@@ -62,12 +62,12 @@ namespace TitanOrbit.Entities
             // Only check for hits after traveling min distance (avoids spawn-area false hits)
             if (dist < minTravelBeforeHit) return;
 
-            // SphereCast for reliable hit detection
+            // SphereCast - only look ahead one frame + small buffer (prevents tunneling without "reaching" far ahead)
             Vector3 vel = rb.linearVelocity;
             if (vel.sqrMagnitude > 0.01f)
             {
-                float castDist = (vel.magnitude * Time.fixedDeltaTime) + 2.5f;
-                float radius = 0.5f;
+                float castDist = vel.magnitude * Time.fixedDeltaTime;
+                float radius = 0.3f;
                 if (Physics.SphereCast(transform.position, radius, vel.normalized, out RaycastHit hit, castDist, ~0, QueryTriggerInteraction.Ignore))
                 {
                     if (hit.collider != null && hit.collider.transform != transform && !hit.collider.transform.IsChildOf(transform))
