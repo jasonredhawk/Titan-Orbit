@@ -13,8 +13,9 @@ namespace TitanOrbit.Entities
         [Header("Bullet Settings")]
         [SerializeField] private float speed = 20f;
         [SerializeField] private float damage = 10f;
-        [SerializeField] private float lifetime = 5f;
-        [SerializeField] private float maxDistance = 50f;
+        [SerializeField] private float lifetime = 10f;
+        [SerializeField] private float maxDistance = 200f;
+        [SerializeField] private float minTravelBeforeHit = 3f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
 
         private Rigidbody rb;
@@ -58,7 +59,10 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // SphereCast for reliable hit detection (larger hit area, handles fast movement)
+            // Only check for hits after traveling min distance (avoids spawn-area false hits)
+            if (dist < minTravelBeforeHit) return;
+
+            // SphereCast for reliable hit detection
             Vector3 vel = rb.linearVelocity;
             if (vel.sqrMagnitude > 0.01f)
             {
@@ -77,6 +81,8 @@ namespace TitanOrbit.Entities
         private void OnTriggerEnter(Collider other)
         {
             if (!IsServer) return;
+            float dist = Vector3.Distance(transform.position, spawnPosition);
+            if (dist < minTravelBeforeHit) return; // Ignore hits in spawn area
             TryHit(other);
         }
 

@@ -502,11 +502,11 @@ namespace TitanOrbit.Editor
             // Make it look more like an asteroid (randomize scale slightly)
             asteroid.transform.localScale = new Vector3(1.2f, 1.5f, 1.3f);
 
-            // Non-trigger collider for ship collision (bullets use OnTriggerEnter which works with non-trigger)
+            // Non-trigger collider - radius 0.5 matches Unity sphere primitive mesh (scales with transform)
             Object.DestroyImmediate(asteroid.GetComponent<Collider>());
             SphereCollider collider = asteroid.AddComponent<SphereCollider>();
             collider.isTrigger = false;
-            collider.radius = 1f;
+            collider.radius = 0.5f;
 
             Rigidbody rb = asteroid.AddComponent<Rigidbody>();
             rb.useGravity = false;
