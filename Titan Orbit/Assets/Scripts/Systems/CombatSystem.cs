@@ -29,25 +29,39 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Quaternion rotation, float speed, float damage, TeamManager.Team ownerTeam)
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam)
         {
             if (bulletPrefab == null) return;
 
-            GameObject bulletObj = Instantiate(bulletPrefab, position, rotation);
+            // Ensure direction is normalized in XZ plane
+            Vector3 dir = direction;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            else dir.Normalize();
+
+            Quaternion lookRot = Quaternion.LookRotation(dir, Vector3.up);
+            GameObject bulletObj = Instantiate(bulletPrefab, position, lookRot);
+            Bullet bullet = bulletObj.GetComponent<Bullet>();
+            Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
+
+            if (bullet != null)
+            {
+                bullet.Initialize(speed, damage, ownerTeam);
+            }
+
+            if (bulletRb != null)
+            {
+                bulletRb.linearVelocity = dir * speed;
+            }
+
             NetworkObject bulletNetObj = bulletObj.GetComponent<NetworkObject>();
-            
             if (bulletNetObj != null)
             {
                 bulletNetObj.Spawn();
-                
-                Bullet bullet = bulletObj.GetComponent<Bullet>();
-                if (bullet != null)
-                {
-                    bullet.Initialize(speed, damage, ownerTeam);
-                }
             }
 
-            if (bulletParent != null)
+            // Only parent if bulletParent has NetworkObject (Netcode requirement)
+            if (bulletParent != null && bulletParent.GetComponent<NetworkObject>() != null)
             {
                 bulletObj.transform.SetParent(bulletParent);
             }

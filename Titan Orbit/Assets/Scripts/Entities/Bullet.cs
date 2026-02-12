@@ -5,7 +5,7 @@ using TitanOrbit.Core;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Bullet/projectile that deals damage on collision
+    /// Bullet/projectile - uses Raycast for reliable hit detection, despawns on hit or max distance/lifetime
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class Bullet : NetworkBehaviour
@@ -14,10 +14,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private float speed = 20f;
         [SerializeField] private float damage = 10f;
         [SerializeField] private float lifetime = 5f;
+        [SerializeField] private float maxDistance = 50f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
 
         private Rigidbody rb;
         private float spawnTime;
+        private Vector3 spawnPosition;
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
@@ -25,42 +27,83 @@ namespace TitanOrbit.Entities
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            }
         }
 
         public override void OnNetworkSpawn()
         {
             spawnTime = Time.time;
-            
-            if (IsServer)
-            {
-                // Set velocity
-                rb.linearVelocity = transform.forward * speed;
-            }
+            spawnPosition = transform.position;
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
-            if (IsServer && Time.time - spawnTime > lifetime)
+            if (!IsServer) return;
+
+            // Max distance
+            float dist = Vector3.Distance(transform.position, spawnPosition);
+            if (dist > maxDistance)
             {
-                // Destroy bullet after lifetime
                 GetComponent<NetworkObject>().Despawn();
+                return;
+            }
+
+            // Max lifetime
+            if (Time.time - spawnTime > lifetime)
+            {
+                GetComponent<NetworkObject>().Despawn();
+                return;
+            }
+
+            // SphereCast for reliable hit detection (larger hit area, handles fast movement)
+            Vector3 vel = rb.linearVelocity;
+            if (vel.sqrMagnitude > 0.01f)
+            {
+                float castDist = (vel.magnitude * Time.fixedDeltaTime) + 2.5f;
+                float radius = 0.5f;
+                if (Physics.SphereCast(transform.position, radius, vel.normalized, out RaycastHit hit, castDist, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    if (hit.collider != null && hit.collider.transform != transform && !hit.collider.transform.IsChildOf(transform))
+                    {
+                        TryHit(hit.collider);
+                    }
+                }
             }
         }
 
         private void OnTriggerEnter(Collider other)
         {
             if (!IsServer) return;
+            TryHit(other);
+        }
 
-            // Check if hit a starship
-            Starship ship = other.GetComponent<Starship>();
-            if (ship != null && ship.ShipTeam != ownerTeam)
+        private void TryHit(Collider other)
+        {
+            if (other == null) return;
+
+            Asteroid asteroid = other.GetComponent<Asteroid>();
+            if (asteroid != null && !asteroid.IsDestroyed)
             {
-                // Deal damage
-                ship.TakeDamageServerRpc(damage, ownerTeam);
-                
-                // Destroy bullet
-                GetComponent<NetworkObject>().Despawn();
+                asteroid.TakeDamageServerRpc(damage);
+                DespawnBullet();
+                return;
             }
+
+            Starship ship = other.GetComponent<Starship>();
+            if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
+            {
+                ship.TakeDamageServerRpc(damage, ownerTeam);
+                DespawnBullet();
+            }
+        }
+
+        private void DespawnBullet()
+        {
+            var no = GetComponent<NetworkObject>();
+            if (no != null && no.IsSpawned) no.Despawn();
         }
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)

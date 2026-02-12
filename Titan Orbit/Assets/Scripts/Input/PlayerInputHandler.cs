@@ -17,13 +17,12 @@ namespace TitanOrbit.Input
         private InputAction lookAction;
 
         // Input values
-        private Vector2 moveInput;
-        private Vector2 lookInput;
         private bool shootPressed;
+        private bool moveForwardPressed;
 
-        public Vector2 MoveInput => moveInput;
-        public Vector2 LookInput => lookInput;
         public bool ShootPressed => shootPressed;
+        /// <summary>True when right mouse is held - move in facing direction</summary>
+        public bool MoveForwardPressed => moveForwardPressed;
         public bool IsMobile => Application.isMobilePlatform;
 
         private void Awake()
@@ -57,40 +56,36 @@ namespace TitanOrbit.Input
 
         private void Update()
         {
-            // Read input values
-            if (moveAction != null)
-            {
-                moveInput = moveAction.ReadValue<Vector2>();
-            }
-
-            if (lookAction != null)
-            {
-                lookInput = lookAction.ReadValue<Vector2>();
-            }
-
+            // Left-click = shoot
             if (shootAction != null)
             {
                 shootPressed = shootAction.IsPressed();
             }
+            else
+            {
+                shootPressed = Mouse.current != null && Mouse.current.leftButton.isPressed;
+            }
+
+            // Right-click = move in facing direction
+            moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
         }
 
         /// <summary>
-        /// Get world position for movement (for mouse/touch input)
+        /// Get mouse cursor world position (for ship rotation - ship faces toward cursor)
         /// </summary>
-        public Vector3 GetMoveWorldPosition(UnityEngine.Camera cam)
+        public Vector3 GetMouseWorldPosition(UnityEngine.Camera cam)
         {
-            if (cam == null) return Vector3.zero;
+            if (cam == null || Mouse.current == null) return transform.position;
 
-            Vector3 screenPos = new Vector3(lookInput.x, lookInput.y, cam.nearClipPlane);
-            return cam.ScreenToWorldPoint(screenPos);
+            Vector2 mousePos = Mouse.current.position.ReadValue();
+            Ray ray = cam.ScreenPointToRay(new Vector3(mousePos.x, mousePos.y, 0));
+            Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
+            if (groundPlane.Raycast(ray, out float distance))
+            {
+                return ray.GetPoint(distance);
+            }
+            return transform.position;
         }
 
-        /// <summary>
-        /// Get direction vector for movement
-        /// </summary>
-        public Vector2 GetMoveDirection()
-        {
-            return moveInput.normalized;
-        }
     }
 }

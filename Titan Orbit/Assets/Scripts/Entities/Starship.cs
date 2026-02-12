@@ -50,6 +50,7 @@ namespace TitanOrbit.Entities
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth => maxHealth;
         public float CurrentGems => currentGems.Value;
+        public bool IsDead => isDead.Value;
         public float GemCapacity => gemCapacity;
         public float CurrentPeople => currentPeople.Value;
         public float PeopleCapacity => peopleCapacity;
@@ -70,12 +71,8 @@ namespace TitanOrbit.Entities
                 currentHealth.Value = maxHealth;
                 currentGems.Value = 0f;
                 currentPeople.Value = 0f;
-            }
-
-            // Assign team
-            if (IsOwner && TeamManager.Instance != null)
-            {
-                shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
+                if (TeamManager.Instance != null)
+                    shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
             }
         }
 
@@ -89,8 +86,8 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
+            if (IsServer) HandleDeath();
             if (!IsOwner) return;
-
             HandleMovement();
             HandleRotation();
         }
@@ -99,28 +96,29 @@ namespace TitanOrbit.Entities
         {
             if (inputHandler == null) return;
 
-            // Movement input
-            Vector2 moveInput = inputHandler.MoveInput;
-            if (moveInput.magnitude > 0.1f)
+            // Movement: right-click only - move in direction ship is facing
+            if (inputHandler.MoveForwardPressed)
             {
-                moveDirection = new Vector3(moveInput.x, 0f, moveInput.y);
+                moveDirection = transform.forward;
+                moveDirection.y = 0f;
+                if (moveDirection.sqrMagnitude > 0.01f)
+                {
+                    moveDirection.Normalize();
+                }
             }
             else
             {
-                // Try to get world position for movement (mouse/touch)
-                UnityEngine.Camera cam = UnityEngine.Camera.main;
-                if (cam != null)
-                {
-                    Vector3 worldPos = inputHandler.GetMoveWorldPosition(cam);
-                    moveDirection = (worldPos - transform.position).normalized;
-                    moveDirection.y = 0f;
-                }
+                moveDirection = Vector3.zero;
             }
 
-            // Shooting input
-            if (inputHandler.ShootPressed && CanFire())
+            // Shooting input - pass fire position and direction from client (Vector3 avoids Quaternion sync issues)
+            if (inputHandler.ShootPressed && CanFire() && firePoint != null)
             {
-                FireServerRpc();
+                Vector3 dir = transform.forward;
+                dir.y = 0f;
+                if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+                else dir.Normalize();
+                FireServerRpc(firePoint.position, dir);
             }
         }
 
@@ -135,14 +133,24 @@ namespace TitanOrbit.Entities
 
         private void HandleRotation()
         {
-            if (moveDirection.magnitude > 0.1f)
+            // Always rotate toward mouse cursor - works in place, no movement required
+            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            if (cam != null && inputHandler != null)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-                transform.rotation = Quaternion.RotateTowards(
-                    transform.rotation,
-                    targetRotation,
-                    rotationSpeed * Time.fixedDeltaTime
-                );
+                Vector3 mouseWorldPos = inputHandler.GetMouseWorldPosition(cam);
+                Vector3 directionToMouse = (mouseWorldPos - transform.position);
+                directionToMouse.y = 0f;
+                if (directionToMouse.sqrMagnitude > 0.001f)
+                {
+                    directionToMouse.Normalize();
+                    Quaternion targetRotation = Quaternion.LookRotation(directionToMouse);
+                    Quaternion newRotation = Quaternion.RotateTowards(
+                        rb.rotation,
+                        targetRotation,
+                        rotationSpeed * Time.fixedDeltaTime
+                    );
+                    rb.MoveRotation(newRotation);
+                }
             }
         }
 
@@ -163,18 +171,17 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc]
-        private void FireServerRpc()
+        private void FireServerRpc(Vector3 firePosition, Vector3 fireDirection)
         {
             if (!CanFire()) return;
 
             lastFireTime = Time.time;
             
-            // Spawn bullet
-            if (firePoint != null && Systems.CombatSystem.Instance != null)
+            if (Systems.CombatSystem.Instance != null)
             {
                 Systems.CombatSystem.Instance.SpawnBulletServerRpc(
-                    firePoint.position,
-                    firePoint.rotation,
+                    firePosition,
+                    fireDirection,
                     bulletSpeed,
                     firePower,
                     shipTeam.Value
@@ -190,15 +197,36 @@ namespace TitanOrbit.Entities
             // Visual/audio feedback for firing
         }
 
+        private NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
+        private float timeHealthZero;
+
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam)
         {
-            // No friendly fire
             if (attackerTeam == shipTeam.Value) return;
+            if (isDead.Value) return;
 
             currentHealth.Value = Mathf.Max(0f, currentHealth.Value - damage);
 
             if (currentHealth.Value <= 0f)
+            {
+                timeHealthZero = Time.time;
+            }
+        }
+
+        private void HandleDeath()
+        {
+            if (isDead.Value) return;
+
+            if (currentHealth.Value <= 0f)
+            {
+                // Drain gems over time when health is zero
+                float drainRate = 20f;
+                float toDrain = drainRate * Time.deltaTime;
+                currentGems.Value = Mathf.Max(0f, currentGems.Value - toDrain);
+            }
+
+            if (currentHealth.Value <= 0f && currentGems.Value <= 0f)
             {
                 DieServerRpc();
             }
@@ -207,7 +235,8 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc()
         {
-            // Handle death
+            if (isDead.Value) return;
+            isDead.Value = true;
             RespawnServerRpc();
         }
 
@@ -217,7 +246,20 @@ namespace TitanOrbit.Entities
             currentHealth.Value = maxHealth;
             currentGems.Value = 0f;
             currentPeople.Value = 0f;
-            // Reset position to home planet
+            isDead.Value = false;
+        }
+
+        private void OnCollisionEnter(Collision collision)
+        {
+            if (!IsServer) return;
+
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid != null)
+            {
+                float collisionDamage = 10f;
+                asteroid.TakeDamageServerRpc(collisionDamage);
+                TakeDamageServerRpc(collisionDamage, TeamManager.Team.None);
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]

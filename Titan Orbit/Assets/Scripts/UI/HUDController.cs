@@ -34,56 +34,51 @@ namespace TitanOrbit.UI
         {
             if (playerShip == null)
             {
-                // Find player ship
-                playerShip = FindObjectOfType<Starship>();
+                foreach (var ship in FindObjectsOfType<Starship>())
+                {
+                    if (ship.IsOwner) { playerShip = ship; break; }
+                }
                 if (playerShip == null) return;
             }
-
+            if (playerShip.IsDead) return;
             UpdateHUD();
         }
 
+        private TextMeshProUGUI fallbackText;
+
         private void UpdateHUD()
         {
-            // Update health
             if (healthBar != null)
-            {
                 healthBar.value = playerShip.CurrentHealth / playerShip.MaxHealth;
-            }
 
             if (healthText != null)
-            {
                 healthText.text = $"{playerShip.CurrentHealth:F0}/{playerShip.MaxHealth:F0}";
-            }
 
-            // Update gems
             if (gemCounter != null)
-            {
                 gemCounter.text = $"Gems: {playerShip.CurrentGems:F0}/{playerShip.GemCapacity:F0}";
-            }
 
-            // Update population
             if (populationCounter != null)
-            {
                 populationCounter.text = $"People: {playerShip.CurrentPeople:F0}/{playerShip.PeopleCapacity:F0}";
-            }
 
-            // Update ship level
             if (shipLevelText != null)
-            {
                 shipLevelText.text = $"Level {playerShip.ShipLevel}";
-            }
 
-            // Update ship type
             if (shipTypeText != null)
-            {
                 shipTypeText.text = playerShip.FocusType.ToString();
-            }
 
-            // Update team indicator
             if (teamIndicator != null)
+                teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
+
+            // Fallback: single combined text when individual elements not assigned
+            if (healthText == null && gemCounter == null && populationCounter == null)
             {
-                Color teamColor = GetTeamColor(playerShip.ShipTeam);
-                teamIndicator.color = teamColor;
+                if (fallbackText == null) fallbackText = GetComponentInChildren<TextMeshProUGUI>();
+                if (fallbackText != null)
+                {
+                    fallbackText.text = $"Health: {playerShip.CurrentHealth:F0}/{playerShip.MaxHealth:F0}\n" +
+                        $"Gems: {playerShip.CurrentGems:F0}/{playerShip.GemCapacity:F0}\n" +
+                        $"People: {playerShip.CurrentPeople:F0}/{playerShip.PeopleCapacity:F0}";
+                }
             }
         }
 

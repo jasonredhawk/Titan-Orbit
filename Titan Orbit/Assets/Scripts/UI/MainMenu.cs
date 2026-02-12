@@ -88,9 +88,12 @@ namespace TitanOrbit.UI
         {
             if (playerCountText != null)
             {
-                // Update player count
-                int playerCount = NetworkManager.Singleton != null ? 
-                    NetworkManager.Singleton.ConnectedClients.Count : 0;
+                // ConnectedClients can only be accessed on server
+                int playerCount = 0;
+                if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                {
+                    playerCount = NetworkManager.Singleton.ConnectedClients.Count;
+                }
                 playerCountText.text = $"Players: {playerCount}/60";
             }
 

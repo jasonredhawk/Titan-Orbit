@@ -44,6 +44,11 @@ namespace TitanOrbit.Networking
 
         public void StartHost()
         {
+            if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            {
+                Debug.LogError("Player Prefab not set on NetworkManager! Use menu: Titan Orbit > Fix Player Prefab & Materials");
+                return;
+            }
             NetworkManager.Singleton.StartHost();
             Debug.Log("Host started");
         }

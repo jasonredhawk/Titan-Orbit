@@ -10,17 +10,14 @@ namespace TitanOrbit.Camera
     {
         [Header("Camera Settings")]
         [SerializeField] private Transform target;
-        [SerializeField] private Vector3 offset = new Vector3(0, 10, 0);
-        [SerializeField] private float followSpeed = 5f;
-        [SerializeField] private float rotationSpeed = 2f;
+        [SerializeField] private Vector3 offset = new Vector3(0, 20, 0); // Above ship for top-down view
 
         [Header("Toroidal Map Settings")]
-        [SerializeField] private float mapWidth = 1000f;
-        [SerializeField] private float mapHeight = 1000f;
+        [SerializeField] private float mapWidth = 300f;
+        [SerializeField] private float mapHeight = 300f;
         [SerializeField] private bool enableToroidalWrapping = true;
 
         private UnityEngine.Camera cam;
-        private Vector3 velocity;
 
         private void Awake()
         {
@@ -38,23 +35,13 @@ namespace TitanOrbit.Camera
         {
             if (target == null) return;
 
+            // Lock camera to ship - ship always centered, no delay
             Vector3 targetPosition = target.position + offset;
-            
-            // Handle toroidal wrapping
             if (enableToroidalWrapping)
             {
                 targetPosition = WrapPosition(targetPosition);
             }
-
-            // Smooth follow
-            transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref velocity, 1f / followSpeed);
-
-            // Optional: Rotate camera to match ship rotation
-            if (rotationSpeed > 0)
-            {
-                Quaternion targetRotation = Quaternion.Euler(90f, target.eulerAngles.y, 0f);
-                transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
-            }
+            transform.position = targetPosition;
         }
 
         private Vector3 WrapPosition(Vector3 position)
