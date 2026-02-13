@@ -20,6 +20,39 @@ namespace TitanOrbit.Generation
         public static float GetMapHeight() => mapHeight;
 
         /// <summary>
+        /// Returns the toroidal copy of logicalPos that is closest to cameraPos.
+        /// Use this for display position so the entity is always visible when the camera is near edges.
+        /// </summary>
+        public static Vector3 GetDisplayPosition(Vector3 logicalPos, Vector3 cameraPos)
+        {
+            float halfW = mapWidth / 2f;
+            float halfH = mapHeight / 2f;
+            float bestX = logicalPos.x;
+            float bestZ = logicalPos.z;
+            float bestDistSq = float.MaxValue;
+
+            for (int k = -1; k <= 1; k++)
+            {
+                for (int m = -1; m <= 1; m++)
+                {
+                    float x = logicalPos.x + k * mapWidth;
+                    float z = logicalPos.z + m * mapHeight;
+                    float dx = x - cameraPos.x;
+                    float dz = z - cameraPos.z;
+                    float distSq = dx * dx + dz * dz;
+                    if (distSq < bestDistSq)
+                    {
+                        bestDistSq = distSq;
+                        bestX = x;
+                        bestZ = z;
+                    }
+                }
+            }
+
+            return new Vector3(bestX, logicalPos.y, bestZ);
+        }
+
+        /// <summary>
         /// Wraps a position to the toroidal map. Uses modulo for consistent wrapping.
         /// Valid range: [-halfWidth, halfWidth) for X, [-halfHeight, halfHeight) for Z
         /// </summary>

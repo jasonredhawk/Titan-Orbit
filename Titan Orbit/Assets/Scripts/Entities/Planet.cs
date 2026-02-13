@@ -103,13 +103,9 @@ namespace TitanOrbit.Entities
                 transform.position = pos;
             }
             
-            // Wrap position toroidally (same as starship)
-            Vector3 wrappedPos = ToroidalMap.WrapPosition(pos);
-            if (Vector3.SqrMagnitude(wrappedPos - pos) > 0.0001f)
-            {
-                transform.position = wrappedPos;
-            }
-            
+            // Position is set by ToroidalRenderer in LateUpdate (display copy closest to camera).
+            // Do not wrap here or entities will disappear at edges.
+
             if (IsServer)
             {
                 // Grow population over time if not at max
