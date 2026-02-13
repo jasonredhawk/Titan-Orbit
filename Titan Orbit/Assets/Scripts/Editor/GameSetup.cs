@@ -418,7 +418,9 @@ namespace TitanOrbit.Editor
             nose.transform.localScale = new Vector3(0.6f, 0.6f, 0.8f);
             Object.DestroyImmediate(nose.GetComponent<Collider>());
             Renderer noseRenderer = nose.GetComponent<Renderer>();
-            noseRenderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_StarshipNose", new Color(0.6f, 1f, 1f)); // Brighter cyan for nose
+            noseRenderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_StarshipNose", new Color(0.6f, 1f, 1f), 2501); // Brighter cyan for nose, even higher render queue
+            // Set sorting order so nose renders in front of planets (for orthographic camera)
+            noseRenderer.sortingOrder = 11;
 
             // Create fire point at front
             GameObject firePoint = new GameObject("FirePoint");
@@ -430,8 +432,11 @@ namespace TitanOrbit.Editor
             starshipSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Set URP-compatible material for body - brighter cyan for better contrast
+            // Use higher render queue (2500) so starships render in front of planets (2000)
             Renderer renderer = ship.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0f, 1f, 1f)); // Bright cyan
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0f, 1f, 1f), 2500); // Bright cyan, higher render queue
+            // Set sorting order so starships render in front of planets (for orthographic camera)
+            renderer.sortingOrder = 10;
 
             // Save as prefab
             string path = "Assets/Prefabs/Starship.prefab";
@@ -464,22 +469,24 @@ namespace TitanOrbit.Editor
             Renderer renderer = planet.GetComponent<Renderer>();
             renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.3f, 0.5f, 0.9f)); // Bright blue
 
-            // Add ring like home planet but different color (cyan instead of yellow)
+            // Add ring - vertical orientation to differentiate from home planets (horizontal)
             GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Ring";
             ring.transform.SetParent(planet.transform);
             ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
-            ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
+            ring.transform.localRotation = Quaternion.Euler(0, 0, 0); // Vertical (standing up) instead of horizontal
             ring.transform.localPosition = Vector3.zero;
             Object.DestroyImmediate(ring.GetComponent<Collider>()); // Remove collider from ring
             ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PlanetRing", new Color(0f, 0.8f, 1f, 0.7f)); // Cyan ring
 
             // Add population text display - static rotation for top-down view (horizontal, facing up)
+            // Position scales with planet size (8f scale = 8f radius, so position at ~1.5x radius)
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(planet.transform);
-            textObj.transform.localPosition = new Vector3(0, 5f, 0); // Above larger planet
+            float planetRadius = planet.transform.localScale.x;
+            textObj.transform.localPosition = new Vector3(0, planetRadius * 1.5f, 0); // Scale with planet size
             textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Flat, facing up for top-down camera
-            textObj.transform.localScale = Vector3.one * 0.1f;
+            textObj.transform.localScale = Vector3.one * (planetRadius * 0.0125f); // Scale text size with planet
             
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
@@ -547,12 +554,13 @@ namespace TitanOrbit.Editor
             Object.DestroyImmediate(ring.GetComponent<Collider>());
             ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanetRing", new Color(1f, 1f, 1f, 0.6f)); // Ring color matches planet
 
-            // Add population text display (like regular planets)
+            // Add population text display (like regular planets) - scale with planet size
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(homePlanet.transform);
-            textObj.transform.localPosition = new Vector3(0, 12f, 0); // Above larger home planet
+            float homePlanetRadius = homePlanet.transform.localScale.x;
+            textObj.transform.localPosition = new Vector3(0, homePlanetRadius * 1.5f, 0); // Scale with planet size
             textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Static, facing up
-            textObj.transform.localScale = Vector3.one * 0.05f;
+            textObj.transform.localScale = Vector3.one * (homePlanetRadius * 0.0025f); // Scale text size with planet
             
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
@@ -574,20 +582,93 @@ namespace TitanOrbit.Editor
             Debug.Log($"Created prefab: {path}");
         }
 
+        /// <summary>
+        /// Creates a lumpy, irregular asteroid mesh instead of a smooth sphere
+        /// Saves the mesh as an asset so it persists in the prefab
+        /// </summary>
+        private static Mesh GetOrCreateLumpyAsteroidMesh()
+        {
+            // Check if mesh already exists
+            string meshPath = "Assets/Meshes/LumpyAsteroid.asset";
+            Mesh existingMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+            if (existingMesh != null)
+            {
+                return existingMesh;
+            }
+            
+            // Create meshes folder if needed
+            if (!AssetDatabase.IsValidFolder("Assets/Meshes"))
+            {
+                AssetDatabase.CreateFolder("Assets", "Meshes");
+            }
+            
+            // Start with a sphere mesh and deform it
+            GameObject tempSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Mesh baseMesh = tempSphere.GetComponent<MeshFilter>().sharedMesh;
+            Object.DestroyImmediate(tempSphere);
+            
+            // Create a new mesh with deformed vertices
+            Mesh lumpyMesh = new Mesh();
+            lumpyMesh.name = "LumpyAsteroid";
+            
+            Vector3[] vertices = baseMesh.vertices;
+            Vector3[] normals = baseMesh.normals;
+            Vector2[] uvs = baseMesh.uv;
+            int[] triangles = baseMesh.triangles;
+            
+            // Deform vertices to create lumpy appearance
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3 vertex = vertices[i];
+                float distance = vertex.magnitude;
+                
+                // Use Perlin noise to create irregular bumps
+                float noiseX = Mathf.PerlinNoise(vertex.x * 3f, vertex.y * 3f);
+                float noiseY = Mathf.PerlinNoise(vertex.y * 3f + 100f, vertex.z * 3f);
+                float noiseZ = Mathf.PerlinNoise(vertex.z * 3f + 200f, vertex.x * 3f);
+                
+                // Combine noise values
+                float noise = (noiseX + noiseY + noiseZ) / 3f;
+                
+                // Create lumpy deformation (0.7 to 1.3 scale variation)
+                float deformation = 0.7f + noise * 0.6f;
+                
+                // Apply deformation along the normal direction
+                vertices[i] = vertex.normalized * (distance * deformation);
+            }
+            
+            lumpyMesh.vertices = vertices;
+            lumpyMesh.normals = normals;
+            lumpyMesh.uv = uvs;
+            lumpyMesh.triangles = triangles;
+            lumpyMesh.RecalculateNormals();
+            lumpyMesh.RecalculateBounds();
+            
+            // Save mesh as asset
+            AssetDatabase.CreateAsset(lumpyMesh, meshPath);
+            AssetDatabase.SaveAssets();
+            
+            return lumpyMesh;
+        }
+        
         private static void CreateAsteroidPrefab()
         {
-            GameObject asteroid = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            asteroid.name = "Asteroid";
-            asteroid.transform.localScale = Vector3.one * 1.5f;
-
+            GameObject asteroid = new GameObject("Asteroid");
+            
+            // Get or create lumpy mesh (saved as asset)
+            Mesh lumpyMesh = GetOrCreateLumpyAsteroidMesh();
+            MeshFilter meshFilter = asteroid.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = lumpyMesh; // Use sharedMesh so it references the asset
+            MeshRenderer meshRenderer = asteroid.AddComponent<MeshRenderer>();
+            
             // Make it look more like an asteroid (randomize scale slightly)
             asteroid.transform.localScale = new Vector3(1.2f, 1.5f, 1.3f);
 
-            // Non-trigger collider - radius 0.5 matches Unity sphere primitive mesh (scales with transform)
-            Object.DestroyImmediate(asteroid.GetComponent<Collider>());
-            SphereCollider collider = asteroid.AddComponent<SphereCollider>();
+            // Non-trigger collider - use mesh collider for accurate lumpy shape
+            MeshCollider collider = asteroid.AddComponent<MeshCollider>();
             collider.isTrigger = false;
-            collider.radius = 0.5f;
+            collider.sharedMesh = lumpyMesh;
+            collider.convex = true; // Required for dynamic physics
 
             Rigidbody rb = asteroid.AddComponent<Rigidbody>();
             rb.useGravity = false;
@@ -733,15 +814,17 @@ namespace TitanOrbit.Editor
         
         /// <summary>
         /// Creates a procedural asteroid texture with crater-like patterns using Perlin noise
+        /// Grey color scheme with highly visible craters
         /// </summary>
         private static Texture2D CreateAsteroidTexture(int width = 512, int height = 512)
         {
             Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, true);
-            Color baseColor = new Color(0.4f, 0.25f, 0.15f); // Dark brown base
-            Color darkColor = new Color(0.25f, 0.15f, 0.1f); // Darker for craters
-            Color lightColor = new Color(0.5f, 0.35f, 0.2f); // Lighter for highlights
+            Color baseColor = new Color(0.5f, 0.5f, 0.5f); // Grey base
+            Color darkColor = new Color(0.2f, 0.2f, 0.2f); // Very dark grey for deep craters
+            Color lightColor = new Color(0.7f, 0.7f, 0.7f); // Light grey for highlights
+            Color craterColor = new Color(0.15f, 0.15f, 0.15f); // Darkest for crater centers
             
-            // Generate noise-based texture
+            // Generate noise-based texture with prominent craters
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
@@ -750,38 +833,66 @@ namespace TitanOrbit.Editor
                     float ny = (float)y / height;
                     
                     // Multiple layers of Perlin noise for varied surface
-                    float noise1 = Mathf.PerlinNoise(nx * 8f, ny * 8f); // Fine detail
-                    float noise2 = Mathf.PerlinNoise(nx * 4f, ny * 4f); // Medium detail
-                    float noise3 = Mathf.PerlinNoise(nx * 2f, ny * 2f); // Large detail
-                    float noise4 = Mathf.PerlinNoise(nx * 16f, ny * 16f); // Very fine detail
+                    float noise1 = Mathf.PerlinNoise(nx * 12f, ny * 12f); // Fine detail
+                    float noise2 = Mathf.PerlinNoise(nx * 6f, ny * 6f); // Medium detail
+                    float noise3 = Mathf.PerlinNoise(nx * 3f, ny * 3f); // Large detail
+                    float noise4 = Mathf.PerlinNoise(nx * 24f, ny * 24f); // Very fine detail
                     
                     // Combine noise layers with different weights
-                    float combinedNoise = (noise1 * 0.3f + noise2 * 0.4f + noise3 * 0.2f + noise4 * 0.1f);
+                    float combinedNoise = (noise1 * 0.25f + noise2 * 0.35f + noise3 * 0.25f + noise4 * 0.15f);
                     
-                    // Create crater-like dark spots (inverted noise in some areas)
-                    float craterNoise = Mathf.PerlinNoise(nx * 3f + 100f, ny * 3f + 100f);
-                    float craterMask = Mathf.SmoothStep(0.3f, 0.7f, craterNoise);
-                    
-                    // Mix colors based on noise
-                    Color pixelColor;
-                    if (combinedNoise < 0.35f)
+                    // Create prominent crater patterns using circular distance from noise centers
+                    float craterPattern = 0f;
+                    for (int i = 0; i < 8; i++)
                     {
-                        // Dark craters
-                        pixelColor = Color.Lerp(darkColor, baseColor, combinedNoise * 2f);
+                        float cx = Mathf.PerlinNoise((float)i * 50f, 0f);
+                        float cy = Mathf.PerlinNoise(0f, (float)i * 50f);
+                        float dx = nx - cx;
+                        float dy = ny - cy;
+                        float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                        float craterSize = 0.08f + Mathf.PerlinNoise((float)i * 100f, 100f) * 0.05f;
+                        float craterDepth = Mathf.SmoothStep(craterSize, craterSize * 0.3f, dist);
+                        craterPattern = Mathf.Max(craterPattern, craterDepth);
                     }
-                    else if (combinedNoise > 0.7f)
+                    
+                    // Additional random crater noise
+                    float craterNoise = Mathf.PerlinNoise(nx * 5f + 200f, ny * 5f + 200f);
+                    float craterMask = Mathf.SmoothStep(0.2f, 0.5f, craterNoise);
+                    
+                    // Mix colors based on noise and craters
+                    Color pixelColor;
+                    float craterInfluence = craterPattern * 0.8f + (1f - craterMask) * 0.3f;
+                    
+                    if (craterInfluence > 0.6f)
+                    {
+                        // Deep crater centers - very dark
+                        pixelColor = Color.Lerp(craterColor, darkColor, (craterInfluence - 0.6f) / 0.4f);
+                    }
+                    else if (craterInfluence > 0.3f)
+                    {
+                        // Crater edges - dark grey
+                        pixelColor = Color.Lerp(darkColor, baseColor, (craterInfluence - 0.3f) / 0.3f);
+                    }
+                    else if (combinedNoise < 0.3f)
+                    {
+                        // Dark areas
+                        pixelColor = Color.Lerp(darkColor, baseColor, combinedNoise / 0.3f);
+                    }
+                    else if (combinedNoise > 0.75f)
                     {
                         // Light highlights
-                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.7f) * 3.33f);
+                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.75f) / 0.25f);
                     }
                     else
                     {
                         // Base color with variation
-                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.35f) / 0.35f * 0.3f);
+                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.3f) / 0.45f * 0.4f);
                     }
                     
-                    // Apply crater mask for additional dark spots
-                    pixelColor = Color.Lerp(pixelColor, darkColor, (1f - craterMask) * 0.4f);
+                    // Ensure good contrast
+                    pixelColor.r = Mathf.Clamp01(pixelColor.r);
+                    pixelColor.g = Mathf.Clamp01(pixelColor.g);
+                    pixelColor.b = Mathf.Clamp01(pixelColor.b);
                     
                     texture.SetPixel(x, y, pixelColor);
                 }
@@ -1087,7 +1198,7 @@ namespace TitanOrbit.Editor
             Debug.Log("Prefab materials fixed for URP.");
         }
 
-        private static Material CreateAndSaveMaterial(string name, Color color)
+        private static Material CreateAndSaveMaterial(string name, Color color, int renderQueue = -1)
         {
             if (!AssetDatabase.IsValidFolder("Assets/Materials"))
             {
@@ -1098,10 +1209,18 @@ namespace TitanOrbit.Editor
             if (existing != null)
             {
                 existing.SetColor("_BaseColor", color);
+                if (renderQueue >= 0)
+                {
+                    existing.renderQueue = renderQueue;
+                }
                 EditorUtility.SetDirty(existing);
                 return existing;
             }
             Material mat = CreateURPMaterial(color);
+            if (renderQueue >= 0)
+            {
+                mat.renderQueue = renderQueue;
+            }
             AssetDatabase.CreateAsset(mat, path);
             return mat;
         }
