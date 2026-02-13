@@ -37,18 +37,18 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnGemsServerRpc(Vector3 asteroidCenter, float totalValue, float asteroidSize = 1f)
+        public void SpawnGemsServerRpc(Vector3 asteroidCenter, float totalValue, float asteroidSize = 1f, float asteroidPhysicalSize = 0.5f)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null) return;
 
-            // asteroidSize is now normalized (1-20 range)
+            // asteroidSize is normalized (1-20); asteroidPhysicalSize is world scale (~0.3-1.5) for gem visual scale
             // totalValue should be between 1 and 50 based on normalized size
             
             // Smallest asteroids (size ~1, totalValue ~1) produce exactly 1 tiny gem
             if (asteroidSize <= 1.5f && totalValue <= 2f)
             {
-                SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f);
+                SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f, asteroidPhysicalSize);
                 return;
             }
 
@@ -141,14 +141,14 @@ namespace TitanOrbit.Systems
                 // Add some random variation to size
                 sizeMultiplier *= Random.Range(0.9f, 1.1f);
                 
-                SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier);
+                SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier, asteroidPhysicalSize);
                 remainingValue -= gemValue;
                 
                 if (remainingValue <= 0) break;
             }
         }
         
-        private void SpawnGem(GameObject prefab, Vector3 asteroidCenter, float gemValue, float sizeMultiplier)
+        private void SpawnGem(GameObject prefab, Vector3 asteroidCenter, float gemValue, float sizeMultiplier, float asteroidPhysicalSize)
         {
             // Random direction in XZ plane, slightly outward
             Vector2 dir2 = Random.insideUnitCircle.normalized;
@@ -168,7 +168,7 @@ namespace TitanOrbit.Systems
             {
                 netObj.Spawn();
                 Gem gem = gemObj.GetComponent<Gem>();
-                if (gem != null) gem.Initialize(gemValue, sizeMultiplier);
+                if (gem != null) gem.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize);
             }
         }
     }

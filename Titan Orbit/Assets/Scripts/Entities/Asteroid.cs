@@ -192,11 +192,12 @@ namespace TitanOrbit.Entities
 
             Vector3 pos = transform.position;
             Vector3 scale = transform.localScale;
+            float physicalSize = (scale.x + scale.y + scale.z) / 3f;
 
             // Spawn gems
             if (GemSpawner.Instance != null)
             {
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value, asteroidSize);
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value, asteroidSize, physicalSize);
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption

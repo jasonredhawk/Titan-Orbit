@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Generation
 {
@@ -139,6 +140,10 @@ namespace TitanOrbit.Generation
         private void GenerateAsteroids()
         {
             if (asteroidPrefab == null) return;
+
+            // Ensure respawn manager can respawn asteroids (same prefab)
+            if (AsteroidRespawnManager.Instance != null)
+                AsteroidRespawnManager.Instance.SetPrefab(asteroidPrefab);
 
             // Create cluster centers
             Vector3[] clusterCenters = new Vector3[asteroidClusters];

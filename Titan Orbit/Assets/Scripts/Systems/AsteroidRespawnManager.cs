@@ -31,7 +31,11 @@ namespace TitanOrbit.Systems
 
         public void ScheduleRespawn(Vector3 position, Vector3 scale, float respawnTime = 30f)
         {
-            if (asteroidPrefab == null) return;
+            if (asteroidPrefab == null)
+            {
+                Debug.LogWarning("AsteroidRespawnManager: asteroidPrefab is null. Assign it in the Inspector or ensure MapGenerator sets it.");
+                return;
+            }
             pending.Add(new PendingRespawn
             {
                 position = position,
@@ -44,6 +48,7 @@ namespace TitanOrbit.Systems
         {
             if (!IsServer) return;
             if (asteroidPrefab == null) return;
+            if (!NetworkManager.Singleton || !NetworkManager.Singleton.IsListening) return;
 
             float now = Time.time;
             for (int i = pending.Count - 1; i >= 0; i--)
@@ -62,9 +67,17 @@ namespace TitanOrbit.Systems
             // Ensure Y position is locked to 0
             position.y = 0f;
             var obj = Instantiate(asteroidPrefab, position, Quaternion.identity);
+            if (obj == null) return;
             obj.transform.localScale = scale;
             var no = obj.GetComponent<NetworkObject>();
-            if (no != null) no.Spawn();
+            if (no != null)
+            {
+                no.Spawn();
+            }
+            else
+            {
+                Debug.LogWarning("AsteroidRespawnManager: Spawned asteroid has no NetworkObject.");
+            }
         }
 
         public void SetPrefab(GameObject prefab) => asteroidPrefab = prefab;
