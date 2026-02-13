@@ -88,7 +88,7 @@ namespace TitanOrbit.Entities
                 health.Value = baseHealth * sizeMultiplier;
                 isDestroyed.Value = false;
                 
-                // Set up gentle rotation - deterministic based on position (same for all clients)
+                // Set up rotation - deterministic based on position (same for all clients)
                 // Use position hash to ensure same rotation for all clients
                 int hash = (int)(spawnPosition.x * 1000 + spawnPosition.z * 1000);
                 System.Random rng = new System.Random(hash);
@@ -97,7 +97,7 @@ namespace TitanOrbit.Entities
                     0f, // Keep rotation in XZ plane
                     (float)(rng.NextDouble() * 2 - 1)
                 ).normalized;
-                rotationSpeed = 5f + (float)(rng.NextDouble() * 10f); // Gentle rotation speed (5-15 degrees per second)
+                rotationSpeed = 20f + (float)(rng.NextDouble() * 30f); // Faster rotation speed (20-50 degrees per second)
                 
                 // Ensure physics state is correct
                 EnsurePhysicsState();

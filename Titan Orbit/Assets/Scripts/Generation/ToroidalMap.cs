@@ -17,32 +17,17 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
-        /// Wraps a position to the toroidal map
+        /// Wraps a position to the toroidal map. Uses modulo for consistent wrapping.
+        /// Valid range: [-halfWidth, halfWidth) for X, [-halfHeight, halfHeight) for Z
         /// </summary>
         public static Vector3 WrapPosition(Vector3 position)
         {
             float halfWidth = mapWidth / 2f;
             float halfHeight = mapHeight / 2f;
 
-            // Wrap X
-            if (position.x > halfWidth)
-            {
-                position.x -= mapWidth;
-            }
-            else if (position.x < -halfWidth)
-            {
-                position.x += mapWidth;
-            }
-
-            // Wrap Z
-            if (position.z > halfHeight)
-            {
-                position.z -= mapHeight;
-            }
-            else if (position.z < -halfHeight)
-            {
-                position.z += mapHeight;
-            }
+            // Use modulo for consistent, seamless wrapping (handles any magnitude)
+            position.x = Mathf.Repeat(position.x + halfWidth, mapWidth) - halfWidth;
+            position.z = Mathf.Repeat(position.z + halfHeight, mapHeight) - halfHeight;
 
             return position;
         }

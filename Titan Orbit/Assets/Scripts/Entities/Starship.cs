@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Input;
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Entities
 {
@@ -102,16 +103,25 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
+            if (rb == null) return;
+            
             // Always lock Y position (prevents drift from physics/collisions)
-            Vector3 pos = transform.position;
+            Vector3 pos = rb.position;
             if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
             {
                 pos.y = FIXED_Y_POSITION;
-                transform.position = pos;
+                rb.position = pos;
+            }
+            
+            // Wrap position toroidally - use rb.position for consistency (avoids transform/rb desync)
+            Vector3 wrappedPos = ToroidalMap.WrapPosition(pos);
+            if (Vector3.SqrMagnitude(wrappedPos - pos) > 0.0001f)
+            {
+                rb.position = wrappedPos;
             }
             
             // Ensure rigidbody velocity has no Y component
-            if (rb != null && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
+            if (Mathf.Abs(rb.linearVelocity.y) > 0.01f)
             {
                 Vector3 vel = rb.linearVelocity;
                 vel.y = 0f;
@@ -173,6 +183,9 @@ namespace TitanOrbit.Entities
             // Calculate new position and lock Y to fixed position
             Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
             newPosition.y = FIXED_Y_POSITION;
+            
+            // Wrap position toroidally (no borders - wraps around map)
+            newPosition = ToroidalMap.WrapPosition(newPosition);
             
             rb.MovePosition(newPosition);
         }

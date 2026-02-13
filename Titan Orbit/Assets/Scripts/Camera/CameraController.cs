@@ -12,11 +12,6 @@ namespace TitanOrbit.Camera
         [SerializeField] private Transform target;
         [SerializeField] private Vector3 offset = new Vector3(0, 20, 0); // Above ship for top-down view
 
-        [Header("Toroidal Map Settings")]
-        [SerializeField] private float mapWidth = 300f;
-        [SerializeField] private float mapHeight = 300f;
-        [SerializeField] private bool enableToroidalWrapping = true;
-
         private UnityEngine.Camera cam;
 
         private void Awake()
@@ -35,49 +30,15 @@ namespace TitanOrbit.Camera
         {
             if (target == null) return;
 
-            // Lock camera to ship - ship always centered, no delay
+            // Lock camera to ship - ship is always in wrapped coordinates, so just follow directly
+            // No camera wrapping needed - ship position is already wrapped in [-halfWidth, halfWidth]
             Vector3 targetPosition = target.position + offset;
-            if (enableToroidalWrapping)
-            {
-                targetPosition = WrapPosition(targetPosition);
-            }
             transform.position = targetPosition;
-        }
-
-        private Vector3 WrapPosition(Vector3 position)
-        {
-            // Wrap X
-            if (position.x > mapWidth / 2f)
-            {
-                position.x -= mapWidth;
-            }
-            else if (position.x < -mapWidth / 2f)
-            {
-                position.x += mapWidth;
-            }
-
-            // Wrap Z
-            if (position.z > mapHeight / 2f)
-            {
-                position.z -= mapHeight;
-            }
-            else if (position.z < -mapHeight / 2f)
-            {
-                position.z += mapHeight;
-            }
-
-            return position;
         }
 
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;
-        }
-
-        public void SetMapSize(float width, float height)
-        {
-            mapWidth = width;
-            mapHeight = height;
         }
     }
 }
