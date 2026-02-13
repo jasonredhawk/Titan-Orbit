@@ -170,7 +170,7 @@ namespace TitanOrbit.Entities
             // Spawn gems
             if (GemSpawner.Instance != null)
             {
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value);
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value, asteroidSize);
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption

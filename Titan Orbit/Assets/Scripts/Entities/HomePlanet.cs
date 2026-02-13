@@ -23,6 +23,15 @@ namespace TitanOrbit.Entities
         public TeamManager.Team AssignedTeam => assignedTeam.Value;
         public int MaxShipLevel => GetMaxShipLevelForPlanetLevel(homePlanetLevel.Value);
 
+        /// <summary>
+        /// Called by MapGenerator at spawn to set team and color. Call before NetworkObject.Spawn().
+        /// </summary>
+        public void InitForTeam(TeamManager.Team team)
+        {
+            assignedTeam.Value = team;
+            SetInitialTeamOwnership(team); // Updates visual via Planet's team ownership
+        }
+
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();

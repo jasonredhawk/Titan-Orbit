@@ -446,7 +446,7 @@ namespace TitanOrbit.Editor
         {
             GameObject planet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             planet.name = "Planet";
-            planet.transform.localScale = Vector3.one * 2f;
+            planet.transform.localScale = Vector3.one * 8f; // Much larger for orbit gameplay
 
             // Remove default collider, add trigger collider
             Object.DestroyImmediate(planet.GetComponent<Collider>());
@@ -474,10 +474,11 @@ namespace TitanOrbit.Editor
             Object.DestroyImmediate(ring.GetComponent<Collider>()); // Remove collider from ring
             ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PlanetRing", new Color(0f, 0.8f, 1f, 0.7f)); // Cyan ring
 
-            // Add population text display
+            // Add population text display - static rotation for top-down view (horizontal, facing up)
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(planet.transform);
-            textObj.transform.localPosition = new Vector3(0, 1.5f, 0); // Above planet
+            textObj.transform.localPosition = new Vector3(0, 5f, 0); // Above larger planet
+            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Flat, facing up for top-down camera
             textObj.transform.localScale = Vector3.one * 0.1f;
             
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
@@ -489,6 +490,7 @@ namespace TitanOrbit.Editor
             
             // Assign to planet script
             var planetSO = new SerializedObject(planetScript);
+            planetSO.FindProperty("planetRenderer").objectReferenceValue = renderer;
             planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
             planetSO.ApplyModifiedPropertiesWithoutUndo();
 
@@ -505,7 +507,7 @@ namespace TitanOrbit.Editor
         {
             GameObject homePlanet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             homePlanet.name = "HomePlanet";
-            homePlanet.transform.localScale = Vector3.one * 3f;
+            homePlanet.transform.localScale = Vector3.one * 20f; // Much larger - team base
 
             // Remove default collider, add trigger collider
             Object.DestroyImmediate(homePlanet.GetComponent<Collider>());
@@ -519,9 +521,22 @@ namespace TitanOrbit.Editor
             // Add HomePlanet script (which extends Planet)
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
 
-            // Brighter yellow for better contrast
+            // Default material - team color set at runtime by MapGenerator
             Renderer renderer = homePlanet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(1f, 0.9f, 0f)); // Bright yellow
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(0.5f, 0.5f, 0.5f)); // Neutral default
+
+            // Team-specific materials for home planets (A=red, B=blue, C=green)
+            Material teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)); // Red
+            Material teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)); // Blue
+            Material teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)); // Green
+
+            var planetSO = new SerializedObject(homePlanetScript);
+            planetSO.FindProperty("planetRenderer").objectReferenceValue = renderer;
+            planetSO.FindProperty("neutralMaterial").objectReferenceValue = renderer.sharedMaterial;
+            planetSO.FindProperty("teamAMaterial").objectReferenceValue = teamAMat;
+            planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
+            planetSO.FindProperty("teamCMaterial").objectReferenceValue = teamCMat;
+            planetSO.ApplyModifiedPropertiesWithoutUndo();
 
             GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Ring";
@@ -529,7 +544,26 @@ namespace TitanOrbit.Editor
             ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
             ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
             ring.transform.localPosition = Vector3.zero;
-            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Ring", new Color(1f, 0.9f, 0f, 0.8f)); // Bright yellow ring
+            Object.DestroyImmediate(ring.GetComponent<Collider>());
+            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanetRing", new Color(1f, 1f, 1f, 0.6f)); // Ring color matches planet
+
+            // Add population text display (like regular planets)
+            GameObject textObj = new GameObject("PopulationText");
+            textObj.transform.SetParent(homePlanet.transform);
+            textObj.transform.localPosition = new Vector3(0, 12f, 0); // Above larger home planet
+            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Static, facing up
+            textObj.transform.localScale = Vector3.one * 0.05f;
+            
+            TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
+            textMesh.text = "0";
+            textMesh.fontSize = 48;
+            textMesh.color = Color.white;
+            textMesh.alignment = TextAlignmentOptions.Center;
+            textMesh.fontStyle = FontStyles.Bold;
+            
+            planetSO = new SerializedObject(homePlanetScript);
+            planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
+            planetSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Save as prefab
             string path = "Assets/Prefabs/HomePlanet.prefab";
@@ -698,11 +732,121 @@ namespace TitanOrbit.Editor
         }
         
         /// <summary>
+        /// Creates a procedural asteroid texture with crater-like patterns using Perlin noise
+        /// </summary>
+        private static Texture2D CreateAsteroidTexture(int width = 512, int height = 512)
+        {
+            Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, true);
+            Color baseColor = new Color(0.4f, 0.25f, 0.15f); // Dark brown base
+            Color darkColor = new Color(0.25f, 0.15f, 0.1f); // Darker for craters
+            Color lightColor = new Color(0.5f, 0.35f, 0.2f); // Lighter for highlights
+            
+            // Generate noise-based texture
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float nx = (float)x / width;
+                    float ny = (float)y / height;
+                    
+                    // Multiple layers of Perlin noise for varied surface
+                    float noise1 = Mathf.PerlinNoise(nx * 8f, ny * 8f); // Fine detail
+                    float noise2 = Mathf.PerlinNoise(nx * 4f, ny * 4f); // Medium detail
+                    float noise3 = Mathf.PerlinNoise(nx * 2f, ny * 2f); // Large detail
+                    float noise4 = Mathf.PerlinNoise(nx * 16f, ny * 16f); // Very fine detail
+                    
+                    // Combine noise layers with different weights
+                    float combinedNoise = (noise1 * 0.3f + noise2 * 0.4f + noise3 * 0.2f + noise4 * 0.1f);
+                    
+                    // Create crater-like dark spots (inverted noise in some areas)
+                    float craterNoise = Mathf.PerlinNoise(nx * 3f + 100f, ny * 3f + 100f);
+                    float craterMask = Mathf.SmoothStep(0.3f, 0.7f, craterNoise);
+                    
+                    // Mix colors based on noise
+                    Color pixelColor;
+                    if (combinedNoise < 0.35f)
+                    {
+                        // Dark craters
+                        pixelColor = Color.Lerp(darkColor, baseColor, combinedNoise * 2f);
+                    }
+                    else if (combinedNoise > 0.7f)
+                    {
+                        // Light highlights
+                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.7f) * 3.33f);
+                    }
+                    else
+                    {
+                        // Base color with variation
+                        pixelColor = Color.Lerp(baseColor, lightColor, (combinedNoise - 0.35f) / 0.35f * 0.3f);
+                    }
+                    
+                    // Apply crater mask for additional dark spots
+                    pixelColor = Color.Lerp(pixelColor, darkColor, (1f - craterMask) * 0.4f);
+                    
+                    texture.SetPixel(x, y, pixelColor);
+                }
+            }
+            
+            texture.Apply();
+            texture.wrapMode = TextureWrapMode.Repeat;
+            texture.filterMode = FilterMode.Bilinear;
+            
+            return texture;
+        }
+        
+        /// <summary>
+        /// Gets or creates the asteroid texture asset
+        /// </summary>
+        private static Texture2D GetOrCreateAsteroidTexture()
+        {
+            string texturePath = "Assets/Textures/AsteroidTexture.png";
+            
+            // Check if texture already exists
+            Texture2D existingTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+            if (existingTexture != null)
+            {
+                return existingTexture;
+            }
+            
+            // Create texture folder if needed
+            if (!AssetDatabase.IsValidFolder("Assets/Textures"))
+            {
+                AssetDatabase.CreateFolder("Assets", "Textures");
+            }
+            
+            // Create procedural asteroid texture
+            Texture2D asteroidTexture = CreateAsteroidTexture();
+            
+            // Save texture asset
+            byte[] pngData = asteroidTexture.EncodeToPNG();
+            System.IO.File.WriteAllBytes(texturePath, pngData);
+            AssetDatabase.ImportAsset(texturePath);
+            
+            // Configure texture import settings
+            TextureImporter importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+            if (importer != null)
+            {
+                importer.textureType = TextureImporterType.Default;
+                importer.sRGBTexture = true;
+                importer.mipmapEnabled = true;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.wrapMode = TextureWrapMode.Repeat;
+                AssetDatabase.ImportAsset(texturePath, ImportAssetOptions.ForceUpdate);
+            }
+            
+            // Load and return the saved texture
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+        }
+        
+        /// <summary>
         /// Creates a crater-textured material for asteroids using noise/procedural approach
         /// </summary>
         private static Material CreateCraterMaterial()
         {
-            // Create a darker brown material with roughness to simulate craters
+            // Get or create the asteroid texture
+            Texture2D asteroidTexture = GetOrCreateAsteroidTexture();
+            
+            // Create a darker brown material with texture
             Color baseColor = new Color(0.4f, 0.25f, 0.15f); // Dark brown
             
             Material baseMat = AssetDatabase.LoadAssetAtPath<Material>(
@@ -710,7 +854,11 @@ namespace TitanOrbit.Editor
             if (baseMat != null)
             {
                 Material mat = new Material(baseMat);
-                mat.SetColor("_BaseColor", baseColor);
+                mat.SetColor("_BaseColor", Color.white); // Use white so texture shows properly
+                if (asteroidTexture != null)
+                {
+                    mat.SetTexture("_BaseMap", asteroidTexture);
+                }
                 // Low metallic, high roughness for rocky/cratered look
                 mat.SetFloat("_Metallic", 0.1f);
                 mat.SetFloat("_Smoothness", 0.2f); // Rough surface = craters
@@ -722,7 +870,11 @@ namespace TitanOrbit.Editor
             if (urpShader != null)
             {
                 Material mat = new Material(urpShader);
-                mat.SetColor("_BaseColor", baseColor);
+                mat.SetColor("_BaseColor", Color.white);
+                if (asteroidTexture != null)
+                {
+                    mat.SetTexture("_BaseMap", asteroidTexture);
+                }
                 mat.SetFloat("_Metallic", 0.1f);
                 mat.SetFloat("_Smoothness", 0.2f);
                 return mat;
@@ -855,6 +1007,36 @@ namespace TitanOrbit.Editor
             }
 
             FixPrefabMaterials();
+        }
+
+        [MenuItem("Titan Orbit/Update Asteroid Material with Texture")]
+        public static void UpdateAsteroidMaterial()
+        {
+            // Get or create the asteroid texture
+            Texture2D asteroidTexture = GetOrCreateAsteroidTexture();
+            
+            if (asteroidTexture == null)
+            {
+                Debug.LogError("Failed to create asteroid texture.");
+                return;
+            }
+            
+            // Update the existing asteroid material
+            Material asteroidMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/TitanOrbit_Asteroid_Crater.mat");
+            if (asteroidMat != null)
+            {
+                asteroidMat.SetColor("_BaseColor", Color.white);
+                asteroidMat.SetTexture("_BaseMap", asteroidTexture);
+                asteroidMat.SetFloat("_Metallic", 0.1f);
+                asteroidMat.SetFloat("_Smoothness", 0.2f);
+                EditorUtility.SetDirty(asteroidMat);
+                AssetDatabase.SaveAssets();
+                Debug.Log("Asteroid material updated with texture.");
+            }
+            else
+            {
+                Debug.LogWarning("Asteroid material not found. Run 'Create Basic Prefabs' first.");
+            }
         }
 
         [MenuItem("Titan Orbit/Fix Prefab Materials (URP)")]

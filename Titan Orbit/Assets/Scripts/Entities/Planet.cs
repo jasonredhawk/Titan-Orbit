@@ -31,6 +31,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> planetLevel = new NetworkVariable<int>(1);
 
         public TeamManager.Team TeamOwnership => teamOwnership.Value;
+        
+        protected void SetInitialTeamOwnership(TeamManager.Team team)
+        {
+            teamOwnership.Value = team;
+        }
         public float CurrentPopulation => currentPopulation.Value;
         public float MaxPopulation => maxPopulation.Value;
         public float GrowthRate => growthRate.Value;
@@ -103,14 +108,7 @@ namespace TitanOrbit.Entities
             {
                 int pop = Mathf.RoundToInt(currentPopulation.Value);
                 populationText.text = pop.ToString();
-                
-                // Make text face camera
-                UnityEngine.Camera mainCam = UnityEngine.Camera.main;
-                if (mainCam != null)
-                {
-                    populationText.transform.LookAt(mainCam.transform);
-                    populationText.transform.Rotate(0, 180, 0); // Flip to face camera
-                }
+                // Text rotation is static (set once) - no LookAt, always readable from top-down
             }
         }
 

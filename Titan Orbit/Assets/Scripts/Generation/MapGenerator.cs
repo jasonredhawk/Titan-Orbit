@@ -23,8 +23,8 @@ namespace TitanOrbit.Generation
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
         [SerializeField] private int numberOfPlanets = 20;
-        [SerializeField] private float minPlanetSize = 0.5f;
-        [SerializeField] private float maxPlanetSize = 2f;
+        [SerializeField] private float minPlanetSize = 4f;
+        [SerializeField] private float maxPlanetSize = 12f;
 
         [Header("Asteroid Settings")]
         [SerializeField] private GameObject asteroidPrefab;
@@ -92,7 +92,9 @@ namespace TitanOrbit.Generation
         {
             if (homePlanetPrefab == null) return;
 
+            TeamManager.Team[] teams = { TeamManager.Team.TeamA, TeamManager.Team.TeamB, TeamManager.Team.TeamC };
             float angleStep = 120f * Mathf.Deg2Rad;
+            
             for (int i = 0; i < 3; i++)
             {
                 float angle = i * angleStep;
@@ -103,9 +105,14 @@ namespace TitanOrbit.Generation
                 );
 
                 GameObject homePlanetObj = Instantiate(homePlanetPrefab, position, Quaternion.identity);
+                HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
                 NetworkObject netObj = homePlanetObj.GetComponent<NetworkObject>();
                 if (netObj != null) netObj.Spawn();
-                // Note: Cannot parent NetworkObjects to non-NetworkObject parents in Netcode
+                
+                if (homePlanet != null)
+                {
+                    homePlanet.InitForTeam(teams[i]); // Set team color (A=red, B=blue, C=green)
+                }
 
                 planetPositions.Add(position);
             }
@@ -115,7 +122,7 @@ namespace TitanOrbit.Generation
         {
             if (planetPrefab == null) return;
 
-            float minDist = 8f;
+            float minDist = 30f; // Larger planets need more spacing
             for (int i = 0; i < numberOfPlanets; i++)
             {
                 Vector3 position = GetRandomPositionAvoiding(minDist, planetPositions, asteroidPositions);
@@ -148,7 +155,7 @@ namespace TitanOrbit.Generation
                 {
                     Vector3 position = GetPositionInCluster(center);
                     if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
-                    if (IsTooCloseToAny(position, 5f, planetPositions)) continue;
+                    if (IsTooCloseToAny(position, 20f, planetPositions)) continue; // Keep asteroids away from larger planets
 
                     asteroidPositions.Add(position);
                     float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
