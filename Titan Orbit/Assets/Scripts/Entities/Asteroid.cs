@@ -5,9 +5,11 @@ using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Asteroid - can be mined, destroyed by bullets, collision damage with ships
-    /// Spawns gems when destroyed, respawns after delay
+    /// Asteroid - can be mined, destroyed by bullets, collision damage with ships.
+    /// When destroyed: despawn and respawn a fresh instance after delay (avoids state corruption).
     /// </summary>
+    [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(Collider))]
     public class Asteroid : NetworkBehaviour
     {
         [Header("Asteroid Settings")]
@@ -21,8 +23,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<bool> isDestroyed = new NetworkVariable<bool>(false);
 
         private Vector3 spawnPosition;
-        private float destroyTime;
+        private Vector3 spawnScale;
         private float asteroidSize = 1f;
+        private Rigidbody rb;
+        private Collider col;
+        private Vector3 rotationAxis;
+        private float rotationSpeed;
 
         public float RemainingGems => remainingGems.Value;
         public float MaxGems => maxGems.Value;
@@ -38,28 +44,105 @@ namespace TitanOrbit.Entities
             remainingGems.Value = Mathf.Max(0, remainingGems.Value - amount);
         }
 
+        private const float FIXED_Y_POSITION = 0f;
+
+        private void Awake()
+        {
+            rb = GetComponent<Rigidbody>();
+            col = GetComponent<Collider>();
+            
+            // Ensure proper collision detection for kinematic objects to detect fast-moving bullets/ships
+            if (rb != null)
+            {
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+                // Lock Y position - asteroids stay on same plane
+                rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            }
+            
+            // Ensure collider is enabled and not a trigger (for ship collisions)
+            if (col != null)
+            {
+                col.enabled = true;
+                if (col is SphereCollider sphereCol)
+                {
+                    sphereCol.isTrigger = false;
+                }
+            }
+        }
+
         public override void OnNetworkSpawn()
         {
+            // Lock Y position to 0
+            Vector3 pos = transform.position;
+            pos.y = FIXED_Y_POSITION;
+            transform.position = pos;
+            
             if (IsServer)
             {
                 spawnPosition = transform.position;
-                asteroidSize = Mathf.Max(0.3f, (transform.localScale.x + transform.localScale.y + transform.localScale.z) / 3f);
+                spawnScale = transform.localScale;
+                asteroidSize = Mathf.Max(0.3f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
                 float sizeMultiplier = asteroidSize;
                 maxGems.Value = baseGemCount * sizeMultiplier;
                 remainingGems.Value = maxGems.Value;
                 health.Value = baseHealth * sizeMultiplier;
                 isDestroyed.Value = false;
+                
+                // Set up gentle rotation - deterministic based on position (same for all clients)
+                // Use position hash to ensure same rotation for all clients
+                int hash = (int)(spawnPosition.x * 1000 + spawnPosition.z * 1000);
+                System.Random rng = new System.Random(hash);
+                rotationAxis = new Vector3(
+                    (float)(rng.NextDouble() * 2 - 1),
+                    0f, // Keep rotation in XZ plane
+                    (float)(rng.NextDouble() * 2 - 1)
+                ).normalized;
+                rotationSpeed = 5f + (float)(rng.NextDouble() * 10f); // Gentle rotation speed (5-15 degrees per second)
+                
+                // Ensure physics state is correct
+                EnsurePhysicsState();
             }
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
-            if (!IsServer) return;
-            if (!isDestroyed.Value) return;
-
-            if (Time.time - destroyTime >= respawnTime)
+            // Always lock Y position (prevents drift)
+            Vector3 pos = transform.position;
+            if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
             {
-                RespawnServerRpc();
+                pos.y = FIXED_Y_POSITION;
+                transform.position = pos;
+            }
+            
+            // Gentle rotation - all clients can see it
+            if (!isDestroyed.Value && rotationAxis.sqrMagnitude > 0.01f)
+            {
+                transform.Rotate(rotationAxis, rotationSpeed * Time.fixedDeltaTime, Space.World);
+            }
+            
+            if (!IsServer) return;
+            
+            // Safeguard: ensure collider stays enabled (prevents corruption bug)
+            if (col != null && !col.enabled && !isDestroyed.Value)
+            {
+                col.enabled = true;
+            }
+        }
+
+        private void EnsurePhysicsState()
+        {
+            if (rb != null)
+            {
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+                rb.isKinematic = true;
+            }
+            if (col != null)
+            {
+                col.enabled = true;
+                if (col is SphereCollider sphereCol)
+                {
+                    sphereCol.isTrigger = false;
+                }
             }
         }
 
@@ -80,37 +163,24 @@ namespace TitanOrbit.Entities
         {
             if (isDestroyed.Value) return;
             isDestroyed.Value = true;
-            destroyTime = Time.time;
+
+            Vector3 pos = transform.position;
+            Vector3 scale = transform.localScale;
 
             // Spawn gems
             if (GemSpawner.Instance != null)
             {
-                GemSpawner.Instance.SpawnGemsServerRpc(transform.position, remainingGems.Value);
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value);
             }
 
-            // Hide asteroid (will respawn)
-            SetVisibleClientRpc(false);
-        }
+            // Schedule respawn and despawn - fresh instance avoids state corruption
+            if (AsteroidRespawnManager.Instance != null)
+            {
+                AsteroidRespawnManager.Instance.ScheduleRespawn(pos, scale, respawnTime);
+            }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void RespawnServerRpc()
-        {
-            transform.position = spawnPosition;
-            float sizeMultiplier = asteroidSize;
-            maxGems.Value = baseGemCount * sizeMultiplier;
-            remainingGems.Value = maxGems.Value;
-            health.Value = baseHealth * sizeMultiplier;
-            isDestroyed.Value = false;
-            SetVisibleClientRpc(true);
-        }
-
-        [ClientRpc]
-        private void SetVisibleClientRpc(bool visible)
-        {
-            foreach (var r in GetComponentsInChildren<Renderer>())
-                r.enabled = visible;
-            foreach (var c in GetComponentsInChildren<Collider>())
-                c.enabled = visible;
+            var no = GetComponent<NetworkObject>();
+            if (no != null && no.IsSpawned) no.Despawn();
         }
     }
 }

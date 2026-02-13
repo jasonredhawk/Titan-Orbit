@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
+using TMPro;
 
 namespace TitanOrbit.Entities
 {
@@ -21,6 +22,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamAMaterial;
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
+        [SerializeField] private TextMeshPro populationText;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<float> currentPopulation = new NetworkVariable<float>(0f);
@@ -36,8 +38,15 @@ namespace TitanOrbit.Entities
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
 
+        private const float FIXED_Y_POSITION = 0f;
+
         public override void OnNetworkSpawn()
         {
+            // Lock Y position to 0
+            Vector3 pos = transform.position;
+            pos.y = FIXED_Y_POSITION;
+            transform.position = pos;
+            
             if (IsServer)
             {
                 // Initialize planet based on size
@@ -50,9 +59,11 @@ namespace TitanOrbit.Entities
 
             // Update visual on spawn
             UpdateVisual();
+            UpdatePopulationDisplay();
             
             // Subscribe to ownership changes
             teamOwnership.OnValueChanged += OnOwnershipChanged;
+            currentPopulation.OnValueChanged += (float oldVal, float newVal) => UpdatePopulationDisplay();
         }
 
         public override void OnNetworkDespawn()
@@ -62,6 +73,14 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            // Always lock Y position (prevents drift)
+            Vector3 pos = transform.position;
+            if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
+            {
+                pos.y = FIXED_Y_POSITION;
+                transform.position = pos;
+            }
+            
             if (IsServer)
             {
                 // Grow population over time if not at max
@@ -71,6 +90,26 @@ namespace TitanOrbit.Entities
                         currentPopulation.Value + growthRate.Value * Time.deltaTime,
                         maxPopulation.Value
                     );
+                }
+            }
+            
+            // Update population display every frame (handles client-side updates)
+            UpdatePopulationDisplay();
+        }
+        
+        private void UpdatePopulationDisplay()
+        {
+            if (populationText != null)
+            {
+                int pop = Mathf.RoundToInt(currentPopulation.Value);
+                populationText.text = pop.ToString();
+                
+                // Make text face camera
+                UnityEngine.Camera mainCam = UnityEngine.Camera.main;
+                if (mainCam != null)
+                {
+                    populationText.transform.LookAt(mainCam.transform);
+                    populationText.transform.Rotate(0, 180, 0); // Flip to face camera
                 }
             }
         }
@@ -120,6 +159,7 @@ namespace TitanOrbit.Entities
         private void OnOwnershipChanged(TeamManager.Team previousTeam, TeamManager.Team newTeam)
         {
             UpdateVisual();
+            UpdatePopulationDisplay();
         }
 
         private void UpdateVisual()

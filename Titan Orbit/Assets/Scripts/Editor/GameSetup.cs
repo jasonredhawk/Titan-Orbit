@@ -76,6 +76,7 @@ namespace TitanOrbit.Editor
             
             CombatSystem combatSystem = obj.AddComponent<CombatSystem>();
             GemSpawner gemSpawner = obj.AddComponent<GemSpawner>();
+            AsteroidRespawnManager asteroidRespawn = obj.AddComponent<AsteroidRespawnManager>();
             MiningSystem miningSystem = obj.AddComponent<MiningSystem>();
             TransportSystem transportSystem = obj.AddComponent<TransportSystem>();
             CaptureSystem captureSystem = obj.AddComponent<CaptureSystem>();
@@ -126,17 +127,23 @@ namespace TitanOrbit.Editor
 
         private static GameObject CreateLighting()
         {
-            // Create directional light (main scene light)
+            // Create directional light (main scene light) - brighter for better contrast
             GameObject lightObj = new GameObject("Directional Light");
             Light light = lightObj.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.color = new Color(1f, 0.98f, 0.9f); // Slightly warm white
-            light.intensity = 1f;
+            light.color = new Color(1f, 0.98f, 0.95f); // Bright white
+            light.intensity = 1.5f; // Increased intensity for better contrast
             light.shadows = LightShadows.Soft;
 
             // Position and rotate for top-down game (light from above)
             lightObj.transform.position = new Vector3(0, 20, 0);
             lightObj.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            
+            // Add ambient light for better visibility
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.3f, 0.3f, 0.35f);
+            RenderSettings.ambientEquatorColor = new Color(0.2f, 0.2f, 0.25f);
+            RenderSettings.ambientGroundColor = new Color(0.1f, 0.1f, 0.15f);
 
             return lightObj;
         }
@@ -232,15 +239,25 @@ namespace TitanOrbit.Editor
             hudTextRect.offsetMin = new Vector2(15, 30);
             hudTextRect.offsetMax = new Vector2(-15, -10);
 
-            // Minimap (right side, below HUD)
+            // Minimap (bottom right corner, 20% of screen width, square)
             GameObject minimapObj = CreatePanel(canvasObj.transform, "Minimap", new Color(0, 0, 0, 0.4f), uiSprite);
             RectTransform minimapRect = minimapObj.GetComponent<RectTransform>();
-            minimapRect.anchorMin = new Vector2(1, 1);
-            minimapRect.anchorMax = new Vector2(1, 1);
-            minimapRect.pivot = new Vector2(1, 1);
-            minimapRect.anchoredPosition = new Vector2(-20, -150);
-            minimapRect.sizeDelta = new Vector2(170, 170);
-            minimapObj.AddComponent<MinimapController>();
+            minimapRect.anchorMin = new Vector2(1, 0);
+            minimapRect.anchorMax = new Vector2(1, 0);
+            minimapRect.pivot = new Vector2(1, 0);
+            // Position at bottom right with padding
+            minimapRect.anchoredPosition = new Vector2(-20, 20);
+            // Size: 20% of screen width, square aspect ratio
+            // Use CanvasScaler to make it responsive - set size based on reference resolution
+            // Assuming 1920x1080 reference, 20% = 384px
+            float minimapSize = 384f; // Will scale with canvas
+            minimapRect.sizeDelta = new Vector2(minimapSize, minimapSize);
+            MinimapController minimapController = minimapObj.AddComponent<MinimapController>();
+            
+            // Set display size to match
+            var minimapSO = new SerializedObject(minimapController);
+            minimapSO.FindProperty("displaySize").floatValue = minimapSize;
+            minimapSO.ApplyModifiedPropertiesWithoutUndo();
 
             GameObject minimapBorder = CreatePanel(minimapObj.transform, "Border", new Color(0.2f, 0.2f, 0.3f, 0.8f), uiSprite);
             RectTransform borderRect = minimapBorder.GetComponent<RectTransform>();
@@ -370,12 +387,12 @@ namespace TitanOrbit.Editor
             ship.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // Lay capsule on side, length = Z
             ship.transform.localScale = new Vector3(0.4f, 0.2f, 1f); // Body narrower, elongated along Z
 
-            // Replace with capsule collider oriented for movement
+            // Replace with box collider - rectangular shape prevents sliding off asteroids
             Object.DestroyImmediate(ship.GetComponent<Collider>());
-            CapsuleCollider col = ship.AddComponent<CapsuleCollider>();
-            col.direction = 2; // Z-axis
-            col.height = 2f;
-            col.radius = 0.2f;
+            BoxCollider boxCol = ship.AddComponent<BoxCollider>();
+            boxCol.size = new Vector3(0.4f, 0.2f, 1.2f); // Rectangular: wider and taller than long
+            boxCol.center = new Vector3(0, 0, 0.1f); // Slightly forward
+            
             Rigidbody rb = ship.AddComponent<Rigidbody>();
             rb.useGravity = false;
             rb.linearDamping = 5f;
@@ -412,9 +429,9 @@ namespace TitanOrbit.Editor
             starshipSO.FindProperty("firePoint").objectReferenceValue = firePoint.transform;
             starshipSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Set URP-compatible material for body
+            // Set URP-compatible material for body - brighter cyan for better contrast
             Renderer renderer = ship.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Starship", Color.cyan);
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0f, 1f, 1f)); // Bright cyan
 
             // Save as prefab
             string path = "Assets/Prefabs/Starship.prefab";
@@ -443,8 +460,37 @@ namespace TitanOrbit.Editor
             // Add Planet script
             Planet planetScript = planet.AddComponent<Planet>();
 
+            // Brighter blue-gray material for better contrast
             Renderer renderer = planet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", Color.gray);
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.3f, 0.5f, 0.9f)); // Bright blue
+
+            // Add ring like home planet but different color (cyan instead of yellow)
+            GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            ring.name = "Ring";
+            ring.transform.SetParent(planet.transform);
+            ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
+            ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
+            ring.transform.localPosition = Vector3.zero;
+            Object.DestroyImmediate(ring.GetComponent<Collider>()); // Remove collider from ring
+            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PlanetRing", new Color(0f, 0.8f, 1f, 0.7f)); // Cyan ring
+
+            // Add population text display
+            GameObject textObj = new GameObject("PopulationText");
+            textObj.transform.SetParent(planet.transform);
+            textObj.transform.localPosition = new Vector3(0, 1.5f, 0); // Above planet
+            textObj.transform.localScale = Vector3.one * 0.1f;
+            
+            TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
+            textMesh.text = "0";
+            textMesh.fontSize = 36;
+            textMesh.color = Color.white;
+            textMesh.alignment = TextAlignmentOptions.Center;
+            textMesh.fontStyle = FontStyles.Bold;
+            
+            // Assign to planet script
+            var planetSO = new SerializedObject(planetScript);
+            planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
+            planetSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Save as prefab
             string path = "Assets/Prefabs/Planet.prefab";
@@ -473,8 +519,9 @@ namespace TitanOrbit.Editor
             // Add HomePlanet script (which extends Planet)
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
 
+            // Brighter yellow for better contrast
             Renderer renderer = homePlanet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanet", Color.yellow);
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(1f, 0.9f, 0f)); // Bright yellow
 
             GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Ring";
@@ -482,7 +529,7 @@ namespace TitanOrbit.Editor
             ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
             ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
             ring.transform.localPosition = Vector3.zero;
-            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Ring", new Color(1f, 1f, 0f, 0.8f));
+            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Ring", new Color(1f, 0.9f, 0f, 0.8f)); // Bright yellow ring
 
             // Save as prefab
             string path = "Assets/Prefabs/HomePlanet.prefab";
@@ -511,6 +558,7 @@ namespace TitanOrbit.Editor
             Rigidbody rb = asteroid.AddComponent<Rigidbody>();
             rb.useGravity = false;
             rb.isKinematic = true;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; // Detect fast-moving bullets/ships
 
             // Add NetworkObject
             NetworkObject netObj = asteroid.AddComponent<NetworkObject>();
@@ -518,7 +566,15 @@ namespace TitanOrbit.Editor
             // Add Asteroid script
             Asteroid asteroidScript = asteroid.AddComponent<Asteroid>();
 
-            asteroid.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Asteroid", new Color(0.5f, 0.35f, 0.2f));
+            // Create crater-textured material for asteroids - darker brown with better contrast
+            Material craterMat = CreateCraterMaterial();
+            if (!AssetDatabase.IsValidFolder("Assets/Materials"))
+            {
+                AssetDatabase.CreateFolder("Assets", "Materials");
+            }
+            string craterPath = "Assets/Materials/TitanOrbit_Asteroid_Crater.mat";
+            AssetDatabase.CreateAsset(craterMat, craterPath);
+            asteroid.GetComponent<Renderer>().sharedMaterial = craterMat;
 
             // Save as prefab
             string path = "Assets/Prefabs/Asteroid.prefab";
@@ -621,6 +677,9 @@ namespace TitanOrbit.Editor
             {
                 Material mat = new Material(baseMat);
                 mat.SetColor("_BaseColor", color);
+                // Increase metallic and smoothness for better contrast
+                mat.SetFloat("_Metallic", 0.3f);
+                mat.SetFloat("_Smoothness", 0.6f);
                 return mat;
             }
             // Fallback: create from shader
@@ -630,10 +689,46 @@ namespace TitanOrbit.Editor
             {
                 Material mat = new Material(urpShader);
                 mat.SetColor("_BaseColor", color);
+                mat.SetFloat("_Metallic", 0.3f);
+                mat.SetFloat("_Smoothness", 0.6f);
                 return mat;
             }
             Debug.LogWarning("Could not find URP Lit material/shader. Objects may appear purple.");
             return new Material(Shader.Find("Sprites/Default")) { color = color };
+        }
+        
+        /// <summary>
+        /// Creates a crater-textured material for asteroids using noise/procedural approach
+        /// </summary>
+        private static Material CreateCraterMaterial()
+        {
+            // Create a darker brown material with roughness to simulate craters
+            Color baseColor = new Color(0.4f, 0.25f, 0.15f); // Dark brown
+            
+            Material baseMat = AssetDatabase.LoadAssetAtPath<Material>(
+                "Packages/com.unity.render-pipelines.universal/Runtime/Materials/Lit.mat");
+            if (baseMat != null)
+            {
+                Material mat = new Material(baseMat);
+                mat.SetColor("_BaseColor", baseColor);
+                // Low metallic, high roughness for rocky/cratered look
+                mat.SetFloat("_Metallic", 0.1f);
+                mat.SetFloat("_Smoothness", 0.2f); // Rough surface = craters
+                return mat;
+            }
+            
+            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit")
+                ?? Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (urpShader != null)
+            {
+                Material mat = new Material(urpShader);
+                mat.SetColor("_BaseColor", baseColor);
+                mat.SetFloat("_Metallic", 0.1f);
+                mat.SetFloat("_Smoothness", 0.2f);
+                return mat;
+            }
+            
+            return CreateAndSaveMaterial("TitanOrbit_Asteroid", baseColor);
         }
 
         [MenuItem("Titan Orbit/Fix Duplicate Network Prefabs")]
@@ -731,7 +826,7 @@ namespace TitanOrbit.Editor
                 }
             }
 
-            // Assign gem prefab and parent to GemSpawner
+            // Assign gem prefab to GemSpawner
             GemSpawner gemSpawner = Object.FindObjectOfType<GemSpawner>();
             if (gemSpawner != null)
             {
@@ -742,6 +837,20 @@ namespace TitanOrbit.Editor
                     so.FindProperty("gemPrefab").objectReferenceValue = gemPrefab;
                     so.ApplyModifiedPropertiesWithoutUndo();
                     Debug.Log("Gem prefab assigned to GemSpawner.");
+                }
+            }
+
+            // Assign asteroid prefab to AsteroidRespawnManager
+            AsteroidRespawnManager asteroidRespawn = Object.FindObjectOfType<AsteroidRespawnManager>();
+            if (asteroidRespawn != null)
+            {
+                var asteroidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Asteroid.prefab");
+                if (asteroidPrefab != null)
+                {
+                    var so = new SerializedObject(asteroidRespawn);
+                    so.FindProperty("asteroidPrefab").objectReferenceValue = asteroidPrefab;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    Debug.Log("Asteroid prefab assigned to AsteroidRespawnManager.");
                 }
             }
 

@@ -20,6 +20,8 @@ namespace TitanOrbit.Entities
         [Header("Movement")]
         [SerializeField] private float movementSpeed = 10f;
         [SerializeField] private float rotationSpeed = 180f;
+        [SerializeField] private float acceleration = 20f;
+        [SerializeField] private float deceleration = 8f;
 
         [Header("Combat")]
         [SerializeField] private float fireRate = 1f;
@@ -46,6 +48,7 @@ namespace TitanOrbit.Entities
 
         private float lastFireTime = 0f;
         private Vector3 moveDirection = Vector3.zero;
+        private Vector3 currentVelocity = Vector3.zero;
 
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth => maxHealth;
@@ -58,14 +61,27 @@ namespace TitanOrbit.Entities
         public int ShipLevel => shipLevel;
         public ShipFocusType FocusType => focusType;
 
+        private const float FIXED_Y_POSITION = 0f;
+
         private void Awake()
         {
             if (rb == null) rb = GetComponent<Rigidbody>();
             if (inputHandler == null) inputHandler = GetComponent<PlayerInputHandler>();
+            
+            // Lock Y position - prevent elevation changes
+            if (rb != null)
+            {
+                rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            }
         }
 
         public override void OnNetworkSpawn()
         {
+            // Ensure Y position is locked to 0
+            Vector3 pos = transform.position;
+            pos.y = FIXED_Y_POSITION;
+            transform.position = pos;
+            
             if (IsServer)
             {
                 currentHealth.Value = maxHealth;
@@ -86,6 +102,22 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
+            // Always lock Y position (prevents drift from physics/collisions)
+            Vector3 pos = transform.position;
+            if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
+            {
+                pos.y = FIXED_Y_POSITION;
+                transform.position = pos;
+            }
+            
+            // Ensure rigidbody velocity has no Y component
+            if (rb != null && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
+            {
+                Vector3 vel = rb.linearVelocity;
+                vel.y = 0f;
+                rb.linearVelocity = vel;
+            }
+            
             if (IsServer) HandleDeath();
             if (!IsOwner) return;
             HandleMovement();
@@ -126,9 +158,23 @@ namespace TitanOrbit.Entities
         {
             if (moveDirection.magnitude > 0.1f)
             {
-                Vector3 movement = moveDirection * movementSpeed * Time.fixedDeltaTime;
-                rb.MovePosition(rb.position + movement);
+                currentVelocity += moveDirection * acceleration * Time.fixedDeltaTime;
+                if (currentVelocity.magnitude > movementSpeed)
+                    currentVelocity = currentVelocity.normalized * movementSpeed;
             }
+            else
+            {
+                currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, deceleration * Time.fixedDeltaTime);
+            }
+
+            // Ensure velocity has no Y component
+            currentVelocity.y = 0f;
+
+            // Calculate new position and lock Y to fixed position
+            Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
+            newPosition.y = FIXED_Y_POSITION;
+            
+            rb.MovePosition(newPosition);
         }
 
         private void HandleRotation()

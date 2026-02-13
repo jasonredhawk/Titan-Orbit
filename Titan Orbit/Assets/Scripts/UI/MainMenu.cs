@@ -41,7 +41,23 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
-            UpdateLobbyInfo();
+            // Hide lobby panel once player spawns (game has started)
+            if (lobbyPanel != null && lobbyPanel.activeSelf)
+            {
+                // Check if player has spawned
+                foreach (var ship in FindObjectsOfType<TitanOrbit.Entities.Starship>())
+                {
+                    if (ship.IsOwner)
+                    {
+                        // Player spawned, hide lobby
+                        lobbyPanel.SetActive(false);
+                        break;
+                    }
+                }
+            }
+            
+            // Don't update lobby info anymore - we hide it when game starts
+            // UpdateLobbyInfo();
         }
 
         private void OnStartServerClicked()
@@ -78,6 +94,7 @@ namespace TitanOrbit.UI
                 mainMenuPanel.SetActive(false);
             }
 
+            // Only show lobby briefly - it will auto-hide when player spawns
             if (lobbyPanel != null)
             {
                 lobbyPanel.SetActive(true);

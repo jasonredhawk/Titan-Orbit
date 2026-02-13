@@ -17,6 +17,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float minimapRadius = 80f;
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
+        
+        private RectTransform minimapRect;
 
         [Header("Entity Prefabs")]
         [SerializeField] private GameObject playerBlipPrefab;
@@ -40,11 +42,27 @@ namespace TitanOrbit.UI
 
         private void Start()
         {
-            if (minimapContent == null) minimapContent = GetComponent<RectTransform>();
+            minimapRect = GetComponent<RectTransform>();
+            if (minimapContent == null) minimapContent = minimapRect;
+            if (minimapRect != null)
+            {
+                // Update display size to match actual minimap size
+                displaySize = minimapRect.sizeDelta.x; // Square, so x = y
+            }
         }
 
         private void Update()
         {
+            // Update display size if minimap size changed
+            if (minimapRect != null)
+            {
+                float newSize = minimapRect.sizeDelta.x;
+                if (Mathf.Abs(newSize - displaySize) > 1f)
+                {
+                    displaySize = newSize;
+                }
+            }
+            
             if (playerShip == null || !playerShip.IsOwner)
             {
                 foreach (var ship in FindObjectsOfType<Starship>())
