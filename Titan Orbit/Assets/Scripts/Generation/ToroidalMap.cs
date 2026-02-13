@@ -16,6 +16,9 @@ namespace TitanOrbit.Generation
             mapHeight = height;
         }
 
+        public static float GetMapWidth() => mapWidth;
+        public static float GetMapHeight() => mapHeight;
+
         /// <summary>
         /// Wraps a position to the toroidal map. Uses modulo for consistent wrapping.
         /// Valid range: [-halfWidth, halfWidth) for X, [-halfHeight, halfHeight) for Z

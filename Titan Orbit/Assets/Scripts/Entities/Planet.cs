@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TMPro;
 
 namespace TitanOrbit.Entities
@@ -52,6 +53,14 @@ namespace TitanOrbit.Entities
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
             
+            // Update planetSize from actual transform scale (MapGenerator sets scale directly)
+            // Use average of x, y, z scale components
+            float actualSize = (transform.localScale.x + transform.localScale.y + transform.localScale.z) / 3f;
+            if (actualSize > 0.1f) // Only update if scale is valid
+            {
+                planetSize = actualSize;
+            }
+            
             if (IsServer)
             {
                 // Initialize planet based on size
@@ -60,6 +69,14 @@ namespace TitanOrbit.Entities
                 currentPopulation.Value = maxPopulation.Value * 0.1f; // Start with 10% population
                 growthRate.Value = baseGrowthRate * sizeMultiplier;
                 teamOwnership.Value = TeamManager.Team.None; // Neutral by default
+            }
+
+            // Ensure population text is visible
+            if (populationText != null)
+            {
+                populationText.enabled = true;
+                populationText.color = Color.white;
+                populationText.gameObject.SetActive(true);
             }
 
             // Update visual on spawn
@@ -86,6 +103,13 @@ namespace TitanOrbit.Entities
                 transform.position = pos;
             }
             
+            // Wrap position toroidally (same as starship)
+            Vector3 wrappedPos = ToroidalMap.WrapPosition(pos);
+            if (Vector3.SqrMagnitude(wrappedPos - pos) > 0.0001f)
+            {
+                transform.position = wrappedPos;
+            }
+            
             if (IsServer)
             {
                 // Grow population over time if not at max
@@ -108,6 +132,9 @@ namespace TitanOrbit.Entities
             {
                 int pop = Mathf.RoundToInt(currentPopulation.Value);
                 populationText.text = pop.ToString();
+                // Ensure text is visible - make it brighter and ensure it's enabled
+                populationText.color = Color.white;
+                populationText.enabled = true;
                 // Text rotation is static (set once) - no LookAt, always readable from top-down
             }
         }

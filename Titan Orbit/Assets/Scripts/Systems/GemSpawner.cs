@@ -42,62 +42,109 @@ namespace TitanOrbit.Systems
             GameObject prefab = GetGemPrefab();
             if (prefab == null) return;
 
-            // Define gem size categories
-            // Small gems: 0.5x size, 0.5x value multiplier
-            // Medium gems: 1.0x size, 1.0x value multiplier  
-            // Large gems: 1.5x size, 1.5x value multiplier
+            // asteroidSize is now normalized (1-20 range)
+            // totalValue should be between 1 and 50 based on normalized size
             
-            // Calculate gem distribution based on asteroid size/value
-            // Smaller asteroids -> more small gems, fewer large gems
-            // Larger asteroids -> more large gems, fewer small gems
-            
-            float normalizedSize = Mathf.Clamp01((asteroidSize - 0.3f) / 2f); // Normalize asteroid size (assuming 0.3-2.3 range)
-            
-            // Determine gem size distribution probabilities
-            // Small asteroids (low normalizedSize) -> high chance of small gems
-            // Large asteroids (high normalizedSize) -> high chance of large gems
-            float smallGemChance = 1f - normalizedSize * 0.6f; // 100% -> 40% as size increases
-            float largeGemChance = normalizedSize * 0.6f; // 0% -> 60% as size increases
-            float mediumGemChance = 1f - smallGemChance - largeGemChance; // Remaining
-            
-            // Calculate target gem count (fewer gems for larger sizes, but each gem is worth more)
-            int baseCount = Mathf.Max(1, Mathf.CeilToInt(totalValue / 10f));
-            int gemCount = baseCount;
-            
-            // Distribute gems across size categories
-            int smallCount = Mathf.RoundToInt(gemCount * smallGemChance);
-            int largeCount = Mathf.RoundToInt(gemCount * largeGemChance);
-            int mediumCount = gemCount - smallCount - largeCount;
-            
-            // Ensure we have at least one gem
-            if (smallCount + mediumCount + largeCount == 0)
+            // Smallest asteroids (size ~1, totalValue ~1) produce exactly 1 tiny gem
+            if (asteroidSize <= 1.5f && totalValue <= 2f)
             {
-                mediumCount = 1;
+                SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f);
+                return;
+            }
+
+            // Normalize asteroid size to 0-1 range for distribution logic
+            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (20f - 1f));
+            
+            // Determine gem count and distribution based on asteroid size
+            // Small asteroids: multiple small gems
+            // Medium asteroids: mix of small/medium gems
+            // Large asteroids: fewer large gems (max value 50 per gem)
+            
+            int gemCount;
+            float minGemValue, maxGemValue;
+            
+            if (normalizedSize < 0.3f) // Small asteroids (size 1-6.7)
+            {
+                gemCount = Random.Range(2, 5);
+                minGemValue = 1f;
+                maxGemValue = 5f;
+            }
+            else if (normalizedSize < 0.7f) // Medium asteroids (size 6.7-14.3)
+            {
+                gemCount = Random.Range(2, 5);
+                minGemValue = 1f;
+                maxGemValue = 25f;
+            }
+            else // Large asteroids (size 14.3-20)
+            {
+                // Large asteroids produce fewer, more valuable gems
+                // Max gem value is 50
+                if (normalizedSize >= 0.9f) // Very large asteroids (size 18.1-20)
+                {
+                    gemCount = Random.Range(1, 4);
+                    minGemValue = 20f;
+                    maxGemValue = 50f; // Max value per gem
+                }
+                else // Large but not largest (size 14.3-18.1)
+                {
+                    gemCount = Random.Range(2, 4);
+                    minGemValue = 10f;
+                    maxGemValue = 40f;
+                }
             }
             
-            // Calculate value per gem size category
-            // We need: smallCount * (valuePerSmallGem) + mediumCount * (valuePerMediumGem) + largeCount * (valuePerLargeGem) = totalValue
-            // Where: valuePerSmallGem = baseValue * 0.5, valuePerMediumGem = baseValue * 1.0, valuePerLargeGem = baseValue * 1.5
-            
-            float totalSizeMultiplier = smallCount * 0.5f + mediumCount * 1.0f + largeCount * 1.5f;
-            float baseValuePerGem = totalSizeMultiplier > 0 ? totalValue / totalSizeMultiplier : totalValue;
-            
-            // Spawn small gems
-            for (int i = 0; i < smallCount; i++)
+            // Distribute totalValue across gems
+            float remainingValue = totalValue;
+            for (int i = 0; i < gemCount; i++)
             {
-                SpawnGem(prefab, asteroidCenter, baseValuePerGem * 0.5f, 0.5f);
-            }
-            
-            // Spawn medium gems
-            for (int i = 0; i < mediumCount; i++)
-            {
-                SpawnGem(prefab, asteroidCenter, baseValuePerGem * 1.0f, 1.0f);
-            }
-            
-            // Spawn large gems
-            for (int i = 0; i < largeCount; i++)
-            {
-                SpawnGem(prefab, asteroidCenter, baseValuePerGem * 1.5f, 1.5f);
+                bool isLast = (i == gemCount - 1);
+                
+                float gemValue;
+                if (isLast)
+                {
+                    // Last gem gets remaining value, clamped to max 50
+                    gemValue = Mathf.Clamp(remainingValue, minGemValue, Mathf.Min(maxGemValue, 50f));
+                }
+                else
+                {
+                    // Distribute value proportionally
+                    float avgValuePerGem = remainingValue / (gemCount - i);
+                    gemValue = Mathf.Clamp(avgValuePerGem * Random.Range(0.7f, 1.3f), minGemValue, Mathf.Min(maxGemValue, 50f));
+                }
+                
+                // Clamp gem value to 1-50 range (hard cap at 50)
+                gemValue = Mathf.Clamp(gemValue, 1f, 50f);
+                
+                // Calculate size multiplier based on value
+                // Value 1-10: size 0.3-0.6
+                // Value 11-25: size 0.6-1.0
+                // Value 26-40: size 1.0-1.4
+                // Value 41-50: size 1.4-2.0
+                float sizeMultiplier;
+                if (gemValue <= 10f)
+                {
+                    sizeMultiplier = Mathf.Lerp(0.3f, 0.6f, gemValue / 10f);
+                }
+                else if (gemValue <= 25f)
+                {
+                    sizeMultiplier = Mathf.Lerp(0.6f, 1.0f, (gemValue - 10f) / 15f);
+                }
+                else if (gemValue <= 40f)
+                {
+                    sizeMultiplier = Mathf.Lerp(1.0f, 1.4f, (gemValue - 25f) / 15f);
+                }
+                else
+                {
+                    sizeMultiplier = Mathf.Lerp(1.4f, 2.0f, (gemValue - 40f) / 10f);
+                }
+                
+                // Add some random variation to size
+                sizeMultiplier *= Random.Range(0.9f, 1.1f);
+                
+                SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier);
+                remainingValue -= gemValue;
+                
+                if (remainingValue <= 0) break;
             }
         }
         

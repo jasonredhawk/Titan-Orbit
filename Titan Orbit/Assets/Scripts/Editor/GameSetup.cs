@@ -465,9 +465,12 @@ namespace TitanOrbit.Editor
             // Add Planet script
             Planet planetScript = planet.AddComponent<Planet>();
 
-            // Brighter blue-gray material for better contrast
+            // Add ToroidalRenderer for seamless map wrapping
+            planet.AddComponent<ToroidalRenderer>();
+
+            // Grey material for neutral planets - will change to team color when captured
             Renderer renderer = planet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.3f, 0.5f, 0.9f)); // Bright blue
+            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f)); // Grey
 
             // Add ring - vertical orientation to differentiate from home planets (horizontal)
             GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -527,6 +530,9 @@ namespace TitanOrbit.Editor
 
             // Add HomePlanet script (which extends Planet)
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
+
+            // Add ToroidalRenderer for seamless map wrapping
+            homePlanet.AddComponent<ToroidalRenderer>();
 
             // Default material - team color set at runtime by MapGenerator
             Renderer renderer = homePlanet.GetComponent<Renderer>();
@@ -680,6 +686,9 @@ namespace TitanOrbit.Editor
 
             // Add Asteroid script
             Asteroid asteroidScript = asteroid.AddComponent<Asteroid>();
+
+            // Add ToroidalRenderer for seamless map wrapping
+            asteroid.AddComponent<ToroidalRenderer>();
 
             // Create crater-textured material for asteroids - darker brown with better contrast
             Material craterMat = CreateCraterMaterial();
