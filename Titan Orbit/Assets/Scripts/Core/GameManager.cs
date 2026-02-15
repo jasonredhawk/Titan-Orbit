@@ -10,8 +10,14 @@ namespace TitanOrbit.Core
     {
         public static GameManager Instance { get; private set; }
 
+        [Header("Debug")]
+        [Tooltip("When enabled: bullets one-shot asteroids, gem value is 100x. Toggle off for normal play.")]
+        [SerializeField] private bool debugMode = true;
+
         [Header("Game Settings")]
         [SerializeField] private int maxPlayersPerTeam = 20;
+
+        public bool DebugMode => debugMode;
         [SerializeField] private int numberOfTeams = 3;
         [SerializeField] private float matchDuration = 3600f; // 60 minutes default
 

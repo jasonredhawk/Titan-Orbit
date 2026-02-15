@@ -1,0 +1,391 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e9e710a673e3a2439d0d0a73d6deeca, type: 3}
+  m_Name: UpgradeTree
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.UpgradeTree
+  level2Ships:
+  - shipData: {fileID: 11400000, guid: d7e2508ad5f585947add9fb2f02d5b67, type: 2}
+    shipName: 2.1
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 2dd8b55a8ca13624c8a60a75218df122, type: 2}
+    shipName: 2.2
+    focusType: 1
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  level3Ships:
+  - shipData: {fileID: 11400000, guid: 2a8566191fb68c04aa6920227292bb7f, type: 2}
+    shipName: 3.1
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: c44070dd8c7f5bd439f1e97c7a2bf8d5, type: 2}
+    shipName: 3.2
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 11ce9ced4a8179b44a1cb112e38d0801, type: 2}
+    shipName: 3.3
+    focusType: 1
+    canUpgradeFromBranchIndices: 01000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 38f1f7f0d6c6c564686c9757b4cf2e20, type: 2}
+    shipName: 3.4
+    focusType: 1
+    canUpgradeFromBranchIndices: 01000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  level4Ships:
+  - shipData: {fileID: 11400000, guid: bfbe41d12a58ce741a9bfdf3774d58dc, type: 2}
+    shipName: 4.1
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: e52fbc019647d9641ae23483a0bbe192, type: 2}
+    shipName: 4.2
+    focusType: 0
+    canUpgradeFromBranchIndices: 0000000001000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: c9c5005872b19d442ae607e17f5c11f7, type: 2}
+    shipName: 4.3
+    focusType: 0
+    canUpgradeFromBranchIndices: 0100000002000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: e959381ad3ed76f419003bc7d682f525, type: 2}
+    shipName: 4.4
+    focusType: 1
+    canUpgradeFromBranchIndices: 0200000003000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: db7d6e0bfd3ad19459a033814588bd39, type: 2}
+    shipName: 4.5
+    focusType: 1
+    canUpgradeFromBranchIndices: 03000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 0417f3a13e98b8a4395a151d0547cb3e, type: 2}
+    shipName: 4.6
+    focusType: 1
+    canUpgradeFromBranchIndices: 03000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  level5Ships:
+  - shipData: {fileID: 11400000, guid: 7096a7906151d824da3a2d0ad19f4f98, type: 2}
+    shipName: 5.1
+    focusType: 0
+    canUpgradeFromBranchIndices: 0000000001000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 22f6a5ceb0db7144caf3fa2722eaf38d, type: 2}
+    shipName: 5.2
+    focusType: 0
+    canUpgradeFromBranchIndices: 0100000002000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: db6b599b704903c44887b2fe9f528cf7, type: 2}
+    shipName: 5.3
+    focusType: 0
+    canUpgradeFromBranchIndices: 0200000003000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: f9397fdde13735b488e9f219d36d7095, type: 2}
+    shipName: 5.4
+    focusType: 0
+    canUpgradeFromBranchIndices: 0300000004000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 13e22ad6ca6480247a49c9bed735880b, type: 2}
+    shipName: 5.5
+    focusType: 1
+    canUpgradeFromBranchIndices: 0400000005000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 7a09dfff229e0304b945bf80c21f5a01, type: 2}
+    shipName: 5.6
+    focusType: 1
+    canUpgradeFromBranchIndices: 05000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: cfcd18a2be4cfe147a656e97e6f87b82, type: 2}
+    shipName: 5.7
+    focusType: 1
+    canUpgradeFromBranchIndices: 05000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 0fb487564972609418dd68dffbd22d32, type: 2}
+    shipName: 5.8
+    focusType: 1
+    canUpgradeFromBranchIndices: 05000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  level6Ships:
+  - shipData: {fileID: 11400000, guid: f0b3185d1b459134982593d1c06e7403, type: 2}
+    shipName: 6.1
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: fa7ac1b31d8a6434e9dd33834c1a4559, type: 2}
+    shipName: 6.2
+    focusType: 0
+    canUpgradeFromBranchIndices: 0000000001000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: ecb83066309ba1247b37e9fa28b984f6, type: 2}
+    shipName: 6.3
+    focusType: 0
+    canUpgradeFromBranchIndices: 0100000002000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 8afe2bed7009b0944acf1df17c0ddcfc, type: 2}
+    shipName: 6.4
+    focusType: 0
+    canUpgradeFromBranchIndices: 0200000003000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: e5ab6220ba2b10d4d946708c325dc67b, type: 2}
+    shipName: 6.5
+    focusType: 1
+    canUpgradeFromBranchIndices: 0300000004000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 813f6ee42873ab64493584bd109601e7, type: 2}
+    shipName: 6.6
+    focusType: 1
+    canUpgradeFromBranchIndices: 0400000005000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 6474d747bbaf4e147a70b61c68450a47, type: 2}
+    shipName: 6.7
+    focusType: 1
+    canUpgradeFromBranchIndices: 0500000006000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: c12795d46b514ba4e8b8000e1af64508, type: 2}
+    shipName: 6.8
+    focusType: 1
+    canUpgradeFromBranchIndices: 0600000007000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: e08992f8a24b13f4c87748b32c62e7ca, type: 2}
+    shipName: 6.9
+    focusType: 1
+    canUpgradeFromBranchIndices: 07000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  level7Ships:
+  - shipData: {fileID: 11400000, guid: 4b7fa594dc155f748b571121a1cc30a6, type: 2}
+    shipName: MEGA 1
+    focusType: 0
+    canUpgradeFromBranchIndices: 00000000030000000400000008000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 620b35608d58df44d9529725fa12e2d3, type: 2}
+    shipName: MEGA 2
+    focusType: 0
+    canUpgradeFromBranchIndices: 0000000001000000040000000500000008000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: 228bb0e7c2c113046ad0dae1f005f183, type: 2}
+    shipName: MEGA 3
+    focusType: 1
+    canUpgradeFromBranchIndices: 01000000020000000500000006000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  - shipData: {fileID: 11400000, guid: fb14463e9a56e254dad62d0f7d53fa5d, type: 2}
+    shipName: MEGA 4
+    focusType: 1
+    canUpgradeFromBranchIndices: 02000000030000000600000007000000
+    movementSpeedMultiplier: 0
+    fireRateMultiplier: 0
+    firePowerMultiplier: 0
+    healthMultiplier: 0
+    gemCapacityMultiplier: 0
+    peopleCapacityMultiplier: 0
+    miningRateMultiplier: 0
+  gemCostsPerLevel:
+  - 0
+  - 100
+  - 250
+  - 500
+  - 1000
+  - 2000
+  - 5000

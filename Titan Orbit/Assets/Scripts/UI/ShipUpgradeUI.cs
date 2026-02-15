@@ -14,9 +14,9 @@ namespace TitanOrbit.UI
     {
         [Header("UI References")]
         [SerializeField] private GameObject upgradePanel;
-        [SerializeField] private Button[] shipOptionButtons = new Button[3];
-        [SerializeField] private TextMeshProUGUI[] shipOptionNames = new TextMeshProUGUI[3];
-        [SerializeField] private TextMeshProUGUI[] shipOptionStats = new TextMeshProUGUI[3];
+        [SerializeField] private Button[] shipOptionButtons = new Button[2];
+        [SerializeField] private TextMeshProUGUI[] shipOptionNames = new TextMeshProUGUI[2];
+        [SerializeField] private TextMeshProUGUI[] shipOptionStats = new TextMeshProUGUI[2];
         [SerializeField] private TextMeshProUGUI gemCostText;
         [SerializeField] private Button upgradeButton;
 
@@ -43,7 +43,7 @@ namespace TitanOrbit.UI
             if (currentShip == null || upgradeTree == null) return;
 
             int nextLevel = currentShip.ShipLevel + 1;
-            var availableUpgrades = upgradeTree.GetAvailableUpgrades(currentShip.ShipLevel, currentShip.FocusType);
+            var availableUpgrades = upgradeTree.GetAvailableUpgrades(currentShip.ShipLevel, currentShip.BranchIndex);
 
             // Update gem cost
             float gemCost = upgradeTree.GetGemCostForLevel(nextLevel);
@@ -108,7 +108,7 @@ namespace TitanOrbit.UI
             if (UpgradeSystem.Instance == null) return;
 
             int nextLevel = currentShip.ShipLevel + 1;
-            var availableUpgrades = upgradeTree.GetAvailableUpgrades(currentShip.ShipLevel, currentShip.FocusType);
+            var availableUpgrades = upgradeTree.GetAvailableUpgrades(currentShip.ShipLevel, currentShip.BranchIndex);
             
             if (selectedShipIndex < availableUpgrades.Count)
             {

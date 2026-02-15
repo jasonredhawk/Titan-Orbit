@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Generation;
 
@@ -194,10 +195,13 @@ namespace TitanOrbit.Entities
             Vector3 scale = transform.localScale;
             float physicalSize = (scale.x + scale.y + scale.z) / 3f;
 
-            // Spawn gems
+            // Spawn gems (100x value in debug mode for faster testing)
             if (GemSpawner.Instance != null)
             {
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, remainingGems.Value, asteroidSize, physicalSize);
+                float gemValue = remainingGems.Value;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                    gemValue *= 100f;
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize);
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption

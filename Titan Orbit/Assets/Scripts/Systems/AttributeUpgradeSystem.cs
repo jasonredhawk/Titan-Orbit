@@ -16,19 +16,17 @@ namespace TitanOrbit.Systems
         public class ShipAttributeUpgrades
         {
             public int movementSpeedLevel = 0;
-            public int fireRateLevel = 0;
+            public int energyCapacityLevel = 0;
             public int firePowerLevel = 0;
             public int bulletSpeedLevel = 0;
             public int maxHealthLevel = 0;
             public int healthRegenLevel = 0;
             public int rotationSpeedLevel = 0;
-            public int gemCapacityLevel = 0;
-            public int peopleCapacityLevel = 0;
+            public int energyRegenLevel = 0;
         }
 
         [Header("Upgrade Settings")]
-        [SerializeField] private float upgradeCostPerLevel = 50f;
-        [SerializeField] private float attributeMultiplierPerLevel = 0.1f; // 10% increase per level
+        [SerializeField] private float gemsPerUpgrade = 5f; // Cost = gemsPerUpgrade * shipLevel per upgrade
 
         private void Awake()
         {
@@ -51,46 +49,25 @@ namespace TitanOrbit.Systems
             Starship ship = shipNetObj.GetComponent<Starship>();
             if (ship == null) return;
 
-            // Check if ship can upgrade this attribute
-            int currentLevel = GetAttributeLevel(ship, attributeType);
-            int maxUpgrades = ship.ShipLevel; // Level 1 ship = 1 upgrade, Level 6 ship = 6 upgrades
+            int currentLevel = ship.GetAttributeLevel(attributeType);
+            int maxUpgrades = ship.ShipLevel; // Level N ship = N upgrades per attribute
 
             if (currentLevel >= maxUpgrades) return;
 
-            // Check if player has enough gems
-            float cost = upgradeCostPerLevel * (currentLevel + 1);
+            // Cost = 5 gems × ship level per upgrade (e.g. level 3 = 15 gems per upgrade)
+            float cost = gemsPerUpgrade * ship.ShipLevel;
             if (ship.CurrentGems < cost) return;
 
-            // Apply upgrade
             ship.RemoveGemsServerRpc(cost);
-            ApplyAttributeUpgrade(ship, attributeType, currentLevel + 1);
+            ship.IncrementAttributeLevel(attributeType);
 
             UpgradeAttributeClientRpc(shipNetworkId, attributeType, currentLevel + 1);
         }
 
-        private int GetAttributeLevel(Starship ship, ShipAttributeType attributeType)
+        /// <summary>Cost per single upgrade: gemsPerUpgrade × shipLevel.</summary>
+        public float GetUpgradeCost(int shipLevel)
         {
-            // This would need to be stored in a NetworkVariable or component
-            // For now, return 0 as placeholder
-            return 0;
-        }
-
-        private void ApplyAttributeUpgrade(Starship ship, ShipAttributeType attributeType, int newLevel)
-        {
-            float multiplier = 1f + (attributeMultiplierPerLevel * newLevel);
-
-            // Apply multiplier to ship attribute
-            // This would need to be implemented in Starship class
-            switch (attributeType)
-            {
-                case ShipAttributeType.MovementSpeed:
-                    // ship.movementSpeed *= multiplier;
-                    break;
-                case ShipAttributeType.FireRate:
-                    // ship.fireRate *= multiplier;
-                    break;
-                // ... etc
-            }
+            return gemsPerUpgrade * shipLevel;
         }
 
         [ClientRpc]
@@ -102,14 +79,13 @@ namespace TitanOrbit.Systems
         public enum ShipAttributeType
         {
             MovementSpeed,
-            FireRate,
+            EnergyCapacity,
             FirePower,
             BulletSpeed,
             MaxHealth,
             HealthRegen,
             RotationSpeed,
-            GemCapacity,
-            PeopleCapacity
+            EnergyRegen
         }
     }
 }

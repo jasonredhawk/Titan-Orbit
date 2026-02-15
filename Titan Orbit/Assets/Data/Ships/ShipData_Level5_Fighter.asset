@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44bd3321733ea134096805d1cbe5a7ce, type: 3}
+  m_Name: ShipData_Level5_Fighter
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipData
+  shipLevel: 5
+  focusType: 0
+  shipName: Lv5 Fighter
+  baseMovementSpeed: 11
+  baseFireRate: 1.5
+  baseFirePower: 23
+  baseBulletSpeed: 28
+  baseMaxHealth: 195
+  baseHealthRegenRate: 1.2
+  baseRotationSpeed: 190
+  baseGemCapacity: 190
+  basePeopleCapacity: 16
+  baseEnergyCapacity: 85
+  baseEnergyRegenRate: 5.5
+  baseMiningRate: 10
+  miningMultiplier: 1
+  shipSprite: {fileID: 0}
+  shipPrefab: {fileID: 6117270942166053240, guid: 35b8b9b16d41e7541b0f9314e73c53e1, type: 3}
+  shipColor: {r: 1, g: 1, b: 1, a: 1}

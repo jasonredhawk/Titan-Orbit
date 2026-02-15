@@ -61,13 +61,13 @@ This is a multiplayer top-down space arcade game built with Unity 6 and Unity Ne
 
 ### Ship System
 - 6 ship levels total
-- 3 upgrade choices per level (with overlap)
+- 2 upgrade choices per level (with overlap between branches)
 - Each ship focused on Fighter/Miner/Transport
-- Level 6 converges to 4 mega ships
 - Attribute upgrades: Level N ship = N upgrades per attribute
+- Ship level upgrade: full gem capacity + home planet level allows next level; can upgrade from anywhere (bottom bar or at home planet)
 
 ### Planet System
-- Home planets: Max level 4, supports ship levels 1-6
+- Home planets: Start at level 3 (ships can level 1→2→3 without leveling planet). Level up to 4, 5 when team deposits enough gems (increasing thresholds). Max level 5, supports ship levels up to 6
 - Neutral planets: Can be captured by transporting population
 - Population growth over time
 - Capture requires 1 more population than current

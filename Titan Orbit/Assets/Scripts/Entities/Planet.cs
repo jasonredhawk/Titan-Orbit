@@ -13,7 +13,7 @@ namespace TitanOrbit.Entities
     {
         [Header("Planet Settings")]
         [SerializeField] private float baseMaxPopulation = 100f;
-        [SerializeField] private float baseGrowthRate = 1f; // Population per second
+        [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
         [SerializeField] private float planetSize = 1f;
         [SerializeField] private float captureRadius = 5f;
 
@@ -24,6 +24,9 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
         [SerializeField] private TextMeshPro populationText;
+
+        /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
+        private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<float> currentPopulation = new NetworkVariable<float>(0f);
@@ -63,24 +66,30 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
-                // Initialize planet based on size
-                float sizeMultiplier = planetSize;
-                maxPopulation.Value = baseMaxPopulation * sizeMultiplier;
-                currentPopulation.Value = maxPopulation.Value * 0.1f; // Start with 10% population
-                growthRate.Value = baseGrowthRate * sizeMultiplier;
+                // Max population: regular planets 50-150 by size; home planets override to 100
+                float potentialMax = GetMaxPopulationForPlanet();
+                currentPopulation.Value = potentialMax * 0.25f; // Start with 25% population
+                growthRate.Value = GetGrowthRatePerSecond();
                 teamOwnership.Value = TeamManager.Team.None; // Neutral by default
+                // For neutral (regular) planets only: starting population is also the max (display as e.g. 18 of 18). Home planets keep full cap.
+                if (!(this is HomePlanet))
+                    maxPopulation.Value = currentPopulation.Value;
+                else
+                    maxPopulation.Value = potentialMax;
             }
 
-            // Ensure population text is visible
             if (populationText != null)
             {
                 populationText.enabled = true;
-                populationText.color = Color.white;
                 populationText.gameObject.SetActive(true);
+                EnsurePopulationTextPosition();
             }
 
+            EnsureBodyColliderSize();
+            EnsureOrbitZoneExists();
+
             // Update visual on spawn
-            UpdateVisual();
+            UpdateVisual(teamOwnership.Value);
             UpdatePopulationDisplay();
             
             // Subscribe to ownership changes
@@ -122,37 +131,108 @@ namespace TitanOrbit.Entities
             UpdatePopulationDisplay();
         }
         
+        /// <summary>Override in HomePlanet to place text above the ring (e.g. 0.8).</summary>
+        protected virtual Vector3 GetPopulationTextLocalPosition() => new Vector3(0f, 0.55f, 0f);
+
+        /// <summary>
+        /// Positions population text just above planet surface. Negative X scale so text is readable (not mirrored).
+        /// </summary>
+        private void EnsurePopulationTextPosition()
+        {
+            if (populationText == null) return;
+            Transform t = populationText.transform;
+            t.localPosition = GetPopulationTextLocalPosition();
+            t.localScale = new Vector3(0.04f, -0.04f, 0.04f); // +X: not mirrored, -Y: right-side up
+        }
+
+        /// <summary>
+        /// Body collider = planet sphere (Unity default sphere radius 0.5 local). Orbit zone = band from surface to +10% diameter (radius 0.5 to 0.6).
+        /// </summary>
+        private void EnsureBodyColliderSize()
+        {
+            SphereCollider body = GetComponent<SphereCollider>();
+            if (body != null)
+            {
+                body.radius = 0.5f; // Match Unity primitive sphere (diameter 1)
+                body.isTrigger = false;
+            }
+        }
+
+        /// <summary>
+        /// Orbit zone: surface (0.5) to a bit farther out (0.8 local). Ship orbits in that band.
+        /// </summary>
+        private void EnsureOrbitZoneExists()
+        {
+            PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
+            if (existing != null)
+            {
+                var col = existing.GetComponent<SphereCollider>();
+                if (col != null) col.radius = 0.8f;
+                EnsureOrbitZoneVisual(existing.gameObject);
+                return;
+            }
+            GameObject orbitZoneObj = new GameObject("OrbitZone");
+            orbitZoneObj.transform.SetParent(transform);
+            orbitZoneObj.transform.localPosition = Vector3.zero;
+            orbitZoneObj.transform.localScale = Vector3.one;
+            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
+            orbitCollider.isTrigger = true;
+            orbitCollider.radius = 0.8f;
+            PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
+            zone.SetPlanet(this);
+            EnsureOrbitZoneVisual(orbitZoneObj);
+        }
+
+        private void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
+        {
+            OrbitZoneVisual visual = orbitZoneObj.GetComponent<OrbitZoneVisual>();
+            if (visual == null)
+                visual = orbitZoneObj.AddComponent<OrbitZoneVisual>();
+            visual.SetPlanet(this);
+        }
+
+        /// <summary>Override in HomePlanet to use a color that contrasts with the white ring.</summary>
+        protected virtual Color GetPopulationTextColor() => Color.white;
+
         private void UpdatePopulationDisplay()
         {
             if (populationText != null)
             {
                 int pop = Mathf.RoundToInt(currentPopulation.Value);
                 populationText.text = pop.ToString();
-                // Ensure text is visible - make it brighter and ensure it's enabled
-                populationText.color = Color.white;
+                populationText.color = GetPopulationTextColor();
                 populationText.enabled = true;
-                // Text rotation is static (set once) - no LookAt, always readable from top-down
             }
+        }
+
+        /// <summary>Population per second. Override in HomePlanet for 1 per 5 sec. Regular: flat 1 per 30 sec.</summary>
+        protected virtual float GetGrowthRatePerSecond()
+        {
+            return baseGrowthRate;
+        }
+
+        /// <summary>Max population: regular planets 50-150 by size (min 4, max 12). Override in HomePlanet for 100.</summary>
+        protected virtual float GetMaxPopulationForPlanet()
+        {
+            const float minSize = 4f, maxSize = 12f;
+            float t = Mathf.Clamp01((planetSize - minSize) / (maxSize - minSize));
+            return Mathf.Lerp(50f, 150f, t);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void AddPopulationServerRpc(float amount, TeamManager.Team sourceTeam)
         {
-            if (teamOwnership.Value == TeamManager.Team.None || teamOwnership.Value == sourceTeam)
+            // Same-team planet: add population (reinforce)
+            if (teamOwnership.Value != TeamManager.Team.None && teamOwnership.Value == sourceTeam)
             {
-                // Add to same team or neutral planet
                 currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, maxPopulation.Value);
+                return;
             }
-            else
+            // Neutral or enemy: unload decreases their population (capture attempt)
+            currentPopulation.Value -= amount;
+            if (currentPopulation.Value <= 0)
             {
-                // Different team - attempt capture
-                currentPopulation.Value -= amount;
-                
-                if (currentPopulation.Value <= 0)
-                {
-                    // Captured!
-                    CapturePlanetServerRpc(sourceTeam);
-                }
+                CapturePlanetServerRpc(sourceTeam);
             }
         }
 
@@ -167,44 +247,73 @@ namespace TitanOrbit.Entities
         {
             teamOwnership.Value = newTeam;
             currentPopulation.Value = 0f; // Reset population after capture
+            maxPopulation.Value = GetMaxPopulationForPlanet(); // New owner gets full cap (e.g. 50-150)
             CapturePlanetClientRpc(newTeam);
         }
 
         [ClientRpc]
         private void CapturePlanetClientRpc(TeamManager.Team newTeam)
         {
-            UpdateVisual();
+            UpdateVisual(newTeam);
             Debug.Log($"Planet captured by {newTeam}");
         }
 
         private void OnOwnershipChanged(TeamManager.Team previousTeam, TeamManager.Team newTeam)
         {
-            UpdateVisual();
+            UpdateVisual(newTeam);
             UpdatePopulationDisplay();
         }
 
-        private void UpdateVisual()
+        private void UpdateVisual(TeamManager.Team? teamOverride = null)
         {
-            if (planetRenderer == null) return;
+            Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
+            if (renderer == null) return;
 
-            Material materialToUse = neutralMaterial;
-            
-            switch (teamOwnership.Value)
-            {
-                case TeamManager.Team.TeamA:
-                    materialToUse = teamAMaterial ?? neutralMaterial;
-                    break;
-                case TeamManager.Team.TeamB:
-                    materialToUse = teamBMaterial ?? neutralMaterial;
-                    break;
-                case TeamManager.Team.TeamC:
-                    materialToUse = teamCMaterial ?? neutralMaterial;
-                    break;
-            }
-
+            EnsureSharedMaterialsRegistered();
+            TeamManager.Team team = teamOverride ?? teamOwnership.Value;
+            Material materialToUse = GetEffectiveMaterial(team);
             if (materialToUse != null)
+                renderer.material = materialToUse;
+        }
+
+        /// <summary>When this planet has no team materials (e.g. regular prefab), copy from a HomePlanet so captured planets can change colour.</summary>
+        private void EnsureSharedMaterialsRegistered()
+        {
+            if (s_sharedTeamA != null) return;
+            // Prefer HomePlanet (always has team materials assigned in prefab)
+            foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
             {
-                planetRenderer.material = materialToUse;
+                if (hp != null && hp.teamAMaterial != null)
+                {
+                    s_sharedNeutral = hp.neutralMaterial;
+                    s_sharedTeamA = hp.teamAMaterial;
+                    s_sharedTeamB = hp.teamBMaterial;
+                    s_sharedTeamC = hp.teamCMaterial;
+                    return;
+                }
+            }
+            foreach (var p in Object.FindObjectsOfType<Planet>())
+            {
+                if (p != null && p.teamAMaterial != null)
+                {
+                    s_sharedNeutral = p.neutralMaterial;
+                    s_sharedTeamA = p.teamAMaterial;
+                    s_sharedTeamB = p.teamBMaterial;
+                    s_sharedTeamC = p.teamCMaterial;
+                    return;
+                }
+            }
+        }
+
+        private Material GetEffectiveMaterial(TeamManager.Team team)
+        {
+            Material neutral = neutralMaterial ?? s_sharedNeutral;
+            switch (team)
+            {
+                case TeamManager.Team.TeamA: return teamAMaterial ?? s_sharedTeamA ?? neutral;
+                case TeamManager.Team.TeamB: return teamBMaterial ?? s_sharedTeamB ?? neutral;
+                case TeamManager.Team.TeamC: return teamCMaterial ?? s_sharedTeamC ?? neutral;
+                default: return neutral;
             }
         }
 

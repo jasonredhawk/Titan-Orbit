@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using TitanOrbit.Core;
 
 namespace TitanOrbit.Networking
@@ -14,6 +15,8 @@ namespace TitanOrbit.Networking
         [Header("Network Settings")]
         [SerializeField] private int maxPlayers = 60;
         [SerializeField] private bool autoStartServer = false;
+        [Tooltip("UDP port for host/server. Change to e.g. 7778 if 7777 is already in use (e.g. previous play session).")]
+        [SerializeField] private ushort serverPort = 7777;
 
         private void Awake()
         {
@@ -36,10 +39,25 @@ namespace TitanOrbit.Networking
             }
         }
 
+        /// <summary>
+        /// Applies the configured server port to UnityTransport so it's used when starting host/server.
+        /// Call this before StartHost or StartServer so "port already in use" can be avoided by changing serverPort in the inspector.
+        /// </summary>
+        private void ApplyServerPort()
+        {
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport != null)
+            {
+                transport.SetConnectionData(transport.ConnectionData.Address, serverPort, transport.ConnectionData.ServerListenAddress);
+                Debug.Log($"Network port set to {serverPort}. If you get 'address already in use', try another port (e.g. 7778) in NetworkGameManager.");
+            }
+        }
+
         public void StartServer()
         {
+            ApplyServerPort();
             NetworkManager.Singleton.StartServer();
-            Debug.Log("Server started");
+            Debug.Log($"Server started on port {serverPort}");
         }
 
         public void StartHost()
@@ -49,8 +67,9 @@ namespace TitanOrbit.Networking
                 Debug.LogError("Player Prefab not set on NetworkManager! Use menu: Titan Orbit > Fix Player Prefab & Materials");
                 return;
             }
+            ApplyServerPort();
             NetworkManager.Singleton.StartHost();
-            Debug.Log("Host started");
+            Debug.Log($"Host started on port {serverPort}");
         }
 
         public void StartClient()
@@ -81,13 +100,21 @@ namespace TitanOrbit.Networking
         {
             Debug.Log($"Client {clientId} connected");
             
-            // Assign player to team
+            // Assign player to team (happens after player object spawns, so ship may have Team.None until now)
             if (TeamManager.Instance != null)
             {
                 TeamManager.Team team = TeamManager.Instance.AssignPlayerToTeam(clientId);
                 Debug.Log($"Client {clientId} assigned to {team}");
                 
-                // Notify client of team assignment
+                // Set ship's team and move to home planet orbit (team is assigned here, after spawn)
+                NetworkObject playerObj = NetworkManager.Singleton.SpawnManager.GetPlayerNetworkObject(clientId);
+                if (playerObj != null)
+                {
+                    var ship = playerObj.GetComponent<TitanOrbit.Entities.Starship>();
+                    if (ship != null && team != TeamManager.Team.None)
+                        ship.AssignTeamAndStartInOrbit(team);
+                }
+                
                 AssignTeamClientRpc(clientId, team);
             }
         }

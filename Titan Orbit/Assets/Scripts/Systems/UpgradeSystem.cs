@@ -16,6 +16,8 @@ namespace TitanOrbit.Systems
         [Header("Upgrade Settings")]
         [SerializeField] private UpgradeTree upgradeTree;
 
+        public UpgradeTree UpgradeTree => upgradeTree;
+
         private void Awake()
         {
             if (Instance == null)
@@ -25,41 +27,45 @@ namespace TitanOrbit.Systems
             else
             {
                 Destroy(gameObject);
+                return;
             }
+            // Fallback: if tree not assigned (e.g. scene set up before tree existed), try Resources
+            if (upgradeTree == null)
+                upgradeTree = Resources.Load<UpgradeTree>("UpgradeTree");
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void UpgradeShipServerRpc(ulong shipNetworkId, int targetLevel, ShipFocusType targetFocus, int shipIndex)
         {
+            if (upgradeTree == null) return;
             NetworkObject shipNetObj = GetNetworkObject(shipNetworkId);
             if (shipNetObj == null) return;
 
             Starship ship = shipNetObj.GetComponent<Starship>();
             if (ship == null) return;
 
-            // Check if player has enough gems
+            const float fullEpsilon = 0.01f;
+            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return; // must be full of gems
             float gemCost = upgradeTree.GetGemCostForLevel(targetLevel);
-            if (ship.CurrentGems < gemCost) return;
+            float actualCharge = Mathf.Min(gemCost, ship.CurrentGems); // never charge more than they have
 
-            // Check home planet level restriction
-            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-            if (homePlanet != null)
+            // Level 7 MEGA only: home planet must be level 6 and have full gems. Levels 2–6: no home planet requirement (ship gems = ship upgrade).
+            if (targetLevel == 7)
             {
-                int maxShipLevel = homePlanet.MaxShipLevel;
-                if (targetLevel > maxShipLevel) return;
+                HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+                if (homePlanet == null || homePlanet.HomePlanetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return;
             }
 
-            // Get available upgrades
-            var availableUpgrades = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.FocusType);
+            var availableUpgrades = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
             if (shipIndex < 0 || shipIndex >= availableUpgrades.Count) return;
 
             ShipUpgradeNode upgradeNode = availableUpgrades[shipIndex];
-            
-            // Apply upgrade
-            ship.RemoveGemsServerRpc(gemCost);
+            int previousBranchIndex = ship.BranchIndex;
+
+            ship.RemoveGemsServerRpc(actualCharge);
             ApplyShipUpgrade(ship, upgradeNode, targetLevel);
 
-            UpgradeShipClientRpc(shipNetworkId, targetLevel, targetFocus);
+            UpgradeShipClientRpc(shipNetworkId, targetLevel, previousBranchIndex, shipIndex);
         }
 
         private void ApplyShipUpgrade(Starship ship, ShipUpgradeNode upgradeNode, int newLevel)
@@ -72,6 +78,22 @@ namespace TitanOrbit.Systems
             // Apply multipliers to ship stats
             // Note: This would need to be implemented in Starship class
             // For now, we'll rely on ShipData
+        }
+
+        /// <summary>True when ship is full of gems (e.g. 100/100). Cost is deducted up to what they have; full ship can always upgrade. Level 7 also requires home planet 6 + full gems.</summary>
+        public bool CanUpgradeStarshipLevel(Starship ship)
+        {
+            if (ship == null || upgradeTree == null) return false;
+            if (ship.ShipLevel >= 7) return false;
+            const float fullEpsilon = 0.01f;
+            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return false; // must be full of gems (e.g. 100/100)
+            int nextLevel = ship.ShipLevel + 1;
+            if (nextLevel == 7)
+            {
+                HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+                if (homePlanet == null || homePlanet.HomePlanetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
+            }
+            return upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex).Count > 0;
         }
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
@@ -88,9 +110,17 @@ namespace TitanOrbit.Systems
         }
 
         [ClientRpc]
-        private void UpgradeShipClientRpc(ulong shipNetworkId, int newLevel, ShipFocusType newFocus)
+        private void UpgradeShipClientRpc(ulong shipNetworkId, int newLevel, int previousBranchIndex, int shipIndex)
         {
-            Debug.Log($"Ship upgraded to level {newLevel} with focus {newFocus}");
+            if (upgradeTree == null) return;
+            int previousLevel = newLevel - 1;
+            var available = upgradeTree.GetAvailableUpgrades(previousLevel, previousBranchIndex);
+            if (shipIndex < 0 || shipIndex >= available.Count || available[shipIndex].shipData == null) return;
+            NetworkObject netObj = GetNetworkObject(shipNetworkId);
+            if (netObj == null) return;
+            Starship ship = netObj.GetComponent<Starship>();
+            if (ship != null)
+                ship.SetShipData(available[shipIndex].shipData);
         }
 
         [ServerRpc(RequireOwnership = false)]

@@ -147,7 +147,10 @@ namespace TitanOrbit.Entities
             Asteroid asteroid = other.GetComponent<Asteroid>();
             if (asteroid != null && !asteroid.IsDestroyed)
             {
-                asteroid.TakeDamageServerRpc(damage);
+                float appliedDamage = damage;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                    appliedDamage = 999999f; // One-shot asteroids in debug mode
+                asteroid.TakeDamageServerRpc(appliedDamage);
                 DespawnBullet();
                 return;
             }

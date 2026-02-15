@@ -11,6 +11,8 @@ namespace TitanOrbit.Data
     {
         [Header("Ship Identity")]
         public int shipLevel = 1;
+        [Tooltip("0-based index of this ship within its level (e.g. level 2 has 2 ships: 0 and 1). Used for upgrade tree branching.")]
+        public int branchIndex = 0;
         public ShipFocusType focusType = ShipFocusType.Fighter;
         public string shipName = "Basic Ship";
 
@@ -24,6 +26,9 @@ namespace TitanOrbit.Data
         public float baseRotationSpeed = 180f;
         public float baseGemCapacity = 100f;
         public float basePeopleCapacity = 10f;
+        [Header("Energy (weapon system)")]
+        public float baseEnergyCapacity = 50f;  // Max stored energy for energy weapons
+        public float baseEnergyRegenRate = 5f;  // Energy per second
 
         [Header("Mining Stats")]
         public float baseMiningRate = 10f;

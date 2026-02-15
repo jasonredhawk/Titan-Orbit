@@ -84,6 +84,15 @@ namespace TitanOrbit.Editor
             AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
 
+            // Assign UpgradeTree so ship level-up menu and buttons work (full gems + home planet level)
+            TitanOrbit.Data.UpgradeTree upgradeTree = AssetDatabase.LoadAssetAtPath<TitanOrbit.Data.UpgradeTree>("Assets/Data/UpgradeTree.asset");
+            if (upgradeTree != null)
+            {
+                SerializedObject so = new SerializedObject(upgradeSystem);
+                so.FindProperty("upgradeTree").objectReferenceValue = upgradeTree;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             return obj;
         }
 
@@ -285,7 +294,69 @@ namespace TitanOrbit.Editor
             mobileControlsObj.SetActive(Application.isMobilePlatform);
             mobileControlsObj.AddComponent<MobileControls>();
 
+            // Orbit panel (shown when ship is in home planet orbit - deposit gems, load/unload people, future store)
+            GameObject orbitPanelObj = CreatePanel(canvasObj.transform, "OrbitPanel", new Color(0.12f, 0.12f, 0.2f, 0.95f), uiSprite);
+            RectTransform orbitRect = orbitPanelObj.GetComponent<RectTransform>();
+            orbitRect.anchorMin = new Vector2(0.5f, 0.5f);
+            orbitRect.anchorMax = new Vector2(0.5f, 0.5f);
+            orbitRect.pivot = new Vector2(0.5f, 0.5f);
+            orbitRect.anchoredPosition = new Vector2(-220f, 60f); // Left and up so it doesn't cover the starship
+            orbitRect.sizeDelta = new Vector2(320, 280);
+            orbitPanelObj.SetActive(false);
+            HomePlanetOrbitUI orbitUI = orbitPanelObj.AddComponent<HomePlanetOrbitUI>();
+            GameObject orbitTitle = CreateText(orbitPanelObj.transform, "Title", "Home Planet — In Orbit", 28, TextAnchor.MiddleCenter);
+            RectTransform orbitTitleRect = orbitTitle.GetComponent<RectTransform>();
+            orbitTitleRect.anchorMin = new Vector2(0, 1);
+            orbitTitleRect.anchorMax = new Vector2(1, 1);
+            orbitTitleRect.pivot = new Vector2(0.5f, 1);
+            orbitTitleRect.anchoredPosition = new Vector2(0, -20);
+            orbitTitleRect.sizeDelta = new Vector2(-30, 36);
+            GameObject orbitInfo = CreateText(orbitPanelObj.transform, "PlanetInfo", "Level 1 | Gems: 0 | Pop: 0/100", 16, TextAnchor.MiddleCenter);
+            RectTransform orbitInfoRect = orbitInfo.GetComponent<RectTransform>();
+            orbitInfoRect.anchorMin = new Vector2(0, 1);
+            orbitInfoRect.anchorMax = new Vector2(1, 1);
+            orbitInfoRect.pivot = new Vector2(0.5f, 1);
+            orbitInfoRect.anchoredPosition = new Vector2(0, -58);
+            orbitInfoRect.sizeDelta = new Vector2(-30, 24);
+            GameObject depositBtn = CreateButton(orbitPanelObj.transform, "DepositGemsButton", "Deposit Gems", uiSprite);
+            SetRectAnchorTop(depositBtn, 90, 36);
+            GameObject loadBtn = CreateButton(orbitPanelObj.transform, "LoadPeopleButton", "Load People", uiSprite);
+            SetRectAnchorTop(loadBtn, 132, 36);
+            GameObject unloadBtn = CreateButton(orbitPanelObj.transform, "UnloadPeopleButton", "Unload People", uiSprite);
+            SetRectAnchorTop(unloadBtn, 174, 36);
+            GameObject storeBtn = CreateButton(orbitPanelObj.transform, "StoreButton", "Store (coming soon)", uiSprite);
+            SetRectAnchorTop(storeBtn, 216, 36);
+            var orbitUISO = new SerializedObject(orbitUI);
+            orbitUISO.FindProperty("orbitPanel").objectReferenceValue = orbitPanelObj;
+            orbitUISO.FindProperty("titleText").objectReferenceValue = orbitTitle.GetComponent<TextMeshProUGUI>();
+            orbitUISO.FindProperty("planetInfoText").objectReferenceValue = orbitInfo.GetComponent<TextMeshProUGUI>();
+            orbitUISO.FindProperty("depositGemsButton").objectReferenceValue = depositBtn.GetComponent<Button>();
+            orbitUISO.FindProperty("depositGemsLabel").objectReferenceValue = depositBtn.GetComponentInChildren<TextMeshProUGUI>();
+            orbitUISO.FindProperty("loadPeopleButton").objectReferenceValue = loadBtn.GetComponent<Button>();
+            orbitUISO.FindProperty("loadPeopleLabel").objectReferenceValue = loadBtn.GetComponentInChildren<TextMeshProUGUI>();
+            orbitUISO.FindProperty("unloadPeopleButton").objectReferenceValue = unloadBtn.GetComponent<Button>();
+            orbitUISO.FindProperty("unloadPeopleLabel").objectReferenceValue = unloadBtn.GetComponentInChildren<TextMeshProUGUI>();
+            orbitUISO.FindProperty("storeButton").objectReferenceValue = storeBtn.GetComponent<Button>();
+            orbitUISO.FindProperty("storeLabel").objectReferenceValue = storeBtn.GetComponentInChildren<TextMeshProUGUI>();
+            orbitUISO.ApplyModifiedPropertiesWithoutUndo();
+
+            // Starship upgrade menu (9 attribute buttons at bottom of screen)
+            GameObject upgradeMenuObj = new GameObject("StarshipUpgradeMenu");
+            upgradeMenuObj.transform.SetParent(canvasObj.transform, false);
+            upgradeMenuObj.AddComponent<StarshipUpgradeMenu>();
+
             return canvasObj;
+        }
+
+        private static void SetRectAnchorTop(GameObject obj, float yFromTop, float height)
+        {
+            RectTransform rect = obj.GetComponent<RectTransform>();
+            if (rect == null) return;
+            rect.anchorMin = new Vector2(0.5f, 1);
+            rect.anchorMax = new Vector2(0.5f, 1);
+            rect.pivot = new Vector2(0.5f, 1);
+            rect.anchoredPosition = new Vector2(0, -yFromTop);
+            rect.sizeDelta = new Vector2(260, height);
         }
 
         private static Sprite CreateWhiteSprite()
@@ -381,64 +452,81 @@ namespace TitanOrbit.Editor
 
         private static void CreateStarshipPrefab()
         {
-            // Main body - capsule rotated so length is along Z (forward direction)
-            GameObject ship = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            ship.name = "Starship";
-            ship.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // Lay capsule on side, length = Z
-            ship.transform.localScale = new Vector3(0.4f, 0.2f, 1f); // Body narrower, elongated along Z
+            // One custom hull mesh (arrowhead shape) + cockpit sphere. Single cohesive silhouette, no primitive soup.
+            Mesh hullMesh = GetOrCreateStarshipHullMesh();
+            GameObject ship = new GameObject("Starship");
+            ship.transform.localPosition = Vector3.zero;
+            ship.transform.localRotation = Quaternion.identity;
+            ship.transform.localScale = Vector3.one;
 
-            // Replace with box collider - rectangular shape prevents sliding off asteroids
-            Object.DestroyImmediate(ship.GetComponent<Collider>());
+            MeshFilter mf = ship.AddComponent<MeshFilter>();
+            mf.sharedMesh = hullMesh;
+            MeshRenderer mr = ship.AddComponent<MeshRenderer>();
+
             BoxCollider boxCol = ship.AddComponent<BoxCollider>();
-            boxCol.size = new Vector3(0.4f, 0.2f, 1.2f); // Rectangular: wider and taller than long
-            boxCol.center = new Vector3(0, 0, 0.1f); // Slightly forward
-            
+            boxCol.size = new Vector3(0.5f, 0.12f, 1.1f);
+            boxCol.center = new Vector3(0, 0, 0.02f);
+
             Rigidbody rb = ship.AddComponent<Rigidbody>();
             rb.useGravity = false;
             rb.linearDamping = 5f;
             rb.angularDamping = 5f;
 
-            // Add NetworkObject
-            NetworkObject netObj = ship.AddComponent<NetworkObject>();
-
-            // Add Starship script
+            ship.AddComponent<NetworkObject>();
             Starship starship = ship.AddComponent<Starship>();
+            ShipTeamColor shipTeamColor = ship.AddComponent<ShipTeamColor>();
+            ship.AddComponent<PlayerInputHandler>();
 
-            // Team-colored ship
-            ship.AddComponent<ShipTeamColor>();
+            Material bodyMat = CreateAndSaveMaterial("TitanOrbit_StarshipBody", new Color(0.18f, 0.18f, 0.2f), 2500);
+            Material accentMat = CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0.4f, 0.7f, 1f), 2500);
+            var accentRenderersList = new System.Collections.Generic.List<Renderer>();
+            const int sortBody = 10;
+            const int sortAccent = 11;
 
-            // Add Input Handler
-            PlayerInputHandler inputHandler = ship.AddComponent<PlayerInputHandler>();
+            mr.sharedMaterial = bodyMat;
+            mr.sortingOrder = sortBody;
 
-            // Nose cone - clearly shows front of ship
-            GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            nose.name = "Nose";
-            nose.transform.SetParent(ship.transform);
-            nose.transform.localPosition = new Vector3(0, 0, 0.6f); // Front of ship
-            nose.transform.localScale = new Vector3(0.6f, 0.6f, 0.8f);
-            Object.DestroyImmediate(nose.GetComponent<Collider>());
-            Renderer noseRenderer = nose.GetComponent<Renderer>();
-            noseRenderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_StarshipNose", new Color(0.6f, 1f, 1f), 2501); // Brighter cyan for nose, even higher render queue
-            // Set sorting order so nose renders in front of planets (for orthographic camera)
-            noseRenderer.sortingOrder = 11;
+            // Cockpit dome (team accent)
+            GameObject cockpit = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            cockpit.name = "Cockpit";
+            cockpit.transform.SetParent(ship.transform);
+            cockpit.transform.localPosition = new Vector3(0, 0.06f, 0.12f);
+            cockpit.transform.localRotation = Quaternion.identity;
+            cockpit.transform.localScale = new Vector3(0.28f, 0.16f, 0.28f);
+            Object.DestroyImmediate(cockpit.GetComponent<Collider>());
+            AddRenderer(cockpit.GetComponent<Renderer>(), accentMat, sortAccent, accentRenderersList);
 
-            // Create fire point at front
+            // Rear engine glow (team accent)
+            GameObject engineL = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            engineL.name = "EngineL";
+            engineL.transform.SetParent(ship.transform);
+            engineL.transform.localPosition = new Vector3(-0.12f, 0, -0.42f);
+            engineL.transform.localScale = new Vector3(0.12f, 0.12f, 0.12f);
+            Object.DestroyImmediate(engineL.GetComponent<Collider>());
+            AddRenderer(engineL.GetComponent<Renderer>(), accentMat, sortAccent, accentRenderersList);
+            GameObject engineR = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            engineR.name = "EngineR";
+            engineR.transform.SetParent(ship.transform);
+            engineR.transform.localPosition = new Vector3(0.12f, 0, -0.42f);
+            engineR.transform.localScale = new Vector3(0.12f, 0.12f, 0.12f);
+            Object.DestroyImmediate(engineR.GetComponent<Collider>());
+            AddRenderer(engineR.GetComponent<Renderer>(), accentMat, sortAccent, accentRenderersList);
+
             GameObject firePoint = new GameObject("FirePoint");
             firePoint.transform.SetParent(ship.transform);
-            firePoint.transform.localPosition = new Vector3(0, 0, 0.8f);
+            firePoint.transform.localPosition = new Vector3(0, 0, 0.55f);
 
             var starshipSO = new SerializedObject(starship);
             starshipSO.FindProperty("firePoint").objectReferenceValue = firePoint.transform;
             starshipSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Set URP-compatible material for body - brighter cyan for better contrast
-            // Use higher render queue (2500) so starships render in front of planets (2000)
-            Renderer renderer = ship.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0f, 1f, 1f), 2500); // Bright cyan, higher render queue
-            // Set sorting order so starships render in front of planets (for orthographic camera)
-            renderer.sortingOrder = 10;
+            var stcSO = new SerializedObject(shipTeamColor);
+            SerializedProperty accentProp = stcSO.FindProperty("accentRenderers");
+            accentProp.arraySize = accentRenderersList.Count;
+            for (int i = 0; i < accentRenderersList.Count; i++)
+                accentProp.GetArrayElementAtIndex(i).objectReferenceValue = accentRenderersList[i];
+            stcSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Save as prefab
             string path = "Assets/Prefabs/Starship.prefab";
             EnsurePrefabDirectory();
             PrefabUtility.SaveAsPrefabAsset(ship, path);
@@ -447,17 +535,105 @@ namespace TitanOrbit.Editor
             Debug.Log($"Created prefab: {path}");
         }
 
+        /// <summary>
+        /// Creates a single hull mesh: smooth fighter silhouette (pointed nose, swept wings, narrow tail). Top-down view.
+        /// </summary>
+        private static Mesh GetOrCreateStarshipHullMesh()
+        {
+            const string meshPath = "Assets/Meshes/StarshipHull.asset";
+            if (!AssetDatabase.IsValidFolder("Assets/Meshes"))
+                AssetDatabase.CreateFolder("Assets", "Meshes");
+
+            float halfThick = 0.05f;
+            // Outline: nose -> right side -> tail -> left side -> back to nose. Z = forward, symmetric.
+            // Smoother curve: sharp nose, flare to wing tips, taper to tail.
+            Vector3[] topOutline = new Vector3[]
+            {
+                new Vector3(0, halfThick, 0.5f),       // 0 nose
+                new Vector3(0.05f, halfThick, 0.4f),
+                new Vector3(0.12f, halfThick, 0.25f),
+                new Vector3(0.18f, halfThick, 0.08f),
+                new Vector3(0.26f, halfThick, -0.06f),  // 4 wing tip
+                new Vector3(0.24f, halfThick, -0.2f),
+                new Vector3(0.18f, halfThick, -0.32f),
+                new Vector3(0.1f, halfThick, -0.42f),
+                new Vector3(0, halfThick, -0.5f),     // 8 tail
+                new Vector3(-0.1f, halfThick, -0.42f),
+                new Vector3(-0.18f, halfThick, -0.32f),
+                new Vector3(-0.24f, halfThick, -0.2f),
+                new Vector3(-0.26f, halfThick, -0.06f), // 12 wing tip
+                new Vector3(-0.18f, halfThick, 0.08f),
+                new Vector3(-0.12f, halfThick, 0.25f),
+                new Vector3(-0.05f, halfThick, 0.4f),
+            };
+            int n = topOutline.Length;
+            Vector3[] bottomOutline = new Vector3[n];
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 t = topOutline[i];
+                bottomOutline[i] = new Vector3(t.x, -halfThick, t.z);
+            }
+
+            Vector3[] verts = new Vector3[n * 2];
+            for (int i = 0; i < n; i++) verts[i] = topOutline[i];
+            for (int i = 0; i < n; i++) verts[n + i] = bottomOutline[i];
+
+            var tris = new System.Collections.Generic.List<int>();
+            // Top: fan from nose (0)
+            for (int i = 1; i < n; i++)
+            {
+                int next = i + 1;
+                if (next >= n) next = 1;
+                tris.Add(0); tris.Add(i); tris.Add(next);
+            }
+            // Bottom: fan from tail (vertex 8). Order around bottom: 7,6,5,4,3,2,1,0,15,14,13,12,11,10,9
+            int tailIdx = n + 8;
+            int[] bottomOrder = { 7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9 };
+            for (int i = 0; i < bottomOrder.Length; i++)
+            {
+                int a = n + bottomOrder[i];
+                int b = n + bottomOrder[(i + 1) % bottomOrder.Length];
+                tris.Add(tailIdx); tris.Add(b); tris.Add(a);
+            }
+            // Sides
+            for (int i = 0; i < n; i++)
+            {
+                int j = (i + 1) % n;
+                tris.Add(i); tris.Add(j); tris.Add(j + n);
+                tris.Add(i); tris.Add(j + n); tris.Add(i + n);
+            }
+
+            Mesh mesh = new Mesh();
+            mesh.name = "StarshipHull";
+            mesh.vertices = verts;
+            mesh.triangles = tris.ToArray();
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            AssetDatabase.CreateAsset(mesh, meshPath);
+            AssetDatabase.SaveAssets();
+            return mesh;
+        }
+
+        private static void AddRenderer(Renderer r, Material mat, int order, System.Collections.Generic.List<Renderer> accentList)
+        {
+            if (r == null) return;
+            r.sharedMaterial = mat;
+            r.sortingOrder = order;
+            accentList.Add(r);
+        }
+
         private static void CreatePlanetPrefab()
         {
             GameObject planet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             planet.name = "Planet";
             planet.transform.localScale = Vector3.one * 8f; // Much larger for orbit gameplay
 
-            // Remove default collider, add trigger collider
+            // Body collider = planet sphere (Unity default radius 0.5). Orbit zone = 0.5 to 0.6 (10% band)
             Object.DestroyImmediate(planet.GetComponent<Collider>());
-            SphereCollider collider = planet.AddComponent<SphereCollider>();
-            collider.isTrigger = true;
-            collider.radius = 1f;
+            SphereCollider bodyCollider = planet.AddComponent<SphereCollider>();
+            bodyCollider.isTrigger = false;
+            bodyCollider.radius = 0.5f;
 
             // Add NetworkObject
             NetworkObject netObj = planet.AddComponent<NetworkObject>();
@@ -465,12 +641,31 @@ namespace TitanOrbit.Editor
             // Add Planet script
             Planet planetScript = planet.AddComponent<Planet>();
 
+            // Orbit zone: surface (0.5) to a bit farther (0.8 local)
+            GameObject orbitZoneObj = new GameObject("OrbitZone");
+            orbitZoneObj.transform.SetParent(planet.transform);
+            orbitZoneObj.transform.localPosition = Vector3.zero;
+            orbitZoneObj.transform.localScale = Vector3.one;
+            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
+            orbitCollider.isTrigger = true;
+            orbitCollider.radius = 0.8f;
+            PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
+            var orbitZoneSO = new SerializedObject(orbitZoneScript);
+            orbitZoneSO.FindProperty("planet").objectReferenceValue = planetScript;
+            orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();
+
             // Add ToroidalRenderer for seamless map wrapping
             planet.AddComponent<ToroidalRenderer>();
 
             // Grey material for neutral planets - will change to team color when captured
             Renderer renderer = planet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f)); // Grey
+            Material neutralMat = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f)); // Grey
+            renderer.sharedMaterial = neutralMat;
+
+            // Team materials (same names as HomePlanet so regular planets change colour when captured)
+            Material teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)); // Red
+            Material teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)); // Blue
+            Material teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)); // Green
 
             // Add ring - vertical orientation to differentiate from home planets (horizontal)
             GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -482,14 +677,12 @@ namespace TitanOrbit.Editor
             Object.DestroyImmediate(ring.GetComponent<Collider>()); // Remove collider from ring
             ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PlanetRing", new Color(0f, 0.8f, 1f, 0.7f)); // Cyan ring
 
-            // Add population text display - static rotation for top-down view (horizontal, facing up)
-            // Position scales with planet size (8f scale = 8f radius, so position at ~1.5x radius)
+            // Population text: just above surface; negative X scale so text reads correctly (not mirrored)
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(planet.transform);
-            float planetRadius = planet.transform.localScale.x;
-            textObj.transform.localPosition = new Vector3(0, planetRadius * 1.5f, 0); // Scale with planet size
-            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Flat, facing up for top-down camera
-            textObj.transform.localScale = Vector3.one * (planetRadius * 0.0125f); // Scale text size with planet
+            textObj.transform.localPosition = new Vector3(0f, 0.55f, 0f); // Just above sphere (radius 0.5)
+            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f); // +X: not mirrored, -Y: right-side up
             
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
@@ -498,9 +691,13 @@ namespace TitanOrbit.Editor
             textMesh.alignment = TextAlignmentOptions.Center;
             textMesh.fontStyle = FontStyles.Bold;
             
-            // Assign to planet script
+            // Assign to planet script (renderer, materials for neutral + team colours when captured, population text)
             var planetSO = new SerializedObject(planetScript);
             planetSO.FindProperty("planetRenderer").objectReferenceValue = renderer;
+            planetSO.FindProperty("neutralMaterial").objectReferenceValue = neutralMat;
+            planetSO.FindProperty("teamAMaterial").objectReferenceValue = teamAMat;
+            planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
+            planetSO.FindProperty("teamCMaterial").objectReferenceValue = teamCMat;
             planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
             planetSO.ApplyModifiedPropertiesWithoutUndo();
 
@@ -519,17 +716,30 @@ namespace TitanOrbit.Editor
             homePlanet.name = "HomePlanet";
             homePlanet.transform.localScale = Vector3.one * 20f; // Much larger - team base
 
-            // Remove default collider, add trigger collider
+            // Body collider = planet sphere (Unity default radius 0.5). Orbit zone = 0.5 to 0.6 (10% band)
             Object.DestroyImmediate(homePlanet.GetComponent<Collider>());
-            SphereCollider collider = homePlanet.AddComponent<SphereCollider>();
-            collider.isTrigger = true;
-            collider.radius = 1f;
+            SphereCollider bodyCollider = homePlanet.AddComponent<SphereCollider>();
+            bodyCollider.isTrigger = false;
+            bodyCollider.radius = 0.5f;
 
             // Add NetworkObject
             NetworkObject netObj = homePlanet.AddComponent<NetworkObject>();
 
             // Add HomePlanet script (which extends Planet)
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
+
+            // Orbit zone: surface (0.5) to a bit farther (0.8 local)
+            GameObject orbitZoneObj = new GameObject("OrbitZone");
+            orbitZoneObj.transform.SetParent(homePlanet.transform);
+            orbitZoneObj.transform.localPosition = Vector3.zero;
+            orbitZoneObj.transform.localScale = Vector3.one;
+            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
+            orbitCollider.isTrigger = true;
+            orbitCollider.radius = 0.8f;
+            PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
+            var orbitZoneSO = new SerializedObject(orbitZoneScript);
+            orbitZoneSO.FindProperty("planet").objectReferenceValue = homePlanetScript;
+            orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Add ToroidalRenderer for seamless map wrapping
             homePlanet.AddComponent<ToroidalRenderer>();
@@ -560,13 +770,12 @@ namespace TitanOrbit.Editor
             Object.DestroyImmediate(ring.GetComponent<Collider>());
             ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanetRing", new Color(1f, 1f, 1f, 0.6f)); // Ring color matches planet
 
-            // Add population text display (like regular planets) - scale with planet size
+            // Population text: just above surface; negative X scale so text reads correctly (not mirrored)
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(homePlanet.transform);
-            float homePlanetRadius = homePlanet.transform.localScale.x;
-            textObj.transform.localPosition = new Vector3(0, homePlanetRadius * 1.5f, 0); // Scale with planet size
-            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Static, facing up
-            textObj.transform.localScale = Vector3.one * (homePlanetRadius * 0.0025f); // Scale text size with planet
+            textObj.transform.localPosition = new Vector3(0f, 0.55f, 0f); // Just above sphere (radius 0.5)
+            textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f); // +X: not mirrored, -Y: right-side up
             
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
@@ -1170,9 +1379,13 @@ namespace TitanOrbit.Editor
 
             var materials = new System.Collections.Generic.Dictionary<string, Material>
             {
-                { "TitanOrbit_Starship", CreateAndSaveMaterial("TitanOrbit_Starship", Color.cyan) },
+                { "TitanOrbit_Starship", CreateAndSaveMaterial("TitanOrbit_Starship", new Color(0.4f, 0.7f, 1f)) },
+                { "TitanOrbit_StarshipBody", CreateAndSaveMaterial("TitanOrbit_StarshipBody", new Color(0.18f, 0.18f, 0.2f)) },
                 { "TitanOrbit_Planet", CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.6f, 0.8f)) },
                 { "TitanOrbit_HomePlanet", CreateAndSaveMaterial("TitanOrbit_HomePlanet", Color.yellow) },
+                { "TitanOrbit_HomePlanet_TeamA", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)) },
+                { "TitanOrbit_HomePlanet_TeamB", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)) },
+                { "TitanOrbit_HomePlanet_TeamC", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)) },
                 { "TitanOrbit_Asteroid", CreateAndSaveMaterial("TitanOrbit_Asteroid", new Color(0.5f, 0.35f, 0.2f)) },
                 { "TitanOrbit_Bullet", CreateAndSaveMaterial("TitanOrbit_Bullet", Color.yellow) },
                 { "TitanOrbit_Gem", CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.2f, 0.9f, 0.5f)) },
@@ -1192,10 +1405,57 @@ namespace TitanOrbit.Editor
                     if (instance != null)
                     {
                         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
+                        bool isStarship = paths[i].Contains("Starship.prefab");
+                        Material bodyMat = materials.TryGetValue("TitanOrbit_StarshipBody", out Material b) ? b : mat;
                         foreach (Renderer r in renderers)
                         {
-                            r.sharedMaterial = r.gameObject.name == "Ring" && materials.TryGetValue("TitanOrbit_Ring", out Material ringMat)
-                                ? ringMat : mat;
+                            if (r.gameObject.name == "Ring" && materials.TryGetValue("TitanOrbit_Ring", out Material ringMat))
+                                r.sharedMaterial = ringMat;
+                            else if (isStarship && r.gameObject.name == "Starship")
+                                r.sharedMaterial = bodyMat; // Hull mesh = dark grey
+                            else if (isStarship)
+                                r.sharedMaterial = mat; // Cockpit, Nose, WingTipL/R, NozzleL/R, Dorsal = accent
+                            else
+                                r.sharedMaterial = mat;
+                        }
+                        // Regular Planet: set script material refs so captured planets change colour
+                        if (paths[i].EndsWith("Planet.prefab") && !paths[i].Contains("HomePlanet"))
+                        {
+                            Planet planetScript = instance.GetComponent<Planet>();
+                            if (planetScript != null)
+                            {
+                                var planetSO = new SerializedObject(planetScript);
+                                Material neutralMat = materials["TitanOrbit_Planet"];
+                                if (materials.TryGetValue("TitanOrbit_HomePlanet_TeamA", out Material ta) &&
+                                    materials.TryGetValue("TitanOrbit_HomePlanet_TeamB", out Material tb) &&
+                                    materials.TryGetValue("TitanOrbit_HomePlanet_TeamC", out Material tc))
+                                {
+                                    planetSO.FindProperty("neutralMaterial").objectReferenceValue = neutralMat;
+                                    planetSO.FindProperty("teamAMaterial").objectReferenceValue = ta;
+                                    planetSO.FindProperty("teamBMaterial").objectReferenceValue = tb;
+                                    planetSO.FindProperty("teamCMaterial").objectReferenceValue = tc;
+                                    planetSO.ApplyModifiedPropertiesWithoutUndo();
+                                }
+                            }
+                        }
+                        if (paths[i].Contains("HomePlanet.prefab"))
+                        {
+                            HomePlanet homeScript = instance.GetComponent<HomePlanet>();
+                            if (homeScript != null)
+                            {
+                                var homeSO = new SerializedObject(homeScript);
+                                Material neutralMat = materials["TitanOrbit_HomePlanet"];
+                                if (materials.TryGetValue("TitanOrbit_HomePlanet_TeamA", out Material ta) &&
+                                    materials.TryGetValue("TitanOrbit_HomePlanet_TeamB", out Material tb) &&
+                                    materials.TryGetValue("TitanOrbit_HomePlanet_TeamC", out Material tc))
+                                {
+                                    homeSO.FindProperty("neutralMaterial").objectReferenceValue = neutralMat;
+                                    homeSO.FindProperty("teamAMaterial").objectReferenceValue = ta;
+                                    homeSO.FindProperty("teamBMaterial").objectReferenceValue = tb;
+                                    homeSO.FindProperty("teamCMaterial").objectReferenceValue = tc;
+                                    homeSO.ApplyModifiedPropertiesWithoutUndo();
+                                }
+                            }
                         }
                         PrefabUtility.SaveAsPrefabAsset(instance, paths[i]);
                         Object.DestroyImmediate(instance);

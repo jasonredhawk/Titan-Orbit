@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44bd3321733ea134096805d1cbe5a7ce, type: 3}
+  m_Name: ShipData_Level6_Fighter
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipData
+  shipLevel: 6
+  focusType: 0
+  shipName: Lv6 Fighter
+  baseMovementSpeed: 11.5
+  baseFireRate: 1.6
+  baseFirePower: 26
+  baseBulletSpeed: 30
+  baseMaxHealth: 220
+  baseHealthRegenRate: 1.2
+  baseRotationSpeed: 190
+  baseGemCapacity: 220
+  basePeopleCapacity: 18
+  baseEnergyCapacity: 95
+  baseEnergyRegenRate: 5.5
+  baseMiningRate: 10
+  miningMultiplier: 1
+  shipSprite: {fileID: 0}
+  shipPrefab: {fileID: 2040300595031985382, guid: 235512c3102d451468860b4f09a8433c, type: 3}
+  shipColor: {r: 1, g: 1, b: 1, a: 1}
