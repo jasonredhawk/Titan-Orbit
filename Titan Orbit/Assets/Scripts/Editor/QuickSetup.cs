@@ -80,16 +80,15 @@ namespace TitanOrbit.Editor
                 }
             }
 
-            // Find NetworkManager and set player prefab
+            // Find NetworkManager and set player prefab (PlayerPrefab is on NetworkConfig, not NetworkManager)
             NetworkManager networkManager = Object.FindObjectOfType<NetworkManager>();
             if (networkManager != null)
             {
                 GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
                 if (starshipPrefab != null)
                 {
-                    SerializedObject so = new SerializedObject(networkManager);
-                    so.FindProperty("playerPrefab").objectReferenceValue = starshipPrefab;
-                    so.ApplyModifiedProperties();
+                    networkManager.NetworkConfig.PlayerPrefab = starshipPrefab;
+                    EditorUtility.SetDirty(networkManager);
                 }
             }
         }
