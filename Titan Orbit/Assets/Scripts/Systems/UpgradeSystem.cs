@@ -49,11 +49,18 @@ namespace TitanOrbit.Systems
             float gemCost = upgradeTree.GetGemCostForLevel(targetLevel);
             float actualCharge = Mathf.Min(gemCost, ship.CurrentGems); // never charge more than they have
 
-            // Level 7 MEGA only: home planet must be level 6 and have full gems. Levels 2–6: no home planet requirement (ship gems = ship upgrade).
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return;
+
+            // Ship level cannot exceed home planet level (enforced in code, not serialized array). Level 7 only when planet 6 + full gems.
+            int planetLevel = homePlanet.HomePlanetLevel;
             if (targetLevel == 7)
             {
-                HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-                if (homePlanet == null || homePlanet.HomePlanetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return;
+                if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return;
+            }
+            else if (targetLevel > planetLevel)
+            {
+                return; // e.g. planet 4 → ship can only go up to 4
             }
 
             var availableUpgrades = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
@@ -80,18 +87,25 @@ namespace TitanOrbit.Systems
             // For now, we'll rely on ShipData
         }
 
-        /// <summary>True when ship is full of gems (e.g. 100/100). Cost is deducted up to what they have; full ship can always upgrade. Level 7 also requires home planet 6 + full gems.</summary>
+        /// <summary>True when ship is full of gems and can upgrade. Ship level cannot exceed home planet level; level 7 requires planet 6 + full gems.</summary>
         public bool CanUpgradeStarshipLevel(Starship ship)
         {
             if (ship == null || upgradeTree == null) return false;
             if (ship.ShipLevel >= 7) return false;
             const float fullEpsilon = 0.01f;
-            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return false; // must be full of gems (e.g. 100/100)
+            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return false; // must be full of gems
             int nextLevel = ship.ShipLevel + 1;
+
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return false;
+            int planetLevel = homePlanet.HomePlanetLevel; // use level directly so cap works regardless of serialized array
             if (nextLevel == 7)
             {
-                HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-                if (homePlanet == null || homePlanet.HomePlanetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
+                if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
+            }
+            else if (nextLevel > planetLevel)
+            {
+                return false; // e.g. planet 4 → ship can only go up to 4
             }
             return upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex).Count > 0;
         }

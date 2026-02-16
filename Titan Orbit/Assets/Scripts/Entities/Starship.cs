@@ -54,6 +54,8 @@ namespace TitanOrbit.Entities
         [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced.")]
         [SerializeField] private Transform visualRoot;
 
+        private MaterialPropertyBlock hullColorBlock;
+
         private NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<float> currentPeople = new NetworkVariable<float>(0f);
@@ -116,12 +118,25 @@ namespace TitanOrbit.Entities
             if (inputHandler == null) inputHandler = GetComponent<PlayerInputHandler>();
             if (energyCapacity <= 0f) energyCapacity = 50f;
             if (energyRegenRate <= 0f) energyRegenRate = 5f;
-            
+
+            ApplyHullIdentityColor();
+
             // Lock Y position - prevent elevation changes
             if (rb != null)
             {
                 rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
             }
+        }
+
+        private void ApplyHullIdentityColor()
+        {
+            if (shipData == null || shipData.shipColor == Color.white) return;
+            var mr = GetComponent<Renderer>();
+            if (mr == null) return;
+            if (hullColorBlock == null) hullColorBlock = new MaterialPropertyBlock();
+            mr.GetPropertyBlock(hullColorBlock);
+            hullColorBlock.SetColor("_BaseColor", shipData.shipColor);
+            mr.SetPropertyBlock(hullColorBlock);
         }
 
         public override void OnNetworkSpawn()
@@ -364,10 +379,9 @@ namespace TitanOrbit.Entities
         {
             if (IsServer && currentHealth.Value < MaxHealth)
             {
-                currentHealth.Value = Mathf.Min(
-                    currentHealth.Value + EffectiveHealthRegen * Time.deltaTime,
-                    MaxHealth
-                );
+                float regen = EffectiveHealthRegen * Time.deltaTime;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
+                currentHealth.Value = Mathf.Min(currentHealth.Value + regen, MaxHealth);
             }
         }
 
@@ -375,10 +389,9 @@ namespace TitanOrbit.Entities
         {
             if (IsServer && currentEnergy.Value < EffectiveEnergyCapacity)
             {
-                currentEnergy.Value = Mathf.Min(
-                    currentEnergy.Value + EffectiveEnergyRegen * Time.deltaTime,
-                    EffectiveEnergyCapacity
-                );
+                float regen = EffectiveEnergyRegen * Time.deltaTime;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
+                currentEnergy.Value = Mathf.Min(currentEnergy.Value + regen, EffectiveEnergyCapacity);
             }
         }
 
@@ -457,6 +470,7 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == null) return;
 
             float rate = shipLevel * Time.fixedDeltaTime; // e.g. level 1 = 1 per second
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
 
             if (wantToLoadPeople.Value)
@@ -499,6 +513,7 @@ namespace TitanOrbit.Entities
 
             // shipLevel gems per 0.5 sec = shipLevel * 2 per second
             float rate = shipLevel * 2f * Time.fixedDeltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
             if (amount > 0f)
@@ -655,29 +670,76 @@ namespace TitanOrbit.Entities
 
                 if (data.shipPrefab != null)
                     ApplyShipVisual(data.shipPrefab);
+                ApplyHullIdentityColor();
             }
         }
 
-        /// <summary>Replaces this ship's visual mesh with the prefab's visual (keeps NetworkObject and behaviour).</summary>
+        /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting).</summary>
         private void ApplyShipVisual(GameObject shipPrefab)
         {
+            if (shipPrefab == null) return;
             Transform root = visualRoot != null ? visualRoot : transform;
-            for (int i = root.childCount - 1; i >= 0; i--)
-                Object.Destroy(root.GetChild(i).gameObject);
 
             GameObject instance = Instantiate(shipPrefab);
             Transform prefabRoot = instance.transform;
+
+            // Copy hull from prefab root to our root (prefab has MeshFilter + MeshRenderer on root)
+            MeshFilter prefabMf = prefabRoot.GetComponent<MeshFilter>();
+            MeshRenderer prefabMr = prefabRoot.GetComponent<MeshRenderer>();
+            if (prefabMf != null && prefabMr != null)
+            {
+                MeshFilter ourMf = root.GetComponent<MeshFilter>();
+                if (ourMf == null) ourMf = root.gameObject.AddComponent<MeshFilter>();
+                if (ourMf != null && prefabMf.sharedMesh != null)
+                    ourMf.sharedMesh = prefabMf.sharedMesh;
+
+                MeshRenderer ourMr = root.GetComponent<MeshRenderer>();
+                if (ourMr == null) ourMr = root.gameObject.AddComponent<MeshRenderer>();
+                if (ourMr != null)
+                {
+                    ourMr.sharedMaterials = prefabMr.sharedMaterials;
+                    ourMr.enabled = prefabMr.enabled;
+                }
+            }
+
+            // Remove our current visual children, then adopt prefab root's children
+            for (int i = root.childCount - 1; i >= 0; i--)
+                Object.Destroy(root.GetChild(i).gameObject);
+
+            Transform newFirePoint = null;
             while (prefabRoot.childCount > 0)
             {
                 Transform child = prefabRoot.GetChild(0);
+                if (child.name == "FirePoint")
+                    newFirePoint = child;
+                Vector3 localPos = child.localPosition;
+                Quaternion localRot = child.localRotation;
+                Vector3 localScl = child.localScale;
                 child.SetParent(root, false);
-                child.localPosition = Vector3.zero;
-                child.localRotation = Quaternion.identity;
-                child.localScale = Vector3.one;
+                child.localPosition = localPos;
+                child.localRotation = localRot;
+                child.localScale = localScl;
             }
             Destroy(instance);
-            var newFirePoint = root.Find("FirePoint");
-            if (newFirePoint != null) firePoint = newFirePoint;
+
+            // Rebind FirePoint from the prefab child we just moved (don't use Find - old children may still be present until Destroy runs)
+            if (newFirePoint != null)
+                firePoint = newFirePoint;
+            else
+            {
+                newFirePoint = root.Find("FirePoint");
+                if (newFirePoint != null) firePoint = newFirePoint;
+                else
+                {
+                    // Fallback: ensure we always have a valid fire point so shooting works
+                    GameObject fp = new GameObject("FirePoint");
+                    fp.transform.SetParent(root, false);
+                    fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+                    fp.transform.localRotation = Quaternion.identity;
+                    fp.transform.localScale = Vector3.one;
+                    firePoint = fp.transform;
+                }
+            }
         }
 
         /// <summary>Returns the current upgrade level for the given attribute (0 to ShipLevel).</summary>

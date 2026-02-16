@@ -56,8 +56,10 @@ namespace TitanOrbit.Systems
                 planet.TeamOwnership != ship.ShipTeam) return;
 
             // Calculate how much can be loaded
+            float effectiveAmount = amount * Time.deltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode) effectiveAmount *= 100f;
             float peopleToLoad = Mathf.Min(
-                amount * Time.deltaTime,
+                effectiveAmount,
                 planet.CurrentPopulation,
                 ship.PeopleCapacity - ship.CurrentPeople
             );
@@ -84,8 +86,10 @@ namespace TitanOrbit.Systems
             if (!IsInOrbit(ship, planet)) return;
 
             // Calculate how much can be dropped off
+            float effectiveAmount = amount * Time.deltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode) effectiveAmount *= 100f;
             float peopleToDrop = Mathf.Min(
-                amount * Time.deltaTime,
+                effectiveAmount,
                 ship.CurrentPeople
             );
 

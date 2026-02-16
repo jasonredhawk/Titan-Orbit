@@ -266,7 +266,7 @@ namespace TitanOrbit.UI
             if (planetInfoText != null)
             {
                 if (currentPlanet is HomePlanet hp)
-                    planetInfoText.text = $"Level {hp.HomePlanetLevel} | Gems: {hp.CurrentGems:F0} | Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
+                    planetInfoText.text = $"Level {hp.HomePlanetLevel} | Gems: {hp.CurrentGems:F0}/{hp.MaxGems:F0} | Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
                 else
                     planetInfoText.text = $"Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
             }

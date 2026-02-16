@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 using TitanOrbit.Entities;
 
 namespace TitanOrbit.Systems
@@ -57,6 +58,7 @@ namespace TitanOrbit.Systems
                 asteroid.RemainingGems,
                 ship.GemCapacity - ship.CurrentGems
             );
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode) gemsMined *= 100f;
 
             asteroid.MineGemsServerRpc(gemsMined, shipNetworkId);
             ship.AddGemsServerRpc(gemsMined);

@@ -31,8 +31,7 @@ namespace TitanOrbit.Entities
         private void Update()
         {
             Color c = GetTeamColor(starship.ShipTeam);
-            bool useAccentsOnly = accentRenderers != null && accentRenderers.Length > 0;
-            var targetRenderers = useAccentsOnly ? accentRenderers : allRenderers;
+            var targetRenderers = GetAccentRenderers();
 
             foreach (var r in targetRenderers)
             {
@@ -41,6 +40,24 @@ namespace TitanOrbit.Entities
                 propBlock.SetColor("_BaseColor", c);
                 r.SetPropertyBlock(propBlock);
             }
+        }
+
+        private Renderer[] GetAccentRenderers()
+        {
+            if (accentRenderers != null)
+            {
+                var valid = System.Array.FindAll(accentRenderers, r => r != null);
+                if (valid.Length > 0) return valid;
+            }
+            var list = new System.Collections.Generic.List<Renderer>();
+            foreach (var r in allRenderers)
+            {
+                if (r == null) continue;
+                string n = r.gameObject.name;
+                if (n == "Cockpit" || n.StartsWith("Engine") || n.StartsWith("Wing"))
+                    list.Add(r);
+            }
+            return list.Count > 0 ? list.ToArray() : allRenderers;
         }
 
         private Color GetTeamColor(TeamManager.Team team)

@@ -2,26 +2,31 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Main HUD controller displaying health, gems, population, ship level, etc.
+    /// Main HUD: ship stats (top-left), home planet stats (top-right). Gaming-style layout.
     /// </summary>
     public class HUDController : MonoBehaviour
     {
-        [Header("Health")]
+        [Header("Ship Stats (Top-Left)")]
         [SerializeField] private Slider healthBar;
         [SerializeField] private TextMeshProUGUI healthText;
-
-        [Header("Resources")]
+        [SerializeField] private Slider gemBar;
         [SerializeField] private TextMeshProUGUI gemCounter;
+        [SerializeField] private Slider peopleBar;
         [SerializeField] private TextMeshProUGUI populationCounter;
-
-        [Header("Ship Info")]
         [SerializeField] private TextMeshProUGUI shipLevelText;
         [SerializeField] private TextMeshProUGUI shipTypeText;
         [SerializeField] private Image teamIndicator;
+
+        [Header("Home Planet Stats (Top-Right)")]
+        [SerializeField] private GameObject homePlanetPanel;
+        [SerializeField] private TextMeshProUGUI homePlanetLevelText;
+        [SerializeField] private Slider homePlanetGemBar;
+        [SerializeField] private TextMeshProUGUI homePlanetGemsText;
 
         [Header("Team Colors")]
         [SerializeField] private Color teamAColor = Color.red;
@@ -54,8 +59,14 @@ namespace TitanOrbit.UI
             if (healthText != null)
                 healthText.text = $"{playerShip.CurrentHealth:F0}/{playerShip.MaxHealth:F0}";
 
+            if (gemBar != null)
+                gemBar.value = playerShip.GemCapacity > 0 ? playerShip.CurrentGems / playerShip.GemCapacity : 0f;
+
             if (gemCounter != null)
                 gemCounter.text = $"Gems: {playerShip.CurrentGems:F0}/{playerShip.GemCapacity:F0}";
+
+            if (peopleBar != null)
+                peopleBar.value = playerShip.PeopleCapacity > 0 ? playerShip.CurrentPeople / playerShip.PeopleCapacity : 0f;
 
             if (populationCounter != null)
                 populationCounter.text = $"People: {playerShip.CurrentPeople:F0}/{playerShip.PeopleCapacity:F0}";
@@ -69,6 +80,9 @@ namespace TitanOrbit.UI
             if (teamIndicator != null)
                 teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
 
+            // Home planet stats (top-right): show player's team base
+            UpdateHomePlanetPanel();
+
             // Fallback: single combined text when individual elements not assigned
             if (healthText == null && gemCounter == null && populationCounter == null)
             {
@@ -80,6 +94,37 @@ namespace TitanOrbit.UI
                         $"People: {playerShip.CurrentPeople:F0}/{playerShip.PeopleCapacity:F0}";
                 }
             }
+        }
+
+        private void UpdateHomePlanetPanel()
+        {
+            HomePlanet homePlanet = GetHomePlanetForTeam(playerShip.ShipTeam);
+            if (homePlanetPanel != null)
+                homePlanetPanel.SetActive(homePlanet != null);
+            if (homePlanet == null)
+            {
+                if (homePlanetLevelText != null) homePlanetLevelText.text = "—";
+                if (homePlanetGemsText != null) homePlanetGemsText.text = "—";
+                return;
+            }
+            if (homePlanetLevelText != null)
+                homePlanetLevelText.text = $"Level {homePlanet.HomePlanetLevel}";
+            
+            if (homePlanetGemBar != null)
+                homePlanetGemBar.value = homePlanet.MaxGems > 0 ? homePlanet.CurrentGems / homePlanet.MaxGems : 0f;
+            
+            if (homePlanetGemsText != null)
+                homePlanetGemsText.text = $"{homePlanet.CurrentGems:F0} / {homePlanet.MaxGems:F0}";
+        }
+
+        private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None) return null;
+            foreach (var hp in FindObjectsOfType<HomePlanet>())
+            {
+                if (hp.AssignedTeam == team) return hp;
+            }
+            return null;
         }
 
         private Color GetTeamColor(Core.TeamManager.Team team)

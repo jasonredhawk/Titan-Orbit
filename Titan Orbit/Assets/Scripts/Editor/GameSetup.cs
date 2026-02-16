@@ -73,6 +73,7 @@ namespace TitanOrbit.Editor
         {
             GameObject obj = new GameObject("Systems");
             obj.AddComponent<NetworkObject>(); // Required for NetworkBehaviour components
+            obj.AddComponent<NetworkObject>(); // Required for NetworkBehaviour components
             
             CombatSystem combatSystem = obj.AddComponent<CombatSystem>();
             GemSpawner gemSpawner = obj.AddComponent<GemSpawner>();
@@ -83,6 +84,7 @@ namespace TitanOrbit.Editor
             UpgradeSystem upgradeSystem = obj.AddComponent<UpgradeSystem>();
             AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
+            TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
 
             // Assign UpgradeTree so ship level-up menu and buttons work (full gems + home planet level)
             TitanOrbit.Data.UpgradeTree upgradeTree = AssetDatabase.LoadAssetAtPath<TitanOrbit.Data.UpgradeTree>("Assets/Data/UpgradeTree.asset");
@@ -229,24 +231,135 @@ namespace TitanOrbit.Editor
             mainMenuSO.FindProperty("teamStatusText").objectReferenceValue = teamStatusText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // HUD (top-right corner)
-            GameObject hudObj = CreatePanel(canvasObj.transform, "HUD", new Color(0, 0, 0, 0.3f), uiSprite);
-            RectTransform hudRect = hudObj.GetComponent<RectTransform>();
-            hudRect.anchorMin = new Vector2(1, 1);
-            hudRect.anchorMax = new Vector2(1, 1);
-            hudRect.pivot = new Vector2(1, 1);
-            hudRect.anchoredPosition = new Vector2(-20, -20);
-            hudRect.sizeDelta = new Vector2(250, 120);
+            // HUD: ship stats (top-left), home planet stats (top-right). Gaming-style layout.
+            GameObject hudObj = new GameObject("HUD");
+            hudObj.transform.SetParent(canvasObj.transform, false);
+            RectTransform hudRect = hudObj.AddComponent<RectTransform>();
+            hudRect.anchorMin = Vector2.zero;
+            hudRect.anchorMax = Vector2.one;
+            hudRect.offsetMin = Vector2.zero;
+            hudRect.offsetMax = Vector2.zero;
             HUDController hudController = hudObj.AddComponent<HUDController>();
 
-            GameObject hudText = CreateText(hudObj.transform, "HUDText", "Health: --\nGems: --\nPeople: --", 20, TextAnchor.UpperLeft);
-            RectTransform hudTextRect = hudText.GetComponent<RectTransform>();
-            hudTextRect.anchorMin = new Vector2(0, 1);
-            hudTextRect.anchorMax = new Vector2(1, 1);
-            hudTextRect.pivot = new Vector2(0.5f, 1);
-            hudTextRect.anchoredPosition = new Vector2(0, -10);
-            hudTextRect.offsetMin = new Vector2(15, 30);
-            hudTextRect.offsetMax = new Vector2(-15, -10);
+            // —— Ship stats panel (top-left) ——
+            Color shipPanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
+            GameObject shipPanel = CreatePanel(canvasObj.transform, "ShipStatsPanel", shipPanelColor, uiSprite);
+            RectTransform shipRect = shipPanel.GetComponent<RectTransform>();
+            shipRect.anchorMin = new Vector2(0, 1);
+            shipRect.anchorMax = new Vector2(0, 1);
+            shipRect.pivot = new Vector2(0, 1);
+            shipRect.anchoredPosition = new Vector2(16, -16);
+            shipRect.sizeDelta = new Vector2(280, 132);
+            AddPanelBorder(shipPanel, new Color(0.22f, 0.28f, 0.4f, 0.7f), uiSprite);
+
+            GameObject shipTitle = CreateText(shipPanel.transform, "Title", "STARSHIP", 14, TextAnchor.UpperLeft);
+            shipTitle.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.78f, 0.95f);
+            SetRectStretchTop(shipTitle, 12, 10, 12, 20);
+
+            GameObject healthBarObj = CreateHealthSlider(shipPanel.transform, uiSprite);
+            RectTransform healthBarRect = healthBarObj.GetComponent<RectTransform>();
+            healthBarRect.anchorMin = new Vector2(0, 1);
+            healthBarRect.anchorMax = new Vector2(1, 1);
+            healthBarRect.pivot = new Vector2(0.5f, 1);
+            healthBarRect.anchoredPosition = new Vector2(0, -34);
+            healthBarRect.offsetMin = new Vector2(12, 0);
+            healthBarRect.offsetMax = new Vector2(-12, -8);
+
+            GameObject healthTextObj = CreateText(shipPanel.transform, "HealthText", "100/100", 18, TextAnchor.UpperLeft);
+            SetRectStretchTop(healthTextObj, 12, 50, 120, 22);
+            
+            // Gem progress bar
+            GameObject gemBarObj = CreateProgressBar(shipPanel.transform, "GemBar", uiSprite, new Color(0.2f, 0.9f, 0.5f, 1f));
+            RectTransform gemBarRect = gemBarObj.GetComponent<RectTransform>();
+            gemBarRect.anchorMin = new Vector2(0, 1);
+            gemBarRect.anchorMax = new Vector2(1, 1);
+            gemBarRect.pivot = new Vector2(0.5f, 1);
+            gemBarRect.anchoredPosition = new Vector2(0, -74);
+            gemBarRect.offsetMin = new Vector2(12, 0);
+            gemBarRect.offsetMax = new Vector2(-12, -20);
+            GameObject gemTextObj = CreateText(shipPanel.transform, "GemText", "Gems: 0/100", 16, TextAnchor.UpperLeft);
+            SetRectStretchTop(gemTextObj, 12, 74, 12, 20);
+            
+            // People progress bar
+            GameObject peopleBarObj = CreateProgressBar(shipPanel.transform, "PeopleBar", uiSprite, new Color(0.4f, 0.6f, 0.9f, 1f));
+            RectTransform peopleBarRect = peopleBarObj.GetComponent<RectTransform>();
+            peopleBarRect.anchorMin = new Vector2(0, 1);
+            peopleBarRect.anchorMax = new Vector2(1, 1);
+            peopleBarRect.pivot = new Vector2(0.5f, 1);
+            peopleBarRect.anchoredPosition = new Vector2(0, -96);
+            peopleBarRect.offsetMin = new Vector2(12, 0);
+            peopleBarRect.offsetMax = new Vector2(-12, -20);
+            GameObject peopleTextObj = CreateText(shipPanel.transform, "PeopleText", "People: 0/10", 16, TextAnchor.UpperLeft);
+            SetRectStretchTop(peopleTextObj, 12, 96, 12, 20);
+            
+            GameObject shipLevelObj = CreateText(shipPanel.transform, "ShipLevel", "Lv 1", 14, TextAnchor.UpperLeft);
+            shipLevelObj.GetComponent<TextMeshProUGUI>().color = new Color(0.85f, 0.9f, 0.6f);
+            SetRectStretchTop(shipLevelObj, 140, 50, 12, 22);
+
+            Slider healthSlider = healthBarObj.GetComponent<Slider>();
+            Slider gemSlider = gemBarObj.GetComponent<Slider>();
+            Slider peopleSlider = peopleBarObj.GetComponent<Slider>();
+            TextMeshProUGUI shipHealthTmp = healthTextObj.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI gemTmp = gemTextObj.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI peopleTmp = peopleTextObj.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI shipLevelTmp = shipLevelObj.GetComponent<TextMeshProUGUI>();
+
+            // —— Home planet stats panel (top-right) ——
+            Color homePanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
+            GameObject homePanel = CreatePanel(canvasObj.transform, "HomePlanetStatsPanel", homePanelColor, uiSprite);
+            RectTransform homeRect = homePanel.GetComponent<RectTransform>();
+            homeRect.anchorMin = new Vector2(1, 1);
+            homeRect.anchorMax = new Vector2(1, 1);
+            homeRect.pivot = new Vector2(1, 1);
+            homeRect.anchoredPosition = new Vector2(-16, -16);
+            homeRect.sizeDelta = new Vector2(260, 100);
+            AddPanelBorder(homePanel, new Color(0.22f, 0.28f, 0.4f, 0.7f), uiSprite);
+
+            GameObject homeTitle = CreateText(homePanel.transform, "Title", "HOME BASE", 14, TextAnchor.UpperRight);
+            homeTitle.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.78f, 0.95f);
+            homeTitle.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
+            SetRectStretchTop(homeTitle, 12, 10, 12, 20);
+            GameObject homeLevelObj = CreateText(homePanel.transform, "LevelText", "Level 3", 20, TextAnchor.UpperRight);
+            homeLevelObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
+            SetRectStretchTop(homeLevelObj, 12, 36, 12, 26);
+            
+            // Home planet gem progress bar
+            GameObject homeGemBarObj = CreateProgressBar(homePanel.transform, "HomeGemBar", uiSprite, new Color(0.95f, 0.85f, 0.5f, 1f));
+            RectTransform homeGemBarRect = homeGemBarObj.GetComponent<RectTransform>();
+            homeGemBarRect.anchorMin = new Vector2(0, 1);
+            homeGemBarRect.anchorMax = new Vector2(1, 1);
+            homeGemBarRect.pivot = new Vector2(0.5f, 1);
+            homeGemBarRect.anchoredPosition = new Vector2(0, -64);
+            homeGemBarRect.offsetMin = new Vector2(12, 0);
+            homeGemBarRect.offsetMax = new Vector2(-12, -24);
+            GameObject homeGemsObj = CreateText(homePanel.transform, "GemsText", "0 / 800", 18, TextAnchor.UpperRight);
+            homeGemsObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
+            homeGemsObj.GetComponent<TextMeshProUGUI>().color = new Color(0.95f, 0.85f, 0.5f);
+            SetRectStretchTop(homeGemsObj, 12, 64, 12, 24);
+
+            TextMeshProUGUI homeLevelTmp = homeLevelObj.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI homeGemsTmp = homeGemsObj.GetComponent<TextMeshProUGUI>();
+            Slider homeGemSlider = homeGemBarObj.GetComponent<Slider>();
+
+            // Proximity radar (planets/home planets around starship - size = proximity)
+            GameObject proximityRadarObj = new GameObject("ProximityRadar");
+            proximityRadarObj.transform.SetParent(hudObj.transform, false);
+            proximityRadarObj.AddComponent<TitanOrbit.UI.ProximityRadarHUD>();
+
+            // Wire HUDController
+            var hudSO = new SerializedObject(hudController);
+            hudSO.FindProperty("healthBar").objectReferenceValue = healthSlider;
+            hudSO.FindProperty("healthText").objectReferenceValue = shipHealthTmp;
+            hudSO.FindProperty("gemBar").objectReferenceValue = gemSlider;
+            hudSO.FindProperty("gemCounter").objectReferenceValue = gemTmp;
+            hudSO.FindProperty("peopleBar").objectReferenceValue = peopleSlider;
+            hudSO.FindProperty("populationCounter").objectReferenceValue = peopleTmp;
+            hudSO.FindProperty("shipLevelText").objectReferenceValue = shipLevelTmp;
+            hudSO.FindProperty("homePlanetPanel").objectReferenceValue = homePanel;
+            hudSO.FindProperty("homePlanetLevelText").objectReferenceValue = homeLevelTmp;
+            hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemSlider;
+            hudSO.FindProperty("homePlanetGemsText").objectReferenceValue = homeGemsTmp;
+            hudSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Minimap (bottom right corner, 20% of screen width, square)
             GameObject minimapObj = CreatePanel(canvasObj.transform, "Minimap", new Color(0, 0, 0, 0.4f), uiSprite);
@@ -427,6 +540,82 @@ namespace TitanOrbit.Editor
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = new Vector2(posX, posY);
             rect.sizeDelta = new Vector2(width, height);
+        }
+
+        /// <summary>Stretch horizontally under top. left/right/top = insets in px, height = row height.</summary>
+        private static void SetRectStretchTop(GameObject obj, float left, float top, float right, float height)
+        {
+            RectTransform rect = obj.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0, 1);
+            rect.anchorMax = new Vector2(1, 1);
+            rect.pivot = new Vector2(0.5f, 1);
+            rect.offsetMin = new Vector2(left, -top - height);
+            rect.offsetMax = new Vector2(-right, -top);
+        }
+
+        private static void AddPanelBorder(GameObject panel, Color borderColor, Sprite uiSprite)
+        {
+            GameObject border = new GameObject("Border");
+            border.transform.SetParent(panel.transform, false);
+            Image borderImg = border.AddComponent<Image>();
+            borderImg.color = borderColor;
+            borderImg.sprite = uiSprite;
+            RectTransform borderRect = border.GetComponent<RectTransform>();
+            borderRect.anchorMin = Vector2.zero;
+            borderRect.anchorMax = Vector2.one;
+            borderRect.offsetMin = new Vector2(-2, -2);
+            borderRect.offsetMax = new Vector2(2, 2);
+            border.transform.SetAsFirstSibling();
+        }
+
+        private static GameObject CreateHealthSlider(Transform parent, Sprite uiSprite)
+        {
+            return CreateProgressBar(parent, "HealthBar", uiSprite, new Color(0.35f, 0.85f, 0.4f, 1f));
+        }
+
+        private static GameObject CreateProgressBar(Transform parent, string name, Sprite uiSprite, Color fillColor)
+        {
+            GameObject sliderObj = new GameObject(name);
+            sliderObj.transform.SetParent(parent, false);
+            Slider slider = sliderObj.AddComponent<Slider>();
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = 1f;
+            slider.wholeNumbers = false;
+
+            GameObject bg = new GameObject("Background");
+            bg.transform.SetParent(sliderObj.transform, false);
+            Image bgImg = bg.AddComponent<Image>();
+            bgImg.color = new Color(0.15f, 0.15f, 0.2f, 0.95f);
+            bgImg.sprite = uiSprite;
+            RectTransform bgRect = bg.GetComponent<RectTransform>();
+            bgRect.anchorMin = Vector2.zero;
+            bgRect.anchorMax = Vector2.one;
+            bgRect.offsetMin = Vector2.zero;
+            bgRect.offsetMax = Vector2.zero;
+
+            GameObject fillArea = new GameObject("Fill Area");
+            fillArea.transform.SetParent(sliderObj.transform, false);
+            RectTransform fillAreaRect = fillArea.AddComponent<RectTransform>();
+            fillAreaRect.anchorMin = new Vector2(0, 0.1f);
+            fillAreaRect.anchorMax = new Vector2(1, 0.9f);
+            fillAreaRect.offsetMin = new Vector2(4, 2);
+            fillAreaRect.offsetMax = new Vector2(-4, -2);
+
+            GameObject fill = new GameObject("Fill");
+            fill.transform.SetParent(fillArea.transform, false);
+            Image fillImg = fill.AddComponent<Image>();
+            fillImg.color = fillColor;
+            fillImg.sprite = uiSprite;
+            RectTransform fillRect = fill.GetComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = new Vector2(1, 1);
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+
+            slider.fillRect = fillRect;
+            slider.direction = Slider.Direction.LeftToRight;
+            return sliderObj;
         }
 
         private static GameObject CreateAudioManager()

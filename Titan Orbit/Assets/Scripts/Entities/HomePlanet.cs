@@ -11,16 +11,18 @@ namespace TitanOrbit.Entities
     public class HomePlanet : Planet
     {
         [Header("Home Planet Settings")]
-        [Tooltip("Gems required to reach each level. Index 3 = gems to reach level 4, etc. Game starts at level 3. Max planet level 6.")]
-        [SerializeField] private float[] gemThresholdsPerLevel = { 0f, 1000f, 2500f, 5000f, 10000f, 20000f, 40000f }; // Level 1-6
-        [Tooltip("Max starship level allowed at each home planet level. Level 7 (MEGA) requires planet level 6 + full gems.")]
-        [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 3, 4, 5, 6, 6, 6 }; // Planet levels 1-6 (ship 7 is special)
+        [Tooltip("Max gems capacity per level. Level 3=800, 4=1600, 5=3200, 6=6400. Filling capacity levels up the planet.")]
+        private static readonly float[] MaxGemsPerLevel = { 0f, 0f, 0f, 800f, 1600f, 3200f, 6400f }; // Index = level (1-6)
+        [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
+        [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<int> homePlanetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<TeamManager.Team> assignedTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
 
         public float CurrentGems => currentGems.Value;
+        /// <summary>Max gems this home planet can hold at its current level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
+        public float MaxGems => GetMaxGemsForLevel(homePlanetLevel.Value);
         public int HomePlanetLevel => homePlanetLevel.Value;
         public TeamManager.Team AssignedTeam => assignedTeam.Value;
         public int MaxShipLevel => GetMaxShipLevelForPlanetLevel(homePlanetLevel.Value);
@@ -108,10 +110,19 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            currentGems.Value += amount;
+            float maxGems = GetMaxGemsForLevel(homePlanetLevel.Value);
+            currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
 
-            // Check if level up is possible
+            // Level up when gems reach current level's capacity (max home planet level 6)
             CheckLevelUp();
+        }
+
+        /// <summary>Max gems capacity for a given level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
+        public static float GetMaxGemsForLevel(int level)
+        {
+            if (level >= 1 && level < MaxGemsPerLevel.Length)
+                return MaxGemsPerLevel[level];
+            return level >= 6 ? 6400f : 0f;
         }
 
         private void CheckLevelUp()
@@ -119,17 +130,11 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
 
             int currentLevel = homePlanetLevel.Value;
-            
-            // Level up when gems reach threshold for next level (max home planet level 6)
-            if (currentLevel < 6 && currentLevel < gemThresholdsPerLevel.Length)
-            {
-                float thresholdForNextLevel = gemThresholdsPerLevel[currentLevel];
-                
-                if (currentGems.Value >= thresholdForNextLevel)
-                {
-                    LevelUpServerRpc();
-                }
-            }
+            if (currentLevel >= 6) return;
+
+            float maxForLevel = GetMaxGemsForLevel(currentLevel);
+            if (maxForLevel > 0f && currentGems.Value >= maxForLevel)
+                LevelUpServerRpc();
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -162,33 +167,26 @@ namespace TitanOrbit.Entities
             return 6; // Default (e.g. planet level 3+)
         }
 
-        /// <summary>Gems required to reach this level (level 6 = gemThresholdsPerLevel[5]).</summary>
+        /// <summary>Gems required to reach this level (same as max capacity for that level).</summary>
         public float GetGemsThresholdForLevel(int level)
         {
-            int idx = level - 1;
-            if (idx >= 0 && idx < gemThresholdsPerLevel.Length)
-                return gemThresholdsPerLevel[idx];
-            return 0f;
+            return GetMaxGemsForLevel(level);
         }
 
-        /// <summary>True when home planet is level 6 and has at least the gem threshold for level 6 (unlocks ship level 7 MEGA).</summary>
+        /// <summary>True when home planet is level 6 and has at least the gem capacity for level 6 (unlocks ship level 7 MEGA).</summary>
         public bool IsFullGemsForLevel7Unlock()
         {
             if (homePlanetLevel.Value < 6) return false;
-            float thresholdForLevel6 = GetGemsThresholdForLevel(6);
-            return currentGems.Value >= thresholdForLevel6;
+            return currentGems.Value >= GetMaxGemsForLevel(6);
         }
 
+        /// <summary>Gems still needed to fill current level capacity (and trigger level-up if not max level).</summary>
         public float GetGemsNeededForNextLevel()
         {
             int currentLevel = homePlanetLevel.Value;
-            if (currentLevel >= 6) return 0f; // Max level
-
-            if (currentLevel < gemThresholdsPerLevel.Length)
-            {
-                return gemThresholdsPerLevel[currentLevel] - currentGems.Value;
-            }
-            return 0f;
+            if (currentLevel >= 6) return 0f;
+            float maxForLevel = GetMaxGemsForLevel(currentLevel);
+            return Mathf.Max(0f, maxForLevel - currentGems.Value);
         }
 
         public override bool CanBeCapturedBy(TeamManager.Team team)

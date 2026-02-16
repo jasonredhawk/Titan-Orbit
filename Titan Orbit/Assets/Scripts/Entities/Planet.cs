@@ -68,14 +68,20 @@ namespace TitanOrbit.Entities
             {
                 // Max population: regular planets 50-150 by size; home planets override to 100
                 float potentialMax = GetMaxPopulationForPlanet();
-                currentPopulation.Value = potentialMax * 0.25f; // Start with 25% population
                 growthRate.Value = GetGrowthRatePerSecond();
                 teamOwnership.Value = TeamManager.Team.None; // Neutral by default
                 // For neutral (regular) planets only: starting population is also the max (display as e.g. 18 of 18). Home planets keep full cap.
                 if (!(this is HomePlanet))
-                    maxPopulation.Value = currentPopulation.Value;
+                {
+                    float startingPopulation = potentialMax * 0.25f; // Start with 25% population
+                    currentPopulation.Value = startingPopulation;
+                    maxPopulation.Value = startingPopulation; // Max equals starting value for neutral planets
+                }
                 else
+                {
+                    currentPopulation.Value = potentialMax * 0.25f; // Start with 25% population
                     maxPopulation.Value = potentialMax;
+                }
             }
 
             if (populationText != null)
@@ -120,8 +126,10 @@ namespace TitanOrbit.Entities
                 // Grow population over time if not at max
                 if (currentPopulation.Value < maxPopulation.Value && teamOwnership.Value != TeamManager.Team.None)
                 {
+                    float growth = growthRate.Value * Time.deltaTime;
+                    if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
                     currentPopulation.Value = Mathf.Min(
-                        currentPopulation.Value + growthRate.Value * Time.deltaTime,
+                        currentPopulation.Value + growth,
                         maxPopulation.Value
                     );
                 }
