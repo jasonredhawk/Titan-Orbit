@@ -143,6 +143,7 @@ namespace TitanOrbit.Entities
             if (homePlanetLevel.Value >= 6) return; // Max level
 
             homePlanetLevel.Value++;
+            currentGems.Value = 0f; // Reset gem count to 0 when leveling up
             LevelUpClientRpc(homePlanetLevel.Value);
         }
 

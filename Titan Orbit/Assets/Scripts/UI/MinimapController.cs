@@ -1208,12 +1208,41 @@ namespace TitanOrbit.UI
             // Add new entities
             EnsureBlip(playerTransform, () => CreateBlip(Color.white, 8f, BlipType.Capsule), true);
 
+            // Show all players (both team and opposing team starships) on the minimap
+            // They only show when within the visible area - no edge markers for ships
             foreach (var ship in FindObjectsOfType<Starship>())
             {
                 if (ship == playerShip || ship.IsDead) continue;
-                bool friendly = ship.ShipTeam == playerShip.ShipTeam && ship.ShipTeam != TeamManager.Team.None;
-                Color c = friendly ? GetTeamColor(playerShip.ShipTeam) : GetEnemyColor(ship.ShipTeam);
-                EnsureBlip(ship.transform, () => CreateBlip(c, 5f, BlipType.Capsule));
+                
+                // Calculate distance to check if ship is within visible area
+                Vector3 worldPos = ship.transform.position;
+                float dx = worldPos.x - playerPos.x;
+                float dz = worldPos.z - playerPos.z;
+                
+                // Toroidal distance (clamp to nearest wrap)
+                float mapW = 300f, mapH = 300f;
+                if (dx > mapW / 2) dx -= mapW;
+                if (dx < -mapW / 2) dx += mapW;
+                if (dz > mapH / 2) dz -= mapH;
+                if (dz < -mapH / 2) dz += mapH;
+                
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                
+                // Only show ships within the minimap radius (no edge markers for ships)
+                if (dist <= minimapRadius)
+                {
+                    bool friendly = ship.ShipTeam == playerShip.ShipTeam && ship.ShipTeam != TeamManager.Team.None;
+                    Color c = friendly ? GetTeamColor(playerShip.ShipTeam) : GetEnemyColor(ship.ShipTeam);
+                    EnsureBlip(ship.transform, () => CreateBlip(c, 5f, BlipType.Capsule));
+                }
+                else
+                {
+                    // Hide ship blip if outside visible area (no edge marker)
+                    if (blips.ContainsKey(ship.transform))
+                    {
+                        blips[ship.transform].gameObject.SetActive(false);
+                    }
+                }
             }
 
             // Calculate consistent scale factor: world units to minimap pixels
