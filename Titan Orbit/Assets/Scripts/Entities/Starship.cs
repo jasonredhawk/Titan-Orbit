@@ -26,8 +26,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float acceleration = 20f;
         [SerializeField] private float deceleration = 8f;
         [Header("Orbit")]
-        [SerializeField] private float orbitSpeed = 0.8f; // Linear speed while auto-orbiting a home planet
-        [SerializeField] private float orbitRadiusPullStrength = 2f; // How strongly to pull toward ideal orbit radius
+        [SerializeField] private float orbitSpeed = 0.8f; // Linear speed while orbiting (farther ships move slower angular)
+        [SerializeField] private float orbitRadiusPullStrength = 2f; // Gentle push in/out only when outside zone band
 
         [Header("Combat")]
         [SerializeField] private float fireRate = 1f;
@@ -75,6 +75,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> attrRotationSpeed = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrEnergyRegen = new NetworkVariable<int>(0);
 
+        // Store inventory (rockets and mines)
+        private NetworkVariable<int> smallRocketsCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> largeRocketsCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> smallMinesCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> largeMinesCount = new NetworkVariable<int>(0);
+
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
 
         private float EffectiveMovementSpeed => movementSpeed * (1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
@@ -86,6 +92,10 @@ namespace TitanOrbit.Entities
         private float EffectiveEnergyRegen => energyRegenRate * (1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
 
         private float lastFireTime = 0f;
+        private float lastRocketTime = -999f;
+        private float lastMineTime = -999f;
+        private const float ROCKET_COOLDOWN = 0.6f;
+        private const float MINE_COOLDOWN = 1f;
         private Vector3 moveDirection = Vector3.zero;
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
@@ -109,6 +119,10 @@ namespace TitanOrbit.Entities
         public bool WantToLoadPeople => wantToLoadPeople.Value;
         public bool WantToUnloadPeople => wantToUnloadPeople.Value;
         public bool WantToDepositGems => wantToDepositGems.Value;
+        public int SmallRocketsCount => smallRocketsCount.Value;
+        public int LargeRocketsCount => largeRocketsCount.Value;
+        public int SmallMinesCount => smallMinesCount.Value;
+        public int LargeMinesCount => largeMinesCount.Value;
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -249,7 +263,10 @@ namespace TitanOrbit.Entities
             if (!IsOwner) return;
             bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed;
             if (useOrbit)
+            {
                 HandleOrbitMovement();
+                HandleRotation(); // Ship can face any direction (e.g. toward mouse) while orbiting
+            }
             else
             {
                 HandleMovement();
@@ -285,6 +302,34 @@ namespace TitanOrbit.Entities
                 if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
                 else dir.Normalize();
                 FireServerRpc(firePoint.position, dir);
+            }
+
+            // Rocket: Q key (or FireRocket if bound). Prefer large if available.
+            if (!IsPointerOverUI() && Time.time - lastRocketTime >= ROCKET_COOLDOWN)
+            {
+                bool wantRocket = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.RocketPressed == true
+                    || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.qKey.isPressed);
+                if (wantRocket && (SmallRocketsCount > 0 || LargeRocketsCount > 0))
+                {
+                    bool preferLarge = LargeRocketsCount > 0;
+                    FireRocketServerRpc(preferLarge);
+                    lastRocketTime = Time.time;
+                }
+            }
+
+            // Mine: E key. Place in front of ship.
+            if (!IsPointerOverUI() && Time.time - lastMineTime >= MINE_COOLDOWN)
+            {
+                bool wantMine = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.MinePressed == true
+                    || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.eKey.isPressed);
+                if (wantMine && (SmallMinesCount > 0 || LargeMinesCount > 0))
+                {
+                    bool preferLarge = LargeMinesCount > 0;
+                    Vector3 placePos = transform.position + transform.forward * 3f;
+                    placePos.y = 0f;
+                    PlaceMineServerRpc(placePos, preferLarge);
+                    lastMineTime = Time.time;
+                }
             }
         }
 
@@ -327,29 +372,25 @@ namespace TitanOrbit.Entities
             toShip.y = 0f;
             float dist = toShip.magnitude;
             if (dist < 0.01f) return;
-            // Orbit zone: radius 0.5 to 0.8 local. Ideal orbit = 0.65; world = PlanetSize * 0.65f.
-            float idealOrbitRadius = currentOrbitPlanet.PlanetSize * 0.65f;
+            // Orbit zone: inner 0.5 to outer 0.85 (local). Ship keeps whatever radius it entered; no single path.
+            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
+            float outerWorld = currentOrbitPlanet.PlanetSize * 0.85f;
             Vector3 radial = toShip / dist;
-            // Clockwise tangent (viewed from above): (radial.z, 0, -radial.x)
+            // Clockwise tangent (viewed from above): (radial.z, 0, -radial.x). Constant linear speed → angular = orbitSpeed/dist (farther = slower).
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
             Vector3 orbitVelocity = tangent * orbitSpeed;
-            if (Mathf.Abs(dist - idealOrbitRadius) > 0.3f)
-            {
-                Vector3 pull = (dist > idealOrbitRadius ? -radial : radial) * orbitRadiusPullStrength;
-                orbitVelocity += pull;
-            }
+            // Only nudge back when outside the band so ships stay in zone but keep their lane
+            if (dist < innerWorld)
+                orbitVelocity += radial * orbitRadiusPullStrength;
+            else if (dist > outerWorld)
+                orbitVelocity -= radial * orbitRadiusPullStrength;
             currentVelocity = orbitVelocity;
             rb.linearVelocity = orbitVelocity;
             Vector3 newPosition = rb.position + orbitVelocity * Time.fixedDeltaTime;
             newPosition.y = FIXED_Y_POSITION;
             newPosition = ToroidalMap.WrapPosition(newPosition);
             rb.MovePosition(newPosition);
-            // Lock rotation to orbit direction so mouse never pulls the ship out of orbit
-            if (orbitVelocity.sqrMagnitude > 0.001f)
-            {
-                Quaternion orbitFacing = Quaternion.LookRotation(orbitVelocity.normalized);
-                rb.MoveRotation(orbitFacing);
-            }
+            // Rotation is handled by HandleRotation (mouse); ship can face any direction while orbiting.
         }
 
         private void HandleRotation()
@@ -427,6 +468,31 @@ namespace TitanOrbit.Entities
         private void FireClientRpc()
         {
             // Visual/audio feedback for firing
+        }
+
+        [ServerRpc]
+        private void FireRocketServerRpc(bool preferLarge)
+        {
+            bool useLarge = preferLarge && ConsumeLargeRocket();
+            if (!useLarge && !ConsumeSmallRocket()) return;
+            if (firePoint == null) return;
+            Vector3 dir = transform.forward;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            else dir.Normalize();
+            if (CombatSystem.Instance != null)
+                CombatSystem.Instance.SpawnRocketServerRpc(firePoint.position, dir, useLarge, shipTeam.Value);
+        }
+
+        [ServerRpc]
+        private void PlaceMineServerRpc(Vector3 position, bool preferLarge)
+        {
+            bool useLarge = preferLarge && ConsumeLargeMine();
+            if (!useLarge && !ConsumeSmallMine()) return;
+            Vector3 pos = TitanOrbit.Generation.ToroidalMap.WrapPosition(position);
+            pos.y = 0f;
+            if (CombatSystem.Instance != null)
+                CombatSystem.Instance.SpawnMineServerRpc(pos, useLarge, shipTeam.Value);
         }
 
         private NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
@@ -519,7 +585,7 @@ namespace TitanOrbit.Entities
             if (amount > 0f)
             {
                 RemoveGemsServerRpc(amount);
-                home.DepositGemsServerRpc(amount, shipTeam.Value);
+                home.DepositGemsServerRpc(amount, shipTeam.Value, OwnerClientId);
             }
             if (currentGems.Value <= 0.001f)
                 wantToDepositGems.Value = false;
@@ -569,6 +635,41 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
+        public void AddSmallRocketsServerRpc(int count) { smallRocketsCount.Value += count; }
+        [ServerRpc(RequireOwnership = false)]
+        public void AddLargeRocketsServerRpc(int count) { largeRocketsCount.Value += count; }
+        [ServerRpc(RequireOwnership = false)]
+        public void AddSmallMinesServerRpc(int count) { smallMinesCount.Value += count; }
+        [ServerRpc(RequireOwnership = false)]
+        public void AddLargeMinesServerRpc(int count) { largeMinesCount.Value += count; }
+
+        /// <summary>Server: consume one small rocket. Returns true if had one.</summary>
+        public bool ConsumeSmallRocket()
+        {
+            if (smallRocketsCount.Value <= 0) return false;
+            smallRocketsCount.Value--;
+            return true;
+        }
+        public bool ConsumeLargeRocket()
+        {
+            if (largeRocketsCount.Value <= 0) return false;
+            largeRocketsCount.Value--;
+            return true;
+        }
+        public bool ConsumeSmallMine()
+        {
+            if (smallMinesCount.Value <= 0) return false;
+            smallMinesCount.Value--;
+            return true;
+        }
+        public bool ConsumeLargeMine()
+        {
+            if (largeMinesCount.Value <= 0) return false;
+            largeMinesCount.Value--;
+            return true;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
         public void AddPeopleServerRpc(float amount)
         {
             currentPeople.Value = Mathf.Min(currentPeople.Value + amount, PeopleCapacity);
@@ -611,7 +712,7 @@ namespace TitanOrbit.Entities
                 toShip.y = 0f;
                 float dist = toShip.magnitude;
                 float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * 0.8f;
+                float outer = planet.PlanetSize * 0.85f;
                 if (dist >= inner && dist <= outer)
                 {
                     currentOrbitPlanet = planet;

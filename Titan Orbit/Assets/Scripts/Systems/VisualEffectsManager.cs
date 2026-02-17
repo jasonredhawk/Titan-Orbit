@@ -15,6 +15,7 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject miningEffect;
         [SerializeField] private GameObject captureEffect;
         [SerializeField] private GameObject bulletTrailEffect;
+        [SerializeField] private GameObject levelUpEffect;
 
         private void Awake()
         {
@@ -74,6 +75,48 @@ namespace TitanOrbit.Systems
                 GameObject effect = Instantiate(captureEffect, position, Quaternion.identity);
                 Destroy(effect, 3f);
             }
+        }
+
+        /// <summary>Play level-up burst at position (e.g. home planet). Uses levelUpEffect prefab if assigned; otherwise a simple particle burst.</summary>
+        public void PlayLevelUpEffect(Vector3 position)
+        {
+            if (levelUpEffect != null)
+            {
+                GameObject effect = Instantiate(levelUpEffect, position, Quaternion.identity);
+                Destroy(effect, 3f);
+                return;
+            }
+            CreateFallbackLevelUpBurst(position);
+        }
+
+        private static void CreateFallbackLevelUpBurst(Vector3 position)
+        {
+            GameObject go = new GameObject("LevelUpBurst");
+            go.transform.position = position;
+            var ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.duration = 0.5f;
+            main.loop = false;
+            main.startLifetime = 0.8f;
+            main.startSpeed = 8f;
+            main.startSize = 1.5f;
+            main.maxParticles = 40;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var emission = ps.emission;
+            emission.rateOverTime = 0;
+            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 35) });
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Sphere;
+            shape.radius = 2f;
+            var colorOverLifetime = ps.colorOverLifetime;
+            colorOverLifetime.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.9f, 0.5f), 1f) },
+                new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0f, 1f) });
+            colorOverLifetime.color = grad;
+            ps.Play();
+            Object.Destroy(go, 2f);
         }
     }
 }

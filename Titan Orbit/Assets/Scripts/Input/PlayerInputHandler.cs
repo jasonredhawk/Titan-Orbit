@@ -15,12 +15,18 @@ namespace TitanOrbit.Input
         private InputAction moveAction;
         private InputAction shootAction;
         private InputAction lookAction;
+        private InputAction rocketAction;
+        private InputAction mineAction;
 
         // Input values
         private bool shootPressed;
         private bool moveForwardPressed;
+        private bool rocketPressed;
+        private bool minePressed;
 
         public bool ShootPressed => shootPressed;
+        public bool RocketPressed => rocketPressed;
+        public bool MinePressed => minePressed;
         /// <summary>True when right mouse is held - move in facing direction</summary>
         public bool MoveForwardPressed => moveForwardPressed;
         public bool IsMobile => Application.isMobilePlatform;
@@ -36,6 +42,8 @@ namespace TitanOrbit.Input
                     moveAction = gameplayMap.FindAction("Move");
                     shootAction = gameplayMap.FindAction("Shoot");
                     lookAction = gameplayMap.FindAction("Look");
+                    rocketAction = gameplayMap.FindAction("FireRocket");
+                    mineAction = gameplayMap.FindAction("PlaceMine");
                 }
             }
         }
@@ -45,6 +53,8 @@ namespace TitanOrbit.Input
             if (moveAction != null) moveAction.Enable();
             if (shootAction != null) shootAction.Enable();
             if (lookAction != null) lookAction.Enable();
+            if (rocketAction != null) rocketAction.Enable();
+            if (mineAction != null) mineAction.Enable();
         }
 
         private void OnDisable()
@@ -52,6 +62,8 @@ namespace TitanOrbit.Input
             if (moveAction != null) moveAction.Disable();
             if (shootAction != null) shootAction.Disable();
             if (lookAction != null) lookAction.Disable();
+            if (rocketAction != null) rocketAction.Disable();
+            if (mineAction != null) mineAction.Disable();
         }
 
         private void Update()
@@ -68,6 +80,10 @@ namespace TitanOrbit.Input
 
             // Right-click = move in facing direction
             moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
+
+            // Optional: FireRocket / PlaceMine actions; fallback is Q / E in Starship
+            rocketPressed = rocketAction != null && rocketAction.IsPressed();
+            minePressed = mineAction != null && mineAction.IsPressed();
         }
 
         /// <summary>

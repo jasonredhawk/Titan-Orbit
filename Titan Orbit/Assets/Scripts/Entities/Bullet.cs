@@ -129,6 +129,12 @@ namespace TitanOrbit.Entities
                         TryHit(col);
                         return;
                     }
+                    DroneBase drone = col.GetComponent<DroneBase>();
+                    if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+                    {
+                        TryHit(col);
+                        return;
+                    }
                 }
             }
         }
@@ -159,6 +165,14 @@ namespace TitanOrbit.Entities
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
                 ship.TakeDamageServerRpc(damage, ownerTeam);
+                DespawnBullet();
+                return;
+            }
+
+            DroneBase drone = other.GetComponent<DroneBase>();
+            if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+            {
+                drone.TakeDamageServerRpc(damage, ownerTeam);
                 DespawnBullet();
             }
         }

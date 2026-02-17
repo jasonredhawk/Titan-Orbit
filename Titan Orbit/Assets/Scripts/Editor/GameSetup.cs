@@ -13,6 +13,7 @@ using TitanOrbit.Input;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using TMPro;
+using SpaceGraphicsToolkit;
 
 namespace TitanOrbit.Editor
 {
@@ -85,6 +86,7 @@ namespace TitanOrbit.Editor
             AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
+            HomePlanetStoreSystem homePlanetStoreSystem = obj.AddComponent<HomePlanetStoreSystem>();
 
             // Assign UpgradeTree so ship level-up menu and buttons work (full gems + home planet level)
             TitanOrbit.Data.UpgradeTree upgradeTree = AssetDatabase.LoadAssetAtPath<TitanOrbit.Data.UpgradeTree>("Assets/Data/UpgradeTree.asset");
@@ -123,6 +125,9 @@ namespace TitanOrbit.Editor
 
             // Tag as MainCamera
             obj.tag = "MainCamera";
+
+            // Required for SGT Planet (Space Graphics Toolkit) rendering
+            obj.AddComponent<SgtCamera>();
 
             // Add Audio Listener (required for audio playback)
             obj.AddComponent<AudioListener>();
@@ -837,7 +842,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.8f;
+            orbitCollider.radius = 0.85f;
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = planetScript;
@@ -924,7 +929,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.8f;
+            orbitCollider.radius = 0.85f;
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = homePlanetScript;
@@ -1467,12 +1472,14 @@ namespace TitanOrbit.Editor
                             bool found = false;
                             for (int i = 0; i < listProp.arraySize; i++)
                             {
-                                if (listProp.GetArrayElementAtIndex(i).objectReferenceValue == netObj) { found = true; break; }
+                                var elem = listProp.GetArrayElementAtIndex(i);
+                                var prefabRef = elem.FindPropertyRelative("Prefab");
+                                if (prefabRef != null && prefabRef.objectReferenceValue == gemPrefabObj) { found = true; break; }
                             }
                             if (!found)
                             {
                                 listProp.arraySize++;
-                                listProp.GetArrayElementAtIndex(listProp.arraySize - 1).objectReferenceValue = netObj;
+                                listProp.GetArrayElementAtIndex(listProp.arraySize - 1).FindPropertyRelative("Prefab").objectReferenceValue = gemPrefabObj;
                                 so.ApplyModifiedPropertiesWithoutUndo();
                                 AssetDatabase.SaveAssets();
                                 Debug.Log("Gem prefab added to DefaultNetworkPrefabs.");
@@ -1480,9 +1487,40 @@ namespace TitanOrbit.Editor
                         }
                     }
                 }
+
+                // Add store/combat prefabs (drones, rocket, mine) to Network Prefabs list
+                var defaultList2 = AssetDatabase.LoadAssetAtPath<ScriptableObject>("Assets/DefaultNetworkPrefabs.asset");
+                if (defaultList2 != null)
+                {
+                    var so2 = new SerializedObject(defaultList2);
+                    var listProp2 = so2.FindProperty("List");
+                    if (listProp2 != null)
+                    {
+                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab" };
+                        foreach (string path in storePrefabPaths)
+                        {
+                            var prefabObj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                            if (prefabObj == null) continue;
+                            bool found = false;
+                            for (int i = 0; i < listProp2.arraySize; i++)
+                            {
+                                var prefabRef = listProp2.GetArrayElementAtIndex(i).FindPropertyRelative("Prefab");
+                                if (prefabRef != null && prefabRef.objectReferenceValue == prefabObj) { found = true; break; }
+                            }
+                            if (!found)
+                            {
+                                listProp2.arraySize++;
+                                listProp2.GetArrayElementAtIndex(listProp2.arraySize - 1).FindPropertyRelative("Prefab").objectReferenceValue = prefabObj;
+                                Debug.Log($"Added {prefabObj.name} to DefaultNetworkPrefabs.");
+                            }
+                        }
+                        so2.ApplyModifiedPropertiesWithoutUndo();
+                        AssetDatabase.SaveAssets();
+                    }
+                }
             }
 
-            // Assign bullet prefab to CombatSystem
+            // Assign bullet, rocket, mine prefabs to CombatSystem
             CombatSystem combat = Object.FindObjectOfType<CombatSystem>();
             if (combat != null)
             {
@@ -1494,6 +1532,35 @@ namespace TitanOrbit.Editor
                     so.ApplyModifiedPropertiesWithoutUndo();
                     Debug.Log("Bullet prefab assigned to CombatSystem.");
                 }
+                var rocketPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/RocketProjectile.prefab");
+                if (rocketPrefab != null)
+                {
+                    var so = new SerializedObject(combat);
+                    var rocketProp = so.FindProperty("rocketPrefab");
+                    if (rocketProp != null) { rocketProp.objectReferenceValue = rocketPrefab; so.ApplyModifiedPropertiesWithoutUndo(); Debug.Log("Rocket prefab assigned to CombatSystem."); }
+                }
+                var minePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Mine.prefab");
+                if (minePrefab != null)
+                {
+                    var so = new SerializedObject(combat);
+                    var mineProp = so.FindProperty("minePrefab");
+                    if (mineProp != null) { mineProp.objectReferenceValue = minePrefab; so.ApplyModifiedPropertiesWithoutUndo(); Debug.Log("Mine prefab assigned to CombatSystem."); }
+                }
+            }
+
+            // Assign drone prefabs to HomePlanetStoreSystem
+            HomePlanetStoreSystem storeSystem = Object.FindObjectOfType<HomePlanetStoreSystem>();
+            if (storeSystem != null)
+            {
+                var so = new SerializedObject(storeSystem);
+                var fighterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/FighterDrone.prefab");
+                if (fighterPrefab != null) { so.FindProperty("fighterDronePrefab").objectReferenceValue = fighterPrefab; }
+                var shieldPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ShieldDrone.prefab");
+                if (shieldPrefab != null) { so.FindProperty("shieldDronePrefab").objectReferenceValue = shieldPrefab; }
+                var miningPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/MiningDrone.prefab");
+                if (miningPrefab != null) { so.FindProperty("miningDronePrefab").objectReferenceValue = miningPrefab; }
+                so.ApplyModifiedPropertiesWithoutUndo();
+                Debug.Log("Drone prefabs assigned to HomePlanetStoreSystem.");
             }
 
             // Assign gem prefab to GemSpawner

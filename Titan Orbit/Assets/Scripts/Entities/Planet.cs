@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TMPro;
+using SpaceGraphicsToolkit;
 
 namespace TitanOrbit.Entities
 {
@@ -19,6 +20,8 @@ namespace TitanOrbit.Entities
 
         [Header("Visual")]
         [SerializeField] private Renderer planetRenderer;
+        [Tooltip("When set, planet is drawn by SGT Planet (CW asset); team materials are applied to this.")]
+        [SerializeField] private SgtPlanet sgtPlanet;
         [SerializeField] private Material neutralMaterial;
         [SerializeField] private Material teamAMaterial;
         [SerializeField] private Material teamBMaterial;
@@ -94,6 +97,9 @@ namespace TitanOrbit.Entities
             EnsureBodyColliderSize();
             EnsureOrbitZoneExists();
 
+            if (!(this is HomePlanet))
+                EnsurePlanetRingsDrawer();
+
             // Update visual on spawn
             UpdateVisual(teamOwnership.Value);
             UpdatePopulationDisplay();
@@ -167,7 +173,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Orbit zone: surface (0.5) to a bit farther out (0.8 local). Ship orbits in that band.
+        /// Orbit zone: surface (0.5) to outer (0.85 local). Ships orbit at whatever radius they enter; farther = slower.
         /// </summary>
         private void EnsureOrbitZoneExists()
         {
@@ -175,7 +181,7 @@ namespace TitanOrbit.Entities
             if (existing != null)
             {
                 var col = existing.GetComponent<SphereCollider>();
-                if (col != null) col.radius = 0.8f;
+                if (col != null) col.radius = 0.85f;
                 EnsureOrbitZoneVisual(existing.gameObject);
                 return;
             }
@@ -185,7 +191,7 @@ namespace TitanOrbit.Entities
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.8f;
+            orbitCollider.radius = 0.85f;
             PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             zone.SetPlanet(this);
             EnsureOrbitZoneVisual(orbitZoneObj);
@@ -193,10 +199,27 @@ namespace TitanOrbit.Entities
 
         private void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
         {
-            OrbitZoneVisual visual = orbitZoneObj.GetComponent<OrbitZoneVisual>();
-            if (visual == null)
-                visual = orbitZoneObj.AddComponent<OrbitZoneVisual>();
-            visual.SetPlanet(this);
+            var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
+            if (shapesVisual == null)
+                orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+        }
+
+        /// <summary>Regular planets only: remove legacy cylinder ring and use Shapes to draw one tilted ring.</summary>
+        private void EnsurePlanetRingsDrawer()
+        {
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                if (child.name == "Ring" || child.name.StartsWith("Ring"))
+                    Object.Destroy(child.gameObject);
+            }
+            if (GetComponentInChildren<PlanetRingsDrawer>(true) != null) return;
+            GameObject ringsObj = new GameObject("PlanetRings");
+            ringsObj.transform.SetParent(transform);
+            ringsObj.transform.localPosition = Vector3.zero;
+            ringsObj.transform.localRotation = Quaternion.identity;
+            ringsObj.transform.localScale = Vector3.one;
+            ringsObj.AddComponent<PlanetRingsDrawer>();
         }
 
         /// <summary>Override in HomePlanet to use a color that contrasts with the white ring.</summary>
@@ -274,13 +297,18 @@ namespace TitanOrbit.Entities
 
         private void UpdateVisual(TeamManager.Team? teamOverride = null)
         {
-            Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
-            if (renderer == null) return;
-
             EnsureSharedMaterialsRegistered();
             TeamManager.Team team = teamOverride ?? teamOwnership.Value;
             Material materialToUse = GetEffectiveMaterial(team);
-            if (materialToUse != null)
+            if (materialToUse == null) return;
+
+            if (sgtPlanet != null)
+            {
+                sgtPlanet.Material = materialToUse;
+                return;
+            }
+            Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
+            if (renderer != null)
                 renderer.material = materialToUse;
         }
 

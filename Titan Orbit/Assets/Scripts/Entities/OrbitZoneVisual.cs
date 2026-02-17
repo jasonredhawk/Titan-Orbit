@@ -19,7 +19,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private Color tint = new Color(1f, 0.9f, 0.35f);
 
         private const float InnerRadius = 0.5f;  // Planet surface (local)
-        private const float OuterRadius = 0.8f;   // Orbit zone outer edge (local)
+        private const float OuterRadius = 0.85f; // Orbit zone outer edge (local)
         private const int Segments = 64;
 
         private MeshFilter meshFilter;

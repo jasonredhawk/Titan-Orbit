@@ -84,7 +84,7 @@ namespace TitanOrbit.UI
             if (storeButton != null)
             {
                 storeButton.onClick.AddListener(OnStore);
-                storeButton.interactable = false;
+                storeButton.interactable = true;
             }
             if (upgradeShipButton != null) upgradeShipButton.onClick.AddListener(OnUpgradeShip);
         }
@@ -140,9 +140,9 @@ namespace TitanOrbit.UI
             depositGemsLabel = depositGemsButton.GetComponentInChildren<TextMeshProUGUI>();
             upgradeShipButton = CreateButton(orbitPanel.transform, "Upgrade Ship", new Vector2(0, -216));
             upgradeShipLabel = upgradeShipButton.GetComponentInChildren<TextMeshProUGUI>();
-            storeButton = CreateButton(orbitPanel.transform, "Store (coming soon)", new Vector2(0, -258));
+            storeButton = CreateButton(orbitPanel.transform, "Store", new Vector2(0, -258));
             storeLabel = storeButton.GetComponentInChildren<TextMeshProUGUI>();
-            storeButton.interactable = false;
+            storeButton.interactable = true;
 
             loadPeopleButton.onClick.AddListener(OnLoadPeople);
             unloadPeopleButton.onClick.AddListener(OnUnloadPeople);
@@ -335,7 +335,7 @@ namespace TitanOrbit.UI
             if (storeButton != null)
                 storeButton.gameObject.SetActive(isFriendly && isHomePlanet);
             if (storeLabel != null)
-                storeLabel.text = "Store (coming soon)";
+                storeLabel.text = "Store";
         }
 
         private void OnDepositGems()
@@ -366,7 +366,20 @@ namespace TitanOrbit.UI
 
         private void OnStore()
         {
-            // Future: missiles, explosive mines, combat/mining robots, shields
+            if (currentShip == null || currentPlanet == null || !(currentPlanet is HomePlanet home)) return;
+            var storeUI = Object.FindFirstObjectByType<HomePlanetStoreUI>();
+            if (storeUI == null)
+            {
+                Canvas canvas = GetComponentInParent<Canvas>();
+                if (canvas == null) canvas = Object.FindFirstObjectByType<Canvas>();
+                if (canvas != null)
+                {
+                    var go = new GameObject("HomePlanetStoreUI");
+                    go.transform.SetParent(canvas.transform, false);
+                    storeUI = go.AddComponent<HomePlanetStoreUI>();
+                }
+            }
+            if (storeUI != null) storeUI.Show(currentShip, home);
         }
 
         /// <summary>Show ship-level upgrade choice (2 options). Call from anywhere when player can upgrade; does not require being in orbit.</summary>

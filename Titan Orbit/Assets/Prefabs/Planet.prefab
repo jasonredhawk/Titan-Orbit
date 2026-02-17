@@ -190,8 +190,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 807676317360203233}
-  - component: {fileID: 3498292660746892823}
-  - component: {fileID: 4914487223871082077}
+  - component: {fileID: 2284905166689752976}
   - component: {fileID: 4837591169628047860}
   - component: {fileID: 1798764570720657789}
   - component: {fileID: 2284905166689752975}
@@ -221,63 +220,29 @@ Transform:
   - {fileID: 832973437895952674}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &3498292660746892823
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &4914487223871082077
-MeshRenderer:
+--- !u!114 &2284905166689752976
+MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1039601997937951391}
   m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: 482487e64f1f2c94ca86f24a50922c54, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 1
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f2e5335b07476244862effadc97d649, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit.SgtPlanet
+  mesh: {fileID: 4300002, guid: 0eba857bb8ab78c4d98d653565fd1902, type: 3}
+  meshCollider: {fileID: 0}
+  radius: 0.5
+  material: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
+  sharedMaterial: {fileID: 0}
+  waterLevel: 0
+  displace: 1
+  displacement: 0.004
+  clampWater: 1
+  castShadows: 1
+  receiveShadows: 1
 --- !u!135 &4837591169628047860
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -311,7 +276,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 4174794434
+  GlobalObjectIdHash: 769894849
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -336,11 +301,12 @@ MonoBehaviour:
   baseGrowthRate: 0.033333335
   planetSize: 1
   captureRadius: 5
-  planetRenderer: {fileID: 4914487223871082077}
-  neutralMaterial: {fileID: 2100000, guid: 482487e64f1f2c94ca86f24a50922c54, type: 2}
-  teamAMaterial: {fileID: 2100000, guid: 2d29a6184eb12f542acf22a32ed594d6, type: 2}
-  teamBMaterial: {fileID: 2100000, guid: e1cfed9dd6ff6fb4588c21da9722ede7, type: 2}
-  teamCMaterial: {fileID: 2100000, guid: e218a21d63ed67a4a8de64840a7021cc, type: 2}
+  planetRenderer: {fileID: 0}
+  sgtPlanet: {fileID: 2284905166689752976}
+  neutralMaterial: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
+  teamAMaterial: {fileID: 2100000, guid: 801d289287ec4a041a954f2a7d8608f1, type: 2}
+  teamBMaterial: {fileID: 2100000, guid: d1ac48592d2dcf0418cf1214399a4941, type: 2}
+  teamCMaterial: {fileID: 2100000, guid: ce7531fc382a1224c9b4cc6e27ab88b1, type: 2}
   populationText: {fileID: 1822999505890776246}
 --- !u!114 &1032728760940274408
 MonoBehaviour:
@@ -406,7 +372,7 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 0.8
+  m_Radius: 1.2
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &4508721584815065175
 MonoBehaviour:

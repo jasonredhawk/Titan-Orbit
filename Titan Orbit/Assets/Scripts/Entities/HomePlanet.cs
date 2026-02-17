@@ -1,12 +1,16 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
+using TitanOrbit.Systems;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace TitanOrbit.Entities
 {
     /// <summary>
     /// Special planet type that serves as a team's home base
     /// Cannot be neutral, has level system, and elimination condition
+    /// Tracks per-player contributed gems for the Home Planet store.
     /// </summary>
     public class HomePlanet : Planet
     {
@@ -16,9 +20,22 @@ namespace TitanOrbit.Entities
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
+        [Header("Level Visuals")]
+        [Tooltip("Scale pulse multiplier when leveling up (e.g. 1.15 = 15% bigger briefly).")]
+        [SerializeField] private float levelUpPulseScale = 1.15f;
+        [Tooltip("Duration of scale-up phase of level-up pulse (seconds).")]
+        [SerializeField] private float levelUpPulseUpDuration = 0.2f;
+        [Tooltip("Duration of scale-down phase of level-up pulse (seconds).")]
+        [SerializeField] private float levelUpPulseDownDuration = 0.3f;
+
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<int> homePlanetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<TeamManager.Team> assignedTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
+
+        private Vector3 baseLocalScale;
+
+        /// <summary>Server-only: gems each player has contributed to this home planet (for store purchases).</summary>
+        private Dictionary<ulong, float> contributedGemsByClientId = new Dictionary<ulong, float>();
 
         public float CurrentGems => currentGems.Value;
         /// <summary>Max gems this home planet can hold at its current level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
@@ -45,6 +62,9 @@ namespace TitanOrbit.Entities
                 homePlanetLevel.Value = 3; // Start at 3 so starships can level 1→2→3 without leveling planet
                 currentGems.Value = 0f;
             }
+            baseLocalScale = transform.localScale;
+            RemoveOldCylinderRings();
+            EnsureShapesRingsDrawer();
             homePlanetLevel.OnValueChanged += OnLevelChanged;
         }
 
@@ -61,7 +81,7 @@ namespace TitanOrbit.Entities
         protected override float GetGrowthRatePerSecond() => 1f / 5f;
 
         /// <summary>
-        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to 0.6 (10% band). Base Planet may already create zone; we fix sizes.
+        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to 0.85. Base Planet may already create zone; we fix sizes.
         /// </summary>
         private void EnsureSolidColliderAndOrbitZone()
         {
@@ -75,7 +95,7 @@ namespace TitanOrbit.Entities
             if (existing != null)
             {
                 var col = existing.GetComponent<SphereCollider>();
-                if (col != null) col.radius = 0.8f;
+                if (col != null) col.radius = 0.85f;
                 return;
             }
             GameObject orbitZoneObj = new GameObject("OrbitZone");
@@ -84,7 +104,7 @@ namespace TitanOrbit.Entities
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCol = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCol.isTrigger = true;
-            orbitCol.radius = 0.8f;
+            orbitCol.radius = 0.85f;
             PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             zone.SetPlanet(this);
         }
@@ -96,25 +116,42 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam)
+        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             // Only allow team members to deposit gems
             if (assignedTeam.Value == TeamManager.Team.None)
             {
-                // First deposit assigns the team
                 assignedTeam.Value = depositingTeam;
             }
             else if (assignedTeam.Value != depositingTeam)
             {
-                // Wrong team - don't accept gems
                 return;
             }
 
             float maxGems = GetMaxGemsForLevel(homePlanetLevel.Value);
             currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
 
-            // Level up when gems reach current level's capacity (max home planet level 6)
+            // Track contributed gems for this player (for store purchases)
+            if (!contributedGemsByClientId.ContainsKey(depositingClientId))
+                contributedGemsByClientId[depositingClientId] = 0f;
+            contributedGemsByClientId[depositingClientId] += amount;
+
             CheckLevelUp();
+        }
+
+        /// <summary>Server: get contributed gems for a client. Used by store UI.</summary>
+        public float GetContributedGems(ulong clientId)
+        {
+            return contributedGemsByClientId != null && contributedGemsByClientId.TryGetValue(clientId, out float v) ? v : 0f;
+        }
+
+        /// <summary>Server: spend contributed gems (e.g. store purchase). Returns true if successful.</summary>
+        public bool TrySpendContributedGems(ulong clientId, float cost)
+        {
+            if (contributedGemsByClientId == null || !contributedGemsByClientId.TryGetValue(clientId, out float current) || current < cost)
+                return false;
+            contributedGemsByClientId[clientId] = current - cost;
+            return true;
         }
 
         /// <summary>Max gems capacity for a given level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
@@ -155,8 +192,59 @@ namespace TitanOrbit.Entities
 
         private void OnLevelChanged(int previousLevel, int newLevel)
         {
-            // Handle level up effects
+            if (newLevel > previousLevel)
+            {
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.PlayLevelUpEffect(transform.position);
+                StartCoroutine(LevelUpScalePulse());
+            }
             Debug.Log($"Home Planet level changed from {previousLevel} to {newLevel}");
+        }
+
+        /// <summary>Remove legacy cylinder-based Ring children so Shapes-drawn rings are the only ones visible.</summary>
+        private void RemoveOldCylinderRings()
+        {
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                if (child.name == "Ring" || child.name.StartsWith("Ring"))
+                    Object.Destroy(child.gameObject);
+            }
+        }
+
+        /// <summary>Ensure a child with HomePlanetRingsDrawer exists so Saturn-style rings are drawn each frame.</summary>
+        private void EnsureShapesRingsDrawer()
+        {
+            var drawer = GetComponentInChildren<HomePlanetRingsDrawer>(true);
+            if (drawer != null) return;
+            GameObject ringsObj = new GameObject("HomePlanetRings");
+            ringsObj.transform.SetParent(transform);
+            ringsObj.transform.localPosition = Vector3.zero;
+            ringsObj.transform.localRotation = Quaternion.identity;
+            ringsObj.transform.localScale = Vector3.one;
+            ringsObj.AddComponent<HomePlanetRingsDrawer>();
+        }
+
+        private IEnumerator LevelUpScalePulse()
+        {
+            float elapsed = 0f;
+            while (elapsed < levelUpPulseUpDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / levelUpPulseUpDuration;
+                transform.localScale = Vector3.Lerp(baseLocalScale, baseLocalScale * levelUpPulseScale, t);
+                yield return null;
+            }
+            transform.localScale = baseLocalScale * levelUpPulseScale;
+            elapsed = 0f;
+            while (elapsed < levelUpPulseDownDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / levelUpPulseDownDuration;
+                transform.localScale = Vector3.Lerp(baseLocalScale * levelUpPulseScale, baseLocalScale, t);
+                yield return null;
+            }
+            transform.localScale = baseLocalScale;
         }
 
         public int GetMaxShipLevelForPlanetLevel(int planetLevel)
