@@ -30,9 +30,13 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
         [SerializeField] private TextMeshPro populationText;
+        [Tooltip("Tint intensity for regular planets (0 = no tint, 1 = full team color). Only applies to regular planets, not HomePlanets.")]
+        [SerializeField] private float regularPlanetTintIntensity = 0.2f;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
+        
+        private MaterialPropertyBlock tintPropertyBlock;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
@@ -58,6 +62,8 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            tintPropertyBlock = new MaterialPropertyBlock();
+            
             // Lock Y position to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
@@ -319,18 +325,96 @@ namespace TitanOrbit.Entities
 
         private void UpdateVisual(TeamManager.Team? teamOverride = null)
         {
+            if (tintPropertyBlock == null)
+                tintPropertyBlock = new MaterialPropertyBlock();
+                
             EnsureSharedMaterialsRegistered();
-            Material materialToUse = GetEffectiveMaterialForPlanetSurface(teamOverride ?? teamOwnership.Value);
-            if (materialToUse == null) return;
-
-            if (sgtPlanet != null)
+            TeamManager.Team team = teamOverride ?? teamOwnership.Value;
+            
+            // For regular planets (not HomePlanet), apply a faint tint overlay instead of swapping materials
+            bool isRegularPlanet = !(this is HomePlanet);
+            bool hasTeam = team != TeamManager.Team.None;
+            
+            if (isRegularPlanet && hasTeam)
             {
-                sgtPlanet.Material = materialToUse;
-                return;
+                // Use neutral material with faint team color tint
+                Material neutralMat = GetNeutralMaterial();
+                if (neutralMat == null) return;
+                
+                // Get team color from team material
+                Material teamMat = GetTeamMaterial(team);
+                Color teamColor = GetTeamColorFromMaterial(teamMat);
+                
+                // Blend neutral base color with team color
+                Color neutralBaseColor = neutralMat.GetColor("_BaseColor");
+                Color tintedColor = Color.Lerp(neutralBaseColor, teamColor, regularPlanetTintIntensity);
+                
+                if (sgtPlanet != null)
+                {
+                    sgtPlanet.Material = neutralMat;
+                    // Note: SgtPlanet may not support MaterialPropertyBlock, so we might need to create a material instance
+                    // For now, try applying via property block if possible
+                    var sgtRenderer = sgtPlanet.GetComponent<Renderer>();
+                    if (sgtRenderer != null)
+                    {
+                        sgtRenderer.GetPropertyBlock(tintPropertyBlock);
+                        tintPropertyBlock.SetColor("_BaseColor", tintedColor);
+                        sgtRenderer.SetPropertyBlock(tintPropertyBlock);
+                    }
+                    return;
+                }
+                
+                Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
+                if (renderer != null)
+                {
+                    renderer.material = neutralMat;
+                    renderer.GetPropertyBlock(tintPropertyBlock);
+                    tintPropertyBlock.SetColor("_BaseColor", tintedColor);
+                    renderer.SetPropertyBlock(tintPropertyBlock);
+                }
             }
-            Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
-            if (renderer != null)
-                renderer.material = materialToUse;
+            else
+            {
+                // HomePlanets or neutral planets: use full material swap (existing behavior)
+                Material materialToUse = GetEffectiveMaterialForPlanetSurface(team);
+                if (materialToUse == null) return;
+
+                if (sgtPlanet != null)
+                {
+                    sgtPlanet.Material = materialToUse;
+                    // Clear any property block for home planets by setting an empty one
+                    var sgtRenderer = sgtPlanet.GetComponent<Renderer>();
+                    if (sgtRenderer != null)
+                    {
+                        sgtRenderer.SetPropertyBlock(null);
+                    }
+                    return;
+                }
+                Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
+                if (renderer != null)
+                {
+                    renderer.material = materialToUse;
+                    // Clear any property block by setting to null
+                    renderer.SetPropertyBlock(null);
+                }
+            }
+        }
+        
+        private Material GetTeamMaterial(TeamManager.Team team)
+        {
+            switch (team)
+            {
+                case TeamManager.Team.TeamA: return teamAMaterial ?? s_sharedTeamA;
+                case TeamManager.Team.TeamB: return teamBMaterial ?? s_sharedTeamB;
+                case TeamManager.Team.TeamC: return teamCMaterial ?? s_sharedTeamC;
+                default: return null;
+            }
+        }
+        
+        private Color GetTeamColorFromMaterial(Material teamMat)
+        {
+            if (teamMat == null) return Color.white;
+            return teamMat.GetColor("_BaseColor");
         }
 
         /// <summary>Material used for the planet surface. Home planets always use tropical (neutral); others use team color.</summary>

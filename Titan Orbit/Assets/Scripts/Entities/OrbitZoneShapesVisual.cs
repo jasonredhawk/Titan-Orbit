@@ -6,34 +6,30 @@ using Shapes;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Renders the orbit zone as faint, grooved rings using Shapes.
-    /// Much fainter than the old mesh visual; slightly brighter when the local player is in orbit.
+    /// Renders a thin border ring at the outer edge of the orbit zone using Shapes.
+    /// Slightly brighter when the local player is in orbit.
     /// </summary>
     [ExecuteAlways]
     public class OrbitZoneShapesVisual : ImmediateModeShapeDrawer
     {
         [Header("Zone Bounds")]
-        [Tooltip("Inner radius (planet surface ~0.5).")]
-        [SerializeField] private float innerRadius = 0.5f;
         [Tooltip("Outer radius (orbit zone edge).")]
         [SerializeField] private float outerRadius = 0.85f;
 
-        [Header("Grooves")]
-        [Tooltip("Number of thin ring bands (grooves) between inner and outer radius.")]
-        [SerializeField] private int grooveCount = 14;
-        [Tooltip("Gap between groove rings as fraction of groove width (0 = no gap).")]
-        [Range(0f, 2f)]
-        [SerializeField] private float grooveGapFraction = 0.4f;
+        [Header("Border")]
+        [Tooltip("Thickness of the border ring.")]
+        [Range(0.001f, 0.02f)]
+        [SerializeField] private float borderThickness = 0.005f;
 
         [Header("Appearance")]
-        [Tooltip("Spacy tint (soft blue/cyan). Kept faint.")]
+        [Tooltip("Border color tint.")]
         [SerializeField] private Color tint = new Color(0.38f, 0.52f, 0.92f);
-        [Tooltip("Opacity when no one is orbiting. Kept very low.")]
-        [Range(0.01f, 0.15f)]
-        [SerializeField] private float alphaWhenNotOrbiting = 0.032f;
-        [Tooltip("Opacity when local player is in orbit. Still faint.")]
-        [Range(0.04f, 0.2f)]
-        [SerializeField] private float alphaWhenOrbiting = 0.09f;
+        [Tooltip("Opacity when no one is orbiting.")]
+        [Range(0.1f, 0.6f)]
+        [SerializeField] private float alphaWhenNotOrbiting = 0.3f;
+        [Tooltip("Opacity when local player is in orbit.")]
+        [Range(0.3f, 0.9f)]
+        [SerializeField] private float alphaWhenOrbiting = 0.6f;
 
         private Planet planet;
 
@@ -63,7 +59,27 @@ namespace TitanOrbit.Entities
 
         public override void DrawShapes(UnityEngine.Camera cam)
         {
-            // Orbit zone visual disabled — no ring drawn (zone is invisible).
+            if (planet == null)
+                planet = GetComponentInParent<Planet>();
+            if (planet == null) return;
+
+            bool orbiting = IsLocalPlayerOrbitingThisPlanet();
+            float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
+            Color color = new Color(tint.r, tint.g, tint.b, alpha);
+
+            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix;
+
+            using (Draw.Command(cam))
+            {
+                Draw.ResetAllDrawStates();
+                Draw.RadiusSpace = ThicknessSpace.Meters;
+                Draw.ThicknessSpace = ThicknessSpace.Meters;
+                Draw.DiscGeometry = DiscGeometry.Flat2D;
+                Draw.Matrix = worldMatrix;
+
+                // Draw a thin border ring at the outer edge of the orbit zone
+                Draw.Ring(Vector3.zero, Quaternion.identity, outerRadius, borderThickness, color);
+            }
         }
 
         private bool IsLocalPlayerOrbitingThisPlanet()

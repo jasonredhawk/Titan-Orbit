@@ -11,6 +11,7 @@ using TitanOrbit.UI;
 using TitanOrbit.Audio;
 using TitanOrbit.Input;
 using TitanOrbit.Data;
+using TitanOrbit.AI;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using TMPro;
@@ -126,6 +127,7 @@ namespace TitanOrbit.Editor
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
             HomePlanetStoreSystem homePlanetStoreSystem = obj.AddComponent<HomePlanetStoreSystem>();
+            TitanOrbit.AI.AIStarshipManager aiStarshipManager = obj.AddComponent<TitanOrbit.AI.AIStarshipManager>();
 
             // Assign UpgradeTree so ship level-up menu and buttons work (full gems + home planet level)
             TitanOrbit.Data.UpgradeTree upgradeTree = AssetDatabase.LoadAssetAtPath<TitanOrbit.Data.UpgradeTree>("Assets/Data/UpgradeTree.asset");
@@ -1220,22 +1222,17 @@ namespace TitanOrbit.Editor
         
         private static void CreateAsteroidPrefab()
         {
-            GameObject asteroid = new GameObject("Asteroid");
-            
-            // Get or create lumpy mesh (saved as asset)
-            Mesh lumpyMesh = GetOrCreateLumpyAsteroidMesh();
-            MeshFilter meshFilter = asteroid.AddComponent<MeshFilter>();
-            meshFilter.sharedMesh = lumpyMesh; // Use sharedMesh so it references the asset
-            MeshRenderer meshRenderer = asteroid.AddComponent<MeshRenderer>();
+            GameObject asteroid = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            asteroid.name = "Asteroid";
             
             // Make it look more like an asteroid (randomize scale slightly)
             asteroid.transform.localScale = new Vector3(1.2f, 1.5f, 1.3f);
 
-            // Non-trigger collider - use mesh collider for accurate lumpy shape
-            MeshCollider collider = asteroid.AddComponent<MeshCollider>();
+            // Remove default collider, add sphere collider for physics
+            Object.DestroyImmediate(asteroid.GetComponent<Collider>());
+            SphereCollider collider = asteroid.AddComponent<SphereCollider>();
             collider.isTrigger = false;
-            collider.sharedMesh = lumpyMesh;
-            collider.convex = true; // Required for dynamic physics
+            collider.radius = 0.5f; // Unity primitive sphere radius
 
             Rigidbody rb = asteroid.AddComponent<Rigidbody>();
             rb.useGravity = false;
@@ -1251,15 +1248,28 @@ namespace TitanOrbit.Editor
             // Add ToroidalRenderer for seamless map wrapping
             asteroid.AddComponent<ToroidalRenderer>();
 
-            // Create crater-textured material for asteroids - darker brown with better contrast
-            Material craterMat = CreateCraterMaterial();
-            if (!AssetDatabase.IsValidFolder("Assets/Materials"))
+            // SGT Planet: remove default renderer, add SgtPlanet with Barren5 material and higher displacement
+            Object.DestroyImmediate(asteroid.GetComponent<MeshRenderer>());
+            Object.DestroyImmediate(asteroid.GetComponent<MeshFilter>());
+            Mesh planetMesh = GetOrLoadGeosphere50Mesh();
+            Material barren5Mat = LoadCWPlanetMaterial("Barren5");
+            if (barren5Mat == null)
             {
-                AssetDatabase.CreateFolder("Assets", "Materials");
+                Debug.LogWarning("Barren5 material not found, using fallback material");
+                barren5Mat = CreateAndSaveMaterial("TitanOrbit_Asteroid", new Color(0.4f, 0.35f, 0.3f));
             }
-            string craterPath = "Assets/Materials/TitanOrbit_Asteroid_Crater.mat";
-            AssetDatabase.CreateAsset(craterMat, craterPath);
-            asteroid.GetComponent<Renderer>().sharedMaterial = craterMat;
+            
+            SgtPlanet sgtPlanet = asteroid.AddComponent<SgtPlanet>();
+            if (planetMesh != null)
+            {
+                var sgtSO = new SerializedObject(sgtPlanet);
+                sgtSO.FindProperty("mesh").objectReferenceValue = planetMesh;
+                sgtSO.FindProperty("radius").floatValue = 0.5f;
+                sgtSO.FindProperty("material").objectReferenceValue = barren5Mat;
+                sgtSO.FindProperty("displace").boolValue = true;
+                sgtSO.FindProperty("displacement").floatValue = 0.12f; // Higher displacement for rocky feel
+                sgtSO.ApplyModifiedPropertiesWithoutUndo();
+            }
 
             // Save as prefab
             string path = "Assets/Prefabs/Asteroid.prefab";
@@ -1267,7 +1277,7 @@ namespace TitanOrbit.Editor
             PrefabUtility.SaveAsPrefabAsset(asteroid, path);
             Object.DestroyImmediate(asteroid);
 
-            Debug.Log($"Created prefab: {path}");
+            Debug.Log($"Created prefab (SGT with Barren5): {path}");
         }
 
         private static void CreateBulletPrefab()

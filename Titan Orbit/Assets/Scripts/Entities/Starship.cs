@@ -181,10 +181,19 @@ namespace TitanOrbit.Entities
             StartInOrbitAroundHomePlanet();
         }
 
+        /// <summary>Server only: set team without repositioning (for AI ships that are already placed).</summary>
+        public void AssignTeamOnly(TeamManager.Team team)
+        {
+            if (!IsServer) return;
+            shipTeam.Value = team;
+        }
+
         /// <summary>Server: position ship in orbit around its team's home planet at spawn.</summary>
         private void StartInOrbitAroundHomePlanet()
         {
             if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
+            // AI ships are placed by AIStarshipManager; don't overwrite their position
+            if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return;
             HomePlanet home = null;
             foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
             {
@@ -204,6 +213,8 @@ namespace TitanOrbit.Entities
         private void Update()
         {
             if (!IsOwner) return;
+            // AI ships have their own controller; skip player input and orbit UI logic
+            if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
@@ -260,6 +271,8 @@ namespace TitanOrbit.Entities
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
             }
+            // AI-controlled ships have their own movement; don't apply player/orbit movement
+            if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
             if (!IsOwner) return;
             bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed;
             if (useOrbit)
@@ -701,10 +714,34 @@ namespace TitanOrbit.Entities
             wantToDepositGems.Value = value;
         }
 
+        /// <summary>Server-only: set wantToLoadPeople (for AI ships; bypasses RPC ownership).</summary>
+        public void SetWantToLoadPeopleFromServer(bool value)
+        {
+            if (!IsServer) return;
+            wantToLoadPeople.Value = value;
+            if (value) wantToUnloadPeople.Value = false;
+        }
+
+        /// <summary>Server-only: set wantToUnloadPeople (for AI ships; bypasses RPC ownership).</summary>
+        public void SetWantToUnloadPeopleFromServer(bool value)
+        {
+            if (!IsServer) return;
+            wantToUnloadPeople.Value = value;
+            if (value) wantToLoadPeople.Value = false;
+        }
+
+        /// <summary>Server-only: set wantToDepositGems (for AI ships; bypasses RPC ownership).</summary>
+        public void SetWantToDepositGemsFromServer(bool value)
+        {
+            if (!IsServer) return;
+            wantToDepositGems.Value = value;
+        }
+
         /// <summary>Owner-only: detect if we're inside a planet's orbit zone (e.g. after spawning there).</summary>
         private void TryDetectOrbitZone()
         {
             if (rb == null || currentOrbitPlanet != null) return;
+            if (!IsLocalPlayerShip()) return;
             foreach (var planet in Object.FindObjectsOfType<Planet>())
             {
                 if (planet == null) continue;
@@ -723,12 +760,21 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>True if this ship is the local player's ship (not AI or other players).</summary>
+        private bool IsLocalPlayerShip()
+        {
+            if (NetworkManager.Singleton == null) return false;
+            var localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
+            return localPlayer != null && localPlayer == GetComponent<NetworkObject>();
+        }
+
         /// <summary>Called by PlanetOrbitZone when ship enters the orbit/loading zone.</summary>
         public void EnterOrbitZone(Planet planet)
         {
             if (planet == null) return;
             currentOrbitPlanet = planet;
-            if (IsOwner)
+            // Only show orbit menu for local player's ship (not AI ships; on host, AI ships are server-owned so IsOwner would be true)
+            if (IsLocalPlayerShip())
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
                 orbitUI.Show(this, planet);
@@ -742,7 +788,7 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == planet)
             {
                 currentOrbitPlanet = null;
-                if (IsOwner)
+                if (IsLocalPlayerShip())
                 {
                     var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
                     orbitUI.Hide();
