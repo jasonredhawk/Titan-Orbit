@@ -1048,7 +1048,7 @@ namespace TitanOrbit.Editor
                 sgtAtmosphere.OuterMesh = atmosphereMesh;
                 sgtAtmosphere.InnerMeshRadius = 0.5f;
                 sgtAtmosphere.OuterMeshRadius = 1f;   // CW mesh is unit sphere (radius 1)
-                sgtAtmosphere.Height = 0.012f;       // Thin shell close to planet surface
+                sgtAtmosphere.Height = 0.025f;
                 atmosphereObj.AddComponent<SgtAtmosphereDepthTex>();
                 atmosphereObj.AddComponent<SgtAtmosphereLightingTex>();
                 atmosphereObj.AddComponent<SgtAtmosphereScatteringTex>();
