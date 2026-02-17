@@ -36,10 +36,45 @@ namespace TitanOrbit.Editor
             GameObject mapGeneratorObj = CreateMapGenerator();
             GameObject cameraObj = CreateCamera();
             GameObject lightingObj = CreateLighting();
+            CreateSpaceBackground();
             GameObject uiObj = CreateUI();
             GameObject audioObj = CreateAudioManager();
 
             Debug.Log("Game scene setup complete! All GameObjects have been created.");
+        }
+
+        [MenuItem("Titan Orbit/Add Space Background")]
+        public static void AddSpaceBackground()
+        {
+            CreateSpaceBackground();
+            Debug.Log("Space background added. Assign a texture from Assets/DinV/Dynamic Space Background/Sprites/ if not auto-assigned.");
+        }
+
+        [MenuItem("Titan Orbit/Fix Space Background Textures (Enable Tiling)")]
+        public static void FixSpaceBackgroundTextures()
+        {
+            string[] texturePaths = {
+                "Assets/DinV/Dynamic Space Background/Sprites/Nebula Blue.png",
+                "Assets/DinV/Dynamic Space Background/Sprites/Nebula Aqua-Pink.png",
+                "Assets/DinV/Dynamic Space Background/Sprites/Nebula Red.png",
+                "Assets/DinV/Dynamic Space Background/Sprites/Stars Small_1.png",
+                "Assets/DinV/Dynamic Space Background/Sprites/Stars-Big_1.png"
+            };
+            int fixedCount = 0;
+            foreach (string path in texturePaths)
+            {
+                TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (importer == null) continue;
+                bool changed = false;
+                if (importer.wrapModeU != TextureWrapMode.Repeat) { importer.wrapModeU = TextureWrapMode.Repeat; changed = true; }
+                if (importer.wrapModeV != TextureWrapMode.Repeat) { importer.wrapModeV = TextureWrapMode.Repeat; changed = true; }
+                if (changed)
+                {
+                    importer.SaveAndReimport();
+                    fixedCount++;
+                }
+            }
+            Debug.Log($"Space background textures: {fixedCount} updated to Wrap Mode Repeat. Tiling should now work.");
         }
 
         private static GameObject CreateNetworkManager()
@@ -143,6 +178,27 @@ namespace TitanOrbit.Editor
             lpsSO.ApplyModifiedPropertiesWithoutUndo();
 
             return obj;
+        }
+
+        private static void CreateSpaceBackground()
+        {
+            var existing = Object.FindObjectOfType<ScrollingSpaceBackground>();
+            if (existing != null)
+            {
+                Debug.Log("Space background already exists in scene.");
+                return;
+            }
+            GameObject obj = new GameObject("SpaceBackground");
+            var bg = obj.AddComponent<ScrollingSpaceBackground>();
+            // Try to assign Nebula Blue as default texture
+            Texture2D defaultTex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Assets/DinV/Dynamic Space Background/Sprites/Nebula Blue.png");
+            if (defaultTex != null)
+            {
+                var so = new SerializedObject(bg);
+                so.FindProperty("spaceTexture").objectReferenceValue = defaultTex;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
         }
 
         private static GameObject CreateLighting()
