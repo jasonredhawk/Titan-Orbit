@@ -253,9 +253,9 @@ namespace TitanOrbit.Entities
                 sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
                 sgtAtmosphere.SourceMaterial = atmosphereSourceMaterial;
                 sgtAtmosphere.OuterMesh = atmosphereOuterMesh;
-                sgtAtmosphere.InnerMeshRadius = 0.5f;
-                sgtAtmosphere.OuterMeshRadius = 0.5f;
-                sgtAtmosphere.Height = 0.025f;
+            sgtAtmosphere.InnerMeshRadius = 0.5f;
+            sgtAtmosphere.OuterMeshRadius = 1f;   // CW mesh is unit sphere (radius 1)
+            sgtAtmosphere.Height = 0.012f;       // Thin shell close to planet surface
             }
 
             // Required so SourceMaterial has Inner/Outer DepthTex, LightingTex, ScatteringTex (avoids black circle / inspector errors)
