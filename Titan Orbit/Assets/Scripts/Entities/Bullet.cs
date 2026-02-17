@@ -14,8 +14,8 @@ namespace TitanOrbit.Entities
         [Header("Bullet Settings")]
         [SerializeField] private float speed = 20f;
         [SerializeField] private float damage = 10f;
-        [SerializeField] private float lifetime = 10f;
-        [SerializeField] private float maxDistance = 200f;
+        [SerializeField] private float lifetime = 2f; // Reduced from 10f for better performance
+        [SerializeField] private float maxDistance = 10f; // Reduced from 200f to match attack range
         [SerializeField] private float minTravelBeforeHit = 0.5f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
 
@@ -91,13 +91,15 @@ namespace TitanOrbit.Entities
             if (pathLen > 0.001f)
             {
                 // Use SphereCast instead of Raycast for better detection of fast-moving bullets
-                float bulletRadius = 0.1f; // Small radius for bullet
+                float bulletRadius = 0.3f; // Larger radius to reliably hit ships (BoxCollider ~0.5 wide)
                 if (Physics.SphereCast(lastPosition, bulletRadius, (to - lastPosition).normalized, out RaycastHit hit, pathLen, ~0, QueryTriggerInteraction.Ignore))
                 {
                     if (hit.collider.transform != transform && !hit.collider.transform.IsChildOf(transform))
                     {
-                        TryHit(hit.collider);
-                        return; // Hit detected, don't continue
+                        if (TryHit(hit.collider))
+                            return; // Hit valid target, despawned
+                        DespawnBullet(); // Hit something else (planet, etc) - despawn to avoid getting stuck
+                        return;
                     }
                 }
             }
@@ -116,20 +118,20 @@ namespace TitanOrbit.Entities
                 if (col.transform != transform && !col.transform.IsChildOf(transform))
                 {
                     // Only hit if it's an asteroid or enemy ship (not the shooter)
-                    Asteroid asteroid = col.GetComponent<Asteroid>();
+                    Asteroid asteroid = col.GetComponentInParent<Asteroid>();
                     if (asteroid != null && !asteroid.IsDestroyed)
                     {
                         TryHit(col);
                         return;
                     }
                     
-                    Starship ship = col.GetComponent<Starship>();
+                    Starship ship = col.GetComponentInParent<Starship>();
                     if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
                     {
                         TryHit(col);
                         return;
                     }
-                    DroneBase drone = col.GetComponent<DroneBase>();
+                    DroneBase drone = col.GetComponentInParent<DroneBase>();
                     if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
                     {
                         TryHit(col);
@@ -142,15 +144,23 @@ namespace TitanOrbit.Entities
         private void OnTriggerEnter(Collider other)
         {
             if (!IsServer) return;
-            // Remove minTravelBeforeHit check - always check triggers (fixes close-range bug)
             TryHit(other);
         }
 
-        private void TryHit(Collider other)
+        private void OnCollisionEnter(Collision collision)
         {
-            if (other == null) return;
+            if (!IsServer) return;
+            if (collision != null && collision.collider != null)
+                TryHit(collision.collider);
+        }
 
-            Asteroid asteroid = other.GetComponent<Asteroid>();
+        /// <returns>True if we hit a valid target (asteroid, ship, drone) and despawned.</returns>
+        private bool TryHit(Collider other)
+        {
+            if (other == null) return false;
+
+            // Use GetComponentInParent to handle child colliders (e.g. ship sub-meshes)
+            Asteroid asteroid = other.GetComponentInParent<Asteroid>();
             if (asteroid != null && !asteroid.IsDestroyed)
             {
                 float appliedDamage = damage;
@@ -158,23 +168,26 @@ namespace TitanOrbit.Entities
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
                 asteroid.TakeDamageServerRpc(appliedDamage);
                 DespawnBullet();
-                return;
+                return true;
             }
 
-            Starship ship = other.GetComponent<Starship>();
+            Starship ship = other.GetComponentInParent<Starship>();
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
                 ship.TakeDamageServerRpc(damage, ownerTeam);
                 DespawnBullet();
-                return;
+                return true;
             }
 
-            DroneBase drone = other.GetComponent<DroneBase>();
+            DroneBase drone = other.GetComponentInParent<DroneBase>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 drone.TakeDamageServerRpc(damage, ownerTeam);
                 DespawnBullet();
+                return true;
             }
+
+            return false;
         }
 
         private void DespawnBullet()

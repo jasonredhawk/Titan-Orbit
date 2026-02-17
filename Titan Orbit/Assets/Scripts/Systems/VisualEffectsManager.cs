@@ -95,6 +95,8 @@ namespace TitanOrbit.Systems
             go.transform.position = position;
             var ps = go.AddComponent<ParticleSystem>();
             var main = ps.main;
+            main.playOnAwake = false; // Prevent auto-play before we finish configuring
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             main.duration = 0.5f;
             main.loop = false;
             main.startLifetime = 0.8f;

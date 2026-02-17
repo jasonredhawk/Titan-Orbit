@@ -253,7 +253,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 310358248
+  GlobalObjectIdHash: 3552193463
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -403,13 +403,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.OrbitZoneShapesVisual
   useCullingMasks: 0
-  innerRadius: 0.5
   outerRadius: 0.85
-  grooveCount: 14
-  grooveGapFraction: 0.4
+  borderThickness: 0.005
   tint: {r: 0.38, g: 0.52, b: 0.92, a: 1}
-  alphaWhenNotOrbiting: 0.032
-  alphaWhenOrbiting: 0.09
+  alphaWhenNotOrbiting: 0.3
+  alphaWhenOrbiting: 0.6
 --- !u!1 &5754775015515473423
 GameObject:
   m_ObjectHideFlags: 0

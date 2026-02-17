@@ -345,8 +345,8 @@ namespace TitanOrbit.Entities
                 Material teamMat = GetTeamMaterial(team);
                 Color teamColor = GetTeamColorFromMaterial(teamMat);
                 
-                // Blend neutral base color with team color
-                Color neutralBaseColor = neutralMat.GetColor("_BaseColor");
+                // Blend neutral base color with team color (SGT Planet uses _Color, URP uses _BaseColor)
+                Color neutralBaseColor = GetMaterialColor(neutralMat);
                 Color tintedColor = Color.Lerp(neutralBaseColor, teamColor, regularPlanetTintIntensity);
                 
                 if (sgtPlanet != null)
@@ -358,7 +358,7 @@ namespace TitanOrbit.Entities
                     if (sgtRenderer != null)
                     {
                         sgtRenderer.GetPropertyBlock(tintPropertyBlock);
-                        tintPropertyBlock.SetColor("_BaseColor", tintedColor);
+                        SetTintPropertyBlock(sgtRenderer, tintPropertyBlock, neutralMat, tintedColor);
                         sgtRenderer.SetPropertyBlock(tintPropertyBlock);
                     }
                     return;
@@ -369,7 +369,7 @@ namespace TitanOrbit.Entities
                 {
                     renderer.material = neutralMat;
                     renderer.GetPropertyBlock(tintPropertyBlock);
-                    tintPropertyBlock.SetColor("_BaseColor", tintedColor);
+                    SetTintPropertyBlock(renderer, tintPropertyBlock, neutralMat, tintedColor);
                     renderer.SetPropertyBlock(tintPropertyBlock);
                 }
             }
@@ -414,7 +414,25 @@ namespace TitanOrbit.Entities
         private Color GetTeamColorFromMaterial(Material teamMat)
         {
             if (teamMat == null) return Color.white;
-            return teamMat.GetColor("_BaseColor");
+            return GetMaterialColor(teamMat);
+        }
+
+        /// <summary>SGT Planet uses _Color; URP uses _BaseColor. Try both.</summary>
+        private static Color GetMaterialColor(Material mat)
+        {
+            if (mat == null) return Color.white;
+            if (mat.HasProperty("_Color")) return mat.GetColor("_Color");
+            if (mat.HasProperty("_BaseColor")) return mat.GetColor("_BaseColor");
+            return Color.white;
+        }
+
+        private static void SetTintPropertyBlock(Renderer r, MaterialPropertyBlock block, Material mat, Color tintedColor)
+        {
+            if (r == null || block == null) return;
+            r.GetPropertyBlock(block);
+            string prop = mat.HasProperty("_Color") ? "_Color" : (mat.HasProperty("_BaseColor") ? "_BaseColor" : null);
+            if (prop != null) block.SetColor(prop, tintedColor);
+            r.SetPropertyBlock(block);
         }
 
         /// <summary>Material used for the planet surface. Home planets always use tropical (neutral); others use team color.</summary>

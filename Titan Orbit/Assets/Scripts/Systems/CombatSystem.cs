@@ -17,6 +17,7 @@ namespace TitanOrbit.Systems
         [SerializeField] private Transform bulletParent;
         [SerializeField] private GameObject rocketPrefab;
         [SerializeField] private GameObject minePrefab;
+        [SerializeField] private int maxBullets = 200; // Limit total bullets to prevent lag
 
         private void Awake()
         {
@@ -34,6 +35,13 @@ namespace TitanOrbit.Systems
         public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam)
         {
             if (bulletPrefab == null) return;
+
+            // Limit bullet count to prevent lag
+            int currentBulletCount = FindObjectsByType<Bullet>(FindObjectsSortMode.None).Length;
+            if (currentBulletCount >= maxBullets)
+            {
+                return; // Skip spawning if too many bullets exist
+            }
 
             // Ensure direction is normalized in XZ plane
             Vector3 dir = direction;

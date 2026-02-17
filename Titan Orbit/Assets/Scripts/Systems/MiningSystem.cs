@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Systems
 {
@@ -34,7 +35,7 @@ namespace TitanOrbit.Systems
             if (!asteroid.CanBeMined()) return false;
             if (ship.CurrentGems >= ship.GemCapacity) return false;
 
-            float distance = Vector3.Distance(ship.transform.position, asteroid.transform.position);
+            float distance = ToroidalMap.ToroidalDistance(ship.transform.position, asteroid.transform.position);
             return distance <= miningRange;
         }
 

@@ -148,6 +148,50 @@ namespace TitanOrbit.Systems
             }
         }
         
+        /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot collect for 3 sec.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        {
+            GameObject prefab = GetGemPrefab();
+            if (prefab == null || totalValue <= 0f) return;
+
+            // Spawn as one or a few gems (simpler than asteroid distribution)
+            float remaining = totalValue;
+            int maxGems = Mathf.Min(5, Mathf.CeilToInt(totalValue / 2f));
+            if (maxGems < 1) maxGems = 1;
+            for (int i = 0; i < maxGems && remaining > 0.1f; i++)
+            {
+                float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
+                gemValue = Mathf.Clamp(gemValue, 1f, 50f);
+                float sizeMult = Mathf.Lerp(0.4f, 1.2f, Mathf.Clamp01(gemValue / 25f));
+                SpawnGemFromShip(prefab, shipPosition, gemValue, sizeMult, expelledByShipId);
+                remaining -= gemValue;
+            }
+        }
+
+        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId)
+        {
+            Vector2 dir2 = Random.insideUnitCircle.normalized;
+            if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
+            Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
+            Vector3 pos = shipCenter + dir * explosionRadius * Random.Range(0.3f, 1f);
+
+            GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
+            Rigidbody rb = gemObj.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+            }
+
+            NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
+            if (netObj != null)
+            {
+                netObj.Spawn();
+                Gem gem = gemObj.GetComponent<Gem>();
+                if (gem != null) gem.InitializeFromShip(gemValue, sizeMultiplier, expelledByShipId);
+            }
+        }
+
         private void SpawnGem(GameObject prefab, Vector3 asteroidCenter, float gemValue, float sizeMultiplier, float asteroidPhysicalSize)
         {
             // Random direction in XZ plane, slightly outward

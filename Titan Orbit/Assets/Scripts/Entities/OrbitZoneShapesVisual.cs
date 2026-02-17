@@ -18,8 +18,8 @@ namespace TitanOrbit.Entities
 
         [Header("Border")]
         [Tooltip("Thickness of the border ring.")]
-        [Range(0.001f, 0.02f)]
-        [SerializeField] private float borderThickness = 0.005f;
+        [Range(0.001f, 0.1f)]
+        [SerializeField] private float borderThickness = 0.02f;
 
         [Header("Appearance")]
         [Tooltip("Border color tint.")]

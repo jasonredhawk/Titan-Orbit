@@ -9,7 +9,7 @@ using System.Collections.Generic;
 namespace TitanOrbit.AI
 {
     /// <summary>
-    /// Manages AI-driven enemy starships in debug mode
+    /// Manages AI-driven enemy starships. Works regardless of debug mode.
     /// Spawns random number of AI ships per team with mining and transport behaviors
     /// </summary>
     public class AIStarshipManager : NetworkBehaviour
@@ -58,7 +58,6 @@ namespace TitanOrbit.AI
         private void Update()
         {
             if (!IsServer) return;
-            if (GameManager.Instance != null && !GameManager.Instance.DebugMode) return;
             if (hasSpawnedAI) return;
 
             // Wait a bit for the scene to fully initialize
@@ -139,6 +138,8 @@ namespace TitanOrbit.AI
 
             // Add marker before Spawn so Starship.OnNetworkSpawn / StartInOrbitAroundHomePlanet skips repositioning
             shipObj.AddComponent<AIShipMarker>();
+            // Add debug sync for visualization (line + text) - only visible when DebugMode is enabled
+            shipObj.AddComponent<AIStarshipDebugSync>();
 
             // Get NetworkObject and spawn
             NetworkObject netObj = shipObj.GetComponent<NetworkObject>();

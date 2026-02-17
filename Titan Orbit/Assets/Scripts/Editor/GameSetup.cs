@@ -128,6 +128,7 @@ namespace TitanOrbit.Editor
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
             HomePlanetStoreSystem homePlanetStoreSystem = obj.AddComponent<HomePlanetStoreSystem>();
             TitanOrbit.AI.AIStarshipManager aiStarshipManager = obj.AddComponent<TitanOrbit.AI.AIStarshipManager>();
+            obj.AddComponent<TitanOrbit.AI.AIStarshipDebugVisualizer>(); // Debug: line + text above AI ships
 
             // Assign UpgradeTree so ship level-up menu and buttons work (full gems + home planet level)
             TitanOrbit.Data.UpgradeTree upgradeTree = AssetDatabase.LoadAssetAtPath<TitanOrbit.Data.UpgradeTree>("Assets/Data/UpgradeTree.asset");

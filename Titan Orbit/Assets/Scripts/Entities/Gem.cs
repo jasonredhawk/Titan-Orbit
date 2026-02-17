@@ -24,6 +24,8 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> gemSize = new NetworkVariable<float>(1f); // Size multiplier (affects visual scale and value)
         private NetworkVariable<float> asteroidPhysicalSize = new NetworkVariable<float>(0.5f); // Asteroid scale for "half asteroid" gem size
         private NetworkVariable<float> spawnTime = new NetworkVariable<float>(0f); // Server time when gem was spawned
+        private NetworkVariable<ulong> expelledByShipId = new NetworkVariable<ulong>(0); // When non-zero: victim ship cannot collect for 3 sec
+        private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
         private Rigidbody rb;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
 
@@ -87,6 +89,20 @@ namespace TitanOrbit.Entities
                 gemSize.Value = sizeMultiplier;
                 asteroidPhysicalSize.Value = asteroidScale;
                 value.Value = gemValue;
+                expelledByShipId.Value = 0;
+            }
+        }
+
+        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect for 3 sec; enemies can collect immediately.</summary>
+        public void InitializeFromShip(float gemValue, float sizeMultiplier, ulong expelledByShipNetworkId)
+        {
+            if (IsServer)
+            {
+                gemSize.Value = sizeMultiplier;
+                asteroidPhysicalSize.Value = 0.5f; // Default for ship gems
+                value.Value = gemValue;
+                expelledByShipId.Value = expelledByShipNetworkId;
+                spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
         }
 
@@ -115,6 +131,8 @@ namespace TitanOrbit.Entities
             float currentPickupRadius = pickupRadius * gemSize.Value * lifetimeRemaining;
 
             // Find nearest valid ship in range for magnetic pull
+            float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+            ulong expelledId = expelledByShipId.Value;
             Collider[] overlaps = Physics.OverlapSphere(transform.position, currentPickupRadius);
             Starship nearestShip = null;
             float nearestDistSq = currentPickupRadius * currentPickupRadius;
@@ -122,6 +140,13 @@ namespace TitanOrbit.Entities
             {
                 Starship ship = col.GetComponent<Starship>();
                 if (ship == null || ship.IsDead || ship.CurrentGems >= ship.GemCapacity) continue;
+                // Expelled gems: victim ship cannot collect for 3 sec; others can collect immediately
+                if (expelledId != 0)
+                {
+                    var shipNo = ship.GetComponent<NetworkObject>();
+                    if (shipNo != null && shipNo.NetworkObjectId == expelledId && elapsed < EXPELLED_UNCOLLECTABLE_DURATION)
+                        continue; // Victim cannot collect yet
+                }
                 float distSq = (ship.transform.position - transform.position).sqrMagnitude;
                 if (distSq < nearestDistSq)
                 {

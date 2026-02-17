@@ -1206,10 +1206,10 @@ namespace TitanOrbit.UI
             }
 
             // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 8f, BlipType.Capsule), true);
+            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 16f, BlipType.Capsule), true);
 
             // Show all ships (friendly and enemy, including AI) on the minimap
-            // Blip when within visible area, edge marker when outside
+            // Blip when within visible area only - no edge markers for ships (markers only for planets)
             float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
             foreach (var ship in FindObjectsOfType<Starship>())
             {
@@ -1234,24 +1234,18 @@ namespace TitanOrbit.UI
                 if (dist <= currentRadius)
                 {
                     // Show blip when within visible area
-                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 5f, BlipType.Capsule));
-                    // Hide edge marker if ship moved into view
-                    if (edgeMarkers.ContainsKey(ship.transform))
-                    {
-                        edgeMarkers[ship.transform].gameObject.SetActive(false);
-                    }
+                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 12f, BlipType.Capsule));
+                    // Remove any old ship edge marker (markers only for planets)
+                    RemoveShipEdgeMarker(ship.transform);
                 }
                 else
                 {
-                    // Hide blip and show edge marker when outside visible area
+                    // Hide blip when outside visible area - ships don't get edge markers
                     if (blips.ContainsKey(ship.transform))
                     {
                         blips[ship.transform].gameObject.SetActive(false);
                     }
-                    if (!isExpanded)
-                    {
-                        UpdateShipEdgeMarker(ship.transform, dx, dz, dist, shipColor);
-                    }
+                    RemoveShipEdgeMarker(ship.transform);
                 }
             }
 
@@ -1717,44 +1711,14 @@ namespace TitanOrbit.UI
             return new Color(c.r * 0.7f, c.g * 0.7f, c.b * 0.7f);
         }
         
-        private void UpdateShipEdgeMarker(Transform shipTransform, float dx, float dz, float distance, Color shipColor)
+        private void RemoveShipEdgeMarker(Transform shipTransform)
         {
-            if (edgeMarkerContainer == null || isExpanded) return;
-            
-            float angle = Mathf.Atan2(dz, dx);
-            float radius = displaySize / 2f;
-            float edgeX = Mathf.Cos(angle) * radius;
-            float edgeZ = Mathf.Sin(angle) * radius;
-            float normalizedDistance = Mathf.Clamp01((distance - minimapRadius) / (maxPlanetDistance - minimapRadius));
-            float markerSize = Mathf.Lerp(edgeMarkerMaxSize * 0.6f, edgeMarkerMinSize * 0.6f, normalizedDistance);
-            
-            if (!edgeMarkers.ContainsKey(shipTransform))
-            {
-                GameObject markerObj = new GameObject("ShipEdgeMarker");
-                markerObj.transform.SetParent(edgeMarkerContainer, false);
-                Image img = markerObj.AddComponent<Image>();
-                img.color = shipColor;
-                img.raycastTarget = false;
-                img.sprite = CreateBlipSprite(32, BlipType.Capsule);
-                RectTransform rt = markerObj.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(markerSize, markerSize);
-                rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.anchoredPosition = new Vector2(edgeX, edgeZ);
-                rt.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
-                edgeMarkers[shipTransform] = rt;
-                edgeMarkerImages[shipTransform] = img;
-                edgeMarkerIsHomePlanet[shipTransform] = false;
-            }
-            else if (edgeMarkers[shipTransform] != null)
-            {
-                RectTransform markerRect = edgeMarkers[shipTransform];
-                markerRect.gameObject.SetActive(true);
-                markerRect.anchoredPosition = new Vector2(edgeX, edgeZ);
-                markerRect.sizeDelta = new Vector2(markerSize, markerSize);
-                markerRect.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
-                if (edgeMarkerImages.TryGetValue(shipTransform, out var img) && img != null)
-                    img.color = shipColor;
-            }
+            if (shipTransform == null || !edgeMarkers.ContainsKey(shipTransform)) return;
+            var rt = edgeMarkers[shipTransform];
+            if (rt != null) Destroy(rt.gameObject);
+            edgeMarkers.Remove(shipTransform);
+            edgeMarkerImages.Remove(shipTransform);
+            edgeMarkerIsHomePlanet.Remove(shipTransform);
         }
 
         private void UpdateEdgeMarker(Transform planetTransform, float dx, float dz, float distance, bool isHomePlanet, TeamManager.Team team)

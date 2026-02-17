@@ -139,7 +139,14 @@ namespace TitanOrbit.Entities
             if (rb != null)
             {
                 rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+                rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Better hit detection for fast bullets
             }
+        }
+
+        private void OnDestroy()
+        {
+            // Cancel any pending respawn invokes
+            CancelInvoke(nameof(RespawnServerRpc));
         }
 
         private void ApplyHullIdentityColor()
@@ -431,11 +438,20 @@ namespace TitanOrbit.Entities
 
         private void HandleHealthRegen()
         {
-            if (IsServer && currentHealth.Value < MaxHealth)
+            // Health can regen even when at zero - regen is allowed
+            // Only prevent regen when dead
+            if (IsServer && !isDead.Value && currentHealth.Value < MaxHealth)
             {
                 float regen = EffectiveHealthRegen * Time.deltaTime;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
-                currentHealth.Value = Mathf.Min(currentHealth.Value + regen, MaxHealth);
+                float newHealth = currentHealth.Value + regen;
+                // Ensure health never exceeds MaxHealth
+                currentHealth.Value = Mathf.Min(newHealth, MaxHealth);
+            }
+            // Safety check: clamp health to zero minimum (shouldn't go negative)
+            if (IsServer && currentHealth.Value < 0f)
+            {
+                currentHealth.Value = 0f;
             }
         }
 
@@ -483,6 +499,21 @@ namespace TitanOrbit.Entities
             // Visual/audio feedback for firing
         }
 
+        /// <summary>Server-only: AI ships call this to fire at a target. Uses firePoint if set.</summary>
+        public void FireAtTarget(Vector3 direction)
+        {
+            if (!IsServer) return;
+            if (!CanFire()) return;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
+            else direction.Normalize();
+            Vector3 firePos = firePoint != null ? firePoint.position : transform.position + direction * 2f;
+            lastFireTime = Time.time;
+            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - ENERGY_PER_SHOT);
+            if (CombatSystem.Instance != null)
+                CombatSystem.Instance.SpawnBulletServerRpc(firePos, direction, EffectiveBulletSpeed, EffectiveFirePower, shipTeam.Value);
+        }
+
         [ServerRpc]
         private void FireRocketServerRpc(bool preferLarge)
         {
@@ -509,38 +540,48 @@ namespace TitanOrbit.Entities
         }
 
         private NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
-        private float timeHealthZero;
 
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam)
         {
-            if (attackerTeam == shipTeam.Value) return;
+            // Block friendly fire only when both have valid teams and they match
+            if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
             if (isDead.Value) return;
 
-            currentHealth.Value = Mathf.Max(0f, currentHealth.Value - damage);
-
-            if (currentHealth.Value <= 0f)
+            if (currentHealth.Value > 0f)
             {
-                timeHealthZero = Time.time;
+                // Phase 1: Reduce health until it reaches zero
+                currentHealth.Value = Mathf.Max(0f, currentHealth.Value - damage);
+            }
+            else
+            {
+                // Phase 2: Health is zero - bullets drain gems and expel them
+                float gemsToExpel = Mathf.Min(damage, currentGems.Value);
+                if (gemsToExpel > 0f && GemSpawner.Instance != null)
+                {
+                    currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
+                    ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
+                    GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
+                }
+                else if (gemsToExpel > 0f)
+                {
+                    currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
+                }
+            }
+
+            // Check for death - use small epsilon to handle floating point precision
+            const float DEATH_THRESHOLD = 0.001f;
+            if (currentHealth.Value <= DEATH_THRESHOLD && currentGems.Value <= DEATH_THRESHOLD)
+            {
+                DieServerRpc();
             }
         }
 
         private void HandleDeath()
         {
             if (isDead.Value) return;
-
-            if (currentHealth.Value <= 0f)
-            {
-                // Drain gems over time when health is zero
-                float drainRate = 20f;
-                float toDrain = drainRate * Time.deltaTime;
-                currentGems.Value = Mathf.Max(0f, currentGems.Value - toDrain);
-            }
-
-            if (currentHealth.Value <= 0f && currentGems.Value <= 0f)
-            {
-                DieServerRpc();
-            }
+            // Death is triggered in TakeDamageServerRpc when health and gems both reach 0
+            // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
         /// <summary>Server: continuous load/unload at shipLevel people per second while in orbit.</summary>
@@ -604,22 +645,119 @@ namespace TitanOrbit.Entities
                 wantToDepositGems.Value = false;
         }
 
+        [Header("Respawn Settings")]
+        [SerializeField] private float respawnDelay = 5f;
+
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc()
         {
             if (isDead.Value) return;
             isDead.Value = true;
-            RespawnServerRpc();
+            
+            // Hide ship visually and spawn explosion
+            HideShipVisuals();
+            SpawnDeathExplosion();
+            
+            // Delay respawn by 5 seconds
+            Invoke(nameof(RespawnServerRpc), respawnDelay);
         }
 
         [ServerRpc(RequireOwnership = false)]
         private void RespawnServerRpc()
         {
+            // Reset stats
             currentHealth.Value = MaxHealth;
             currentGems.Value = 0f;
             currentPeople.Value = 0f;
             currentEnergy.Value = EffectiveEnergyCapacity;
             isDead.Value = false;
+            
+            // Show ship visuals again
+            ShowShipVisuals();
+            
+            // Respawn at home planet (for both player and AI ships)
+            RespawnAtHomePlanet();
+        }
+
+        /// <summary>Server: respawn ship at home planet (called on death/respawn).</summary>
+        private void RespawnAtHomePlanet()
+        {
+            if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
+            HomePlanet home = null;
+            foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
+            {
+                if (hp.AssignedTeam == shipTeam.Value) { home = hp; break; }
+            }
+            if (home == null) return;
+            float orbitRadius = home.PlanetSize * 0.6f;
+            Vector3 planetPos = home.transform.position;
+            Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
+            orbitPos.y = FIXED_Y_POSITION;
+            orbitPos = ToroidalMap.WrapPosition(orbitPos);
+            rb.position = orbitPos;
+            rb.linearVelocity = new Vector3(0f, 0f, -orbitSpeed); // Tangent for clockwise orbit
+            currentVelocity = rb.linearVelocity;
+        }
+
+        /// <summary>Hide all renderers to make ship invisible when dead.</summary>
+        private void HideShipVisuals()
+        {
+            HideShipVisualsClientRpc();
+        }
+
+        [ClientRpc]
+        private void HideShipVisualsClientRpc()
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                if (renderer != null)
+                    renderer.enabled = false;
+            }
+            
+            // Also disable colliders so dead ships don't interfere
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            foreach (var collider in colliders)
+            {
+                if (collider != null)
+                    collider.enabled = false;
+            }
+        }
+
+        /// <summary>Show all renderers to make ship visible again on respawn.</summary>
+        private void ShowShipVisuals()
+        {
+            ShowShipVisualsClientRpc();
+        }
+
+        [ClientRpc]
+        private void ShowShipVisualsClientRpc()
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                if (renderer != null)
+                    renderer.enabled = true;
+            }
+            
+            // Re-enable colliders
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            foreach (var collider in colliders)
+            {
+                if (collider != null)
+                    collider.enabled = true;
+            }
+        }
+
+        /// <summary>Spawn explosion effect at ship position when it dies.</summary>
+        private void SpawnDeathExplosion()
+        {
+            if (VisualEffectsManager.Instance != null)
+            {
+                Vector3 explosionPos = transform.position;
+                explosionPos.y = 0f;
+                VisualEffectsManager.Instance.SpawnExplosionServerRpc(explosionPos);
+            }
         }
 
         private void OnCollisionEnter(Collision collision)
@@ -627,11 +765,15 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
 
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
-            if (asteroid != null)
+            if (asteroid != null && !asteroid.IsDestroyed)
             {
-                float collisionDamage = 10f;
-                asteroid.TakeDamageServerRpc(collisionDamage);
-                TakeDamageServerRpc(collisionDamage, TeamManager.Team.None);
+                var no = asteroid.GetComponent<NetworkObject>();
+                if (no != null && no.IsSpawned)
+                {
+                    float collisionDamage = 10f;
+                    asteroid.TakeDamageServerRpc(collisionDamage);
+                    TakeDamageServerRpc(collisionDamage, TeamManager.Team.None);
+                }
             }
         }
 
