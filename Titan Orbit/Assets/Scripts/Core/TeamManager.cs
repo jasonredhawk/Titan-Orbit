@@ -24,6 +24,18 @@ namespace TitanOrbit.Core
             TeamC = 3
         }
 
+        /// <summary>Display color for UI, rings, minimap. Neutral = white; Team A/B/C = red/blue/green.</summary>
+        public static Color GetTeamColor(Team team)
+        {
+            switch (team)
+            {
+                case Team.TeamA: return new Color(0.9f, 0.25f, 0.25f);
+                case Team.TeamB: return new Color(0.25f, 0.4f, 0.9f);
+                case Team.TeamC: return new Color(0.25f, 0.85f, 0.35f);
+                default: return Color.white;
+            }
+        }
+
         private Dictionary<ulong, Team> playerTeams = new Dictionary<ulong, Team>();
         private Dictionary<Team, List<ulong>> teamPlayers = new Dictionary<Team, List<ulong>>();
 

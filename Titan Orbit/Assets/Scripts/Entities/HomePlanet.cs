@@ -4,6 +4,8 @@ using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using System.Collections;
 using System.Collections.Generic;
+using SpaceGraphicsToolkit;
+using SpaceGraphicsToolkit.Atmosphere;
 
 namespace TitanOrbit.Entities
 {
@@ -19,6 +21,12 @@ namespace TitanOrbit.Entities
         private static readonly float[] MaxGemsPerLevel = { 0f, 0f, 0f, 800f, 1600f, 3200f, 6400f }; // Index = level (1-6)
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
+
+        [Header("Home Planet SGT: Water & Atmosphere")]
+        [Tooltip("SGT Atmosphere material (e.g. CW Atmosphere + Lighting + Scattering). Required for atmosphere on home planets.")]
+        [SerializeField] private Material atmosphereSourceMaterial;
+        [Tooltip("SGT Atmosphere outer mesh (e.g. Geosphere40 from CW).")]
+        [SerializeField] private Mesh atmosphereOuterMesh;
 
         [Header("Level Visuals")]
         [Tooltip("Scale pulse multiplier when leveling up (e.g. 1.15 = 15% bigger briefly).")]
@@ -65,7 +73,18 @@ namespace TitanOrbit.Entities
             baseLocalScale = transform.localScale;
             RemoveOldCylinderRings();
             EnsureShapesRingsDrawer();
+            EnsureWaterComponents();
+            EnsureAtmosphere();
+            SetHomePlanetWaterLevel();
             homePlanetLevel.OnValueChanged += OnLevelChanged;
+        }
+
+        /// <summary>Set SGT planet water level so tropical water is visible (tropical materials use _HasWater).</summary>
+        private void SetHomePlanetWaterLevel()
+        {
+            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            if (sgt != null)
+                sgt.WaterLevel = 0.2f;
         }
 
         /// <summary>Dark color so population text is readable on the white home planet ring.</summary>
@@ -73,6 +92,12 @@ namespace TitanOrbit.Entities
 
         /// <summary>Position text above the ring so it's visible (not underneath).</summary>
         protected override Vector3 GetPopulationTextLocalPosition() => new Vector3(0f, 0.8f, 0f);
+
+        /// <summary>Home planet surface is always tropical (water + atmosphere); team is shown only on rings.</summary>
+        protected override Material GetEffectiveMaterialForPlanetSurface(TeamManager.Team team)
+        {
+            return GetNeutralMaterial();
+        }
 
         /// <summary>Home planets have max 100 people (until level upgrade increases it later).</summary>
         protected override float GetMaxPopulationForPlanet() => 100f;
@@ -199,6 +224,48 @@ namespace TitanOrbit.Entities
                 StartCoroutine(LevelUpScalePulse());
             }
             Debug.Log($"Home Planet level changed from {previousLevel} to {newLevel}");
+        }
+
+        /// <summary>Add SGT water components so home planet materials with water render correctly.</summary>
+        private void EnsureWaterComponents()
+        {
+            if (GetComponent<SgtPlanetWaterGradient>() == null)
+                gameObject.AddComponent<SgtPlanetWaterGradient>();
+            if (GetComponent<SgtPlanetWaterTexture>() == null)
+                gameObject.AddComponent<SgtPlanetWaterTexture>();
+        }
+
+        /// <summary>Add SGT atmosphere as child for home planets (volumetric atmosphere).</summary>
+        private void EnsureAtmosphere()
+        {
+            if (atmosphereSourceMaterial == null || atmosphereOuterMesh == null) return;
+            Transform existing = transform.Find("Atmosphere");
+            SgtAtmosphere sgtAtmosphere = existing != null ? existing.GetComponent<SgtAtmosphere>() : null;
+
+            if (sgtAtmosphere == null)
+            {
+                GameObject atmosphereObj = new GameObject("Atmosphere");
+                atmosphereObj.transform.SetParent(transform);
+                atmosphereObj.transform.localPosition = Vector3.zero;
+                atmosphereObj.transform.localRotation = Quaternion.identity;
+                atmosphereObj.transform.localScale = Vector3.one;
+
+                sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
+                sgtAtmosphere.SourceMaterial = atmosphereSourceMaterial;
+                sgtAtmosphere.OuterMesh = atmosphereOuterMesh;
+                sgtAtmosphere.InnerMeshRadius = 0.5f;
+                sgtAtmosphere.OuterMeshRadius = 0.5f;
+                sgtAtmosphere.Height = 0.025f;
+            }
+
+            // Required so SourceMaterial has Inner/Outer DepthTex, LightingTex, ScatteringTex (avoids black circle / inspector errors)
+            GameObject atmObj = sgtAtmosphere.gameObject;
+            if (atmObj.GetComponent<SgtAtmosphereDepthTex>() == null)
+                atmObj.AddComponent<SgtAtmosphereDepthTex>();
+            if (atmObj.GetComponent<SgtAtmosphereLightingTex>() == null)
+                atmObj.AddComponent<SgtAtmosphereLightingTex>();
+            if (atmObj.GetComponent<SgtAtmosphereScatteringTex>() == null)
+                atmObj.AddComponent<SgtAtmosphereScatteringTex>();
         }
 
         /// <summary>Remove legacy cylinder-based Ring children so Shapes-drawn rings are the only ones visible.</summary>

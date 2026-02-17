@@ -1,5 +1,6 @@
 using UnityEngine;
 using Shapes;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Entities
 {
@@ -55,7 +56,8 @@ namespace TitanOrbit.Entities
                 Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
 
                 float alpha = Mathf.Clamp01(ringOpacity + (level - 3) * opacityPerLevel);
-                Color color = new Color(1f, 1f, 1f, alpha);
+                Color baseColor = TeamManager.GetTeamColor(homePlanet.TeamOwnership);
+                Color color = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
 
                 float currentRadius = innerRadius;
                 for (int i = 0; i < ringCount; i++)

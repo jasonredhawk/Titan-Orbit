@@ -10,10 +10,14 @@ using TitanOrbit.Generation;
 using TitanOrbit.UI;
 using TitanOrbit.Audio;
 using TitanOrbit.Input;
+using TitanOrbit.Data;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using TMPro;
 using SpaceGraphicsToolkit;
+using SpaceGraphicsToolkit.Atmosphere;
+using SpaceGraphicsToolkit.LightAndShadow;
+using System.Linq;
 
 namespace TitanOrbit.Editor
 {
@@ -154,7 +158,10 @@ namespace TitanOrbit.Editor
             // Position and rotate for top-down game (light from above)
             lightObj.transform.position = new Vector3(0, 20, 0);
             lightObj.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
-            
+
+            // SGT atmosphere/planets need SgtLight on lights to render correctly
+            lightObj.AddComponent<SgtLight>();
+
             // Add ambient light for better visibility
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = new Color(0.3f, 0.3f, 0.35f);
@@ -817,25 +824,86 @@ namespace TitanOrbit.Editor
             accentList.Add(r);
         }
 
+        // ----- CW/SGT asset paths (Space Graphics Toolkit + PLANETS pack) -----
+        private const string CW_PLANETS_MATERIALS = "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Materials";
+        private const string CW_GEOSPHERE50 = "Assets/Plugins/CW/SpaceGraphicsToolkit/Features/Shared/Extras/Meshes/Geosphere50.dae";
+        private const string CW_GEOSPHERE40 = "Assets/Plugins/CW/SpaceGraphicsToolkit/Features/Shared/Extras/Meshes/Geosphere40.dae";
+        private const string CW_ATMOSPHERE_MAT = "Assets/Plugins/CW/SpaceGraphicsToolkit/Features/Atmosphere/Examples/Materials/Atmosphere + Lighting + Scattering.mat";
+        private const string PLANET_MATERIAL_POOL_PATH = "Assets/Data/PlanetMaterialPool.asset";
+
+        private static Mesh GetOrLoadGeosphere50Mesh()
+        {
+            Object[] all = AssetDatabase.LoadAllAssetsAtPath(CW_GEOSPHERE50);
+            if (all == null) return null;
+            foreach (Object o in all)
+                if (o is Mesh m && (m.name == "Geosphere50" || m.name.Contains("Geosphere")))
+                    return m;
+            return all.OfType<Mesh>().FirstOrDefault();
+        }
+
+        private static Mesh GetOrLoadGeosphere40Mesh()
+        {
+            Object[] all = AssetDatabase.LoadAllAssetsAtPath(CW_GEOSPHERE40);
+            if (all == null) return null;
+            foreach (Object o in all)
+                if (o is Mesh m) return m;
+            return null;
+        }
+
+        private static Material LoadCWPlanetMaterial(string materialName)
+        {
+            return AssetDatabase.LoadAssetAtPath<Material>(CW_PLANETS_MATERIALS + "/" + materialName + ".mat");
+        }
+
+        private static PlanetMaterialPool GetOrLoadPlanetMaterialPool()
+        {
+            var pool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(PLANET_MATERIAL_POOL_PATH);
+            if (pool == null && !AssetDatabase.IsValidFolder("Assets/Data"))
+                AssetDatabase.CreateFolder("Assets", "Data");
+            if (pool == null)
+            {
+                pool = ScriptableObject.CreateInstance<PlanetMaterialPool>();
+                AssetDatabase.CreateAsset(pool, PLANET_MATERIAL_POOL_PATH);
+            }
+            if (pool.Materials.Count == 0)
+                PlanetMaterialPoolEditor.PopulateFromCWPack();
+            return pool;
+        }
+
+        private static Material GetOrLoadAtmosphereMaterial()
+        {
+            return AssetDatabase.LoadAssetAtPath<Material>(CW_ATMOSPHERE_MAT);
+        }
+
         private static void CreatePlanetPrefab()
         {
+            const string path = "Assets/Prefabs/Planet.prefab";
+            EnsurePrefabDirectory();
+
+            Mesh planetMesh = GetOrLoadGeosphere50Mesh();
+            PlanetMaterialPool materialPool = GetOrLoadPlanetMaterialPool();
+            Material neutralMat = LoadCWPlanetMaterial("Tropical1") ?? (materialPool != null && materialPool.Materials.Count > 0 ? materialPool.Materials[0] : null);
+            Material teamAMat = LoadCWPlanetMaterial("Desert1");
+            Material teamBMat = LoadCWPlanetMaterial("Frozen1");
+            Material teamCMat = LoadCWPlanetMaterial("Lava1");
+            if (neutralMat == null) neutralMat = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f));
+            if (teamAMat == null) teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f));
+            if (teamBMat == null) teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f));
+            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f));
+
             GameObject planet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             planet.name = "Planet";
-            planet.transform.localScale = Vector3.one * 8f; // Much larger for orbit gameplay
+            planet.transform.localScale = Vector3.one * 8f;
 
-            // Body collider = planet sphere (Unity default radius 0.5). Orbit zone = 0.5 to 0.6 (10% band)
             Object.DestroyImmediate(planet.GetComponent<Collider>());
             SphereCollider bodyCollider = planet.AddComponent<SphereCollider>();
             bodyCollider.isTrigger = false;
             bodyCollider.radius = 0.5f;
 
-            // Add NetworkObject
-            NetworkObject netObj = planet.AddComponent<NetworkObject>();
-
-            // Add Planet script
+            planet.AddComponent<NetworkObject>();
             Planet planetScript = planet.AddComponent<Planet>();
 
-            // Orbit zone: surface (0.5) to a bit farther (0.8 local)
+            // OrbitZone child: Shapes visual + orbit zone
             GameObject orbitZoneObj = new GameObject("OrbitZone");
             orbitZoneObj.transform.SetParent(planet.transform);
             orbitZoneObj.transform.localPosition = Vector3.zero;
@@ -844,50 +912,53 @@ namespace TitanOrbit.Editor
             orbitCollider.isTrigger = true;
             orbitCollider.radius = 0.85f;
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
+            orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = planetScript;
             orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Add ToroidalRenderer for seamless map wrapping
             planet.AddComponent<ToroidalRenderer>();
 
-            // Grey material for neutral planets - will change to team color when captured
-            Renderer renderer = planet.GetComponent<Renderer>();
-            Material neutralMat = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f)); // Grey
-            renderer.sharedMaterial = neutralMat;
+            // SGT Planet: remove default renderer, add SgtPlanet
+            Object.DestroyImmediate(planet.GetComponent<MeshRenderer>());
+            Object.DestroyImmediate(planet.GetComponent<MeshFilter>());
+            SgtPlanet sgtPlanet = planet.AddComponent<SgtPlanet>();
+            if (planetMesh != null)
+            {
+                var sgtSO = new SerializedObject(sgtPlanet);
+                sgtSO.FindProperty("mesh").objectReferenceValue = planetMesh;
+                sgtSO.FindProperty("radius").floatValue = 0.5f;
+                sgtSO.FindProperty("material").objectReferenceValue = neutralMat;
+                sgtSO.FindProperty("displace").boolValue = true;
+                sgtSO.FindProperty("displacement").floatValue = 0.054f;
+                sgtSO.ApplyModifiedPropertiesWithoutUndo();
+            }
 
-            // Team materials (same names as HomePlanet so regular planets change colour when captured)
-            Material teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)); // Red
-            Material teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)); // Blue
-            Material teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)); // Green
+            // Shapes ring drawer (no Ring GameObject)
+            GameObject ringsObj = new GameObject("PlanetRings");
+            ringsObj.transform.SetParent(planet.transform);
+            ringsObj.transform.localPosition = Vector3.zero;
+            ringsObj.transform.localRotation = Quaternion.identity;
+            ringsObj.transform.localScale = Vector3.one;
+            ringsObj.AddComponent<PlanetRingsDrawer>();
 
-            // Add ring - vertical orientation to differentiate from home planets (horizontal)
-            GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            ring.name = "Ring";
-            ring.transform.SetParent(planet.transform);
-            ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
-            ring.transform.localRotation = Quaternion.Euler(0, 0, 0); // Vertical (standing up) instead of horizontal
-            ring.transform.localPosition = Vector3.zero;
-            Object.DestroyImmediate(ring.GetComponent<Collider>()); // Remove collider from ring
-            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PlanetRing", new Color(0f, 0.8f, 1f, 0.7f)); // Cyan ring
-
-            // Population text: just above surface; negative X scale so text reads correctly (not mirrored)
+            // Population text
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(planet.transform);
-            textObj.transform.localPosition = new Vector3(0f, 0.55f, 0f); // Just above sphere (radius 0.5)
+            textObj.transform.localPosition = new Vector3(0f, 0.55f, 0f);
             textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f); // +X: not mirrored, -Y: right-side up
-            
+            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f);
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
             textMesh.fontSize = 36;
             textMesh.color = Color.white;
             textMesh.alignment = TextAlignmentOptions.Center;
             textMesh.fontStyle = FontStyles.Bold;
-            
-            // Assign to planet script (renderer, materials for neutral + team colours when captured, population text)
+
             var planetSO = new SerializedObject(planetScript);
-            planetSO.FindProperty("planetRenderer").objectReferenceValue = renderer;
+            planetSO.FindProperty("planetRenderer").objectReferenceValue = null;
+            planetSO.FindProperty("sgtPlanet").objectReferenceValue = sgtPlanet;
+            planetSO.FindProperty("materialPool").objectReferenceValue = materialPool;
             planetSO.FindProperty("neutralMaterial").objectReferenceValue = neutralMat;
             planetSO.FindProperty("teamAMaterial").objectReferenceValue = teamAMat;
             planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
@@ -895,34 +966,42 @@ namespace TitanOrbit.Editor
             planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
             planetSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Save as prefab
-            string path = "Assets/Prefabs/Planet.prefab";
-            EnsurePrefabDirectory();
             PrefabUtility.SaveAsPrefabAsset(planet, path);
             Object.DestroyImmediate(planet);
-
-            Debug.Log($"Created prefab: {path}");
+            Debug.Log($"Created prefab (SGT + Shapes): {path}");
         }
 
         private static void CreateHomePlanetPrefab()
         {
+            const string path = "Assets/Prefabs/HomePlanet.prefab";
+            EnsurePrefabDirectory();
+
+            Mesh planetMesh = GetOrLoadGeosphere50Mesh();
+            Mesh atmosphereMesh = GetOrLoadGeosphere40Mesh();
+            Material atmosphereMat = GetOrLoadAtmosphereMaterial();
+            PlanetMaterialPool materialPool = GetOrLoadPlanetMaterialPool();
+            Material neutralMat = LoadCWPlanetMaterial("Tropical1") ?? (materialPool != null && materialPool.WaterMaterials.Count > 0 ? materialPool.WaterMaterials[0] : (materialPool != null && materialPool.Materials.Count > 0 ? materialPool.Materials[0] : null));
+            Material teamAMat = LoadCWPlanetMaterial("Desert1");
+            Material teamBMat = LoadCWPlanetMaterial("Frozen1");
+            Material teamCMat = LoadCWPlanetMaterial("Lava1");
+            if (neutralMat == null) neutralMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(0.5f, 0.5f, 0.5f));
+            if (teamAMat == null) teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f));
+            if (teamBMat == null) teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f));
+            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f));
+
             GameObject homePlanet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             homePlanet.name = "HomePlanet";
-            homePlanet.transform.localScale = Vector3.one * 20f; // Much larger - team base
+            homePlanet.transform.localScale = Vector3.one * 20f;
 
-            // Body collider = planet sphere (Unity default radius 0.5). Orbit zone = 0.5 to 0.6 (10% band)
             Object.DestroyImmediate(homePlanet.GetComponent<Collider>());
             SphereCollider bodyCollider = homePlanet.AddComponent<SphereCollider>();
             bodyCollider.isTrigger = false;
             bodyCollider.radius = 0.5f;
 
-            // Add NetworkObject
-            NetworkObject netObj = homePlanet.AddComponent<NetworkObject>();
-
-            // Add HomePlanet script (which extends Planet)
+            homePlanet.AddComponent<NetworkObject>();
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
 
-            // Orbit zone: surface (0.5) to a bit farther (0.8 local)
+            // OrbitZone child + Shapes visual
             GameObject orbitZoneObj = new GameObject("OrbitZone");
             orbitZoneObj.transform.SetParent(homePlanet.transform);
             orbitZoneObj.transform.localPosition = Vector3.zero;
@@ -931,64 +1010,87 @@ namespace TitanOrbit.Editor
             orbitCollider.isTrigger = true;
             orbitCollider.radius = 0.85f;
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
+            orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = homePlanetScript;
             orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Add ToroidalRenderer for seamless map wrapping
             homePlanet.AddComponent<ToroidalRenderer>();
 
-            // Default material - team color set at runtime by MapGenerator
-            Renderer renderer = homePlanet.GetComponent<Renderer>();
-            renderer.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(0.5f, 0.5f, 0.5f)); // Neutral default
+            // SGT Planet + water (no MeshFilter/MeshRenderer)
+            Object.DestroyImmediate(homePlanet.GetComponent<MeshRenderer>());
+            Object.DestroyImmediate(homePlanet.GetComponent<MeshFilter>());
+            SgtPlanet sgtPlanet = homePlanet.AddComponent<SgtPlanet>();
+            homePlanet.AddComponent<SgtPlanetWaterGradient>();
+            homePlanet.AddComponent<SgtPlanetWaterTexture>();
+            if (planetMesh != null)
+            {
+                var sgtSO = new SerializedObject(sgtPlanet);
+                sgtSO.FindProperty("mesh").objectReferenceValue = planetMesh;
+                sgtSO.FindProperty("radius").floatValue = 0.5f;
+                sgtSO.FindProperty("material").objectReferenceValue = neutralMat;
+                sgtSO.FindProperty("displace").boolValue = true;
+                sgtSO.FindProperty("displacement").floatValue = 0.054f;
+                sgtSO.FindProperty("waterLevel").floatValue = 0.2f;
+                sgtSO.ApplyModifiedPropertiesWithoutUndo();
+            }
 
-            // Team-specific materials for home planets (A=red, B=blue, C=green)
-            Material teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)); // Red
-            Material teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)); // Blue
-            Material teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)); // Green
+            // Atmosphere child (SGT Atmosphere + DepthTex/LightingTex/ScatteringTex)
+            if (atmosphereMat != null && atmosphereMesh != null)
+            {
+                GameObject atmosphereObj = new GameObject("Atmosphere");
+                atmosphereObj.transform.SetParent(homePlanet.transform);
+                atmosphereObj.transform.localPosition = Vector3.zero;
+                atmosphereObj.transform.localRotation = Quaternion.identity;
+                atmosphereObj.transform.localScale = Vector3.one;
+                SgtAtmosphere sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
+                sgtAtmosphere.SourceMaterial = atmosphereMat;
+                sgtAtmosphere.OuterMesh = atmosphereMesh;
+                sgtAtmosphere.InnerMeshRadius = 0.5f;
+                sgtAtmosphere.OuterMeshRadius = 0.5f;
+                sgtAtmosphere.Height = 0.025f;
+                atmosphereObj.AddComponent<SgtAtmosphereDepthTex>();
+                atmosphereObj.AddComponent<SgtAtmosphereLightingTex>();
+                atmosphereObj.AddComponent<SgtAtmosphereScatteringTex>();
+            }
 
-            var planetSO = new SerializedObject(homePlanetScript);
-            planetSO.FindProperty("planetRenderer").objectReferenceValue = renderer;
-            planetSO.FindProperty("neutralMaterial").objectReferenceValue = renderer.sharedMaterial;
-            planetSO.FindProperty("teamAMaterial").objectReferenceValue = teamAMat;
-            planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
-            planetSO.FindProperty("teamCMaterial").objectReferenceValue = teamCMat;
-            planetSO.ApplyModifiedPropertiesWithoutUndo();
+            // Shapes ring drawer
+            GameObject ringsObj = new GameObject("HomePlanetRings");
+            ringsObj.transform.SetParent(homePlanet.transform);
+            ringsObj.transform.localPosition = Vector3.zero;
+            ringsObj.transform.localRotation = Quaternion.identity;
+            ringsObj.transform.localScale = Vector3.one;
+            ringsObj.AddComponent<HomePlanetRingsDrawer>();
 
-            GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            ring.name = "Ring";
-            ring.transform.SetParent(homePlanet.transform);
-            ring.transform.localScale = new Vector3(1.2f, 0.05f, 1.2f);
-            ring.transform.localRotation = Quaternion.Euler(90, 0, 0);
-            ring.transform.localPosition = Vector3.zero;
-            Object.DestroyImmediate(ring.GetComponent<Collider>());
-            ring.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_HomePlanetRing", new Color(1f, 1f, 1f, 0.6f)); // Ring color matches planet
-
-            // Population text: just above surface; negative X scale so text reads correctly (not mirrored)
+            // Population text
             GameObject textObj = new GameObject("PopulationText");
             textObj.transform.SetParent(homePlanet.transform);
-            textObj.transform.localPosition = new Vector3(0f, 0.55f, 0f); // Just above sphere (radius 0.5)
+            textObj.transform.localPosition = new Vector3(0f, 0.8f, 0f);
             textObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f); // +X: not mirrored, -Y: right-side up
-            
+            textObj.transform.localScale = new Vector3(0.04f, -0.04f, 0.04f);
             TextMeshPro textMesh = textObj.AddComponent<TextMeshPro>();
             textMesh.text = "0";
             textMesh.fontSize = 48;
-            textMesh.color = Color.white;
+            textMesh.color = new Color(0.12f, 0.12f, 0.15f);
             textMesh.alignment = TextAlignmentOptions.Center;
             textMesh.fontStyle = FontStyles.Bold;
-            
-            planetSO = new SerializedObject(homePlanetScript);
+
+            var planetSO = new SerializedObject(homePlanetScript);
+            planetSO.FindProperty("planetRenderer").objectReferenceValue = null;
+            planetSO.FindProperty("sgtPlanet").objectReferenceValue = sgtPlanet;
+            planetSO.FindProperty("materialPool").objectReferenceValue = materialPool;
+            planetSO.FindProperty("neutralMaterial").objectReferenceValue = neutralMat;
+            planetSO.FindProperty("teamAMaterial").objectReferenceValue = teamAMat;
+            planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
+            planetSO.FindProperty("teamCMaterial").objectReferenceValue = teamCMat;
             planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
+            planetSO.FindProperty("atmosphereSourceMaterial").objectReferenceValue = atmosphereMat;
+            planetSO.FindProperty("atmosphereOuterMesh").objectReferenceValue = atmosphereMesh;
             planetSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Save as prefab
-            string path = "Assets/Prefabs/HomePlanet.prefab";
-            EnsurePrefabDirectory();
             PrefabUtility.SaveAsPrefabAsset(homePlanet, path);
             Object.DestroyImmediate(homePlanet);
-
-            Debug.Log($"Created prefab: {path}");
+            Debug.Log($"Created prefab (SGT + Shapes + Atmosphere): {path}");
         }
 
         /// <summary>

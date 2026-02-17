@@ -1,5 +1,6 @@
 using UnityEngine;
 using Shapes;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Entities
 {
@@ -46,7 +47,8 @@ namespace TitanOrbit.Entities
                 Matrix4x4 planetMatrix = planet.transform.localToWorldMatrix;
                 Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
 
-                Color color = new Color(1f, 1f, 1f, ringOpacity);
+                Color baseColor = TeamManager.GetTeamColor(planet.TeamOwnership);
+                Color color = new Color(baseColor.r, baseColor.g, baseColor.b, ringOpacity);
                 Draw.Ring(Vector3.zero, Quaternion.identity, ringRadius, ringThickness, color);
             }
         }

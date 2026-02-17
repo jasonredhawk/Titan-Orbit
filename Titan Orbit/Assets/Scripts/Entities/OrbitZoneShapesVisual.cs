@@ -63,37 +63,7 @@ namespace TitanOrbit.Entities
 
         public override void DrawShapes(UnityEngine.Camera cam)
         {
-            if (planet == null)
-                planet = GetComponentInParent<Planet>();
-            if (planet == null) return;
-
-            bool orbiting = IsLocalPlayerOrbitingThisPlanet();
-            float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
-            Color color = new Color(tint.r, tint.g, tint.b, alpha);
-
-            float totalWidth = outerRadius - innerRadius;
-            float grooveWidth = totalWidth / (grooveCount + (grooveCount - 1) * grooveGapFraction);
-            float gapWidth = grooveWidth * grooveGapFraction;
-
-            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix;
-
-            using (Draw.Command(cam))
-            {
-                Draw.ResetAllDrawStates();
-                Draw.RadiusSpace = ThicknessSpace.Meters;
-                Draw.ThicknessSpace = ThicknessSpace.Meters;
-                Draw.DiscGeometry = DiscGeometry.Flat2D;
-                Draw.Matrix = worldMatrix;
-
-                float r = innerRadius;
-                for (int i = 0; i < grooveCount && r < outerRadius; i++)
-                {
-                    float bandWidth = Mathf.Min(grooveWidth, outerRadius - r);
-                    if (bandWidth > 0.001f)
-                        Draw.Ring(Vector3.zero, Quaternion.identity, r + bandWidth * 0.5f, bandWidth, color);
-                    r += grooveWidth + gapWidth;
-                }
-            }
+            // Orbit zone visual disabled — no ring drawn (zone is invisible).
         }
 
         private bool IsLocalPlayerOrbitingThisPlanet()

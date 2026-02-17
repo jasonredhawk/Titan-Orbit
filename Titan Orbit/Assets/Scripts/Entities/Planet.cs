@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Data;
 using TMPro;
 using SpaceGraphicsToolkit;
 
@@ -22,6 +23,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private Renderer planetRenderer;
         [Tooltip("When set, planet is drawn by SGT Planet (CW asset); team materials are applied to this.")]
         [SerializeField] private SgtPlanet sgtPlanet;
+        [Tooltip("Optional. When set, neutral material is chosen at random from this pool at spawn.")]
+        [SerializeField] private PlanetMaterialPool materialPool;
         [SerializeField] private Material neutralMaterial;
         [SerializeField] private Material teamAMaterial;
         [SerializeField] private Material teamBMaterial;
@@ -32,6 +35,7 @@ namespace TitanOrbit.Entities
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
+        private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
         private NetworkVariable<float> currentPopulation = new NetworkVariable<float>(0f);
         private NetworkVariable<float> maxPopulation = new NetworkVariable<float>(100f);
         private NetworkVariable<float> growthRate = new NetworkVariable<float>(1f);
@@ -69,6 +73,15 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
+                // Random neutral material from pool (home planets use water materials if available)
+                if (materialPool != null)
+                {
+                    bool useWater = this is HomePlanet;
+                    int idx = materialPool.GetRandomIndex(useWater);
+                    if (idx >= 0)
+                        neutralMaterialIndex.Value = idx;
+                }
+
                 // Max population: regular planets 50-150 by size; home planets override to 100
                 float potentialMax = GetMaxPopulationForPlanet();
                 growthRate.Value = GetGrowthRatePerSecond();
@@ -103,7 +116,10 @@ namespace TitanOrbit.Entities
             // Update visual on spawn
             UpdateVisual(teamOwnership.Value);
             UpdatePopulationDisplay();
-            
+
+            // When neutralMaterialIndex syncs from server (client may get it after spawn), refresh visual
+            neutralMaterialIndex.OnValueChanged += OnNeutralMaterialIndexChanged;
+
             // Subscribe to ownership changes
             teamOwnership.OnValueChanged += OnOwnershipChanged;
             currentPopulation.OnValueChanged += (float oldVal, float newVal) => UpdatePopulationDisplay();
@@ -111,7 +127,13 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkDespawn()
         {
+            neutralMaterialIndex.OnValueChanged -= OnNeutralMaterialIndexChanged;
             teamOwnership.OnValueChanged -= OnOwnershipChanged;
+        }
+
+        private void OnNeutralMaterialIndexChanged(int previous, int current)
+        {
+            UpdateVisual(teamOwnership.Value);
         }
 
         private void Update()
@@ -298,8 +320,7 @@ namespace TitanOrbit.Entities
         private void UpdateVisual(TeamManager.Team? teamOverride = null)
         {
             EnsureSharedMaterialsRegistered();
-            TeamManager.Team team = teamOverride ?? teamOwnership.Value;
-            Material materialToUse = GetEffectiveMaterial(team);
+            Material materialToUse = GetEffectiveMaterialForPlanetSurface(teamOverride ?? teamOwnership.Value);
             if (materialToUse == null) return;
 
             if (sgtPlanet != null)
@@ -310,6 +331,12 @@ namespace TitanOrbit.Entities
             Renderer renderer = planetRenderer != null ? planetRenderer : GetComponent<MeshRenderer>();
             if (renderer != null)
                 renderer.material = materialToUse;
+        }
+
+        /// <summary>Material used for the planet surface. Home planets always use tropical (neutral); others use team color.</summary>
+        protected virtual Material GetEffectiveMaterialForPlanetSurface(TeamManager.Team team)
+        {
+            return GetEffectiveMaterial(team);
         }
 
         /// <summary>When this planet has no team materials (e.g. regular prefab), copy from a HomePlanet so captured planets can change colour.</summary>
@@ -343,7 +370,7 @@ namespace TitanOrbit.Entities
 
         private Material GetEffectiveMaterial(TeamManager.Team team)
         {
-            Material neutral = neutralMaterial ?? s_sharedNeutral;
+            Material neutral = GetNeutralMaterial();
             switch (team)
             {
                 case TeamManager.Team.TeamA: return teamAMaterial ?? s_sharedTeamA ?? neutral;
@@ -351,6 +378,17 @@ namespace TitanOrbit.Entities
                 case TeamManager.Team.TeamC: return teamCMaterial ?? s_sharedTeamC ?? neutral;
                 default: return neutral;
             }
+        }
+
+        protected Material GetNeutralMaterial()
+        {
+            if (materialPool != null && neutralMaterialIndex.Value >= 0)
+            {
+                bool useWaterList = this is HomePlanet;
+                Material fromPool = materialPool.GetMaterial(neutralMaterialIndex.Value, useWaterList);
+                if (fromPool != null) return fromPool;
+            }
+            return neutralMaterial ?? s_sharedNeutral;
         }
 
         public virtual bool CanBeCapturedBy(TeamManager.Team team)

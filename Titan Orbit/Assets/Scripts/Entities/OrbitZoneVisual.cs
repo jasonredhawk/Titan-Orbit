@@ -1,11 +1,9 @@
 using UnityEngine;
-using Unity.Netcode;
 
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Renders a semi-transparent ring for the orbit zone around a planet.
-    /// More opaque when the local player's ship is currently orbiting this planet.
+    /// Optional visual ring for the orbit zone; disabled by default (orbit zone is invisible).
     /// </summary>
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
@@ -34,6 +32,8 @@ namespace TitanOrbit.Entities
             meshRenderer = GetComponent<MeshRenderer>();
             BuildRingMesh();
             EnsureMaterial();
+            if (meshRenderer != null)
+                meshRenderer.enabled = false; // Orbit zone visual off — no ring shown
         }
 
         private void OnDestroy()
@@ -113,34 +113,6 @@ namespace TitanOrbit.Entities
                 meshRenderer.sharedMaterial = materialInstance;
                 meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 meshRenderer.receiveShadows = false;
-            }
-        }
-
-        private void Update()
-        {
-            if (materialInstance == null || planet == null) return;
-
-            bool orbiting = false;
-            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && NetworkManager.Singleton.SpawnManager != null)
-            {
-                var localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
-                if (localPlayer != null)
-                {
-                    var ship = localPlayer.GetComponent<Starship>();
-                    if (ship != null && ship.IsInOrbit && ship.CurrentOrbitPlanet == planet)
-                        orbiting = true;
-                }
-            }
-
-            float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
-            Color c = materialInstance.GetColor("_BaseColor");
-            if (Mathf.Abs(c.a - alpha) > 0.001f)
-            {
-                c.a = alpha;
-                c.r = tint.r;
-                c.g = tint.g;
-                c.b = tint.b;
-                materialInstance.SetColor("_BaseColor", c);
             }
         }
     }

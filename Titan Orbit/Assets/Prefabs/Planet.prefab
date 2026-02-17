@@ -190,11 +190,11 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 807676317360203233}
-  - component: {fileID: 2284905166689752976}
   - component: {fileID: 4837591169628047860}
   - component: {fileID: 1798764570720657789}
   - component: {fileID: 2284905166689752975}
   - component: {fileID: 1032728760940274408}
+  - component: {fileID: 1589875963611201967}
   m_Layer: 0
   m_Name: Planet
   m_TagString: Untagged
@@ -216,33 +216,10 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 7226257653296993935}
-  - {fileID: 824228511669749055}
+  - {fileID: 1389413635080927886}
   - {fileID: 832973437895952674}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &2284905166689752976
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0f2e5335b07476244862effadc97d649, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit.SgtPlanet
-  mesh: {fileID: 4300002, guid: 0eba857bb8ab78c4d98d653565fd1902, type: 3}
-  meshCollider: {fileID: 0}
-  radius: 0.5
-  material: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
-  sharedMaterial: {fileID: 0}
-  waterLevel: 0
-  displace: 1
-  displacement: 0.004
-  clampWater: 1
-  castShadows: 1
-  receiveShadows: 1
 --- !u!135 &4837591169628047860
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -276,7 +253,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 769894849
+  GlobalObjectIdHash: 3943998270
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -302,7 +279,8 @@ MonoBehaviour:
   planetSize: 1
   captureRadius: 5
   planetRenderer: {fileID: 0}
-  sgtPlanet: {fileID: 2284905166689752976}
+  sgtPlanet: {fileID: 1589875963611201967}
+  materialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
   neutralMaterial: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
   teamAMaterial: {fileID: 2100000, guid: 801d289287ec4a041a954f2a7d8608f1, type: 2}
   teamBMaterial: {fileID: 2100000, guid: d1ac48592d2dcf0418cf1214399a4941, type: 2}
@@ -320,6 +298,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c5bd6eac371b8084e9837231e2f650e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ToroidalRenderer
+--- !u!114 &1589875963611201967
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1039601997937951391}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f2e5335b07476244862effadc97d649, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanet
+  mesh: {fileID: 4300002, guid: 0eba857bb8ab78c4d98d653565fd1902, type: 3}
+  meshCollider: {fileID: 0}
+  radius: 0.5
+  material: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
+  sharedMaterial: {fileID: 0}
+  castShadows: 1
+  receiveShadows: 1
+  waterLevel: 0
+  displace: 1
+  displacement: 0.054
+  clampWater: 0
 --- !u!1 &1315973943523223996
 GameObject:
   m_ObjectHideFlags: 0
@@ -331,6 +332,7 @@ GameObject:
   - component: {fileID: 7226257653296993935}
   - component: {fileID: 2902178783293362759}
   - component: {fileID: 4508721584815065175}
+  - component: {fileID: 2650578169922827154}
   m_Layer: 0
   m_Name: OrbitZone
   m_TagString: Untagged
@@ -372,7 +374,7 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 1.2
+  m_Radius: 0.85
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &4508721584815065175
 MonoBehaviour:
@@ -387,7 +389,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.PlanetOrbitZone
   planet: {fileID: 2284905166689752975}
---- !u!1 &4193475638857705611
+--- !u!114 &2650578169922827154
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1315973943523223996}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 92343c8c54a84c74ebe75be43a9b5d1c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.OrbitZoneShapesVisual
+  useCullingMasks: 0
+  innerRadius: 0.5
+  outerRadius: 0.85
+  grooveCount: 14
+  grooveGapFraction: 0.4
+  tint: {r: 0.38, g: 0.52, b: 0.92, a: 1}
+  alphaWhenNotOrbiting: 0.032
+  alphaWhenOrbiting: 0.09
+--- !u!1 &5754775015515473423
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -395,85 +417,44 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 824228511669749055}
-  - component: {fileID: 5257287990123348087}
-  - component: {fileID: 1674168259416085004}
+  - component: {fileID: 1389413635080927886}
+  - component: {fileID: 5936996994572611762}
   m_Layer: 0
-  m_Name: Ring
+  m_Name: PlanetRings
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &824228511669749055
+--- !u!4 &1389413635080927886
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4193475638857705611}
+  m_GameObject: {fileID: 5754775015515473423}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1.2, y: 0.05, z: 1.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 807676317360203233}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &5257287990123348087
-MeshFilter:
+--- !u!114 &5936996994572611762
+MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4193475638857705611}
-  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &1674168259416085004
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4193475638857705611}
+  m_GameObject: {fileID: 5754775015515473423}
   m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: e665ae36a68c8ba418065ab22da600a9, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 1
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7abd498cc5489cb4586f17be56fc1101, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.PlanetRingsDrawer
+  useCullingMasks: 0
+  tiltDegrees: -26.7
+  ringRadius: 0.68
+  ringThickness: 0.06
+  ringOpacity: 0.6

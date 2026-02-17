@@ -9,11 +9,13 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3037897551751055085}
-  - component: {fileID: 1742328809491729138}
   - component: {fileID: 3596380228844672752}
   - component: {fileID: 1538532135675473199}
   - component: {fileID: 1742328809491729137}
   - component: {fileID: 8149982854143887840}
+  - component: {fileID: 8444628455997742549}
+  - component: {fileID: 8588709564937257359}
+  - component: {fileID: 6205357286831094960}
   m_Layer: 0
   m_Name: HomePlanet
   m_TagString: Untagged
@@ -35,33 +37,11 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 3714545540904411813}
-  - {fileID: 4144415448122852197}
+  - {fileID: 496420201941113037}
+  - {fileID: 8991418018994148016}
   - {fileID: 1385518423730214332}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1742328809491729138
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1299268116498016925}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0f2e5335b07476244862effadc97d649, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit.SgtPlanet
-  mesh: {fileID: 4300002, guid: 0eba857bb8ab78c4d98d653565fd1902, type: 3}
-  meshCollider: {fileID: 0}
-  radius: 0.5
-  material: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
-  sharedMaterial: {fileID: 0}
-  waterLevel: 0
-  displace: 1
-  displacement: 0.004
-  clampWater: 1
-  castShadows: 1
-  receiveShadows: 1
 --- !u!135 &3596380228844672752
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -95,7 +75,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 769894849
+  GlobalObjectIdHash: 3943998270
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -121,14 +101,16 @@ MonoBehaviour:
   planetSize: 1
   captureRadius: 5
   planetRenderer: {fileID: 0}
-  sgtPlanet: {fileID: 1742328809491729138}
+  sgtPlanet: {fileID: 8444628455997742549}
+  materialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
   neutralMaterial: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
   teamAMaterial: {fileID: 2100000, guid: 801d289287ec4a041a954f2a7d8608f1, type: 2}
   teamBMaterial: {fileID: 2100000, guid: d1ac48592d2dcf0418cf1214399a4941, type: 2}
   teamCMaterial: {fileID: 2100000, guid: ce7531fc382a1224c9b4cc6e27ab88b1, type: 2}
   populationText: {fileID: 3314496731455080961}
   maxShipLevelPerPlanetLevel: 00000000010000000200000003000000040000000500000006000000
-  ringStackOffset: 0.12
+  atmosphereSourceMaterial: {fileID: 2100000, guid: 1d9004e26641888448d5f4f15b9d0c55, type: 2}
+  atmosphereOuterMesh: {fileID: 4300000, guid: 662157716ef2b6840841e610138115a4, type: 3}
   levelUpPulseScale: 1.15
   levelUpPulseUpDuration: 0.2
   levelUpPulseDownDuration: 0.3
@@ -144,6 +126,113 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c5bd6eac371b8084e9837231e2f650e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ToroidalRenderer
+--- !u!114 &8444628455997742549
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1299268116498016925}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f2e5335b07476244862effadc97d649, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanet
+  mesh: {fileID: 4300002, guid: 0eba857bb8ab78c4d98d653565fd1902, type: 3}
+  meshCollider: {fileID: 0}
+  radius: 0.5
+  material: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
+  sharedMaterial: {fileID: 0}
+  castShadows: 1
+  receiveShadows: 1
+  waterLevel: 0.2
+  displace: 1
+  displacement: 0.054
+  clampWater: 0
+--- !u!114 &8588709564937257359
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1299268116498016925}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e65dd9aac6291fb4eaac97f18bf846f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanetWaterGradient
+  shallow: {r: 0.75, g: 0.75, b: 1, a: 1}
+  deep: {r: 0.25, g: 0.25, b: 1, a: 1}
+  ease: 1
+  sharpness: 1
+  scale: 10
+--- !u!114 &6205357286831094960
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1299268116498016925}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dd1536fd5b394514fb9ecc8dc1ed81f7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanetWaterTexture
+  baseTexture: {fileID: 0}
+  strength: 1
+  speed: 5
+  age: 0
+--- !u!1 &1635748514032876510
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8991418018994148016}
+  - component: {fileID: 3840077954139962481}
+  m_Layer: 0
+  m_Name: HomePlanetRings
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8991418018994148016
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1635748514032876510}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3037897551751055085}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3840077954139962481
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1635748514032876510}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcb3d094bf7b4114ea7f43982be39641, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.HomePlanetRingsDrawer
+  useCullingMasks: 0
+  tiltDegrees: -26.7
+  innerRadius: 0.68
+  ringThickness: 0.06
+  gapBetweenBands: 0.015
+  ringOpacity: 0.7
+  opacityPerLevel: 0.05
 --- !u!1 &5037814961464842442
 GameObject:
   m_ObjectHideFlags: 0
@@ -155,6 +244,7 @@ GameObject:
   - component: {fileID: 3714545540904411813}
   - component: {fileID: 2390589071113804863}
   - component: {fileID: 8451620874705563438}
+  - component: {fileID: 5725197383238505847}
   m_Layer: 0
   m_Name: OrbitZone
   m_TagString: Untagged
@@ -196,7 +286,7 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 1.2
+  m_Radius: 0.85
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &8451620874705563438
 MonoBehaviour:
@@ -211,7 +301,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.PlanetOrbitZone
   planet: {fileID: 1742328809491729137}
---- !u!1 &7268162465902252353
+--- !u!114 &5725197383238505847
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5037814961464842442}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 92343c8c54a84c74ebe75be43a9b5d1c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.OrbitZoneShapesVisual
+  useCullingMasks: 0
+  innerRadius: 0.5
+  outerRadius: 0.85
+  grooveCount: 14
+  grooveGapFraction: 0.4
+  tint: {r: 0.38, g: 0.52, b: 0.92, a: 1}
+  alphaWhenNotOrbiting: 0.032
+  alphaWhenOrbiting: 0.09
+--- !u!1 &7137663261375580071
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -219,46 +329,47 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 4144415448122852197}
-  - component: {fileID: 5967257410526827454}
-  - component: {fileID: 1999267458870403344}
+  - component: {fileID: 1488304911931606407}
+  - component: {fileID: 733458928604521247}
+  - component: {fileID: 6371419872810887466}
+  - component: {fileID: 2134748853347989813}
   m_Layer: 0
-  m_Name: Ring
+  m_Name: SgtAtmosphereModel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &4144415448122852197
+--- !u!4 &1488304911931606407
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7268162465902252353}
+  m_GameObject: {fileID: 7137663261375580071}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1.2, y: 0.05, z: 1.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3037897551751055085}
+  m_Father: {fileID: 496420201941113037}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &5967257410526827454
+--- !u!33 &733458928604521247
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7268162465902252353}
-  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &1999267458870403344
+  m_GameObject: {fileID: 7137663261375580071}
+  m_Mesh: {fileID: 0}
+--- !u!23 &6371419872810887466
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7268162465902252353}
+  m_GameObject: {fileID: 7137663261375580071}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -277,7 +388,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 8c70458371cb0a74bbf095ffb7e785fe, type: 2}
+  - {fileID: 0}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -286,7 +397,7 @@ MeshRenderer:
   m_LightProbeVolumeOverride: {fileID: 0}
   m_ScaleInLightmap: 1
   m_ReceiveGI: 1
-  m_PreserveUVs: 1
+  m_PreserveUVs: 0
   m_IgnoreNormalsForChartDetection: 0
   m_ImportantGI: 0
   m_StitchLightmapSeams: 1
@@ -301,6 +412,21 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &2134748853347989813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7137663261375580071}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 58448e6ecdae0cc44bc6c3749a866ef7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereModel
+  parent: {fileID: 1319851106084105825}
+  cachedMeshFilter: {fileID: 733458928604521247}
+  cachedMeshRenderer: {fileID: 6371419872810887466}
 --- !u!1 &7292045767050586822
 GameObject:
   m_ObjectHideFlags: 0
@@ -335,7 +461,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0.55}
+  m_AnchoredPosition: {x: 0, y: 0.8}
   m_SizeDelta: {x: 20, y: 5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!23 &1519657715025679901
@@ -417,7 +543,7 @@ MonoBehaviour:
   m_fontColor32:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+  m_fontColor: {r: 0.12, g: 0.12, b: 0.15, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -482,3 +608,144 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_renderer: {fileID: 1519657715025679901}
   m_maskType: 0
+--- !u!1 &8076307331495082868
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 496420201941113037}
+  - component: {fileID: 8228186371738896576}
+  - component: {fileID: 1319851106084105825}
+  - component: {fileID: 9174601492940771152}
+  - component: {fileID: 4947015809906185720}
+  - component: {fileID: 5030716871007150066}
+  m_Layer: 0
+  m_Name: Atmosphere
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &496420201941113037
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1488304911931606407}
+  m_Father: {fileID: 3037897551751055085}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8228186371738896576
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b770d959612e3a64195501b962088da4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtSharedMaterial
+  material: {fileID: 0}
+  renderers: []
+--- !u!114 &1319851106084105825
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b85c1f42538e90049b23d0bec8830d4d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphere
+  sourceMaterial: {fileID: 2100000, guid: 1d9004e26641888448d5f4f15b9d0c55, type: 2}
+  color: {r: 1, g: 1, b: 1, a: 1}
+  brightness: 1
+  innerMeshRadius: 0.5
+  outerMesh: {fileID: 4300000, guid: 662157716ef2b6840841e610138115a4, type: 3}
+  outerMeshRadius: 0.5
+  outerSoftness: 0
+  height: 0.025
+  innerFog: 0
+  outerFog: 0
+  sky: 1
+  middle: 0.5
+  cameraOffset: 0
+  occlusionPower: 1
+  night: 0
+  nightSky: 0.25
+  nightEase: 0
+  nightStart: 0.4
+  nightEnd: 0.6
+  nightPower: 2
+  model: {fileID: 2134748853347989813}
+--- !u!114 &9174601492940771152
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0751a07bdf5a4641bf618cd878965cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereDepthTex
+  horizonColor: {r: 1, g: 1, b: 1, a: 1}
+  innerColor: {r: 0.15, g: 0.54, b: 1, a: 1}
+  innerEase: 8
+  innerColorSharpness: 2
+  innerAlphaSharpness: 3
+  outerColor: {r: 0.29, g: 0.73, b: 1, a: 1}
+  outerEase: 3
+  outerColorSharpness: 2
+  outerAlphaSharpness: 3
+--- !u!114 &4947015809906185720
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b5555fd5111f2b74b83ea74d97ffe4ba, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereLightingTex
+  sunsetEase: 1
+  sunsetStart: 0.45
+  sunsetEnd: 1
+  sunsetSharpnessR: 3
+  sunsetSharpnessG: 2
+  sunsetSharpnessB: 2
+--- !u!114 &5030716871007150066
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8076307331495082868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3773d907a8aeff248b74e03817a05441, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereScatteringTex
+  sunsetEase: 1
+  sunsetStart: 0.35
+  sunsetEnd: 0.6
+  sunsetSharpnessR: 2
+  sunsetSharpnessG: 2
+  sunsetSharpnessB: 2
