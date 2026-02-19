@@ -34,6 +34,11 @@ namespace TitanOrbit.Entities
         [SerializeField] private float firePower = 10f;
         [SerializeField] private float bulletSpeed = 20f;
         [SerializeField] private Transform firePoint;
+        [Tooltip("From ShipData: 1–4 bullets per shot; more bullets = less damage per bullet.")]
+        private int bulletsPerShot = 1;
+        [Tooltip("From ShipData: index into Bullet visual options (0=Digital, 1=Ice trail, 2=Fire, 3=Plasma).")]
+        private int bulletVisualStyleIndex = 0;
+        private const float BULLET_SPREAD_DISTANCE = 0.35f;
 
         [Header("Health")]
         [SerializeField] private float maxHealth = 100f;
@@ -278,6 +283,21 @@ namespace TitanOrbit.Entities
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
             }
+            
+            // Dead ships cannot move or rotate
+            if (isDead.Value)
+            {
+                // Stop all movement when dead
+                if (rb != null)
+                {
+                    Vector3 vel = rb.linearVelocity;
+                    vel.y = 0f;
+                    vel = Vector3.MoveTowards(vel, Vector3.zero, deceleration * Time.fixedDeltaTime);
+                    rb.linearVelocity = vel;
+                }
+                return;
+            }
+            
             // AI-controlled ships have their own movement; don't apply player/orbit movement
             if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
             if (!IsOwner) return;
@@ -297,6 +317,13 @@ namespace TitanOrbit.Entities
         private void HandleInput()
         {
             if (inputHandler == null) return;
+            
+            // Dead ships cannot process input
+            if (isDead.Value)
+            {
+                moveDirection = Vector3.zero;
+                return;
+            }
 
             // Movement: right-click only - move in direction ship is facing
             if (inputHandler.MoveForwardPressed)
@@ -314,7 +341,7 @@ namespace TitanOrbit.Entities
             }
 
             // Shooting input - pass fire position and direction from client (Vector3 avoids Quaternion sync issues)
-            // Don't fire when clicking on UI (e.g. orbit menu buttons)
+            // Don't fire when clicking on UI (e.g. orbit menu buttons) or when dead
             if (inputHandler.ShootPressed && CanFire() && firePoint != null && !IsPointerOverUI())
             {
                 Vector3 dir = transform.forward;
@@ -325,7 +352,7 @@ namespace TitanOrbit.Entities
             }
 
             // Rocket: Q key (or FireRocket if bound). Prefer large if available.
-            if (!IsPointerOverUI() && Time.time - lastRocketTime >= ROCKET_COOLDOWN)
+            if (!IsPointerOverUI() && !isDead.Value && Time.time - lastRocketTime >= ROCKET_COOLDOWN)
             {
                 bool wantRocket = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.RocketPressed == true
                     || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.qKey.isPressed);
@@ -338,7 +365,7 @@ namespace TitanOrbit.Entities
             }
 
             // Mine: E key. Place in front of ship.
-            if (!IsPointerOverUI() && Time.time - lastMineTime >= MINE_COOLDOWN)
+            if (!IsPointerOverUI() && !isDead.Value && Time.time - lastMineTime >= MINE_COOLDOWN)
             {
                 bool wantMine = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.MinePressed == true
                     || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.eKey.isPressed);
@@ -467,8 +494,10 @@ namespace TitanOrbit.Entities
 
         private bool CanFire()
         {
+            if (isDead.Value) return false;
+            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
             return Time.time - lastFireTime >= 1f / fireRate
-                && currentEnergy.Value >= ENERGY_PER_SHOT;
+                && currentEnergy.Value >= energyNeeded;
         }
 
         [ServerRpc]
@@ -477,19 +506,41 @@ namespace TitanOrbit.Entities
             if (!CanFire()) return;
 
             lastFireTime = Time.time;
-            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - ENERGY_PER_SHOT);
+            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
+            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - energyNeeded);
+
+            Vector3 dir = fireDirection;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            else dir.Normalize();
+            Vector3 right = Vector3.Cross(Vector3.up, dir);
+
+            float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
+            float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
+            byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
             
+            #if UNITY_EDITOR
+            Debug.Log($"Ship firing: bulletsPerShot={bulletsPerShot}, visualStyleIndex={bulletVisualStyleIndex}, styleIndex={styleIndex}");
+            #endif
+
             if (Systems.CombatSystem.Instance != null)
             {
-                Systems.CombatSystem.Instance.SpawnBulletServerRpc(
-                    firePosition,
-                    fireDirection,
-                    EffectiveBulletSpeed,
-                    EffectiveFirePower,
-                    shipTeam.Value
-                );
+                for (int i = 0; i < bulletsPerShot; i++)
+                {
+                    float t = bulletsPerShot > 1 ? (i - (bulletsPerShot - 1) * 0.5f) : 0f;
+                    Vector3 offset = right * (t * BULLET_SPREAD_DISTANCE);
+                    Systems.CombatSystem.Instance.SpawnBulletServerRpc(
+                        firePosition + offset,
+                        dir,
+                        EffectiveBulletSpeed,
+                        damagePerBullet,
+                        shipTeam.Value,
+                        visualScaleMultiplier,
+                        styleIndex
+                    );
+                }
             }
-            
+
             FireClientRpc();
         }
 
@@ -503,20 +554,44 @@ namespace TitanOrbit.Entities
         public void FireAtTarget(Vector3 direction)
         {
             if (!IsServer) return;
+            if (isDead.Value) return;
             if (!CanFire()) return;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
             else direction.Normalize();
             Vector3 firePos = firePoint != null ? firePoint.position : transform.position + direction * 2f;
             lastFireTime = Time.time;
-            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - ENERGY_PER_SHOT);
+            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
+            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - energyNeeded);
+
+            Vector3 right = Vector3.Cross(Vector3.up, direction);
+            float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
+            float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
+            byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
+            
+            #if UNITY_EDITOR
+            Debug.Log($"AI Ship firing: bulletsPerShot={bulletsPerShot}, visualStyleIndex={bulletVisualStyleIndex}, styleIndex={styleIndex}");
+            #endif
+
             if (CombatSystem.Instance != null)
-                CombatSystem.Instance.SpawnBulletServerRpc(firePos, direction, EffectiveBulletSpeed, EffectiveFirePower, shipTeam.Value);
+            {
+                for (int i = 0; i < bulletsPerShot; i++)
+                {
+                    float t = bulletsPerShot > 1 ? (i - (bulletsPerShot - 1) * 0.5f) : 0f;
+                    Vector3 offset = right * (t * BULLET_SPREAD_DISTANCE);
+                    CombatSystem.Instance.SpawnBulletServerRpc(
+                        firePos + offset, direction, EffectiveBulletSpeed, damagePerBullet, shipTeam.Value,
+                        visualScaleMultiplier, styleIndex
+                    );
+                }
+            }
         }
 
         [ServerRpc]
         private void FireRocketServerRpc(bool preferLarge)
         {
+            // Dead ships cannot fire rockets
+            if (isDead.Value) return;
             bool useLarge = preferLarge && ConsumeLargeRocket();
             if (!useLarge && !ConsumeSmallRocket()) return;
             if (firePoint == null) return;
@@ -531,6 +606,8 @@ namespace TitanOrbit.Entities
         [ServerRpc]
         private void PlaceMineServerRpc(Vector3 position, bool preferLarge)
         {
+            // Dead ships cannot place mines
+            if (isDead.Value) return;
             bool useLarge = preferLarge && ConsumeLargeMine();
             if (!useLarge && !ConsumeSmallMine()) return;
             Vector3 pos = TitanOrbit.Generation.ToroidalMap.WrapPosition(position);
@@ -624,11 +701,23 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at home planet (same team).</summary>
+        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team).</summary>
         private void TickOrbitGemDeposit()
         {
             if (currentOrbitPlanet == null || !wantToDepositGems.Value) return;
-            if (!(currentOrbitPlanet is HomePlanet home) || home.AssignedTeam != shipTeam.Value) return;
+            
+            // Check if planet is owned by same team (or is home planet with assigned team)
+            bool canDeposit = false;
+            if (currentOrbitPlanet is HomePlanet home)
+            {
+                canDeposit = home.AssignedTeam == shipTeam.Value;
+            }
+            else
+            {
+                canDeposit = currentOrbitPlanet.TeamOwnership == shipTeam.Value;
+            }
+            
+            if (!canDeposit) return;
             if (currentGems.Value <= 0f) { wantToDepositGems.Value = false; return; }
 
             // shipLevel gems per 0.5 sec = shipLevel * 2 per second
@@ -639,7 +728,15 @@ namespace TitanOrbit.Entities
             if (amount > 0f)
             {
                 RemoveGemsServerRpc(amount);
-                home.DepositGemsServerRpc(amount, shipTeam.Value, OwnerClientId);
+                ulong clientId = OwnerClientId;
+                if (currentOrbitPlanet is HomePlanet homePlanet)
+                {
+                    homePlanet.DepositGemsServerRpc(amount, shipTeam.Value, clientId);
+                }
+                else
+                {
+                    currentOrbitPlanet.DepositGemsServerRpc(amount, shipTeam.Value, clientId);
+                }
             }
             if (currentGems.Value <= 0.001f)
                 wantToDepositGems.Value = false;
@@ -653,6 +750,14 @@ namespace TitanOrbit.Entities
         {
             if (isDead.Value) return;
             isDead.Value = true;
+            
+            // Stop all movement immediately when dead
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                currentVelocity = Vector3.zero;
+                moveDirection = Vector3.zero;
+            }
             
             // Hide ship visually and spawn explosion
             HideShipVisuals();
@@ -949,6 +1054,11 @@ namespace TitanOrbit.Entities
                 fireRate = data.baseFireRate;
                 firePower = data.baseFirePower;
                 bulletSpeed = data.baseBulletSpeed;
+                bulletsPerShot = Mathf.Clamp(data.baseBulletsPerShot, 1, 4);
+                bulletVisualStyleIndex = Mathf.Clamp(data.bulletVisualStyleIndex, 0, 3);
+                
+                Debug.Log($"Ship SetShipData: Level={data.shipLevel}, Branch={data.branchIndex}, bulletVisualStyleIndex={data.bulletVisualStyleIndex}, bulletsPerShot={data.baseBulletsPerShot}");
+                
                 maxHealth = data.baseMaxHealth;
                 healthRegenRate = data.baseHealthRegenRate;
                 rotationSpeed = data.baseRotationSpeed;

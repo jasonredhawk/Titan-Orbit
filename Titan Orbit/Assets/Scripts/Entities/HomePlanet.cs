@@ -36,8 +36,6 @@ namespace TitanOrbit.Entities
         [Tooltip("Duration of scale-down phase of level-up pulse (seconds).")]
         [SerializeField] private float levelUpPulseDownDuration = 0.3f;
 
-        private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
-        private NetworkVariable<int> homePlanetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<TeamManager.Team> assignedTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
 
         private Vector3 baseLocalScale;
@@ -45,12 +43,11 @@ namespace TitanOrbit.Entities
         /// <summary>Server-only: gems each player has contributed to this home planet (for store purchases).</summary>
         private Dictionary<ulong, float> contributedGemsByClientId = new Dictionary<ulong, float>();
 
-        public float CurrentGems => currentGems.Value;
         /// <summary>Max gems this home planet can hold at its current level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
-        public float MaxGems => GetMaxGemsForLevel(homePlanetLevel.Value);
-        public int HomePlanetLevel => homePlanetLevel.Value;
+        public float MaxGems => GetMaxGemsForLevel(PlanetLevel);
+        public int HomePlanetLevel => PlanetLevel;
         public TeamManager.Team AssignedTeam => assignedTeam.Value;
-        public int MaxShipLevel => GetMaxShipLevelForPlanetLevel(homePlanetLevel.Value);
+        public int MaxShipLevel => GetMaxShipLevelForPlanetLevel(PlanetLevel);
 
         /// <summary>
         /// Called by MapGenerator at spawn to set team and color. Call before NetworkObject.Spawn().
@@ -67,8 +64,7 @@ namespace TitanOrbit.Entities
             EnsureSolidColliderAndOrbitZone();
             if (IsServer)
             {
-                homePlanetLevel.Value = 3; // Start at 3 so starships can level 1→2→3 without leveling planet
-                currentGems.Value = 0f;
+                SetGrowthRate(GetGrowthRatePerSecond()); // 1 per 5 sec at level 3
             }
             baseLocalScale = transform.localScale;
             RemoveOldCylinderRings();
@@ -76,7 +72,6 @@ namespace TitanOrbit.Entities
             EnsureWaterComponents();
             EnsureAtmosphere();
             SetHomePlanetWaterLevel();
-            homePlanetLevel.OnValueChanged += OnLevelChanged;
         }
 
         /// <summary>Set SGT planet water level so tropical water is visible (tropical materials use _HasWater).</summary>
@@ -102,8 +97,28 @@ namespace TitanOrbit.Entities
         /// <summary>Home planets have max 100 people (until level upgrade increases it later).</summary>
         protected override float GetMaxPopulationForPlanet() => 100f;
 
-        /// <summary>Home planets: 1 person per 5 seconds.</summary>
-        protected override float GetGrowthRatePerSecond() => 1f / 5f;
+        /// <summary>Initial planet level. Home planets start at 3.</summary>
+        protected override int GetInitialPlanetLevel() => 3;
+
+        /// <summary>Max level for home planets is 6.</summary>
+        protected override int GetMaxLevel() => 6;
+
+        /// <summary>Max gems capacity for a given level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
+        protected override float GetMaxGemsForLevel(int level)
+        {
+            if (level >= 1 && level < MaxGemsPerLevel.Length)
+                return MaxGemsPerLevel[level];
+            return level >= 6 ? 6400f : 0f;
+        }
+
+        /// <summary>Home planets: 1 person per 5 seconds at level 3, doubles each level (2 at 4, 4 at 5, 8 at 6 per 5 sec).</summary>
+        protected override float GetGrowthRatePerSecond()
+        {
+            int level = PlanetLevel;
+            int exponent = Mathf.Max(0, level - 3); // Level 3 -> 1 per 5s, 4 -> 2, 5 -> 4, 6 -> 8 per 5s
+            float peoplePer5Sec = Mathf.Pow(2f, exponent);
+            return peoplePer5Sec / 5f;
+        }
 
         /// <summary>
         /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to 0.85. Base Planet may already create zone; we fix sizes.
@@ -134,14 +149,8 @@ namespace TitanOrbit.Entities
             zone.SetPlanet(this);
         }
 
-        public override void OnNetworkDespawn()
-        {
-            homePlanetLevel.OnValueChanged -= OnLevelChanged;
-            base.OnNetworkDespawn();
-        }
-
         [ServerRpc(RequireOwnership = false)]
-        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        public new void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             // Only allow team members to deposit gems
             if (assignedTeam.Value == TeamManager.Team.None)
@@ -153,15 +162,13 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            float maxGems = GetMaxGemsForLevel(homePlanetLevel.Value);
-            currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
-
-            // Track contributed gems for this player (for store purchases)
+            // Track contributed gems for this player (for store purchases) BEFORE calling base
             if (!contributedGemsByClientId.ContainsKey(depositingClientId))
                 contributedGemsByClientId[depositingClientId] = 0f;
             contributedGemsByClientId[depositingClientId] += amount;
 
-            CheckLevelUp();
+            // Call base to handle gem deposit and leveling
+            base.DepositGemsServerRpc(amount, depositingTeam, depositingClientId);
         }
 
         /// <summary>Server: get contributed gems for a client. Used by store UI.</summary>
@@ -179,51 +186,15 @@ namespace TitanOrbit.Entities
             return true;
         }
 
-        /// <summary>Max gems capacity for a given level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
-        public static float GetMaxGemsForLevel(int level)
+        /// <summary>Override to add scale pulse effect when home planet levels up.</summary>
+        protected override void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {
-            if (level >= 1 && level < MaxGemsPerLevel.Length)
-                return MaxGemsPerLevel[level];
-            return level >= 6 ? 6400f : 0f;
-        }
-
-        private void CheckLevelUp()
-        {
-            if (!IsServer) return;
-
-            int currentLevel = homePlanetLevel.Value;
-            if (currentLevel >= 6) return;
-
-            float maxForLevel = GetMaxGemsForLevel(currentLevel);
-            if (maxForLevel > 0f && currentGems.Value >= maxForLevel)
-                LevelUpServerRpc();
-        }
-
-        [ServerRpc(RequireOwnership = false)]
-        private void LevelUpServerRpc()
-        {
-            if (homePlanetLevel.Value >= 6) return; // Max level
-
-            homePlanetLevel.Value++;
-            currentGems.Value = 0f; // Reset gem count to 0 when leveling up
-            LevelUpClientRpc(homePlanetLevel.Value);
-        }
-
-        [ClientRpc]
-        private void LevelUpClientRpc(int newLevel)
-        {
-            Debug.Log($"Home Planet leveled up to level {newLevel}! Max ship level is now {GetMaxShipLevelForPlanetLevel(newLevel)}");
-        }
-
-        private void OnLevelChanged(int previousLevel, int newLevel)
-        {
+            base.OnPlanetLevelChanged(previousLevel, newLevel);
             if (newLevel > previousLevel)
             {
-                if (VisualEffectsManager.Instance != null)
-                    VisualEffectsManager.Instance.PlayLevelUpEffect(transform.position);
                 StartCoroutine(LevelUpScalePulse());
+                Debug.Log($"Home Planet leveled up to level {newLevel}! Max ship level is now {GetMaxShipLevelForPlanetLevel(newLevel)}");
             }
-            Debug.Log($"Home Planet level changed from {previousLevel} to {newLevel}");
         }
 
         /// <summary>Add SGT water components so home planet materials with water render correctly.</summary>
@@ -332,17 +303,17 @@ namespace TitanOrbit.Entities
         /// <summary>True when home planet is level 6 and has at least the gem capacity for level 6 (unlocks ship level 7 MEGA).</summary>
         public bool IsFullGemsForLevel7Unlock()
         {
-            if (homePlanetLevel.Value < 6) return false;
-            return currentGems.Value >= GetMaxGemsForLevel(6);
+            if (PlanetLevel < 6) return false;
+            return CurrentGems >= GetMaxGemsForLevel(6);
         }
 
         /// <summary>Gems still needed to fill current level capacity (and trigger level-up if not max level).</summary>
         public float GetGemsNeededForNextLevel()
         {
-            int currentLevel = homePlanetLevel.Value;
+            int currentLevel = PlanetLevel;
             if (currentLevel >= 6) return 0f;
             float maxForLevel = GetMaxGemsForLevel(currentLevel);
-            return Mathf.Max(0f, maxForLevel - currentGems.Value);
+            return Mathf.Max(0f, maxForLevel - CurrentGems);
         }
 
         public override bool CanBeCapturedBy(TeamManager.Team team)

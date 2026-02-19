@@ -277,15 +277,15 @@ namespace TitanOrbit.UI
             float planetPop = currentPlanet.CurrentPopulation;
             float planetMaxPop = currentPlanet.MaxPopulation;
 
-            // Deposit: home + same team only; gradual at shipLevel gems per 0.5s (same pattern as load/unload people)
+            // Deposit: same team only (home or regular planets); gradual at shipLevel gems per 0.5s (same pattern as load/unload people)
             bool isDepositing = currentShip.WantToDepositGems;
             int gemsPerHalfSec = Mathf.Max(1, currentShip.ShipLevel);
             if (depositGemsButton != null)
             {
-                depositGemsButton.gameObject.SetActive(isFriendly && isHomePlanet);
+                depositGemsButton.gameObject.SetActive(isFriendly && sameTeam);
                 if (depositGemsLabel != null)
                     depositGemsLabel.text = isDepositing ? $"Stop Depositing" : $"Deposit Gems ({gemsPerHalfSec}/0.5s)";
-                depositGemsButton.interactable = isHomePlanet && sameTeam && (isDepositing || shipGems > 0);
+                depositGemsButton.interactable = sameTeam && (isDepositing || shipGems > 0);
             }
 
             // Load: friendly only (home or captured); continuous at shipLevel/sec. Disable when ship at max or planet empty.

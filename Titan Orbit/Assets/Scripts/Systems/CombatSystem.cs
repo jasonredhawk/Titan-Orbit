@@ -32,18 +32,13 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam)
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, float visualScaleMultiplier = 1f, byte bulletVisualStyleIndex = 0)
         {
             if (bulletPrefab == null) return;
 
-            // Limit bullet count to prevent lag
             int currentBulletCount = FindObjectsByType<Bullet>(FindObjectsSortMode.None).Length;
-            if (currentBulletCount >= maxBullets)
-            {
-                return; // Skip spawning if too many bullets exist
-            }
+            if (currentBulletCount >= maxBullets) return;
 
-            // Ensure direction is normalized in XZ plane
             Vector3 dir = direction;
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
@@ -55,26 +50,17 @@ namespace TitanOrbit.Systems
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
             if (bullet != null)
-            {
-                bullet.Initialize(speed, damage, ownerTeam);
-            }
+                bullet.Initialize(speed, damage, ownerTeam, visualScaleMultiplier, bulletVisualStyleIndex);
 
             if (bulletRb != null)
-            {
                 bulletRb.linearVelocity = dir * speed;
-            }
 
             NetworkObject bulletNetObj = bulletObj.GetComponent<NetworkObject>();
             if (bulletNetObj != null)
-            {
                 bulletNetObj.Spawn();
-            }
 
-            // Only parent if bulletParent has NetworkObject (Netcode requirement)
             if (bulletParent != null && bulletParent.GetComponent<NetworkObject>() != null)
-            {
                 bulletObj.transform.SetParent(bulletParent);
-            }
         }
 
         [ServerRpc(RequireOwnership = false)]

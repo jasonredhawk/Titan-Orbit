@@ -132,8 +132,13 @@ namespace TitanOrbit.Editor
             float cap = Mathf.Lerp(110f, 180f, fighterToMinerBlend) + (level - 1) * 35f;
             if (level == 7) { fire *= 1.8f; mine *= 1.5f; health *= 2f; cap *= 1.8f; scale *= 1.2f; }
             data.baseMovementSpeed = 10f * scale;
-            data.baseFireRate = Mathf.Lerp(1.2f, 0.85f, fighterToMinerBlend);
+            // Fire rate: unique per ship (e.g. fast 5/s spray vs slow 1/s heavy), scales with level so higher tiers are stronger
+            float fireRateIdentity = Mathf.Lerp(4.5f, 0.75f, fighterToMinerBlend);
+            float fireRateLevelScale = 0.85f + level * 0.1f;
+            data.baseFireRate = fireRateIdentity * fireRateLevelScale;
             data.baseFirePower = fire;
+            data.baseBulletsPerShot = level <= 2 ? 1 : Mathf.Clamp(1 + (level + data.branchIndex) % 4, 1, 4);
+            data.bulletVisualStyleIndex = (level + data.branchIndex) % 4;
             data.baseBulletSpeed = Mathf.Lerp(24f, 18f, fighterToMinerBlend);
             data.baseMaxHealth = health;
             data.baseHealthRegenRate = 1.2f;

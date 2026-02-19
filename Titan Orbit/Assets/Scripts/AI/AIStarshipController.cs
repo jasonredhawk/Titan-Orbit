@@ -31,7 +31,7 @@ namespace TitanOrbit.AI
         [SerializeField] private float gemCollectionProximity = 30f; // Only collect gems within this range; otherwise return to asteroids
         [SerializeField] private float updateInterval = 0.5f; // Update AI decisions every 0.5 seconds
         [SerializeField] private float orbitSpeed = 0.8f;
-        [SerializeField] private float attackRange = 10f; // Range at which to attack enemy ships (matches bullet range)
+        [SerializeField] private float attackRange = 3f; // Range at which to attack enemy ships (close proximity only - very short range)
 
         private Starship starship;
         private Rigidbody rb;
@@ -49,7 +49,8 @@ namespace TitanOrbit.AI
             LoadingPeople,
             MovingToPlanet,
             UnloadingPeople,
-            AttackingEnemy     // Attacking an enemy ship while moving
+            AttackingEnemy,    // Attacking an enemy ship while moving
+            LevelingUp         // Mining and depositing gems to level up ship and attributes
         }
         private AIState currentState = AIState.Idle;
         
@@ -61,6 +62,22 @@ namespace TitanOrbit.AI
         private AIState previousState;  // Store previous state to return to after combat
         private float lastUpdateTime;
         private Vector3 moveDirection = Vector3.zero;
+        
+        // Combat movement randomization
+        private float combatPatternChangeTime = 0f;
+        private float combatPatternDuration = 2f; // Change pattern every 2 seconds
+        private int currentCombatPattern = 0; // 0-3: different movement patterns
+        private float strafeDirection = 1f; // -1 or 1 for left/right strafe
+        private float preferredCombatDistance = 0f; // Randomized preferred distance
+        private float combatCooldownUntil = 0f; // Don't re-engage combat until this time (reduces constant fighting)
+        
+        // Cached object lists to avoid expensive FindObjectsOfType calls every update
+        private static float lastCacheRefreshTime = 0f;
+        private static float cacheRefreshInterval = 1f; // Refresh cache every 1 second
+        private static Asteroid[] cachedAsteroids = new Asteroid[0];
+        private static Gem[] cachedGems = new Gem[0];
+        private static Planet[] cachedPlanets = new Planet[0];
+        private static Starship[] cachedShips = new Starship[0];
 
         public AIBehaviorType BehaviorType => behaviorType;
         public TeamManager.Team AssignedTeam => assignedTeam;
@@ -122,6 +139,7 @@ namespace TitanOrbit.AI
             }
 
             // Handle shooting when at asteroid (shoot every FixedUpdate - FireAtTarget respects fire rate)
+            // Works for both mining behavior and leveling behavior (both miners and transporters can mine when leveling)
             if (currentState == AIState.ShootingAsteroid && targetAsteroid != null && !targetAsteroid.IsDestroyed)
                 HandleShootingAsteroid();
 
@@ -138,11 +156,12 @@ namespace TitanOrbit.AI
             // Health can regen even when at zero - regen is allowed
             // Only prevent regen when dead
             if (starship.IsDead) return;
-            // AI ships regen health on server (same logic as Starship.HandleHealthRegen, but without debug mode multiplier)
+            // AI ships regen health on server (same logic as Starship.HandleHealthRegen)
             if (starship.CurrentHealth < starship.MaxHealth)
             {
-                float regenRate = 1f; // Base regen rate per second (enemy ships ignore debug mode)
+                float regenRate = 1f; // Base regen rate per second
                 float regen = regenRate * Time.deltaTime;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
                 
                 // Access NetworkVariable via reflection (Starship doesn't expose it publicly)
                 var healthField = typeof(Starship).GetField("currentHealth", 
@@ -166,11 +185,12 @@ namespace TitanOrbit.AI
 
         private void HandleEnergyRegen()
         {
-            // AI ships regen energy on server (same logic as Starship.HandleEnergyRegen, but without debug mode multiplier)
+            // AI ships regen energy on server (same logic as Starship.HandleEnergyRegen)
             if (starship.CurrentEnergy < starship.EnergyCapacity)
             {
-                float regenRate = 5f; // Base regen rate per second (enemy ships ignore debug mode)
+                float regenRate = 5f; // Base regen rate per second
                 float regen = regenRate * Time.deltaTime;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
                 
                 // Access NetworkVariable via reflection (Starship doesn't expose it publicly)
                 var energyField = typeof(Starship).GetField("currentEnergy", 
@@ -194,51 +214,27 @@ namespace TitanOrbit.AI
                 if (homePlanet == null) return;
             }
 
-            // Check for enemy ships first - combat takes priority over all other actions
-            Starship nearestEnemy = FindNearestEnemyShip();
-            if (nearestEnemy != null)
+            // --- PRIMARY BEHAVIOR FIRST ---
+            // Run leveling/upgrade/primary action BEFORE combat check.
+            // Combat only overrides when enemy is in range - don't let combat prevent primary actions.
+            // Hierarchy: level up -> upgrade abilities -> primary action (mine/transport)
+            if (CanLevelUpPotential())
             {
-                // Enemy in range - switch to attack mode
-                if (currentState != AIState.AttackingEnemy)
-                {
-                    previousState = currentState; // Save current state to return to later
-                }
-                targetEnemyShip = nearestEnemy;
-                currentState = AIState.AttackingEnemy;
-                ExitOrbitIfInOrbit(); // Exit orbit when engaging enemy
+                UpdateLevelingBehavior();
             }
-            else if (currentState == AIState.AttackingEnemy)
+            else if (CanUpgradeAnyAttributePotential())
             {
-                // No enemies in range - return to previous behavior
-                targetEnemyShip = null;
-                AIState stateToReturnTo = previousState;
-                
-                // If previous state was invalid or was also AttackingEnemy, reset to Idle
-                if (stateToReturnTo == AIState.AttackingEnemy)
-                {
-                    stateToReturnTo = AIState.Idle;
-                }
-                
-                currentState = stateToReturnTo;
-                
-                // Force behavior update to ensure proper state transitions
-                // This ensures ships don't get stuck when returning from attack
-                if (currentState == AIState.Idle || currentState == AIState.ReturningToHome || 
-                    currentState == AIState.LoadingPeople || currentState == AIState.UnloadingPeople)
-                {
-                    // Reset any stale targets that might prevent proper behavior
-                    if (currentState == AIState.Idle)
-                    {
-                        targetAsteroid = null;
-                        targetPlanet = null;
-                        targetGem = null;
-                    }
-                }
+                UpdateLevelingBehavior();
             }
-
-            // Only update behavior if not attacking
-            if (currentState != AIState.AttackingEnemy)
+            else if (IsFullyMaxedOut())
             {
+                // Fully maxed: do primary action (mine for home, or transport people)
+                if (currentState == AIState.ReturningToHome && targetAsteroid == null && targetGem == null)
+                {
+                    currentState = AIState.Idle;
+                    targetAsteroid = null;
+                    targetGem = null;
+                }
                 switch (behaviorType)
                 {
                     case AIBehaviorType.Mining:
@@ -249,6 +245,50 @@ namespace TitanOrbit.AI
                         break;
                 }
             }
+            else
+            {
+                UpdateLevelingBehavior();
+            }
+
+            // --- COMBAT OVERRIDE (only when enemy in range) ---
+            // If already in combat, verify target is still in range - exit if not (don't chase)
+            if (currentState == AIState.AttackingEnemy && targetEnemyShip != null && !targetEnemyShip.IsDead)
+            {
+                float distToTarget = ToroidalMap.ToroidalDistance(rb.position, targetEnemyShip.transform.position);
+                if (distToTarget > attackRange)
+                {
+                    combatCooldownUntil = Time.time + 3f;
+                    targetEnemyShip = null;
+                    currentState = previousState; // Resume primary task - don't clear targets
+                    ExitOrbitIfInOrbit();
+                }
+            }
+            else if (currentState == AIState.AttackingEnemy)
+            {
+                // Target dead or invalid - exit combat and resume primary task
+                combatCooldownUntil = Time.time + 4f;
+                targetEnemyShip = null;
+                currentState = previousState; // Resume primary task - don't clear targets
+                ExitOrbitIfInOrbit();
+            }
+            else
+            {
+                // Not in combat - check if enemy entered range (override primary action only when enemy is close)
+                bool inCombatCooldown = Time.time < combatCooldownUntil;
+                Starship nearestEnemy = inCombatCooldown ? null : FindNearestEnemyShip();
+                if (nearestEnemy != null)
+                {
+                    previousState = currentState;
+                    targetEnemyShip = nearestEnemy;
+                    currentState = AIState.AttackingEnemy;
+                    currentCombatPattern = Random.Range(0, 4);
+                    strafeDirection = Random.value > 0.5f ? 1f : -1f;
+                    preferredCombatDistance = attackRange * Random.Range(0.6f, 0.9f);
+                    combatPatternDuration = Random.Range(1.5f, 3f);
+                    combatPatternChangeTime = Time.time + combatPatternDuration;
+                    ExitOrbitIfInOrbit();
+                }
+            }
         }
 
         private void UpdateMiningBehavior()
@@ -257,25 +297,82 @@ namespace TitanOrbit.AI
             {
                 case AIState.Idle:
                 case AIState.MovingToTarget:
-                    // If gems = max gems, target = home planet
+                    // If gems = max gems, find nearest planet to deposit (home or captured)
                     if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
                     {
-                        // Check if already at home - if so, deposit and then continue
+                        // Check if home planet is fully maxed (level 6 is max for home planets)
+                        bool homePlanetMaxed = homePlanet.PlanetLevel >= 6;
+                        
+                        // Check if already at a friendly planet - if so, deposit and then continue
+                        Planet currentDepositPlanet = null;
                         float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
                         float homeOrbitRadius = homePlanet.PlanetSize * 0.85f;
+                        
                         if (distanceToHome <= homeOrbitRadius)
                         {
-                            // Already at home - deposit gems
+                            // At home planet - deposit if not maxed, otherwise go to nearby planet
+                            if (!homePlanetMaxed)
+                            {
+                                currentDepositPlanet = homePlanet;
+                            }
+                        }
+                        else
+                        {
+                            // Check if at a captured planet
+                            Planet nearestCaptured = FindNearestCapturedPlanet();
+                            if (nearestCaptured != null)
+                            {
+                                float distToCaptured = ToroidalMap.ToroidalDistance(rb.position, nearestCaptured.transform.position);
+                                float capturedOrbitRadius = nearestCaptured.PlanetSize * 0.85f;
+                                if (distToCaptured <= capturedOrbitRadius)
+                                {
+                                    currentDepositPlanet = nearestCaptured;
+                                }
+                            }
+                        }
+                        
+                        if (currentDepositPlanet != null)
+                        {
+                            // Already at a friendly planet - deposit gems
                             starship.SetWantToDepositGemsFromServer(true);
                             currentState = AIState.Idle; // Will check again next update
                         }
                         else
                         {
-                            // Not at home - go to home planet
-                            targetPosition = homePlanet.transform.position;
-                            SetTargetInOrbitZone(homePlanet, ref targetPosition);
-                            currentState = AIState.ReturningToHome;
-                            ExitOrbitIfInOrbit();
+                            // Not at a friendly planet - choose target
+                            Planet targetDepositPlanet = null;
+                            
+                            if (homePlanetMaxed)
+                            {
+                                // Home planet is maxed - bring gems to nearby captured planets to level them up
+                                Planet nearestCaptured = FindNearestCapturedPlanet();
+                                if (nearestCaptured != null)
+                                {
+                                    targetDepositPlanet = nearestCaptured;
+                                }
+                                else
+                                {
+                                    // No captured planets - still go to home (might level up later)
+                                    targetDepositPlanet = homePlanet;
+                                }
+                            }
+                            else
+                            {
+                                // Home planet not maxed - go to nearest (home or captured)
+                                Planet nearestFriendly = FindNearestCapturedPlanet();
+                                float distToHomeCheck = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
+                                float distToCapturedCheck = nearestFriendly != null ? ToroidalMap.ToroidalDistance(rb.position, nearestFriendly.transform.position) : float.MaxValue;
+                                
+                                targetDepositPlanet = (nearestFriendly != null && distToCapturedCheck < distToHomeCheck) ? nearestFriendly : homePlanet;
+                            }
+                            
+                            if (targetDepositPlanet != null)
+                            {
+                                targetPosition = targetDepositPlanet.transform.position;
+                                SetTargetInOrbitZone(targetDepositPlanet, ref targetPosition);
+                                currentState = AIState.ReturningToHome;
+                                ExitOrbitIfInOrbit();
+                            }
                         }
                         break;
                     }
@@ -318,20 +415,22 @@ namespace TitanOrbit.AI
                         currentState = AIState.MovingToTarget;
                     }
                     // Shooting happens in FixedUpdate via HandleShootingAsteroid
-                    // If ship is full, return to home
+                    // If ship is full, return to nearest friendly planet to deposit
                     if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
                     {
                         currentState = AIState.ReturningToHome;
                         targetAsteroid = null;
+                        // Target will be set in ReturningToHome state
                     }
                     break;
 
                 case AIState.CollectingGems:
-                    // Ship full? Return home
+                    // Ship full? Return to nearest friendly planet to deposit
                     if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
                     {
                         currentState = AIState.ReturningToHome;
                         targetGem = null;
+                        // Target will be set in ReturningToHome state
                         break;
                     }
                     // Find nearest gem within proximity only - otherwise return to asteroids
@@ -349,12 +448,40 @@ namespace TitanOrbit.AI
                     break;
 
                 case AIState.ReturningToHome:
-                    // Target orbit zone at home (not center)
-                    SetTargetInOrbitZone(homePlanet, ref targetPosition);
-                    float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                    float homeOrbitRadiusReturn = homePlanet.PlanetSize * 0.85f; // Use outer orbit band (0.5-0.85)
+                    // Target orbit zone at deposit planet (home or captured) - determine which one we're going to
+                    bool homePlanetMaxedMining = homePlanet.PlanetLevel >= 6; // Max level for home planets is 6
+                    Planet depositTarget = homePlanet;
                     
-                    if (distToHomeReturn <= homeOrbitRadiusReturn)
+                    if (homePlanetMaxedMining)
+                    {
+                        // Home planet is maxed - bring gems to nearby captured planets
+                        Planet nearestCapturedForDeposit = FindNearestCapturedPlanet();
+                        if (nearestCapturedForDeposit != null)
+                        {
+                            depositTarget = nearestCapturedForDeposit;
+                        }
+                        // Otherwise use home planet (fallback)
+                    }
+                    else
+                    {
+                        // Home planet not maxed - choose nearest (home or captured)
+                        float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
+                        Planet nearestCapturedForDeposit = FindNearestCapturedPlanet();
+                        if (nearestCapturedForDeposit != null)
+                        {
+                            float distToCapturedReturn = ToroidalMap.ToroidalDistance(rb.position, nearestCapturedForDeposit.transform.position);
+                            if (distToCapturedReturn < distToHomeReturn)
+                            {
+                                depositTarget = nearestCapturedForDeposit;
+                            }
+                        }
+                    }
+                    
+                    SetTargetInOrbitZone(depositTarget, ref targetPosition);
+                    float distToDepositTarget = ToroidalMap.ToroidalDistance(rb.position, depositTarget.transform.position);
+                    float depositOrbitRadius = depositTarget.PlanetSize * 0.85f; // Use outer orbit band (0.5-0.85)
+                    
+                    if (distToDepositTarget <= depositOrbitRadius)
                     {
                         starship.SetWantToDepositGemsFromServer(true);
                         // After depositing, transition to Idle so ship can continue mining
@@ -374,32 +501,62 @@ namespace TitanOrbit.AI
             {
                 case AIState.Idle:
                 case AIState.LoadingPeople:
-                    // If people = 0, target = home planet; if in orbit, load people
+                    // If people = 0, find planet with most people (same team) to load from
                     if (starship.CurrentPeople < starship.PeopleCapacity - 0.1f)
                     {
-                        float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                        if (distanceToHome <= Mathf.Max(homePlanet.PlanetSize * 1.1f, 6f))
+                        Planet planetWithMostPeople = FindPlanetWithMostPeople();
+                        if (planetWithMostPeople != null)
                         {
-                            starship.SetWantToLoadPeopleFromServer(true);
-                            currentState = AIState.LoadingPeople;
+                            float distToLoadPlanet = ToroidalMap.ToroidalDistance(rb.position, planetWithMostPeople.transform.position);
+                            float orbitRadius = Mathf.Max(planetWithMostPeople.PlanetSize * 1.1f, 6f);
+                            
+                            if (distToLoadPlanet <= orbitRadius)
+                            {
+                                starship.SetWantToLoadPeopleFromServer(true);
+                                currentState = AIState.LoadingPeople;
+                            }
+                            else
+                            {
+                                targetPosition = planetWithMostPeople.transform.position;
+                                SetTargetInOrbitZone(planetWithMostPeople, ref targetPosition);
+                                currentState = AIState.MovingToTarget;
+                                ExitOrbitIfInOrbit();
+                            }
                         }
                         else
                         {
-                            targetPosition = homePlanet.transform.position;
-                            SetTargetInOrbitZone(homePlanet, ref targetPosition);
-                            currentState = AIState.MovingToTarget;
-                            ExitOrbitIfInOrbit();
+                            // No planets with people available - stay idle
+                            currentState = AIState.Idle;
                         }
                     }
                     else if (starship.CurrentPeople >= starship.PeopleCapacity - 0.1f)
                     {
-                        // People = max: target = closest neutral planet
-                        Planet nearestPlanet = FindNearestPlanet();
-                        if (nearestPlanet != null)
+                        // People = max: target = closest neutral/enemy planet OR captured planet for unloading
+                        Planet nearestNeutral = FindNearestPlanet();
+                        Planet nearestCaptured = FindNearestCapturedPlanet();
+                        
+                        Planet targetUnloadPlanet = null;
+                        if (nearestNeutral != null && nearestCaptured != null)
                         {
-                            targetPlanet = nearestPlanet;
-                            targetPosition = nearestPlanet.transform.position;
-                            SetTargetInOrbitZone(nearestPlanet, ref targetPosition);
+                            // Choose closest between neutral and captured
+                            float distToNeutral = ToroidalMap.ToroidalDistance(rb.position, nearestNeutral.transform.position);
+                            float distToCaptured = ToroidalMap.ToroidalDistance(rb.position, nearestCaptured.transform.position);
+                            targetUnloadPlanet = distToNeutral < distToCaptured ? nearestNeutral : nearestCaptured;
+                        }
+                        else if (nearestNeutral != null)
+                        {
+                            targetUnloadPlanet = nearestNeutral;
+                        }
+                        else if (nearestCaptured != null)
+                        {
+                            targetUnloadPlanet = nearestCaptured;
+                        }
+                        
+                        if (targetUnloadPlanet != null)
+                        {
+                            targetPlanet = targetUnloadPlanet;
+                            targetPosition = targetUnloadPlanet.transform.position;
+                            SetTargetInOrbitZone(targetUnloadPlanet, ref targetPosition);
                             currentState = AIState.MovingToPlanet;
                             ExitOrbitIfInOrbit();
                         }
@@ -412,14 +569,23 @@ namespace TitanOrbit.AI
                     break;
 
                 case AIState.MovingToTarget:
-                    // Transport going to home to load people - check if we've arrived
-                    SetTargetInOrbitZone(homePlanet, ref targetPosition);
-                    float distanceToHomeTransport = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                    float homeOrbitRadiusTransport = Mathf.Max(homePlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
-                    if (distanceToHomeTransport <= homeOrbitRadiusTransport)
+                    // Transport going to planet with most people to load - check if we've arrived
+                    Planet loadTargetPlanet = FindPlanetWithMostPeople();
+                    if (loadTargetPlanet != null)
                     {
-                        starship.SetWantToLoadPeopleFromServer(true);
-                        currentState = AIState.LoadingPeople;
+                        SetTargetInOrbitZone(loadTargetPlanet, ref targetPosition);
+                        float distanceToLoadPlanet = ToroidalMap.ToroidalDistance(rb.position, loadTargetPlanet.transform.position);
+                        float loadOrbitRadius = Mathf.Max(loadTargetPlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
+                        if (distanceToLoadPlanet <= loadOrbitRadius)
+                        {
+                            starship.SetWantToLoadPeopleFromServer(true);
+                            currentState = AIState.LoadingPeople;
+                        }
+                    }
+                    else
+                    {
+                        // No planet with people found - go back to idle
+                        currentState = AIState.Idle;
                     }
                     break;
 
@@ -471,6 +637,17 @@ namespace TitanOrbit.AI
         private void HandleAIMovement()
         {
             if (rb == null || starship == null) return;
+            
+            // Dead ships cannot move - stop all movement
+            if (starship.IsDead)
+            {
+                Vector3 vel = rb.linearVelocity;
+                vel.y = 0f;
+                vel = Vector3.MoveTowards(vel, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                rb.linearVelocity = vel;
+                moveDirection = Vector3.zero;
+                return;
+            }
 
             // When in orbit zone and idle/loading/unloading/depositing, orbit slowly
             // Don't orbit when attacking enemies
@@ -494,17 +671,22 @@ namespace TitanOrbit.AI
                 Vector3 toTarget = ToroidalMap.ToroidalDirection(pos, targetPosition);
                 float distanceToTarget = ToroidalMap.ToroidalDistance(pos, targetPosition);
 
+                // Check if we're leveling up - both miners and transporters mine asteroids when leveling
+                bool isLevelingUp = !IsFullyMaxedOut();
+
                 // Arrival threshold: use miningRange for asteroids, small value for gems (collect radius 0.6), arrivalDistance for planets
                 float effectiveArrival = arrivalDistance;
-                if (behaviorType == AIBehaviorType.Mining && currentState == AIState.MovingToTarget && targetAsteroid != null)
+                // Both miners and transporters can mine asteroids when leveling up
+                if (currentState == AIState.MovingToTarget && targetAsteroid != null && 
+                    (behaviorType == AIBehaviorType.Mining || isLevelingUp))
                     effectiveArrival = miningRange * 0.9f; // Stop at orbit point around asteroid
                 else if (currentState == AIState.CollectingGems)
                     effectiveArrival = 0.5f; // Get close enough for gem collect (Gem.collectRadius = 0.6)
 
-                // Transport: transition when within planet orbit radius - smaller planets need larger relative radius
-                if (behaviorType == AIBehaviorType.Transport)
+                // Transport: transition when within planet orbit radius - but skip this when leveling up
+                if (behaviorType == AIBehaviorType.Transport && !isLevelingUp)
                 {
-                    if (currentState == AIState.MovingToTarget && homePlanet != null)
+                    if (currentState == AIState.MovingToTarget && homePlanet != null && targetAsteroid == null)
                     {
                         float distToHome = ToroidalMap.ToroidalDistance(pos, homePlanet.transform.position);
                         float orbitRadius = Mathf.Max(homePlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
@@ -541,8 +723,9 @@ namespace TitanOrbit.AI
                 // Check if we've arrived at target - transition to ShootingAsteroid when we reach orbit point
                 if (distanceToTarget <= effectiveArrival)
                 {
-                    // Reached orbit point around asteroid? Start shooting
-                    if (behaviorType == AIBehaviorType.Mining && currentState == AIState.MovingToTarget && targetAsteroid != null && !targetAsteroid.IsDestroyed)
+                    // Reached orbit point around asteroid? Start shooting (both miners and transporters when leveling)
+                    if (currentState == AIState.MovingToTarget && targetAsteroid != null && !targetAsteroid.IsDestroyed &&
+                        (behaviorType == AIBehaviorType.Mining || isLevelingUp))
                         currentState = AIState.ShootingAsteroid;
 
                     moveDirection = Vector3.zero;
@@ -615,11 +798,22 @@ namespace TitanOrbit.AI
                 return false;
             }
             // Only orbit when idle/loading/unloading/depositing AND we don't have work to do
-            // For miners: orbit only if gems are being deposited
+            // For miners: orbit only when depositing gems (wantToDepositGems)
+            // When fully maxed, NEVER orbit at home idle - they should be mining
             if (behaviorType == AIBehaviorType.Mining)
             {
-                // Orbit only if depositing gems (wantToDepositGems is true)
-                return starship.WantToDepositGems;
+                if (starship.WantToDepositGems) return true;
+                // Allow idle-at-home orbit ONLY when leveling (not fully maxed) - waiting for upgrade
+                if (!IsFullyMaxedOut() && currentState == AIState.Idle && homePlanet != null)
+                {
+                    float distToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
+                    float homeOrbitRadius = homePlanet.PlanetSize * 0.85f;
+                    if (distToHome <= homeOrbitRadius && targetAsteroid == null && targetGem == null)
+                    {
+                        return true; // Idle at home while leveling - allow orbiting
+                    }
+                }
+                return false;
             }
             // For transporters: orbit when loading/unloading people
             return currentState == AIState.LoadingPeople || currentState == AIState.UnloadingPeople;
@@ -683,46 +877,171 @@ namespace TitanOrbit.AI
             Vector3 dirToEnemy = ToroidalMap.ToroidalDirection(myPos, enemyPos);
             float distanceToEnemy = ToroidalMap.ToroidalDistance(myPos, enemyPos);
             
+            // Don't chase - if enemy left range, stop moving and shooting (UpdateAI will exit combat)
+            if (distanceToEnemy > attackRange)
+            {
+                moveDirection = Vector3.zero;
+                return;
+            }
+            
             if (dirToEnemy.sqrMagnitude < 0.01f) return;
             dirToEnemy.Normalize();
 
-            // Rotate toward enemy
-            Quaternion targetRotation = Quaternion.LookRotation(dirToEnemy);
+            // Change combat pattern periodically for more dynamic dogfights
+            if (Time.time >= combatPatternChangeTime)
+            {
+                // Randomize combat pattern (0-3: different movement styles)
+                currentCombatPattern = Random.Range(0, 4);
+                // Randomize strafe direction (left or right)
+                strafeDirection = Random.value > 0.5f ? 1f : -1f;
+                // Randomize preferred combat distance (60% to 90% of attack range)
+                preferredCombatDistance = attackRange * Random.Range(0.6f, 0.9f);
+                // Set next pattern change time (1.5 to 3 seconds)
+                combatPatternDuration = Random.Range(1.5f, 3f);
+                combatPatternChangeTime = Time.time + combatPatternDuration;
+            }
+
+            // Rotate toward enemy (but add some randomness to rotation for more dynamic feel)
+            Vector3 aimDirection = dirToEnemy;
+            // Add slight random jitter to aim (5 degrees max)
+            float aimJitter = Random.Range(-5f, 5f) * Mathf.Deg2Rad;
+            Vector3 jitterAxis = Vector3.Cross(dirToEnemy, Vector3.up).normalized;
+            if (jitterAxis.sqrMagnitude > 0.01f)
+            {
+                aimDirection = Quaternion.AngleAxis(aimJitter * Mathf.Rad2Deg, Vector3.up) * dirToEnemy;
+            }
+            
+            Quaternion targetRotation = Quaternion.LookRotation(aimDirection);
             rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, aiRotationSpeed * Time.fixedDeltaTime));
 
             // Shoot at enemy (FireAtTarget respects fire rate and energy)
             starship.FireAtTarget(dirToEnemy);
 
-            // Continue moving toward enemy while attacking (don't stop)
-            // Maintain a preferred distance - move closer if too far, circle if too close
-            float preferredDistance = attackRange * 0.7f; // Stay at 70% of attack range
-            if (distanceToEnemy > attackRange)
+            // Dynamic combat movement patterns - different behaviors for variety
+            Vector3 movementDir = Vector3.zero;
+            
+            switch (currentCombatPattern)
             {
-                // Too far - move closer
-                moveDirection = dirToEnemy;
+                case 0: // Aggressive approach with strafe
+                    if (distanceToEnemy > preferredCombatDistance)
+                    {
+                        // Approach while strafing
+                        Vector3 tangent = new Vector3(-dirToEnemy.z * strafeDirection, 0f, dirToEnemy.x * strafeDirection);
+                        movementDir = (dirToEnemy * 0.7f + tangent * 0.3f).normalized;
+                    }
+                    else
+                    {
+                        // Circle strafe
+                        Vector3 tangent = new Vector3(-dirToEnemy.z * strafeDirection, 0f, dirToEnemy.x * strafeDirection);
+                        movementDir = tangent;
+                    }
+                    break;
+                    
+                case 1: // Defensive circling
+                    // Always circle, but vary distance
+                    Vector3 tangent1 = new Vector3(-dirToEnemy.z * strafeDirection, 0f, dirToEnemy.x * strafeDirection);
+                    if (distanceToEnemy < preferredCombatDistance * 0.8f)
+                    {
+                        // Too close - circle outward
+                        movementDir = (tangent1 * 0.8f - dirToEnemy * 0.2f).normalized;
+                    }
+                    else
+                    {
+                        // Circle at distance
+                        movementDir = tangent1;
+                    }
+                    break;
+                    
+                case 2: // Hit and run
+                    if (distanceToEnemy > preferredCombatDistance)
+                    {
+                        // Approach quickly
+                        movementDir = dirToEnemy;
+                    }
+                    else
+                    {
+                        // Retreat while strafing
+                        Vector3 tangent2 = new Vector3(-dirToEnemy.z * strafeDirection, 0f, dirToEnemy.x * strafeDirection);
+                        movementDir = (-dirToEnemy * 0.5f + tangent2 * 0.5f).normalized;
+                    }
+                    break;
+                    
+                case 3: // Erratic jinking
+                    // Random movement with bias toward enemy
+                    Vector3 tangent3 = new Vector3(-dirToEnemy.z * strafeDirection, 0f, dirToEnemy.x * strafeDirection);
+                    float randomFactor = Random.Range(0f, 1f);
+                    if (randomFactor < 0.4f)
+                    {
+                        // Move toward enemy
+                        movementDir = dirToEnemy;
+                    }
+                    else if (randomFactor < 0.7f)
+                    {
+                        // Strafe
+                        movementDir = tangent3;
+                    }
+                    else
+                    {
+                        // Diagonal approach
+                        movementDir = (dirToEnemy * 0.6f + tangent3 * 0.4f).normalized;
+                    }
+                    break;
             }
-            else if (distanceToEnemy < preferredDistance)
+            
+            // Add random jitter to movement direction for more organic feel
+            float jitterAmount = 0.15f; // 15% random variation
+            Vector3 jitter = new Vector3(
+                Random.Range(-jitterAmount, jitterAmount),
+                0f,
+                Random.Range(-jitterAmount, jitterAmount)
+            );
+            moveDirection = (movementDir + jitter).normalized;
+        }
+
+        /// <summary>Refresh cached object lists periodically to avoid expensive FindObjectsOfType calls.</summary>
+        private static void RefreshObjectCache()
+        {
+            // Only refresh in play mode (Time.time is only available during play)
+            if (!Application.isPlaying) return;
+            
+            if (Time.time - lastCacheRefreshTime >= cacheRefreshInterval)
             {
-                // Too close - strafe around enemy (perpendicular movement)
-                Vector3 tangent = new Vector3(-dirToEnemy.z, 0f, dirToEnemy.x);
-                moveDirection = tangent;
-            }
-            else
-            {
-                // Good distance - maintain position with slight movement
-                Vector3 tangent = new Vector3(-dirToEnemy.z, 0f, dirToEnemy.x);
-                moveDirection = (dirToEnemy * 0.3f + tangent * 0.7f).normalized; // Mostly strafe, slight forward
+                // Refresh cache and filter out null/destroyed objects
+                var asteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+                var gems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
+                var planets = Object.FindObjectsByType<Planet>(FindObjectsSortMode.None);
+                var ships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
+                
+                // Filter out null/destroyed objects
+                System.Collections.Generic.List<Asteroid> validAsteroids = new System.Collections.Generic.List<Asteroid>();
+                foreach (var a in asteroids) if (a != null && a.gameObject != null) validAsteroids.Add(a);
+                cachedAsteroids = validAsteroids.ToArray();
+                
+                System.Collections.Generic.List<Gem> validGems = new System.Collections.Generic.List<Gem>();
+                foreach (var g in gems) if (g != null && g.gameObject != null) validGems.Add(g);
+                cachedGems = validGems.ToArray();
+                
+                System.Collections.Generic.List<Planet> validPlanets = new System.Collections.Generic.List<Planet>();
+                foreach (var p in planets) if (p != null && p.gameObject != null) validPlanets.Add(p);
+                cachedPlanets = validPlanets.ToArray();
+                
+                System.Collections.Generic.List<Starship> validShips = new System.Collections.Generic.List<Starship>();
+                foreach (var s in ships) if (s != null && s.gameObject != null) validShips.Add(s);
+                cachedShips = validShips.ToArray();
+                
+                lastCacheRefreshTime = Time.time;
             }
         }
 
         /// <summary>Find nearest gem within maxRange. Used for CollectingGems - only pursue gems in close proximity.</summary>
         private Gem FindNearestGemWithinRange(float maxRange)
         {
+            RefreshObjectCache();
+            
             Gem nearest = null;
             float nearestDistance = float.MaxValue;
 
-            Gem[] gems = Object.FindObjectsOfType<Gem>();
-            foreach (var gem in gems)
+            foreach (var gem in cachedGems)
             {
                 if (gem == null) continue;
 
@@ -739,11 +1058,12 @@ namespace TitanOrbit.AI
 
         private Asteroid FindNearestMineableAsteroid()
         {
+            RefreshObjectCache();
+            
             Asteroid nearest = null;
             float nearestDistance = float.MaxValue;
 
-            Asteroid[] asteroids = Object.FindObjectsOfType<Asteroid>();
-            foreach (var asteroid in asteroids)
+            foreach (var asteroid in cachedAsteroids)
             {
                 if (asteroid == null || !asteroid.CanBeMined()) continue;
                 if (asteroid.IsDestroyed) continue;
@@ -759,13 +1079,15 @@ namespace TitanOrbit.AI
             return nearest;
         }
 
+        /// <summary>Find nearest neutral or enemy planet (for capturing/unloading people).</summary>
         private Planet FindNearestPlanet()
         {
+            RefreshObjectCache();
+            
             Planet nearest = null;
             float nearestDistance = float.MaxValue;
 
-            Planet[] planets = Object.FindObjectsOfType<Planet>();
-            foreach (var planet in planets)
+            foreach (var planet in cachedPlanets)
             {
                 if (planet == null) continue;
                 if (planet is HomePlanet) continue; // Skip home planets
@@ -782,9 +1104,87 @@ namespace TitanOrbit.AI
             return nearest;
         }
 
+        /// <summary>Find nearest captured planet (same team) for depositing gems or unloading people.</summary>
+        private Planet FindNearestCapturedPlanet()
+        {
+            RefreshObjectCache();
+            
+            Planet nearest = null;
+            float nearestDistance = float.MaxValue;
+
+            foreach (var planet in cachedPlanets)
+            {
+                if (planet == null) continue;
+                if (planet is HomePlanet) continue; // Skip home planets (use home planet directly)
+                if (planet.TeamOwnership != assignedTeam) continue; // Only captured planets (same team)
+
+                float distance = ToroidalMap.ToroidalDistance(rb.position, planet.transform.position);
+                if (distance < detectionRange && distance < nearestDistance)
+                {
+                    nearest = planet;
+                    nearestDistance = distance;
+                }
+            }
+
+            return nearest;
+        }
+
+        /// <summary>Find planet with most people (same team) for loading people. Includes home planet.</summary>
+        private Planet FindPlanetWithMostPeople()
+        {
+            RefreshObjectCache();
+            
+            Planet bestPlanet = null;
+            float mostPeople = 0f;
+
+            foreach (var planet in cachedPlanets)
+            {
+                if (planet == null) continue;
+                
+                // Check if planet belongs to our team
+                bool isOurPlanet = false;
+                if (planet is HomePlanet home)
+                {
+                    isOurPlanet = home.AssignedTeam == assignedTeam;
+                }
+                else
+                {
+                    isOurPlanet = planet.TeamOwnership == assignedTeam;
+                }
+                
+                if (!isOurPlanet) continue; // Only our team's planets
+                if (planet.CurrentPopulation <= 0f) continue; // Skip empty planets
+
+                float population = planet.CurrentPopulation;
+                if (population > mostPeople)
+                {
+                    mostPeople = population;
+                    bestPlanet = planet;
+                }
+            }
+
+            return bestPlanet;
+        }
+
         private void FindHomePlanet()
         {
-            HomePlanet[] homePlanets = Object.FindObjectsOfType<HomePlanet>();
+            RefreshObjectCache();
+            
+            // Filter cached planets for HomePlanets
+            foreach (var planet in cachedPlanets)
+            {
+                if (planet is HomePlanet homePlanet)
+                {
+                    if (homePlanet.AssignedTeam == assignedTeam)
+                    {
+                        homePlanet = homePlanet;
+                        return;
+                    }
+                }
+            }
+            
+            // Fallback to FindObjectsOfType if cache doesn't have it (shouldn't happen)
+            HomePlanet[] homePlanets = Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None);
             foreach (var hp in homePlanets)
             {
                 if (hp != null && hp.AssignedTeam == assignedTeam)
@@ -795,27 +1195,376 @@ namespace TitanOrbit.AI
             }
         }
 
+        /// <summary>Check if ship is fully maxed out (level 7 + all attributes maxed).</summary>
+        private bool IsFullyMaxedOut()
+        {
+            if (starship == null) return true;
+            
+            // Check if ship is at max level (7)
+            if (starship.ShipLevel < 7) return false;
+            
+            // Check if all attributes are maxed (each can have up to ShipLevel upgrades)
+            int maxUpgrades = starship.ShipLevel; // Level 7 = 7 upgrades per attribute
+            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
+            {
+                if (starship.GetAttributeLevel(attr) < maxUpgrades)
+                    return false;
+            }
+            
+            return true;
+        }
+
+        /// <summary>Check if ship can level up RIGHT NOW (has full gems and meets requirements).</summary>
+        private bool CanLevelUp()
+        {
+            if (starship == null || homePlanet == null) return false;
+            if (Systems.UpgradeSystem.Instance == null) return false;
+            
+            return Systems.UpgradeSystem.Instance.CanUpgradeStarshipLevel(starship);
+        }
+
+        /// <summary>Check if ship CAN level up (has potential - planet level allows it, just needs gems).</summary>
+        private bool CanLevelUpPotential()
+        {
+            if (starship == null || homePlanet == null) return false;
+            if (Systems.UpgradeSystem.Instance == null) return false;
+            if (starship.ShipLevel >= 7) return false; // Already max level
+            
+            int nextLevel = starship.ShipLevel + 1;
+            int planetLevel = homePlanet.HomePlanetLevel;
+            
+            // Check if planet level allows this ship level
+            if (nextLevel == 7)
+            {
+                // Level 7 requires planet level 6 + full gems on planet
+                if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
+            }
+            else if (nextLevel > planetLevel)
+            {
+                return false; // Planet level too low
+            }
+            
+            // Check if upgrade tree has available upgrades
+            var upgradeTree = Systems.UpgradeSystem.Instance.UpgradeTree;
+            if (upgradeTree == null) return false;
+            return upgradeTree.GetAvailableUpgrades(starship.ShipLevel, starship.BranchIndex).Count > 0;
+        }
+
+        /// <summary>Check if ship CAN upgrade any attribute (has potential - just needs gems).</summary>
+        private bool CanUpgradeAnyAttributePotential()
+        {
+            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return false;
+            
+            int currentLevel = starship.ShipLevel;
+            int maxUpgrades = currentLevel; // Level N = N upgrades per attribute
+            
+            // Check if any attribute can still be upgraded (regardless of current gems)
+            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
+            {
+                if (starship.GetAttributeLevel(attr) < maxUpgrades)
+                    return true; // Has potential to upgrade this attribute
+            }
+            
+            return false;
+        }
+
+        /// <summary>Check if ship can upgrade any attribute (has enough gems).</summary>
+        private bool CanUpgradeAnyAttribute()
+        {
+            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return false;
+            
+            int currentLevel = starship.ShipLevel;
+            int maxUpgrades = currentLevel; // Level N = N upgrades per attribute
+            float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(currentLevel);
+            
+            // Check if any attribute can be upgraded
+            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
+            {
+                if (starship.GetAttributeLevel(attr) < maxUpgrades && starship.CurrentGems >= upgradeCost)
+                    return true;
+            }
+            
+            return false;
+        }
+
+        /// <summary>Upgrade the next available attribute (lowest level first).</summary>
+        private void UpgradeNextAttribute()
+        {
+            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return;
+            if (!IsServerAuthority) return;
+            
+            int currentLevel = starship.ShipLevel;
+            int maxUpgrades = currentLevel;
+            float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(currentLevel);
+            
+            // Find the first attribute that can be upgraded
+            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
+            {
+                if (starship.GetAttributeLevel(attr) < maxUpgrades && starship.CurrentGems >= upgradeCost)
+                {
+                    var shipNetObj = starship.GetComponent<NetworkObject>();
+                    if (shipNetObj != null)
+                    {
+                        Systems.AttributeUpgradeSystem.Instance.UpgradeAttributeServerRpc(shipNetObj.NetworkObjectId, attr);
+                    }
+                    return;
+                }
+            }
+        }
+
+        /// <summary>Attempt to level up the ship if possible.</summary>
+        private void TryLevelUp()
+        {
+            if (starship == null || homePlanet == null) return;
+            if (Systems.UpgradeSystem.Instance == null) return;
+            if (!IsServerAuthority) return;
+            
+            if (!CanLevelUp()) return;
+            
+            // Get available upgrades for current level
+            var upgradeTree = Systems.UpgradeSystem.Instance.UpgradeTree;
+            if (upgradeTree == null) return;
+            
+            var availableUpgrades = upgradeTree.GetAvailableUpgrades(starship.ShipLevel, starship.BranchIndex);
+            if (availableUpgrades.Count == 0) return;
+            
+            // Choose first available upgrade (or could randomize)
+            int nextLevel = starship.ShipLevel + 1;
+            int shipIndex = 0; // Choose first available ship variant
+            
+            var shipNetObj = starship.GetComponent<NetworkObject>();
+            if (shipNetObj != null)
+            {
+                Systems.UpgradeSystem.Instance.UpgradeShipServerRpc(
+                    shipNetObj.NetworkObjectId,
+                    nextLevel,
+                    starship.FocusType, // Keep same focus type
+                    shipIndex
+                );
+            }
+        }
+
+        /// <summary>Update behavior when ship is leveling up - mine asteroids and use gems to upgrade (don't deposit).</summary>
+        private void UpdateLevelingBehavior()
+        {
+            if (starship == null || homePlanet == null) return;
+            
+            // Don't update state if already shooting asteroid - let it finish
+            if (currentState == AIState.ShootingAsteroid && targetAsteroid != null && !targetAsteroid.IsDestroyed)
+            {
+                // Check if ship is full - if so, return to home after asteroid is destroyed
+                if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                {
+                    // Will transition to ReturningToHome when asteroid is destroyed (handled below)
+                }
+                return;
+            }
+            
+            // Check if we're at home planet
+            float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
+            float homeOrbitRadius = homePlanet.PlanetSize * 0.85f;
+            bool atHome = distanceToHome <= homeOrbitRadius;
+            
+            if (atHome)
+            {
+                // Priority 1: Try to level up ship (requires full gems)
+                if (CanLevelUp())
+                {
+                    TryLevelUp();
+                    // After leveling up, gems will be consumed
+                    // Check if we can level up again or upgrade attributes - if so, continue leveling behavior
+                    // Otherwise, will fall through to check if we need more gems
+                    currentState = AIState.Idle;
+                    targetAsteroid = null;
+                    targetGem = null;
+                    // Don't return - check if we can upgrade more or need more gems
+                }
+                
+                // Priority 2: Try to upgrade attributes if we have enough gems
+                if (CanUpgradeAnyAttribute())
+                {
+                    UpgradeNextAttribute();
+                    // Stay at home to continue upgrading next update (might have more gems)
+                    currentState = AIState.Idle;
+                    return;
+                }
+                
+                // Check if we need more gems
+                bool needsFullGems = CanLevelUpPotential(); // Level up requires full gems
+                bool needsSomeGems = CanUpgradeAnyAttributePotential(); // Attribute upgrade needs less
+                bool needsMoreGems = false;
+                
+                if (needsFullGems && starship.CurrentGems < starship.GemCapacity * 0.95f)
+                {
+                    needsMoreGems = true; // Need full gems for level up
+                }
+                else if (needsSomeGems && !needsFullGems)
+                {
+                    float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(starship.ShipLevel);
+                    if (starship.CurrentGems < upgradeCost)
+                    {
+                        needsMoreGems = true; // Need more gems for attribute upgrade
+                    }
+                }
+                
+                if (needsMoreGems)
+                {
+                    // Need more gems - leave home and go mine (fall through to mining logic)
+                    currentState = AIState.Idle;
+                    targetAsteroid = null;
+                    targetGem = null;
+                    // Continue to mining logic below
+                }
+                else
+                {
+                    // Full gems but can't upgrade (might need planet level up first) - wait at home
+                    currentState = AIState.Idle;
+                    return;
+                }
+            }
+            
+            // Not at home OR need to mine - handle mining states
+            switch (currentState)
+            {
+                case AIState.Idle:
+                case AIState.MovingToTarget:
+                    // Validate current target asteroid - if it's destroyed or null, reset state
+                    if (currentState == AIState.MovingToTarget && (targetAsteroid == null || targetAsteroid.IsDestroyed))
+                    {
+                        targetAsteroid = null;
+                        currentState = AIState.Idle;
+                    }
+                    
+                    // If gems = max gems, go to home planet to upgrade
+                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    {
+                        targetPosition = homePlanet.transform.position;
+                        SetTargetInOrbitZone(homePlanet, ref targetPosition);
+                        currentState = AIState.ReturningToHome;
+                        targetAsteroid = null; // Clear asteroid target when returning home
+                        ExitOrbitIfInOrbit();
+                        break;
+                    }
+                    
+                    // Find nearest asteroid with gems
+                    Asteroid nearestAsteroid = FindNearestMineableAsteroid();
+                    if (nearestAsteroid != null)
+                    {
+                        // Only update target if we don't have one or it's different
+                        if (targetAsteroid != nearestAsteroid)
+                        {
+                            targetAsteroid = nearestAsteroid;
+                            Vector3 dirToShip = ToroidalMap.ToroidalDirection(nearestAsteroid.transform.position, rb.position);
+                            targetPosition = nearestAsteroid.transform.position + dirToShip * (nearestAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
+                            targetPosition = ToroidalMap.WrapPosition(targetPosition);
+                            currentState = AIState.MovingToTarget;
+                            ExitOrbitIfInOrbit();
+                        }
+                        // If we already have this asteroid as target, keep moving toward it
+                    }
+                    else
+                    {
+                        // No asteroids found - clear target and go idle
+                        targetAsteroid = null;
+                        currentState = AIState.Idle;
+                    }
+                    break;
+
+                case AIState.ShootingAsteroid:
+                    // Asteroid destroyed? Transition to collecting gems
+                    if (targetAsteroid == null || targetAsteroid.IsDestroyed)
+                    {
+                        targetAsteroid = null;
+                        currentState = AIState.CollectingGems;
+                        targetGem = FindNearestGemWithinRange(gemCollectionProximity);
+                        if (targetGem != null)
+                            targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                        break;
+                    }
+
+                    float distanceToAsteroidLeveling = ToroidalMap.ToroidalDistance(rb.position, targetAsteroid.transform.position);
+                    if (distanceToAsteroidLeveling > miningRange)
+                    {
+                        // Move closer - target orbit point (not center) to avoid bumping
+                        Vector3 dirToShipLeveling = ToroidalMap.ToroidalDirection(targetAsteroid.transform.position, rb.position);
+                        targetPosition = targetAsteroid.transform.position + dirToShipLeveling * (targetAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
+                        targetPosition = ToroidalMap.WrapPosition(targetPosition);
+                        currentState = AIState.MovingToTarget;
+                    }
+                    // Shooting happens in FixedUpdate via HandleShootingAsteroid
+                    // If ship is full, return to home to upgrade
+                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    {
+                        currentState = AIState.ReturningToHome;
+                        targetAsteroid = null;
+                    }
+                    break;
+
+                case AIState.CollectingGems:
+                    // Ship full? Return to home to upgrade
+                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    {
+                        currentState = AIState.ReturningToHome;
+                        targetGem = null;
+                        break;
+                    }
+                    // Find nearest gem within proximity
+                    targetGem = FindNearestGemWithinRange(gemCollectionProximity);
+                    if (targetGem != null)
+                    {
+                        targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                    }
+                    else
+                    {
+                        targetGem = null;
+                        currentState = AIState.Idle;
+                    }
+                    break;
+
+                case AIState.ReturningToHome:
+                    // Target orbit zone at home
+                    SetTargetInOrbitZone(homePlanet, ref targetPosition);
+                    float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
+                    float homeOrbitRadiusReturn = homePlanet.PlanetSize * 0.85f;
+                    
+                    if (distToHomeReturn <= homeOrbitRadiusReturn)
+                    {
+                        // Arrived at home - check for upgrades (will be handled in atHome check next update)
+                        // Reset state to Idle so the atHome check can process upgrades
+                        currentState = AIState.Idle;
+                        targetAsteroid = null;
+                        targetGem = null;
+                        // Next update will check atHome and handle upgrades
+                    }
+                    break;
+            }
+        }
+
         /// <summary>Find nearest enemy ship within attack range. Returns null if none found.</summary>
         private Starship FindNearestEnemyShip()
         {
             if (starship == null || assignedTeam == TeamManager.Team.None) return null;
             
+            RefreshObjectCache();
+            
             Vector3 myPos = rb != null ? rb.position : transform.position;
             Starship nearest = null;
             float nearestDistance = float.MaxValue;
-            float attackRangeSq = attackRange * attackRange;
 
-            Starship[] ships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
-            foreach (var ship in ships)
+            foreach (var ship in cachedShips)
             {
-                if (ship == null || ship.IsDead) continue;
-                if (ship.ShipTeam == assignedTeam || ship.ShipTeam == TeamManager.Team.None) continue; // Skip friendly ships and neutral
+                if (ship == null || ship == starship) continue; // Skip self
+                if (ship.IsDead) continue;
+                if (ship.ShipTeam == assignedTeam) continue; // Skip friendly ships
 
-                float distance = ToroidalMap.ToroidalDistance(myPos, ship.transform.position);
-                if (distance <= attackRange && distance < nearestDistance)
+                Vector3 shipPos = ship.transform.position;
+                shipPos.y = 0f;
+                float dist = ToroidalMap.ToroidalDistance(myPos, shipPos);
+
+                if (dist <= attackRange && dist < nearestDistance)
                 {
                     nearest = ship;
-                    nearestDistance = distance;
+                    nearestDistance = dist;
                 }
             }
 

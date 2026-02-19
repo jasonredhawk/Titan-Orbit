@@ -1320,6 +1320,64 @@ namespace TitanOrbit.Editor
             PrefabUtility.SaveAsPrefabAsset(bullet, path);
             Object.DestroyImmediate(bullet);
 
+            // Load prefab back and configure particle visuals
+            GameObject bulletPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (bulletPrefab != null)
+            {
+                Bullet bulletComponent = bulletPrefab.GetComponent<Bullet>();
+                if (bulletComponent != null)
+                {
+                    SerializedObject so = new SerializedObject(bulletComponent);
+                    
+                    // Set bulletVisualPrefab (default - Digital Projectile)
+                    GameObject digitalProj = AssetDatabase.LoadAssetAtPath<GameObject>(
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Digital Projectile.prefab");
+                    if (digitalProj != null)
+                    {
+                        so.FindProperty("bulletVisualPrefab").objectReferenceValue = digitalProj;
+                    }
+
+                    // Set bulletVisualPrefabOptions array (4 styles: Digital, Ice, Fire, Plasma)
+                    SerializedProperty visualOptionsProp = so.FindProperty("bulletVisualPrefabOptions");
+                    visualOptionsProp.ClearArray();
+                    
+                    string[] visualPaths = new[]
+                    {
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Digital Projectile.prefab",
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Ice Projectile.prefab",
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Fire Bullet.prefab",
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Plasma Ball.prefab"
+                    };
+
+                    foreach (string visualPath in visualPaths)
+                    {
+                        GameObject visualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(visualPath);
+                        if (visualPrefab != null)
+                        {
+                            visualOptionsProp.InsertArrayElementAtIndex(visualOptionsProp.arraySize);
+                            visualOptionsProp.GetArrayElementAtIndex(visualOptionsProp.arraySize - 1).objectReferenceValue = visualPrefab;
+                        }
+                    }
+
+                    // Set impact effect (Red Impact)
+                    GameObject redImpact = AssetDatabase.LoadAssetAtPath<GameObject>(
+                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Red Impact.prefab");
+                    if (redImpact != null)
+                    {
+                        so.FindProperty("impactEffectPrefab").objectReferenceValue = redImpact;
+                    }
+
+                    // Set visual scale and impact settings
+                    so.FindProperty("bulletVisualScale").floatValue = 0.35f;
+                    so.FindProperty("impactEffectDuration").floatValue = 3f;
+                    so.FindProperty("impactEffectScale").floatValue = 0.5f;
+
+                    so.ApplyModifiedProperties();
+                    EditorUtility.SetDirty(bulletPrefab);
+                    AssetDatabase.SaveAssets();
+                }
+            }
+
             Debug.Log($"Created prefab: {path}");
         }
 

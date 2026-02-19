@@ -35,6 +35,7 @@ namespace TitanOrbit.AI
                 case 6: return "MovingToPlanet";
                 case 7: return "UnloadingPeople";
                 case 8: return "AttackingEnemy";
+                case 9: return "LevelingUp";
                 default: return "?";
             }
         }

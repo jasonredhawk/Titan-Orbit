@@ -245,7 +245,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2958585487
+  GlobalObjectIdHash: 1696175176
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -268,7 +268,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Bullet
   speed: 20
   damage: 10
-  lifetime: 10
-  maxDistance: 200
+  lifetime: 2
+  maxDistance: 30
   minTravelBeforeHit: 0.5
   ownerTeam: 0
+  bulletVisualPrefab: {fileID: 5295586122231405360, guid: 76ff8ef44a10b794bb0f8ff177b9ca27, type: 3}
+  bulletVisualPrefabOptions:
+  - {fileID: 5295586122231405360, guid: 76ff8ef44a10b794bb0f8ff177b9ca27, type: 3}
+  - {fileID: 7258936774047215834, guid: 0ab20d89b262f8240999628a1403ecc8, type: 3}
+  - {fileID: 7493796544200936264, guid: 625a5893477f7b94da52aa0c2e1eb1d8, type: 3}
+  - {fileID: 8102155473089344357, guid: d56b87557a2d32340bf36655f72d7ef8, type: 3}
+  bulletVisualScale: 0.35
+  impactEffectPrefab: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
+  impactEffectDuration: 3
+  impactEffectScale: 0.5

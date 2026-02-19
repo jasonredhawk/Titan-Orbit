@@ -15,15 +15,35 @@ namespace TitanOrbit.Entities
         [SerializeField] private float speed = 20f;
         [SerializeField] private float damage = 10f;
         [SerializeField] private float lifetime = 2f; // Reduced from 10f for better performance
-        [SerializeField] private float maxDistance = 10f; // Reduced from 200f to match attack range
+        [SerializeField] private float maxDistance = 30f; // ~3x previous range for space combat
         [SerializeField] private float minTravelBeforeHit = 0.5f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
+
+        [Header("Particle Visual (AllIn1 VFX)")]
+        [Tooltip("Optional: particle/projectile effect from AllIn1 VFX Toolkit. If set, replaces the default sphere visual.")]
+        [SerializeField] private GameObject bulletVisualPrefab;
+        [Tooltip("Per-ship styles: [0]=Digital, [1]=Ice/long trail, [2]=Fire, [3]=Plasma. Leave empty to use bulletVisualPrefab only.")]
+        [SerializeField] private GameObject[] bulletVisualPrefabOptions;
+        [Tooltip("Base scale of the instantiated particle visual. Final scale = this × visualScaleMultiplier (from ship power).")]
+        [SerializeField] private float bulletVisualScale = 0.35f;
+        [Tooltip("Optional: explosion/impact effect played when bullet hits. Spawned on all clients.")]
+        [SerializeField] private GameObject impactEffectPrefab;
+        [SerializeField] private float impactEffectDuration = 3f;
+        [SerializeField] private float impactEffectScale = 0.5f;
+
+        private NetworkVariable<float> bulletVisualScaleMultiplier = new NetworkVariable<float>(1f);
+        private NetworkVariable<byte> bulletVisualStyleIndex = new NetworkVariable<byte>(0);
+        
+        // Local cache set immediately (before NetworkVariable syncs) so visual can be created right away
+        private byte cachedVisualStyleIndex = 0;
+        private float cachedVisualScaleMultiplier = 1f;
 
         private const float FIXED_Y_POSITION = 0f;
         private Rigidbody rb;
         private float spawnTime;
         private Vector3 spawnPosition;
         private Vector3 lastPosition;
+        private GameObject spawnedVisual;
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
@@ -37,6 +57,30 @@ namespace TitanOrbit.Entities
                 // Lock Y position - bullets stay on same plane
                 rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
             }
+            
+            // Subscribe to NetworkVariable changes to update visual when style index syncs
+            bulletVisualStyleIndex.OnValueChanged += OnVisualStyleIndexChanged;
+            bulletVisualScaleMultiplier.OnValueChanged += OnVisualScaleChanged;
+        }
+
+        private void OnDestroy()
+        {
+            bulletVisualStyleIndex.OnValueChanged -= OnVisualStyleIndexChanged;
+            bulletVisualScaleMultiplier.OnValueChanged -= OnVisualScaleChanged;
+        }
+
+        private void OnVisualStyleIndexChanged(byte oldValue, byte newValue)
+        {
+            UpdateVisual();
+        }
+
+        private void OnVisualScaleChanged(float oldValue, float newValue)
+        {
+            if (spawnedVisual != null)
+            {
+                float scale = bulletVisualScale * bulletVisualScaleMultiplier.Value;
+                spawnedVisual.transform.localScale = Vector3.one * scale;
+            }
         }
 
         public override void OnNetworkSpawn()
@@ -49,12 +93,24 @@ namespace TitanOrbit.Entities
             spawnTime = Time.time;
             spawnPosition = transform.position;
             lastPosition = spawnPosition;
+
+            // Update visual immediately (NetworkVariable should be synced with spawn)
+            UpdateVisual();
+            
+            // Also schedule a delayed update in case NetworkVariable sync is delayed
+            StartCoroutine(DelayedVisualUpdate());
             
             // Check for immediate overlaps when spawning (fixes close-range tunneling)
             if (IsServer)
             {
                 CheckImmediateOverlaps();
             }
+        }
+
+        private System.Collections.IEnumerator DelayedVisualUpdate()
+        {
+            yield return null; // Wait one frame for NetworkVariable to sync
+            UpdateVisual();
         }
 
         private void FixedUpdate()
@@ -192,15 +248,111 @@ namespace TitanOrbit.Entities
 
         private void DespawnBullet()
         {
+            Vector3 impactPos = transform.position;
+            if (impactEffectPrefab != null)
+            {
+                SpawnImpactEffectClientRpc(impactPos);
+                SpawnImpactAt(impactPos); // Server spawns too (ClientRpc doesn't run on server)
+            }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
         }
 
+        private void SpawnImpactAt(Vector3 position)
+        {
+            GameObject go = Instantiate(impactEffectPrefab, position, Quaternion.identity);
+            go.transform.localScale = Vector3.one * impactEffectScale;
+            DisableGrabPassMaterials(go); // Avoid "GrabPass can't be called from job thread" in URP/SRP
+            Destroy(go, impactEffectDuration);
+        }
+
+        /// <summary>Prevents GrabPass use in URP/SRP: swap AllIn1VfxGrabPass shader to SRP batch and disable screen-distortion keyword.</summary>
+        private static void DisableGrabPassMaterials(GameObject root)
+        {
+            Shader srpShader = Shader.Find("AllIn1Vfx/AllIn1VfxSRPBatch");
+            foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.sharedMaterials == null) continue;
+                foreach (Material mat in r.materials)
+                {
+                    if (mat == null) continue;
+                    if (mat.shader.name == "AllIn1Vfx/AllIn1VfxGrabPass" && srpShader != null)
+                        mat.shader = srpShader;
+                    if (mat.IsKeywordEnabled("SCREENDISTORTION_ON"))
+                        mat.DisableKeyword("SCREENDISTORTION_ON");
+                }
+            }
+        }
+
+        [ClientRpc]
+        private void SpawnImpactEffectClientRpc(Vector3 position)
+        {
+            if (impactEffectPrefab == null) return;
+            SpawnImpactAt(position);
+        }
+
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)
+        {
+            Initialize(bulletSpeed, bulletDamage, team, 1f, 0);
+        }
+
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, float visualScaleMultiplier, byte visualStyleIndex)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
             ownerTeam = team;
+            cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
+            cachedVisualStyleIndex = visualStyleIndex;
+            bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
+            bulletVisualStyleIndex.Value = cachedVisualStyleIndex;
+            
+            #if UNITY_EDITOR
+            Debug.Log($"Bullet Initialize: visualStyleIndex={visualStyleIndex}, cached={cachedVisualStyleIndex}");
+            #endif
+        }
+
+        private void UpdateVisual()
+        {
+            // Remove existing visual if any
+            if (spawnedVisual != null)
+            {
+                Destroy(spawnedVisual);
+                spawnedVisual = null;
+            }
+
+            GameObject visualPrefab = ChooseVisualPrefab();
+            float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
+            float scale = bulletVisualScale * scaleMult;
+            if (visualPrefab != null)
+            {
+                foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+                    r.enabled = false;
+                spawnedVisual = Instantiate(visualPrefab, transform);
+                spawnedVisual.transform.localPosition = Vector3.zero;
+                spawnedVisual.transform.localRotation = Quaternion.identity;
+                spawnedVisual.transform.localScale = Vector3.one * scale;
+                
+            }
+        }
+
+        private GameObject ChooseVisualPrefab()
+        {
+            // Use cached value first (set immediately), fall back to NetworkVariable if needed
+            byte styleIndex = cachedVisualStyleIndex != 0 ? cachedVisualStyleIndex : bulletVisualStyleIndex.Value;
+            
+            if (bulletVisualPrefabOptions != null && bulletVisualPrefabOptions.Length > 0)
+            {
+                int idx = Mathf.Clamp(styleIndex, 0, bulletVisualPrefabOptions.Length - 1);
+                if (bulletVisualPrefabOptions[idx] != null)
+                {
+                    #if UNITY_EDITOR
+                    string[] styleNames = { "Digital", "Ice", "Fire", "Plasma" };
+                    Debug.Log($"Bullet choosing visual: index={idx}, style={styleNames[idx]}, cached={cachedVisualStyleIndex}, network={bulletVisualStyleIndex.Value}");
+                    #endif
+                    return bulletVisualPrefabOptions[idx];
+                }
+            }
+            return bulletVisualPrefab;
         }
     }
 }

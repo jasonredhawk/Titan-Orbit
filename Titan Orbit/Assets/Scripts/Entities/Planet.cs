@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Data;
+using TitanOrbit.Systems;
 using TMPro;
 using SpaceGraphicsToolkit;
 
@@ -44,6 +45,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> maxPopulation = new NetworkVariable<float>(100f);
         private NetworkVariable<float> growthRate = new NetworkVariable<float>(1f);
         private NetworkVariable<int> planetLevel = new NetworkVariable<int>(1);
+        private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
 
         public TeamManager.Team TeamOwnership => teamOwnership.Value;
         
@@ -57,6 +59,7 @@ namespace TitanOrbit.Entities
         public int PlanetLevel => planetLevel.Value;
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
+        public float CurrentGems => currentGems.Value;
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -87,6 +90,10 @@ namespace TitanOrbit.Entities
                     if (idx >= 0)
                         neutralMaterialIndex.Value = idx;
                 }
+
+                // Initialize planet level (home planets start at 3, regular planets at 1)
+                planetLevel.Value = GetInitialPlanetLevel();
+                currentGems.Value = 0f;
 
                 // Max population: regular planets 50-150 by size; home planets override to 100
                 float potentialMax = GetMaxPopulationForPlanet();
@@ -129,12 +136,14 @@ namespace TitanOrbit.Entities
             // Subscribe to ownership changes
             teamOwnership.OnValueChanged += OnOwnershipChanged;
             currentPopulation.OnValueChanged += (float oldVal, float newVal) => UpdatePopulationDisplay();
+            planetLevel.OnValueChanged += OnPlanetLevelChanged;
         }
 
         public override void OnNetworkDespawn()
         {
             neutralMaterialIndex.OnValueChanged -= OnNeutralMaterialIndexChanged;
             teamOwnership.OnValueChanged -= OnOwnershipChanged;
+            planetLevel.OnValueChanged -= OnPlanetLevelChanged;
         }
 
         private void OnNeutralMaterialIndexChanged(int previous, int current)
@@ -160,7 +169,7 @@ namespace TitanOrbit.Entities
                 // Grow population over time if not at max
                 if (currentPopulation.Value < maxPopulation.Value && teamOwnership.Value != TeamManager.Team.None)
                 {
-                    float growth = growthRate.Value * Time.deltaTime;
+                    float growth = GetGrowthRatePerSecond() * Time.deltaTime;
                     if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
                     currentPopulation.Value = Mathf.Min(
                         currentPopulation.Value + growth,
@@ -264,10 +273,100 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Population per second. Override in HomePlanet for 1 per 5 sec. Regular: flat 1 per 30 sec.</summary>
+        /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>
         protected virtual float GetGrowthRatePerSecond()
         {
-            return baseGrowthRate;
+            // Use stored growthRate.Value (which doubles on level up) instead of constant baseGrowthRate
+            return growthRate.Value > 0f ? growthRate.Value : baseGrowthRate;
+        }
+
+        /// <summary>Server: update synced growth rate (e.g. when planet levels up).</summary>
+        protected void SetGrowthRate(float rate)
+        {
+            if (IsServer)
+                growthRate.Value = rate;
+        }
+
+        /// <summary>Initial planet level. Override in HomePlanet to start at 3.</summary>
+        protected virtual int GetInitialPlanetLevel() => 1;
+
+        /// <summary>Max gems capacity for a given level. Override in HomePlanet for different thresholds. Regular planets: 200 * 2^(level-1).</summary>
+        protected virtual float GetMaxGemsForLevel(int level)
+        {
+            // Regular planets: Level 1 = 200, Level 2 = 400, Level 3 = 800, etc.
+            if (level < 1) return 0f;
+            return 200f * Mathf.Pow(2f, level - 1);
+        }
+
+        /// <summary>Max level for this planet type. Override in HomePlanet for 6.</summary>
+        protected virtual int GetMaxLevel() => 10; // Regular planets can level up many times
+
+        [ServerRpc(RequireOwnership = false)]
+        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        {
+            // Only allow same team to deposit gems
+            if (teamOwnership.Value == TeamManager.Team.None)
+            {
+                // Neutral planet: can't deposit until captured
+                return;
+            }
+            else if (teamOwnership.Value != depositingTeam)
+            {
+                // Enemy team: can't deposit
+                return;
+            }
+
+            float maxGems = GetMaxGemsForLevel(planetLevel.Value);
+            currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
+
+            CheckLevelUp();
+        }
+
+        private void CheckLevelUp()
+        {
+            if (!IsServer) return;
+
+            int currentLevel = planetLevel.Value;
+            if (currentLevel >= GetMaxLevel()) return;
+
+            float maxForLevel = GetMaxGemsForLevel(currentLevel);
+            if (maxForLevel > 0f && currentGems.Value >= maxForLevel)
+                LevelUpServerRpc();
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void LevelUpServerRpc()
+        {
+            if (planetLevel.Value >= GetMaxLevel()) return; // Max level
+
+            int oldLevel = planetLevel.Value;
+            planetLevel.Value++;
+            currentGems.Value = 0f; // Reset gem count to 0 when leveling up
+
+            // Double max population and growth rate
+            float oldMaxPop = maxPopulation.Value;
+            maxPopulation.Value = oldMaxPop * 2f;
+            
+            float oldGrowthRate = growthRate.Value;
+            SetGrowthRate(oldGrowthRate * 2f);
+
+            LevelUpClientRpc(planetLevel.Value);
+        }
+
+        [ClientRpc]
+        private void LevelUpClientRpc(int newLevel)
+        {
+            Debug.Log($"Planet leveled up to level {newLevel}!");
+        }
+
+        protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)
+        {
+            if (newLevel > previousLevel)
+            {
+                // Play level up effect if available
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.PlayLevelUpEffect(transform.position);
+            }
         }
 
         /// <summary>Max population: regular planets 50-150 by size (min 4, max 12). Override in HomePlanet for 100.</summary>
