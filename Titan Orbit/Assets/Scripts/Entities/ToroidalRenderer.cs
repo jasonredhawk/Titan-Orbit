@@ -13,6 +13,8 @@ namespace TitanOrbit.Entities
     {
         private Vector3 logicalPosition;
         private bool logicalPositionStored;
+        private static UnityEngine.Camera s_cachedMainCamera;
+        private static int s_cachedCameraFrame = -1;
 
         private void Start()
         {
@@ -36,7 +38,13 @@ namespace TitanOrbit.Entities
 
         private void LateUpdate()
         {
-            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            // Cache Camera.main once per frame (it does FindGameObjectWithTag internally); 314+ entities were each calling it every frame causing lag.
+            if (Time.frameCount != s_cachedCameraFrame)
+            {
+                s_cachedCameraFrame = Time.frameCount;
+                s_cachedMainCamera = UnityEngine.Camera.main;
+            }
+            UnityEngine.Camera cam = s_cachedMainCamera;
             if (cam == null) return;
 
             // If we haven't stored logical position yet (e.g. late spawn), use current position as canonical

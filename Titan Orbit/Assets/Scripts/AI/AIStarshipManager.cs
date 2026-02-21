@@ -16,6 +16,12 @@ namespace TitanOrbit.AI
     {
         public static AIStarshipManager Instance { get; private set; }
 
+        /// <summary>PlayerPrefs key for "AI ships enabled" (1 = on, 0 = off). Used by main menu toggle and here.</summary>
+        public const string PrefsKeyAIShipsEnabled = "TitanOrbit_AIShipsEnabled";
+
+        /// <summary>True when AI ships should be spawned (host/server reads this before spawning). Default true.</summary>
+        public static bool AIShipsEnabled => PlayerPrefs.GetInt(PrefsKeyAIShipsEnabled, 1) != 0;
+
         [Header("AI Spawn Settings")]
         [SerializeField] private GameObject starshipPrefab;
         [Tooltip("Minimum number of AI ships per team")]
@@ -59,6 +65,13 @@ namespace TitanOrbit.AI
         {
             if (!IsServer) return;
             if (hasSpawnedAI) return;
+
+            // Skip spawning if player disabled AI ships (main menu checkbox)
+            if (!AIShipsEnabled)
+            {
+                hasSpawnedAI = true;
+                return;
+            }
 
             // Wait a bit for the scene to fully initialize
             if (Time.time < 2f) return;

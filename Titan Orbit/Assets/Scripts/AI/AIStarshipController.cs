@@ -1011,7 +1011,7 @@ namespace TitanOrbit.AI
                 var gems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
                 var planets = Object.FindObjectsByType<Planet>(FindObjectsSortMode.None);
                 var ships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
-                
+
                 // Filter out null/destroyed objects
                 System.Collections.Generic.List<Asteroid> validAsteroids = new System.Collections.Generic.List<Asteroid>();
                 foreach (var a in asteroids) if (a != null && a.gameObject != null) validAsteroids.Add(a);

@@ -33,10 +33,20 @@ namespace TitanOrbit.UI
         [SerializeField] private Color teamBColor = Color.blue;
         [SerializeField] private Color teamCColor = Color.green;
 
+        [Header("Proximity Radar (planets around ship)")]
+        [SerializeField] private GameObject proximityRadar;
+        [SerializeField] private KeyCode proximityRadarToggleKey = KeyCode.R;
+
         private Starship playerShip;
 
         private void Update()
         {
+            // Toggle proximity radar (when off, GameObject is inactive so no Update or rendering)
+            if (proximityRadar == null)
+                proximityRadar = transform.Find("ProximityRadar")?.gameObject;
+            if (proximityRadar != null && UnityEngine.Input.GetKeyDown(proximityRadarToggleKey))
+                proximityRadar.SetActive(!proximityRadar.activeSelf);
+
             if (playerShip == null)
             {
                 foreach (var ship in FindObjectsOfType<Starship>())

@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using Unity.Netcode;
 using TitanOrbit.Networking;
+using TitanOrbit.AI;
 
 namespace TitanOrbit.UI
 {
@@ -17,6 +18,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Button startServerButton;
         [SerializeField] private Button startHostButton;
         [SerializeField] private Button startClientButton;
+        [SerializeField] private Toggle aiShipsToggle;
         [SerializeField] private TMP_InputField serverAddressInput;
         [SerializeField] private TextMeshProUGUI playerCountText;
         [SerializeField] private TextMeshProUGUI teamStatusText;
@@ -37,6 +39,18 @@ namespace TitanOrbit.UI
             {
                 startClientButton.onClick.AddListener(OnStartClientClicked);
             }
+
+            if (aiShipsToggle != null)
+            {
+                aiShipsToggle.isOn = AIStarshipManager.AIShipsEnabled;
+                aiShipsToggle.onValueChanged.AddListener(OnAIShipsToggleChanged);
+            }
+        }
+
+        private void OnAIShipsToggleChanged(bool enabled)
+        {
+            PlayerPrefs.SetInt(AIStarshipManager.PrefsKeyAIShipsEnabled, enabled ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         private void Update()

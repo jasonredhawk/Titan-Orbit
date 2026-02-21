@@ -275,6 +275,9 @@ namespace TitanOrbit.Editor
             GameObject startClientBtn = CreateButton(mainMenuPanel.transform, "StartClientButton", "Start Client", uiSprite);
             SetRect(startClientBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -100, 250, 60);
 
+            GameObject aiShipsToggleObj = CreateToggle(mainMenuPanel.transform, "AIShipsToggle", "AI Ships", uiSprite);
+            SetRect(aiShipsToggleObj, 0.5f, 0.5f, 0.5f, 0.5f, 0, -170, 250, 36);
+
             // Lobby Panel (hidden initially)
             GameObject lobbyPanel = CreatePanel(canvasObj.transform, "LobbyPanel", new Color(0.1f, 0.1f, 0.15f, 0.9f), uiSprite);
             RectTransform lobbyRect = lobbyPanel.GetComponent<RectTransform>();
@@ -298,6 +301,7 @@ namespace TitanOrbit.Editor
             mainMenuSO.FindProperty("startServerButton").objectReferenceValue = startServerBtn.GetComponent<Button>();
             mainMenuSO.FindProperty("startHostButton").objectReferenceValue = startHostBtn.GetComponent<Button>();
             mainMenuSO.FindProperty("startClientButton").objectReferenceValue = startClientBtn.GetComponent<Button>();
+            mainMenuSO.FindProperty("aiShipsToggle").objectReferenceValue = aiShipsToggleObj.GetComponent<Toggle>();
             mainMenuSO.FindProperty("playerCountText").objectReferenceValue = playerCountText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("teamStatusText").objectReferenceValue = teamStatusText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.ApplyModifiedPropertiesWithoutUndo();
@@ -430,6 +434,7 @@ namespace TitanOrbit.Editor
             hudSO.FindProperty("homePlanetLevelText").objectReferenceValue = homeLevelTmp;
             hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemSlider;
             hudSO.FindProperty("homePlanetGemsText").objectReferenceValue = homeGemsTmp;
+            hudSO.FindProperty("proximityRadar").objectReferenceValue = proximityRadarObj;
             hudSO.ApplyModifiedPropertiesWithoutUndo();
 
             // Minimap (bottom right corner, 20% of screen width, square)
@@ -601,6 +606,54 @@ namespace TitanOrbit.Editor
             btn.colors = colors;
 
             return btnObj;
+        }
+
+        private static GameObject CreateToggle(Transform parent, string name, string label, Sprite sprite)
+        {
+            GameObject toggleObj = new GameObject(name);
+            toggleObj.transform.SetParent(parent, false);
+
+            GameObject backgroundObj = new GameObject("Background");
+            backgroundObj.transform.SetParent(toggleObj.transform, false);
+            Image bgImg = backgroundObj.AddComponent<Image>();
+            bgImg.color = new Color(0.2f, 0.25f, 0.35f);
+            bgImg.sprite = sprite;
+            RectTransform bgRect = backgroundObj.GetComponent<RectTransform>();
+            bgRect.anchorMin = new Vector2(0, 0.5f);
+            bgRect.anchorMax = new Vector2(0, 0.5f);
+            bgRect.pivot = new Vector2(0, 0.5f);
+            bgRect.anchoredPosition = new Vector2(18, 0);
+            bgRect.sizeDelta = new Vector2(36, 36);
+
+            GameObject checkmarkObj = new GameObject("Checkmark");
+            checkmarkObj.transform.SetParent(backgroundObj.transform, false);
+            Image checkImg = checkmarkObj.AddComponent<Image>();
+            checkImg.color = new Color(0.3f, 0.8f, 0.4f);
+            checkImg.sprite = sprite;
+            RectTransform checkRect = checkmarkObj.GetComponent<RectTransform>();
+            checkRect.anchorMin = new Vector2(0.2f, 0.2f);
+            checkRect.anchorMax = new Vector2(0.8f, 0.8f);
+            checkRect.offsetMin = Vector2.zero;
+            checkRect.offsetMax = Vector2.zero;
+
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(toggleObj.transform, false);
+            TextMeshProUGUI labelTmp = labelObj.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 22;
+            labelTmp.color = new Color(0.9f, 0.9f, 0.95f);
+            RectTransform labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0, 0);
+            labelRect.anchorMax = new Vector2(1, 1);
+            labelRect.offsetMin = new Vector2(44, 0);
+            labelRect.offsetMax = new Vector2(-8, 0);
+
+            Toggle toggle = toggleObj.AddComponent<Toggle>();
+            toggle.targetGraphic = bgImg;
+            toggle.graphic = checkImg;
+            toggle.isOn = true;
+
+            return toggleObj;
         }
 
         private static void SetRect(GameObject obj, float anchorMinX, float anchorMinY, float anchorMaxX, float anchorMaxY, float posX, float posY, float width, float height)
