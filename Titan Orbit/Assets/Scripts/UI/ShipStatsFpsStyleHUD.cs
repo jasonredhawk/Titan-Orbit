@@ -12,18 +12,25 @@ namespace TitanOrbit.UI
     /// </summary>
     public class ShipStatsFpsStyleHUD : ImmediateModeShapeDrawer
     {
-        [Header("Arc bar style (thin, further out – double arcs close together)")]
+        [Header("Arc bar style (gap between inner/outer ≈ bar thickness; outer arc just inside radar)")]
         [Range(0.3f, 2f)] [SerializeField] private float angularSpanRad = 1.1f;
         [Range(0.02f, 0.2f)] [SerializeField] private float outlineThickness = 0.08f;
         [Range(0.15f, 0.8f)] [SerializeField] private float barThickness = 0.4f;
-        [Tooltip("Left side: outer arc")]
-        [Range(3f, 22f)] [SerializeField] private float radiusHealth = 9f;
-        [Tooltip("Left side: inner arc (keep close to outer for tight double arc)")]
-        [Range(2f, 20f)] [SerializeField] private float radiusEnergy = 7.5f;
-        [Tooltip("Right side: outer arc")]
-        [Range(3f, 22f)] [SerializeField] private float radiusGems = 9f;
-        [Tooltip("Right side: inner arc (keep close to outer for tight double arc)")]
-        [Range(2f, 20f)] [SerializeField] private float radiusPeople = 7.5f;
+        [Tooltip("Left outer arc. Set so outer edge stays clearly inside the proximity radar ring.")]
+        [Range(4f, 14f)] [SerializeField] private float radiusHealth = 7.6f;
+        [Tooltip("Left inner arc. Keep (radiusHealth - radiusEnergy) ≈ 2× barThickness for gap = bar thickness.")]
+        [Range(3f, 13f)] [SerializeField] private float radiusEnergy = 6.8f;
+        [Tooltip("Right outer arc. Match radiusHealth so radar sits just outside.")]
+        [Range(4f, 14f)] [SerializeField] private float radiusGems = 7.6f;
+        [Tooltip("Right inner arc. Keep (radiusGems - radiusPeople) ≈ 2× barThickness.")]
+        [Range(3f, 13f)] [SerializeField] private float radiusPeople = 6.8f;
+
+        [Header("Label style")]
+        [Range(1f, 8f)] [SerializeField] private float labelFontSize = 3.2f;
+        [Range(0.2f, 1.5f)] [SerializeField] private float labelOffsetFromArc = 0.5f;
+        [Tooltip("Nudge so two max labels at same tip (left/right) don't overlap.")]
+        [Range(0.1f, 0.8f)] [SerializeField] private float labelTipNudge = 0.35f;
+        [SerializeField] private Color labelColor = new Color(1f, 1f, 1f, 0.95f);
 
         [Header("Colors")]
         [SerializeField] private Color healthColor = new Color(0.2f, 0.9f, 0.45f, 1f);   // green
@@ -100,7 +107,23 @@ namespace TitanOrbit.UI
                 // Right: Gems (outer), People (inner) – fill direction reversed so progress reads correctly
                 DrawArcBar(origin, radiusGems, rightStart, rightEnd, gemsFill, gemsColor, reverseFill: true);
                 DrawArcBar(origin, radiusPeople, rightStart, rightEnd, peopleFill, peopleColor, reverseFill: true);
+
+                // Max value at the top tip of each arc (left tip = leftEnd, right tip = rightEnd)
+                DrawArcLabel(origin, radiusHealth + labelOffsetFromArc, leftEnd, labelTipNudge, Mathf.FloorToInt(healthMax).ToString());
+                DrawArcLabel(origin, radiusEnergy + labelOffsetFromArc, leftEnd, -labelTipNudge, Mathf.FloorToInt(energyCap).ToString());
+                DrawArcLabel(origin, radiusGems + labelOffsetFromArc, rightEnd, labelTipNudge, Mathf.FloorToInt(gemCap).ToString());
+                DrawArcLabel(origin, radiusPeople + labelOffsetFromArc, rightEnd, -labelTipNudge, Mathf.FloorToInt(peopleCap).ToString());
             }
+        }
+
+        private void DrawArcLabel(Vector2 origin, float radius, float tipAngRad, float perpendicularNudge, string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            Vector2 dir = ShapesMath.AngToDir(tipAngRad);
+            Vector2 perp = new Vector2(-dir.y, dir.x);
+            Vector2 pos = origin + dir * radius + perp * perpendicularNudge;
+            Draw.FontSize = labelFontSize;
+            Draw.Text(pos, Quaternion.identity, text, TextAlign.Center, labelColor);
         }
 
         private void DrawArcBar(Vector2 origin, float radius, float angStart, float angEnd, float fill01, Color fillColor, bool reverseFill = false)
@@ -123,19 +146,15 @@ namespace TitanOrbit.UI
                 arcEnd = fillAng;
             }
 
-            // Filled arc segment
-            Draw.Arc(origin, radius, barThickness, arcStart, arcEnd, fillColor);
+            // Filled arc segment (round caps at both ends)
+            Draw.Arc(origin, radius, barThickness, arcStart, arcEnd, ArcEndCap.Round, fillColor);
 
-            // Disc at empty end (start of fill)
-            Vector2 startPos = origin + ShapesMath.AngToDir(arcStart) * radius;
-            Draw.Disc(startPos, barThickness / 2f, fillColor);
-
-            // Moving disc at current fill end
+            // Moving disc at current fill end (over the round cap)
             Vector2 endPos = origin + ShapesMath.AngToDir(fillAng) * radius;
             Draw.Disc(endPos, barThickness / 2f + outlineThickness / 2f, outlineColor);
             Draw.Disc(endPos, barThickness / 2f - outlineThickness / 2f, fillColor);
 
-            // Rounded outline for full arc
+            // Rounded outline for full arc (round ends only)
             DrawRoundedArcOutline(origin, radius, barThickness, outlineThickness, angStart, angEnd);
         }
 
@@ -143,14 +162,14 @@ namespace TitanOrbit.UI
         {
             float innerRadius = radius - thickness / 2f;
             float outerRadius = radius + thickness / 2f;
-            float aaMargin = 0.02f;
-            Draw.Arc(origin, innerRadius, outlineThickness, angStart - aaMargin, angEnd + aaMargin, outlineColor);
-            Draw.Arc(origin, outerRadius, outlineThickness, angStart - aaMargin, angEnd + aaMargin, outlineColor);
-
-            Vector2 originBottom = origin + ShapesMath.AngToDir(angStart) * radius;
-            Vector2 originTop = origin + ShapesMath.AngToDir(angEnd) * radius;
-            Draw.Arc(originBottom, thickness / 2f, outlineThickness, angStart, angStart - ShapesMath.TAU / 2f, outlineColor);
-            Draw.Arc(originTop, thickness / 2f, outlineThickness, angEnd, angEnd + ShapesMath.TAU / 2f, outlineColor);
+            // End arcs exactly at cap angles so they don't stick out past the rounded caps
+            Draw.Arc(origin, innerRadius, outlineThickness, angStart, angEnd, ArcEndCap.Round, outlineColor);
+            Draw.Arc(origin, outerRadius, outlineThickness, angStart, angEnd, ArcEndCap.Round, outlineColor);
+            // Semicircle caps at each end so the bar ends read as round (FPS-style)
+            Vector2 originStart = origin + ShapesMath.AngToDir(angStart) * radius;
+            Vector2 originEnd = origin + ShapesMath.AngToDir(angEnd) * radius;
+            Draw.Arc(originStart, thickness / 2f, outlineThickness, angStart, angStart - ShapesMath.TAU / 2f, ArcEndCap.Round, outlineColor);
+            Draw.Arc(originEnd, thickness / 2f, outlineThickness, angEnd, angEnd + ShapesMath.TAU / 2f, ArcEndCap.Round, outlineColor);
         }
     }
 }
