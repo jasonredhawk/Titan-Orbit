@@ -180,6 +180,15 @@ namespace TitanOrbit.Editor
             lpsSO.FindProperty("cameraController").objectReferenceValue = cameraController;
             lpsSO.ApplyModifiedPropertiesWithoutUndo();
 
+            // FPS-style arc HUD (health, energy, gems) — top-left in view; camera looks down (-Y), so local +Z = in front
+            GameObject fpsHudObj = new GameObject("ShipStatsFpsHUD");
+            fpsHudObj.transform.SetParent(obj.transform, false);
+            // Local: -X = left, +Y = up on screen, +Z = in front of camera so it's not culled
+            fpsHudObj.transform.localPosition = new Vector3(-8f, 5f, 1f);
+            fpsHudObj.transform.localRotation = Quaternion.identity;
+            fpsHudObj.transform.localScale = Vector3.one;
+            fpsHudObj.AddComponent<TitanOrbit.UI.ShipStatsFpsStyleHUD>();
+
             return obj;
         }
 
@@ -316,69 +325,6 @@ namespace TitanOrbit.Editor
             hudRect.offsetMax = Vector2.zero;
             HUDController hudController = hudObj.AddComponent<HUDController>();
 
-            // —— Ship stats panel (top-left) ——
-            Color shipPanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
-            GameObject shipPanel = CreatePanel(canvasObj.transform, "ShipStatsPanel", shipPanelColor, uiSprite);
-            RectTransform shipRect = shipPanel.GetComponent<RectTransform>();
-            shipRect.anchorMin = new Vector2(0, 1);
-            shipRect.anchorMax = new Vector2(0, 1);
-            shipRect.pivot = new Vector2(0, 1);
-            shipRect.anchoredPosition = new Vector2(16, -16);
-            shipRect.sizeDelta = new Vector2(280, 132);
-            AddPanelBorder(shipPanel, new Color(0.22f, 0.28f, 0.4f, 0.7f), uiSprite);
-
-            GameObject shipTitle = CreateText(shipPanel.transform, "Title", "STARSHIP", 14, TextAnchor.UpperLeft);
-            shipTitle.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.78f, 0.95f);
-            SetRectStretchTop(shipTitle, 12, 10, 12, 20);
-
-            GameObject healthBarObj = CreateHealthSlider(shipPanel.transform, uiSprite);
-            RectTransform healthBarRect = healthBarObj.GetComponent<RectTransform>();
-            healthBarRect.anchorMin = new Vector2(0, 1);
-            healthBarRect.anchorMax = new Vector2(1, 1);
-            healthBarRect.pivot = new Vector2(0.5f, 1);
-            healthBarRect.anchoredPosition = new Vector2(0, -34);
-            healthBarRect.offsetMin = new Vector2(12, 0);
-            healthBarRect.offsetMax = new Vector2(-12, -8);
-
-            GameObject healthTextObj = CreateText(shipPanel.transform, "HealthText", "100/100", 18, TextAnchor.UpperLeft);
-            SetRectStretchTop(healthTextObj, 12, 50, 120, 22);
-            
-            // Gem progress bar
-            GameObject gemBarObj = CreateProgressBar(shipPanel.transform, "GemBar", uiSprite, new Color(0.2f, 0.9f, 0.5f, 1f));
-            RectTransform gemBarRect = gemBarObj.GetComponent<RectTransform>();
-            gemBarRect.anchorMin = new Vector2(0, 1);
-            gemBarRect.anchorMax = new Vector2(1, 1);
-            gemBarRect.pivot = new Vector2(0.5f, 1);
-            gemBarRect.anchoredPosition = new Vector2(0, -74);
-            gemBarRect.offsetMin = new Vector2(12, 0);
-            gemBarRect.offsetMax = new Vector2(-12, -20);
-            GameObject gemTextObj = CreateText(shipPanel.transform, "GemText", "Gems: 0/100", 16, TextAnchor.UpperLeft);
-            SetRectStretchTop(gemTextObj, 12, 74, 12, 20);
-            
-            // People progress bar
-            GameObject peopleBarObj = CreateProgressBar(shipPanel.transform, "PeopleBar", uiSprite, new Color(0.4f, 0.6f, 0.9f, 1f));
-            RectTransform peopleBarRect = peopleBarObj.GetComponent<RectTransform>();
-            peopleBarRect.anchorMin = new Vector2(0, 1);
-            peopleBarRect.anchorMax = new Vector2(1, 1);
-            peopleBarRect.pivot = new Vector2(0.5f, 1);
-            peopleBarRect.anchoredPosition = new Vector2(0, -96);
-            peopleBarRect.offsetMin = new Vector2(12, 0);
-            peopleBarRect.offsetMax = new Vector2(-12, -20);
-            GameObject peopleTextObj = CreateText(shipPanel.transform, "PeopleText", "People: 0/10", 16, TextAnchor.UpperLeft);
-            SetRectStretchTop(peopleTextObj, 12, 96, 12, 20);
-            
-            GameObject shipLevelObj = CreateText(shipPanel.transform, "ShipLevel", "Lv 1", 14, TextAnchor.UpperLeft);
-            shipLevelObj.GetComponent<TextMeshProUGUI>().color = new Color(0.85f, 0.9f, 0.6f);
-            SetRectStretchTop(shipLevelObj, 140, 50, 12, 22);
-
-            Slider healthSlider = healthBarObj.GetComponent<Slider>();
-            Slider gemSlider = gemBarObj.GetComponent<Slider>();
-            Slider peopleSlider = peopleBarObj.GetComponent<Slider>();
-            TextMeshProUGUI shipHealthTmp = healthTextObj.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI gemTmp = gemTextObj.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI peopleTmp = peopleTextObj.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI shipLevelTmp = shipLevelObj.GetComponent<TextMeshProUGUI>();
-
             // —— Home planet stats panel (top-right) ——
             Color homePanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
             GameObject homePanel = CreatePanel(canvasObj.transform, "HomePlanetStatsPanel", homePanelColor, uiSprite);
@@ -421,15 +367,8 @@ namespace TitanOrbit.Editor
             proximityRadarObj.transform.SetParent(hudObj.transform, false);
             proximityRadarObj.AddComponent<TitanOrbit.UI.ProximityRadarHUD>();
 
-            // Wire HUDController
+            // Wire HUDController (ship stats top-left are now drawn by ShipStatsFpsHUD on the camera; no panel refs)
             var hudSO = new SerializedObject(hudController);
-            hudSO.FindProperty("healthBar").objectReferenceValue = healthSlider;
-            hudSO.FindProperty("healthText").objectReferenceValue = shipHealthTmp;
-            hudSO.FindProperty("gemBar").objectReferenceValue = gemSlider;
-            hudSO.FindProperty("gemCounter").objectReferenceValue = gemTmp;
-            hudSO.FindProperty("peopleBar").objectReferenceValue = peopleSlider;
-            hudSO.FindProperty("populationCounter").objectReferenceValue = peopleTmp;
-            hudSO.FindProperty("shipLevelText").objectReferenceValue = shipLevelTmp;
             hudSO.FindProperty("homePlanetPanel").objectReferenceValue = homePanel;
             hudSO.FindProperty("homePlanetLevelText").objectReferenceValue = homeLevelTmp;
             hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemSlider;

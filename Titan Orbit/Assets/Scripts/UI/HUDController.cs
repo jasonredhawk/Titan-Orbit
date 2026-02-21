@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using TMPro;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
@@ -35,7 +36,7 @@ namespace TitanOrbit.UI
 
         [Header("Proximity Radar (planets around ship)")]
         [SerializeField] private GameObject proximityRadar;
-        [SerializeField] private KeyCode proximityRadarToggleKey = KeyCode.R;
+        [SerializeField] private Key proximityRadarToggleKey = Key.R;
 
         private Starship playerShip;
 
@@ -44,7 +45,8 @@ namespace TitanOrbit.UI
             // Toggle proximity radar (when off, GameObject is inactive so no Update or rendering)
             if (proximityRadar == null)
                 proximityRadar = transform.Find("ProximityRadar")?.gameObject;
-            if (proximityRadar != null && UnityEngine.Input.GetKeyDown(proximityRadarToggleKey))
+            var keyboard = Keyboard.current;
+            if (proximityRadar != null && keyboard != null && keyboard[proximityRadarToggleKey].wasPressedThisFrame)
                 proximityRadar.SetActive(!proximityRadar.activeSelf);
 
             if (playerShip == null)

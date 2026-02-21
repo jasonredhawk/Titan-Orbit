@@ -73,7 +73,6 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void UpgradeAttributeClientRpc(ulong shipNetworkId, ShipAttributeType attributeType, int newLevel)
         {
-            Debug.Log($"Attribute {attributeType} upgraded to level {newLevel}");
         }
 
         public enum ShipAttributeType

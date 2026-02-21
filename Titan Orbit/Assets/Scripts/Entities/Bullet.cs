@@ -85,6 +85,13 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            // Set NetworkVariables after spawn so we don't trigger "written before NetworkObject is spawned" (Initialize runs before Spawn in CombatSystem).
+            if (IsServer)
+            {
+                bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
+                bulletVisualStyleIndex.Value = cachedVisualStyleIndex;
+            }
+
             // Lock Y position to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
@@ -94,7 +101,7 @@ namespace TitanOrbit.Entities
             spawnPosition = transform.position;
             lastPosition = spawnPosition;
 
-            // Update visual immediately (NetworkVariable should be synced with spawn)
+            // Update visual immediately (uses cached values; NetworkVariable sync will update clients)
             UpdateVisual();
             
             // Also schedule a delayed update in case NetworkVariable sync is delayed
@@ -303,12 +310,7 @@ namespace TitanOrbit.Entities
             ownerTeam = team;
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualStyleIndex = visualStyleIndex;
-            bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
-            bulletVisualStyleIndex.Value = cachedVisualStyleIndex;
-            
-            #if UNITY_EDITOR
-            Debug.Log($"Bullet Initialize: visualStyleIndex={visualStyleIndex}, cached={cachedVisualStyleIndex}");
-            #endif
+            // NetworkVariables are set in OnNetworkSpawn (after Spawn) to avoid "written before NetworkObject is spawned" warning.
         }
 
         private void UpdateVisual()
@@ -344,13 +346,7 @@ namespace TitanOrbit.Entities
             {
                 int idx = Mathf.Clamp(styleIndex, 0, bulletVisualPrefabOptions.Length - 1);
                 if (bulletVisualPrefabOptions[idx] != null)
-                {
-                    #if UNITY_EDITOR
-                    string[] styleNames = { "Digital", "Ice", "Fire", "Plasma" };
-                    Debug.Log($"Bullet choosing visual: index={idx}, style={styleNames[idx]}, cached={cachedVisualStyleIndex}, network={bulletVisualStyleIndex.Value}");
-                    #endif
                     return bulletVisualPrefabOptions[idx];
-                }
             }
             return bulletVisualPrefab;
         }

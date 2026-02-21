@@ -518,10 +518,6 @@ namespace TitanOrbit.Entities
             float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
             float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
             byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
-            
-            #if UNITY_EDITOR
-            Debug.Log($"Ship firing: bulletsPerShot={bulletsPerShot}, visualStyleIndex={bulletVisualStyleIndex}, styleIndex={styleIndex}");
-            #endif
 
             if (Systems.CombatSystem.Instance != null)
             {
@@ -568,10 +564,6 @@ namespace TitanOrbit.Entities
             float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
             float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
             byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
-            
-            #if UNITY_EDITOR
-            Debug.Log($"AI Ship firing: bulletsPerShot={bulletsPerShot}, visualStyleIndex={bulletVisualStyleIndex}, styleIndex={styleIndex}");
-            #endif
 
             if (CombatSystem.Instance != null)
             {
@@ -1056,9 +1048,7 @@ namespace TitanOrbit.Entities
                 bulletSpeed = data.baseBulletSpeed;
                 bulletsPerShot = Mathf.Clamp(data.baseBulletsPerShot, 1, 4);
                 bulletVisualStyleIndex = Mathf.Clamp(data.bulletVisualStyleIndex, 0, 3);
-                
-                Debug.Log($"Ship SetShipData: Level={data.shipLevel}, Branch={data.branchIndex}, bulletVisualStyleIndex={data.bulletVisualStyleIndex}, bulletsPerShot={data.baseBulletsPerShot}");
-                
+
                 maxHealth = data.baseMaxHealth;
                 healthRegenRate = data.baseHealthRegenRate;
                 rotationSpeed = data.baseRotationSpeed;
