@@ -25,11 +25,11 @@ namespace TitanOrbit.UI
         [Tooltip("Right inner arc. Keep (radiusGems - radiusPeople) ≈ 2× barThickness.")]
         [Range(3f, 13f)] [SerializeField] private float radiusPeople = 6.8f;
 
-        [Header("Label style")]
-        [Range(1f, 8f)] [SerializeField] private float labelFontSize = 3.2f;
-        [Range(0.2f, 1.5f)] [SerializeField] private float labelOffsetFromArc = 0.5f;
-        [Tooltip("Nudge so two max labels at same tip (left/right) don't overlap.")]
-        [Range(0.1f, 0.8f)] [SerializeField] private float labelTipNudge = 0.35f;
+        [Header("Scrubber (fill-end circle)")]
+        [Tooltip("Radius of the scrubber circle; sized to fit up to 3 digits (e.g. 999).")]
+        [Range(0.2f, 0.7f)] [SerializeField] private float scrubberRadius = 0.38f;
+        [Header("Label style (current value inside scrubber)")]
+        [Range(0.8f, 4f)] [SerializeField] private float labelFontSize = 1.6f;
         [SerializeField] private Color labelColor = new Color(1f, 1f, 1f, 0.95f);
 
         [Header("Colors")]
@@ -101,32 +101,16 @@ namespace TitanOrbit.UI
                 float gemsFill = gemCap > 0f ? Mathf.Clamp01(ship.CurrentGems / gemCap) : 0f;
                 float peopleFill = peopleCap > 0f ? Mathf.Clamp01(ship.CurrentPeople / peopleCap) : 0f;
 
-                // Left: Health (outer), Energy (inner)
-                DrawArcBar(origin, radiusHealth, leftStart, leftEnd, healthFill, healthColor, reverseFill: false);
-                DrawArcBar(origin, radiusEnergy, leftStart, leftEnd, energyFill, energyColor, reverseFill: false);
+                // Left: Health (outer), Energy (inner) — current value in scrubber (max 3 digits)
+                DrawArcBar(origin, radiusHealth, leftStart, leftEnd, healthFill, healthColor, reverseFill: false, Mathf.FloorToInt(ship.CurrentHealth).ToString());
+                DrawArcBar(origin, radiusEnergy, leftStart, leftEnd, energyFill, energyColor, reverseFill: false, Mathf.FloorToInt(ship.CurrentEnergy).ToString());
                 // Right: Gems (outer), People (inner) – fill direction reversed so progress reads correctly
-                DrawArcBar(origin, radiusGems, rightStart, rightEnd, gemsFill, gemsColor, reverseFill: true);
-                DrawArcBar(origin, radiusPeople, rightStart, rightEnd, peopleFill, peopleColor, reverseFill: true);
-
-                // Max value at the top tip of each arc (left tip = leftEnd, right tip = rightEnd)
-                DrawArcLabel(origin, radiusHealth + labelOffsetFromArc, leftEnd, labelTipNudge, Mathf.FloorToInt(healthMax).ToString());
-                DrawArcLabel(origin, radiusEnergy + labelOffsetFromArc, leftEnd, -labelTipNudge, Mathf.FloorToInt(energyCap).ToString());
-                DrawArcLabel(origin, radiusGems + labelOffsetFromArc, rightEnd, labelTipNudge, Mathf.FloorToInt(gemCap).ToString());
-                DrawArcLabel(origin, radiusPeople + labelOffsetFromArc, rightEnd, -labelTipNudge, Mathf.FloorToInt(peopleCap).ToString());
+                DrawArcBar(origin, radiusGems, rightStart, rightEnd, gemsFill, gemsColor, reverseFill: true, Mathf.FloorToInt(ship.CurrentGems).ToString());
+                DrawArcBar(origin, radiusPeople, rightStart, rightEnd, peopleFill, peopleColor, reverseFill: true, Mathf.FloorToInt(ship.CurrentPeople).ToString());
             }
         }
 
-        private void DrawArcLabel(Vector2 origin, float radius, float tipAngRad, float perpendicularNudge, string text)
-        {
-            if (string.IsNullOrEmpty(text)) return;
-            Vector2 dir = ShapesMath.AngToDir(tipAngRad);
-            Vector2 perp = new Vector2(-dir.y, dir.x);
-            Vector2 pos = origin + dir * radius + perp * perpendicularNudge;
-            Draw.FontSize = labelFontSize;
-            Draw.Text(pos, Quaternion.identity, text, TextAlign.Center, labelColor);
-        }
-
-        private void DrawArcBar(Vector2 origin, float radius, float angStart, float angEnd, float fill01, Color fillColor, bool reverseFill = false)
+        private void DrawArcBar(Vector2 origin, float radius, float angStart, float angEnd, float fill01, Color fillColor, bool reverseFill = false, string scrubberLabel = null)
         {
             fill01 = Mathf.Clamp01(fill01);
             float fillAng;
@@ -149,10 +133,17 @@ namespace TitanOrbit.UI
             // Filled arc segment (round caps at both ends)
             Draw.Arc(origin, radius, barThickness, arcStart, arcEnd, ArcEndCap.Round, fillColor);
 
-            // Moving disc at current fill end (over the round cap)
+            // Scrubber circle at current fill end (larger so it can hold current/max text)
             Vector2 endPos = origin + ShapesMath.AngToDir(fillAng) * radius;
-            Draw.Disc(endPos, barThickness / 2f + outlineThickness / 2f, outlineColor);
-            Draw.Disc(endPos, barThickness / 2f - outlineThickness / 2f, fillColor);
+            float outerR = scrubberRadius + outlineThickness / 2f;
+            float innerR = Mathf.Max(0.05f, scrubberRadius - outlineThickness / 2f);
+            Draw.Disc(endPos, outerR, outlineColor);
+            Draw.Disc(endPos, innerR, fillColor);
+            if (!string.IsNullOrEmpty(scrubberLabel))
+            {
+                Draw.FontSize = labelFontSize;
+                Draw.Text(endPos, Quaternion.identity, scrubberLabel, TextAlign.Center, labelColor);
+            }
 
             // Rounded outline for full arc (round ends only)
             DrawRoundedArcOutline(origin, radius, barThickness, outlineThickness, angStart, angEnd);
