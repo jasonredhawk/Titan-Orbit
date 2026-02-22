@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Rendering;
 using Unity.Netcode;
 using TitanOrbit.Entities;
 using Shapes;
@@ -7,47 +6,41 @@ using Shapes;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Arc HUD centered on the ship: left = Health (outer), Energy (inner); right = Gems (outer), People (inner).
-    /// Bars are thin and sized to surround the ship without taking too much screen space.
+    /// Top-left ship stats HUD: horizontal progress bars (Health, Energy, Gems, People)
+    /// stacked with spacing. Same width as minimap. Current value at the right end of each bar.
+    /// Requires ImmediateModeCanvas (e.g. TitanOrbitShapesCanvas) on the canvas.
     /// </summary>
-    public class ShipStatsFpsStyleHUD : ImmediateModeShapeDrawer
+    public class ShipStatsFpsStyleHUD : ImmediateModePanel
     {
-        [Header("Arc bar style (gap between inner/outer ≈ bar thickness; outer arc just inside radar)")]
-        [Range(0.3f, 2f)] [SerializeField] private float angularSpanRad = 1.1f;
-        [Range(0.02f, 0.2f)] [SerializeField] private float outlineThickness = 0.08f;
-        [Range(0.15f, 0.8f)] [SerializeField] private float barThickness = 0.4f;
-        [Tooltip("Left outer arc. Set so outer edge stays clearly inside the proximity radar ring.")]
-        [Range(4f, 14f)] [SerializeField] private float radiusHealth = 7.6f;
-        [Tooltip("Left inner arc. Keep (radiusHealth - radiusEnergy) ≈ 2× barThickness for gap = bar thickness.")]
-        [Range(3f, 13f)] [SerializeField] private float radiusEnergy = 6.8f;
-        [Tooltip("Right outer arc. Match radiusHealth so radar sits just outside.")]
-        [Range(4f, 14f)] [SerializeField] private float radiusGems = 7.6f;
-        [Tooltip("Right inner arc. Keep (radiusGems - radiusPeople) ≈ 2× barThickness.")]
-        [Range(3f, 13f)] [SerializeField] private float radiusPeople = 6.8f;
+        [Header("Layout (panel width = same as minimap)")]
+        [SerializeField] private float margin = 12f;
+        [SerializeField] private float barGap = 8f;
+        [SerializeField] private float barHeight = 18f;
 
-        [Header("Scrubber (fill-end circle)")]
-        [Tooltip("Radius of the scrubber circle; sized to fit up to 3 digits (e.g. 999).")]
-        [Range(0.2f, 0.7f)] [SerializeField] private float scrubberRadius = 0.38f;
-        [Header("Label style (current value inside scrubber)")]
-        [Range(0.8f, 4f)] [SerializeField] private float labelFontSize = 1.6f;
-        [SerializeField] private Color labelColor = new Color(1f, 1f, 1f, 0.95f);
+        [Header("Style")]
+        [SerializeField] private float cornerRadius = 6f;
+        [SerializeField] private float borderThickness = 2f;
+        [Range(8f, 36f)] [SerializeField] private float valueFontSize = 18f;
+        [Range(8f, 28f)] [SerializeField] private float labelFontSize = 14f;
 
         [Header("Colors")]
-        [SerializeField] private Color healthColor = new Color(0.2f, 0.9f, 0.45f, 1f);   // green
-        [SerializeField] private Color energyColor = new Color(0.2f, 0.65f, 0.95f, 1f);  // blue
-        [SerializeField] private Color gemsColor = new Color(0.95f, 0.25f, 0.2f, 1f);    // red
-        [SerializeField] private Color peopleColor = new Color(0.9f, 0.75f, 0.3f, 1f);  // amber
-        [SerializeField] private Color outlineColor = new Color(0.4f, 0.45f, 0.55f, 0.9f);
+        [SerializeField] private Color healthColor = new Color(0.2f, 0.9f, 0.45f, 1f);
+        [SerializeField] private Color energyColor = new Color(0.2f, 0.65f, 0.95f, 1f);
+        [SerializeField] private Color gemsColor = new Color(0.95f, 0.25f, 0.2f, 1f);
+        [SerializeField] private Color peopleColor = new Color(0.9f, 0.75f, 0.3f, 1f);
+        [SerializeField] private Color emptyColor = new Color(0.12f, 0.12f, 0.18f, 0.9f);
+        [SerializeField] private Color borderColor = new Color(0.35f, 0.4f, 0.5f, 0.9f);
+        [SerializeField] private Color valueColor = new Color(1f, 1f, 1f, 0.95f);
+        [SerializeField] private Color labelColor = new Color(0.85f, 0.85f, 0.9f, 0.95f);
 
         private Starship _playerShip;
-        private UnityEngine.Camera _targetCamera;
 
-        /// <summary>Returns the local player's ship only (via SpawnManager.GetLocalPlayerObject), not AI or other clients' ships.</summary>
         private Starship GetPlayerShip()
         {
             if (_playerShip != null && !_playerShip.IsDead) return _playerShip;
             _playerShip = null;
-            if (NetworkManager.Singleton == null) return null;
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.SpawnManager == null)
+                return null;
             NetworkObject localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
             if (localPlayer == null) return null;
             var ship = localPlayer.GetComponent<Starship>();
@@ -55,112 +48,57 @@ namespace TitanOrbit.UI
             return _playerShip;
         }
 
-        private void Awake()
+        public override void DrawPanelShapes(Rect rect, ImCanvasContext ctx)
         {
-            _targetCamera = GetComponentInParent<UnityEngine.Camera>();
-            if (_targetCamera == null) _targetCamera = UnityEngine.Camera.main;
-        }
-
-        public override void DrawShapes(UnityEngine.Camera cam)
-        {
-            // Only draw in our target camera (main / this object's camera)
-            if (_targetCamera != null && cam != _targetCamera)
-                return;
-            // Skip on dedicated server (no local player to show HUD for)
-            if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsClient)
-                return;
             Starship ship = GetPlayerShip();
             if (ship == null)
                 return;
 
-            using (Draw.Command(cam))
-            {
-                Draw.ZTest = CompareFunction.Always;
-                Draw.Matrix = transform.localToWorldMatrix;
-                Draw.BlendMode = ShapesBlendMode.Transparent;
-                Draw.LineGeometry = LineGeometry.Flat2D;
+            float left = rect.xMin + margin;
+            float right = rect.xMax - margin;
+            float y = rect.yMax - margin - barHeight; // top-down: first bar at top
 
-                // Center arcs on the ship (origin in our draw space = ship position in transform's local 2D plane)
-                Vector3 shipLocal = transform.InverseTransformPoint(ship.transform.position);
-                Vector2 origin = new Vector2(shipLocal.x, shipLocal.y);
+            // Reserve space for label (left) and value text (right)
+            float labelWidth = 52f;
+            float valueWidth = valueFontSize * 2.5f;
+            float barLeft = left + labelWidth;
+            float barMaxRight = right - valueWidth - 6f;
+            float barWidth = barMaxRight - barLeft;
 
-                float half = angularSpanRad * 0.5f;
-                // Left: 0 = right, TAU/2 = left (math CCW)
-                float leftStart = ShapesMath.TAU / 2f - half;
-                float leftEnd = ShapesMath.TAU / 2f + half;
-                // Right: opposite side
-                float rightStart = -half;
-                float rightEnd = half;
+            DrawOneBar(left, barLeft, y, barWidth, barHeight, ship.CurrentHealth / (ship.MaxHealth > 0 ? ship.MaxHealth : 1f), healthColor, "Health", Mathf.FloorToInt(ship.CurrentHealth).ToString());
+            y -= (barHeight + barGap);
 
-                float healthMax = ship.MaxHealth;
-                float energyCap = ship.EnergyCapacity;
-                float gemCap = ship.GemCapacity;
-                float peopleCap = ship.PeopleCapacity;
-                float healthFill = healthMax > 0f ? Mathf.Clamp01(ship.CurrentHealth / healthMax) : 0f;
-                float energyFill = energyCap > 0f ? Mathf.Clamp01(ship.CurrentEnergy / energyCap) : 0f;
-                float gemsFill = gemCap > 0f ? Mathf.Clamp01(ship.CurrentGems / gemCap) : 0f;
-                float peopleFill = peopleCap > 0f ? Mathf.Clamp01(ship.CurrentPeople / peopleCap) : 0f;
+            float energyCap = ship.EnergyCapacity;
+            DrawOneBar(left, barLeft, y, barWidth, barHeight, energyCap > 0 ? ship.CurrentEnergy / energyCap : 0f, energyColor, "Energy", Mathf.FloorToInt(ship.CurrentEnergy).ToString());
+            y -= (barHeight + barGap);
 
-                // Left: Health (outer), Energy (inner) — current value in scrubber (max 3 digits)
-                DrawArcBar(origin, radiusHealth, leftStart, leftEnd, healthFill, healthColor, reverseFill: false, Mathf.FloorToInt(ship.CurrentHealth).ToString());
-                DrawArcBar(origin, radiusEnergy, leftStart, leftEnd, energyFill, energyColor, reverseFill: false, Mathf.FloorToInt(ship.CurrentEnergy).ToString());
-                // Right: Gems (outer), People (inner) – fill direction reversed so progress reads correctly
-                DrawArcBar(origin, radiusGems, rightStart, rightEnd, gemsFill, gemsColor, reverseFill: true, Mathf.FloorToInt(ship.CurrentGems).ToString());
-                DrawArcBar(origin, radiusPeople, rightStart, rightEnd, peopleFill, peopleColor, reverseFill: true, Mathf.FloorToInt(ship.CurrentPeople).ToString());
-            }
+            float gemCap = ship.GemCapacity;
+            DrawOneBar(left, barLeft, y, barWidth, barHeight, gemCap > 0 ? ship.CurrentGems / gemCap : 0f, gemsColor, "Gems", Mathf.FloorToInt(ship.CurrentGems).ToString());
+            y -= (barHeight + barGap);
+
+            float peopleCap = ship.PeopleCapacity;
+            DrawOneBar(left, barLeft, y, barWidth, barHeight, peopleCap > 0 ? ship.CurrentPeople / peopleCap : 0f, peopleColor, "People", Mathf.FloorToInt(ship.CurrentPeople).ToString());
         }
 
-        private void DrawArcBar(Vector2 origin, float radius, float angStart, float angEnd, float fill01, Color fillColor, bool reverseFill = false, string scrubberLabel = null)
+        private void DrawOneBar(float labelX, float x, float y, float w, float h, float fill01, Color fillColor, string labelText, string valueText)
         {
             fill01 = Mathf.Clamp01(fill01);
-            float fillAng;
-            float arcStart, arcEnd;
-            if (reverseFill)
+            Rect barRect = new Rect(x, y, w, h);
+
+            Draw.Rectangle(barRect, cornerRadius * 0.5f, emptyColor);
+            if (fill01 > 0.001f)
             {
-                // Fill from angStart toward angEnd as 0 -> 1 (reversed for right-side bars)
-                fillAng = Mathf.Lerp(angStart, angEnd, fill01);
-                arcStart = angStart;
-                arcEnd = fillAng;
-            }
-            else
-            {
-                // Fill from angEnd toward angStart as 0 -> 1
-                fillAng = Mathf.Lerp(angEnd, angStart, fill01);
-                arcStart = angEnd;
-                arcEnd = fillAng;
+                Rect fillRect = new Rect(x, y, w * fill01, h);
+                Draw.Rectangle(fillRect, cornerRadius * 0.5f, fillColor);
             }
 
-            // Filled arc segment (round caps at both ends)
-            Draw.Arc(origin, radius, barThickness, arcStart, arcEnd, ArcEndCap.Round, fillColor);
+            Draw.RectangleBorder(barRect, 1f, cornerRadius * 0.5f, borderColor);
 
-            // Scrubber circle at current fill end (larger so it can hold current/max text)
-            Vector2 endPos = origin + ShapesMath.AngToDir(fillAng) * radius;
-            float outerR = scrubberRadius + outlineThickness / 2f;
-            float innerR = Mathf.Max(0.05f, scrubberRadius - outlineThickness / 2f);
-            Draw.Disc(endPos, outerR, outlineColor);
-            Draw.Disc(endPos, innerR, fillColor);
-            if (!string.IsNullOrEmpty(scrubberLabel))
-            {
-                Draw.FontSize = labelFontSize;
-                Draw.Text(endPos, Quaternion.identity, scrubberLabel, TextAlign.Center, labelColor);
-            }
-
-            // Rounded outline for full arc (round ends only)
-            DrawRoundedArcOutline(origin, radius, barThickness, outlineThickness, angStart, angEnd);
-        }
-
-        private void DrawRoundedArcOutline(Vector2 origin, float radius, float thickness, float outlineThickness, float angStart, float angEnd)
-        {
-            float innerRadius = radius - thickness / 2f;
-            float outerRadius = radius + thickness / 2f;
-            // End arcs exactly at cap angles so they don't stick out past the rounded caps
-            Draw.Arc(origin, innerRadius, outlineThickness, angStart, angEnd, ArcEndCap.Round, outlineColor);
-            Draw.Arc(origin, outerRadius, outlineThickness, angStart, angEnd, ArcEndCap.Round, outlineColor);
-            // Semicircle caps at each end so the bar ends read as round (FPS-style)
-            Vector2 originStart = origin + ShapesMath.AngToDir(angStart) * radius;
-            Vector2 originEnd = origin + ShapesMath.AngToDir(angEnd) * radius;
-            Draw.Arc(originStart, thickness / 2f, outlineThickness, angStart, angStart - ShapesMath.TAU / 2f, ArcEndCap.Round, outlineColor);
-            Draw.Arc(originEnd, thickness / 2f, outlineThickness, angEnd, angEnd + ShapesMath.TAU / 2f, ArcEndCap.Round, outlineColor);
+            float baselineY = barRect.yMax - h * 0.35f;
+            Draw.FontSize = labelFontSize;
+            Draw.Text(new Vector2(labelX, baselineY), labelText, TextAlign.BaselineLeft, labelColor);
+            Draw.FontSize = valueFontSize;
+            Draw.Text(new Vector2(barRect.xMax + 6f, baselineY), valueText, TextAlign.BaselineLeft, valueColor);
         }
     }
 }

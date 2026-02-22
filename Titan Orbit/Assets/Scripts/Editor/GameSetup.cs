@@ -180,15 +180,6 @@ namespace TitanOrbit.Editor
             lpsSO.FindProperty("cameraController").objectReferenceValue = cameraController;
             lpsSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // FPS-style arc HUD (health, energy, gems) — top-left in view; camera looks down (-Y), so local +Z = in front
-            GameObject fpsHudObj = new GameObject("ShipStatsFpsHUD");
-            fpsHudObj.transform.SetParent(obj.transform, false);
-            // Local: -X = left, +Y = up on screen, +Z = in front of camera so it's not culled
-            fpsHudObj.transform.localPosition = new Vector3(-8f, 5f, 1f);
-            fpsHudObj.transform.localRotation = Quaternion.identity;
-            fpsHudObj.transform.localScale = Vector3.one;
-            fpsHudObj.AddComponent<TitanOrbit.UI.ShipStatsFpsStyleHUD>();
-
             return obj;
         }
 
@@ -249,6 +240,7 @@ namespace TitanOrbit.Editor
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
             canvasObj.AddComponent<GraphicRaycaster>();
+            canvasObj.AddComponent<TitanOrbit.UI.TitanOrbitShapesCanvas>();
 
             // Create EventSystem (use InputSystemUIInputModule for new Input System)
             GameObject eventSystemObj = new GameObject("EventSystem");
@@ -324,6 +316,18 @@ namespace TitanOrbit.Editor
             hudRect.offsetMin = Vector2.zero;
             hudRect.offsetMax = Vector2.zero;
             HUDController hudController = hudObj.AddComponent<HUDController>();
+
+            // —— Ship stats panel (top-left, same width as minimap: 384) ——
+            const float minimapWidth = 384f;
+            float shipStatsHeight = 120f; // 4 bars + spacing + margin
+            GameObject shipStatsPanel = CreatePanel(canvasObj.transform, "ShipStatsPanel", new Color(0, 0, 0, 0), uiSprite);
+            RectTransform shipStatsRect = shipStatsPanel.GetComponent<RectTransform>();
+            shipStatsRect.anchorMin = new Vector2(0, 1);
+            shipStatsRect.anchorMax = new Vector2(0, 1);
+            shipStatsRect.pivot = new Vector2(0, 1);
+            shipStatsRect.anchoredPosition = new Vector2(20, -20);
+            shipStatsRect.sizeDelta = new Vector2(minimapWidth, shipStatsHeight);
+            shipStatsPanel.AddComponent<TitanOrbit.UI.ShipStatsFpsStyleHUD>();
 
             // —— Home planet stats panel (top-right) ——
             Color homePanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
