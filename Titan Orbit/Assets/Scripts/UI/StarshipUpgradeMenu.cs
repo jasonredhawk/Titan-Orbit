@@ -9,12 +9,16 @@ using TitanOrbit.Data;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Upgrade menu at the bottom of the screen with 8 attribute upgrade buttons.
-    /// Full width minus minimap. Each button: icon, title, notches. Cost = 5 gems × ship level per upgrade.
+    /// Upgrade menu along the full bottom of the screen (minus minimap). Eight attribute buttons:
+    /// Icon + title, 6 flat progression notches (when at max ship level), and Lvl + key row.
     /// </summary>
     public class StarshipUpgradeMenu : MonoBehaviour
     {
-        [Header("Optional: assign sprites for upgrade icons (otherwise uses colored placeholders)")]
+        [Header("Optional: Shift Sci-Fi panel/button styling")]
+        [SerializeField] private Sprite panelSprite;
+        [SerializeField] private Sprite buttonSprite;
+
+        [Header("Optional: assign sprites for upgrade icons (otherwise uses coloured placeholders)")]
         [SerializeField] private Sprite iconMovementSpeed;
         [SerializeField] private Sprite iconEnergyCapacity;
         [SerializeField] private Sprite iconFirePower;
@@ -24,31 +28,40 @@ namespace TitanOrbit.UI
         [SerializeField] private Sprite iconRotationSpeed;
         [SerializeField] private Sprite iconEnergyRegen;
 
-        private static readonly (AttributeUpgradeSystem.ShipAttributeType Type, string Title, Color PlaceholderColor)[] UpgradeTypes =
+        // Brighter semi-transparent theme background colours (same theme = same tint)
+        private static readonly Color ThemeMovement = new Color(0.35f, 0.65f, 0.9f, 0.5f);
+        private static readonly Color ThemeEnergy = new Color(0.9f, 0.7f, 0.25f, 0.5f);
+        private static readonly Color ThemeCombat = new Color(0.85f, 0.35f, 0.35f, 0.5f);
+        private static readonly Color ThemeHealth = new Color(0.35f, 0.75f, 0.5f, 0.5f);
+
+        // Order: 1 Move Speed, 2 Turn Speed, 3 Health Capacity, 4 Health Regen, 5 Energy Capacity, 6 Energy Regen, 7 Shot Power, 8 Shot Speed
+        private static readonly (AttributeUpgradeSystem.ShipAttributeType Type, string Title, Color PlaceholderColor, Color ThemeBg)[] UpgradeTypes =
         {
-            (AttributeUpgradeSystem.ShipAttributeType.MovementSpeed, "Speed", new Color(0.4f, 0.8f, 1f)),
-            (AttributeUpgradeSystem.ShipAttributeType.EnergyCapacity, "Energy Cap", new Color(1f, 0.7f, 0.2f)),
-            (AttributeUpgradeSystem.ShipAttributeType.FirePower, "Power", new Color(1f, 0.3f, 0.3f)),
-            (AttributeUpgradeSystem.ShipAttributeType.BulletSpeed, "Shot Spd", new Color(1f, 0.9f, 0.3f)),
-            (AttributeUpgradeSystem.ShipAttributeType.MaxHealth, "Health", new Color(0.4f, 1f, 0.4f)),
-            (AttributeUpgradeSystem.ShipAttributeType.HealthRegen, "Regen", new Color(0.3f, 1f, 0.6f)),
-            (AttributeUpgradeSystem.ShipAttributeType.RotationSpeed, "Turn", new Color(0.8f, 0.5f, 1f)),
-            (AttributeUpgradeSystem.ShipAttributeType.EnergyRegen, "Energy Regen", new Color(0.2f, 0.9f, 1f)),
+            (AttributeUpgradeSystem.ShipAttributeType.MovementSpeed, "Move\nSpeed", new Color(0.4f, 0.8f, 1f), ThemeMovement),
+            (AttributeUpgradeSystem.ShipAttributeType.RotationSpeed, "Turn\nSpeed", new Color(0.8f, 0.5f, 1f), ThemeMovement),
+            (AttributeUpgradeSystem.ShipAttributeType.MaxHealth, "Health\nCapacity", new Color(0.4f, 1f, 0.4f), ThemeHealth),
+            (AttributeUpgradeSystem.ShipAttributeType.HealthRegen, "Health\nRegen", new Color(0.3f, 1f, 0.6f), ThemeHealth),
+            (AttributeUpgradeSystem.ShipAttributeType.EnergyCapacity, "Energy\nCapacity", new Color(1f, 0.7f, 0.2f), ThemeEnergy),
+            (AttributeUpgradeSystem.ShipAttributeType.EnergyRegen, "Energy\nRegen", new Color(0.2f, 0.9f, 1f), ThemeEnergy),
+            (AttributeUpgradeSystem.ShipAttributeType.FirePower, "Shot\nPower", new Color(1f, 0.3f, 0.3f), ThemeCombat),
+            (AttributeUpgradeSystem.ShipAttributeType.BulletSpeed, "Shot\nSpeed", new Color(1f, 0.9f, 0.3f), ThemeCombat),
         };
 
-        private const float MINIMAP_WIDTH = 404f; // 384px + 20px padding (matches GameSetup)
-
-        private const int SHIP_LEVEL_BUTTON_INDEX = 0;
+        private const float MINIMAP_WIDTH = 384f;
+        private const float BUTTON_WIDTH = 168f;
+        private const float BUTTON_HEIGHT = 80f;
+        private const float BUTTON_SPACING = 20f;
+        private const float ICON_SIZE = 28f;
+        private const int KEY_1_TO_8 = 1;
         private const int ATTRIBUTE_BUTTON_COUNT = 8;
+        private const int NOTCH_COUNT = 6;
 
         private GameObject panel;
-        private Button shipLevelUpgradeButton;
-        private TextMeshProUGUI shipLevelUpgradeLabel;
         private Button[] upgradeButtons = new Button[ATTRIBUTE_BUTTON_COUNT];
         private Image[] iconImages = new Image[ATTRIBUTE_BUTTON_COUNT];
         private TextMeshProUGUI[] titleTexts = new TextMeshProUGUI[ATTRIBUTE_BUTTON_COUNT];
+        private TextMeshProUGUI[] keyTexts = new TextMeshProUGUI[ATTRIBUTE_BUTTON_COUNT];
         private Image[][] notchImages = new Image[ATTRIBUTE_BUTTON_COUNT][];
-        private TextMeshProUGUI costHintText;
         private Starship playerShip;
 
         // Top-center strip: two ship upgrade choice buttons (shown when criteria met). Keys 9 and 0.
@@ -82,7 +95,10 @@ namespace TitanOrbit.UI
 
         private void Awake()
         {
-            Show();
+            // Start hidden; only show when in play mode (player ship exists)
+            EnsurePanelExists();
+            EnsureTopShipChoicePanelExists();
+            Hide();
         }
 
         private void Update()
@@ -94,13 +110,19 @@ namespace TitanOrbit.UI
                     if (ship.IsOwner) { playerShip = ship; break; }
                 }
             }
-            if (playerShip != null)
+
+            // Only show upgrade menu when in play mode (local player ship exists)
+            if (playerShip == null)
             {
-                EnsureTopShipChoicePanelExists();
-                RefreshTopShipChoiceButtons();
-                if (panel != null && panel.activeSelf)
-                    RefreshAllButtons();
+                Hide();
+                return;
             }
+
+            Show();
+            EnsureTopShipChoicePanelExists();
+            RefreshTopShipChoiceButtons();
+            if (panel != null && panel.activeSelf)
+                RefreshAllButtons();
             HandleKeyboardShortcuts();
         }
 
@@ -127,29 +149,23 @@ namespace TitanOrbit.UI
             panel = new GameObject("UpgradePanel");
             panel.transform.SetParent(canvas.transform, false);
             var rect = panel.AddComponent<RectTransform>();
+            float margin = 24f;
+            float panelHeight = BUTTON_HEIGHT + 24f;
+            // Full width at bottom minus minimap
             rect.anchorMin = new Vector2(0f, 0f);
             rect.anchorMax = new Vector2(1f, 0f);
             rect.pivot = new Vector2(0.5f, 0f);
+            rect.anchoredPosition = new Vector2(0f, panelHeight + 20f);
             rect.offsetMin = new Vector2(0f, 0f);
-            rect.offsetMax = new Vector2(-MINIMAP_WIDTH, 160f); // Leave space for minimap, 160px tall
+            rect.offsetMax = new Vector2(-MINIMAP_WIDTH, panelHeight);
             var img = panel.AddComponent<Image>();
-            img.color = new Color(0.06f, 0.07f, 0.12f, 0.94f);
+            img.color = new Color(0f, 0f, 0f, 0f);
+            img.raycastTarget = false;
 
-            // Cost hint at top of bar
-            costHintText = CreateTMP(panel.transform, "CostHint", "5 gems × ship level per upgrade", 16,
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -10), new Vector2(800, 28));
-
-            float buttonWidth = 130f;
-            float spacing = 12f;
-            int totalCount = 1 + ATTRIBUTE_BUTTON_COUNT; // Ship level + 8 attributes
-            float totalWidth = totalCount * buttonWidth + (totalCount - 1) * spacing;
-            float startX = -totalWidth / 2f + buttonWidth / 2f;
-
-            CreateShipLevelUpgradeButton(startX, buttonWidth);
             for (int i = 0; i < ATTRIBUTE_BUTTON_COUNT; i++)
             {
-                float x = startX + (1 + i) * (buttonWidth + spacing);
-                CreateUpgradeButton(i, x, buttonWidth);
+                float x = margin + i * (BUTTON_WIDTH + BUTTON_SPACING);
+                CreateUpgradeButton(i, x);
             }
         }
 
@@ -170,6 +186,7 @@ namespace TitanOrbit.UI
             rect.sizeDelta = new Vector2(420f, 72f);
             var img = topShipChoicePanel.AddComponent<Image>();
             img.color = new Color(0.08f, 0.09f, 0.14f, 0.92f);
+            if (panelSprite != null) { img.sprite = panelSprite; img.type = panelSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
 
             float btnWidth = 190f;
             float spacing = 20f;
@@ -186,6 +203,7 @@ namespace TitanOrbit.UI
                 btnRect.sizeDelta = new Vector2(btnWidth, 52f);
                 var btnImg = btnRoot.AddComponent<Image>();
                 btnImg.color = new Color(0.2f, 0.45f, 0.85f, 0.95f);
+                if (buttonSprite != null) { btnImg.sprite = buttonSprite; btnImg.type = buttonSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
                 var btn = btnRoot.AddComponent<Button>();
                 var colors = btn.colors;
                 colors.normalColor = new Color(0.2f, 0.45f, 0.85f);
@@ -218,168 +236,142 @@ namespace TitanOrbit.UI
             topShipChoicePanel.transform.SetAsLastSibling(); // Draw on top of other UI
         }
 
-        private void CreateShipLevelUpgradeButton(float x, float width)
-        {
-            var btnRoot = new GameObject("Upgrade_ShipLevel");
-            btnRoot.transform.SetParent(panel.transform, false);
-            var btnRect = btnRoot.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(0.5f, 0f);
-            btnRect.anchorMax = new Vector2(0.5f, 0f);
-            btnRect.pivot = new Vector2(0.5f, 0f);
-            btnRect.anchoredPosition = new Vector2(x, 20f);
-            btnRect.sizeDelta = new Vector2(width, 120f);
-            var btnImg = btnRoot.AddComponent<Image>();
-            btnImg.color = new Color(0.14f, 0.16f, 0.24f, 0.95f);
-            var outline = btnRoot.AddComponent<Outline>();
-            outline.effectColor = new Color(0.35f, 0.4f, 0.55f, 0.6f);
-            outline.effectDistance = new Vector2(1, 1);
-            shipLevelUpgradeButton = btnRoot.AddComponent<Button>();
-            var colors = shipLevelUpgradeButton.colors;
-            colors.normalColor = new Color(0.14f, 0.16f, 0.24f);
-            colors.highlightedColor = new Color(0.22f, 0.26f, 0.38f);
-            colors.pressedColor = new Color(0.1f, 0.12f, 0.18f);
-            colors.disabledColor = new Color(0.1f, 0.11f, 0.16f, 0.7f);
-            shipLevelUpgradeButton.colors = colors;
-            shipLevelUpgradeButton.onClick.AddListener(OnShipLevelUpgradeClicked);
-
-            var labelGo = new GameObject("Label");
-            labelGo.transform.SetParent(btnRoot.transform, false);
-            var labelRect = labelGo.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(4, 4);
-            labelRect.offsetMax = new Vector2(-4, -4);
-            shipLevelUpgradeLabel = labelGo.AddComponent<TextMeshProUGUI>();
-            shipLevelUpgradeLabel.text = "Ship Lv1";
-            shipLevelUpgradeLabel.fontSize = 14;
-            shipLevelUpgradeLabel.alignment = TextAlignmentOptions.Center;
-            shipLevelUpgradeLabel.color = new Color(0.95f, 0.96f, 1f);
-            shipLevelUpgradeLabel.raycastTarget = false;
-        }
-
-        private void CreateUpgradeButton(int index, float x, float width)
+        private void CreateUpgradeButton(int index, float x)
         {
             var type = UpgradeTypes[index];
+            int keyNum = index + KEY_1_TO_8;
             var btnRoot = new GameObject($"Upgrade_{type.Title}");
             btnRoot.transform.SetParent(panel.transform, false);
             var btnRect = btnRoot.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(0.5f, 0f);
-            btnRect.anchorMax = new Vector2(0.5f, 0f);
-            btnRect.pivot = new Vector2(0.5f, 0f);
-            btnRect.anchoredPosition = new Vector2(x, 20f);
-            btnRect.sizeDelta = new Vector2(width, 120f);
+            btnRect.anchorMin = new Vector2(0f, 0.5f);
+            btnRect.anchorMax = new Vector2(0f, 0.5f);
+            btnRect.pivot = new Vector2(0f, 0.5f);
+            btnRect.anchoredPosition = new Vector2(x, 0f);
+            btnRect.sizeDelta = new Vector2(BUTTON_WIDTH, BUTTON_HEIGHT);
 
-            // Button background with outline
             var btnImg = btnRoot.AddComponent<Image>();
-            btnImg.color = new Color(0.14f, 0.16f, 0.24f, 0.95f);
+            btnImg.color = type.ThemeBg;
+            if (buttonSprite != null) { btnImg.sprite = buttonSprite; btnImg.type = buttonSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
             var outline = btnRoot.AddComponent<Outline>();
             outline.effectColor = new Color(0.35f, 0.4f, 0.55f, 0.4f);
-            outline.effectDistance = new Vector2(2, -2);
+            outline.effectDistance = new Vector2(1, -1);
             var btn = btnRoot.AddComponent<Button>();
             var colors = btn.colors;
-            colors.normalColor = new Color(0.14f, 0.16f, 0.24f);
-            colors.highlightedColor = new Color(0.22f, 0.26f, 0.38f);
-            colors.pressedColor = new Color(0.1f, 0.12f, 0.18f);
-            colors.disabledColor = new Color(0.1f, 0.11f, 0.16f, 0.7f);
+            // Use white so the Image's theme colour (ThemeBg) shows; Button only adds hover/press tint
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.15f, 1.15f, 1.15f, 1f);
+            colors.pressedColor = new Color(0.88f, 0.88f, 0.88f, 1f);
+            colors.disabledColor = new Color(0.6f, 0.6f, 0.6f, 0.85f);
             btn.colors = colors;
 
             int idx = index;
             btn.onClick.AddListener(() => OnUpgradeClicked(idx));
 
-            // Icon at top-left with padding and subtle frame
-            const float iconSize = 42f;
-            const float iconPadding = 8f;
-            var iconFrame = new GameObject("IconFrame");
-            iconFrame.transform.SetParent(btnRoot.transform, false);
-            var iconFrameRect = iconFrame.AddComponent<RectTransform>();
-            iconFrameRect.anchorMin = new Vector2(0f, 1f);
-            iconFrameRect.anchorMax = new Vector2(0f, 1f);
-            iconFrameRect.pivot = new Vector2(0f, 1f);
-            iconFrameRect.anchoredPosition = new Vector2(iconPadding, -iconPadding);
-            iconFrameRect.sizeDelta = new Vector2(iconSize, iconSize);
-            var iconFrameImg = iconFrame.AddComponent<Image>();
-            iconFrameImg.color = new Color(0.08f, 0.1f, 0.16f);
-            iconFrameImg.raycastTarget = false;
+            float pad = 6f;
 
+            // Top row: Icon + Title only
             var iconGo = new GameObject("Icon");
-            iconGo.transform.SetParent(iconFrame.transform, false);
+            iconGo.transform.SetParent(btnRoot.transform, false);
             var iconRect = iconGo.AddComponent<RectTransform>();
-            iconRect.anchorMin = new Vector2(0.5f, 0.5f);
-            iconRect.anchorMax = new Vector2(0.5f, 0.5f);
-            iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.anchoredPosition = Vector2.zero;
-            iconRect.sizeDelta = new Vector2(iconSize - 6, iconSize - 6);
+            iconRect.anchorMin = new Vector2(0f, 1f);
+            iconRect.anchorMax = new Vector2(0f, 1f);
+            iconRect.pivot = new Vector2(0f, 1f);
+            iconRect.anchoredPosition = new Vector2(pad, -pad);
+            iconRect.sizeDelta = new Vector2(ICON_SIZE, ICON_SIZE);
             var iconImg = iconGo.AddComponent<Image>();
-            iconImg.color = type.PlaceholderColor;
-            if (GetIconSprite(index) != null)
-                iconImg.sprite = GetIconSprite(index);
+            Sprite iconSprite = GetIconSprite(type.Type);
+            iconImg.color = iconSprite != null ? Color.white : type.PlaceholderColor;
+            if (iconSprite != null) iconImg.sprite = iconSprite;
+            iconImg.preserveAspect = true;
             iconImg.raycastTarget = false;
             iconImages[index] = iconImg;
 
-            // Title: top-middle, in the space to the right of icon (centered in remaining area)
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(btnRoot.transform, false);
             var titleRect = titleGo.AddComponent<RectTransform>();
-            titleRect.anchorMin = new Vector2(0f, 0.55f);
-            titleRect.anchorMax = new Vector2(1f, 0.92f);
-            titleRect.offsetMin = new Vector2(iconPadding + iconSize + 6, 4f);
-            titleRect.offsetMax = new Vector2(-iconPadding, -4f);
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -pad);
+            titleRect.offsetMin = new Vector2(pad + ICON_SIZE + 4f, -44f);
+            titleRect.offsetMax = new Vector2(-pad, 0f);
             var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
             titleTmp.text = type.Title;
-            titleTmp.fontSize = 15;
+            titleTmp.fontSize = 13;
             titleTmp.fontStyle = FontStyles.Bold;
             titleTmp.alignment = TextAlignmentOptions.Center;
+            titleTmp.enableWordWrapping = true;
+            titleTmp.overflowMode = TMPro.TextOverflowModes.Overflow;
             titleTmp.color = new Color(0.95f, 0.96f, 1f);
             titleTmp.raycastTarget = false;
             titleTexts[index] = titleTmp;
 
-            // Notches row at bottom
+            // Vertical stack of 6 flat progression notches (left side of bottom area); key number to the right
+            float notchBarW = 22f;
+            float notchBarH = 4f;
+            float notchGap = 2f;
+            float stackHeight = NOTCH_COUNT * notchBarH + (NOTCH_COUNT - 1) * notchGap;
             var notchRoot = new GameObject("Notches");
             notchRoot.transform.SetParent(btnRoot.transform, false);
             var notchRootRect = notchRoot.AddComponent<RectTransform>();
-            notchRootRect.anchorMin = new Vector2(0.5f, 0f);
-            notchRootRect.anchorMax = new Vector2(0.5f, 0f);
-            notchRootRect.pivot = new Vector2(0.5f, 0f);
-            notchRootRect.anchoredPosition = new Vector2(0, 12f);
-            notchRootRect.sizeDelta = new Vector2(width - 16, 22);
+            notchRootRect.anchorMin = new Vector2(0f, 0f);
+            notchRootRect.anchorMax = new Vector2(0f, 0f);
+            notchRootRect.pivot = new Vector2(0f, 0f);
+            notchRootRect.anchoredPosition = new Vector2(pad, pad);
+            notchRootRect.sizeDelta = new Vector2(notchBarW, stackHeight);
 
-            notchImages[index] = new Image[6];
-            float notchSize = 12f;
-            float notchSpacing = 5f;
-            for (int n = 0; n < 6; n++)
+            notchImages[index] = new Image[NOTCH_COUNT];
+            for (int n = 0; n < NOTCH_COUNT; n++)
             {
                 var notchGo = new GameObject($"Notch_{n}");
                 notchGo.transform.SetParent(notchRoot.transform, false);
                 var notchRect = notchGo.AddComponent<RectTransform>();
-                notchRect.anchorMin = new Vector2(0.5f, 0.5f);
-                notchRect.anchorMax = new Vector2(0.5f, 0.5f);
-                notchRect.pivot = new Vector2(0.5f, 0.5f);
-                float totalW = 6f * notchSize + 5f * notchSpacing;
-                float nStartX = -totalW / 2f + notchSize / 2f;
-                float nx = nStartX + n * (notchSize + notchSpacing);
-                notchRect.anchoredPosition = new Vector2(nx, 0);
-                notchRect.sizeDelta = new Vector2(notchSize, notchSize);
+                notchRect.anchorMin = new Vector2(0f, 0f);
+                notchRect.anchorMax = new Vector2(0f, 0f);
+                notchRect.pivot = new Vector2(0f, 0f);
+                notchRect.anchoredPosition = new Vector2(0f, n * (notchBarH + notchGap));
+                notchRect.sizeDelta = new Vector2(notchBarW, notchBarH);
                 var notchImg = notchGo.AddComponent<Image>();
                 notchImg.color = new Color(0.28f, 0.3f, 0.4f);
                 notchImg.raycastTarget = false;
                 notchImages[index][n] = notchImg;
             }
 
+            // Key number: fills the space to the right of the notch stack (large, centered in that area)
+            float keyAreaLeft = pad + notchBarW + 6f;
+            var keyGo = new GameObject("Key");
+            keyGo.transform.SetParent(btnRoot.transform, false);
+            var keyRect = keyGo.AddComponent<RectTransform>();
+            keyRect.anchorMin = new Vector2(0f, 0f);
+            keyRect.anchorMax = new Vector2(1f, 0f);
+            keyRect.pivot = new Vector2(0.5f, 0f);
+            keyRect.anchoredPosition = new Vector2(0f, 0f);
+            keyRect.offsetMin = new Vector2(keyAreaLeft, pad);
+            keyRect.offsetMax = new Vector2(-pad, pad + stackHeight);
+            var keyTmp = keyGo.AddComponent<TextMeshProUGUI>();
+            keyTmp.text = keyNum.ToString();
+            keyTmp.fontSize = 28;
+            keyTmp.fontStyle = FontStyles.Bold;
+            keyTmp.alignment = TextAlignmentOptions.Center;
+            keyTmp.color = new Color(0.85f, 0.92f, 1f, 0.95f);
+            keyTmp.raycastTarget = false;
+            keyTexts[index] = keyTmp;
+
             upgradeButtons[index] = btn;
         }
 
-        private Sprite GetIconSprite(int index)
+        private Sprite GetIconSprite(AttributeUpgradeSystem.ShipAttributeType type)
         {
-            switch (index)
+            switch (type)
             {
-                case 0: return iconMovementSpeed;
-                case 1: return iconEnergyCapacity;
-                case 2: return iconFirePower;
-                case 3: return iconBulletSpeed;
-                case 4: return iconMaxHealth;
-                case 5: return iconHealthRegen;
-                case 6: return iconRotationSpeed;
-                case 7: return iconEnergyRegen;
+                case AttributeUpgradeSystem.ShipAttributeType.MovementSpeed: return iconMovementSpeed;
+                case AttributeUpgradeSystem.ShipAttributeType.EnergyCapacity: return iconEnergyCapacity;
+                case AttributeUpgradeSystem.ShipAttributeType.FirePower: return iconFirePower;
+                case AttributeUpgradeSystem.ShipAttributeType.BulletSpeed: return iconBulletSpeed;
+                case AttributeUpgradeSystem.ShipAttributeType.MaxHealth: return iconMaxHealth;
+                case AttributeUpgradeSystem.ShipAttributeType.HealthRegen: return iconHealthRegen;
+                case AttributeUpgradeSystem.ShipAttributeType.RotationSpeed: return iconRotationSpeed;
+                case AttributeUpgradeSystem.ShipAttributeType.EnergyRegen: return iconEnergyRegen;
                 default: return null;
             }
         }
@@ -432,17 +424,6 @@ namespace TitanOrbit.UI
             float cost = AttributeUpgradeSystem.Instance != null
                 ? AttributeUpgradeSystem.Instance.GetUpgradeCost(shipLevel)
                 : 5f * shipLevel;
-            if (costHintText != null)
-                costHintText.text = $"Cost: {cost:F0} gems per upgrade  |  Keys 1-8: abilities, 9/0: new ship";
-
-            bool canUpgradeShipLevel = UpgradeSystem.Instance != null && UpgradeSystem.Instance.CanUpgradeStarshipLevel(playerShip);
-            if (shipLevelUpgradeButton != null)
-            {
-                shipLevelUpgradeButton.interactable = canUpgradeShipLevel;
-                shipLevelUpgradeButton.gameObject.SetActive(true);
-            }
-            if (shipLevelUpgradeLabel != null)
-                shipLevelUpgradeLabel.text = canUpgradeShipLevel ? $"Upgrade Ship\n(Lv{shipLevel}→Lv{shipLevel + 1})" : $"Ship Lv{shipLevel}";
 
             for (int i = 0; i < ATTRIBUTE_BUTTON_COUNT; i++)
             {
@@ -453,9 +434,13 @@ namespace TitanOrbit.UI
                 if (upgradeButtons[i] != null)
                     upgradeButtons[i].interactable = canUpgrade;
 
+                int keyNum = i + KEY_1_TO_8;
+                if (keyTexts[i] != null)
+                    keyTexts[i].text = keyNum.ToString();
+
                 if (notchImages[i] != null)
                 {
-                    for (int n = 0; n < 6; n++)
+                    for (int n = 0; n < NOTCH_COUNT; n++)
                     {
                         if (n >= max)
                             notchImages[i][n].gameObject.SetActive(false);
@@ -469,12 +454,6 @@ namespace TitanOrbit.UI
                     }
                 }
             }
-        }
-
-        private void OnShipLevelUpgradeClicked()
-        {
-            if (playerShip == null) return;
-            HomePlanetOrbitUI.GetOrCreate().ShowShipUpgradeChoice(playerShip);
         }
 
         private void OnTopShipChoiceClicked(int index)

@@ -249,16 +249,29 @@ namespace TitanOrbit.Editor
 
             Sprite uiSprite = CreateWhiteSprite();
 
-            // Create Main Menu Panel
-            GameObject mainMenuPanel = CreatePanel(canvasObj.transform, "MainMenuPanel", new Color(0.1f, 0.1f, 0.15f, 0.95f), uiSprite);
+            // Shift Sci-Fi UI assets for main menu
+            Sprite shiftPanelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Placeholder/Placeholder HUD BG.png");
+            Sprite shiftButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Cut/Cut Frame Filled.png");
+            Sprite shiftRoundedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Rounded/Rounded Filled (300ppu).png");
+            if (shiftPanelSprite == null) shiftPanelSprite = uiSprite;
+            if (shiftButtonSprite == null) shiftButtonSprite = uiSprite;
+            if (shiftRoundedSprite == null) shiftRoundedSprite = uiSprite;
+
+            // Create Main Menu Panel (Shift Sci-Fi style)
+            GameObject mainMenuPanel = CreateShiftPanel(canvasObj.transform, "MainMenuPanel", new Color(0.06f, 0.08f, 0.14f, 0.97f), shiftPanelSprite);
             RectTransform mainMenuRect = mainMenuPanel.GetComponent<RectTransform>();
             mainMenuRect.anchorMin = Vector2.zero;
             mainMenuRect.anchorMax = Vector2.one;
             mainMenuRect.offsetMin = Vector2.zero;
             mainMenuRect.offsetMax = Vector2.zero;
 
-            // Title
+            // Title (sci-fi style)
             GameObject titleObj = CreateText(mainMenuPanel.transform, "Title", "TITAN ORBIT", 72, TextAnchor.MiddleCenter);
+            titleObj.GetComponent<TextMeshProUGUI>().color = new Color(0.4f, 0.85f, 1f, 1f);
+            titleObj.GetComponent<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
             RectTransform titleRect = titleObj.GetComponent<RectTransform>();
             titleRect.anchorMin = new Vector2(0.5f, 0.8f);
             titleRect.anchorMax = new Vector2(0.5f, 0.9f);
@@ -266,21 +279,21 @@ namespace TitanOrbit.Editor
             titleRect.anchoredPosition = Vector2.zero;
             titleRect.sizeDelta = new Vector2(800, 100);
 
-            // Buttons
-            GameObject startHostBtn = CreateButton(mainMenuPanel.transform, "StartHostButton", "Start Host", uiSprite);
-            SetRect(startHostBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, 40, 250, 60);
+            // Buttons (Shift Sci-Fi style)
+            GameObject startHostBtn = CreateShiftButton(mainMenuPanel.transform, "StartHostButton", "START HOST", shiftButtonSprite);
+            SetRect(startHostBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, 40, 280, 64);
 
-            GameObject startServerBtn = CreateButton(mainMenuPanel.transform, "StartServerButton", "Start Server", uiSprite);
-            SetRect(startServerBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -30, 250, 60);
+            GameObject startServerBtn = CreateShiftButton(mainMenuPanel.transform, "StartServerButton", "START SERVER", shiftButtonSprite);
+            SetRect(startServerBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -36, 280, 64);
 
-            GameObject startClientBtn = CreateButton(mainMenuPanel.transform, "StartClientButton", "Start Client", uiSprite);
-            SetRect(startClientBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -100, 250, 60);
+            GameObject startClientBtn = CreateShiftButton(mainMenuPanel.transform, "StartClientButton", "START CLIENT", shiftButtonSprite);
+            SetRect(startClientBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -112, 280, 64);
 
-            GameObject aiShipsToggleObj = CreateToggle(mainMenuPanel.transform, "AIShipsToggle", "AI Ships", uiSprite);
-            SetRect(aiShipsToggleObj, 0.5f, 0.5f, 0.5f, 0.5f, 0, -170, 250, 36);
+            GameObject aiShipsToggleObj = CreateShiftToggle(mainMenuPanel.transform, "AIShipsToggle", "AI SHIPS", shiftRoundedSprite, uiSprite);
+            SetRect(aiShipsToggleObj, 0.5f, 0.5f, 0.5f, 0.5f, 0, -188, 280, 40);
 
-            // Lobby Panel (hidden initially)
-            GameObject lobbyPanel = CreatePanel(canvasObj.transform, "LobbyPanel", new Color(0.1f, 0.1f, 0.15f, 0.9f), uiSprite);
+            // Lobby Panel (hidden initially, Shift style)
+            GameObject lobbyPanel = CreateShiftPanel(canvasObj.transform, "LobbyPanel", new Color(0.06f, 0.08f, 0.14f, 0.95f), shiftPanelSprite);
             RectTransform lobbyRect = lobbyPanel.GetComponent<RectTransform>();
             lobbyRect.anchorMin = Vector2.zero;
             lobbyRect.anchorMax = Vector2.one;
@@ -289,9 +302,11 @@ namespace TitanOrbit.Editor
             lobbyPanel.SetActive(false);
 
             GameObject playerCountText = CreateText(lobbyPanel.transform, "PlayerCount", "Players: 0/60", 36, TextAnchor.MiddleCenter);
+            playerCountText.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.9f, 1f, 1f);
             SetRect(playerCountText, 0.5f, 0.7f, 0.5f, 0.7f, 0, 0, 400, 50);
 
             GameObject teamStatusText = CreateText(lobbyPanel.transform, "TeamStatus", "Team A: 0/20 | Team B: 0/20 | Team C: 0/20", 24, TextAnchor.MiddleCenter);
+            teamStatusText.GetComponent<TextMeshProUGUI>().color = new Color(0.65f, 0.8f, 0.95f, 1f);
             SetRect(teamStatusText, 0.5f, 0.6f, 0.5f, 0.6f, 0, 0, 800, 40);
 
             // Main Menu component on Canvas (stays active when panel hidden)
@@ -317,9 +332,23 @@ namespace TitanOrbit.Editor
             hudRect.offsetMax = Vector2.zero;
             HUDController hudController = hudObj.AddComponent<HUDController>();
 
-            // —— Ship stats panel (top-left, same width as minimap: 384) ——
+            // —— Ship stats panel (top-left, same width as minimap: 384) ———
+            // Uses Shift Sci-Fi UI for bar styling and CleanFlatIcon for row icons
             const float minimapWidth = 384f;
-            float shipStatsHeight = 120f; // 4 bars + spacing + margin
+            float shipStatsHeight = 128f;
+            float rowHeight = 26f;
+            float rowGap = 6f;
+            float margin = 12f;
+            Sprite shiftBarSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Rounded/Rounded Filled (300ppu).png");
+            if (shiftBarSprite == null)
+                shiftBarSprite = uiSprite;
+            // Shift Sci-Fi UI icons: Armor (health), Brightness (energy), Star Filled (gems), Friends (people)
+            Sprite iconHealth = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Shift - Complete Sci-Fi UI/Textures/Icon/Armor Glow.png");
+            Sprite iconEnergy = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Shift - Complete Sci-Fi UI/Textures/Icon/Brightness.png");
+            Sprite iconGems = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Shift - Complete Sci-Fi UI/Textures/Icon/Star Filled.png");
+            Sprite iconPeople = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Shift - Complete Sci-Fi UI/Textures/Icon/Friends.png");
+
             GameObject shipStatsPanel = CreatePanel(canvasObj.transform, "ShipStatsPanel", new Color(0, 0, 0, 0), uiSprite);
             RectTransform shipStatsRect = shipStatsPanel.GetComponent<RectTransform>();
             shipStatsRect.anchorMin = new Vector2(0, 1);
@@ -327,7 +356,33 @@ namespace TitanOrbit.Editor
             shipStatsRect.pivot = new Vector2(0, 1);
             shipStatsRect.anchoredPosition = new Vector2(20, -20);
             shipStatsRect.sizeDelta = new Vector2(minimapWidth, shipStatsHeight);
-            shipStatsPanel.AddComponent<TitanOrbit.UI.ShipStatsFpsStyleHUD>();
+
+            float iconSize = 28f; // Larger so 128px icons scale down less and stay crisp
+            float barLeft = margin + iconSize + 8f;
+            float valueWidth = 36f;
+            float barRight = minimapWidth - margin - valueWidth - 4f;
+            float barW = barRight - barLeft;
+
+            (Image icon, Slider bar, TextMeshProUGUI value) Row1 = CreateShipStatRow(shipStatsPanel.transform, 0, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.2f, 0.9f, 0.45f, 1f), iconHealth);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row2 = CreateShipStatRow(shipStatsPanel.transform, 1, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.2f, 0.65f, 0.95f, 1f), iconEnergy);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row3 = CreateShipStatRow(shipStatsPanel.transform, 2, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.95f, 0.25f, 0.2f, 1f), iconGems);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row4 = CreateShipStatRow(shipStatsPanel.transform, 3, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.9f, 0.75f, 0.3f, 1f), iconPeople);
+
+            ShipStatsFpsStyleHUD shipStatsHud = shipStatsPanel.AddComponent<ShipStatsFpsStyleHUD>();
+            SerializedObject shipHudSO = new SerializedObject(shipStatsHud);
+            shipHudSO.FindProperty("iconHealth").objectReferenceValue = Row1.icon;
+            shipHudSO.FindProperty("iconEnergy").objectReferenceValue = Row2.icon;
+            shipHudSO.FindProperty("iconGems").objectReferenceValue = Row3.icon;
+            shipHudSO.FindProperty("iconPeople").objectReferenceValue = Row4.icon;
+            shipHudSO.FindProperty("barHealth").objectReferenceValue = Row1.bar;
+            shipHudSO.FindProperty("barEnergy").objectReferenceValue = Row2.bar;
+            shipHudSO.FindProperty("barGems").objectReferenceValue = Row3.bar;
+            shipHudSO.FindProperty("barPeople").objectReferenceValue = Row4.bar;
+            shipHudSO.FindProperty("valueHealth").objectReferenceValue = Row1.value;
+            shipHudSO.FindProperty("valueEnergy").objectReferenceValue = Row2.value;
+            shipHudSO.FindProperty("valueGems").objectReferenceValue = Row3.value;
+            shipHudSO.FindProperty("valuePeople").objectReferenceValue = Row4.value;
+            shipHudSO.ApplyModifiedPropertiesWithoutUndo();
 
             // —— Home planet stats panel (top-right) ——
             Color homePanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
@@ -472,10 +527,23 @@ namespace TitanOrbit.Editor
             orbitUISO.FindProperty("storeLabel").objectReferenceValue = storeBtn.GetComponentInChildren<TextMeshProUGUI>();
             orbitUISO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Starship upgrade menu (9 attribute buttons at bottom of screen)
+            // Starship upgrade menu (9 attribute buttons at bottom of screen) — Shift Sci-Fi styling + icons
             GameObject upgradeMenuObj = new GameObject("StarshipUpgradeMenu");
             upgradeMenuObj.transform.SetParent(canvasObj.transform, false);
-            upgradeMenuObj.AddComponent<StarshipUpgradeMenu>();
+            StarshipUpgradeMenu upgradeMenu = upgradeMenuObj.AddComponent<StarshipUpgradeMenu>();
+            SerializedObject upgradeMenuSO = new SerializedObject(upgradeMenu);
+            string shiftRoot = "Assets/Shift - Complete Sci-Fi UI/Textures";
+            upgradeMenuSO.FindProperty("panelSprite").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Placeholder/Placeholder HUD BG.png");
+            upgradeMenuSO.FindProperty("buttonSprite").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Border/Cut/Cut Frame Filled.png");
+            upgradeMenuSO.FindProperty("iconMovementSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Play.png");
+            upgradeMenuSO.FindProperty("iconEnergyCapacity").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Brightness.png");
+            upgradeMenuSO.FindProperty("iconFirePower").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Star Filled.png");
+            upgradeMenuSO.FindProperty("iconBulletSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Arrow Right.png");
+            upgradeMenuSO.FindProperty("iconMaxHealth").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Armor Glow.png");
+            upgradeMenuSO.FindProperty("iconHealthRegen").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Refresh.png");
+            upgradeMenuSO.FindProperty("iconRotationSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Swap.png");
+            upgradeMenuSO.FindProperty("iconEnergyRegen").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Gameplay.png");
+            upgradeMenuSO.ApplyModifiedPropertiesWithoutUndo();
 
             return canvasObj;
         }
@@ -507,6 +575,105 @@ namespace TitanOrbit.Editor
             img.color = color;
             img.sprite = sprite;
             return obj;
+        }
+
+        /// <summary>Shift Sci-Fi UI style panel using HUD/panel sprite (sliced for borders if sprite supports it).</summary>
+        private static GameObject CreateShiftPanel(Transform parent, string name, Color color, Sprite sprite)
+        {
+            GameObject obj = new GameObject(name);
+            obj.transform.SetParent(parent, false);
+            Image img = obj.AddComponent<Image>();
+            img.color = color;
+            img.sprite = sprite;
+            img.type = sprite != null && sprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+            return obj;
+        }
+
+        /// <summary>Shift Sci-Fi UI style button: Cut Frame / rounded sprite with cyan accent colors.</summary>
+        private static GameObject CreateShiftButton(Transform parent, string name, string label, Sprite sprite)
+        {
+            GameObject btnObj = new GameObject(name);
+            btnObj.transform.SetParent(parent, false);
+            Image img = btnObj.AddComponent<Image>();
+            img.color = new Color(0.25f, 0.55f, 0.9f, 0.95f);
+            img.sprite = sprite;
+            img.type = sprite != null && sprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+
+            GameObject textObj = new GameObject("Text");
+            textObj.transform.SetParent(btnObj.transform, false);
+            TextMeshProUGUI tmp = textObj.AddComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 22;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = new Color(1f, 1f, 1f, 0.95f);
+            RectTransform textRect = textObj.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(4, 4);
+            textRect.offsetMax = new Vector2(-4, -4);
+
+            Button btn = btnObj.AddComponent<Button>();
+            ColorBlock colors = btn.colors;
+            colors.normalColor = new Color(0.25f, 0.55f, 0.9f, 0.95f);
+            colors.highlightedColor = new Color(0.4f, 0.7f, 1f, 1f);
+            colors.pressedColor = new Color(0.18f, 0.45f, 0.8f, 1f);
+            colors.selectedColor = new Color(0.3f, 0.6f, 0.95f, 1f);
+            colors.disabledColor = new Color(0.2f, 0.25f, 0.35f, 0.7f);
+            btn.colors = colors;
+
+            return btnObj;
+        }
+
+        /// <summary>Shift-style toggle: rounded background + checkmark, label to the right.</summary>
+        private static GameObject CreateShiftToggle(Transform parent, string name, string label, Sprite bgSprite, Sprite checkSprite)
+        {
+            GameObject toggleObj = new GameObject(name);
+            toggleObj.transform.SetParent(parent, false);
+
+            GameObject backgroundObj = new GameObject("Background");
+            backgroundObj.transform.SetParent(toggleObj.transform, false);
+            Image bgImg = backgroundObj.AddComponent<Image>();
+            bgImg.color = new Color(0.15f, 0.2f, 0.3f, 0.95f);
+            bgImg.sprite = bgSprite;
+            bgImg.type = bgSprite != null && bgSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+            RectTransform bgRect = backgroundObj.GetComponent<RectTransform>();
+            bgRect.anchorMin = new Vector2(0, 0.5f);
+            bgRect.anchorMax = new Vector2(0, 0.5f);
+            bgRect.pivot = new Vector2(0, 0.5f);
+            bgRect.anchoredPosition = new Vector2(20, 0);
+            bgRect.sizeDelta = new Vector2(40, 40);
+
+            GameObject checkmarkObj = new GameObject("Checkmark");
+            checkmarkObj.transform.SetParent(backgroundObj.transform, false);
+            Image checkImg = checkmarkObj.AddComponent<Image>();
+            checkImg.color = new Color(0.35f, 0.85f, 0.5f, 1f);
+            checkImg.sprite = checkSprite;
+            RectTransform checkRect = checkmarkObj.GetComponent<RectTransform>();
+            checkRect.anchorMin = new Vector2(0.2f, 0.2f);
+            checkRect.anchorMax = new Vector2(0.8f, 0.8f);
+            checkRect.offsetMin = Vector2.zero;
+            checkRect.offsetMax = Vector2.zero;
+
+            GameObject labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(toggleObj.transform, false);
+            TextMeshProUGUI labelTmp = labelObj.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 20;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.color = new Color(0.85f, 0.9f, 1f, 1f);
+            RectTransform labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0, 0);
+            labelRect.anchorMax = new Vector2(1, 1);
+            labelRect.offsetMin = new Vector2(52, 0);
+            labelRect.offsetMax = new Vector2(-8, 0);
+
+            Toggle toggle = toggleObj.AddComponent<Toggle>();
+            toggle.targetGraphic = bgImg;
+            toggle.graphic = checkImg;
+            toggle.isOn = true;
+
+            return toggleObj;
         }
 
         private static GameObject CreateText(Transform parent, string name, string content, int fontSize, TextAnchor anchor)
@@ -640,7 +807,56 @@ namespace TitanOrbit.Editor
             return CreateProgressBar(parent, "HealthBar", uiSprite, new Color(0.35f, 0.85f, 0.4f, 1f));
         }
 
-        private static GameObject CreateProgressBar(Transform parent, string name, Sprite uiSprite, Color fillColor)
+        /// <summary>Creates one ship stat row: icon (CleanFlat) + bar (Shift sprite) + value text. Returns (icon Image, Slider, value Text).</summary>
+        private static (Image icon, Slider bar, TextMeshProUGUI value) CreateShipStatRow(Transform parent, int rowIndex, float margin, float rowHeight, float rowGap, float barLeft, float barWidth, float iconSize, Sprite barSprite, Color fillColor, Sprite iconSprite)
+        {
+            float yTop = -margin - rowIndex * (rowHeight + rowGap);
+            GameObject rowObj = new GameObject("Row" + rowIndex);
+            rowObj.transform.SetParent(parent, false);
+            RectTransform rowRect = rowObj.AddComponent<RectTransform>();
+            rowRect.anchorMin = new Vector2(0, 1);
+            rowRect.anchorMax = new Vector2(1, 1);
+            rowRect.pivot = new Vector2(0, 1);
+            rowRect.anchoredPosition = new Vector2(0, yTop);
+            rowRect.sizeDelta = new Vector2(0, rowHeight);
+
+            GameObject iconObj = new GameObject("Icon");
+            iconObj.transform.SetParent(rowObj.transform, false);
+            Image iconImg = iconObj.AddComponent<Image>();
+            iconImg.sprite = iconSprite;
+            iconImg.color = Color.white;
+            iconImg.preserveAspect = true; // Keep icons crisp, no stretch
+            iconImg.raycastTarget = false;
+            if (iconSprite == null) iconImg.enabled = false;
+            RectTransform iconRect = iconObj.GetComponent<RectTransform>();
+            iconRect.anchorMin = new Vector2(0, 0.5f);
+            iconRect.anchorMax = new Vector2(0, 0.5f);
+            iconRect.pivot = new Vector2(0, 0.5f);
+            iconRect.anchoredPosition = new Vector2(margin, 0);
+            iconRect.sizeDelta = new Vector2(iconSize, iconSize);
+
+            GameObject barObj = CreateProgressBar(rowObj.transform, "Bar", barSprite, fillColor, useSliced: true);
+            RectTransform barRect = barObj.GetComponent<RectTransform>();
+            barRect.anchorMin = new Vector2(0, 0);
+            barRect.anchorMax = new Vector2(1, 1);
+            barRect.offsetMin = new Vector2(barLeft, 2);
+            barRect.offsetMax = new Vector2(-40f, -2);
+
+            GameObject valueObj = CreateText(rowObj.transform, "Value", "0", 16, TextAnchor.MiddleLeft);
+            valueObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.MidlineRight;
+            valueObj.GetComponent<TextMeshProUGUI>().color = new Color(1f, 1f, 1f, 0.95f);
+            RectTransform valueRect = valueObj.GetComponent<RectTransform>();
+            valueRect.anchorMin = new Vector2(1, 0.5f);
+            valueRect.anchorMax = new Vector2(1, 0.5f);
+            valueRect.pivot = new Vector2(1, 0.5f);
+            valueRect.anchoredPosition = new Vector2(-4, 0);
+            valueRect.sizeDelta = new Vector2(34, rowHeight - 2);
+
+            Slider bar = barObj.GetComponent<Slider>();
+            return (iconImg, bar, valueObj.GetComponent<TextMeshProUGUI>());
+        }
+
+        private static GameObject CreateProgressBar(Transform parent, string name, Sprite uiSprite, Color fillColor, bool useSliced = false)
         {
             GameObject sliderObj = new GameObject(name);
             sliderObj.transform.SetParent(parent, false);
@@ -655,6 +871,7 @@ namespace TitanOrbit.Editor
             Image bgImg = bg.AddComponent<Image>();
             bgImg.color = new Color(0.15f, 0.15f, 0.2f, 0.95f);
             bgImg.sprite = uiSprite;
+            if (useSliced) bgImg.type = Image.Type.Sliced; // Prevents rounded/sprite borders from stretching
             RectTransform bgRect = bg.GetComponent<RectTransform>();
             bgRect.anchorMin = Vector2.zero;
             bgRect.anchorMax = Vector2.one;
@@ -674,6 +891,7 @@ namespace TitanOrbit.Editor
             Image fillImg = fill.AddComponent<Image>();
             fillImg.color = fillColor;
             fillImg.sprite = uiSprite;
+            if (useSliced) fillImg.type = Image.Type.Sliced;
             RectTransform fillRect = fill.GetComponent<RectTransform>();
             fillRect.anchorMin = Vector2.zero;
             fillRect.anchorMax = new Vector2(1, 1);
