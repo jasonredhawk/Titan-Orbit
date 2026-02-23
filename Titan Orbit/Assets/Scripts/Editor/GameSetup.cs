@@ -1592,6 +1592,7 @@ namespace TitanOrbit.Editor
             mf.sharedMesh = crystalMesh;
             MeshRenderer mr = gem.AddComponent<MeshRenderer>();
             mr.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.85f, 0.15f, 0.2f));
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // Avoid weird overlapping shadows when many gems are close
 
             SphereCollider col = gem.AddComponent<SphereCollider>();
             col.isTrigger = true;
@@ -1614,26 +1615,24 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
-        /// Creates an irregular crystal mesh with flat shading: random-ish facet count and vertex positions for a rough, natural look.
-        /// Uses a fixed seed so the saved mesh is deterministic.
+        /// Creates a crystal gem mesh: two points (top and bottom) and one waist ring with random facets. Flat shading.
         /// </summary>
         private static Mesh CreateCrystalMesh()
         {
             Random.InitState(42);
             Mesh mesh = new Mesh();
             mesh.name = "GemCrystal";
-            float baseH = 0.55f;
             float baseR = 0.35f;
-            int numSides = Random.Range(5, 10);
-            float topH = baseH * Random.Range(0.92f, 1.08f);
-            float botH = baseH * Random.Range(0.92f, 1.08f);
-            Vector3 top = new Vector3(0, topH, 0);
-            Vector3 bot = new Vector3(0, -botH, 0);
+            int numSides = Random.Range(6, 11);
+            float topDist = baseR * Random.Range(0.78f, 1.22f);
+            float botDist = baseR * Random.Range(0.78f, 1.22f);
+            Vector3 top = new Vector3(0, topDist, 0);
+            Vector3 bot = new Vector3(0, -botDist, 0);
             Vector3[] waist = new Vector3[numSides];
             for (int i = 0; i < numSides; i++)
             {
-                float angle = (i / (float)numSides) * 2f * Mathf.PI + Random.Range(-0.2f, 0.2f);
-                float r = baseR * Random.Range(0.7f, 1.2f);
+                float angle = (i / (float)numSides) * 2f * Mathf.PI + Random.Range(-0.12f, 0.12f);
+                float r = baseR * Random.Range(0.88f, 1.12f);
                 waist[i] = new Vector3(r * Mathf.Cos(angle), 0f, r * Mathf.Sin(angle));
             }
 

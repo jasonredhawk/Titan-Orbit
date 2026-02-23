@@ -36,6 +36,9 @@ namespace TitanOrbit.Entities
         {
             rb = GetComponent<Rigidbody>();
             effectivePickupRadius = pickupRadius;
+            var renderer = GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // Avoid overlapping shadow artifacts when gems cluster
         }
 
         public override void OnNetworkSpawn()
