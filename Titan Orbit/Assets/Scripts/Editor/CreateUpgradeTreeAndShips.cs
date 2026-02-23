@@ -14,6 +14,7 @@ namespace TitanOrbit.Editor
     public static class CreateUpgradeTreeAndShips
     {
         private const string SHIPS_DATA_FOLDER = "Assets/Data/Ships";
+        private const string WEAPON_CONFIGS_FOLDER = "Assets/Data/WeaponConfigs";
         private const string PREFABS_SHIPS_FOLDER = "Assets/Prefabs/Ships";
         private const string UPGRADE_TREE_PATH = "Assets/Data/UpgradeTree.asset";
 
@@ -77,6 +78,8 @@ namespace TitanOrbit.Editor
                 AssetDatabase.CreateFolder("Assets", "Data");
             if (!AssetDatabase.IsValidFolder(SHIPS_DATA_FOLDER))
                 AssetDatabase.CreateFolder("Assets/Data", "Ships");
+            if (!AssetDatabase.IsValidFolder(WEAPON_CONFIGS_FOLDER))
+                AssetDatabase.CreateFolder("Assets/Data", "WeaponConfigs");
             if (!AssetDatabase.IsValidFolder("Assets/Prefabs"))
                 return;
             if (!AssetDatabase.IsValidFolder(PREFABS_SHIPS_FOLDER))
@@ -94,6 +97,7 @@ namespace TitanOrbit.Editor
             data.focusType = ShipFocusType.Fighter;
             data.shipName = "Starter";
             SetBaseStats(data, 1, 0f);
+            data.weaponConfig = GetOrCreateWeaponConfig(1, 0);
             AssetDatabase.CreateAsset(data, path);
         }
 
@@ -114,6 +118,7 @@ namespace TitanOrbit.Editor
                     data.focusType = blend < 0.5f ? ShipFocusType.Fighter : ShipFocusType.Miner;
                     data.shipName = level == 7 ? $"MEGA {bi + 1}" : $"{level}.{bi + 1}";
                     SetBaseStats(data, level, blend);
+                    data.weaponConfig = GetOrCreateWeaponConfig(level, bi);
                     string assetPath = $"{SHIPS_DATA_FOLDER}/ShipData_Level{level}_{bi}.asset";
                     AssetDatabase.CreateAsset(data, assetPath);
                     list.Add(data);
@@ -126,20 +131,11 @@ namespace TitanOrbit.Editor
         private static void SetBaseStats(ShipData data, int level, float fighterToMinerBlend)
         {
             float scale = 0.9f + level * 0.08f;
-            float fire = Mathf.Lerp(14f, 8f, fighterToMinerBlend) + (level - 1) * 2f;
             float mine = Mathf.Lerp(10f, 22f, fighterToMinerBlend) + (level - 1) * 3f;
             float health = Mathf.Lerp(130f, 95f, fighterToMinerBlend) + (level - 1) * 20f;
             float cap = Mathf.Lerp(110f, 180f, fighterToMinerBlend) + (level - 1) * 35f;
-            if (level == 7) { fire *= 1.8f; mine *= 1.5f; health *= 2f; cap *= 1.8f; scale *= 1.2f; }
+            if (level == 7) { mine *= 1.5f; health *= 2f; cap *= 1.8f; scale *= 1.2f; }
             data.baseMovementSpeed = 10f * scale;
-            // Fire rate: unique per ship (e.g. fast 5/s spray vs slow 1/s heavy), scales with level so higher tiers are stronger
-            float fireRateIdentity = Mathf.Lerp(4.5f, 0.75f, fighterToMinerBlend);
-            float fireRateLevelScale = 0.85f + level * 0.1f;
-            data.baseFireRate = fireRateIdentity * fireRateLevelScale;
-            data.baseFirePower = fire;
-            data.baseBulletsPerShot = level <= 2 ? 1 : Mathf.Clamp(1 + (level + data.branchIndex) % 4, 1, 4);
-            data.bulletVisualStyleIndex = (level + data.branchIndex) % 4;
-            data.baseBulletSpeed = Mathf.Lerp(24f, 18f, fighterToMinerBlend);
             data.baseMaxHealth = health;
             data.baseHealthRegenRate = 1.2f;
             data.baseRotationSpeed = 180f;
@@ -160,6 +156,147 @@ namespace TitanOrbit.Editor
             float s = 0.5f + 0.3f * fighterToMinerBlend;
             float v = 0.75f + 0.2f * (1f - Mathf.Abs(fighterToMinerBlend - 0.5f) * 2f);
             return Color.HSVToRGB(h, s, v);
+        }
+
+        /// <summary>Load existing or create preset WeaponConfig for this ship (level, branch).</summary>
+        private static WeaponConfig GetOrCreateWeaponConfig(int level, int branchIndex)
+        {
+            string assetPath = $"{WEAPON_CONFIGS_FOLDER}/WeaponConfig_Level{level}_{branchIndex}.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<WeaponConfig>(assetPath);
+            if (existing != null) return existing;
+
+            var config = ScriptableObject.CreateInstance<WeaponConfig>();
+            config.displayName = level == 1 ? "Starter" : (level == 7 ? $"MEGA {branchIndex + 1}" : $"{level}.{branchIndex + 1}");
+            config.cannons = BuildPresetCannons(level, branchIndex);
+            AssetDatabase.CreateAsset(config, assetPath);
+            return config;
+        }
+
+        private static List<CannonConfig> BuildPresetCannons(int level, int branchIndex)
+        {
+            var list = new List<CannonConfig>();
+            float levelScale = 0.9f + level * 0.08f;
+            if (level == 7) levelScale *= 1.1f;
+
+            if (level == 1)
+            {
+                list.Add(new CannonConfig
+                {
+                    fireRate = 2.5f,
+                    energyCostPerShot = 2f,
+                    damagePerBullet = 8f,
+                    directionAngle = 0f,
+                    spreadType = CannonSpreadType.Straight,
+                    bulletScale = 0.6f,
+                    bulletSpeed = 20f
+                });
+                return list;
+            }
+
+            if (level == 2)
+            {
+                if (branchIndex == 0)
+                {
+                    list.Add(new CannonConfig
+                    {
+                        fireRate = 2.2f,
+                        energyCostPerShot = 2.5f,
+                        damagePerBullet = 9f,
+                        directionAngle = 0f,
+                        spreadType = CannonSpreadType.FixedSpread,
+                        spreadAngleMin = -12f,
+                        spreadAngleMax = 12f,
+                        spreadProjectileCount = 3,
+                        bulletScale = 0.65f,
+                        bulletSpeed = 22f
+                    });
+                }
+                else
+                {
+                    list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 2.2f, damagePerBullet = 8f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.6f, localOffsetX = -0.15f, bulletSpeed = 21f });
+                    list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 2.2f, damagePerBullet = 8f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.6f, localOffsetX = 0.15f, bulletSpeed = 21f });
+                }
+                return list;
+            }
+
+            if (level == 3)
+            {
+                if (branchIndex == 0)
+                {
+                    list.Add(new CannonConfig { fireRate = 3f, energyCostPerShot = 2f, damagePerBullet = 7f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.55f, localOffsetX = -0.2f, bulletSpeed = 23f });
+                    list.Add(new CannonConfig { fireRate = 3f, energyCostPerShot = 2f, damagePerBullet = 7f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.55f, localOffsetX = 0.2f, bulletSpeed = 23f });
+                    list.Add(new CannonConfig { fireRate = 1.2f, energyCostPerShot = 12f, damagePerBullet = 22f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 1.4f, bulletSpeed = 20f });
+                }
+                else if (branchIndex == 1)
+                {
+                    list.Add(new CannonConfig
+                    {
+                        fireRate = 6f,
+                        energyCostPerShot = 1.5f,
+                        damagePerBullet = 4f,
+                        directionAngle = 0f,
+                        spreadType = CannonSpreadType.RandomSpread,
+                        spreadAngleMin = -15f,
+                        spreadAngleMax = 15f,
+                        bulletScale = 0.5f,
+                        bulletSpeed = 24f
+                    });
+                }
+                else if (branchIndex == 2)
+                {
+                    list.Add(new CannonConfig { fireRate = 2.8f, energyCostPerShot = 2.5f, damagePerBullet = 10f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.7f, localOffsetX = -0.18f, bulletSpeed = 22f });
+                    list.Add(new CannonConfig { fireRate = 2.8f, energyCostPerShot = 2.5f, damagePerBullet = 10f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 0.7f, localOffsetX = 0.18f, bulletSpeed = 22f });
+                }
+                else
+                {
+                    list.Add(new CannonConfig { fireRate = 0.7f, energyCostPerShot = 25f, damagePerBullet = 35f, directionAngle = 0f, spreadType = CannonSpreadType.Straight, bulletScale = 1.8f, bulletSpeed = 18f });
+                }
+                return list;
+            }
+
+            if (level == 4)
+            {
+                int bc = branchIndex % 4;
+                if (bc == 0) { list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 3f, damagePerBullet = 12f, spreadType = CannonSpreadType.FixedSpread, spreadAngleMin = -8f, spreadAngleMax = 8f, spreadProjectileCount = 3, bulletScale = 0.75f, bulletSpeed = 23f }); }
+                else if (bc == 1) { list.Add(new CannonConfig { fireRate = 2.2f, energyCostPerShot = 2.8f, damagePerBullet = 10f, localOffsetX = -0.2f, bulletScale = 0.7f, bulletSpeed = 22f }); list.Add(new CannonConfig { fireRate = 2.2f, energyCostPerShot = 2.8f, damagePerBullet = 10f, localOffsetX = 0.2f, bulletScale = 0.7f, bulletSpeed = 22f }); }
+                else if (bc == 2) { list.Add(new CannonConfig { fireRate = 5f, energyCostPerShot = 2f, damagePerBullet = 5f, spreadType = CannonSpreadType.RandomSpread, spreadAngleMin = -10f, spreadAngleMax = 10f, bulletScale = 0.55f, bulletSpeed = 25f }); }
+                else { list.Add(new CannonConfig { fireRate = 1f, energyCostPerShot = 15f, damagePerBullet = 28f, bulletScale = 1.5f, bulletSpeed = 19f }); }
+                return list;
+            }
+
+            if (level == 5)
+            {
+                int bc = branchIndex % 5;
+                if (bc <= 1) { list.Add(new CannonConfig { fireRate = 2.8f, energyCostPerShot = 3f, damagePerBullet = 13f, localOffsetX = -0.22f, bulletScale = 0.8f, bulletSpeed = 23f }); list.Add(new CannonConfig { fireRate = 2.8f, energyCostPerShot = 3f, damagePerBullet = 13f, localOffsetX = 0.22f, bulletScale = 0.8f, bulletSpeed = 23f }); }
+                else if (bc == 2) { list.Add(new CannonConfig { fireRate = 2f, energyCostPerShot = 4f, damagePerBullet = 14f, spreadType = CannonSpreadType.FixedSpread, spreadAngleMin = -10f, spreadAngleMax = 10f, spreadProjectileCount = 3, bulletScale = 0.8f, bulletSpeed = 22f }); }
+                else if (bc == 3) { list.Add(new CannonConfig { fireRate = 6f, energyCostPerShot = 2f, damagePerBullet = 6f, spreadType = CannonSpreadType.RandomSpread, spreadAngleMin = -12f, spreadAngleMax = 12f, bulletScale = 0.6f, bulletSpeed = 24f }); }
+                else { list.Add(new CannonConfig { fireRate = 1.2f, energyCostPerShot = 18f, damagePerBullet = 32f, bulletScale = 1.6f, bulletSpeed = 20f }); }
+                return list;
+            }
+
+            if (level == 6)
+            {
+                int bc = branchIndex % 6;
+                if (bc == 0 || bc == 1) { list.Add(new CannonConfig { fireRate = 3f, energyCostPerShot = 3.2f, damagePerBullet = 14f, localOffsetX = -0.25f, bulletScale = 0.85f, bulletSpeed = 24f }); list.Add(new CannonConfig { fireRate = 3f, energyCostPerShot = 3.2f, damagePerBullet = 14f, localOffsetX = 0.25f, bulletScale = 0.85f, bulletSpeed = 24f }); }
+                else if (bc == 2) { list.Add(new CannonConfig { fireRate = 2.2f, energyCostPerShot = 4f, damagePerBullet = 15f, spreadType = CannonSpreadType.FixedSpread, spreadAngleMin = -10f, spreadAngleMax = 10f, spreadProjectileCount = 4, bulletScale = 0.8f, bulletSpeed = 23f }); }
+                else if (bc == 3) { list.Add(new CannonConfig { fireRate = 6.5f, energyCostPerShot = 2.2f, damagePerBullet = 6f, spreadType = CannonSpreadType.RandomSpread, spreadAngleMin = -14f, spreadAngleMax = 14f, bulletScale = 0.6f, bulletSpeed = 25f }); }
+                else if (bc == 4) { list.Add(new CannonConfig { fireRate = 1.5f, energyCostPerShot = 20f, damagePerBullet = 38f, bulletScale = 1.7f, bulletSpeed = 21f }); }
+                else { list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 3.5f, damagePerBullet = 12f, localOffsetX = -0.3f, bulletScale = 0.75f, bulletSpeed = 23f }); list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 3.5f, damagePerBullet = 12f, localOffsetX = 0.3f, bulletScale = 0.75f, bulletSpeed = 23f }); }
+                return list;
+            }
+
+            if (level == 7)
+            {
+                int bc = branchIndex % 4;
+                if (bc == 0) { list.Add(new CannonConfig { fireRate = 3.5f, energyCostPerShot = 4f, damagePerBullet = 16f, localOffsetX = -0.35f, bulletScale = 1f, bulletSpeed = 25f }); list.Add(new CannonConfig { fireRate = 3.5f, energyCostPerShot = 4f, damagePerBullet = 16f, localOffsetX = 0.35f, bulletScale = 1f, bulletSpeed = 25f }); list.Add(new CannonConfig { fireRate = 1.5f, energyCostPerShot = 14f, damagePerBullet = 28f, bulletScale = 1.3f, bulletSpeed = 22f }); }
+                else if (bc == 1) { list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 5f, damagePerBullet = 18f, spreadType = CannonSpreadType.FixedSpread, spreadAngleMin = -15f, spreadAngleMax = 15f, spreadProjectileCount = 4, bulletScale = 0.9f, bulletSpeed = 24f }); }
+                else if (bc == 2) { list.Add(new CannonConfig { fireRate = 7f, energyCostPerShot = 2.5f, damagePerBullet = 8f, spreadType = CannonSpreadType.RandomSpread, spreadAngleMin = -18f, spreadAngleMax = 18f, bulletScale = 0.7f, bulletSpeed = 26f }); }
+                else { list.Add(new CannonConfig { fireRate = 1f, energyCostPerShot = 35f, damagePerBullet = 55f, bulletScale = 2f, bulletSpeed = 20f }); }
+                return list;
+            }
+
+            list.Add(new CannonConfig { fireRate = 2.5f, energyCostPerShot = 3f, damagePerBullet = 10f, bulletScale = 0.7f, bulletSpeed = 22f });
+            return list;
         }
 
         private static UpgradeTree CreateOrLoadUpgradeTree(List<List<ShipData>> shipDataByLevel)

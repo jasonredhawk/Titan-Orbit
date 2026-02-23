@@ -30,15 +30,40 @@ namespace TitanOrbit.Entities
         [SerializeField] private float orbitRadiusPullStrength = 2f; // Gentle push in/out only when outside zone band
 
         [Header("Combat")]
-        [SerializeField] private float fireRate = 1f;
-        [SerializeField] private float firePower = 10f;
-        [SerializeField] private float bulletSpeed = 20f;
         [SerializeField] private Transform firePoint;
-        [Tooltip("From ShipData: 1–4 bullets per shot; more bullets = less damage per bullet.")]
-        private int bulletsPerShot = 1;
-        [Tooltip("From ShipData: index into Bullet visual options (0=Digital, 1=Ice trail, 2=Fire, 3=Plasma).")]
-        private int bulletVisualStyleIndex = 0;
-        private const float BULLET_SPREAD_DISTANCE = 0.35f;
+        private WeaponConfig weaponConfig;
+        private float[] cannonLastFireTime;
+
+        private static WeaponConfig defaultWeaponConfig;
+
+        private static WeaponConfig GetDefaultWeaponConfig()
+        {
+            if (defaultWeaponConfig != null) return defaultWeaponConfig;
+            defaultWeaponConfig = ScriptableObject.CreateInstance<WeaponConfig>();
+            defaultWeaponConfig.displayName = "Default";
+            defaultWeaponConfig.cannons = new System.Collections.Generic.List<CannonConfig>
+            {
+                new CannonConfig { fireRate = 2.5f, energyCostPerShot = 2f, damagePerBullet = 8f, bulletScale = 0.6f, bulletSpeed = 20f }
+            };
+            return defaultWeaponConfig;
+        }
+
+        /// <summary>Always returns a valid config (from ship data or default). Use this instead of weaponConfig so client can fire without sync.</summary>
+        private WeaponConfig EffectiveWeaponConfig =>
+            (weaponConfig != null && weaponConfig.cannons != null && weaponConfig.cannons.Count > 0)
+                ? weaponConfig
+                : GetDefaultWeaponConfig();
+
+        private void EnsureCannonLastFireTime()
+        {
+            var wc = EffectiveWeaponConfig;
+            int n = wc.cannons.Count;
+            if (cannonLastFireTime == null || cannonLastFireTime.Length != n)
+            {
+                cannonLastFireTime = new float[n];
+                for (int i = 0; i < n; i++) cannonLastFireTime[i] = -999f;
+            }
+        }
 
         [Header("Health")]
         [SerializeField] private float maxHealth = 100f;
@@ -90,13 +115,12 @@ namespace TitanOrbit.Entities
 
         private float EffectiveMovementSpeed => movementSpeed * (1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveEnergyCapacity => energyCapacity * (1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float EffectiveFirePower => firePower * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float EffectiveBulletSpeed => bulletSpeed * (1f + attrBulletSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
+        private float DamageMultiplier => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+        private float SpeedMultiplier => 1f + attrBulletSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
         private float EffectiveHealthRegen => healthRegenRate * (1f + attrHealthRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveRotationSpeed => rotationSpeed * (1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveEnergyRegen => energyRegenRate * (1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
 
-        private float lastFireTime = 0f;
         private float lastRocketTime = -999f;
         private float lastMineTime = -999f;
         private const float ROCKET_COOLDOWN = 0.6f;
@@ -167,6 +191,10 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
+            if (shipData != null && weaponConfig == null)
+                SetShipData(shipData);
+
             // Ensure Y position is locked to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
@@ -342,13 +370,13 @@ namespace TitanOrbit.Entities
 
             // Shooting input - pass fire position and direction from client (Vector3 avoids Quaternion sync issues)
             // Don't fire when clicking on UI (e.g. orbit menu buttons) or when dead
-            if (inputHandler.ShootPressed && CanFire() && firePoint != null && !IsPointerOverUI())
+            if (inputHandler.ShootPressed && CanAnyCannonFire() && firePoint != null && !IsPointerOverUI())
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
                 if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
                 else dir.Normalize();
-                FireServerRpc(firePoint.position, dir);
+                FireServerRpc(transform.position, dir);
             }
 
             // Rocket: Q key (or FireRocket if bound). Prefer large if available.
@@ -492,51 +520,72 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private bool CanFire()
+        private bool CanAnyCannonFire()
         {
             if (isDead.Value) return false;
-            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
-            return Time.time - lastFireTime >= 1f / fireRate
-                && currentEnergy.Value >= energyNeeded;
+            var wc = EffectiveWeaponConfig;
+            EnsureCannonLastFireTime();
+            for (int i = 0; i < wc.cannons.Count; i++)
+            {
+                var c = wc.cannons[i];
+                if (currentEnergy.Value >= c.energyCostPerShot &&
+                    (i >= cannonLastFireTime.Length || Time.time - cannonLastFireTime[i] >= 1f / c.fireRate))
+                    return true;
+            }
+            return false;
         }
 
         [ServerRpc]
-        private void FireServerRpc(Vector3 firePosition, Vector3 fireDirection)
+        private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
         {
-            if (!CanFire()) return;
+            if (CombatSystem.Instance == null) return;
+            var wc = EffectiveWeaponConfig;
+            EnsureCannonLastFireTime();
+            Vector3 forward = shipForward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
+            else forward.Normalize();
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            Vector3 fireOrigin = firePoint != null ? firePoint.position : shipPosition + forward * 2f;
 
-            lastFireTime = Time.time;
-            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
-            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - energyNeeded);
-
-            Vector3 dir = fireDirection;
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
-            else dir.Normalize();
-            Vector3 right = Vector3.Cross(Vector3.up, dir);
-
-            float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
-            float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
-            byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
-
-            if (Systems.CombatSystem.Instance != null)
+            for (int i = 0; i < wc.cannons.Count; i++)
             {
-                for (int i = 0; i < bulletsPerShot; i++)
+                var c = wc.cannons[i];
+                if (currentEnergy.Value < c.energyCostPerShot) continue;
+                if (i < cannonLastFireTime.Length && Time.time - cannonLastFireTime[i] < 1f / c.fireRate) continue;
+
+                currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
+                if (i < cannonLastFireTime.Length) cannonLastFireTime[i] = Time.time;
+
+                float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
+                Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
+                int numShots = 1;
+                float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
+                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
                 {
-                    float t = bulletsPerShot > 1 ? (i - (bulletsPerShot - 1) * 0.5f) : 0f;
-                    Vector3 offset = right * (t * BULLET_SPREAD_DISTANCE);
-                    Systems.CombatSystem.Instance.SpawnBulletServerRpc(
-                        firePosition + offset,
-                        dir,
-                        EffectiveBulletSpeed,
-                        damagePerBullet,
-                        shipTeam.Value,
-                        visualScaleMultiplier,
-                        styleIndex
-                    );
+                    numShots = Mathf.Max(1, c.spreadProjectileCount);
+                }
+                for (int s = 0; s < numShots; s++)
+                {
+                    Vector3 dir = baseDir;
+                    if (c.spreadType == CannonSpreadType.RandomSpread)
+                    {
+                        float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
+                        dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                    }
+                    else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                    {
+                        float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
+                        float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
+                        dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                    }
+                    Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
+                    float damage = c.damagePerBullet * DamageMultiplier;
+                    float speed = c.bulletSpeed * SpeedMultiplier;
+                    float scale = c.bulletScale * (0.25f + damage / 80f);
+                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale);
                 }
             }
-
             FireClientRpc();
         }
 
@@ -546,37 +595,16 @@ namespace TitanOrbit.Entities
             // Visual/audio feedback for firing
         }
 
-        /// <summary>Server-only: AI ships call this to fire at a target. Uses firePoint if set.</summary>
+        /// <summary>Server-only: AI ships call this to fire at a target.</summary>
         public void FireAtTarget(Vector3 direction)
         {
             if (!IsServer) return;
             if (isDead.Value) return;
-            if (!CanFire()) return;
+            if (!CanAnyCannonFire()) return;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
             else direction.Normalize();
-            Vector3 firePos = firePoint != null ? firePoint.position : transform.position + direction * 2f;
-            lastFireTime = Time.time;
-            float energyNeeded = ENERGY_PER_SHOT * bulletsPerShot;
-            currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - energyNeeded);
-
-            Vector3 right = Vector3.Cross(Vector3.up, direction);
-            float damagePerBullet = EffectiveFirePower / Mathf.Sqrt(bulletsPerShot);
-            float visualScaleMultiplier = 0.25f + EffectiveFirePower / 80f;
-            byte styleIndex = (byte)Mathf.Clamp(bulletVisualStyleIndex, 0, 255);
-
-            if (CombatSystem.Instance != null)
-            {
-                for (int i = 0; i < bulletsPerShot; i++)
-                {
-                    float t = bulletsPerShot > 1 ? (i - (bulletsPerShot - 1) * 0.5f) : 0f;
-                    Vector3 offset = right * (t * BULLET_SPREAD_DISTANCE);
-                    CombatSystem.Instance.SpawnBulletServerRpc(
-                        firePos + offset, direction, EffectiveBulletSpeed, damagePerBullet, shipTeam.Value,
-                        visualScaleMultiplier, styleIndex
-                    );
-                }
-            }
+            FireServerRpc(transform.position, direction);
         }
 
         [ServerRpc]
@@ -1046,11 +1074,11 @@ namespace TitanOrbit.Entities
                 shipLevel = data.shipLevel;
                 focusType = data.focusType;
                 movementSpeed = data.baseMovementSpeed;
-                fireRate = data.baseFireRate;
-                firePower = data.baseFirePower;
-                bulletSpeed = data.baseBulletSpeed;
-                bulletsPerShot = Mathf.Clamp(data.baseBulletsPerShot, 1, 4);
-                bulletVisualStyleIndex = Mathf.Clamp(data.bulletVisualStyleIndex, 0, 3);
+                weaponConfig = data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0
+                    ? data.weaponConfig
+                    : GetDefaultWeaponConfig();
+                cannonLastFireTime = new float[weaponConfig.cannons.Count];
+                for (int i = 0; cannonLastFireTime != null && i < cannonLastFireTime.Length; i++) cannonLastFireTime[i] = -999f;
 
                 maxHealth = data.baseMaxHealth;
                 healthRegenRate = data.baseHealthRegenRate;

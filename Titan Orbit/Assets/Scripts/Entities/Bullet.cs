@@ -19,23 +19,17 @@ namespace TitanOrbit.Entities
         [SerializeField] private float minTravelBeforeHit = 0.5f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
 
-        [Header("Particle Visual (AllIn1 VFX)")]
-        [Tooltip("Optional: particle/projectile effect from AllIn1 VFX Toolkit. If set, replaces the default sphere visual.")]
+        [Header("Particle Visual (same bullet skin for all ships)")]
+        [Tooltip("Bullet particle effect. Same for all ships; size comes from weapon config.")]
         [SerializeField] private GameObject bulletVisualPrefab;
-        [Tooltip("Per-ship styles: [0]=Digital, [1]=Ice/long trail, [2]=Fire, [3]=Plasma. Leave empty to use bulletVisualPrefab only.")]
-        [SerializeField] private GameObject[] bulletVisualPrefabOptions;
-        [Tooltip("Base scale of the instantiated particle visual. Final scale = this × visualScaleMultiplier (from ship power).")]
+        [Tooltip("Base scale. Final scale = this × visualScaleMultiplier from cannon.")]
         [SerializeField] private float bulletVisualScale = 0.35f;
-        [Tooltip("Optional: explosion/impact effect played when bullet hits. Spawned on all clients.")]
+        [Tooltip("Optional: impact effect when bullet hits.")]
         [SerializeField] private GameObject impactEffectPrefab;
         [SerializeField] private float impactEffectDuration = 3f;
         [SerializeField] private float impactEffectScale = 0.5f;
 
         private NetworkVariable<float> bulletVisualScaleMultiplier = new NetworkVariable<float>(1f);
-        private NetworkVariable<byte> bulletVisualStyleIndex = new NetworkVariable<byte>(0);
-        
-        // Local cache set immediately (before NetworkVariable syncs) so visual can be created right away
-        private byte cachedVisualStyleIndex = 0;
         private float cachedVisualScaleMultiplier = 1f;
 
         private const float FIXED_Y_POSITION = 0f;
@@ -58,20 +52,12 @@ namespace TitanOrbit.Entities
                 rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
             }
             
-            // Subscribe to NetworkVariable changes to update visual when style index syncs
-            bulletVisualStyleIndex.OnValueChanged += OnVisualStyleIndexChanged;
             bulletVisualScaleMultiplier.OnValueChanged += OnVisualScaleChanged;
         }
 
         private void OnDestroy()
         {
-            bulletVisualStyleIndex.OnValueChanged -= OnVisualStyleIndexChanged;
             bulletVisualScaleMultiplier.OnValueChanged -= OnVisualScaleChanged;
-        }
-
-        private void OnVisualStyleIndexChanged(byte oldValue, byte newValue)
-        {
-            UpdateVisual();
         }
 
         private void OnVisualScaleChanged(float oldValue, float newValue)
@@ -85,12 +71,8 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
-            // Set NetworkVariables after spawn so we don't trigger "written before NetworkObject is spawned" (Initialize runs before Spawn in CombatSystem).
             if (IsServer)
-            {
                 bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
-                bulletVisualStyleIndex.Value = cachedVisualStyleIndex;
-            }
 
             // Lock Y position to 0
             Vector3 pos = transform.position;
@@ -300,17 +282,16 @@ namespace TitanOrbit.Entities
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)
         {
-            Initialize(bulletSpeed, bulletDamage, team, 1f, 0);
+            Initialize(bulletSpeed, bulletDamage, team, 1f);
         }
 
-        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, float visualScaleMultiplier, byte visualStyleIndex)
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, float visualScaleMultiplier)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
             ownerTeam = team;
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
-            cachedVisualStyleIndex = visualStyleIndex;
-            // NetworkVariables are set in OnNetworkSpawn (after Spawn) to avoid "written before NetworkObject is spawned" warning.
+            // NetworkVariable set in OnNetworkSpawn to avoid writing before NetworkObject.Spawn()
         }
 
         private void UpdateVisual()
@@ -322,7 +303,7 @@ namespace TitanOrbit.Entities
                 spawnedVisual = null;
             }
 
-            GameObject visualPrefab = ChooseVisualPrefab();
+            GameObject visualPrefab = bulletVisualPrefab;
             float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
             float scale = bulletVisualScale * scaleMult;
             if (visualPrefab != null)
@@ -333,22 +314,7 @@ namespace TitanOrbit.Entities
                 spawnedVisual.transform.localPosition = Vector3.zero;
                 spawnedVisual.transform.localRotation = Quaternion.identity;
                 spawnedVisual.transform.localScale = Vector3.one * scale;
-                
             }
-        }
-
-        private GameObject ChooseVisualPrefab()
-        {
-            // Use cached value first (set immediately), fall back to NetworkVariable if needed
-            byte styleIndex = cachedVisualStyleIndex != 0 ? cachedVisualStyleIndex : bulletVisualStyleIndex.Value;
-            
-            if (bulletVisualPrefabOptions != null && bulletVisualPrefabOptions.Length > 0)
-            {
-                int idx = Mathf.Clamp(styleIndex, 0, bulletVisualPrefabOptions.Length - 1);
-                if (bulletVisualPrefabOptions[idx] != null)
-                    return bulletVisualPrefabOptions[idx];
-            }
-            return bulletVisualPrefab;
         }
     }
 }

@@ -1543,35 +1543,11 @@ namespace TitanOrbit.Editor
                 {
                     SerializedObject so = new SerializedObject(bulletComponent);
                     
-                    // Set bulletVisualPrefab (default - Digital Projectile)
+                    // Single bullet visual (same skin for all ships; size from weapon config)
                     GameObject digitalProj = AssetDatabase.LoadAssetAtPath<GameObject>(
                         "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Digital Projectile.prefab");
                     if (digitalProj != null)
-                    {
                         so.FindProperty("bulletVisualPrefab").objectReferenceValue = digitalProj;
-                    }
-
-                    // Set bulletVisualPrefabOptions array (4 styles: Digital, Ice, Fire, Plasma)
-                    SerializedProperty visualOptionsProp = so.FindProperty("bulletVisualPrefabOptions");
-                    visualOptionsProp.ClearArray();
-                    
-                    string[] visualPaths = new[]
-                    {
-                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Digital Projectile.prefab",
-                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Ice Projectile.prefab",
-                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Fire Bullet.prefab",
-                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Plasma Ball.prefab"
-                    };
-
-                    foreach (string visualPath in visualPaths)
-                    {
-                        GameObject visualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(visualPath);
-                        if (visualPrefab != null)
-                        {
-                            visualOptionsProp.InsertArrayElementAtIndex(visualOptionsProp.arraySize);
-                            visualOptionsProp.GetArrayElementAtIndex(visualOptionsProp.arraySize - 1).objectReferenceValue = visualPrefab;
-                        }
-                    }
 
                     // Set impact effect (Red Impact)
                     GameObject redImpact = AssetDatabase.LoadAssetAtPath<GameObject>(
