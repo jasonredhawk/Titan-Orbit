@@ -181,6 +181,10 @@ namespace TitanOrbit.Systems
             if (rb != null)
             {
                 rb.linearVelocity = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+                rb.angularVelocity = new Vector3(
+                    Random.Range(-1.5f, 1.5f),
+                    Random.Range(-1.5f, 1.5f),
+                    Random.Range(-1.5f, 1.5f));
             }
 
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
@@ -205,6 +209,10 @@ namespace TitanOrbit.Systems
             if (rb != null)
             {
                 rb.linearVelocity = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+                rb.angularVelocity = new Vector3(
+                    Random.Range(-1.5f, 1.5f),
+                    Random.Range(-1.5f, 1.5f),
+                    Random.Range(-1.5f, 1.5f));
             }
 
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();

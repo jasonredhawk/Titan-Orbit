@@ -1577,11 +1577,22 @@ namespace TitanOrbit.Editor
 
         private static void CreateGemPrefab()
         {
-            GameObject gem = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            gem.name = "Gem";
+            // Crystal-shaped mesh (bipyramid / octahedron) for a gem look
+            Mesh crystalMesh = CreateCrystalMesh();
+            if (!AssetDatabase.IsValidFolder("Assets/Meshes"))
+                AssetDatabase.CreateFolder("Assets", "Meshes");
+            string meshPath = "Assets/Meshes/GemCrystal.asset";
+            AssetDatabase.CreateAsset(crystalMesh, meshPath);
+            AssetDatabase.SaveAssets();
+
+            GameObject gem = new GameObject("Gem");
             gem.transform.localScale = Vector3.one * 0.5f;
 
-            Object.DestroyImmediate(gem.GetComponent<Collider>());
+            MeshFilter mf = gem.AddComponent<MeshFilter>();
+            mf.sharedMesh = crystalMesh;
+            MeshRenderer mr = gem.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.85f, 0.15f, 0.2f));
+
             SphereCollider col = gem.AddComponent<SphereCollider>();
             col.isTrigger = true;
             col.radius = 1f;
@@ -1591,10 +1602,8 @@ namespace TitanOrbit.Editor
             rb.linearDamping = 4f;
             rb.isKinematic = false;
 
-            NetworkObject netObj = gem.AddComponent<NetworkObject>();
-            Gem gemScript = gem.AddComponent<Gem>();
-
-            gem.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.2f, 0.9f, 0.5f));
+            gem.AddComponent<NetworkObject>();
+            gem.AddComponent<Gem>();
 
             string path = "Assets/Prefabs/Gem.prefab";
             EnsurePrefabDirectory();
@@ -1602,6 +1611,63 @@ namespace TitanOrbit.Editor
             Object.DestroyImmediate(gem);
 
             Debug.Log($"Created prefab: {path}");
+        }
+
+        /// <summary>
+        /// Creates an irregular crystal mesh with flat shading: random-ish facet count and vertex positions for a rough, natural look.
+        /// Uses a fixed seed so the saved mesh is deterministic.
+        /// </summary>
+        private static Mesh CreateCrystalMesh()
+        {
+            Random.InitState(42);
+            Mesh mesh = new Mesh();
+            mesh.name = "GemCrystal";
+            float baseH = 0.55f;
+            float baseR = 0.35f;
+            int numSides = Random.Range(5, 10);
+            float topH = baseH * Random.Range(0.92f, 1.08f);
+            float botH = baseH * Random.Range(0.92f, 1.08f);
+            Vector3 top = new Vector3(0, topH, 0);
+            Vector3 bot = new Vector3(0, -botH, 0);
+            Vector3[] waist = new Vector3[numSides];
+            for (int i = 0; i < numSides; i++)
+            {
+                float angle = (i / (float)numSides) * 2f * Mathf.PI + Random.Range(-0.2f, 0.2f);
+                float r = baseR * Random.Range(0.7f, 1.2f);
+                waist[i] = new Vector3(r * Mathf.Cos(angle), 0f, r * Mathf.Sin(angle));
+            }
+
+            var verts = new System.Collections.Generic.List<Vector3>();
+            var norms = new System.Collections.Generic.List<Vector3>();
+            var tris = new System.Collections.Generic.List<int>();
+            int idx = 0;
+
+            for (int i = 0; i < numSides; i++)
+            {
+                int j = (i + 1) % numSides;
+                Vector3 a = top, b = waist[i], c = waist[j];
+                Vector3 n = Vector3.Cross(b - a, c - a).normalized;
+                verts.Add(a); verts.Add(b); verts.Add(c);
+                norms.Add(n); norms.Add(n); norms.Add(n);
+                tris.Add(idx); tris.Add(idx + 1); tris.Add(idx + 2);
+                idx += 3;
+            }
+            for (int i = 0; i < numSides; i++)
+            {
+                int j = (i + 1) % numSides;
+                Vector3 a = bot, b = waist[j], c = waist[i];
+                Vector3 n = Vector3.Cross(b - a, c - a).normalized;
+                verts.Add(a); verts.Add(b); verts.Add(c);
+                norms.Add(n); norms.Add(n); norms.Add(n);
+                tris.Add(idx); tris.Add(idx + 1); tris.Add(idx + 2);
+                idx += 3;
+            }
+
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         private static void EnsurePrefabDirectory()
@@ -2065,7 +2131,7 @@ namespace TitanOrbit.Editor
                 { "TitanOrbit_HomePlanet_TeamC", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)) },
                 { "TitanOrbit_Asteroid", CreateAndSaveMaterial("TitanOrbit_Asteroid", new Color(0.5f, 0.35f, 0.2f)) },
                 { "TitanOrbit_Bullet", CreateAndSaveMaterial("TitanOrbit_Bullet", Color.yellow) },
-                { "TitanOrbit_Gem", CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.2f, 0.9f, 0.5f)) },
+                { "TitanOrbit_Gem", CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.85f, 0.15f, 0.2f)) },
                 { "TitanOrbit_Ring", CreateAndSaveMaterial("TitanOrbit_Ring", new Color(1f, 1f, 0f, 0.8f)) }
             };
 
