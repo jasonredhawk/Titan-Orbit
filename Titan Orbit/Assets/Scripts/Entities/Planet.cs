@@ -6,6 +6,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Systems;
 using TMPro;
 using SpaceGraphicsToolkit;
+using SpaceGraphicsToolkit.Atmosphere;
 
 namespace TitanOrbit.Entities
 {
@@ -33,6 +34,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private TextMeshPro populationText;
         [Tooltip("Tint intensity for regular planets (0 = no tint, 1 = full team color). Only applies to regular planets, not HomePlanets.")]
         [SerializeField] private float regularPlanetTintIntensity = 0.2f;
+
+        [Header("Regular Planet: Water & Atmosphere (optional)")]
+        [Tooltip("Optional. When set, regular planets get varying atmosphere (derived from material index). Leave empty for no atmosphere.")]
+        [SerializeField] private Material atmosphereSourceMaterial;
+        [Tooltip("Optional. SGT atmosphere outer mesh (e.g. Geosphere40 from CW). Required if atmosphere is used.")]
+        [SerializeField] private Mesh atmosphereOuterMesh;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
@@ -82,13 +89,21 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
-                // Random neutral material from pool (home planets use water materials if available)
+                // Home planets: Team A = Tropical1, Team B = Tropical2, Team C = Tropical3 (WaterMaterials 0,1,2). Regular: random from Materials.
                 if (materialPool != null)
                 {
-                    bool useWater = this is HomePlanet;
-                    int idx = materialPool.GetRandomIndex(useWater);
-                    if (idx >= 0)
-                        neutralMaterialIndex.Value = idx;
+                    if (this is HomePlanet homePlanet)
+                    {
+                        var team = homePlanet.AssignedTeam;
+                        int tropicalIndex = team == TeamManager.Team.TeamA ? 0 : team == TeamManager.Team.TeamB ? 1 : team == TeamManager.Team.TeamC ? 2 : 0;
+                        neutralMaterialIndex.Value = tropicalIndex;
+                    }
+                    else
+                    {
+                        int idx = materialPool.GetRandomIndex(false);
+                        if (idx >= 0)
+                            neutralMaterialIndex.Value = idx;
+                    }
                 }
 
                 // Initialize planet level (home planets start at 3, regular planets at 1)
@@ -126,6 +141,8 @@ namespace TitanOrbit.Entities
             if (!(this is HomePlanet))
                 EnsurePlanetRingsDrawer();
 
+            ApplyRegularPlanetWaterAndAtmosphere();
+
             // Update visual on spawn
             UpdateVisual(teamOwnership.Value);
             UpdatePopulationDisplay();
@@ -148,7 +165,52 @@ namespace TitanOrbit.Entities
 
         private void OnNeutralMaterialIndexChanged(int previous, int current)
         {
+            ApplyRegularPlanetWaterAndAtmosphere();
             UpdateVisual(teamOwnership.Value);
+        }
+
+        /// <summary>Regular planets only: set varying water level and optional atmosphere from deterministic seed (neutralMaterialIndex).</summary>
+        private void ApplyRegularPlanetWaterAndAtmosphere()
+        {
+            if (this is HomePlanet) return;
+
+            int seed = Mathf.Max(0, neutralMaterialIndex.Value);
+            float waterLevel = (seed % 5) * 0.055f;
+            float atmosphereHeight = (seed % 4) * 0.012f;
+
+            if (sgtPlanet != null)
+                sgtPlanet.WaterLevel = waterLevel;
+
+            if (waterLevel > 0.001f)
+            {
+                if (GetComponent<SgtPlanetWaterGradient>() == null)
+                    gameObject.AddComponent<SgtPlanetWaterGradient>();
+                if (GetComponent<SgtPlanetWaterTexture>() == null)
+                    gameObject.AddComponent<SgtPlanetWaterTexture>();
+            }
+
+            if (atmosphereSourceMaterial != null && atmosphereOuterMesh != null && atmosphereHeight > 0.001f)
+            {
+                Transform existing = transform.Find("Atmosphere");
+                SgtAtmosphere sgtAtmosphere = existing != null ? existing.GetComponent<SgtAtmosphere>() : null;
+                if (sgtAtmosphere == null)
+                {
+                    GameObject atmosphereObj = new GameObject("Atmosphere");
+                    atmosphereObj.transform.SetParent(transform);
+                    atmosphereObj.transform.localPosition = Vector3.zero;
+                    atmosphereObj.transform.localRotation = Quaternion.identity;
+                    atmosphereObj.transform.localScale = Vector3.one;
+                    sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
+                    sgtAtmosphere.SourceMaterial = atmosphereSourceMaterial;
+                    sgtAtmosphere.OuterMesh = atmosphereOuterMesh;
+                    sgtAtmosphere.InnerMeshRadius = 0.5f;
+                    sgtAtmosphere.OuterMeshRadius = 1f;
+                    atmosphereObj.AddComponent<SgtAtmosphereDepthTex>();
+                    atmosphereObj.AddComponent<SgtAtmosphereLightingTex>();
+                    atmosphereObj.AddComponent<SgtAtmosphereScatteringTex>();
+                }
+                sgtAtmosphere.Height = atmosphereHeight;
+            }
         }
 
         private void Update()
@@ -585,8 +647,8 @@ namespace TitanOrbit.Entities
         {
             if (materialPool != null && neutralMaterialIndex.Value >= 0)
             {
-                bool useWaterList = this is HomePlanet;
-                Material fromPool = materialPool.GetMaterial(neutralMaterialIndex.Value, useWaterList);
+                bool useTropicalList = this is HomePlanet;
+                Material fromPool = materialPool.GetMaterial(neutralMaterialIndex.Value, useTropicalList);
                 if (fromPool != null) return fromPool;
             }
             return neutralMaterial ?? s_sharedNeutral;

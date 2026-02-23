@@ -36,18 +36,21 @@ namespace TitanOrbit.Editor
                 Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
                 if (mat == null) continue;
                 pool.Materials.Add(mat);
-                // Materials with _HasWater (e.g. Tropical) - check shader for water; Tropical1, Tropical2, Tropical3 have water
-                string name = mat.name.ToLowerInvariant();
-                if (name.StartsWith("tropical") || (mat.shader != null && mat.shader.name.Contains("Planet") && mat.HasProperty("_HasWater") && mat.GetFloat("_HasWater") > 0.5f))
-                    pool.WaterMaterials.Add(mat);
             }
 
-            if (pool.WaterMaterials.Count == 0)
-                pool.WaterMaterials.AddRange(pool.Materials);
+            // Home planets: WaterMaterials = exactly Tropical1, Tropical2, Tropical3 (Team A/B/C). Order matters.
+            foreach (string name in new[] { "Tropical1", "Tropical2", "Tropical3" })
+            {
+                var mat = AssetDatabase.LoadAssetAtPath<Material>(PLANETS_MATERIALS_PATH + "/" + name + ".mat");
+                if (mat != null)
+                    pool.WaterMaterials.Add(mat);
+            }
+            if (pool.WaterMaterials.Count == 0 && pool.Materials.Count > 0)
+                pool.WaterMaterials.Add(pool.Materials[0]);
 
             EditorUtility.SetDirty(pool);
             AssetDatabase.SaveAssets();
-            Debug.Log($"PlanetMaterialPool: {pool.Materials.Count} materials, {pool.WaterMaterials.Count} water materials.");
+            Debug.Log($"PlanetMaterialPool: {pool.Materials.Count} materials, {pool.WaterMaterials.Count} water (Tropical1/2/3 for home planets).");
         }
     }
 }

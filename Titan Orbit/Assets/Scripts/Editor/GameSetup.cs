@@ -1140,7 +1140,33 @@ namespace TitanOrbit.Editor
             }
             if (pool.Materials.Count == 0)
                 PlanetMaterialPoolEditor.PopulateFromCWPack();
+            EnsureHomePlanetTropicalOnly(pool);
             return pool;
+        }
+
+        /// <summary>Ensures home planet team skins: Team A = Tropical1, Team B = Tropical2, Team C = Tropical3. Call from Quick Setup (All).</summary>
+        public static void EnsureHomePlanetTeamTropicalMapping()
+        {
+            var pool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(PLANET_MATERIAL_POOL_PATH);
+            if (pool == null) return;
+            EnsureHomePlanetTropicalOnly(pool);
+        }
+
+        /// <summary>Ensures WaterMaterials is exactly [Tropical1, Tropical2, Tropical3] for home planet team mapping (Team A/B/C).</summary>
+        private static void EnsureHomePlanetTropicalOnly(PlanetMaterialPool pool)
+        {
+            if (pool == null) return;
+            Material t1 = LoadCWPlanetMaterial("Tropical1");
+            Material t2 = LoadCWPlanetMaterial("Tropical2");
+            Material t3 = LoadCWPlanetMaterial("Tropical3");
+            pool.WaterMaterials.Clear();
+            if (t1 != null) pool.WaterMaterials.Add(t1);
+            if (t2 != null) pool.WaterMaterials.Add(t2);
+            if (t3 != null) pool.WaterMaterials.Add(t3);
+            if (pool.WaterMaterials.Count == 0 && pool.Materials.Count > 0)
+                pool.WaterMaterials.Add(pool.Materials[0]);
+            EditorUtility.SetDirty(pool);
+            AssetDatabase.SaveAssets();
         }
 
         private static Material GetOrLoadAtmosphereMaterial()

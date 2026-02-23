@@ -23,6 +23,9 @@ namespace TitanOrbit.Editor
         {
             Debug.Log("Starting quick setup...");
 
+            // Team A = Tropical1, Team B = Tropical2, Team C = Tropical3 for home planets
+            GameSetup.EnsureHomePlanetTeamTropicalMapping();
+
             // First create prefabs
             GameSetup.CreateBasicPrefabs();
 
