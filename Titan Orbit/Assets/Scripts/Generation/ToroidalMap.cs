@@ -21,34 +21,19 @@ namespace TitanOrbit.Generation
 
         /// <summary>
         /// Returns the toroidal copy of logicalPos that is closest to cameraPos.
-        /// Use this for display position so the entity is always visible when the camera is near edges.
+        /// Supports the ship flying arbitrarily far (e.g. 100, 15000): we pick the copy in the same
+        /// "tile" as the camera so planets/asteroids always reposition around the local ship.
         /// </summary>
         public static Vector3 GetDisplayPosition(Vector3 logicalPos, Vector3 cameraPos)
         {
-            float halfW = mapWidth / 2f;
-            float halfH = mapHeight / 2f;
-            float bestX = logicalPos.x;
-            float bestZ = logicalPos.z;
-            float bestDistSq = float.MaxValue;
-
-            for (int k = -1; k <= 1; k++)
-            {
-                for (int m = -1; m <= 1; m++)
-                {
-                    float x = logicalPos.x + k * mapWidth;
-                    float z = logicalPos.z + m * mapHeight;
-                    float dx = x - cameraPos.x;
-                    float dz = z - cameraPos.z;
-                    float distSq = dx * dx + dz * dz;
-                    if (distSq < bestDistSq)
-                    {
-                        bestDistSq = distSq;
-                        bestX = x;
-                        bestZ = z;
-                    }
-                }
-            }
-
+            // Nearest copy = logical + (k*W, m*H) for integers k,m that minimize distance to camera.
+            // k = round((camera.x - logical.x) / W), m = round((camera.z - logical.z) / H).
+            float dx = cameraPos.x - logicalPos.x;
+            float dz = cameraPos.z - logicalPos.z;
+            int k = (int)Mathf.Round(dx / mapWidth);
+            int m = (int)Mathf.Round(dz / mapHeight);
+            float bestX = logicalPos.x + k * mapWidth;
+            float bestZ = logicalPos.z + m * mapHeight;
             return new Vector3(bestX, logicalPos.y, bestZ);
         }
 

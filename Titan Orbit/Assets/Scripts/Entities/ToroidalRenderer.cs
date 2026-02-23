@@ -4,41 +4,106 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Keeps toroidal map entities visible when the camera is near edges.
-    /// Stores the logical (canonical) position and each frame moves the transform to the
-    /// toroidal copy that is closest to the camera—same idea as the minimap's placement.
-    /// No wrapping in Update: we only update display position here in LateUpdate.
+    /// Toroidal display: the player/ship never wraps (can be at 100, 310 or 100, 15000). All other
+    /// entities are repositioned each frame to the toroidal copy closest to the local camera, so
+    /// the world appears seamless and bullets/gems don't disappear from warping. Static entities
+    /// (planets, asteroids): move root to display copy. Moving entities (gems, bullets): position
+    /// a "Visual" child at the display copy; root stays for physics/network.
     /// </summary>
+    [DefaultExecutionOrder(32000)] // Run after NetworkTransform/sync and other LateUpdates
     public class ToroidalRenderer : MonoBehaviour
     {
+        private const string VISUAL_CHILD_NAME = "Visual";
+
         private Vector3 logicalPosition;
         private bool logicalPositionStored;
+        private Rigidbody rb;
+        private Transform visualChild; // For Rigidbody entities: we position this, not the root
         private static UnityEngine.Camera s_cachedMainCamera;
         private static int s_cachedCameraFrame = -1;
 
         private void Start()
         {
+            rb = GetComponent<Rigidbody>();
+            // Only use Visual child for non-kinematic Rigidbodies (gems, bullets). Kinematic (e.g. asteroids)
+            // use procedural/SGT mesh on root and must have root moved like planets.
+            if (rb != null && !rb.isKinematic)
+            {
+                Transform v = transform.Find(VISUAL_CHILD_NAME);
+                if (v != null)
+                    visualChild = v;
+                else
+                    EnsureVisualChild();
+            }
             StoreLogicalPosition();
         }
 
         private void OnEnable()
         {
-            // In case we're enabled after position is set (e.g. network spawn)
-            if (!logicalPositionStored)
+            if (rb == null)
+                rb = GetComponent<Rigidbody>();
+            if (rb != null && !rb.isKinematic && visualChild == null)
             {
-                StoreLogicalPosition();
+                Transform v = transform.Find(VISUAL_CHILD_NAME);
+                if (v != null) visualChild = v;
+                else EnsureVisualChild();
             }
+            if (!logicalPositionStored)
+                StoreLogicalPosition();
+        }
+
+        /// <summary>
+        /// For Rigidbody entities without a "Visual" child: create one, copy root mesh/renderer to it,
+        /// and reparent any existing children (e.g. Bullet's Glow) under it so we can position
+        /// the visual independently of the synced/physics root.
+        /// </summary>
+        private void EnsureVisualChild()
+        {
+            if (transform.Find(VISUAL_CHILD_NAME) != null) return;
+
+            // Collect current children to reparent (before we add the new Visual child)
+            int n = transform.childCount;
+            var toReparent = new System.Collections.Generic.List<Transform>(n);
+            for (int i = 0; i < n; i++)
+                toReparent.Add(transform.GetChild(i));
+
+            GameObject visualGo = new GameObject(VISUAL_CHILD_NAME);
+            visualGo.transform.SetParent(transform, false);
+            visualGo.transform.localPosition = Vector3.zero;
+            visualGo.transform.localRotation = Quaternion.identity;
+            visualGo.transform.localScale = Vector3.one;
+
+            MeshFilter mf = GetComponent<MeshFilter>();
+            Renderer r = GetComponent<Renderer>();
+            if (mf != null && mf.sharedMesh != null)
+            {
+                var mfChild = visualGo.AddComponent<MeshFilter>();
+                mfChild.sharedMesh = mf.sharedMesh;
+                // MeshFilter has no enabled property; root mesh is hidden by disabling Renderer below
+            }
+            if (r != null)
+            {
+                var rChild = visualGo.AddComponent<MeshRenderer>();
+                rChild.sharedMaterials = r.sharedMaterials;
+                rChild.shadowCastingMode = r.shadowCastingMode;
+                rChild.receiveShadows = r.receiveShadows;
+                r.enabled = false;
+            }
+
+            foreach (Transform c in toReparent)
+                c.SetParent(visualGo.transform, true);
+
+            visualChild = visualGo.transform;
         }
 
         private void StoreLogicalPosition()
         {
-            logicalPosition = transform.position;
+            logicalPosition = rb != null ? rb.position : transform.position;
             logicalPositionStored = true;
         }
 
         private void LateUpdate()
         {
-            // Cache Camera.main once per frame (it does FindGameObjectWithTag internally); 314+ entities were each calling it every frame causing lag.
             if (Time.frameCount != s_cachedCameraFrame)
             {
                 s_cachedCameraFrame = Time.frameCount;
@@ -47,15 +112,37 @@ namespace TitanOrbit.Entities
             UnityEngine.Camera cam = s_cachedMainCamera;
             if (cam == null) return;
 
-            // If we haven't stored logical position yet (e.g. late spawn), use current position as canonical
-            if (!logicalPositionStored)
+            if (rb != null)
+            {
+                logicalPosition = ToroidalMap.WrapPosition(rb.position);
+                logicalPositionStored = true;
+            }
+            else if (!logicalPositionStored)
             {
                 StoreLogicalPosition();
             }
 
-            // Place this entity at the toroidal copy closest to the camera so it's always visible.
             Vector3 displayPos = ToroidalMap.GetDisplayPosition(logicalPosition, cam.transform.position);
-            transform.position = displayPos;
+
+            // Use visual child only for non-kinematic moving entities (gems, bullets). Kinematic (asteroids)
+            // and no-Rigidbody (planets) move root so procedural/SGT visuals follow.
+            if (rb != null && !rb.isKinematic && visualChild != null)
+            {
+                // Reparent any siblings that were added at runtime (e.g. Bullet's spawnedVisual) under our Visual
+                for (int i = transform.childCount - 1; i >= 0; i--)
+                {
+                    Transform c = transform.GetChild(i);
+                    if (c != visualChild && c.parent == transform)
+                        c.SetParent(visualChild, true);
+                }
+                // Position only the visual child; leave root for physics/network
+                visualChild.position = displayPos;
+            }
+            else
+            {
+                // Static or kinematic entity: move root (planets, asteroids with SgtPlanet/procedural mesh)
+                transform.position = displayPos;
+            }
         }
     }
 }

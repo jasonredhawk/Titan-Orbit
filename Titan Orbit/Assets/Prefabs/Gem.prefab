@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 4528165771315768315}
   - component: {fileID: 2234843476656030852}
   - component: {fileID: 2759333732032392297}
+  - component: {fileID: 1238730556394064687}
   m_Layer: 0
   m_Name: Gem
   m_TagString: Untagged
@@ -154,7 +155,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3803452671
+  GlobalObjectIdHash: 865906896
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -185,3 +186,15 @@ MonoBehaviour:
   shrinkDuration: 3
   magnetSpeed: 8
   collectRadius: 0.6
+--- !u!114 &1238730556394064687
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4800967330874723475}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c5bd6eac371b8084e9837231e2f650e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ToroidalRenderer

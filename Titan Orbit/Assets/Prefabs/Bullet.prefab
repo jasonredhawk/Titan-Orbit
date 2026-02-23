@@ -105,6 +105,7 @@ GameObject:
   - component: {fileID: 6321335224097299716}
   - component: {fileID: 8547371066609432745}
   - component: {fileID: 7256069891563052912}
+  - component: {fileID: 6072836832872796092}
   m_Layer: 0
   m_Name: Bullet
   m_TagString: Untagged
@@ -285,3 +286,15 @@ MonoBehaviour:
   impactEffectPrefab: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   impactEffectDuration: 3
   impactEffectScale: 0.5
+--- !u!114 &6072836832872796092
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5046561962449129338}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c5bd6eac371b8084e9837231e2f650e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ToroidalRenderer

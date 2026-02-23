@@ -1542,8 +1542,9 @@ namespace TitanOrbit.Editor
             // Add NetworkObject
             NetworkObject netObj = bullet.AddComponent<NetworkObject>();
 
-            // Add Bullet script
+            // Add Bullet script and ToroidalRenderer for seamless map wrapping
             Bullet bulletScript = bullet.AddComponent<Bullet>();
+            bullet.AddComponent<ToroidalRenderer>();
 
             bullet.GetComponent<Renderer>().sharedMaterial = CreateAndSaveMaterial("TitanOrbit_Bullet", Color.yellow);
 
@@ -1631,6 +1632,7 @@ namespace TitanOrbit.Editor
 
             gem.AddComponent<NetworkObject>();
             gem.AddComponent<Gem>();
+            gem.AddComponent<ToroidalRenderer>();
 
             string path = "Assets/Prefabs/Gem.prefab";
             EnsurePrefabDirectory();

@@ -244,7 +244,6 @@ namespace TitanOrbit.Entities
             Vector3 planetPos = home.transform.position;
             Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
-            orbitPos = ToroidalMap.WrapPosition(orbitPos);
             rb.position = orbitPos;
             rb.linearVelocity = new Vector3(0f, 0f, -orbitSpeed); // Tangent for clockwise orbit
             currentVelocity = rb.linearVelocity;
@@ -290,13 +289,8 @@ namespace TitanOrbit.Entities
                 rb.position = pos;
             }
             
-            // Wrap position toroidally - use rb.position for consistency (avoids transform/rb desync)
-            Vector3 wrappedPos = ToroidalMap.WrapPosition(pos);
-            if (Vector3.SqrMagnitude(wrappedPos - pos) > 0.0001f)
-            {
-                rb.position = wrappedPos;
-            }
-            
+            // Never wrap ship position: ship stays in world space (e.g. 100, 310). All other
+            // entities are repositioned around the player via ToroidalRenderer (display copy closest to camera).
             // Ensure rigidbody velocity has no Y component
             if (Mathf.Abs(rb.linearVelocity.y) > 0.01f)
             {
@@ -429,13 +423,9 @@ namespace TitanOrbit.Entities
             // Ensure velocity has no Y component
             currentVelocity.y = 0f;
 
-            // Calculate new position and lock Y to fixed position
+            // Calculate new position and lock Y to fixed position (no wrapping - ship stays in world space)
             Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
             newPosition.y = FIXED_Y_POSITION;
-            
-            // Wrap position toroidally (no borders - wraps around map)
-            newPosition = ToroidalMap.WrapPosition(newPosition);
-            
             rb.MovePosition(newPosition);
         }
 
@@ -463,7 +453,6 @@ namespace TitanOrbit.Entities
             rb.linearVelocity = orbitVelocity;
             Vector3 newPosition = rb.position + orbitVelocity * Time.fixedDeltaTime;
             newPosition.y = FIXED_Y_POSITION;
-            newPosition = ToroidalMap.WrapPosition(newPosition);
             rb.MovePosition(newPosition);
             // Rotation is handled by HandleRotation (mouse); ship can face any direction while orbiting.
         }
@@ -819,7 +808,6 @@ namespace TitanOrbit.Entities
             Vector3 planetPos = home.transform.position;
             Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
-            orbitPos = ToroidalMap.WrapPosition(orbitPos);
             rb.position = orbitPos;
             rb.linearVelocity = new Vector3(0f, 0f, -orbitSpeed); // Tangent for clockwise orbit
             currentVelocity = rb.linearVelocity;

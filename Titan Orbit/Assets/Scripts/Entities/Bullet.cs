@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Entities
 {
@@ -167,7 +168,8 @@ namespace TitanOrbit.Entities
             
             if (!IsServer) return;
 
-            float dist = Vector3.Distance(transform.position, spawnPosition);
+            // Use toroidal distance so bullets don't despawn when crossing map edge
+            float dist = ToroidalMap.ToroidalDistance(transform.position, spawnPosition);
             if (dist > maxDistance || Time.time - spawnTime > lifetime)
             {
                 DespawnBullet();

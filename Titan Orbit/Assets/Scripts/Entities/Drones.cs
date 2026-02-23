@@ -102,16 +102,16 @@ namespace TitanOrbit.Entities
             Vector3 shipPos = ownerShip.transform.position;
             shipPos.y = FIXED_Y;
             Vector3 offset = new Vector3(Mathf.Cos(orbitAngle), 0f, Mathf.Sin(orbitAngle)) * orbitRadius;
-            Vector3 targetPos = ToroidalMap.WrapPosition(shipPos + offset);
+            Vector3 targetPos = shipPos + offset;
             Vector3 currentPos = transform.position;
             currentPos.y = FIXED_Y;
-            Vector3 toTarget = ToroidalMap.WrapPosition(targetPos - currentPos);
+            Vector3 toTarget = targetPos - currentPos;
             toTarget.y = 0f;
             if (toTarget.sqrMagnitude > 0.01f)
             {
                 Vector3 vel = toTarget.normalized * Mathf.Min(moveSpeed, toTarget.magnitude / Time.fixedDeltaTime);
                 if (rb != null) rb.linearVelocity = vel;
-                transform.position = ToroidalMap.WrapPosition(currentPos + vel * Time.fixedDeltaTime);
+                transform.position = currentPos + vel * Time.fixedDeltaTime;
             }
         }
 
@@ -202,17 +202,16 @@ namespace TitanOrbit.Entities
                     Vector3 bulletDir = toShip / distToShip;
                     float interceptDist = Mathf.Max(1.5f, distToShip * 0.4f);
                     Vector3 idealPos = bulletPos + bulletDir * (distToShip - interceptDist);
-                    idealPos = ToroidalMap.WrapPosition(idealPos);
                     Vector3 myPos = transform.position;
                     myPos.y = 0f;
-                    Vector3 toIdeal = ToroidalMap.WrapPosition(idealPos - myPos);
+                    Vector3 toIdeal = idealPos - myPos;
                     toIdeal.y = 0f;
                     if (toIdeal.sqrMagnitude > 0.1f)
                     {
                         float speed = moveSpeed * interceptSpeedMultiplier;
                         Vector3 vel = toIdeal.normalized * Mathf.Min(speed, toIdeal.magnitude / Time.fixedDeltaTime);
                         if (rb != null) rb.linearVelocity = vel;
-                        transform.position = ToroidalMap.WrapPosition(myPos + vel * Time.fixedDeltaTime);
+                        transform.position = myPos + vel * Time.fixedDeltaTime;
                         return;
                     }
                 }

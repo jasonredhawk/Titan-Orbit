@@ -383,7 +383,6 @@ namespace TitanOrbit.AI
                         targetAsteroid = nearestAsteroid;
                         Vector3 dirToShip = ToroidalMap.ToroidalDirection(nearestAsteroid.transform.position, rb.position);
                         targetPosition = nearestAsteroid.transform.position + dirToShip * (nearestAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
-                        targetPosition = ToroidalMap.WrapPosition(targetPosition);
                         currentState = AIState.MovingToTarget;
                         ExitOrbitIfInOrbit();
                     }
@@ -401,7 +400,7 @@ namespace TitanOrbit.AI
                         currentState = AIState.CollectingGems;
                         targetGem = FindNearestGemWithinRange(gemCollectionProximity);
                         if (targetGem != null)
-                            targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                            targetPosition = targetGem.transform.position;
                         break;
                     }
 
@@ -411,7 +410,6 @@ namespace TitanOrbit.AI
                         // Move closer - target orbit point (not center) to avoid bumping
                         Vector3 dirToShip = ToroidalMap.ToroidalDirection(targetAsteroid.transform.position, rb.position);
                         targetPosition = targetAsteroid.transform.position + dirToShip * (targetAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
-                        targetPosition = ToroidalMap.WrapPosition(targetPosition);
                         currentState = AIState.MovingToTarget;
                     }
                     // Shooting happens in FixedUpdate via HandleShootingAsteroid
@@ -437,7 +435,7 @@ namespace TitanOrbit.AI
                     targetGem = FindNearestGemWithinRange(gemCollectionProximity);
                     if (targetGem != null)
                     {
-                        targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                        targetPosition = targetGem.transform.position;
                     }
                     else
                     {
@@ -778,10 +776,9 @@ namespace TitanOrbit.AI
             currentVelocity.y = 0f;
             rb.linearVelocity = currentVelocity;
 
-            // Update position with toroidal wrapping
+            // Update position (no wrapping - ship stays in world space; ToroidalRenderer repositions display)
             Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
             newPosition.y = 0f;
-            newPosition = ToroidalMap.WrapPosition(newPosition);
             rb.MovePosition(newPosition);
             transform.position = newPosition;
         }
@@ -841,7 +838,6 @@ namespace TitanOrbit.AI
             rb.linearVelocity = orbitVelocity;
             Vector3 newPosition = rb.position + orbitVelocity * Time.fixedDeltaTime;
             newPosition.y = 0f;
-            newPosition = ToroidalMap.WrapPosition(newPosition);
             rb.MovePosition(newPosition);
             transform.position = newPosition;
             transform.rotation = Quaternion.LookRotation(tangent);
@@ -1456,7 +1452,6 @@ namespace TitanOrbit.AI
                             targetAsteroid = nearestAsteroid;
                             Vector3 dirToShip = ToroidalMap.ToroidalDirection(nearestAsteroid.transform.position, rb.position);
                             targetPosition = nearestAsteroid.transform.position + dirToShip * (nearestAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
-                            targetPosition = ToroidalMap.WrapPosition(targetPosition);
                             currentState = AIState.MovingToTarget;
                             ExitOrbitIfInOrbit();
                         }
@@ -1478,7 +1473,7 @@ namespace TitanOrbit.AI
                         currentState = AIState.CollectingGems;
                         targetGem = FindNearestGemWithinRange(gemCollectionProximity);
                         if (targetGem != null)
-                            targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                            targetPosition = targetGem.transform.position;
                         break;
                     }
 
@@ -1488,7 +1483,6 @@ namespace TitanOrbit.AI
                         // Move closer - target orbit point (not center) to avoid bumping
                         Vector3 dirToShipLeveling = ToroidalMap.ToroidalDirection(targetAsteroid.transform.position, rb.position);
                         targetPosition = targetAsteroid.transform.position + dirToShipLeveling * (targetAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
-                        targetPosition = ToroidalMap.WrapPosition(targetPosition);
                         currentState = AIState.MovingToTarget;
                     }
                     // Shooting happens in FixedUpdate via HandleShootingAsteroid
@@ -1512,7 +1506,7 @@ namespace TitanOrbit.AI
                     targetGem = FindNearestGemWithinRange(gemCollectionProximity);
                     if (targetGem != null)
                     {
-                        targetPosition = ToroidalMap.WrapPosition(targetGem.transform.position);
+                        targetPosition = targetGem.transform.position;
                     }
                     else
                     {
@@ -1578,7 +1572,6 @@ namespace TitanOrbit.AI
             Vector3 dirToShip = ToroidalMap.ToroidalDirection(planet.transform.position, rb.position);
             float orbitDist = planet.PlanetSize * 0.65f; // Middle of orbit band 0.5-0.85
             target = planet.transform.position + dirToShip * orbitDist;
-            target = ToroidalMap.WrapPosition(target);
         }
 
         /// <summary>Force exit orbit when we have a new movement target (like player right-click does).</summary>

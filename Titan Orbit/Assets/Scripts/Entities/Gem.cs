@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Entities
 {
@@ -117,7 +118,10 @@ namespace TitanOrbit.Entities
         {
             // Update visual scale on all clients (for shrinking effect)
             UpdateVisualScale();
-            
+
+            // Never wrap gem position: world position can grow (e.g. 100, 310). ToroidalRenderer
+            // displays at the copy closest to the local player's camera for a seamless view.
+
             if (!IsServer) return;
             if (value.Value <= 0) return;
 
@@ -135,40 +139,42 @@ namespace TitanOrbit.Entities
             float lifetimeRemaining = 1f;
             if (elapsedTime >= lifetimeSeconds - shrinkDuration)
                 lifetimeRemaining = Mathf.Clamp01((lifetimeSeconds - elapsedTime) / shrinkDuration);
-            float currentPickupRadius = pickupRadius * gemSize.Value * lifetimeRemaining;
+            float currentPickupRadius = effectivePickupRadius;
 
-            // Find nearest valid ship in range for magnetic pull
+            // Find nearest valid ship in range using toroidal distance (so pickup works across map edges)
             float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
             ulong expelledId = expelledByShipId.Value;
-            Collider[] overlaps = Physics.OverlapSphere(transform.position, currentPickupRadius);
+            Vector3 gemPos = rb != null ? rb.position : transform.position;
             Starship nearestShip = null;
-            float nearestDistSq = currentPickupRadius * currentPickupRadius;
-            foreach (Collider col in overlaps)
+            float nearestDist = currentPickupRadius;
+            Starship[] ships = FindObjectsByType<Starship>(FindObjectsSortMode.None);
+            foreach (Starship ship in ships)
             {
-                Starship ship = col.GetComponent<Starship>();
-                if (ship == null || ship.IsDead || ship.CurrentGems >= ship.GemCapacity) continue;
-                // Expelled gems: victim ship cannot collect for 3 sec; others can collect immediately
+                if (ship.IsDead || ship.CurrentGems >= ship.GemCapacity) continue;
                 if (expelledId != 0)
                 {
                     var shipNo = ship.GetComponent<NetworkObject>();
                     if (shipNo != null && shipNo.NetworkObjectId == expelledId && elapsed < EXPELLED_UNCOLLECTABLE_DURATION)
                         continue; // Victim cannot collect yet
                 }
-                float distSq = (ship.transform.position - transform.position).sqrMagnitude;
-                if (distSq < nearestDistSq)
+                float dist = ToroidalMap.ToroidalDistance(gemPos, ship.transform.position);
+                if (dist < nearestDist)
                 {
-                    nearestDistSq = distSq;
+                    nearestDist = dist;
                     nearestShip = ship;
                 }
             }
 
             if (nearestShip != null)
             {
-                Vector3 toShip = nearestShip.transform.position - transform.position;
+                // Toroidal direction for magnetic pull (correct across wrap)
+                Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, nearestShip.transform.position);
                 toShip.y = 0f;
-                float dist = toShip.magnitude;
+                if (toShip.sqrMagnitude < 0.0001f) toShip = Vector3.forward;
+                else toShip.Normalize();
+                float dist = nearestDist;
 
-                // Collect when very close
+                // Collect when very close (toroidal distance)
                 if (dist <= collectRadius)
                 {
                     float toAdd = Mathf.Min(value.Value, nearestShip.GemCapacity - nearestShip.CurrentGems);
@@ -182,11 +188,10 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
-                // Magnetic pull toward ship (XZ only)
-                if (rb != null && dist > 0.01f)
+                // Magnetic pull toward ship (XZ only, toroidal direction)
+                if (rb != null)
                 {
-                    Vector3 dir = toShip / dist;
-                    Vector3 targetVel = dir * magnetSpeed;
+                    Vector3 targetVel = toShip * magnetSpeed;
                     rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, magnetSpeed * Time.fixedDeltaTime * 4f);
                     rb.linearDamping = 0f;
                 }
