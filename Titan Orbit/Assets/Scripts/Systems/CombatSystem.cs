@@ -32,7 +32,7 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, float visualScaleMultiplier = 1f)
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0)
         {
             if (bulletPrefab == null) return;
 
@@ -50,7 +50,7 @@ namespace TitanOrbit.Systems
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
             if (bullet != null)
-                bullet.Initialize(speed, damage, ownerTeam, visualScaleMultiplier);
+                bullet.Initialize(speed, damage, ownerTeam, visualScaleMultiplier, bulletShapeIndex);
 
             if (bulletRb != null)
                 bulletRb.linearVelocity = dir * speed;

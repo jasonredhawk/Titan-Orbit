@@ -582,8 +582,9 @@ namespace TitanOrbit.Entities
                     Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
                     float damage = c.damagePerBullet * DamageMultiplier;
                     float speed = c.bulletSpeed * SpeedMultiplier;
-                    float scale = c.bulletScale * (0.25f + damage / 80f);
-                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale);
+                    float scale = c.bulletScale * (0.65f + damage / 50f);
+                    byte shapeIndex = 0; // TODO: from weapon config or player preference
+                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale, shapeIndex);
                 }
             }
             FireClientRpc();

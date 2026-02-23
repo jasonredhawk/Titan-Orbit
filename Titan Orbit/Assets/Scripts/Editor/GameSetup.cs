@@ -1543,11 +1543,14 @@ namespace TitanOrbit.Editor
                 {
                     SerializedObject so = new SerializedObject(bulletComponent);
                     
-                    // Single bullet visual (same skin for all ships; size from weapon config)
-                    GameObject digitalProj = AssetDatabase.LoadAssetAtPath<GameObject>(
-                        "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Digital Projectile.prefab");
-                    if (digitalProj != null)
-                        so.FindProperty("bulletVisualPrefab").objectReferenceValue = digitalProj;
+                    // Built-in customizable VFX (core + particle tail). Leave prefab null to use it; set prefab to override.
+                    so.FindProperty("bulletVisualPrefab").objectReferenceValue = null;
+                    so.FindProperty("defaultShape").enumValueIndex = 0; // Round
+                    so.FindProperty("coreSize").floatValue = 0.5f;
+                    so.FindProperty("tailLength").floatValue = 0.8f;
+                    so.FindProperty("tailWidth").floatValue = 0.12f;
+                    so.FindProperty("tailFade").floatValue = 0.7f;
+                    so.FindProperty("proceduralBulletMaterial").objectReferenceValue = null;
 
                     // Set impact effect (Red Impact)
                     GameObject redImpact = AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -1557,8 +1560,9 @@ namespace TitanOrbit.Editor
                         so.FindProperty("impactEffectPrefab").objectReferenceValue = redImpact;
                     }
 
-                    // Set visual scale and impact settings
-                    so.FindProperty("bulletVisualScale").floatValue = 0.35f;
+                    // Procedural color (bluish white energy); editable in prefab
+                    so.FindProperty("proceduralBulletColor").colorValue = new Color(0.75f, 0.88f, 1f);
+                    so.FindProperty("bulletVisualScale").floatValue = 1.2f;
                     so.FindProperty("impactEffectDuration").floatValue = 3f;
                     so.FindProperty("impactEffectScale").floatValue = 0.5f;
 
