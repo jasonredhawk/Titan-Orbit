@@ -22,12 +22,6 @@ namespace TitanOrbit.Entities
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
-        [Header("Home Planet SGT: Water & Atmosphere")]
-        [Tooltip("SGT Atmosphere material (e.g. CW Atmosphere + Lighting + Scattering). Required for atmosphere on home planets.")]
-        [SerializeField] private Material atmosphereSourceMaterial;
-        [Tooltip("SGT Atmosphere outer mesh (e.g. Geosphere40 from CW).")]
-        [SerializeField] private Mesh atmosphereOuterMesh;
-
         [Header("Level Visuals")]
         [Tooltip("Scale pulse multiplier when leveling up (e.g. 1.15 = 15% bigger briefly).")]
         [SerializeField] private float levelUpPulseScale = 1.15f;

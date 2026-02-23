@@ -37,9 +37,9 @@ namespace TitanOrbit.Entities
 
         [Header("Regular Planet: Water & Atmosphere (optional)")]
         [Tooltip("Optional. When set, regular planets get varying atmosphere (derived from material index). Leave empty for no atmosphere.")]
-        [SerializeField] private Material atmosphereSourceMaterial;
+        [SerializeField] protected Material atmosphereSourceMaterial;
         [Tooltip("Optional. SGT atmosphere outer mesh (e.g. Geosphere40 from CW). Required if atmosphere is used.")]
-        [SerializeField] private Mesh atmosphereOuterMesh;
+        [SerializeField] protected Mesh atmosphereOuterMesh;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
@@ -113,7 +113,8 @@ namespace TitanOrbit.Entities
                 // Max population: regular planets 50-150 by size; home planets override to 100
                 float potentialMax = GetMaxPopulationForPlanet();
                 growthRate.Value = GetGrowthRatePerSecond();
-                teamOwnership.Value = TeamManager.Team.None; // Neutral by default
+                if (!(this is HomePlanet))
+                    teamOwnership.Value = TeamManager.Team.None; // Neutral by default (home planets already set in InitForTeam for rings/color)
                 // For neutral (regular) planets only: starting population is also the max (display as e.g. 18 of 18). Home planets keep full cap.
                 if (!(this is HomePlanet))
                 {

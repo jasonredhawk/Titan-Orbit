@@ -108,12 +108,9 @@ namespace TitanOrbit.Generation
                 GameObject homePlanetObj = Instantiate(homePlanetPrefab, position, Quaternion.identity);
                 HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
                 NetworkObject netObj = homePlanetObj.GetComponent<NetworkObject>();
-                if (netObj != null) netObj.Spawn();
-                
                 if (homePlanet != null)
-                {
-                    homePlanet.InitForTeam(teams[i]); // Set team color (A=red, B=blue, C=green)
-                }
+                    homePlanet.InitForTeam(teams[i]); // Set team before Spawn so home planet gets correct tropical skin (A=Tropical1, B=Tropical2, C=Tropical3)
+                if (netObj != null) netObj.Spawn();
 
                 planetPositions.Add(position);
             }
