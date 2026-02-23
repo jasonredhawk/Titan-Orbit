@@ -268,10 +268,14 @@ namespace TitanOrbit.Editor
             mainMenuRect.offsetMin = Vector2.zero;
             mainMenuRect.offsetMax = Vector2.zero;
 
-            // Title (sci-fi style)
+            // Title (sci-fi style) — use Shift pack's Rajdhani font for a tech/sci-fi look
+            TMP_FontAsset sciFiTitleFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                "Assets/Shift - Complete Sci-Fi UI/Fonts/Rajdhani-Bold SDF.asset");
             GameObject titleObj = CreateText(mainMenuPanel.transform, "Title", "TITAN ORBIT", 72, TextAnchor.MiddleCenter);
-            titleObj.GetComponent<TextMeshProUGUI>().color = new Color(0.4f, 0.85f, 1f, 1f);
-            titleObj.GetComponent<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
+            TextMeshProUGUI titleTmp = titleObj.GetComponent<TextMeshProUGUI>();
+            if (sciFiTitleFont != null) titleTmp.font = sciFiTitleFont;
+            titleTmp.color = new Color(0.4f, 0.85f, 1f, 1f);
+            titleTmp.fontStyle = FontStyles.Bold;
             RectTransform titleRect = titleObj.GetComponent<RectTransform>();
             titleRect.anchorMin = new Vector2(0.5f, 0.8f);
             titleRect.anchorMax = new Vector2(0.5f, 0.9f);
