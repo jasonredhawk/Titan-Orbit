@@ -1040,6 +1040,9 @@ namespace TitanOrbit.Entities
             shipData = data;
             if (data != null)
             {
+                // When ship levels up, reset all ability upgrades so player can re-upgrade 0..newLevel per attribute
+                if (IsServer && data.shipLevel > shipLevel)
+                    ResetAttributeLevels();
                 shipLevel = data.shipLevel;
                 focusType = data.focusType;
                 movementSpeed = data.baseMovementSpeed;
@@ -1163,6 +1166,20 @@ namespace TitanOrbit.Entities
                 case AttributeUpgradeSystem.ShipAttributeType.RotationSpeed: attrRotationSpeed.Value++; break;
                 case AttributeUpgradeSystem.ShipAttributeType.EnergyRegen: attrEnergyRegen.Value++; break;
             }
+        }
+
+        /// <summary>Server only: resets all attribute upgrade levels to 0. Called when ship levels up.</summary>
+        private void ResetAttributeLevels()
+        {
+            if (!IsServer) return;
+            attrMovementSpeed.Value = 0;
+            attrEnergyCapacity.Value = 0;
+            attrFirePower.Value = 0;
+            attrBulletSpeed.Value = 0;
+            attrMaxHealth.Value = 0;
+            attrHealthRegen.Value = 0;
+            attrRotationSpeed.Value = 0;
+            attrEnergyRegen.Value = 0;
         }
     }
 }
