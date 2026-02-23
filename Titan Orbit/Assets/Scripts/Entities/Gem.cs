@@ -13,8 +13,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float pickupRadius = 2f;
         [SerializeField] private float stopSpeedThreshold = 0.3f;
         [SerializeField] private float slowdownDrag = 4f;
-        [SerializeField] private float baseScale = 0.5f; // Base visual scale (multiplied by asteroid size so gem ≈ half asteroid)
-        [SerializeField] private float visualScaleMultiplier = 2f; // Scale all gems up so smallest (value 1) is visible
+        [SerializeField] private float baseScale = 0.48f; // Base visual scale; final scale = baseScale * value^(1/3) * ...
+        [SerializeField] private float visualScaleMultiplier = 2.2f; // Global scale so value-1 gems are visible; value-50 is ~50x volume (not 50x radius)
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
@@ -77,12 +77,16 @@ namespace TitanOrbit.Entities
                     lifetimeRemaining = Mathf.Clamp01((lifetimeSeconds - elapsedTime) / shrinkDuration);
             }
             
-            // Gem scale ≈ half the asteroid size, then by gem size multiplier, lifetime, and global scale-up
-            float scale = baseScale * asteroidPhysicalSize.Value * gemSize.Value * lifetimeRemaining * visualScaleMultiplier;
+            // Scale by value^(1/3) so volume ∝ value (1-50)
+            float valueScale = Mathf.Pow(Mathf.Max(1f, value.Value), 1f / 3f);
+            float scale = baseScale * valueScale * asteroidPhysicalSize.Value * lifetimeRemaining * visualScaleMultiplier;
+            // Cap so gem is never bigger than the asteroid it came from
+            if (asteroidPhysicalSize.Value > 0.01f)
+                scale = Mathf.Min(scale, asteroidPhysicalSize.Value * 0.85f);
             transform.localScale = Vector3.one * scale;
             
-            // Scale pickup radius based on gem size and lifetime
-            effectivePickupRadius = pickupRadius * gemSize.Value * lifetimeRemaining;
+            // Pickup radius scales with value^(1/3) so bigger gems are easier to collect
+            effectivePickupRadius = pickupRadius * valueScale * lifetimeRemaining;
         }
 
         public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f)

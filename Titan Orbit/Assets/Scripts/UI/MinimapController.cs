@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
-        [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale (0.3-1.5); keeps blips small vs old AsteroidSize (1-20)
+        [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
         [SerializeField] private float edgeMarkerMaxSize = 48f; // Maximum size for closest planets
@@ -1367,7 +1367,7 @@ namespace TitanOrbit.UI
             foreach (var a in FindObjectsOfType<Asteroid>())
             {
                 if (a.IsDestroyed) continue;
-                // Use physical scale (transform) for minimap size, not normalized AsteroidSize (1-20)
+                // Use physical scale (transform) for minimap size, not normalized AsteroidSize (1-50)
                 // Raw asteroid scale is ~0.3 to 1.5 world units
                 float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
                 // Keep asteroid blips small: physical size 0.3–1.5 → blip ~2–5 px (no sizeScaleFactor so they don’t match planet scale)

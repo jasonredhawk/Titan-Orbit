@@ -31,8 +31,8 @@ namespace TitanOrbit.Generation
         [SerializeField] private GameObject asteroidPrefab;
         [SerializeField] private int numberOfAsteroids = 400;
         [SerializeField] private int asteroidClusters = 25;
-        [SerializeField] private float minAsteroidSize = 0.3f;
-        [SerializeField] private float maxAsteroidSize = 1.5f;
+        [SerializeField] private float minAsteroidSize = 1f;   // Normalized size 1-50 (volume-proportional)
+        [SerializeField] private float maxAsteroidSize = 50f;
         [SerializeField] private float minAsteroidSpacing = 1.5f;
 
         [Header("Parent Containers")]
@@ -164,10 +164,11 @@ namespace TitanOrbit.Generation
 
                     asteroidPositions.Add(position);
                     float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
+                    float linearScale = 0.35f * Mathf.Pow(size, 1f / 3f);
                     Vector3 scale = new Vector3(
-                        size * (0.8f + (float)random.NextDouble() * 0.4f),
-                        size * (0.9f + (float)random.NextDouble() * 0.2f),
-                        size * (0.85f + (float)random.NextDouble() * 0.3f)
+                        linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
+                        linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
+                        linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
                     );
 
                     GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));

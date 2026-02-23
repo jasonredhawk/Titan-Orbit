@@ -42,54 +42,43 @@ namespace TitanOrbit.Systems
             GameObject prefab = GetGemPrefab();
             if (prefab == null) return;
 
-            // asteroidSize is normalized (1-20); asteroidPhysicalSize is world scale (~0.3-1.5) for gem visual scale
-            // totalValue should be between 1 and 50 based on normalized size
-            
-            // Smallest asteroids (size ~1, totalValue ~1) produce exactly 1 tiny gem
+            // asteroidSize and totalValue both 1-50 (volume-proportional); asteroidPhysicalSize is world scale for gem cap
             if (asteroidSize <= 1.5f && totalValue <= 2f)
             {
                 SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f, asteroidPhysicalSize);
                 return;
             }
 
-            // Normalize asteroid size to 0-1 range for distribution logic
-            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (20f - 1f));
-            
-            // Determine gem count and distribution based on asteroid size
-            // Small asteroids: multiple small gems
-            // Medium asteroids: mix of small/medium gems
-            // Large asteroids: fewer large gems (max value 50 per gem)
+            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (50f - 1f));
             
             int gemCount;
             float minGemValue, maxGemValue;
             
-            if (normalizedSize < 0.3f) // Small asteroids (size 1-6.7)
+            if (normalizedSize < 0.3f)
             {
                 gemCount = Random.Range(2, 5);
                 minGemValue = 1f;
-                maxGemValue = 5f;
+                maxGemValue = 15f;
             }
-            else if (normalizedSize < 0.7f) // Medium asteroids (size 6.7-14.3)
+            else if (normalizedSize < 0.7f)
             {
                 gemCount = Random.Range(2, 5);
                 minGemValue = 1f;
-                maxGemValue = 25f;
+                maxGemValue = 35f;
             }
-            else // Large asteroids (size 14.3-20)
+            else
             {
-                // Large asteroids produce fewer, more valuable gems
-                // Max gem value is 50
-                if (normalizedSize >= 0.9f) // Very large asteroids (size 18.1-20)
+                if (normalizedSize >= 0.9f)
                 {
                     gemCount = Random.Range(1, 4);
                     minGemValue = 20f;
-                    maxGemValue = 50f; // Max value per gem
+                    maxGemValue = 50f;
                 }
-                else // Large but not largest (size 14.3-18.1)
+                else
                 {
                     gemCount = Random.Range(2, 4);
                     minGemValue = 10f;
-                    maxGemValue = 40f;
+                    maxGemValue = 45f;
                 }
             }
             

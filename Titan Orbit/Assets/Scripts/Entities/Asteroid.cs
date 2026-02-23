@@ -84,21 +84,14 @@ namespace TitanOrbit.Entities
             {
                 spawnPosition = transform.position;
                 spawnScale = transform.localScale;
-                float rawSize = Mathf.Max(0.3f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
-                
-                // Normalize asteroid size from actual scale (0.3-1.5) to normalized range (1-20)
-                // Size 1 = smallest, Size 20 = largest
-                float minRawSize = 0.3f;
-                float maxRawSize = 1.5f;
-                float normalizedSize = 1f + (rawSize - minRawSize) / (maxRawSize - minRawSize) * (20f - 1f);
-                normalizedSize = Mathf.Clamp(normalizedSize, 1f, 20f);
+                float rawSize = Mathf.Max(0.01f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
+                const float asteroidScaleBase = 0.35f;
+                float normalizedSize = Mathf.Pow(rawSize / asteroidScaleBase, 3f);
+                normalizedSize = Mathf.Clamp(normalizedSize, 1f, 50f);
                 asteroidSize = normalizedSize;
                 
-                // Scale gem total value from 1 to 50 based on normalized size
-                // Size 1 -> totalValue 1, Size 20 -> totalValue 50
-                float minTotalValue = 1f;
-                float maxTotalValue = 50f;
-                maxGems.Value = minTotalValue + (normalizedSize - 1f) / (20f - 1f) * (maxTotalValue - minTotalValue);
+                // Total gem value = asteroid size (both 1-50, volume-proportional)
+                maxGems.Value = normalizedSize;
                 remainingGems.Value = maxGems.Value;
                 
                 // HP scales more aggressively for larger asteroids based on raw physical size
