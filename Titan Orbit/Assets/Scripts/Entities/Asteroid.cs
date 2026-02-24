@@ -70,7 +70,27 @@ namespace TitanOrbit.Entities
                 {
                     sphereCol.isTrigger = false;
                 }
+                // High-friction material so ships can ram and sustain pressure without slipping off
+                if (col.sharedMaterial == null)
+                {
+                    col.sharedMaterial = GetOrCreateAsteroidRammingMaterial();
+                }
             }
+        }
+
+        private static PhysicMaterial asteroidRammingMaterial;
+        private static PhysicMaterial GetOrCreateAsteroidRammingMaterial()
+        {
+            if (asteroidRammingMaterial != null) return asteroidRammingMaterial;
+            asteroidRammingMaterial = new PhysicMaterial("AsteroidRamming")
+            {
+                dynamicFriction = 0.95f,
+                staticFriction = 0.95f,
+                frictionCombine = PhysicMaterialCombine.Maximum,
+                bounceCombine = PhysicMaterialCombine.Minimum,
+                bounciness = 0f
+            };
+            return asteroidRammingMaterial;
         }
 
         public override void OnNetworkSpawn()

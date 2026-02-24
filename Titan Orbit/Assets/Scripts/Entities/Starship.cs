@@ -21,16 +21,23 @@ namespace TitanOrbit.Entities
         [SerializeField] private ShipFocusType focusType = ShipFocusType.Fighter;
 
         [Header("Movement")]
-        [SerializeField] private float movementSpeed = 10f;
+        [SerializeField] private float movementSpeed = 5f;
         [SerializeField] private float rotationSpeed = 180f;
         [SerializeField] private float acceleration = 20f;
-        [SerializeField] private float deceleration = 8f;
+        [Tooltip("When space brakes are on, speed is reduced by this amount per second (higher = more friction, faster stop).")]
+        [SerializeField] private float brakeDeceleration = 7f;
+        [Tooltip("When over max speed (e.g. from recoil), speed is reduced back toward max by this amount per second.")]
+        [SerializeField] private float recoilDecayPerSecond = 6f;
         [Header("Orbit")]
-        [SerializeField] private float orbitSpeed = 0.8f; // Linear speed while orbiting (farther ships move slower angular)
+        [SerializeField] private float orbitSpeed = 0.8f; // Baseline linear speed while orbiting; modified by planet size and radius
         [SerializeField] private float orbitRadiusPullStrength = 2f; // Gentle push in/out only when outside zone band
+        [Tooltip("How quickly the ship's existing velocity is steered toward the ideal orbit velocity. Higher = snappier capture, lower = more drift-through.")]
+        [SerializeField] private float orbitCaptureResponsiveness = 1.5f;
 
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
+        [Tooltip("Recoil impulse per shot scales with bullet scale and damage. Bigger bullets push the ship back more; stationary ships can reverse.")]
+        [SerializeField] private float recoilStrength = 0.5f;
         private WeaponConfig weaponConfig;
         private float[] cannonLastFireTime;
 
@@ -164,12 +171,35 @@ namespace TitanOrbit.Entities
 
             ApplyHullIdentityColor();
 
-            // Lock Y position - prevent elevation changes
+            // Lock Y position - prevent elevation changes; no drag so ship can float frictionless when brakes off
             if (rb != null)
             {
                 rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
-                rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Better hit detection for fast bullets
+                rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Prevent tunnelling through planets/asteroids
+                rb.linearDamping = 0f; // Frictionless: velocity only changes from our code (thrust/brakes/recoil)
             }
+
+            // High-friction material so ship doesn't slip off asteroids when ramming
+            Collider shipCol = GetComponent<Collider>();
+            if (shipCol != null && shipCol.sharedMaterial == null)
+            {
+                shipCol.sharedMaterial = GetOrCreateShipRammingMaterial();
+            }
+        }
+
+        private static PhysicMaterial shipRammingMaterial;
+        private static PhysicMaterial GetOrCreateShipRammingMaterial()
+        {
+            if (shipRammingMaterial != null) return shipRammingMaterial;
+            shipRammingMaterial = new PhysicMaterial("ShipRamming")
+            {
+                dynamicFriction = 0.95f,
+                staticFriction = 0.95f,
+                frictionCombine = PhysicMaterialCombine.Maximum,
+                bounceCombine = PhysicMaterialCombine.Minimum,
+                bounciness = 0f
+            };
+            return shipRammingMaterial;
         }
 
         private void OnDestroy()
@@ -245,7 +275,12 @@ namespace TitanOrbit.Entities
             Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
             rb.position = orbitPos;
-            rb.linearVelocity = new Vector3(0f, 0f, -orbitSpeed); // Tangent for clockwise orbit
+
+            float innerWorld = home.PlanetSize * 0.5f;
+            float outerWorld = home.PlanetSize * 0.85f;
+            float targetSpeed = GetOrbitTargetSpeed(home, orbitRadius, innerWorld, outerWorld);
+
+            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed); // Tangent for clockwise orbit
             currentVelocity = rb.linearVelocity;
         }
 
@@ -257,17 +292,15 @@ namespace TitanOrbit.Entities
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
-            // When user starts moving, hide orbit menu immediately (even if still in zone)
-            if (currentOrbitPlanet != null && movePressed)
+            if (IsLocalPlayerShip())
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                orbitUI.Hide();
-            }
-            // When user stops moving while still in orbit zone, show menu again
-            if (currentOrbitPlanet != null && !movePressed && wasMovePressedLastFrame)
-            {
-                var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                orbitUI.Show(this, currentOrbitPlanet);
+                // Hide menu when moving or when in zone but not yet in stable orbit
+                if (movePressed || currentOrbitPlanet == null || !IsInStableOrbit())
+                    orbitUI.Hide();
+                // Show menu only when in orbit zone, not thrusting, and fully in stable orbit
+                else if (currentOrbitPlanet != null && !movePressed && IsInStableOrbit())
+                    orbitUI.Show(this, currentOrbitPlanet);
             }
             wasMovePressedLastFrame = movePressed;
             HandleHealthRegen();
@@ -314,7 +347,7 @@ namespace TitanOrbit.Entities
                 {
                     Vector3 vel = rb.linearVelocity;
                     vel.y = 0f;
-                    vel = Vector3.MoveTowards(vel, Vector3.zero, deceleration * Time.fixedDeltaTime);
+                    vel = Vector3.MoveTowards(vel, Vector3.zero, brakeDeceleration * Time.fixedDeltaTime);
                     rb.linearVelocity = vel;
                 }
                 return;
@@ -409,52 +442,160 @@ namespace TitanOrbit.Entities
 
         private void HandleMovement()
         {
+            // Sync from rigidbody so recoil (AddForce) is included in our velocity
+            currentVelocity = rb.linearVelocity;
+            currentVelocity.y = 0f;
+
+            float maxSpeed = EffectiveMovementSpeed;
+            bool brakesOn = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.SpaceBrakesEnabled ?? true;
+
             if (moveDirection.magnitude > 0.1f)
             {
                 currentVelocity += moveDirection * acceleration * Time.fixedDeltaTime;
-                if (currentVelocity.magnitude > EffectiveMovementSpeed)
-                    currentVelocity = currentVelocity.normalized * EffectiveMovementSpeed;
+                if (currentVelocity.magnitude > maxSpeed)
+                    currentVelocity = currentVelocity.normalized * maxSpeed;
             }
             else
             {
-                currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, deceleration * Time.fixedDeltaTime);
+                if (brakesOn)
+                    currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, brakeDeceleration * Time.fixedDeltaTime);
+                // else: frictionless float (keep currentVelocity unchanged)
             }
 
             // Ensure velocity has no Y component
             currentVelocity.y = 0f;
 
-            // Calculate new position and lock Y to fixed position (no wrapping - ship stays in world space)
-            Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
-            newPosition.y = FIXED_Y_POSITION;
-            rb.MovePosition(newPosition);
+            // Cap at max speed; if over (e.g. from recoil), decay back toward max over time
+            float mag = currentVelocity.magnitude;
+            if (mag > maxSpeed && maxSpeed > 0.001f)
+            {
+                float targetMag = Mathf.MoveTowards(mag, maxSpeed, recoilDecayPerSecond * Time.fixedDeltaTime);
+                currentVelocity = currentVelocity.normalized * targetMag;
+            }
+
+            rb.linearVelocity = currentVelocity;
+            // Do not use MovePosition - let physics move the body so collisions with planets/asteroids block properly
         }
 
         private void HandleOrbitMovement()
         {
             if (currentOrbitPlanet == null || rb == null) return;
+
             Vector3 planetPos = currentOrbitPlanet.transform.position;
             Vector3 toShip = rb.position - planetPos;
             toShip.y = 0f;
             float dist = toShip.magnitude;
             if (dist < 0.01f) return;
-            // Orbit zone: inner 0.5 to outer 0.85 (local). Ship keeps whatever radius it entered; no single path.
+
+            // Orbit zone: inner 0.5 to outer 0.85 (world = planet size * local). Ship keeps whatever radius it entered.
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
             float outerWorld = currentOrbitPlanet.PlanetSize * 0.85f;
             Vector3 radial = toShip / dist;
-            // Clockwise tangent (viewed from above): (radial.z, 0, -radial.x). Constant linear speed → angular = orbitSpeed/dist (farther = slower).
+
+            // Clockwise tangent (viewed from above): (radial.z, 0, -radial.x).
+            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
-            Vector3 orbitVelocity = tangent * orbitSpeed;
-            // Only nudge back when outside the band so ships stay in zone but keep their lane
+            Vector3 desiredOrbitVelocity = tangent * targetSpeed;
+
+            // Only nudge back when outside the band so ships stay in zone but keep their lane.
+            Vector3 radialCorrection = Vector3.zero;
             if (dist < innerWorld)
-                orbitVelocity += radial * orbitRadiusPullStrength;
+                radialCorrection += radial * orbitRadiusPullStrength;
             else if (dist > outerWorld)
-                orbitVelocity -= radial * orbitRadiusPullStrength;
-            currentVelocity = orbitVelocity;
-            rb.linearVelocity = orbitVelocity;
-            Vector3 newPosition = rb.position + orbitVelocity * Time.fixedDeltaTime;
-            newPosition.y = FIXED_Y_POSITION;
-            rb.MovePosition(newPosition);
+                radialCorrection -= radial * orbitRadiusPullStrength;
+
+            desiredOrbitVelocity += radialCorrection;
+
+            // Blend from current velocity toward desired orbit velocity instead of snapping instantly.
+            Vector3 currentVel = rb.linearVelocity;
+            currentVel.y = 0f;
+
+            float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
+            float alignRate = orbitCaptureResponsiveness * gravityFactor;
+            float t = Mathf.Clamp01(alignRate * Time.fixedDeltaTime);
+
+            Vector3 blendedVelocity = Vector3.Lerp(currentVel, desiredOrbitVelocity, t);
+            blendedVelocity.y = 0f;
+
+            currentVelocity = blendedVelocity;
+            rb.linearVelocity = blendedVelocity;
+            // Do not use MovePosition - let physics move the body so collisions block properly
             // Rotation is handled by HandleRotation (mouse); ship can face any direction while orbiting.
+        }
+
+        /// <summary>
+        /// Computes the ideal orbit linear speed for a given planet and radius.
+        /// Closer orbits and larger planets yield faster orbital speeds.
+        /// </summary>
+        private float GetOrbitTargetSpeed(Planet planet, float radius, float innerWorld, float outerWorld)
+        {
+            if (planet == null)
+                return orbitSpeed;
+
+            float clampedRadius = Mathf.Clamp(radius, innerWorld, outerWorld);
+            // 0 at outer edge of orbit band, 1 near the planet surface.
+            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
+
+            // Normalize planet size using the same rough range regular planets use (4–12), but works for home planets too.
+            const float minSize = 4f;
+            const float maxSize = 12f;
+            float sizeNorm = Mathf.Clamp01((planet.PlanetSize - minSize) / (maxSize - minSize));
+
+            // Bigger planets and tighter orbits move noticeably faster.
+            float sizeMultiplier = Mathf.Lerp(0.8f, 1.4f, sizeNorm);     // Small → big planet
+            float radiusMultiplier = Mathf.Lerp(0.7f, 1.6f, radiusFactor); // Outer → inner orbit
+
+            return orbitSpeed * sizeMultiplier * radiusMultiplier;
+        }
+
+        /// <summary>
+        /// Gravity-style factor used for how strongly we steer toward the orbit velocity.
+        /// Larger planets and closer orbits pull velocity into alignment more quickly.
+        /// </summary>
+        private float GetOrbitGravityFactor(Planet planet, float radius, float innerWorld, float outerWorld)
+        {
+            if (planet == null)
+                return 1f;
+
+            float clampedRadius = Mathf.Clamp(radius, innerWorld, outerWorld);
+            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius); // 0 outer, 1 inner
+
+            const float minSize = 4f;
+            const float maxSize = 12f;
+            float sizeNorm = Mathf.Clamp01((planet.PlanetSize - minSize) / (maxSize - minSize));
+
+            // Base 1x, up to roughly ~2.7x for large planets and inner orbits.
+            float gravityFactor = 1f + 0.7f * sizeNorm + 1.0f * radiusFactor;
+            return gravityFactor;
+        }
+
+        /// <summary>True when in orbit zone and velocity is aligned with orbital path and speed is close to target (i.e. "true orbit" for UI).</summary>
+        private bool IsInStableOrbit()
+        {
+            if (currentOrbitPlanet == null || rb == null) return false;
+
+            Vector3 planetPos = currentOrbitPlanet.transform.position;
+            Vector3 toShip = rb.position - planetPos;
+            toShip.y = 0f;
+            float dist = toShip.magnitude;
+            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
+            float outerWorld = currentOrbitPlanet.PlanetSize * 0.85f;
+            if (dist < innerWorld || dist > outerWorld) return false;
+
+            Vector3 radial = toShip / dist;
+            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
+            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
+            if (targetSpeed < 0.001f) return false;
+
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float speed = vel.magnitude;
+            if (speed < 0.001f) return false;
+
+            float alignment = Vector3.Dot(vel.normalized, tangent);
+            float speedRatio = speed / targetSpeed;
+            // Mostly tangential (alignment > ~0.92 ≈ 23°) and speed within ~30% of target
+            return alignment >= 0.92f && speedRatio >= 0.7f && speedRatio <= 1.35f;
         }
 
         private void HandleRotation()
@@ -536,6 +677,8 @@ namespace TitanOrbit.Entities
             else forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward);
             Vector3 fireOrigin = firePoint != null ? firePoint.position : shipPosition + forward * 2f;
+            Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            shipVel.y = 0f;
 
             for (int i = 0; i < wc.cannons.Count; i++)
             {
@@ -573,7 +716,13 @@ namespace TitanOrbit.Entities
                     float speed = c.bulletSpeed * SpeedMultiplier;
                     float scale = c.bulletScale * (0.65f + damage / 50f);
                     byte shapeIndex = 0; // TODO: from weapon config or player preference
-                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale, shapeIndex);
+                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale, shapeIndex, shipVel);
+                    // Recoil: scaled down so it nudges the ship without throwing it; scales with bullet size and damage
+                    if (rb != null)
+                    {
+                        float recoilImpulse = recoilStrength * scale * (0.25f + damage / 150f);
+                        rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                    }
                 }
             }
             FireClientRpc();
@@ -809,7 +958,12 @@ namespace TitanOrbit.Entities
             Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
             rb.position = orbitPos;
-            rb.linearVelocity = new Vector3(0f, 0f, -orbitSpeed); // Tangent for clockwise orbit
+
+            float innerWorld = home.PlanetSize * 0.5f;
+            float outerWorld = home.PlanetSize * 0.85f;
+            float targetSpeed = GetOrbitTargetSpeed(home, orbitRadius, innerWorld, outerWorld);
+
+            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed); // Tangent for clockwise orbit
             currentVelocity = rb.linearVelocity;
         }
 
@@ -889,6 +1043,32 @@ namespace TitanOrbit.Entities
                     TakeDamageServerRpc(collisionDamage, TeamManager.Team.None);
                 }
             }
+        }
+
+        /// <summary>
+        /// When pushing into an asteroid, cancel tangential velocity so the ship sustains pressure and doesn't slip off.
+        /// Contact normal points from asteroid toward ship; we keep only velocity component into the asteroid (-normal).
+        /// </summary>
+        private void OnCollisionStay(Collision collision)
+        {
+            if (!IsServer || rb == null || isDead.Value) return;
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid == null || asteroid.IsDestroyed || collision.contactCount == 0) return;
+
+            Vector3 normal = collision.GetContact(0).normal;
+            normal.y = 0f;
+            if (normal.sqrMagnitude < 0.01f) return;
+            normal.Normalize();
+            // Into asteroid = opposite of normal (normal points from asteroid to us)
+            Vector3 intoAsteroid = -normal;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float pushAmount = Vector3.Dot(vel, intoAsteroid);
+            if (pushAmount <= 0f) return; // Not pushing in
+            // Keep only the "pushing in" component so we don't slide sideways
+            Vector3 ramVelocity = intoAsteroid * pushAmount;
+            rb.linearVelocity = new Vector3(ramVelocity.x, 0f, ramVelocity.z);
+            currentVelocity = rb.linearVelocity;
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -1009,8 +1189,7 @@ namespace TitanOrbit.Entities
                 if (dist >= inner && dist <= outer)
                 {
                     currentOrbitPlanet = planet;
-                    var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                    orbitUI.Show(this, planet);
+                    // Menu shows in Update when IsInStableOrbit() is true
                     break;
                 }
             }
@@ -1024,17 +1203,12 @@ namespace TitanOrbit.Entities
             return localPlayer != null && localPlayer == GetComponent<NetworkObject>();
         }
 
-        /// <summary>Called by PlanetOrbitZone when ship enters the orbit/loading zone.</summary>
+        /// <summary>Called by PlanetOrbitZone when ship enters the orbit/loading zone. Menu is shown only once in stable orbit (see Update).</summary>
         public void EnterOrbitZone(Planet planet)
         {
             if (planet == null) return;
             currentOrbitPlanet = planet;
-            // Only show orbit menu for local player's ship (not AI ships; on host, AI ships are server-owned so IsOwner would be true)
-            if (IsLocalPlayerShip())
-            {
-                var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                orbitUI.Show(this, planet);
-            }
+            // Menu shows in Update when IsInStableOrbit() is true, not on zone entry
         }
 
         /// <summary>Called by PlanetOrbitZone when ship leaves the orbit zone.</summary>

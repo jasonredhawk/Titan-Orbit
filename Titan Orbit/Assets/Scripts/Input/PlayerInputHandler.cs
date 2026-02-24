@@ -23,12 +23,16 @@ namespace TitanOrbit.Input
         private bool moveForwardPressed;
         private bool rocketPressed;
         private bool minePressed;
+        /// <summary>When true, ship decelerates when not holding move. When false, ship floats (no auto-slow). Toggled by CTRL.</summary>
+        private bool spaceBrakesEnabled = true;
 
         public bool ShootPressed => shootPressed;
         public bool RocketPressed => rocketPressed;
         public bool MinePressed => minePressed;
         /// <summary>True when right mouse is held - move in facing direction</summary>
         public bool MoveForwardPressed => moveForwardPressed;
+        /// <summary>True when space brakes are on (ship slows when not holding move). False = float endlessly. Toggle with CTRL.</summary>
+        public bool SpaceBrakesEnabled => spaceBrakesEnabled;
         public bool IsMobile => Application.isMobilePlatform;
 
         private void Awake()
@@ -80,6 +84,10 @@ namespace TitanOrbit.Input
 
             // Right-click = move in facing direction
             moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
+
+            // CTRL toggles space brakes (when on: ship slows when not holding move; when off: ship floats)
+            if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
+                spaceBrakesEnabled = !spaceBrakesEnabled;
 
             // Optional: FireRocket / PlaceMine actions; fallback is Q / E in Starship
             rocketPressed = rocketAction != null && rocketAction.IsPressed();

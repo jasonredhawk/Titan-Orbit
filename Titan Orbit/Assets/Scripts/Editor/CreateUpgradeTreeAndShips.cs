@@ -128,6 +128,22 @@ namespace TitanOrbit.Editor
             return result;
         }
 
+        /// <summary>Speed curve: L1 fastest, L2/L3 slower, L4–L6 faster again, L7 mega ships slow.</summary>
+        private static float GetMovementSpeedForLevel(int level)
+        {
+            switch (level)
+            {
+                case 1: return 6f;   // fastest (starter)
+                case 2: return 5.2f;
+                case 3: return 4.5f;  // slowest of mid-levels
+                case 4: return 4.9f;  // start getting faster again
+                case 5: return 5.2f;
+                case 6: return 5.5f;
+                case 7: return 3.5f;  // mega ships slow
+                default: return 5f;
+            }
+        }
+
         private static void SetBaseStats(ShipData data, int level, float fighterToMinerBlend)
         {
             float scale = 0.9f + level * 0.08f;
@@ -135,7 +151,7 @@ namespace TitanOrbit.Editor
             float health = Mathf.Lerp(130f, 95f, fighterToMinerBlend) + (level - 1) * 20f;
             float cap = Mathf.Lerp(110f, 180f, fighterToMinerBlend) + (level - 1) * 35f;
             if (level == 7) { mine *= 1.5f; health *= 2f; cap *= 1.8f; scale *= 1.2f; }
-            data.baseMovementSpeed = 10f * scale;
+            data.baseMovementSpeed = GetMovementSpeedForLevel(level);
             data.baseMaxHealth = health;
             data.baseHealthRegenRate = 1.2f;
             data.baseRotationSpeed = 180f;
