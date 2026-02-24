@@ -6,30 +6,30 @@ using Shapes;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Renders a thin border ring at the outer edge of the orbit zone using Shapes.
+    /// Renders a circular border at the outer edge of the orbit zone using Shapes (faint but visible).
     /// Slightly brighter when the local player is in orbit.
     /// </summary>
     [ExecuteAlways]
     public class OrbitZoneShapesVisual : ImmediateModeShapeDrawer
     {
         [Header("Zone Bounds")]
-        [Tooltip("Outer radius (orbit zone edge).")]
+        [Tooltip("Outer radius (orbit zone edge) in planet local space.")]
         [SerializeField] private float outerRadius = 0.85f;
 
         [Header("Border")]
-        [Tooltip("Thickness of the border ring.")]
-        [Range(0.001f, 0.1f)]
-        [SerializeField] private float borderThickness = 0.02f;
+        [Tooltip("Thickness of the border ring. Very thick by default so orbit zone is unmissable.")]
+        [Range(0.02f, 0.5f)]
+        [SerializeField] private float borderThickness = 0.22f;
 
         [Header("Appearance")]
-        [Tooltip("Border color tint.")]
-        [SerializeField] private Color tint = new Color(0.38f, 0.52f, 0.92f);
+        [Tooltip("Border color. Bright so orbit zone is obvious.")]
+        [SerializeField] private Color tint = new Color(1f, 1f, 1f);
         [Tooltip("Opacity when no one is orbiting.")]
-        [Range(0.1f, 0.6f)]
-        [SerializeField] private float alphaWhenNotOrbiting = 0.3f;
+        [Range(0.5f, 1f)]
+        [SerializeField] private float alphaWhenNotOrbiting = 1f;
         [Tooltip("Opacity when local player is in orbit.")]
-        [Range(0.3f, 0.9f)]
-        [SerializeField] private float alphaWhenOrbiting = 0.6f;
+        [Range(0.5f, 1f)]
+        [SerializeField] private float alphaWhenOrbiting = 1f;
 
         private Planet planet;
 
@@ -67,7 +67,9 @@ namespace TitanOrbit.Entities
             float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
             Color color = new Color(tint.r, tint.g, tint.b, alpha);
 
-            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix;
+            // Ring in XZ plane (flat on ground) so it's visible from top-down camera
+            Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
+            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix * Matrix4x4.Rotate(flatXZ);
 
             using (Draw.Command(cam))
             {
@@ -77,7 +79,7 @@ namespace TitanOrbit.Entities
                 Draw.DiscGeometry = DiscGeometry.Flat2D;
                 Draw.Matrix = worldMatrix;
 
-                // Draw a thin border ring at the outer edge of the orbit zone
+                // Single circular border at orbit zone outer edge (clearly visible)
                 Draw.Ring(Vector3.zero, Quaternion.identity, outerRadius, borderThickness, color);
             }
         }

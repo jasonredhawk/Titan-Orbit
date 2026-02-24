@@ -265,10 +265,10 @@ namespace TitanOrbit.UI
                 titleText.text = isHomePlanet ? "Home Planet — In Orbit" : "Planet — In Orbit";
             if (planetInfoText != null)
             {
-                if (currentPlanet is HomePlanet hp)
-                    planetInfoText.text = $"Level {hp.HomePlanetLevel} | Gems: {hp.CurrentGems:F0}/{hp.MaxGems:F0} | Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
-                else
-                    planetInfoText.text = $"Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
+                // All planets (home and regular) show level, gems, pop when friendly so ships can see deposit/level-up progress
+                int level = currentPlanet.PlanetLevel;
+                float maxGems = currentPlanet.MaxGems;
+                planetInfoText.text = $"Level {level} | Gems: {currentPlanet.CurrentGems:F0}/{maxGems:F0} | Pop: {currentPlanet.CurrentPopulation:F0}/{currentPlanet.MaxPopulation:F0}";
             }
 
             float shipGems = currentShip.CurrentGems;

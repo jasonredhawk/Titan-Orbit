@@ -37,8 +37,6 @@ namespace TitanOrbit.Entities
         /// <summary>Server-only: gems each player has contributed to this home planet (for store purchases).</summary>
         private Dictionary<ulong, float> contributedGemsByClientId = new Dictionary<ulong, float>();
 
-        /// <summary>Max gems this home planet can hold at its current level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
-        public float MaxGems => GetMaxGemsForLevel(PlanetLevel);
         public int HomePlanetLevel => PlanetLevel;
         public TeamManager.Team AssignedTeam => assignedTeam.Value;
         public int MaxShipLevel => GetMaxShipLevelForPlanetLevel(PlanetLevel);
@@ -76,20 +74,17 @@ namespace TitanOrbit.Entities
                 sgt.WaterLevel = 0.2f;
         }
 
-        /// <summary>Dark color so population text is readable on the white home planet ring.</summary>
         protected override Color GetPopulationTextColor() => new Color(0.12f, 0.12f, 0.15f);
-
-        /// <summary>Position text above the ring so it's visible (not underneath).</summary>
-        protected override Vector3 GetPopulationTextLocalPosition() => new Vector3(0f, 0.8f, 0f);
+        protected override Color GetPopulationTextOutlineColor() => new Color(1f, 1f, 1f, 0.95f);
+        // Keep text below camera when zoomed in: camera Y = 20*0.7 = 14, so localY*scale < 14 → localY < 0.7 for scale 20
+        protected override Vector3 GetPopulationTextLocalPosition() => new Vector3(0f, 0.65f, 0f);
+        protected override int GetPopulationTextRenderQueue() => (int)UnityEngine.Rendering.RenderQueue.Geometry + 100;
 
         /// <summary>Home planet surface is always tropical (water + atmosphere); team is shown only on rings.</summary>
         protected override Material GetEffectiveMaterialForPlanetSurface(TeamManager.Team team)
         {
             return GetNeutralMaterial();
         }
-
-        /// <summary>Home planets have max 100 people (until level upgrade increases it later).</summary>
-        protected override float GetMaxPopulationForPlanet() => 100f;
 
         /// <summary>Initial planet level. Home planets start at 3.</summary>
         protected override int GetInitialPlanetLevel() => 3;

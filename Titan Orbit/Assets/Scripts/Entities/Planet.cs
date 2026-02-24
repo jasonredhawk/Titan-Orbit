@@ -67,6 +67,8 @@ namespace TitanOrbit.Entities
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
         public float CurrentGems => currentGems.Value;
+        /// <summary>Max gems at current level. Override GetMaxGemsForLevel in HomePlanet for different thresholds.</summary>
+        public float MaxGems => GetMaxGemsForLevel(planetLevel.Value);
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -115,18 +117,9 @@ namespace TitanOrbit.Entities
                 growthRate.Value = GetGrowthRatePerSecond();
                 if (!(this is HomePlanet))
                     teamOwnership.Value = TeamManager.Team.None; // Neutral by default (home planets already set in InitForTeam for rings/color)
-                // For neutral (regular) planets only: starting population is also the max (display as e.g. 18 of 18). Home planets keep full cap.
-                if (!(this is HomePlanet))
-                {
-                    float startingPopulation = potentialMax * 0.25f; // Start with 25% population
-                    currentPopulation.Value = startingPopulation;
-                    maxPopulation.Value = startingPopulation; // Max equals starting value for neutral planets
-                }
-                else
-                {
-                    currentPopulation.Value = potentialMax * 0.25f; // Start with 25% population
-                    maxPopulation.Value = potentialMax;
-                }
+                // All planets (neutral and home) start at 100% population capacity.
+                currentPopulation.Value = potentialMax;
+                maxPopulation.Value = potentialMax;
             }
 
             if (populationText != null)
@@ -134,6 +127,7 @@ namespace TitanOrbit.Entities
                 populationText.enabled = true;
                 populationText.gameObject.SetActive(true);
                 EnsurePopulationTextPosition();
+                EnsurePopulationTextReadable();
             }
 
             EnsureBodyColliderSize();
@@ -325,15 +319,35 @@ namespace TitanOrbit.Entities
         /// <summary>Override in HomePlanet to use a color that contrasts with the white ring.</summary>
         protected virtual Color GetPopulationTextColor() => Color.white;
 
+        /// <summary>Outline color for population text so it stays readable on any planet texture. Default: black (for white text). Override in HomePlanet for light outline (dark text).</summary>
+        protected virtual Color GetPopulationTextOutlineColor() => Color.black;
+
+        /// <summary>Render queue for population text so it draws on top of rings (all planets use Shapes for rings).</summary>
+        protected virtual int GetPopulationTextRenderQueue() => (int)UnityEngine.Rendering.RenderQueue.Geometry + 100;
+
+        /// <summary>One-time setup: outline so text reads on any planet, render queue so home-planet text isn't behind rings.</summary>
+        private void EnsurePopulationTextReadable()
+        {
+            if (populationText == null) return;
+            Material mat = populationText.fontMaterial;
+            if (mat == null) return;
+            mat.EnableKeyword("OUTLINE_ON");
+            if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", GetPopulationTextOutlineColor());
+            if (mat.HasProperty("_OutlineWidth")) mat.SetFloat("_OutlineWidth", 0.25f);
+            if (mat.HasProperty("_OutlineSoftness")) mat.SetFloat("_OutlineSoftness", 0.1f);
+            mat.renderQueue = GetPopulationTextRenderQueue();
+        }
+
         private void UpdatePopulationDisplay()
         {
-            if (populationText != null)
-            {
-                int pop = Mathf.RoundToInt(currentPopulation.Value);
-                populationText.text = pop.ToString();
-                populationText.color = GetPopulationTextColor();
-                populationText.enabled = true;
-            }
+            if (populationText == null) return;
+            populationText.gameObject.SetActive(true);
+            populationText.text = Mathf.RoundToInt(currentPopulation.Value).ToString();
+            populationText.color = GetPopulationTextColor();
+            populationText.enabled = true;
+            var r = populationText.GetComponent<Renderer>();
+            if (r != null) r.enabled = true;
+            populationText.ForceMeshUpdate(true, false);
         }
 
         /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>
@@ -362,7 +376,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Max level for this planet type. Override in HomePlanet for 6.</summary>
-        protected virtual int GetMaxLevel() => 10; // Regular planets can level up many times
+        protected virtual int GetMaxLevel() => 3; // Regular planets max level 3
 
         [ServerRpc(RequireOwnership = false)]
         public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
@@ -406,38 +420,34 @@ namespace TitanOrbit.Entities
             planetLevel.Value++;
             currentGems.Value = 0f; // Reset gem count to 0 when leveling up
 
-            // Double max population and growth rate
-            float oldMaxPop = maxPopulation.Value;
-            maxPopulation.Value = oldMaxPop * 2f;
-            
+            // Recompute max population from new level (formula: size * level^1.5); double growth rate
+            maxPopulation.Value = GetMaxPopulationForPlanet();
             float oldGrowthRate = growthRate.Value;
             SetGrowthRate(oldGrowthRate * 2f);
 
-            LevelUpClientRpc(planetLevel.Value);
+            LevelUpClientRpc(planetLevel.Value, transform.position);
         }
 
         [ClientRpc]
-        private void LevelUpClientRpc(int newLevel)
+        private void LevelUpClientRpc(int newLevel, Vector3 planetPosition)
         {
             Debug.Log($"Planet leveled up to level {newLevel}!");
+            VisualEffectsManager.PlayLevelUpEffectStatic(planetPosition);
         }
 
         protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {
             if (newLevel > previousLevel)
             {
-                // Play level up effect if available
-                if (VisualEffectsManager.Instance != null)
-                    VisualEffectsManager.Instance.PlayLevelUpEffect(transform.position);
+                // Level-up VFX is played from LevelUpClientRpc only (once per client)
             }
         }
 
-        /// <summary>Max population: regular planets 50-150 by size (min 4, max 12). Override in HomePlanet for 100.</summary>
+        /// <summary>Max population = planet size * level^1.5 (e.g. home size 20 level 3 ≈ 104; regular size 10 level 1 = 10).</summary>
         protected virtual float GetMaxPopulationForPlanet()
         {
-            const float minSize = 4f, maxSize = 12f;
-            float t = Mathf.Clamp01((planetSize - minSize) / (maxSize - minSize));
-            return Mathf.Lerp(50f, 150f, t);
+            int level = Mathf.Max(1, planetLevel.Value);
+            return planetSize * Mathf.Pow(level, 1.5f);
         }
 
         [ServerRpc(RequireOwnership = false)]

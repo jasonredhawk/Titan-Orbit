@@ -30,9 +30,9 @@ namespace TitanOrbit.Entities
         [SerializeField] private float recoilDecayPerSecond = 6f;
         [Header("Orbit")]
         [SerializeField] private float orbitSpeed = 0.8f; // Baseline linear speed while orbiting; modified by planet size and radius
-        [SerializeField] private float orbitRadiusPullStrength = 2f; // Gentle push in/out only when outside zone band
+        [SerializeField] private float orbitRadiusPullStrength = 2.5f; // Push in/out when outside zone band; stronger = quicker stabilization
         [Tooltip("How quickly the ship's existing velocity is steered toward the ideal orbit velocity. Higher = snappier capture, lower = more drift-through.")]
-        [SerializeField] private float orbitCaptureResponsiveness = 1.5f;
+        [SerializeField] private float orbitCaptureResponsiveness = 2.2f;
 
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
@@ -169,6 +169,9 @@ namespace TitanOrbit.Entities
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
         private bool wasMovePressedLastFrame;
+        /// <summary>When &lt; 0 we're stable (or not in zone). When >= 0, time when we first dropped out of stable orbit (for menu hide delay).</summary>
+        private float lastTimeStableOrbitLost = -1f;
+        private const float STABLE_ORBIT_HIDE_DELAY = 0.6f; // Keep menu visible this long after briefly dipping out of stable orbit
 
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth => maxHealth * (1f + attrMaxHealth.Value * ATTR_MULTIPLIER_PER_LEVEL);
@@ -328,11 +331,23 @@ namespace TitanOrbit.Entities
             if (IsLocalPlayerShip())
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                // Hide menu when moving or when in zone but not yet in stable orbit
-                if (movePressed || currentOrbitPlanet == null || !IsInStableOrbit())
+                bool stable = currentOrbitPlanet != null && !movePressed && IsInStableOrbit();
+                if (stable)
+                    lastTimeStableOrbitLost = -1f;
+                else if (currentOrbitPlanet != null && !movePressed)
+                {
+                    if (lastTimeStableOrbitLost < 0f)
+                        lastTimeStableOrbitLost = Time.time;
+                }
+                else
+                    lastTimeStableOrbitLost = -1f;
+
+                float notStableDuration = lastTimeStableOrbitLost >= 0f ? Time.time - lastTimeStableOrbitLost : 0f;
+                bool keepMenuVisible = stable || (currentOrbitPlanet != null && !movePressed && notStableDuration < STABLE_ORBIT_HIDE_DELAY);
+
+                if (movePressed || currentOrbitPlanet == null || !keepMenuVisible)
                     orbitUI.Hide();
-                // Show menu only when in orbit zone, not thrusting, and fully in stable orbit
-                else if (currentOrbitPlanet != null && !movePressed && IsInStableOrbit())
+                else if (currentOrbitPlanet != null && !movePressed && keepMenuVisible)
                     orbitUI.Show(this, currentOrbitPlanet);
             }
             wasMovePressedLastFrame = movePressed;
@@ -637,7 +652,7 @@ namespace TitanOrbit.Entities
 
             float alignment = Vector3.Dot(vel.normalized, tangent);
             float speedRatio = speed / targetSpeed;
-            // Mostly tangential (alignment > ~0.92 ≈ 23°) and speed within ~30% of target
+            // Strict thresholds: truly in orbit (~23° alignment, speed within ~30% of target). Buffer for not flickering is in Update (hide delay).
             return alignment >= 0.92f && speedRatio >= 0.7f && speedRatio <= 1.35f;
         }
 

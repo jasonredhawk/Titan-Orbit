@@ -27,6 +27,18 @@ namespace TitanOrbit.Entities
         [Tooltip("Extra glow/brightness per level (adds to opacity).")]
         [SerializeField] private float opacityPerLevel = 0.05f;
 
+        [Header("Orbit Zone Fill")]
+        [Tooltip("Draw the orbit zone as a filled ring with gradient: 0.3 alpha at inner edge, 0 at outer edge.")]
+        [SerializeField] private bool drawOrbitZoneFill = true;
+        [Tooltip("Inner radius of orbit zone (planet local).")]
+        [SerializeField] private float orbitZoneInnerRadius = 0.5f;
+        [Tooltip("Outer radius of orbit zone (planet local).")]
+        [SerializeField] private float orbitZoneOuterRadius = 0.85f;
+        [SerializeField] private Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
+        [Tooltip("Alpha at inner edge of orbit zone.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float orbitZoneInnerAlpha = 0.3f;
+
         private HomePlanet homePlanet;
 
         private void Awake()
@@ -64,6 +76,19 @@ namespace TitanOrbit.Entities
                 {
                     Draw.Ring(Vector3.zero, Quaternion.identity, currentRadius, ringThickness, color);
                     currentRadius += ringThickness + gapBetweenBands;
+                }
+
+                // Orbit zone: filled ring with radial gradient (alpha 0.3 at inner edge, 0 at outer), flat on ground
+                if (drawOrbitZoneFill)
+                {
+                    Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
+                    Matrix4x4 homeMatrix = homePlanet.transform.localToWorldMatrix;
+                    Draw.Matrix = homeMatrix * Matrix4x4.Rotate(flatXZ);
+                    float zoneRadius = (orbitZoneInnerRadius + orbitZoneOuterRadius) * 0.5f;
+                    float zoneThickness = orbitZoneOuterRadius - orbitZoneInnerRadius;
+                    Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
+                    Color outerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
+                    Draw.Ring(Vector3.zero, Quaternion.identity, zoneRadius, zoneThickness, DiscColors.Radial(innerColor, outerColor));
                 }
             }
         }

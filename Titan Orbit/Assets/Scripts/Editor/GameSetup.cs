@@ -44,6 +44,28 @@ namespace TitanOrbit.Editor
             Debug.Log("Game scene setup complete! All GameObjects have been created.");
         }
 
+        [MenuItem("Titan Orbit/Assign Level-Up VFX (Red Impact – same as bullets)")]
+        public static void AssignLevelUpVfx()
+        {
+            // Use Red Impact – same prefab as bullet impact, so the same URP fix works and no rebuild needed
+            GameObject levelUpPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Red Impact.prefab");
+            var vfx = Object.FindFirstObjectByType<VisualEffectsManager>();
+            if (vfx == null)
+            {
+                Debug.LogWarning("VisualEffectsManager not found in scene. Run Setup Game Scene first.");
+                return;
+            }
+            SerializedObject so = new SerializedObject(vfx);
+            if (levelUpPrefab != null)
+            {
+                so.FindProperty("levelUpEffect").objectReferenceValue = levelUpPrefab;
+                so.FindProperty("levelUpEffectScale").floatValue = 1.5f;
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+            Debug.Log("Level-up effect set to Red Impact (same as bullet impact). Save the scene. No rebuild needed – same GrabPass fix is applied at runtime.");
+        }
+
         [MenuItem("Titan Orbit/Add Space Background")]
         public static void AddSpaceBackground()
         {
@@ -125,6 +147,16 @@ namespace TitanOrbit.Editor
             UpgradeSystem upgradeSystem = obj.AddComponent<UpgradeSystem>();
             AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
+            // Assign level-up VFX = Red Impact (same as bullet impact, same URP fix works)
+            GameObject levelUpPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Red Impact.prefab");
+            if (levelUpPrefab != null)
+            {
+                SerializedObject vfxSO = new SerializedObject(visualEffectsManager);
+                vfxSO.FindProperty("levelUpEffect").objectReferenceValue = levelUpPrefab;
+                vfxSO.FindProperty("levelUpEffectScale").floatValue = 1.5f;
+                vfxSO.ApplyModifiedPropertiesWithoutUndo();
+            }
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
             HomePlanetStoreSystem homePlanetStoreSystem = obj.AddComponent<HomePlanetStoreSystem>();
             TitanOrbit.AI.AIStarshipManager aiStarshipManager = obj.AddComponent<TitanOrbit.AI.AIStarshipManager>();
