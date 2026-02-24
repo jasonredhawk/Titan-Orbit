@@ -1075,32 +1075,33 @@ namespace TitanOrbit.Entities
         private void OnCollisionEnter(Collision collision)
         {
             if (!IsServer || rb == null) return;
+            if (collision.contactCount == 0) return;
 
+            ContactPoint contact = collision.GetContact(0);
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
-            if (asteroid != null && !asteroid.IsDestroyed && collision.contactCount > 0)
-            {
-                ContactPoint contact = collision.GetContact(0);
-                // If overlapping (e.g. asteroid respawned on ship), start gentle escape push immediately
-                if (contact.separation < 0f)
-                {
-                    Vector3 normal = contact.normal;
-                    normal.y = 0f;
-                    if (normal.sqrMagnitude > 0.01f)
-                    {
-                        normal.Normalize();
-                        Vector3 vel = rb.linearVelocity;
-                        vel.y = 0f;
-                        vel += normal * (overlapEscapeSpeed * Time.fixedDeltaTime);
-                        rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
-                        currentVelocity = rb.linearVelocity;
-                    }
-                    return; // no impact damage when we're stuck inside (respawn case)
-                }
 
+            if (asteroid != null && !asteroid.IsDestroyed && contact.separation < 0f)
+            {
+                // Overlapping (e.g. asteroid respawned on ship): gentle escape push
+                Vector3 normal = contact.normal;
+                normal.y = 0f;
+                if (normal.sqrMagnitude > 0.01f)
+                {
+                    normal.Normalize();
+                    Vector3 vel = rb.linearVelocity;
+                    vel.y = 0f;
+                    vel += normal * (overlapEscapeSpeed * Time.fixedDeltaTime);
+                    rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
+                    currentVelocity = rb.linearVelocity;
+                }
+                return;
+            }
+
+            if (asteroid != null && !asteroid.IsDestroyed)
+            {
                 var no = asteroid.GetComponent<NetworkObject>();
                 if (no != null && no.IsSpawned)
                 {
-                    // Impact damage scales with speed and momentum (mass * speed). Mining hull deals more to asteroid, takes less self.
                     float impactSpeed = collision.relativeVelocity.magnitude;
                     impactSpeed = Mathf.Max(0f, impactSpeed - 0.5f);
                     float mass = Mathf.Max(0.5f, rb.mass);
