@@ -37,7 +37,7 @@ namespace TitanOrbit.Entities
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
         [Tooltip("Recoil impulse per shot scales with bullet scale and damage. Bigger bullets push the ship back more; stationary ships can reverse.")]
-        [SerializeField] private float recoilStrength = 2.8f;
+        [SerializeField] private float recoilStrength = 6.5f;
 
         [Header("Ramming")]
         [Tooltip("Base damage applied to ship and asteroid on impact (in addition to speed-based damage).")]
@@ -100,10 +100,10 @@ namespace TitanOrbit.Entities
         [SerializeField] private float peopleCapacity = 10f;
 
         [Header("Mass (affects momentum and ramming)")]
-        [Tooltip("Base rigidbody mass when empty. Heavier ship = slower to accelerate/brake, handles recoil better.")]
-        [SerializeField] private float baseMass = 4f;
+        [Tooltip("Base rigidbody mass when empty (overridden by ShipData.baseMass when set). Heavier ship = slower to accelerate/brake.")]
+        [SerializeField] private float baseMass = 1f;
         [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
-        [SerializeField] private float massPerGem = 0.04f;
+        [SerializeField] private float massPerGem = 0.02f;
 
         [Header("Energy (weapon system)")]
         [SerializeField] private float energyCapacity = 50f;
@@ -153,8 +153,8 @@ namespace TitanOrbit.Entities
         private float EffectiveRotationSpeed => rotationSpeed * (1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveEnergyRegen => energyRegenRate * (1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
 
-        /// <summary>Mass increases with gems carried; affects acceleration, braking, and ramming damage.</summary>
-        private float EffectiveMass => Mathf.Max(0.5f, baseMass + currentGems.Value * massPerGem);
+        /// <summary>Mass increases with gems carried; affects acceleration, braking, and ramming damage. Base from ShipData when set.</summary>
+        private float EffectiveMass => Mathf.Max(0.5f, (shipData != null && shipData.baseMass > 0f ? shipData.baseMass : baseMass) + currentGems.Value * massPerGem);
 
         /// <summary>Mining ships (ice-breaker hull) deal more ramming damage to asteroids.</summary>
         private float HullRammingToAsteroidMultiplier => focusType == ShipFocusType.Miner ? minerRammingToAsteroidMultiplier : 1f;
@@ -763,6 +763,7 @@ namespace TitanOrbit.Entities
                     // Recoil: scaled down so it nudges the ship without throwing it; scales with bullet size and damage
                     if (rb != null)
                     {
+                        // Same impulse regardless of mass: empty ship feels more recoil, heavy ship absorbs it better
                         float recoilImpulse = recoilStrength * scale * (0.25f + damage / 150f);
                         rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
                     }
@@ -1353,6 +1354,11 @@ namespace TitanOrbit.Entities
 
                 if (data.shipPrefab != null)
                     ApplyShipVisual(data.shipPrefab);
+                if (data.visualScale > 0f)
+                {
+                    Transform root = visualRoot != null ? visualRoot : transform;
+                    root.localScale = Vector3.one * data.visualScale;
+                }
                 ApplyHullIdentityColor();
             }
         }

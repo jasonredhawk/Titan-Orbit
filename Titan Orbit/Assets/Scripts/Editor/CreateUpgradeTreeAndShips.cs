@@ -146,11 +146,21 @@ namespace TitanOrbit.Editor
 
         private static void SetBaseStats(ShipData data, int level, float fighterToMinerBlend)
         {
-            float scale = 0.9f + level * 0.08f;
+            // Fighter: lighter mass, smaller size. Transport/Miner: heavier, larger, especially as level increases.
+            float baseMassFighter = Mathf.Lerp(0.7f, 1.2f, (level - 1) / 6f);   // 0.7 @ L1 → 1.2 @ L7
+            float baseMassMiner = Mathf.Lerp(1.8f, 4.5f, (level - 1) / 6f);    // 1.8 @ L1 → 4.5 @ L7
+            data.baseMass = Mathf.Lerp(baseMassFighter, baseMassMiner, fighterToMinerBlend);
+            if (level == 7) data.baseMass *= 1.15f;
+
+            float visualScaleFighter = 0.82f + (level - 1) * 0.03f;  // smaller: 0.82 @ L1 → ~1.0 @ L7
+            float visualScaleMiner = 1f + (level - 1) * 0.08f;        // larger: 1.0 @ L1 → ~1.5 @ L7
+            data.visualScale = Mathf.Lerp(visualScaleFighter, visualScaleMiner, fighterToMinerBlend);
+            if (level == 7) data.visualScale *= 1.12f;
+
             float mine = Mathf.Lerp(10f, 22f, fighterToMinerBlend) + (level - 1) * 3f;
             float health = Mathf.Lerp(130f, 95f, fighterToMinerBlend) + (level - 1) * 20f;
             float cap = Mathf.Lerp(110f, 180f, fighterToMinerBlend) + (level - 1) * 35f;
-            if (level == 7) { mine *= 1.5f; health *= 2f; cap *= 1.8f; scale *= 1.2f; }
+            if (level == 7) { mine *= 1.5f; health *= 2f; cap *= 1.8f; }
             data.baseMovementSpeed = GetMovementSpeedForLevel(level);
             data.baseMaxHealth = health;
             data.baseHealthRegenRate = 1.2f;
@@ -437,7 +447,7 @@ namespace TitanOrbit.Editor
                     {
                         ship.SetShipData(data);
                         float blend = count <= 1 ? 0.5f : (float)data.branchIndex / (count - 1);
-                        BuildProceduralShipVisual(instance, level, data.branchIndex, blend, count);
+                        BuildProceduralShipVisual(instance, data, blend, count);
                         var saved = PrefabUtility.SaveAsPrefabAsset(instance, path);
                         if (saved != null)
                         {
@@ -451,15 +461,15 @@ namespace TitanOrbit.Editor
             }
         }
 
-        /// <summary>Procedurally rebuilds the ship visual with unique hull shape, wings, engines, cockpit for each ship.</summary>
-        private static void BuildProceduralShipVisual(GameObject shipRoot, int level, int branchIndex, float fighterToMinerBlend, int branchCount)
+        /// <summary>Procedurally rebuilds the ship visual with unique hull shape, wings, engines, cockpit for each ship. Size reflects mass (fighter small, miner large).</summary>
+        private static void BuildProceduralShipVisual(GameObject shipRoot, ShipData data, float fighterToMinerBlend, int branchCount)
         {
+            int level = data.shipLevel;
+            int branchIndex = data.branchIndex;
             int seed = level * 50 + branchIndex;
             float R(int m) => ((seed * m) % 100) / 100f;
 
-            float levelScale = 0.85f + (level - 1) * 0.15f;
-            if (level == 7) levelScale *= 1.15f;
-            shipRoot.transform.localScale = Vector3.one * levelScale;
+            shipRoot.transform.localScale = Vector3.one * data.visualScale;
 
             var hullMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/TitanOrbit_StarshipBody.mat");
             var accentMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/TitanOrbit_Starship.mat");

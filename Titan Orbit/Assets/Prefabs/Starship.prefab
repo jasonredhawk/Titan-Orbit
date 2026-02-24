@@ -250,7 +250,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1689429608
+  GlobalObjectIdHash: 1007704319
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -283,9 +283,12 @@ MonoBehaviour:
   orbitRadiusPullStrength: 2
   orbitCaptureResponsiveness: 1.5
   firePoint: {fileID: 5809966372781692589}
-  recoilStrength: 0.5
+  recoilStrength: 2.8
   baseRammingDamage: 5
   rammingDamagePerSpeedUnit: 3
+  rammingMomentumDamageScale: 0.4
+  minerRammingToAsteroidMultiplier: 1.4
+  minerRammingSelfDamageMultiplier: 0.35
   ramDamagePerSecond: 18
   ramTickInterval: 0.25
   overlapEscapeSpeed: 4
@@ -293,6 +296,8 @@ MonoBehaviour:
   healthRegenRate: 1
   gemCapacity: 100
   peopleCapacity: 10
+  baseMass: 1
+  massPerGem: 0.02
   energyCapacity: 50
   energyRegenRate: 5
   inputHandler: {fileID: 0}

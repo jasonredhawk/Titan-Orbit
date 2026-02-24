@@ -17,6 +17,10 @@ namespace TitanOrbit.Data
         public string shipName = "Basic Ship";
 
         [Header("Base Stats")]
+        [Tooltip("Rigidbody mass when empty. Fighters lighter, transport/mining heavier; scales with level.")]
+        public float baseMass = 1f;
+        [Tooltip("Visual scale of ship model. Fighters smaller, transport/mining larger.")]
+        public float visualScale = 1f;
         public float baseMovementSpeed = 8f;
         [Tooltip("Weapon config: cannons, rate, energy, damage, spread. Same bullet skin for all ships.")]
         public WeaponConfig weaponConfig;
