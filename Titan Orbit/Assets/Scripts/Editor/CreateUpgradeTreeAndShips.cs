@@ -128,19 +128,19 @@ namespace TitanOrbit.Editor
             return result;
         }
 
-        /// <summary>Speed curve: L1 fastest, L2/L3 slower, L4–L6 faster again, L7 mega ships slow.</summary>
+        /// <summary>Speed curve: L1 fastest, L2/L3 slower, L4–L6 faster again, L7 mega ships slow. Scaled up for physics-based movement.</summary>
         private static float GetMovementSpeedForLevel(int level)
         {
             switch (level)
             {
-                case 1: return 6f;   // fastest (starter)
-                case 2: return 5.2f;
-                case 3: return 4.5f;  // slowest of mid-levels
-                case 4: return 4.9f;  // start getting faster again
-                case 5: return 5.2f;
-                case 6: return 5.5f;
-                case 7: return 3.5f;  // mega ships slow
-                default: return 5f;
+                case 1: return 9.5f;   // fastest (starter)
+                case 2: return 8.2f;
+                case 3: return 7.2f;   // slowest of mid-levels
+                case 4: return 7.8f;   // start getting faster again
+                case 5: return 8.2f;
+                case 6: return 8.8f;
+                case 7: return 5.5f;   // mega ships slow
+                default: return 8f;
             }
         }
 

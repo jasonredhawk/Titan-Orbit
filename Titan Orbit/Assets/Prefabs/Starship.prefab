@@ -250,7 +250,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1414489297
+  GlobalObjectIdHash: 1689429608
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -274,16 +274,21 @@ MonoBehaviour:
   shipData: {fileID: 0}
   shipLevel: 1
   focusType: 0
-  movementSpeed: 5
+  movementSpeed: 8
   rotationSpeed: 180
-  acceleration: 20
-  brakeDeceleration: 14
+  acceleration: 32
+  brakeDeceleration: 7
   recoilDecayPerSecond: 6
   orbitSpeed: 0.8
   orbitRadiusPullStrength: 2
   orbitCaptureResponsiveness: 1.5
   firePoint: {fileID: 5809966372781692589}
   recoilStrength: 0.5
+  baseRammingDamage: 5
+  rammingDamagePerSpeedUnit: 3
+  ramDamagePerSecond: 18
+  ramTickInterval: 0.25
+  overlapEscapeSpeed: 4
   maxHealth: 100
   healthRegenRate: 1
   gemCapacity: 100

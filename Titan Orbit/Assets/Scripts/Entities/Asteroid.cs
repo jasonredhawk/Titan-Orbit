@@ -78,16 +78,16 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private static PhysicMaterial asteroidRammingMaterial;
-        private static PhysicMaterial GetOrCreateAsteroidRammingMaterial()
+        private static PhysicsMaterial asteroidRammingMaterial;
+        private static PhysicsMaterial GetOrCreateAsteroidRammingMaterial()
         {
             if (asteroidRammingMaterial != null) return asteroidRammingMaterial;
-            asteroidRammingMaterial = new PhysicMaterial("AsteroidRamming")
+            asteroidRammingMaterial = new PhysicsMaterial("AsteroidRamming")
             {
-                dynamicFriction = 0.95f,
-                staticFriction = 0.95f,
-                frictionCombine = PhysicMaterialCombine.Maximum,
-                bounceCombine = PhysicMaterialCombine.Minimum,
+                dynamicFriction = 0.9f,
+                staticFriction = 0.9f,
+                frictionCombine = PhysicsMaterialCombine.Maximum,
+                bounceCombine = PhysicsMaterialCombine.Minimum,
                 bounciness = 0f
             };
             return asteroidRammingMaterial;

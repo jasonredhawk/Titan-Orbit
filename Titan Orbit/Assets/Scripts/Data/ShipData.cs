@@ -17,7 +17,7 @@ namespace TitanOrbit.Data
         public string shipName = "Basic Ship";
 
         [Header("Base Stats")]
-        public float baseMovementSpeed = 5f;
+        public float baseMovementSpeed = 8f;
         [Tooltip("Weapon config: cannons, rate, energy, damage, spread. Same bullet skin for all ships.")]
         public WeaponConfig weaponConfig;
         public float baseMaxHealth = 100f;

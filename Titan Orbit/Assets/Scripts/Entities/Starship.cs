@@ -21,9 +21,9 @@ namespace TitanOrbit.Entities
         [SerializeField] private ShipFocusType focusType = ShipFocusType.Fighter;
 
         [Header("Movement")]
-        [SerializeField] private float movementSpeed = 5f;
+        [SerializeField] private float movementSpeed = 8f;
         [SerializeField] private float rotationSpeed = 180f;
-        [SerializeField] private float acceleration = 20f;
+        [SerializeField] private float acceleration = 32f;
         [Tooltip("When space brakes are on, speed is reduced by this amount per second (higher = more friction, faster stop).")]
         [SerializeField] private float brakeDeceleration = 7f;
         [Tooltip("When over max speed (e.g. from recoil), speed is reduced back toward max by this amount per second.")]
@@ -37,7 +37,26 @@ namespace TitanOrbit.Entities
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
         [Tooltip("Recoil impulse per shot scales with bullet scale and damage. Bigger bullets push the ship back more; stationary ships can reverse.")]
-        [SerializeField] private float recoilStrength = 0.5f;
+        [SerializeField] private float recoilStrength = 2.8f;
+
+        [Header("Ramming")]
+        [Tooltip("Base damage applied to ship and asteroid on impact (in addition to speed-based damage).")]
+        [SerializeField] private float baseRammingDamage = 5f;
+        [Tooltip("Extra damage per unit of impact speed (ship + asteroid relative velocity).")]
+        [SerializeField] private float rammingDamagePerSpeedUnit = 3f;
+        [Tooltip("Damage scale from momentum (mass * speed). Higher = ramming speed and weight matter more.")]
+        [SerializeField] private float rammingMomentumDamageScale = 0.4f;
+        [Tooltip("Mining ships (ice-breaker hull) deal this multiplier to asteroids; take less self-damage via HullRammingSelfDamageMultiplier.")]
+        [SerializeField] private float minerRammingToAsteroidMultiplier = 1.4f;
+        [Tooltip("Mining ships take this fraction of ramming self-damage (stronger hull). Fighter = 1, Miner = 0.35.")]
+        [SerializeField] private float minerRammingSelfDamageMultiplier = 0.35f;
+        [Tooltip("Damage per second to asteroid (and self) while sustaining contact (ramming).")]
+        [SerializeField] private float ramDamagePerSecond = 18f;
+        [Tooltip("Interval between sustained ram damage ticks (seconds).")]
+        [SerializeField] private float ramTickInterval = 0.25f;
+        private float lastRamDamageTime = -999f;
+        [Tooltip("When overlapping an asteroid (e.g. after respawn), ship is pushed outward at this speed for a smooth escape.")]
+        [SerializeField] private float overlapEscapeSpeed = 4f;
         private WeaponConfig weaponConfig;
         private float[] cannonLastFireTime;
 
@@ -79,6 +98,12 @@ namespace TitanOrbit.Entities
         [Header("Capacity (ship level only - upgrades with ship level)")]
         [SerializeField] private float gemCapacity = 100f;
         [SerializeField] private float peopleCapacity = 10f;
+
+        [Header("Mass (affects momentum and ramming)")]
+        [Tooltip("Base rigidbody mass when empty. Heavier ship = slower to accelerate/brake, handles recoil better.")]
+        [SerializeField] private float baseMass = 4f;
+        [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
+        [SerializeField] private float massPerGem = 0.04f;
 
         [Header("Energy (weapon system)")]
         [SerializeField] private float energyCapacity = 50f;
@@ -127,6 +152,14 @@ namespace TitanOrbit.Entities
         private float EffectiveHealthRegen => healthRegenRate * (1f + attrHealthRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveRotationSpeed => rotationSpeed * (1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
         private float EffectiveEnergyRegen => energyRegenRate * (1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
+
+        /// <summary>Mass increases with gems carried; affects acceleration, braking, and ramming damage.</summary>
+        private float EffectiveMass => Mathf.Max(0.5f, baseMass + currentGems.Value * massPerGem);
+
+        /// <summary>Mining ships (ice-breaker hull) deal more ramming damage to asteroids.</summary>
+        private float HullRammingToAsteroidMultiplier => focusType == ShipFocusType.Miner ? minerRammingToAsteroidMultiplier : 1f;
+        /// <summary>Mining ships take less ramming self-damage (stronger hull).</summary>
+        private float HullRammingSelfDamageMultiplier => focusType == ShipFocusType.Miner ? minerRammingSelfDamageMultiplier : 1f;
 
         private float lastRocketTime = -999f;
         private float lastMineTime = -999f;
@@ -187,16 +220,16 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private static PhysicMaterial shipRammingMaterial;
-        private static PhysicMaterial GetOrCreateShipRammingMaterial()
+        private static PhysicsMaterial shipRammingMaterial;
+        private static PhysicsMaterial GetOrCreateShipRammingMaterial()
         {
             if (shipRammingMaterial != null) return shipRammingMaterial;
-            shipRammingMaterial = new PhysicMaterial("ShipRamming")
+            shipRammingMaterial = new PhysicsMaterial("ShipRamming")
             {
                 dynamicFriction = 0.95f,
                 staticFriction = 0.95f,
-                frictionCombine = PhysicMaterialCombine.Maximum,
-                bounceCombine = PhysicMaterialCombine.Minimum,
+                frictionCombine = PhysicsMaterialCombine.Maximum,
+                bounceCombine = PhysicsMaterialCombine.Minimum,
                 bounciness = 0f
             };
             return shipRammingMaterial;
@@ -313,7 +346,10 @@ namespace TitanOrbit.Entities
         private void FixedUpdate()
         {
             if (rb == null) return;
-            
+
+            // Gem load increases mass: ship feels heavier and has more momentum (slower to accelerate/brake)
+            rb.mass = EffectiveMass;
+
             // Always lock Y position (prevents drift from physics/collisions)
             Vector3 pos = rb.position;
             if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
@@ -446,30 +482,36 @@ namespace TitanOrbit.Entities
             currentVelocity = rb.linearVelocity;
             currentVelocity.y = 0f;
 
+            float mass = Mathf.Max(0.5f, rb.mass);
+            // Heavier ship (more gems) = slower acceleration and braking (more momentum)
+            float effectiveAccel = acceleration / mass;
+            float effectiveBrake = brakeDeceleration / mass;
+            float effectiveRecoilDecay = recoilDecayPerSecond / mass;
+
             float maxSpeed = EffectiveMovementSpeed;
             bool brakesOn = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.SpaceBrakesEnabled ?? true;
 
             if (moveDirection.magnitude > 0.1f)
             {
-                currentVelocity += moveDirection * acceleration * Time.fixedDeltaTime;
+                currentVelocity += moveDirection * effectiveAccel * Time.fixedDeltaTime;
                 if (currentVelocity.magnitude > maxSpeed)
                     currentVelocity = currentVelocity.normalized * maxSpeed;
             }
             else
             {
                 if (brakesOn)
-                    currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, brakeDeceleration * Time.fixedDeltaTime);
+                    currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, effectiveBrake * Time.fixedDeltaTime);
                 // else: frictionless float (keep currentVelocity unchanged)
             }
 
             // Ensure velocity has no Y component
             currentVelocity.y = 0f;
 
-            // Cap at max speed; if over (e.g. from recoil), decay back toward max over time
+            // Cap at max speed; if over (e.g. from recoil), decay back toward max over time (heavier = slower decay)
             float mag = currentVelocity.magnitude;
             if (mag > maxSpeed && maxSpeed > 0.001f)
             {
-                float targetMag = Mathf.MoveTowards(mag, maxSpeed, recoilDecayPerSecond * Time.fixedDeltaTime);
+                float targetMag = Mathf.MoveTowards(mag, maxSpeed, effectiveRecoilDecay * Time.fixedDeltaTime);
                 currentVelocity = currentVelocity.normalized * targetMag;
             }
 
@@ -506,12 +548,13 @@ namespace TitanOrbit.Entities
 
             desiredOrbitVelocity += radialCorrection;
 
-            // Blend from current velocity toward desired orbit velocity instead of snapping instantly.
+            // Blend from current velocity toward desired orbit velocity. Heavier ship = more momentum = slower to align.
             Vector3 currentVel = rb.linearVelocity;
             currentVel.y = 0f;
 
+            float mass = Mathf.Max(0.5f, rb.mass);
             float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
-            float alignRate = orbitCaptureResponsiveness * gravityFactor;
+            float alignRate = (orbitCaptureResponsiveness * gravityFactor) / mass;
             float t = Mathf.Clamp01(alignRate * Time.fixedDeltaTime);
 
             Vector3 blendedVelocity = Vector3.Lerp(currentVel, desiredOrbitVelocity, t);
@@ -1030,24 +1073,52 @@ namespace TitanOrbit.Entities
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (!IsServer) return;
+            if (!IsServer || rb == null) return;
 
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
-            if (asteroid != null && !asteroid.IsDestroyed)
+            if (asteroid != null && !asteroid.IsDestroyed && collision.contactCount > 0)
             {
+                ContactPoint contact = collision.GetContact(0);
+                // If overlapping (e.g. asteroid respawned on ship), start gentle escape push immediately
+                if (contact.separation < 0f)
+                {
+                    Vector3 normal = contact.normal;
+                    normal.y = 0f;
+                    if (normal.sqrMagnitude > 0.01f)
+                    {
+                        normal.Normalize();
+                        Vector3 vel = rb.linearVelocity;
+                        vel.y = 0f;
+                        vel += normal * (overlapEscapeSpeed * Time.fixedDeltaTime);
+                        rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
+                        currentVelocity = rb.linearVelocity;
+                    }
+                    return; // no impact damage when we're stuck inside (respawn case)
+                }
+
                 var no = asteroid.GetComponent<NetworkObject>();
                 if (no != null && no.IsSpawned)
                 {
-                    float collisionDamage = 10f;
-                    asteroid.TakeDamageServerRpc(collisionDamage);
-                    TakeDamageServerRpc(collisionDamage, TeamManager.Team.None);
+                    // Impact damage scales with speed and momentum (mass * speed). Mining hull deals more to asteroid, takes less self.
+                    float impactSpeed = collision.relativeVelocity.magnitude;
+                    impactSpeed = Mathf.Max(0f, impactSpeed - 0.5f);
+                    float mass = Mathf.Max(0.5f, rb.mass);
+                    float momentum = mass * impactSpeed;
+                    float damage = baseRammingDamage + rammingDamagePerSpeedUnit * impactSpeed + rammingMomentumDamageScale * momentum;
+                    damage = Mathf.Max(2f, damage);
+
+                    float toAsteroid = damage * HullRammingToAsteroidMultiplier;
+                    float toSelf = damage * HullRammingSelfDamageMultiplier;
+                    asteroid.TakeDamageServerRpc(toAsteroid);
+                    TakeDamageServerRpc(toSelf, TeamManager.Team.None);
                 }
             }
         }
 
         /// <summary>
         /// When pushing into an asteroid, cancel tangential velocity so the ship sustains pressure and doesn't slip off.
-        /// Contact normal points from asteroid toward ship; we keep only velocity component into the asteroid (-normal).
+        /// When overlapping (e.g. asteroid respawned on top of ship), gently push the ship outward for a smooth escape.
+        /// Contact normal points from asteroid toward ship.
         /// </summary>
         private void OnCollisionStay(Collision collision)
         {
@@ -1055,20 +1126,49 @@ namespace TitanOrbit.Entities
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
             if (asteroid == null || asteroid.IsDestroyed || collision.contactCount == 0) return;
 
-            Vector3 normal = collision.GetContact(0).normal;
+            ContactPoint contact = collision.GetContact(0);
+            Vector3 normal = contact.normal;
             normal.y = 0f;
             if (normal.sqrMagnitude < 0.01f) return;
             normal.Normalize();
+
+            // Overlapping (e.g. asteroid respawned on ship): gently and progressively push ship outward
+            // separation < 0 means penetration
+            if (contact.separation < 0f)
+            {
+                Vector3 outward = normal; // normal points from asteroid to ship = outward
+                Vector3 vel = rb.linearVelocity;
+                vel.y = 0f;
+                vel += outward * (overlapEscapeSpeed * Time.fixedDeltaTime);
+                rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
+                currentVelocity = rb.linearVelocity;
+                return; // don't do ramming stick/damage while we're escaping overlap
+            }
+
             // Into asteroid = opposite of normal (normal points from asteroid to us)
             Vector3 intoAsteroid = -normal;
-            Vector3 vel = rb.linearVelocity;
-            vel.y = 0f;
-            float pushAmount = Vector3.Dot(vel, intoAsteroid);
+            Vector3 vel2 = rb.linearVelocity;
+            vel2.y = 0f;
+            float pushAmount = Vector3.Dot(vel2, intoAsteroid);
             if (pushAmount <= 0f) return; // Not pushing in
+
             // Keep only the "pushing in" component so we don't slide sideways
             Vector3 ramVelocity = intoAsteroid * pushAmount;
             rb.linearVelocity = new Vector3(ramVelocity.x, 0f, ramVelocity.z);
             currentVelocity = rb.linearVelocity;
+
+            // Sustained ramming damage (tick at interval). Scaled by mass (pressure) and hull type.
+            if (Time.time - lastRamDamageTime >= ramTickInterval)
+            {
+                lastRamDamageTime = Time.time;
+                float mass = Mathf.Max(0.5f, rb.mass);
+                float baseTick = ramDamagePerSecond * ramTickInterval;
+                float massScale = Mathf.Sqrt(mass); // so damage scales with mass but not too harshly
+                float tickToAsteroid = baseTick * massScale * HullRammingToAsteroidMultiplier;
+                float tickToSelf = baseTick * massScale * HullRammingSelfDamageMultiplier;
+                asteroid.TakeDamageServerRpc(tickToAsteroid);
+                TakeDamageServerRpc(tickToSelf, TeamManager.Team.None);
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]
