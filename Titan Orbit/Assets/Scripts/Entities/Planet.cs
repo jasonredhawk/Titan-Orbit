@@ -41,6 +41,12 @@ namespace TitanOrbit.Entities
         [Tooltip("Optional. SGT atmosphere outer mesh (e.g. Geosphere40 from CW). Required if atmosphere is used.")]
         [SerializeField] protected Mesh atmosphereOuterMesh;
 
+        [Header("Rotation")]
+        [Tooltip("When enabled, the planet rotates around the same tilted axis used by its rings.")]
+        [SerializeField] private bool enableSpin = true;
+        [Tooltip("Spin speed in degrees/second. Clockwise when viewed from the positive ring axis.")]
+        [SerializeField] private float spinDegreesPerSecond = 2f;
+
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
         
@@ -132,6 +138,7 @@ namespace TitanOrbit.Entities
 
             EnsureBodyColliderSize();
             EnsureOrbitZoneExists();
+            EnsureSpinTargetSetup();
 
             if (!(this is HomePlanet))
                 EnsurePlanetRingsDrawer();
@@ -173,15 +180,17 @@ namespace TitanOrbit.Entities
             float waterLevel = (seed % 5) * 0.055f;
             float atmosphereHeight = (seed % 4) * 0.012f;
 
+            GameObject visualTarget = GetPlanetVisualTargetObject();
+
             if (sgtPlanet != null)
                 sgtPlanet.WaterLevel = waterLevel;
 
             if (waterLevel > 0.001f)
             {
-                if (GetComponent<SgtPlanetWaterGradient>() == null)
-                    gameObject.AddComponent<SgtPlanetWaterGradient>();
-                if (GetComponent<SgtPlanetWaterTexture>() == null)
-                    gameObject.AddComponent<SgtPlanetWaterTexture>();
+                if (visualTarget.GetComponent<SgtPlanetWaterGradient>() == null)
+                    visualTarget.AddComponent<SgtPlanetWaterGradient>();
+                if (visualTarget.GetComponent<SgtPlanetWaterTexture>() == null)
+                    visualTarget.AddComponent<SgtPlanetWaterTexture>();
             }
 
             if (atmosphereSourceMaterial != null && atmosphereOuterMesh != null && atmosphereHeight > 0.001f)
@@ -210,6 +219,8 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            ApplyPlanetSpin();
+
             // Always lock Y position (prevents drift)
             Vector3 pos = transform.position;
             if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
@@ -237,6 +248,122 @@ namespace TitanOrbit.Entities
             
             // Update population display every frame (handles client-side updates)
             UpdatePopulationDisplay();
+        }
+
+        /// <summary>Rotate around the ring normal so body spin matches ring axis.</summary>
+        private void ApplyPlanetSpin()
+        {
+            if (!enableSpin || Mathf.Approximately(spinDegreesPerSecond, 0f))
+                return;
+
+            Transform spinTarget = GetSpinTargetTransform();
+            if (spinTarget == null)
+                return;
+
+            Vector3 axis = GetRingAxisWorld();
+            spinTarget.RotateAround(transform.position, axis, spinDegreesPerSecond * Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Ensures visual planet rendering lives on a child transform, so spin does not rotate text/rings/orbit visuals.
+        /// </summary>
+        private void EnsureSpinTargetSetup()
+        {
+            if (sgtPlanet == null || sgtPlanet.transform != transform)
+                return;
+
+            SgtPlanet source = sgtPlanet;
+            Transform spinTarget = transform.Find("PlanetVisualSpin");
+            if (spinTarget == null)
+            {
+                GameObject visualObj = new GameObject("PlanetVisualSpin");
+                spinTarget = visualObj.transform;
+                spinTarget.SetParent(transform, false);
+            }
+
+            SgtPlanet target = spinTarget.GetComponent<SgtPlanet>();
+            if (target == null)
+                target = spinTarget.gameObject.AddComponent<SgtPlanet>();
+
+            target.Mesh = source.Mesh;
+            target.MeshCollider = source.MeshCollider;
+            target.Radius = source.Radius;
+            target.Material = source.Material;
+            target.SharedMaterial = source.SharedMaterial;
+            target.CastShadows = source.CastShadows;
+            target.ReceiveShadows = source.ReceiveShadows;
+            target.WaterLevel = source.WaterLevel;
+            target.Displace = source.Displace;
+            target.Displacement = source.Displacement;
+            target.ClampWater = source.ClampWater;
+
+            MoveWaterComponentsToSpinTarget(spinTarget.gameObject);
+
+            sgtPlanet = target;
+            Object.Destroy(source);
+        }
+
+        private void MoveWaterComponentsToSpinTarget(GameObject spinTargetObject)
+        {
+            SgtPlanetWaterGradient sourceGradient = GetComponent<SgtPlanetWaterGradient>();
+            if (sourceGradient != null)
+            {
+                SgtPlanetWaterGradient targetGradient = spinTargetObject.GetComponent<SgtPlanetWaterGradient>();
+                if (targetGradient == null)
+                    targetGradient = spinTargetObject.AddComponent<SgtPlanetWaterGradient>();
+                targetGradient.Shallow = sourceGradient.Shallow;
+                targetGradient.Deep = sourceGradient.Deep;
+                targetGradient.Ease = sourceGradient.Ease;
+                targetGradient.Sharpness = sourceGradient.Sharpness;
+                targetGradient.Scale = sourceGradient.Scale;
+                Object.Destroy(sourceGradient);
+            }
+
+            SgtPlanetWaterTexture sourceTexture = GetComponent<SgtPlanetWaterTexture>();
+            if (sourceTexture != null)
+            {
+                SgtPlanetWaterTexture targetTexture = spinTargetObject.GetComponent<SgtPlanetWaterTexture>();
+                if (targetTexture == null)
+                    targetTexture = spinTargetObject.AddComponent<SgtPlanetWaterTexture>();
+                targetTexture.BaseTexture = sourceTexture.BaseTexture;
+                targetTexture.Strength = sourceTexture.Strength;
+                targetTexture.Speed = sourceTexture.Speed;
+                Object.Destroy(sourceTexture);
+            }
+        }
+
+        private Transform GetSpinTargetTransform()
+        {
+            if (sgtPlanet != null)
+                return sgtPlanet.transform == transform ? null : sgtPlanet.transform;
+
+            if (planetRenderer != null && planetRenderer.transform != transform)
+                return planetRenderer.transform;
+
+            return null;
+        }
+
+        protected GameObject GetPlanetVisualTargetObject()
+        {
+            if (sgtPlanet != null)
+                return sgtPlanet.gameObject;
+            if (planetRenderer != null)
+                return planetRenderer.gameObject;
+            return gameObject;
+        }
+
+        /// <summary>Gets ring axis from the active ring drawer; falls back to local up.</summary>
+        private Vector3 GetRingAxisWorld()
+        {
+            PlanetRingsDrawer regularRings = GetComponentInChildren<PlanetRingsDrawer>(true);
+            if (regularRings != null)
+                return regularRings.GetRingAxisWorld();
+
+            HomePlanetRingsDrawer homeRings = GetComponentInChildren<HomePlanetRingsDrawer>(true);
+            if (homeRings != null)
+                return homeRings.GetRingAxisWorld();
+
+            return transform.up;
         }
         
         /// <summary>Override in HomePlanet to place text above the ring (e.g. 0.8).</summary>
@@ -425,14 +552,14 @@ namespace TitanOrbit.Entities
             float oldGrowthRate = growthRate.Value;
             SetGrowthRate(oldGrowthRate * 2f);
 
-            LevelUpClientRpc(planetLevel.Value, transform.position);
+            LevelUpClientRpc(planetLevel.Value, transform.position, planetSize);
         }
 
         [ClientRpc]
-        private void LevelUpClientRpc(int newLevel, Vector3 planetPosition)
+        private void LevelUpClientRpc(int newLevel, Vector3 planetPosition, float effectPlanetSize)
         {
             Debug.Log($"Planet leveled up to level {newLevel}!");
-            VisualEffectsManager.PlayLevelUpEffectStatic(planetPosition);
+            VisualEffectsManager.PlayLevelUpEffectStatic(planetPosition, effectPlanetSize);
         }
 
         protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)

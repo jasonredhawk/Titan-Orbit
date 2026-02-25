@@ -46,6 +46,17 @@ namespace TitanOrbit.Entities
             homePlanet = GetComponentInParent<HomePlanet>();
         }
 
+        public Vector3 GetRingAxisWorld()
+        {
+            if (homePlanet == null)
+                homePlanet = GetComponentInParent<HomePlanet>();
+            if (homePlanet == null)
+                return transform.up;
+
+            Quaternion tilt = Quaternion.Euler(tiltDegrees, 0f, 0f);
+            return homePlanet.transform.TransformDirection(tilt * Vector3.forward).normalized;
+        }
+
         public override void DrawShapes(UnityEngine.Camera cam)
         {
             if (homePlanet == null)
@@ -67,17 +78,6 @@ namespace TitanOrbit.Entities
                 Matrix4x4 planetMatrix = homePlanet.transform.localToWorldMatrix;
                 Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
 
-                float alpha = Mathf.Clamp01(ringOpacity + (level - 3) * opacityPerLevel);
-                Color baseColor = TeamManager.GetTeamColor(homePlanet.TeamOwnership);
-                Color color = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
-
-                float currentRadius = innerRadius;
-                for (int i = 0; i < ringCount; i++)
-                {
-                    Draw.Ring(Vector3.zero, Quaternion.identity, currentRadius, ringThickness, color);
-                    currentRadius += ringThickness + gapBetweenBands;
-                }
-
                 // Orbit zone: filled ring with radial gradient (alpha 0.3 at inner edge, 0 at outer), flat on ground
                 if (drawOrbitZoneFill)
                 {
@@ -89,6 +89,19 @@ namespace TitanOrbit.Entities
                     Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
                     Color outerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
                     Draw.Ring(Vector3.zero, Quaternion.identity, zoneRadius, zoneThickness, DiscColors.Radial(innerColor, outerColor));
+                }
+
+                // Draw home-planet rings after orbit fill so ring bands are not visually clipped by the zone overlay.
+                Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
+                float alpha = Mathf.Clamp01(ringOpacity + (level - 3) * opacityPerLevel);
+                Color baseColor = TeamManager.GetTeamColor(homePlanet.TeamOwnership);
+                Color color = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
+
+                float currentRadius = innerRadius;
+                for (int i = 0; i < ringCount; i++)
+                {
+                    Draw.Ring(Vector3.zero, Quaternion.identity, currentRadius, ringThickness, color);
+                    currentRadius += ringThickness + gapBetweenBands;
                 }
             }
         }

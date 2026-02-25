@@ -69,7 +69,7 @@ namespace TitanOrbit.Entities
         /// <summary>Set SGT planet water level so tropical water is visible (tropical materials use _HasWater).</summary>
         private void SetHomePlanetWaterLevel()
         {
-            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            var sgt = GetPlanetVisualTargetObject().GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
             if (sgt != null)
                 sgt.WaterLevel = 0.2f;
         }
@@ -189,10 +189,11 @@ namespace TitanOrbit.Entities
         /// <summary>Add SGT water components so home planet materials with water render correctly.</summary>
         private void EnsureWaterComponents()
         {
-            if (GetComponent<SgtPlanetWaterGradient>() == null)
-                gameObject.AddComponent<SgtPlanetWaterGradient>();
-            if (GetComponent<SgtPlanetWaterTexture>() == null)
-                gameObject.AddComponent<SgtPlanetWaterTexture>();
+            GameObject target = GetPlanetVisualTargetObject();
+            if (target.GetComponent<SgtPlanetWaterGradient>() == null)
+                target.AddComponent<SgtPlanetWaterGradient>();
+            if (target.GetComponent<SgtPlanetWaterTexture>() == null)
+                target.AddComponent<SgtPlanetWaterTexture>();
         }
 
         /// <summary>Add SGT atmosphere as child for home planets (volumetric atmosphere).</summary>

@@ -60,7 +60,7 @@ namespace TitanOrbit.Editor
             if (levelUpPrefab != null)
             {
                 so.FindProperty("levelUpEffect").objectReferenceValue = levelUpPrefab;
-                so.FindProperty("levelUpEffectScale").floatValue = 1.5f;
+                so.FindProperty("levelUpEffectScale").floatValue = 4f;
             }
             so.ApplyModifiedPropertiesWithoutUndo();
             Debug.Log("Level-up effect set to Red Impact (same as bullet impact). Save the scene. No rebuild needed – same GrabPass fix is applied at runtime.");
@@ -154,7 +154,7 @@ namespace TitanOrbit.Editor
             {
                 SerializedObject vfxSO = new SerializedObject(visualEffectsManager);
                 vfxSO.FindProperty("levelUpEffect").objectReferenceValue = levelUpPrefab;
-                vfxSO.FindProperty("levelUpEffectScale").floatValue = 1.5f;
+                vfxSO.FindProperty("levelUpEffectScale").floatValue = 4f;
                 vfxSO.ApplyModifiedPropertiesWithoutUndo();
             }
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();

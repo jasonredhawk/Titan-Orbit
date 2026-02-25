@@ -103,7 +103,7 @@ namespace TitanOrbit.Entities
         [Tooltip("Base rigidbody mass when empty (overridden by ShipData.baseMass when set). Heavier ship = slower to accelerate/brake.")]
         [SerializeField] private float baseMass = 1f;
         [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
-        [SerializeField] private float massPerGem = 0.02f;
+        [SerializeField] private float massPerGem = 0.005f;
 
         [Header("Energy (weapon system)")]
         [SerializeField] private float energyCapacity = 50f;
@@ -171,6 +171,8 @@ namespace TitanOrbit.Entities
         private bool wasMovePressedLastFrame;
         /// <summary>When &lt; 0 we're stable (or not in zone). When >= 0, time when we first dropped out of stable orbit (for menu hide delay).</summary>
         private float lastTimeStableOrbitLost = -1f;
+        /// <summary>True only after we've been in stable orbit at least once this zone entry; prevents menu showing on zone entry before stable.</summary>
+        private bool hasReachedStableOrbitThisZoneEntry = false;
         private const float STABLE_ORBIT_HIDE_DELAY = 0.6f; // Keep menu visible this long after briefly dipping out of stable orbit
 
         public float CurrentHealth => currentHealth.Value;
@@ -333,17 +335,25 @@ namespace TitanOrbit.Entities
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
                 bool stable = currentOrbitPlanet != null && !movePressed && IsInStableOrbit();
                 if (stable)
+                {
                     lastTimeStableOrbitLost = -1f;
+                    hasReachedStableOrbitThisZoneEntry = true;
+                }
                 else if (currentOrbitPlanet != null && !movePressed)
                 {
                     if (lastTimeStableOrbitLost < 0f)
                         lastTimeStableOrbitLost = Time.time;
                 }
                 else
+                {
                     lastTimeStableOrbitLost = -1f;
+                    if (currentOrbitPlanet == null)
+                        hasReachedStableOrbitThisZoneEntry = false;
+                }
 
                 float notStableDuration = lastTimeStableOrbitLost >= 0f ? Time.time - lastTimeStableOrbitLost : 0f;
-                bool keepMenuVisible = stable || (currentOrbitPlanet != null && !movePressed && notStableDuration < STABLE_ORBIT_HIDE_DELAY);
+                bool allowHideDelay = hasReachedStableOrbitThisZoneEntry && currentOrbitPlanet != null && !movePressed && notStableDuration < STABLE_ORBIT_HIDE_DELAY;
+                bool keepMenuVisible = stable || allowHideDelay;
 
                 if (movePressed || currentOrbitPlanet == null || !keepMenuVisible)
                     orbitUI.Hide();
