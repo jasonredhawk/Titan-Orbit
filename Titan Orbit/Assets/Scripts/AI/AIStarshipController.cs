@@ -1033,7 +1033,7 @@ namespace TitanOrbit.AI
         private Gem FindNearestGemWithinRange(float maxRange)
         {
             RefreshObjectCache();
-            
+
             Gem nearest = null;
             float nearestDistance = float.MaxValue;
 

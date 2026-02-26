@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using TMPro;
 using System.Collections.Generic;
+using System.IO;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
@@ -76,6 +77,20 @@ namespace TitanOrbit.UI
         // Edge markers for attack/defend markers outside visible area
         private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
+        private float lastEntityCacheRefreshTime = -999f;
+        private const float EntityCacheRefreshInterval = 0.5f;
+        private Starship[] cachedShips = new Starship[0];
+        private Planet[] cachedPlanets = new Planet[0];
+        private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
+        private Asteroid[] cachedAsteroids = new Asteroid[0];
+        private MinimapMarker[] cachedMarkers = new MinimapMarker[0];
+        private int skippedNullShips = 0;
+        private int skippedNullPlanets = 0;
+        private int skippedNullHomePlanets = 0;
+        private int skippedNullAsteroids = 0;
+        private int skippedNullMarkers = 0;
+        private const int MaxAsteroidBlips = 80;
+        private static float nextMinimapLogTime = -999f;
 
         private enum BlipType
         {
@@ -93,6 +108,19 @@ namespace TitanOrbit.UI
             dz = to.z - from.z;
             dx -= mapW * Mathf.Round(dx / mapW);
             dz -= mapH * Mathf.Round(dz / mapH);
+        }
+
+        private void RefreshEntityCache(bool force = false)
+        {
+            if (!Application.isPlaying) return;
+            if (!force && Time.time - lastEntityCacheRefreshTime < EntityCacheRefreshInterval) return;
+
+            cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
+            cachedPlanets = FindObjectsByType<Planet>(FindObjectsSortMode.None);
+            cachedHomePlanets = FindObjectsByType<HomePlanet>(FindObjectsSortMode.None);
+            cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+            cachedMarkers = FindObjectsByType<MinimapMarker>(FindObjectsSortMode.None);
+            lastEntityCacheRefreshTime = Time.time;
         }
 
         private void Start()
@@ -875,7 +903,8 @@ namespace TitanOrbit.UI
             
             if (playerShip == null || !playerShip.IsOwner)
             {
-                foreach (var ship in FindObjectsOfType<Starship>())
+                RefreshEntityCache();
+                foreach (var ship in cachedShips)
                 {
                     if (ship.IsOwner) { playerShip = ship; playerTransform = ship.transform; break; }
                 }
@@ -1140,6 +1169,7 @@ namespace TitanOrbit.UI
 
         private void UpdateBlips()
         {
+            RefreshEntityCache();
             Vector3 playerPos = playerTransform.position;
             var toRemove = new List<Transform>();
 
@@ -1212,10 +1242,14 @@ namespace TitanOrbit.UI
             EnsureBlip(playerTransform, () => CreateBlip(Color.white, 16f, BlipType.Capsule), true);
 
             // Show all ships (friendly and enemy, including AI) on the minimap
-            // Blip when within visible area only - no edge markers for ships (markers only for planets)
             float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
-            foreach (var ship in FindObjectsOfType<Starship>())
+            foreach (var ship in cachedShips)
             {
+                if (ship == null)
+                {
+                    skippedNullShips++;
+                    continue;
+                }
                 if (ship == playerShip || ship.IsDead) continue;
                 
                 // Calculate distance to check if ship is within visible area
@@ -1244,13 +1278,18 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Calculate consistent scale factor: world units to minimap pixels
+            // Calculate consistent scale factor
             // The minimap shows minimapRadius * 2 world units across displaySize pixels
             // So 1 world unit = displaySize / (minimapRadius * 2) pixels
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);
             
-            foreach (var p in FindObjectsOfType<Planet>())
+            foreach (var p in cachedPlanets)
             {
+                if (p == null)
+                {
+                    skippedNullPlanets++;
+                    continue;
+                }
                 if (p is HomePlanet) continue;
                 
                 Vector3 worldPos = p.transform.position;
@@ -1297,8 +1336,13 @@ namespace TitanOrbit.UI
                 }
             }
 
-            foreach (var hp in FindObjectsOfType<HomePlanet>())
+            foreach (var hp in cachedHomePlanets)
             {
+                if (hp == null)
+                {
+                    skippedNullHomePlanets++;
+                    continue;
+                }
                 Vector3 worldPos = hp.transform.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
                 
@@ -1343,9 +1387,29 @@ namespace TitanOrbit.UI
                 }
             }
 
-            foreach (var a in FindObjectsOfType<Asteroid>())
+            int asteroidIdx = 0;
+            // Build list of (asteroid, distance) so we can show only the closest MaxAsteroidBlips (stable set, no swirl)
+            var asteroidDistances = new List<(Asteroid a, float dist)>(cachedAsteroids.Length);
+            foreach (var a in cachedAsteroids)
             {
-                if (a.IsDestroyed) continue;
+                if (a == null || a.IsDestroyed) continue;
+                GetToroidalDelta(playerPos, a.transform.position, out float dx, out float dz);
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                asteroidDistances.Add((a, d));
+            }
+            asteroidDistances.Sort((x, y) => x.dist.CompareTo(y.dist));
+            int shownCount = 0;
+            foreach (var pair in asteroidDistances)
+            {
+                var a = pair.a;
+                if (asteroidIdx >= MaxAsteroidBlips)
+                {
+                    if (blips.TryGetValue(a.transform, out var hideRt) && hideRt != null)
+                        hideRt.gameObject.SetActive(false);
+                    continue;
+                }
+                asteroidIdx++;
+                shownCount++;
                 // Use physical scale (transform) for minimap size, not normalized AsteroidSize (1-50)
                 // Raw asteroid scale is ~0.3 to 1.5 world units
                 float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
@@ -1360,12 +1424,38 @@ namespace TitanOrbit.UI
                     EnsureBlip(a.transform, () => CreateBlip(asteroidColor, asteroidBlipSize, BlipType.Irregular));
                 }
             }
+            // #region agent log
+            if (Time.time >= nextMinimapLogTime)
+            {
+                nextMinimapLogTime = Time.time + 1f;
+                long setHash = 0;
+                int n = 0;
+                foreach (var pair in asteroidDistances)
+                {
+                    if (n >= MaxAsteroidBlips) break;
+                    setHash += pair.a != null ? pair.a.GetInstanceID() : 0;
+                    n++;
+                }
+                try
+                {
+                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    string line = "{\"sessionId\":\"9b78d5\",\"runId\":\"minimap\",\"hypothesisId\":\"H1\",\"location\":\"MinimapController.cs:UpdateBlips\",\"message\":\"asteroid set stability\",\"data\":{\"asteroidListCount\":" + asteroidDistances.Count + ",\"shownCount\":" + shownCount + ",\"setHash\":" + setHash + "},\"timestamp\":" + ts + "}\n";
+                    File.AppendAllText("debug-9b78d5.log", line);
+                }
+                catch { }
+            }
+            // #endregion
             
             // Update minimap markers
-            var allMarkers = FindObjectsOfType<MinimapMarker>();
+            var allMarkers = cachedMarkers;
             
             foreach (var marker in allMarkers)
             {
+                if (marker == null)
+                {
+                    skippedNullMarkers++;
+                    continue;
+                }
                 if (!marker.IsSpawned) continue;
                 
                 Vector3 worldPos = marker.transform.position;
@@ -1443,31 +1533,6 @@ namespace TitanOrbit.UI
         {
             if (blips.ContainsKey(t))
             {
-                // Update existing blip color and size if needed
-                if (blipImages.TryGetValue(t, out var img) && img != null)
-                {
-                    var blipRect = blips[t];
-                    if (blipRect != null)
-                    {
-                        // Get the new blip info by creating a temporary one
-                        var tempRt = create();
-                        if (tempRt != null)
-                        {
-                            var tempImg = tempRt.GetComponent<Image>();
-                            if (tempImg != null)
-                            {
-                                img.color = tempImg.color;
-                                blipRect.sizeDelta = tempRt.sizeDelta;
-                                // Update sprite if type changed
-                                if (tempImg.sprite != null)
-                                {
-                                    img.sprite = tempImg.sprite;
-                                }
-                            }
-                            Destroy(tempRt.gameObject);
-                        }
-                    }
-                }
                 return;
             }
             var newBlipRect = create();

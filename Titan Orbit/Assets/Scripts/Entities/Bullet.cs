@@ -2,7 +2,6 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
-
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
@@ -21,6 +20,8 @@ namespace TitanOrbit.Entities
     [RequireComponent(typeof(Rigidbody))]
     public class Bullet : NetworkBehaviour
     {
+        public static int ActiveServerBullets { get; private set; }
+
         [Header("Bullet Settings")]
         [SerializeField] private float speed = 20f;
         [SerializeField] private float damage = 10f;
@@ -60,8 +61,10 @@ namespace TitanOrbit.Entities
 
         private NetworkVariable<float> bulletVisualScaleMultiplier = new NetworkVariable<float>(1f);
         private NetworkVariable<byte> bulletVisualShapeIndex = new NetworkVariable<byte>(0);
+        private NetworkVariable<bool> bulletVisualNoTrail = new NetworkVariable<bool>(false);
         private float cachedVisualScaleMultiplier = 1f;
         private byte cachedVisualShapeIndex;
+        private bool cachedVisualNoTrail;
 
         private const float FIXED_Y_POSITION = 0f;
         private Rigidbody rb;
@@ -70,6 +73,8 @@ namespace TitanOrbit.Entities
         private Vector3 lastPosition;
         private GameObject spawnedVisual;
         private Material proceduralMaterialInstance; // Instance we create for color; destroyed with bullet
+        private TrailRenderer cachedTrail;
+        private bool serverCounted;
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
@@ -86,12 +91,19 @@ namespace TitanOrbit.Entities
             
             bulletVisualScaleMultiplier.OnValueChanged += OnVisualScaleChanged;
             bulletVisualShapeIndex.OnValueChanged += OnVisualShapeChanged;
+            bulletVisualNoTrail.OnValueChanged += OnVisualNoTrailChanged;
         }
 
         private void OnDestroy()
         {
+            if (serverCounted)
+            {
+                ActiveServerBullets = Mathf.Max(0, ActiveServerBullets - 1);
+                serverCounted = false;
+            }
             bulletVisualScaleMultiplier.OnValueChanged -= OnVisualScaleChanged;
             bulletVisualShapeIndex.OnValueChanged -= OnVisualShapeChanged;
+            bulletVisualNoTrail.OnValueChanged -= OnVisualNoTrailChanged;
             if (proceduralMaterialInstance != null)
             {
                 Destroy(proceduralMaterialInstance);
@@ -100,6 +112,11 @@ namespace TitanOrbit.Entities
         }
 
         private void OnVisualShapeChanged(byte oldValue, byte newValue)
+        {
+            UpdateVisual();
+        }
+
+        private void OnVisualNoTrailChanged(bool oldValue, bool newValue)
         {
             UpdateVisual();
         }
@@ -117,8 +134,14 @@ namespace TitanOrbit.Entities
         {
             if (IsServer)
             {
+                if (!serverCounted)
+                {
+                    ActiveServerBullets++;
+                    serverCounted = true;
+                }
                 bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
                 bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
+                bulletVisualNoTrail.Value = cachedVisualNoTrail;
             }
 
             // Lock Y position to 0
@@ -141,6 +164,16 @@ namespace TitanOrbit.Entities
             {
                 CheckImmediateOverlaps();
             }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (serverCounted)
+            {
+                ActiveServerBullets = Mathf.Max(0, ActiveServerBullets - 1);
+                serverCounted = false;
+            }
+            base.OnNetworkDespawn();
         }
 
         private System.Collections.IEnumerator DelayedVisualUpdate()
@@ -166,7 +199,7 @@ namespace TitanOrbit.Entities
                 vel.y = 0f;
                 rb.linearVelocity = vel;
             }
-            
+
             if (!IsServer) return;
 
             // Use toroidal distance so bullets don't despawn when crossing map edge
@@ -330,10 +363,10 @@ namespace TitanOrbit.Entities
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)
         {
-            Initialize(bulletSpeed, bulletDamage, team, 0, 1f, 0);
+            Initialize(bulletSpeed, bulletDamage, team, 0, 1f, 0, false);
         }
 
-        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0)
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0, bool noTrailVisual = false)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
@@ -341,6 +374,7 @@ namespace TitanOrbit.Entities
             ownerShipNetworkId = ownerShipId;
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualShapeIndex = shapeIndex;
+            cachedVisualNoTrail = noTrailVisual;
             // NetworkVariables set in OnNetworkSpawn
         }
 
@@ -356,6 +390,7 @@ namespace TitanOrbit.Entities
             BulletShape shape = shapeIdx == 0 ? defaultShape : (BulletShape)Mathf.Clamp(shapeIdx, 0, 2);
             float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
             float scale = bulletVisualScale * scaleMult;
+            bool noTrailVisual = cachedVisualNoTrail || bulletVisualNoTrail.Value;
 
             foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
                 r.enabled = false;
@@ -371,10 +406,18 @@ namespace TitanOrbit.Entities
                 spawnedVisual = Instantiate(visualPrefab, transform);
                 FixVfxForUrp(spawnedVisual);
                 ApplyColorToVisual(spawnedVisual, proceduralBulletColor);
+                if (noTrailVisual)
+                {
+                    var trails = spawnedVisual.GetComponentsInChildren<TrailRenderer>(true);
+                    for (int i = 0; i < trails.Length; i++)
+                    {
+                        trails[i].enabled = false;
+                    }
+                }
             }
             else
             {
-                spawnedVisual = CreateCustomizableVfxStyle(shape, scale, speed);
+                spawnedVisual = CreateCustomizableVfxStyle(shape, scale, speed, noTrailVisual);
                 if (spawnedVisual != null)
                     spawnedVisual.transform.SetParent(transform, false);
             }
@@ -384,6 +427,7 @@ namespace TitanOrbit.Entities
                 spawnedVisual.transform.localPosition = Vector3.zero;
                 spawnedVisual.transform.localRotation = Quaternion.identity;
                 spawnedVisual.transform.localScale = Vector3.one * scale;
+                cachedTrail = spawnedVisual.GetComponentInChildren<TrailRenderer>(true);
             }
         }
 
@@ -430,7 +474,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Builds a VFX-style bullet: core + smooth TrailRenderer tail (no dotted particles).</summary>
-        private GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed)
+        private GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual)
         {
             if (proceduralMaterialInstance != null)
             {
@@ -457,7 +501,7 @@ namespace TitanOrbit.Entities
             if (coreMr != null) coreMr.sharedMaterial = proceduralMaterialInstance;
 
             // Tail: smooth ribbon via TrailRenderer (follows bullet, no dots)
-            if (tailLength > 0.01f)
+            if (!noTrailVisual && tailLength > 0.01f)
             {
                 TrailRenderer trail = root.AddComponent<TrailRenderer>();
                 trail.time = tailLength / Mathf.Max(5f, bulletSpeed); // so trail length in world ≈ tailLength

@@ -5,6 +5,7 @@ using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.Input;
 using System.Collections.Generic;
+using TitanOrbit.Data;
 
 namespace TitanOrbit.AI
 {
@@ -24,6 +25,8 @@ namespace TitanOrbit.AI
 
         [Header("AI Spawn Settings")]
         [SerializeField] private GameObject starshipPrefab;
+        [Tooltip("Ship data for AI ships (same model and weapon as your ship). Assign the same ShipData asset your player uses (e.g. Starter). If unset, uses first player ship's data when available.")]
+        [SerializeField] private ShipData aiShipData;
         [Tooltip("Minimum number of AI ships per team")]
         [SerializeField] private int minAIShipsPerTeam = 10;
         [Tooltip("Maximum number of AI ships per team (uses TeamManager.MaxPlayersPerTeam if 0)")]
@@ -181,7 +184,23 @@ namespace TitanOrbit.AI
                 inputHandler.enabled = false;
             }
 
-            // Assign team only (AssignTeamAndStartInOrbit would overwrite our random spawn position)
+            // Use same ship model and weapon as player: apply ShipData (from field or first player ship)
+            ShipData dataToApply = aiShipData;
+            if (dataToApply == null)
+            {
+                foreach (Starship s in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                {
+                    if (s != null && s.IsSpawned && s.GetComponent<AIShipMarker>() == null && s.CurrentShipData != null)
+                    {
+                        dataToApply = s.CurrentShipData;
+                        break;
+                    }
+                }
+            }
+            if (dataToApply != null)
+                starship.SetShipData(dataToApply);
+
+            // Assign team only
             starship.AssignTeamOnly(team);
 
             // Ensure Rigidbody is at our spawn position (Spawn/OnNetworkSpawn might not preserve it)

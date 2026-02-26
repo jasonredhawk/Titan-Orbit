@@ -17,6 +17,8 @@ namespace TitanOrbit.Entities
     {
         [Header("Ship Settings")]
         [SerializeField] private ShipData shipData;
+        /// <summary>Current ship data (model, weapon config, stats). Used so AI can match player ship.</summary>
+        public ShipData CurrentShipData => shipData;
         [SerializeField] private int shipLevel = 1;
         [SerializeField] private ShipFocusType focusType = ShipFocusType.Fighter;
 

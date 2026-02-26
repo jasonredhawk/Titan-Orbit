@@ -35,9 +35,20 @@ namespace TitanOrbit.Systems
         public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default)
         {
             if (bulletPrefab == null) return;
-
-            int currentBulletCount = FindObjectsByType<Bullet>(FindObjectsSortMode.None).Length;
-            if (currentBulletCount >= maxBullets) return;
+            bool isAIBullet = false;
+            if (ownerShipNetworkId != 0 && NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
+            {
+                var spawned = NetworkManager.Singleton.SpawnManager.SpawnedObjects;
+                if (spawned != null && spawned.TryGetValue(ownerShipNetworkId, out NetworkObject ownerObj) && ownerObj != null)
+                {
+                    isAIBullet = ownerObj.GetComponent<TitanOrbit.AI.AIShipMarker>() != null;
+                }
+            }
+            int currentBulletCount = Bullet.ActiveServerBullets;
+            if (currentBulletCount >= maxBullets)
+            {
+                return;
+            }
 
             Vector3 dir = direction;
             dir.y = 0f;
@@ -50,7 +61,7 @@ namespace TitanOrbit.Systems
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
             if (bullet != null)
-                bullet.Initialize(speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex);
+                bullet.Initialize(speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false);
 
             if (bulletRb != null)
             {
