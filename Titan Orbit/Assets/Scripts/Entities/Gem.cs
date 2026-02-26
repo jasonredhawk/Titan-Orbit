@@ -13,7 +13,7 @@ namespace TitanOrbit.Entities
     {
         private static Starship[] cachedShips = new Starship[0];
         private static float nextShipCacheRefreshTime = 0f;
-        private const float SHIP_CACHE_REFRESH_INTERVAL = 0.25f;
+        private const float SHIP_CACHE_REFRESH_INTERVAL = 0.5f; // Was 0.25f - reduce FindObjectsByType cost
 
         [SerializeField] private float gemValue = 10f;
         [SerializeField] private float pickupRadius = 2f;
@@ -137,6 +137,23 @@ namespace TitanOrbit.Entities
                 // Gem expired - despawn it
                 var no = GetComponent<NetworkObject>();
                 if (no != null) no.Despawn();
+                return;
+            }
+
+            // Run attraction (find nearest ship + magnetic pull) every 2nd FixedUpdate to halve CPU cost; stagger by instance so not all on same frame
+            bool runAttractionThisFrame = ((Time.frameCount + GetInstanceID()) & 1) == 0;
+            if (!runAttractionThisFrame)
+            {
+                // Still apply drag so gems slow down when no ship nearby (no ship search this frame)
+                if (rb != null)
+                {
+                    rb.linearDamping = slowdownDrag;
+                    if (rb.linearVelocity.magnitude < stopSpeedThreshold)
+                    {
+                        rb.linearVelocity = Vector3.zero;
+                        rb.linearDamping = 0f;
+                    }
+                }
                 return;
             }
 

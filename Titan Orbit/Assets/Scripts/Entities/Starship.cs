@@ -229,6 +229,10 @@ namespace TitanOrbit.Entities
             {
                 shipCol.sharedMaterial = GetOrCreateShipRammingMaterial();
             }
+
+            // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
+            if (GetComponent<ToroidalRenderer>() == null)
+                gameObject.AddComponent<ToroidalRenderer>();
         }
 
         private static PhysicsMaterial shipRammingMaterial;

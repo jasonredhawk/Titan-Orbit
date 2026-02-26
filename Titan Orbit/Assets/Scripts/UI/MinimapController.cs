@@ -4,7 +4,6 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using TMPro;
 using System.Collections.Generic;
-using System.IO;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
@@ -90,7 +89,6 @@ namespace TitanOrbit.UI
         private int skippedNullAsteroids = 0;
         private int skippedNullMarkers = 0;
         private const int MaxAsteroidBlips = 80;
-        private static float nextMinimapLogTime = -999f;
 
         private enum BlipType
         {
@@ -1398,7 +1396,6 @@ namespace TitanOrbit.UI
                 asteroidDistances.Add((a, d));
             }
             asteroidDistances.Sort((x, y) => x.dist.CompareTo(y.dist));
-            int shownCount = 0;
             foreach (var pair in asteroidDistances)
             {
                 var a = pair.a;
@@ -1409,7 +1406,6 @@ namespace TitanOrbit.UI
                     continue;
                 }
                 asteroidIdx++;
-                shownCount++;
                 // Use physical scale (transform) for minimap size, not normalized AsteroidSize (1-50)
                 // Raw asteroid scale is ~0.3 to 1.5 world units
                 float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
@@ -1424,27 +1420,6 @@ namespace TitanOrbit.UI
                     EnsureBlip(a.transform, () => CreateBlip(asteroidColor, asteroidBlipSize, BlipType.Irregular));
                 }
             }
-            // #region agent log
-            if (Time.time >= nextMinimapLogTime)
-            {
-                nextMinimapLogTime = Time.time + 1f;
-                long setHash = 0;
-                int n = 0;
-                foreach (var pair in asteroidDistances)
-                {
-                    if (n >= MaxAsteroidBlips) break;
-                    setHash += pair.a != null ? pair.a.GetInstanceID() : 0;
-                    n++;
-                }
-                try
-                {
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line = "{\"sessionId\":\"9b78d5\",\"runId\":\"minimap\",\"hypothesisId\":\"H1\",\"location\":\"MinimapController.cs:UpdateBlips\",\"message\":\"asteroid set stability\",\"data\":{\"asteroidListCount\":" + asteroidDistances.Count + ",\"shownCount\":" + shownCount + ",\"setHash\":" + setHash + "},\"timestamp\":" + ts + "}\n";
-                    File.AppendAllText("debug-9b78d5.log", line);
-                }
-                catch { }
-            }
-            // #endregion
             
             // Update minimap markers
             var allMarkers = cachedMarkers;

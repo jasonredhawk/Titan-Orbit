@@ -29,9 +29,14 @@ namespace TitanOrbit.AI
         [SerializeField] private float arrivalDistance = 2f;
         [SerializeField] private float miningRange = 3f;
         [SerializeField] private float gemCollectionProximity = 30f; // Only collect gems within this range; otherwise return to asteroids
-        [SerializeField] private float updateInterval = 0.5f; // Update AI decisions every 0.5 seconds
+        [Tooltip("How often AI re-evaluates targets and state (seconds). Higher = less CPU, slightly slower reactions.")]
+        [SerializeField] private float updateInterval = 0.75f; // Slower than 0.5f to reduce load and feel less "twitchy"
         [SerializeField] private float orbitSpeed = 0.8f;
         [SerializeField] private float attackRange = 3f; // Range at which to attack enemy ships (close proximity only - very short range)
+        [Tooltip("When farther than this from any player ship, AI runs at reduced rate and does not shoot (saves CPU off-screen).")]
+        [SerializeField] private float offScreenDistance = 70f;
+        [Tooltip("When off-screen, how often AI updates (seconds).")]
+        [SerializeField] private float offScreenUpdateInterval = 1.5f;
 
         private Starship starship;
         private Rigidbody rb;
@@ -73,11 +78,14 @@ namespace TitanOrbit.AI
         
         // Cached object lists to avoid expensive FindObjectsOfType calls every update
         private static float lastCacheRefreshTime = 0f;
-        private static float cacheRefreshInterval = 1f; // Refresh cache every 1 second
+        private static float cacheRefreshInterval = 1.5f; // Refresh cache every 1.5s (was 1s) to reduce cost
         private static Asteroid[] cachedAsteroids = new Asteroid[0];
         private static Gem[] cachedGems = new Gem[0];
         private static Planet[] cachedPlanets = new Planet[0];
         private static Starship[] cachedShips = new Starship[0];
+        private float lastOffScreenUpdateTime = -999f; // When off-screen, only run UpdateAI at this interval
+        private float lastRegenTime = -999f;
+        private const float REGEN_TICK_INTERVAL = 0.25f; // Regen only every 0.25s to reduce cost
 
         public AIBehaviorType BehaviorType => behaviorType;
         public TeamManager.Team AssignedTeam => assignedTeam;
@@ -111,9 +119,13 @@ namespace TitanOrbit.AI
             if (!IsServerAuthority) return;
             if (starship == null || starship.IsDead) return;
 
-            // Handle health and energy regen for AI ships (they don't have an owner so Starship.Update won't do it)
-            HandleHealthRegen();
-            HandleEnergyRegen();
+            // Throttle regen to reduce reflection cost (was every frame)
+            if (Time.time - lastRegenTime >= REGEN_TICK_INTERVAL)
+            {
+                lastRegenTime = Time.time;
+                HandleHealthRegen();
+                HandleEnergyRegen();
+            }
         }
 
         private void FixedUpdate()
@@ -131,24 +143,47 @@ namespace TitanOrbit.AI
             // Ensure orbit zone is set if we're in it (triggers don't fire for objects that start inside)
             TryEnterOrbitZoneIfInRange();
 
-            // Update AI decisions periodically
-            if (Time.time - lastUpdateTime >= updateInterval)
+            // Off-screen throttle: when far from all players, run AI less often and don't shoot
+            float distToNearestPlayer = GetDistanceToNearestPlayerShip();
+            // When no player ship exists yet (e.g. host just started), don't throttle - run AI at normal rate so ships move
+            bool isOffScreen = distToNearestPlayer < float.MaxValue && distToNearestPlayer > offScreenDistance;
+            float effectiveInterval = isOffScreen ? offScreenUpdateInterval : updateInterval;
+            float lastUpdate = isOffScreen ? lastOffScreenUpdateTime : lastUpdateTime;
+            if (Time.time - lastUpdate >= effectiveInterval)
             {
                 UpdateAI();
-                lastUpdateTime = Time.time;
+                if (isOffScreen)
+                    lastOffScreenUpdateTime = Time.time;
+                else
+                    lastUpdateTime = Time.time;
             }
 
-            // Handle shooting when at asteroid (shoot every FixedUpdate - FireAtTarget respects fire rate)
-            // Works for both mining behavior and leveling behavior (both miners and transporters can mine when leveling)
-            if (currentState == AIState.ShootingAsteroid && targetAsteroid != null && !targetAsteroid.IsDestroyed)
+            // Handle shooting when at asteroid (only when on-screen to save CPU)
+            if (!isOffScreen && currentState == AIState.ShootingAsteroid && targetAsteroid != null && !targetAsteroid.IsDestroyed)
                 HandleShootingAsteroid();
 
-            // Handle attacking enemy ships (moves while shooting)
-            if (currentState == AIState.AttackingEnemy && targetEnemyShip != null && !targetEnemyShip.IsDead)
+            // Handle attacking enemy ships (only when on-screen)
+            if (!isOffScreen && currentState == AIState.AttackingEnemy && targetEnemyShip != null && !targetEnemyShip.IsDead)
                 HandleAttackingEnemy();
 
             // Handle movement
             HandleAIMovement();
+        }
+
+        /// <summary>Distance to nearest player-owned ship (no AIShipMarker). Used for off-screen throttling.</summary>
+        private float GetDistanceToNearestPlayerShip()
+        {
+            RefreshObjectCache();
+            Vector3 myPos = rb != null ? rb.position : transform.position;
+            float nearest = float.MaxValue;
+            foreach (var ship in cachedShips)
+            {
+                if (ship == null || ship == starship || ship.IsDead) continue;
+                if (ship.GetComponent<AIShipMarker>() != null) continue; // Skip AI ships
+                float d = ToroidalMap.ToroidalDistance(myPos, ship.transform.position);
+                if (d < nearest) nearest = d;
+            }
+            return nearest;
         }
 
         private void HandleHealthRegen()

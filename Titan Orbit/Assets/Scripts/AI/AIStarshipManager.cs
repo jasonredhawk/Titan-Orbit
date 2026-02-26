@@ -68,6 +68,9 @@ namespace TitanOrbit.AI
         {
             if (!IsServer) return;
             if (hasSpawnedAI) return;
+            // Wait until server is fully listening (avoids NotListeningException if host init fails or is delayed)
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+                return;
 
             // Skip spawning if player disabled AI ships (main menu checkbox)
             if (!AIShipsEnabled)
