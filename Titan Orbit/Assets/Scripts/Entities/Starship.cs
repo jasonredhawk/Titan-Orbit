@@ -6,6 +6,8 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using System.IO;
+using System.Text;
 
 namespace TitanOrbit.Entities
 {
@@ -15,6 +17,44 @@ namespace TitanOrbit.Entities
     [RequireComponent(typeof(Rigidbody))]
     public class Starship : NetworkBehaviour
     {
+        private const string DEBUG_LOG_FILE = "debug-e62f68.log";
+        private static string DebugLogPath
+        {
+            get
+            {
+                try
+                {
+                    string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
+                    if (!string.IsNullOrEmpty(projectRoot))
+                        return Path.Combine(projectRoot, DEBUG_LOG_FILE);
+                }
+                catch { }
+                return DEBUG_LOG_FILE;
+            }
+        }
+
+        private static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+        }
+
+        private static void DebugPerfLog(string runId, string hypothesisId, string location, string message, string dataJson)
+        {
+            try
+            {
+                string line =
+                    "{\"sessionId\":\"e62f68\",\"runId\":\"" + EscapeJson(runId) +
+                    "\",\"hypothesisId\":\"" + EscapeJson(hypothesisId) +
+                    "\",\"location\":\"" + EscapeJson(location) +
+                    "\",\"message\":\"" + EscapeJson(message) +
+                    "\",\"data\":" + dataJson +
+                    ",\"timestamp\":" + System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
+                File.AppendAllText(DebugLogPath, line + "\n", Encoding.UTF8);
+            }
+            catch { }
+        }
+
         [Header("Ship Settings")]
         [SerializeField] private ShipData shipData;
         [SerializeField] private int shipLevel = 1;
@@ -115,8 +155,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private Rigidbody rb;
         [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced.")]
         [SerializeField] private Transform visualRoot;
+        [Tooltip("Global visual downscale for imported ship example prefabs. Lower = much smaller ship visuals.")]
+        [SerializeField] private float shipVisualScaleMultiplier = 0.175f;
 
         private MaterialPropertyBlock hullColorBlock;
+        private int lastVisualApplyFrame = -1;
+        private GameObject lastVisualApplyPrefab;
 
         private NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
@@ -262,6 +306,19 @@ namespace TitanOrbit.Entities
             // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
             if (shipData != null && weaponConfig == null)
                 SetShipData(shipData);
+
+            // #region agent log
+            DebugPerfLog(
+                "initial",
+                "H4",
+                "Starship.cs:OnNetworkSpawn",
+                "Ship spawned",
+                "{\"shipObject\":\"" + EscapeJson(name) +
+                "\",\"isServer\":" + (IsServer ? "true" : "false") +
+                ",\"isOwner\":" + (IsOwner ? "true" : "false") +
+                ",\"shipLevel\":" + shipLevel +
+                ",\"childCount\":" + transform.childCount + "}");
+            // #endregion
 
             // Ensure Y position is locked to 0
             Vector3 pos = transform.position;
@@ -1355,6 +1412,18 @@ namespace TitanOrbit.Entities
 
         public void SetShipData(ShipData data)
         {
+            // #region agent log
+            DebugPerfLog(
+                "initial",
+                "H4",
+                "Starship.cs:SetShipData",
+                "SetShipData invoked",
+                "{\"shipObject\":\"" + EscapeJson(name) +
+                "\",\"incomingShip\":\"" + EscapeJson(data != null ? data.shipName : "null") +
+                "\",\"incomingPrefab\":\"" + EscapeJson(data != null && data.shipPrefab != null ? data.shipPrefab.name : "null") +
+                "\",\"currentLevel\":" + shipLevel + "}");
+            // #endregion
+
             shipData = data;
             if (data != null)
             {
@@ -1383,7 +1452,8 @@ namespace TitanOrbit.Entities
                 if (data.visualScale > 0f)
                 {
                     Transform root = visualRoot != null ? visualRoot : transform;
-                    root.localScale = Vector3.one * data.visualScale;
+                    float globalVisualScale = Mathf.Max(0.005f, shipVisualScaleMultiplier);
+                    root.localScale = Vector3.one * (data.visualScale * globalVisualScale);
                 }
                 ApplyHullIdentityColor();
             }
@@ -1394,6 +1464,34 @@ namespace TitanOrbit.Entities
         {
             if (shipPrefab == null) return;
             Transform root = visualRoot != null ? visualRoot : transform;
+
+            if (lastVisualApplyFrame == Time.frameCount && lastVisualApplyPrefab == shipPrefab)
+            {
+                // #region agent log
+                DebugPerfLog(
+                    "post-fix",
+                    "H4",
+                    "Starship.cs:ApplyShipVisual:skip",
+                    "Skipped duplicate ApplyShipVisual in same frame",
+                    "{\"shipObject\":\"" + EscapeJson(name) +
+                    "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
+                    "\",\"frame\":" + Time.frameCount + "}");
+                // #endregion
+                return;
+            }
+            lastVisualApplyFrame = Time.frameCount;
+            lastVisualApplyPrefab = shipPrefab;
+
+            // #region agent log
+            DebugPerfLog(
+                "initial",
+                "H1",
+                "Starship.cs:ApplyShipVisual:start",
+                "ApplyShipVisual start",
+                "{\"shipObject\":\"" + EscapeJson(name) +
+                "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
+                "\",\"existingChildren\":" + root.childCount + "}");
+            // #endregion
 
             GameObject instance = Instantiate(shipPrefab);
             Transform prefabRoot = instance.transform;
@@ -1419,7 +1517,18 @@ namespace TitanOrbit.Entities
 
             // Remove our current visual children, then adopt prefab root's children
             for (int i = root.childCount - 1; i >= 0; i--)
-                Object.Destroy(root.GetChild(i).gameObject);
+            {
+                Transform oldChild = root.GetChild(i);
+                if (oldChild == null) continue;
+
+                // Disable immediately so repeated applies in the same frame don't stack rendering/physics cost.
+                var oldRenderers = oldChild.GetComponentsInChildren<Renderer>(true);
+                foreach (var r in oldRenderers) if (r != null) r.enabled = false;
+                var oldColliders = oldChild.GetComponentsInChildren<Collider>(true);
+                foreach (var c in oldColliders) if (c != null) c.enabled = false;
+
+                Object.Destroy(oldChild.gameObject);
+            }
 
             Transform newFirePoint = null;
             while (prefabRoot.childCount > 0)
@@ -1442,18 +1551,93 @@ namespace TitanOrbit.Entities
                 firePoint = newFirePoint;
             else
             {
-                newFirePoint = root.Find("FirePoint");
-                if (newFirePoint != null) firePoint = newFirePoint;
-                else
-                {
-                    // Fallback: ensure we always have a valid fire point so shooting works
-                    GameObject fp = new GameObject("FirePoint");
-                    fp.transform.SetParent(root, false);
-                    fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
-                    fp.transform.localRotation = Quaternion.identity;
-                    fp.transform.localScale = Vector3.one;
-                    firePoint = fp.transform;
-                }
+                // Always create a fresh fallback when upgraded prefab doesn't provide FirePoint.
+                // Avoid binding to an old child queued for Destroy (can become null next frame).
+                GameObject fp = new GameObject("FirePoint");
+                fp.transform.SetParent(root, false);
+                fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+                fp.transform.localRotation = Quaternion.identity;
+                fp.transform.localScale = Vector3.one;
+                firePoint = fp.transform;
+            }
+
+            // Imported example prefabs may include many colliders/rigidbodies/scripts intended for editor setup.
+            // Keep only visual components under the ship visual root to avoid heavy runtime overhead.
+            StripNonVisualComponents(root, firePoint);
+
+            int rendererCount = root.GetComponentsInChildren<Renderer>(true).Length;
+            int colliderCount = root.GetComponentsInChildren<Collider>(true).Length;
+            int behaviourCount = root.GetComponentsInChildren<MonoBehaviour>(true).Length;
+            int rigidbodyCount = root.GetComponentsInChildren<Rigidbody>(true).Length;
+            int shadowCasterCount = 0;
+            int materialSlots = 0;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (r.shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) shadowCasterCount++;
+                materialSlots += (r.sharedMaterials != null ? r.sharedMaterials.Length : 0);
+            }
+
+            // #region agent log
+            DebugPerfLog(
+                "initial",
+                "H1",
+                "Starship.cs:ApplyShipVisual:end",
+                "ApplyShipVisual end",
+                "{\"shipObject\":\"" + EscapeJson(name) +
+                "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
+                "\",\"renderers\":" + rendererCount +
+                ",\"colliders\":" + colliderCount +
+                ",\"behaviours\":" + behaviourCount +
+                ",\"rigidbodies\":" + rigidbodyCount +
+                ",\"shadowCasters\":" + shadowCasterCount +
+                ",\"materialSlots\":" + materialSlots +
+                ",\"firePointNull\":" + (firePoint == null ? "true" : "false") + "}");
+            // #endregion
+        }
+
+        /// <summary>Removes expensive non-visual components from adopted visual hierarchy.</summary>
+        private static void StripNonVisualComponents(Transform visualRootTransform, Transform keepFirePoint)
+        {
+            if (visualRootTransform == null) return;
+
+            Collider[] childColliders = visualRootTransform.GetComponentsInChildren<Collider>(true);
+            foreach (var col in childColliders)
+            {
+                if (col == null) continue;
+                // Keep the main ship collider on the ship root.
+                if (col.transform == visualRootTransform) continue;
+                if (keepFirePoint != null && (col.transform == keepFirePoint || col.transform.IsChildOf(keepFirePoint))) continue;
+                Object.Destroy(col);
+            }
+
+            Rigidbody[] childRigidbodies = visualRootTransform.GetComponentsInChildren<Rigidbody>(true);
+            foreach (var rb in childRigidbodies)
+            {
+                if (rb == null) continue;
+                if (rb.transform == visualRootTransform) continue;
+                Object.Destroy(rb);
+            }
+
+            // Remove any extra behaviours attached inside imported visual prefabs.
+            MonoBehaviour[] childBehaviours = visualRootTransform.GetComponentsInChildren<MonoBehaviour>(true);
+            foreach (var behaviour in childBehaviours)
+            {
+                if (behaviour == null) continue;
+                if (behaviour.transform == visualRootTransform) continue;
+                Object.Destroy(behaviour);
+            }
+
+            // Example prefabs often have many tiny parts; shadow casting on all of them is very expensive.
+            Renderer[] childRenderers = visualRootTransform.GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in childRenderers)
+            {
+                if (renderer == null) continue;
+                if (renderer.transform == visualRootTransform) continue;
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
             }
         }
 

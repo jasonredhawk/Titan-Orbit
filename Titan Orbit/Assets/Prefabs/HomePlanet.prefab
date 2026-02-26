@@ -75,7 +75,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2096745498
+  GlobalObjectIdHash: 1780177541
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -111,6 +111,8 @@ MonoBehaviour:
   regularPlanetTintIntensity: 0.2
   atmosphereSourceMaterial: {fileID: 2100000, guid: 1d9004e26641888448d5f4f15b9d0c55, type: 2}
   atmosphereOuterMesh: {fileID: 4300000, guid: 662157716ef2b6840841e610138115a4, type: 3}
+  enableSpin: 1
+  spinDegreesPerSecond: 2
   maxShipLevelPerPlanetLevel: 00000000010000000200000003000000040000000500000006000000
   levelUpPulseScale: 1.15
   levelUpPulseUpDuration: 0.2

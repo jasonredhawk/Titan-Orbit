@@ -1,6 +1,8 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Entities;
+using System.IO;
+using System.Text;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -13,6 +15,44 @@ namespace TitanOrbit.Systems
     /// </summary>
     public class GemSpawner : NetworkBehaviour
     {
+        private const string DEBUG_LOG_FILE = "debug-e62f68.log";
+        private static string DebugLogPath
+        {
+            get
+            {
+                try
+                {
+                    string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
+                    if (!string.IsNullOrEmpty(projectRoot))
+                        return Path.Combine(projectRoot, DEBUG_LOG_FILE);
+                }
+                catch { }
+                return DEBUG_LOG_FILE;
+            }
+        }
+
+        private static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+        }
+
+        private static void DebugPerfLog(string runId, string hypothesisId, string location, string message, string dataJson)
+        {
+            try
+            {
+                string line =
+                    "{\"sessionId\":\"e62f68\",\"runId\":\"" + EscapeJson(runId) +
+                    "\",\"hypothesisId\":\"" + EscapeJson(hypothesisId) +
+                    "\",\"location\":\"" + EscapeJson(location) +
+                    "\",\"message\":\"" + EscapeJson(message) +
+                    "\",\"data\":" + dataJson +
+                    ",\"timestamp\":" + System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
+                File.AppendAllText(DebugLogPath, line + "\n", Encoding.UTF8);
+            }
+            catch { }
+        }
+
         public static GemSpawner Instance { get; private set; }
 
         [SerializeField] private GameObject gemPrefab;
@@ -84,6 +124,7 @@ namespace TitanOrbit.Systems
             
             // Distribute totalValue across gems
             float remainingValue = totalValue;
+            int spawnedCount = 0;
             for (int i = 0; i < gemCount; i++)
             {
                 bool isLast = (i == gemCount - 1);
@@ -131,10 +172,24 @@ namespace TitanOrbit.Systems
                 sizeMultiplier *= Random.Range(0.9f, 1.1f);
                 
                 SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier, asteroidPhysicalSize);
+                spawnedCount++;
                 remainingValue -= gemValue;
                 
                 if (remainingValue <= 0) break;
             }
+
+            // #region agent log
+            DebugPerfLog(
+                "initial",
+                "G2",
+                "GemSpawner.cs:SpawnGemsServerRpc",
+                "Gem spawn batch",
+                "{\"asteroidSize\":" + asteroidSize +
+                ",\"totalValue\":" + totalValue +
+                ",\"requestedGemCount\":" + gemCount +
+                ",\"spawnedCount\":" + spawnedCount +
+                ",\"activeServerGems\":" + Gem.ActiveServerGems + "}");
+            // #endregion
         }
         
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot collect for 3 sec.</summary>

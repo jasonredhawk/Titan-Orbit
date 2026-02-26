@@ -13,12 +13,13 @@ MonoBehaviour:
   m_Name: ShipData_Level1_Starter
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipData
   shipLevel: 1
+  branchIndex: 0
   focusType: 0
   shipName: Starter
+  baseMass: 1
+  visualScale: 1
   baseMovementSpeed: 10
-  baseFireRate: 1
-  baseFirePower: 10
-  baseBulletSpeed: 20
+  weaponConfig: {fileID: 0}
   baseMaxHealth: 100
   baseHealthRegenRate: 1
   baseRotationSpeed: 180
@@ -29,5 +30,5 @@ MonoBehaviour:
   baseMiningRate: 10
   miningMultiplier: 1
   shipSprite: {fileID: 0}
-  shipPrefab: {fileID: 0}
+  shipPrefab: {fileID: 1578558564194034, guid: 50d56e9319acd7440a97582160b01520, type: 3}
   shipColor: {r: 1, g: 1, b: 1, a: 1}

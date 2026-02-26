@@ -18,16 +18,33 @@ namespace TitanOrbit.Editor
         private const string PREFABS_SHIPS_FOLDER = "Assets/Prefabs/Ships";
         private const string UPGRADE_TREE_PATH = "Assets/Data/UpgradeTree.asset";
         private const string STARSPARROW_MODULES_FOLDER = "Assets/StarSparrow/Prefabs/Modules";
+        private const string STARSPARROW_MODULAR_EXAMPLES_FOLDER = "Assets/StarSparrow/Prefabs/Modular Examples";
+        private const string STARSPARROW_EXAMPLES_FOLDER = "Assets/StarSparrow/Prefabs/Examples";
         private const string STARSPARROW_MATERIALS_FOLDER = "Assets/StarSparrow/Materials";
         private const string STARSPARROW_URP_MATERIALS_FOLDER = "Assets/StarSparrow/Materials/GeneratedURP";
         private const string STARSPARROW_PREFABS_FOLDER = "Assets/StarSparrow/Prefabs";
-        private const float GENERATED_SHIP_SCALE_MULTIPLIER = 0.38f;
+        private const string HIREZ_ROOT_FOLDER = "Assets/HiRezSpaceshipsCreatorFree";
+        private const string HIREZ_EXAMPLES_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Prefabs/Examples";
+        private const string HIREZ_MATERIALS_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Materials";
+        private const string HIREZ_URP_MATERIALS_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Materials/GeneratedURP";
 
         private static readonly int[] CountPerLevel = { 2, 4, 6, 8, 9, 4 }; // levels 2-7
         private static readonly string[] StarSparrowColorVariants =
         {
             "Red", "Blue", "Green", "Purple", "Grey", "White", "Yellow", "Orange", "Cyan", "Black"
         };
+        private static readonly Dictionary<string, GameObject> ModulePrefabCache = new Dictionary<string, GameObject>();
+        private static readonly Dictionary<string, List<TemplatePart>> TemplatePartsCache = new Dictionary<string, List<TemplatePart>>();
+        private static readonly Dictionary<string, Material> HiRezConvertedBySourcePath = new Dictionary<string, Material>();
+        private static readonly Dictionary<string, Material> StarConvertedBySourcePath = new Dictionary<string, Material>();
+
+        private class TemplatePart
+        {
+            public string moduleKey;
+            public Vector3 localPosition;
+            public Quaternion localRotation;
+            public Vector3 localScale;
+        }
 
         [MenuItem("Titan Orbit/Create Upgrade Tree And Ships")]
         public static void CreateAll()
@@ -47,7 +64,8 @@ namespace TitanOrbit.Editor
         public static void RebuildShipPrefabs()
         {
             EnsureFolders();
-            ConvertStarSparrowMaterialsAndPrefabsInternal(forceRebuildConvertedMaterials: false, logSummary: false);
+            // Strictly lightweight rebuild: only assign existing example prefabs to ShipData.
+            // No prefab cloning/saving, no material conversion, no visual reconstruction.
             var shipDataByLevel = new List<List<ShipData>>();
             for (int li = 0; li < CountPerLevel.Length; li++)
             {
@@ -77,15 +95,21 @@ namespace TitanOrbit.Editor
                 }
             }
             CreateShipPrefabs(shipDataByLevel);
+            AssignStarterShipDataToFirstExample();
             AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log($"Rebuilt {shipDataByLevel.Sum(l => l.Count)} ship prefabs with unique designs.");
+            Debug.Log($"Rebuild complete (reference-only): {shipDataByLevel.Sum(l => l.Count)} ShipData assets mapped to existing example prefabs.");
         }
 
         [MenuItem("Titan Orbit/Fix StarSparrow Materials (URP + Prefabs)")]
         public static void FixStarSparrowMaterialsAndPrefabs()
         {
             ConvertStarSparrowMaterialsAndPrefabsInternal(forceRebuildConvertedMaterials: true, logSummary: true);
+        }
+
+        [MenuItem("Titan Orbit/Fix HiRez Materials (URP + Prefabs)")]
+        public static void FixHiRezMaterialsAndPrefabs()
+        {
+            ConvertHiRezMaterialsAndPrefabsInternal(forceRebuildConvertedMaterials: true, logSummary: true);
         }
 
         private static void EnsureFolders()
@@ -447,57 +471,68 @@ namespace TitanOrbit.Editor
 
         private static void CreateShipPrefabs(List<List<ShipData>> shipDataByLevel)
         {
-            var basePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
-            if (basePrefab == null) { Debug.LogWarning("Starship.prefab not found."); return; }
+            var examples = GetCombinedExampleShipPrefabs();
+            if (examples == null || examples.Count == 0)
+            {
+                Debug.LogWarning("No example prefabs found in HiRez/StarSparrow example folders.");
+                return;
+            }
 
+            int assigned = 0;
+            int globalIndex = 0;
             for (int li = 0; li < shipDataByLevel.Count; li++)
             {
-                int level = li + 2;
-                int count = shipDataByLevel[li].Count;
                 foreach (var data in shipDataByLevel[li])
                 {
-                    string path = $"{PREFABS_SHIPS_FOLDER}/Starship_Lv{level}_{data.branchIndex}.prefab";
-                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(basePrefab);
-                    var ship = instance.GetComponent<TitanOrbit.Entities.Starship>();
-                    if (ship != null)
-                    {
-                        ship.SetShipData(data);
-                        float blend = count <= 1 ? 0.5f : (float)data.branchIndex / (count - 1);
-                        BuildProceduralShipVisual(instance, data, blend, count);
-                        var saved = PrefabUtility.SaveAsPrefabAsset(instance, path);
-                        if (saved != null)
-                        {
-                            var so = new SerializedObject(data);
-                            so.FindProperty("shipPrefab").objectReferenceValue = saved;
-                            so.ApplyModifiedPropertiesWithoutUndo();
-                        }
-                    }
-                    Object.DestroyImmediate(instance);
+                    GameObject example = examples[globalIndex % examples.Count];
+                    globalIndex++;
+                    if (data == null || example == null) continue;
+
+                    // Direct mapping to authored example prefabs (reused cyclically).
+                    var so = new SerializedObject(data);
+                    so.FindProperty("shipPrefab").objectReferenceValue = example;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    EditorUtility.SetDirty(data);
+                    assigned++;
                 }
+            }
+            Debug.Log($"Assigned {assigned} ShipData assets to example prefabs (reused from {examples.Count} sources).");
+        }
+
+        private static void AssignStarterShipDataToFirstExample()
+        {
+            var examples = GetCombinedExampleShipPrefabs();
+            if (examples == null || examples.Count == 0) return;
+            GameObject first = examples[0];
+            string[] starterPaths =
+            {
+                $"{SHIPS_DATA_FOLDER}/ShipData_Level1_0_Starter.asset",
+                $"{SHIPS_DATA_FOLDER}/ShipData_Level1_Starter.asset"
+            };
+            foreach (string p in starterPaths)
+            {
+                var starter = AssetDatabase.LoadAssetAtPath<ShipData>(p);
+                if (starter == null) continue;
+                var so = new SerializedObject(starter);
+                so.FindProperty("shipPrefab").objectReferenceValue = first;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(starter);
             }
         }
 
-        /// <summary>
-        /// Rebuilds ship visuals using StarSparrow modular parts.
-        /// Silhouette and module counts are driven by ship role/stats:
-        /// - Cannon count and bullet scale drive front weapon barrels
-        /// - Gem capacity drives cargo pods and body bulk
-        /// - Fighter/miner blend shifts wing-heavy vs heavy-hauler profiles
-        /// </summary>
+        /// <summary>Builds visuals by copying one of the authored example prefabs (HiRez/StarSparrow), then scales to game proportions.</summary>
         private static void BuildProceduralShipVisual(GameObject shipRoot, ShipData data, float fighterToMinerBlend, int branchCount)
         {
             int level = data.shipLevel;
             int branchIndex = data.branchIndex;
-            int seed = level * 101 + branchIndex * 17;
-            float R(int m) => ((seed * m) % 100) / 100f;
+            int seed = level * 149 + branchIndex * 41;
             var root = shipRoot.transform;
-            shipRoot.transform.localScale = Vector3.one * (data.visualScale * GENERATED_SHIP_SCALE_MULTIPLIER);
-            Material moduleMaterial = GetOrCreateConvertedStarSparrowMaterial(GetShipColorVariant(level, branchIndex, fighterToMinerBlend));
+            shipRoot.transform.localScale = Vector3.one;
 
             var rootMf = shipRoot.GetComponent<MeshFilter>();
             var rootMr = shipRoot.GetComponent<MeshRenderer>();
-            if (rootMf != null) Object.DestroyImmediate(rootMf);
-            if (rootMr != null) Object.DestroyImmediate(rootMr);
+            if (rootMf == null) rootMf = shipRoot.AddComponent<MeshFilter>();
+            if (rootMr == null) rootMr = shipRoot.AddComponent<MeshRenderer>();
 
             Transform firePoint = FindChildRecursive(root, "FirePoint");
             if (firePoint == null)
@@ -511,169 +546,28 @@ namespace TitanOrbit.Editor
             }
 
             ClearVisualChildren(root, firePoint);
-
-            var corePrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Core.prefab");
-            var weaponPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Weapon.prefab");
-            var wingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Wing.prefab");
-            var enginePrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Engine.prefab");
-            var thrusterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Thruster.prefab");
-            var tailPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Tail.prefab");
-            var finPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Fin.prefab");
-            var plasmaPrefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{STARSPARROW_MODULES_FOLDER}/StarSparrow_Plasma.prefab");
-
-            if (corePrefab == null || weaponPrefab == null || wingPrefab == null || enginePrefab == null)
+            var examples = GetCombinedExampleShipPrefabs();
+            if (examples.Count == 0)
             {
-                Debug.LogWarning("StarSparrow module prefabs missing. Expected modules under Assets/StarSparrow/Prefabs/Modules.");
+                Debug.LogWarning("No example ship prefabs found in HiRez/StarSparrow examples folders.");
                 return;
             }
-
-            float cargoBias = Mathf.Clamp01(Mathf.InverseLerp(110f, 760f, data.baseGemCapacity));
-            float healthBias = Mathf.Clamp01(Mathf.InverseLerp(120f, 340f, data.baseMaxHealth));
-            float speedBias = Mathf.Clamp01(Mathf.InverseLerp(5.5f, 9.5f, data.baseMovementSpeed));
-            float minerBias = Mathf.Clamp01((fighterToMinerBlend + (data.focusType == ShipFocusType.Miner ? 0.2f : 0f)) * 0.9f);
-
-            // Larger cargos get longer, bulkier hulls while fighter lines stay sleeker.
-            int coreSegments = Mathf.Clamp(1 + Mathf.FloorToInt(cargoBias * 2f) + (level >= 7 ? 1 : 0), 1, 4);
-            float coreScaleX = Mathf.Lerp(0.72f, 1.35f, 0.35f * minerBias + 0.65f * cargoBias);
-            float coreScaleY = Mathf.Lerp(0.62f, 1.1f, 0.4f * minerBias + 0.6f * healthBias);
-            float coreScaleZ = Mathf.Lerp(0.8f, 1.35f, cargoBias) + 0.05f * R(19);
-            float coreSpacing = 1.05f + 0.1f * R(23);
-            float startZ = -0.25f * (coreSegments - 1) * coreSpacing;
-            for (int i = 0; i < coreSegments; i++)
+            GameObject source = examples[Mathf.Abs(seed) % examples.Count];
+            if (!ApplyVisualFromExamplePrefab(root, source, firePoint))
             {
-                float t = coreSegments <= 1 ? 0f : (float)i / (coreSegments - 1);
-                float taper = Mathf.Lerp(1.15f, 0.92f, t);
-                InstantiateModule(
-                    corePrefab,
-                    root,
-                    $"HullCore_{i + 1}",
-                    new Vector3(0f, -0.08f * minerBias, startZ + i * coreSpacing),
-                    Quaternion.identity,
-                    new Vector3(coreScaleX * taper, coreScaleY * taper, coreScaleZ),
-                    moduleMaterial);
+                Debug.LogWarning($"Failed to apply example visual from {source.name}");
+                return;
             }
+            RemapExampleMaterialsToUrp(root);
+            float cargoBias = Mathf.Clamp01(Mathf.InverseLerp(100f, 760f, data.baseGemCapacity));
 
-            if (tailPrefab != null)
-            {
-                InstantiateModule(
-                    tailPrefab,
-                    root,
-                    "Tail",
-                    new Vector3(0f, -0.12f, startZ - 0.95f),
-                    Quaternion.identity,
-                    Vector3.one * Mathf.Lerp(0.78f, 1.25f, minerBias),
-                    moduleMaterial);
-            }
+            // Normalize size to level-1 proportions (no oversized ships), then modestly scale per level.
+            NormalizeShipScaleToStarter(root, data, cargoBias);
+            StripChildColliders(root, firePoint);
 
-            int wingPairs = Mathf.Clamp(1 + Mathf.RoundToInt((1f - minerBias) * 2f) + (level >= 5 ? 1 : 0), 1, 4);
-            float wingSpread = Mathf.Lerp(0.72f, 1.5f, 1f - minerBias) + 0.15f * R(29);
-            float wingBaseScale = Mathf.Lerp(0.72f, 1.25f, 1f - minerBias) * (1f + 0.04f * (level - 1));
-            for (int i = 0; i < wingPairs; i++)
-            {
-                float t = wingPairs <= 1 ? 0f : (float)i / (wingPairs - 1);
-                float z = Mathf.Lerp(startZ - 0.5f, startZ + coreSegments * coreSpacing - 0.25f, t);
-                float side = wingSpread * Mathf.Lerp(0.7f, 1.05f, t);
-                float y = Mathf.Lerp(0.04f, 0.22f, R(31 + i));
-                float scale = wingBaseScale * Mathf.Lerp(0.9f, 1.06f, R(37 + i));
-                InstantiateModule(wingPrefab, root, $"WingL_{i + 1}", new Vector3(-side, y, z), Quaternion.Euler(0f, -18f, 0f), new Vector3(scale, scale, scale), moduleMaterial);
-                InstantiateModule(wingPrefab, root, $"WingR_{i + 1}", new Vector3(side, y, z), Quaternion.Euler(0f, 18f, 0f), new Vector3(scale, scale, scale), moduleMaterial);
-            }
-
-            int engineCount = Mathf.Clamp(2 + Mathf.RoundToInt((1f - speedBias) * 2.5f + minerBias * 1.5f), 2, 7);
-            float rearZ = startZ - 1.45f;
-            float engineSpread = Mathf.Lerp(0.26f, 0.95f, Mathf.InverseLerp(2f, 7f, engineCount));
-            for (int i = 0; i < engineCount; i++)
-            {
-                float t = engineCount <= 1 ? 0.5f : (float)i / (engineCount - 1);
-                float x = Mathf.Lerp(-engineSpread, engineSpread, t);
-                float y = -0.16f + 0.12f * Mathf.Sin(t * Mathf.PI);
-                float s = Mathf.Lerp(0.65f, 1.15f, 0.5f * minerBias + 0.5f * (1f - speedBias));
-                InstantiateModule(enginePrefab, root, $"Engine_{i + 1}", new Vector3(x, y, rearZ), Quaternion.identity, Vector3.one * s, moduleMaterial);
-                if (thrusterPrefab != null)
-                {
-                    InstantiateModule(thrusterPrefab, root, $"Thruster_{i + 1}", new Vector3(x, y - 0.04f, rearZ - 0.5f), Quaternion.identity, Vector3.one * (s * 0.78f), moduleMaterial);
-                }
-            }
-
-            int cargoPairs = Mathf.Clamp(Mathf.RoundToInt(cargoBias * 4f) + (level >= 6 ? 1 : 0), 0, 6);
-            if (cargoPairs > 0 && plasmaPrefab != null)
-            {
-                for (int i = 0; i < cargoPairs; i++)
-                {
-                    float t = cargoPairs <= 1 ? 0.5f : (float)i / (cargoPairs - 1);
-                    float z = Mathf.Lerp(startZ - 0.25f, startZ + coreSegments * coreSpacing - 0.2f, t);
-                    float x = Mathf.Lerp(0.65f, 1.25f, cargoBias) + 0.08f * R(43 + i);
-                    float y = -0.05f + 0.1f * minerBias;
-                    float s = Mathf.Lerp(0.68f, 1.35f, cargoBias);
-                    InstantiateModule(plasmaPrefab, root, $"CargoPodL_{i + 1}", new Vector3(-x, y, z), Quaternion.Euler(0f, 8f, 0f), new Vector3(s, s * 0.85f, s), moduleMaterial);
-                    InstantiateModule(plasmaPrefab, root, $"CargoPodR_{i + 1}", new Vector3(x, y, z), Quaternion.Euler(0f, -8f, 0f), new Vector3(s, s * 0.85f, s), moduleMaterial);
-                }
-            }
-
-            var cannons = data.weaponConfig != null ? data.weaponConfig.cannons : null;
-            int cannonCount = (cannons != null && cannons.Count > 0) ? cannons.Count : 1;
-            float noseZ = startZ + coreSegments * coreSpacing + 0.35f;
-            float maxWeaponZ = noseZ;
-            for (int ci = 0; ci < cannonCount; ci++)
-            {
-                CannonConfig cannon = (cannons != null && ci < cannons.Count) ? cannons[ci] : new CannonConfig();
-                int barrels = cannon.spreadType == CannonSpreadType.FixedSpread
-                    ? Mathf.Clamp(cannon.spreadProjectileCount, 1, 6)
-                    : 1;
-                float baseX = cannon.localOffsetX * 4.2f;
-                float baseZ = noseZ + cannon.localOffsetZ * 2.2f + ci * 0.04f;
-                float baseScale = Mathf.Clamp(0.7f + cannon.bulletScale * 0.35f, 0.62f, 1.85f);
-                float heavyScale = Mathf.Clamp(0.8f + cannon.damagePerBullet / 45f, 0.8f, 1.6f);
-                float moduleScale = baseScale * heavyScale;
-
-                for (int bi = 0; bi < barrels; bi++)
-                {
-                    float spreadT = barrels <= 1 ? 0.5f : (float)bi / (barrels - 1);
-                    float spreadX = Mathf.Lerp(-0.22f, 0.22f, spreadT) * Mathf.Clamp(barrels, 1, 4);
-                    float barrelX = baseX + spreadX;
-                    float barrelZ = baseZ + bi * 0.03f;
-                    float angle = cannon.directionAngle;
-                    if (barrels > 1)
-                        angle += Mathf.Lerp(cannon.spreadAngleMin, cannon.spreadAngleMax, spreadT);
-
-                    InstantiateModule(
-                        weaponPrefab,
-                        root,
-                        $"Weapon_{ci + 1}_{bi + 1}",
-                        new Vector3(barrelX, -0.02f + 0.03f * R(53 + bi), barrelZ),
-                        Quaternion.Euler(0f, angle, 0f),
-                        new Vector3(moduleScale, moduleScale, Mathf.Lerp(moduleScale * 0.85f, moduleScale * 1.15f, R(59 + ci))),
-                        moduleMaterial);
-                    maxWeaponZ = Mathf.Max(maxWeaponZ, barrelZ);
-                }
-
-                // Heavy cannons get additional support housings to read as "big gun".
-                if (moduleScale >= 1.28f && plasmaPrefab != null)
-                {
-                    InstantiateModule(
-                        plasmaPrefab,
-                        root,
-                        $"WeaponSupport_{ci + 1}",
-                        new Vector3(baseX, -0.1f, baseZ - 0.3f),
-                        Quaternion.identity,
-                        Vector3.one * Mathf.Clamp(moduleScale * 0.95f, 0.9f, 1.7f),
-                        moduleMaterial);
-                }
-            }
-
-            if (finPrefab != null)
-            {
-                int dorsalFins = Mathf.Clamp(Mathf.RoundToInt(minerBias * 3f) + (level >= 6 ? 1 : 0), 1, 4);
-                for (int i = 0; i < dorsalFins; i++)
-                {
-                    float t = dorsalFins <= 1 ? 0.5f : (float)i / (dorsalFins - 1);
-                    float z = Mathf.Lerp(startZ - 0.25f, startZ + coreSegments * coreSpacing - 0.2f, t);
-                    float s = Mathf.Lerp(0.62f, 1.25f, 0.65f * minerBias + 0.35f * cargoBias);
-                    InstantiateModule(finPrefab, root, $"FinTop_{i + 1}", new Vector3(0f, 0.35f + 0.08f * t, z), Quaternion.identity, Vector3.one * s, moduleMaterial);
-                }
-            }
-
-            firePoint.localPosition = new Vector3(0f, 0f, maxWeaponZ + 0.35f);
+            Bounds visBounds = GetLocalRendererBounds(root);
+            float noseZ = visBounds.size.sqrMagnitude > 0.0001f ? visBounds.max.z : 0.55f;
+            firePoint.localPosition = new Vector3(0f, 0f, noseZ + 0.12f);
             firePoint.localRotation = Quaternion.identity;
             firePoint.localScale = Vector3.one;
 
@@ -698,6 +592,397 @@ namespace TitanOrbit.Editor
                 so.FindProperty("accentRenderers").ClearArray();
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
+        }
+
+        private static bool ApplyVisualFromExamplePrefab(Transform destinationRoot, GameObject sourcePrefab, Transform keepFirePoint)
+        {
+            if (destinationRoot == null || sourcePrefab == null) return false;
+            GameObject sourceInstance = (GameObject)PrefabUtility.InstantiatePrefab(sourcePrefab);
+            if (sourceInstance == null) return false;
+            try
+            {
+                var srcRoot = sourceInstance.transform;
+                var srcMf = srcRoot.GetComponent<MeshFilter>();
+                var srcMr = srcRoot.GetComponent<MeshRenderer>();
+
+                var dstMf = destinationRoot.GetComponent<MeshFilter>();
+                var dstMr = destinationRoot.GetComponent<MeshRenderer>();
+                if (dstMf == null) dstMf = destinationRoot.gameObject.AddComponent<MeshFilter>();
+                if (dstMr == null) dstMr = destinationRoot.gameObject.AddComponent<MeshRenderer>();
+
+                if (srcMf != null && dstMf != null) dstMf.sharedMesh = srcMf.sharedMesh;
+                if (srcMr != null && dstMr != null)
+                {
+                    dstMr.sharedMaterials = srcMr.sharedMaterials;
+                    dstMr.enabled = srcMr.enabled;
+                }
+
+                while (srcRoot.childCount > 0)
+                {
+                    Transform child = srcRoot.GetChild(0);
+                    child.SetParent(destinationRoot, true);
+                }
+
+                // Remove non-visual heavy components from adopted visual hierarchy.
+                RemoveHeavyComponents(destinationRoot, keepFirePoint);
+                return true;
+            }
+            finally
+            {
+                Object.DestroyImmediate(sourceInstance);
+            }
+        }
+
+        private static void RemoveHeavyComponents(Transform root, Transform keepFirePoint)
+        {
+            var colliders = root.GetComponentsInChildren<Collider>(true);
+            foreach (var c in colliders)
+            {
+                if (c == null) continue;
+                if (c.transform == root) continue; // keep root collider
+                if (keepFirePoint != null && (c.transform == keepFirePoint || c.transform.IsChildOf(keepFirePoint))) continue;
+                Object.DestroyImmediate(c);
+            }
+            var rigidbodies = root.GetComponentsInChildren<Rigidbody>(true);
+            foreach (var rb in rigidbodies)
+            {
+                if (rb == null || rb.transform == root) continue;
+                Object.DestroyImmediate(rb);
+            }
+            var scripts = root.GetComponentsInChildren<MonoBehaviour>(true);
+            foreach (var mb in scripts)
+            {
+                if (mb == null) continue;
+                if (mb.transform == root) continue;
+                Object.DestroyImmediate(mb);
+            }
+        }
+
+        private static List<GameObject> modularExamplePrefabsCache;
+        private static List<GameObject> combinedExamplePrefabsCache;
+
+        private static List<GameObject> GetModularExamplePrefabs()
+        {
+            if (modularExamplePrefabsCache != null && modularExamplePrefabsCache.Count > 0)
+                return modularExamplePrefabsCache;
+
+            modularExamplePrefabsCache = new List<GameObject>();
+            string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { STARSPARROW_MODULAR_EXAMPLES_FOLDER });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab != null) modularExamplePrefabsCache.Add(prefab);
+            }
+            modularExamplePrefabsCache = modularExamplePrefabsCache
+                .OrderBy(p => GetTrailingNumber(p.name))
+                .ThenBy(p => p.name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return modularExamplePrefabsCache;
+        }
+
+        private static List<GameObject> GetCombinedExampleShipPrefabs()
+        {
+            if (combinedExamplePrefabsCache != null && combinedExamplePrefabsCache.Count > 0)
+                return combinedExamplePrefabsCache;
+
+            combinedExamplePrefabsCache = new List<GameObject>();
+            AddExamplePrefabsFromFolder(combinedExamplePrefabsCache, HIREZ_EXAMPLES_FOLDER);
+            AddExamplePrefabsFromFolder(combinedExamplePrefabsCache, STARSPARROW_EXAMPLES_FOLDER);
+
+            combinedExamplePrefabsCache = combinedExamplePrefabsCache
+                .OrderBy(p => IsHiRezPath(AssetDatabase.GetAssetPath(p)) ? 0 : 1)
+                .ThenBy(p => GetTrailingNumber(p.name))
+                .ThenBy(p => p.name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return combinedExamplePrefabsCache;
+        }
+
+        private static void AddExamplePrefabsFromFolder(List<GameObject> list, string folder)
+        {
+            string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { folder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab != null) list.Add(prefab);
+            }
+        }
+
+        private static bool IsHiRezPath(string path)
+        {
+            return !string.IsNullOrEmpty(path) && path.StartsWith(HIREZ_ROOT_FOLDER);
+        }
+
+        private static void EnsureModulePrefabCache()
+        {
+            if (ModulePrefabCache.Count > 0) return;
+            string[] keys = { "Core", "Weapon", "Wing", "Engine", "Thruster", "Tail", "Fin", "Plasma" };
+            foreach (string key in keys)
+            {
+                string path = $"{STARSPARROW_MODULES_FOLDER}/StarSparrow_{key}.prefab";
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab != null) ModulePrefabCache[key] = prefab;
+            }
+        }
+
+        private static GameObject GetModulePrefab(string moduleKey)
+        {
+            if (string.IsNullOrEmpty(moduleKey)) return null;
+            ModulePrefabCache.TryGetValue(moduleKey, out GameObject prefab);
+            return prefab;
+        }
+
+        private static List<TemplatePart> GetTemplateParts(string templatePath)
+        {
+            if (string.IsNullOrEmpty(templatePath)) return new List<TemplatePart>();
+            if (TemplatePartsCache.TryGetValue(templatePath, out List<TemplatePart> cached))
+                return cached;
+
+            var results = new List<TemplatePart>();
+            var root = PrefabUtility.LoadPrefabContents(templatePath);
+            try
+            {
+                for (int i = 0; i < root.transform.childCount; i++)
+                {
+                    Transform child = root.transform.GetChild(i);
+                    string moduleKey = DetectModuleKey(child.name);
+                    if (string.IsNullOrEmpty(moduleKey)) continue;
+                    results.Add(new TemplatePart
+                    {
+                        moduleKey = moduleKey,
+                        localPosition = child.localPosition,
+                        localRotation = child.localRotation,
+                        localScale = child.localScale
+                    });
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+
+            TemplatePartsCache[templatePath] = results;
+            return results;
+        }
+
+        private static string DetectModuleKey(string objectName)
+        {
+            if (string.IsNullOrEmpty(objectName)) return null;
+            string n = objectName.ToLowerInvariant();
+            if (n.Contains("core")) return "Core";
+            if (n.Contains("weapon")) return "Weapon";
+            if (n.Contains("wing")) return "Wing";
+            if (n.Contains("engine")) return "Engine";
+            if (n.Contains("thruster")) return "Thruster";
+            if (n.Contains("tail")) return "Tail";
+            if (n.Contains("fin")) return "Fin";
+            if (n.Contains("plasma")) return "Plasma";
+            return null;
+        }
+
+        private static int IncrementModuleCounter(int[] counters, string moduleKey)
+        {
+            int idx = 0;
+            switch (moduleKey)
+            {
+                case "Core": idx = 0; break;
+                case "Weapon": idx = 1; break;
+                case "Wing": idx = 2; break;
+                case "Engine": idx = 3; break;
+                case "Thruster": idx = 4; break;
+                case "Tail": idx = 5; break;
+                case "Fin": idx = 6; break;
+                case "Plasma": idx = 7; break;
+                default: return 1;
+            }
+            counters[idx]++;
+            return counters[idx];
+        }
+
+        private static int GetTrailingNumber(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return int.MaxValue;
+            int idx = name.Length - 1;
+            while (idx >= 0 && char.IsDigit(name[idx])) idx--;
+            string digits = name.Substring(idx + 1);
+            if (int.TryParse(digits, out int n)) return n;
+            return int.MaxValue;
+        }
+
+        private static void ApplyWeaponLayoutFromStats(Transform root, ShipData data, GameObject weaponPrefab, Material moduleMaterial)
+        {
+            var cannons = data.weaponConfig != null ? data.weaponConfig.cannons : null;
+            var barrelSpecs = new List<(float x, float z, float angle, float scale)>();
+            if (cannons == null || cannons.Count == 0)
+                cannons = new List<CannonConfig> { new CannonConfig() };
+
+            foreach (var cannon in cannons)
+            {
+                int barrels = cannon.spreadType == CannonSpreadType.FixedSpread
+                    ? Mathf.Clamp(cannon.spreadProjectileCount, 1, 6)
+                    : 1;
+                float baseScale = Mathf.Clamp(0.72f + cannon.bulletScale * 0.26f, 0.68f, 1.5f);
+                float heavyScale = Mathf.Clamp(0.86f + cannon.damagePerBullet / 65f, 0.86f, 1.4f);
+                float moduleScale = baseScale * heavyScale;
+                for (int bi = 0; bi < barrels; bi++)
+                {
+                    float spreadT = barrels <= 1 ? 0.5f : (float)bi / (barrels - 1);
+                    float spreadX = Mathf.Lerp(-0.1f, 0.1f, spreadT) * Mathf.Clamp(barrels, 1, 5);
+                    float barrelX = cannon.localOffsetX * 0.6f + spreadX;
+                    float barrelZ = cannon.localOffsetZ * 0.35f;
+                    float angle = cannon.directionAngle;
+                    if (barrels > 1)
+                        angle += Mathf.Lerp(cannon.spreadAngleMin, cannon.spreadAngleMax, spreadT);
+                    barrelSpecs.Add((barrelX, barrelZ, angle, moduleScale));
+                }
+            }
+
+            barrelSpecs = barrelSpecs.Take(10).ToList();
+            var existingWeapons = GetChildrenByNameContains(root, "Weapon");
+            if (existingWeapons.Count == 0 && weaponPrefab != null)
+            {
+                InstantiateModule(weaponPrefab, root, "Weapon_Anchor", new Vector3(0f, 0f, 0.45f), Quaternion.identity, Vector3.one, moduleMaterial);
+                existingWeapons = GetChildrenByNameContains(root, "Weapon");
+            }
+            if (existingWeapons.Count == 0) return;
+
+            existingWeapons = existingWeapons.OrderByDescending(t => t.localPosition.z).ToList();
+            while (existingWeapons.Count < barrelSpecs.Count && weaponPrefab != null)
+            {
+                Transform anchor = existingWeapons[existingWeapons.Count - 1];
+                float side = existingWeapons.Count % 2 == 0 ? 0.1f : -0.1f;
+                var newW = InstantiateModule(weaponPrefab, root, $"Weapon_{existingWeapons.Count + 1}",
+                    anchor.localPosition + new Vector3(side, 0f, 0.02f), anchor.localRotation, anchor.localScale, moduleMaterial);
+                if (newW != null) existingWeapons.Add(newW);
+                else break;
+            }
+
+            for (int i = 0; i < existingWeapons.Count; i++)
+            {
+                if (i >= barrelSpecs.Count)
+                {
+                    Object.DestroyImmediate(existingWeapons[i].gameObject);
+                    continue;
+                }
+
+                var spec = barrelSpecs[i];
+                Transform anchor = existingWeapons[i];
+                Vector3 basePos = anchor.localPosition;
+                anchor.localPosition = new Vector3(
+                    basePos.x + spec.x,
+                    basePos.y,
+                    basePos.z + spec.z);
+                anchor.localRotation = anchor.localRotation * Quaternion.Euler(0f, spec.angle, 0f);
+                anchor.localScale = anchor.localScale * spec.scale;
+            }
+        }
+
+        private static void ApplyCargoPodsFromStats(Transform root, ShipData data, GameObject plasmaPrefab, Material moduleMaterial, float cargoBias)
+        {
+            if (plasmaPrefab == null) return;
+            int desiredPairs = Mathf.Clamp(Mathf.RoundToInt(cargoBias * 3f) + (data.shipLevel >= 6 ? 1 : 0), 0, 4);
+            var existing = GetChildrenByNameContains(root, "Plasma");
+            int desiredTotal = desiredPairs * 2;
+
+            while (existing.Count < desiredTotal)
+            {
+                var added = InstantiateModule(plasmaPrefab, root, $"Plasma_{existing.Count + 1}", Vector3.zero, Quaternion.identity, Vector3.one * 0.9f, moduleMaterial);
+                if (added == null) break;
+                existing.Add(added);
+            }
+            for (int i = existing.Count - 1; i >= desiredTotal; i--)
+                Object.DestroyImmediate(existing[i].gameObject);
+
+            if (desiredTotal == 0) return;
+
+            Bounds b = GetLocalRendererBounds(root);
+            float sideX = Mathf.Max(0.25f, b.extents.x * 1.05f);
+            float y = b.center.y - Mathf.Min(0.05f, b.extents.y * 0.2f);
+            for (int pair = 0; pair < desiredPairs; pair++)
+            {
+                float t = desiredPairs <= 1 ? 0.5f : (float)pair / (desiredPairs - 1);
+                float z = Mathf.Lerp(b.min.z + b.size.z * 0.15f, b.max.z - b.size.z * 0.2f, t);
+                float scale = Mathf.Lerp(0.8f, 1.12f, cargoBias);
+                int leftIdx = pair * 2;
+                int rightIdx = leftIdx + 1;
+                if (leftIdx < existing.Count)
+                {
+                    existing[leftIdx].localPosition = new Vector3(-sideX, y, z);
+                    existing[leftIdx].localRotation = Quaternion.Euler(0f, 6f, 0f);
+                    existing[leftIdx].localScale = Vector3.one * scale;
+                }
+                if (rightIdx < existing.Count)
+                {
+                    existing[rightIdx].localPosition = new Vector3(sideX, y, z);
+                    existing[rightIdx].localRotation = Quaternion.Euler(0f, -6f, 0f);
+                    existing[rightIdx].localScale = Vector3.one * scale;
+                }
+            }
+        }
+
+        private static List<Transform> GetChildrenByNameContains(Transform root, string token)
+        {
+            string lower = token.ToLowerInvariant();
+            var results = new List<Transform>();
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform c = root.GetChild(i);
+                if (c.name.ToLowerInvariant().Contains(lower))
+                    results.Add(c);
+            }
+            return results;
+        }
+
+        private static void NormalizeShipScaleToStarter(Transform root, ShipData data, float cargoBias)
+        {
+            Bounds b = GetLocalRendererBounds(root);
+            float currentLength = Mathf.Max(0.001f, b.size.z);
+            int shipLevel = data != null ? data.shipLevel : 1;
+            float visualScale = data != null ? data.visualScale : 1f;
+            float levelNorm = Mathf.Clamp01((shipLevel - 1f) / 6f);
+            // Starter ship collider is ~1.1 length; keep new ships proportionate to that baseline.
+            float targetLength = Mathf.Lerp(0.95f, 1.2f, levelNorm) * Mathf.Lerp(0.95f, 1.06f, cargoBias);
+            float scale = targetLength / currentLength;
+            // Keep visualScale influence but heavily damped to avoid oversized results.
+            float visualNorm = Mathf.Clamp01(Mathf.InverseLerp(0.8f, 1.5f, visualScale));
+            scale *= Mathf.Lerp(0.95f, 1.03f, visualNorm);
+            root.localScale = Vector3.one * Mathf.Clamp(scale, 0.05f, 2.5f);
+        }
+
+        private static void StripChildColliders(Transform root, Transform keepChild)
+        {
+            var colliders = root.GetComponentsInChildren<Collider>(true);
+            foreach (var col in colliders)
+            {
+                if (col == null) continue;
+                if (col.transform == root) continue; // keep root collider
+                if (keepChild != null && (col.transform == keepChild || col.transform.IsChildOf(keepChild))) continue;
+                Object.DestroyImmediate(col);
+            }
+        }
+
+        private static Bounds GetLocalRendererBounds(Transform root)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            Bounds? localBounds = null;
+            foreach (var r in renderers)
+            {
+                if (r == null || !r.enabled) continue;
+                Bounds wb = r.bounds;
+                Vector3 c = root.InverseTransformPoint(wb.center);
+                Vector3 e = wb.extents;
+                Bounds lb = new Bounds(c, e * 2f);
+                if (!localBounds.HasValue) localBounds = lb;
+                else
+                {
+                    Bounds b = localBounds.Value;
+                    b.Encapsulate(lb.min);
+                    b.Encapsulate(lb.max);
+                    localBounds = b;
+                }
+            }
+            return localBounds ?? new Bounds(Vector3.zero, Vector3.one);
         }
 
         private static Transform InstantiateModule(GameObject modulePrefab, Transform parent, string name, Vector3 localPosition, Quaternion localRotation, Vector3 localScale, Material overrideMaterial)
@@ -738,6 +1023,39 @@ namespace TitanOrbit.Editor
         {
             int hash = Mathf.Abs(level * 97 + branchIndex * 37 + Mathf.RoundToInt(fighterToMinerBlend * 100f) * 17);
             return StarSparrowColorVariants[hash % StarSparrowColorVariants.Length];
+        }
+
+        private static void RemapExampleMaterialsToUrp(Transform root)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                if (renderer == null) continue;
+                var shared = renderer.sharedMaterials;
+                if (shared == null || shared.Length == 0) continue;
+                Material[] replaced = null;
+                for (int i = 0; i < shared.Length; i++)
+                {
+                    Material src = shared[i];
+                    if (src == null) continue;
+                    string srcPath = AssetDatabase.GetAssetPath(src);
+                    if (string.IsNullOrEmpty(srcPath)) continue;
+                    Material dst = null;
+                    if (srcPath.StartsWith(STARSPARROW_MATERIALS_FOLDER))
+                    {
+                        dst = GetOrCreateConvertedStarSparrowMaterial(ExtractStarSparrowVariant(src.name), false);
+                    }
+                    else if (srcPath.StartsWith(HIREZ_MATERIALS_FOLDER) && !srcPath.StartsWith(HIREZ_URP_MATERIALS_FOLDER))
+                    {
+                        dst = GetOrCreateConvertedHiRezMaterial(src, false);
+                    }
+                    if (dst == null) continue;
+                    if (replaced == null) replaced = (Material[])shared.Clone();
+                    replaced[i] = dst;
+                }
+                if (replaced != null)
+                    renderer.sharedMaterials = replaced;
+            }
         }
 
         private static Material GetOrCreateConvertedStarSparrowMaterial(string variantName, bool forceRebuild = false)
@@ -804,6 +1122,181 @@ namespace TitanOrbit.Editor
             AssetDatabase.CreateAsset(converted, convertedPath);
             EditorUtility.SetDirty(converted);
             return converted;
+        }
+
+        private static Material GetOrCreateConvertedHiRezMaterial(Material source, bool forceRebuild)
+        {
+            if (source == null) return null;
+            string srcPath = AssetDatabase.GetAssetPath(source);
+            if (string.IsNullOrEmpty(srcPath) || !srcPath.StartsWith(HIREZ_MATERIALS_FOLDER)) return null;
+            if (HiRezConvertedBySourcePath.TryGetValue(srcPath, out Material cached) && cached != null && !forceRebuild)
+                return cached;
+
+            string relative = srcPath.Substring(HIREZ_MATERIALS_FOLDER.Length).TrimStart('/');
+            string dstPath = $"{HIREZ_URP_MATERIALS_FOLDER}/{relative}";
+            string dstDir = dstPath.Substring(0, dstPath.LastIndexOf('/'));
+            EnsureAssetFolder(dstDir);
+
+            Material existing = AssetDatabase.LoadAssetAtPath<Material>(dstPath);
+            if (forceRebuild && existing != null)
+            {
+                AssetDatabase.DeleteAsset(dstPath);
+                existing = null;
+            }
+            if (existing != null)
+            {
+                HiRezConvertedBySourcePath[srcPath] = existing;
+                return existing;
+            }
+
+            Shader urpLit = Shader.Find("Universal Render Pipeline/Lit");
+            if (urpLit == null) return source;
+            Material converted = new Material(urpLit) { name = source.name + "_URP" };
+
+            Texture mainTex = source.GetTexture("_MainTex");
+            Texture normalTex = source.GetTexture("_BumpMap");
+            Texture metallicTex = source.GetTexture("_MetallicGlossMap");
+            Texture emissionTex = source.GetTexture("_EmissionMap");
+            Color baseColor = source.HasProperty("_Color") ? source.GetColor("_Color") : Color.white;
+            Color emissionColor = source.HasProperty("_EmissionColor") ? source.GetColor("_EmissionColor") : Color.black;
+            float smoothness = source.HasProperty("_Glossiness") ? source.GetFloat("_Glossiness") : 0.5f;
+            float mode = source.HasProperty("_Mode") ? source.GetFloat("_Mode") : 0f; // Standard shader mode
+
+            if (converted.HasProperty("_BaseMap")) converted.SetTexture("_BaseMap", mainTex);
+            if (converted.HasProperty("_MainTex")) converted.SetTexture("_MainTex", mainTex);
+            if (converted.HasProperty("_BaseColor")) converted.SetColor("_BaseColor", baseColor);
+            if (converted.HasProperty("_Color")) converted.SetColor("_Color", baseColor);
+            if (converted.HasProperty("_BumpMap")) converted.SetTexture("_BumpMap", normalTex);
+            if (converted.HasProperty("_MetallicGlossMap")) converted.SetTexture("_MetallicGlossMap", metallicTex);
+            if (converted.HasProperty("_Smoothness")) converted.SetFloat("_Smoothness", smoothness);
+            if (converted.HasProperty("_EmissionMap")) converted.SetTexture("_EmissionMap", emissionTex);
+            if (converted.HasProperty("_EmissionColor")) converted.SetColor("_EmissionColor", emissionColor);
+
+            if (normalTex != null) converted.EnableKeyword("_NORMALMAP");
+            if (emissionTex != null || emissionColor.maxColorComponent > 0.0001f) converted.EnableKeyword("_EMISSION");
+            if (mode >= 2f)
+            {
+                // Standard Fade/Transparent -> URP transparent surface
+                converted.SetFloat("_Surface", 1f);
+                converted.SetFloat("_Blend", 0f);
+                converted.SetFloat("_ZWrite", 0f);
+                converted.renderQueue = 3000;
+            }
+
+            AssetDatabase.CreateAsset(converted, dstPath);
+            EditorUtility.SetDirty(converted);
+            HiRezConvertedBySourcePath[srcPath] = converted;
+            return converted;
+        }
+
+        private static void ConvertHiRezMaterialsAndPrefabsInternal(bool forceRebuildConvertedMaterials, bool logSummary)
+        {
+            EnsureAssetFolder(HIREZ_URP_MATERIALS_FOLDER);
+            HiRezConvertedBySourcePath.Clear();
+
+            int convertedCount = 0;
+            string[] matGuids = AssetDatabase.FindAssets("t:Material", new[] { HIREZ_MATERIALS_FOLDER });
+            foreach (string guid in matGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.StartsWith(HIREZ_URP_MATERIALS_FOLDER)) continue;
+                Material src = AssetDatabase.LoadAssetAtPath<Material>(path);
+                Material dst = GetOrCreateConvertedHiRezMaterial(src, forceRebuildConvertedMaterials);
+                if (dst != null) convertedCount++;
+            }
+
+            int updatedPrefabs = 0;
+            string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { HIREZ_ROOT_FOLDER });
+            foreach (string guid in prefabGuids)
+            {
+                string prefabPath = AssetDatabase.GUIDToAssetPath(guid);
+                var root = PrefabUtility.LoadPrefabContents(prefabPath);
+                bool changed = false;
+                try
+                {
+                    var renderers = root.GetComponentsInChildren<Renderer>(true);
+                    foreach (var renderer in renderers)
+                    {
+                        var shared = renderer.sharedMaterials;
+                        if (shared == null || shared.Length == 0) continue;
+                        Material[] replaced = null;
+                        for (int i = 0; i < shared.Length; i++)
+                        {
+                            Material src = shared[i];
+                            if (src == null) continue;
+                            string srcPath = AssetDatabase.GetAssetPath(src);
+                            if (string.IsNullOrEmpty(srcPath) || !srcPath.StartsWith(HIREZ_MATERIALS_FOLDER) || srcPath.StartsWith(HIREZ_URP_MATERIALS_FOLDER))
+                                continue;
+                            Material dst = GetOrCreateConvertedHiRezMaterial(src, false);
+                            if (dst == null) continue;
+                            if (replaced == null) replaced = (Material[])shared.Clone();
+                            replaced[i] = dst;
+                            changed = true;
+                        }
+                        if (replaced != null) renderer.sharedMaterials = replaced;
+                    }
+                    if (changed)
+                    {
+                        PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+                        updatedPrefabs++;
+                    }
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(root);
+                }
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            if (logSummary)
+                Debug.Log($"HiRez URP conversion complete. Materials converted: {convertedCount}, prefabs updated: {updatedPrefabs}");
+        }
+
+        private static void UpdateBaseStarshipWithFirstExamplePrefab()
+        {
+            var examples = GetCombinedExampleShipPrefabs();
+            if (examples == null || examples.Count == 0) return;
+            string starshipPath = "Assets/Prefabs/Starship.prefab";
+            var root = PrefabUtility.LoadPrefabContents(starshipPath);
+            try
+            {
+                Transform firePoint = FindChildRecursive(root.transform, "FirePoint");
+                if (firePoint == null)
+                {
+                    var fp = new GameObject("FirePoint");
+                    fp.transform.SetParent(root.transform, false);
+                    fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+                    firePoint = fp.transform;
+                }
+                ClearVisualChildren(root.transform, firePoint);
+                ApplyVisualFromExamplePrefab(root.transform, examples[0], firePoint);
+                RemapExampleMaterialsToUrp(root.transform);
+                ScaleVisualChildren(root.transform, firePoint, 0.175f);
+                StripChildColliders(root.transform, firePoint);
+                Bounds b = GetLocalRendererBounds(root.transform);
+                firePoint.localPosition = new Vector3(0f, 0f, b.max.z + 0.12f);
+                var box = root.GetComponent<BoxCollider>();
+                if (box != null) FitColliderToVisuals(root.transform, box);
+                PrefabUtility.SaveAsPrefabAsset(root, starshipPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void ScaleVisualChildren(Transform root, Transform keepFirePoint, float scaleMultiplier)
+        {
+            if (root == null) return;
+            float s = Mathf.Max(0.005f, scaleMultiplier);
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (keepFirePoint != null && (child == keepFirePoint || child.IsChildOf(keepFirePoint))) continue;
+                child.localPosition *= s;
+                child.localScale *= s;
+            }
         }
 
         private static void ConvertStarSparrowMaterialsAndPrefabsInternal(bool forceRebuildConvertedMaterials, bool logSummary)

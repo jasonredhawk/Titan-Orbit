@@ -118,7 +118,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 7183
+  controlID: 39
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -144,7 +144,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 7184
+  controlID: 40
   draggingID: 0
 --- !u!114 &7
 MonoBehaviour:
@@ -170,7 +170,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 7185
+  controlID: 41
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -196,7 +196,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 7186
+  controlID: 42
   draggingID: 0
 --- !u!114 &9
 MonoBehaviour:
@@ -721,9 +721,6 @@ MonoBehaviour:
         m_Data: 0
       m_ExpandedIDs:
       - m_Data: -1356
-      - m_Data: 57528
-      - m_Data: 57746
-      - m_Data: 58030
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1288,9 +1285,9 @@ MonoBehaviour:
   m_AudioPlay: 0
   m_DebugDrawModesUseInteractiveLightBakingData: 0
   m_Position:
-    m_Target: {x: 477.592, y: 306.81055, z: -42.25067}
+    m_Target: {x: 0, y: 1.4990501, z: 0.9504943}
     speed: 2
-    m_Value: {x: 477.592, y: 306.81055, z: -42.25067}
+    m_Value: {x: 0, y: 1.4990501, z: 0.9504943}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -1340,9 +1337,9 @@ MonoBehaviour:
     speed: 2
     m_Value: {x: 0.04454653, y: -0.07634569, z: -0.0034039672, w: -0.99609196}
   m_Size:
-    m_Target: 310.72565
+    m_Target: 5.429124
     speed: 2
-    m_Value: 310.72565
+    m_Value: 5.429124
   m_Ortho:
     m_Target: 0
     speed: 2
@@ -1463,7 +1460,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Plugins/AllIn1VfxToolkit
+    - Assets
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1473,22 +1470,22 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Plugins/AllIn1VfxToolkit
+  - Assets
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 1
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 176}
+    scrollPos: {x: 0, y: 127}
     m_SelectedIDs:
-    - m_Data: 166046
+    - m_Data: 65726
     m_LastClickedID:
-      m_Data: 166046
+      m_Data: 65726
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 58246
-    - m_Data: 58248
+    - m_Data: 63746
+    - m_Data: 63748
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1521,8 +1518,8 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 58246
-    - m_Data: 58248
+    - m_Data: 63746
+    - m_Data: 63748
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1549,8 +1546,9 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
   m_ListAreaState:
-    m_SelectedInstanceIDs: []
-    m_LastClickedInstanceID: 0
+    m_SelectedInstanceIDs:
+    - m_Data: 64048
+    m_LastClickedInstanceID: 64048
     m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs:
     - m_Data: 54664
@@ -1579,7 +1577,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 41}
+    m_ScrollPosition: {x: 0, y: 249}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240

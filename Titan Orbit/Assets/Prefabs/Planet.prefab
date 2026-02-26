@@ -128,7 +128,7 @@ MonoBehaviour:
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
-  m_TextStyleHashCode: -1183493901
+  m_TextStyleHashCode: 0
   m_overrideHtmlColors: 0
   m_faceColor:
     serializedVersion: 2
@@ -253,7 +253,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1906498290
+  GlobalObjectIdHash: 44302502
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -289,6 +289,8 @@ MonoBehaviour:
   regularPlanetTintIntensity: 0.2
   atmosphereSourceMaterial: {fileID: 0}
   atmosphereOuterMesh: {fileID: 0}
+  enableSpin: 1
+  spinDegreesPerSecond: 2
 --- !u!114 &1032728760940274408
 MonoBehaviour:
   m_ObjectHideFlags: 0
