@@ -85,20 +85,14 @@ namespace TitanOrbit.UI
             Bullseye     // Markers (attack/defend)
         }
 
-        private static float WrapDelta(float delta, float mapSize)
-        {
-            if (mapSize <= 0.001f) return delta;
-            return delta - mapSize * Mathf.Round(delta / mapSize);
-        }
-
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
             float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
             float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
-            Vector3 fromWrapped = ToroidalMap.WrapPosition(from);
-            Vector3 toWrapped = ToroidalMap.WrapPosition(to);
-            dx = WrapDelta(toWrapped.x - fromWrapped.x, mapW);
-            dz = WrapDelta(toWrapped.z - fromWrapped.z, mapH);
+            dx = to.x - from.x;
+            dz = to.z - from.z;
+            dx -= mapW * Mathf.Round(dx / mapW);
+            dz -= mapH * Mathf.Round(dz / mapH);
         }
 
         private void Start()

@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using TitanOrbit.Core;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Networking
 {
@@ -82,9 +83,30 @@ namespace TitanOrbit.Networking
         {
             if (IsServer)
             {
+                EnsureScoreSystemExists();
                 NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
             }
+        }
+
+        private void EnsureScoreSystemExists()
+        {
+            ScoreSystem existing = ScoreSystem.Instance;
+            if (existing == null)
+                existing = Object.FindFirstObjectByType<ScoreSystem>();
+
+            if (existing == null)
+            {
+                GameObject go = new GameObject("ScoreSystem");
+                go.AddComponent<NetworkObject>();
+                existing = go.AddComponent<ScoreSystem>();
+            }
+
+            NetworkObject no = existing.GetComponent<NetworkObject>();
+            if (no == null)
+                no = existing.gameObject.AddComponent<NetworkObject>();
+            if (!no.IsSpawned)
+                no.Spawn();
         }
 
         public override void OnNetworkDespawn()

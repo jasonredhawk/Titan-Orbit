@@ -303,7 +303,6 @@ namespace TitanOrbit.UI
                 widgets.scoreText.text = row.Score.ToString();
                 PopulateLeaderBadges(
                     widgets.badgeContainer,
-                    row,
                     bestKills > 0 && row.ShipNetworkId == bestKillerId,
                     bestContributed > 0f && row.ShipNetworkId == bestContributorId,
                     bestHealed > 0f && row.ShipNetworkId == bestHealerId,
@@ -471,7 +470,7 @@ namespace TitanOrbit.UI
             hlg.childForceExpandHeight = true;
             hlg.childForceExpandWidth = false;
 
-            RectTransform badges = CreateCell(rowObj.transform, "Badges", 96f);
+            RectTransform badges = CreateCell(rowObj.transform, "Badges", 88f);
             HorizontalLayoutGroup badgesLayout = badges.gameObject.AddComponent<HorizontalLayoutGroup>();
             badgesLayout.spacing = 4f;
             badgesLayout.childAlignment = TextAnchor.MiddleLeft;
@@ -534,17 +533,23 @@ namespace TitanOrbit.UI
             return text;
         }
 
-        private void PopulateLeaderBadges(RectTransform parent, ScoreEntry row, bool isBestKiller, bool isBestContributor, bool isBestHealer, bool isBestTransporter)
+        private void PopulateLeaderBadges(RectTransform parent, bool isBestKiller, bool isBestContributor, bool isBestHealer, bool isBestTransporter)
         {
             for (int i = parent.childCount - 1; i >= 0; i--)
                 Destroy(parent.GetChild(i).gameObject);
 
+            LayoutElement layout = parent.GetComponent<LayoutElement>();
             int count = 0;
             if (isBestKiller) { CreateBadge(parent, "K", new Color(0.96f, 0.36f, 0.36f)); count++; }
             if (isBestContributor) { CreateBadge(parent, "C", new Color(0.95f, 0.76f, 0.34f)); count++; }
             if (isBestHealer) { CreateBadge(parent, "H", new Color(0.38f, 0.92f, 0.5f)); count++; }
             if (isBestTransporter) { CreateBadge(parent, "T", new Color(0.35f, 0.78f, 0.96f)); count++; }
-            if (count == 0) CreateBadge(parent, "-", new Color(0.42f, 0.5f, 0.62f));
+            if (layout != null)
+            {
+                float width = count > 0 ? Mathf.Min(88f, 6f + count * 16f + Mathf.Max(0, count - 1) * 4f) : 10f;
+                layout.preferredWidth = width;
+                layout.minWidth = width;
+            }
         }
 
         private static void CreateBadge(RectTransform parent, string symbol, Color color)
@@ -552,10 +557,10 @@ namespace TitanOrbit.UI
             GameObject badgeObj = new GameObject($"Badge_{symbol}");
             badgeObj.transform.SetParent(parent, false);
             RectTransform badgeRect = badgeObj.AddComponent<RectTransform>();
-            badgeRect.sizeDelta = new Vector2(20f, 20f);
+            badgeRect.sizeDelta = new Vector2(14f, 14f);
             LayoutElement layout = badgeObj.AddComponent<LayoutElement>();
-            layout.preferredWidth = 20f;
-            layout.preferredHeight = 20f;
+            layout.preferredWidth = 14f;
+            layout.preferredHeight = 14f;
             Image bg = badgeObj.AddComponent<Image>();
             bg.color = color;
 
@@ -568,7 +573,7 @@ namespace TitanOrbit.UI
             txtRect.offsetMax = Vector2.zero;
             TextMeshProUGUI txt = txtObj.AddComponent<TextMeshProUGUI>();
             txt.text = symbol;
-            txt.fontSize = 12;
+            txt.fontSize = 9;
             txt.alignment = TextAlignmentOptions.Center;
             txt.color = Color.white;
             txt.raycastTarget = false;

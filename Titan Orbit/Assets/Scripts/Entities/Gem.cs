@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Generation;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
 {
@@ -183,6 +184,8 @@ namespace TitanOrbit.Entities
                 {
                     float toAdd = Mathf.Min(value.Value, nearestShip.GemCapacity - nearestShip.CurrentGems);
                     nearestShip.AddGemsServerRpc(toAdd);
+                    if (toAdd > 0f && ScoreSystem.Instance != null)
+                        ScoreSystem.Instance.AwardMining(nearestShip, toAdd);
                     value.Value -= toAdd;
                     if (value.Value <= 0)
                     {
