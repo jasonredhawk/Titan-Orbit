@@ -19,15 +19,17 @@ namespace TitanOrbit.Entities
         [SerializeField] private float armTime = 0.5f;
 
         private TeamManager.Team ownerTeam;
+        private ulong ownerShipNetworkId;
         private float spawnTime;
         private const float FIXED_Y = 0f;
 
-        public void Initialize(float mineDamage, float radius, TeamManager.Team team)
+        public void Initialize(float mineDamage, float radius, TeamManager.Team team, ulong ownerShipId)
         {
             damage = mineDamage;
             explosionRadius = radius;
             triggerRadius = Mathf.Max(triggerRadius, radius);
             ownerTeam = team;
+            ownerShipNetworkId = ownerShipId;
         }
 
         public override void OnNetworkSpawn()
@@ -80,11 +82,11 @@ namespace TitanOrbit.Entities
 
                 Starship ship = c.GetComponent<Starship>();
                 if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
-                    ship.TakeDamageServerRpc(dmg, ownerTeam);
+                    ship.TakeDamageServerRpc(dmg, ownerTeam, ownerShipNetworkId);
 
                 DroneBase drone = c.GetComponent<DroneBase>();
                 if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
-                    drone.TakeDamageServerRpc(dmg, ownerTeam);
+                    drone.TakeDamageServerRpc(dmg, ownerTeam, ownerShipNetworkId);
 
                 Asteroid ast = c.GetComponent<Asteroid>();
                 if (ast != null && !ast.IsDestroyed)

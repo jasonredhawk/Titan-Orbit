@@ -143,6 +143,7 @@ namespace TitanOrbit.Editor
             AsteroidRespawnManager asteroidRespawn = obj.AddComponent<AsteroidRespawnManager>();
             MiningSystem miningSystem = obj.AddComponent<MiningSystem>();
             TransportSystem transportSystem = obj.AddComponent<TransportSystem>();
+            obj.AddComponent<ScoreSystem>();
             CaptureSystem captureSystem = obj.AddComponent<CaptureSystem>();
             UpgradeSystem upgradeSystem = obj.AddComponent<UpgradeSystem>();
             AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();

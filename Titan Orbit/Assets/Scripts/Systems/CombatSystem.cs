@@ -32,7 +32,7 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default)
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default)
         {
             if (bulletPrefab == null) return;
 
@@ -50,7 +50,7 @@ namespace TitanOrbit.Systems
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
             if (bullet != null)
-                bullet.Initialize(speed, damage, ownerTeam, visualScaleMultiplier, bulletShapeIndex);
+                bullet.Initialize(speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex);
 
             if (bulletRb != null)
             {
@@ -67,7 +67,7 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnRocketServerRpc(Vector3 position, Vector3 direction, bool isLarge, TeamManager.Team ownerTeam)
+        public void SpawnRocketServerRpc(Vector3 position, Vector3 direction, bool isLarge, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0)
         {
             if (rocketPrefab == null) return;
             Vector3 dir = direction;
@@ -79,7 +79,7 @@ namespace TitanOrbit.Systems
             Quaternion lookRot = Quaternion.LookRotation(dir, Vector3.up);
             GameObject go = Instantiate(rocketPrefab, position, lookRot);
             var rocket = go.GetComponent<RocketProjectile>();
-            if (rocket != null) rocket.Initialize(speed, damage, ownerTeam);
+            if (rocket != null) rocket.Initialize(speed, damage, ownerTeam, ownerShipNetworkId);
             var rb = go.GetComponent<Rigidbody>();
             if (rb != null) rb.linearVelocity = dir * speed;
             var no = go.GetComponent<NetworkObject>();
@@ -89,7 +89,7 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnMineServerRpc(Vector3 position, bool isLarge, TeamManager.Team ownerTeam)
+        public void SpawnMineServerRpc(Vector3 position, bool isLarge, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0)
         {
             if (minePrefab == null) return;
             Vector3 pos = position;
@@ -100,7 +100,7 @@ namespace TitanOrbit.Systems
             {
                 float damage = isLarge ? 70f : 35f;
                 float radius = isLarge ? 7f : 4f;
-                mine.Initialize(damage, radius, ownerTeam);
+                mine.Initialize(damage, radius, ownerTeam, ownerShipNetworkId);
             }
             var no = go.GetComponent<NetworkObject>();
             if (no != null) no.Spawn();

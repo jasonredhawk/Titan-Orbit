@@ -116,10 +116,21 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam)
+        public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam, ulong attackerShipNetworkId = 0)
         {
             if (ownerShip != null && attackerTeam == ownerShip.ShipTeam) return;
+            float previousHp = currentHp.Value;
             currentHp.Value = Mathf.Max(0f, currentHp.Value - damage);
+            if (previousHp > 0f && currentHp.Value <= 0f && attackerShipNetworkId != 0 && ScoreSystem.Instance != null)
+            {
+                var spawnManager = NetworkManager.Singleton != null ? NetworkManager.Singleton.SpawnManager : null;
+                if (spawnManager != null && spawnManager.SpawnedObjects.TryGetValue(attackerShipNetworkId, out NetworkObject attackerObj))
+                {
+                    Starship attackerShip = attackerObj != null ? attackerObj.GetComponent<Starship>() : null;
+                    if (attackerShip != null)
+                        ScoreSystem.Instance.AwardEnemyKill(attackerShip);
+                }
+            }
         }
 
         public bool IsEnemyTeam(TeamManager.Team team)
@@ -154,7 +165,7 @@ namespace TitanOrbit.Entities
                     dir.Normalize();
                     if (CombatSystem.Instance != null)
                     {
-                        CombatSystem.Instance.SpawnBulletServerRpc(firePoint.position, dir, bulletSpeed, firePower, ownerShip.ShipTeam);
+                        CombatSystem.Instance.SpawnBulletServerRpc(firePoint.position, dir, bulletSpeed, firePower, ownerShip.ShipTeam, ownerShip.NetworkObjectId);
                         lastFireTime = Time.time;
                     }
                 }
@@ -278,7 +289,7 @@ namespace TitanOrbit.Entities
                     dir.Normalize();
                     if (CombatSystem.Instance != null)
                     {
-                        CombatSystem.Instance.SpawnBulletServerRpc(firePoint.position, dir, bulletSpeed, firePower, ownerShip.ShipTeam);
+                        CombatSystem.Instance.SpawnBulletServerRpc(firePoint.position, dir, bulletSpeed, firePower, ownerShip.ShipTeam, ownerShip.NetworkObjectId);
                         lastFireTime = Time.time;
                     }
                 }

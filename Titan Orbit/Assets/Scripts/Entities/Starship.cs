@@ -788,7 +788,7 @@ namespace TitanOrbit.Entities
                     float speed = c.bulletSpeed * SpeedMultiplier;
                     float scale = c.bulletScale * (0.65f + damage / 50f);
                     byte shapeIndex = 0; // TODO: from weapon config or player preference
-                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, scale, shapeIndex, shipVel);
+                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, shapeIndex, shipVel);
                     // Recoil: scaled down so it nudges the ship without throwing it; scales with bullet size and damage
                     if (rb != null)
                     {
@@ -832,7 +832,7 @@ namespace TitanOrbit.Entities
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             else dir.Normalize();
             if (CombatSystem.Instance != null)
-                CombatSystem.Instance.SpawnRocketServerRpc(firePoint.position, dir, useLarge, shipTeam.Value);
+                CombatSystem.Instance.SpawnRocketServerRpc(firePoint.position, dir, useLarge, shipTeam.Value, NetworkObjectId);
         }
 
         [ServerRpc]
@@ -845,13 +845,13 @@ namespace TitanOrbit.Entities
             Vector3 pos = TitanOrbit.Generation.ToroidalMap.WrapPosition(position);
             pos.y = 0f;
             if (CombatSystem.Instance != null)
-                CombatSystem.Instance.SpawnMineServerRpc(pos, useLarge, shipTeam.Value);
+                CombatSystem.Instance.SpawnMineServerRpc(pos, useLarge, shipTeam.Value, NetworkObjectId);
         }
 
         private NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
 
         [ServerRpc(RequireOwnership = false)]
-        public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam)
+        public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam, ulong attackerShipNetworkId = 0)
         {
             // Block friendly fire only when both have valid teams and they match
             if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
@@ -882,7 +882,7 @@ namespace TitanOrbit.Entities
             const float DEATH_THRESHOLD = 0.001f;
             if (currentHealth.Value <= DEATH_THRESHOLD && currentGems.Value <= DEATH_THRESHOLD)
             {
-                DieServerRpc();
+                DieServerRpc(attackerShipNetworkId);
             }
         }
 
@@ -914,6 +914,8 @@ namespace TitanOrbit.Entities
                 {
                     currentOrbitPlanet.RemovePopulationServerRpc(amount);
                     AddPeopleServerRpc(amount);
+                    if (ScoreSystem.Instance != null)
+                        ScoreSystem.Instance.AwardFriendlyLoad(this, amount);
                 }
                 // Reset toggle when ship is full or planet has no one left
                 if (currentPeople.Value >= PeopleCapacity - 0.001f || available <= 0f)
@@ -924,8 +926,12 @@ namespace TitanOrbit.Entities
                 float amount = Mathf.Min(rate, currentPeople.Value);
                 if (amount > 0f)
                 {
+                    bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
+                        || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
                     RemovePeopleServerRpc(amount);
                     currentOrbitPlanet.AddPopulationServerRpc(amount, shipTeam.Value); // friendly: adds pop; enemy/neutral: decreases (capture)
+                    if (!friendly && ScoreSystem.Instance != null)
+                        ScoreSystem.Instance.AwardHostileUnload(this, amount);
                 }
                 // Reset toggle when ship has no people left
                 if (currentPeople.Value <= 0.001f)
@@ -960,6 +966,8 @@ namespace TitanOrbit.Entities
             if (amount > 0f)
             {
                 RemoveGemsServerRpc(amount);
+                if (ScoreSystem.Instance != null)
+                    ScoreSystem.Instance.AwardDeposit(this, amount);
                 ulong clientId = OwnerClientId;
                 if (currentOrbitPlanet is HomePlanet homePlanet)
                 {
@@ -978,9 +986,19 @@ namespace TitanOrbit.Entities
         [SerializeField] private float respawnDelay = 5f;
 
         [ServerRpc(RequireOwnership = false)]
-        private void DieServerRpc()
+        private void DieServerRpc(ulong killerShipNetworkId = 0)
         {
             if (isDead.Value) return;
+            if (killerShipNetworkId != 0 && ScoreSystem.Instance != null)
+            {
+                var spawnManager = NetworkManager.Singleton != null ? NetworkManager.Singleton.SpawnManager : null;
+                if (spawnManager != null && spawnManager.SpawnedObjects.TryGetValue(killerShipNetworkId, out NetworkObject killerObj))
+                {
+                    Starship killerShip = killerObj != null ? killerObj.GetComponent<Starship>() : null;
+                    if (killerShip != null && killerShip != this)
+                        ScoreSystem.Instance.AwardEnemyKill(killerShip);
+                }
+            }
             isDead.Value = true;
             
             // Stop all movement immediately when dead

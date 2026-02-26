@@ -19,16 +19,18 @@ namespace TitanOrbit.Entities
         private float speed = 25f;
         private float damage = 25f;
         private TeamManager.Team ownerTeam;
+        private ulong ownerShipNetworkId;
         private float spawnTime;
         private Vector3 spawnPosition;
         private Rigidbody rb;
         private const float FIXED_Y = 0f;
 
-        public void Initialize(float rocketSpeed, float rocketDamage, TeamManager.Team team)
+        public void Initialize(float rocketSpeed, float rocketDamage, TeamManager.Team team, ulong ownerShipId)
         {
             speed = rocketSpeed;
             damage = rocketDamage;
             ownerTeam = team;
+            ownerShipNetworkId = ownerShipId;
         }
 
         private void Awake()
@@ -89,14 +91,14 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponent<Starship>();
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
-                ship.TakeDamageServerRpc(damage, ownerTeam);
+                ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
                 Despawn();
                 return;
             }
             DroneBase drone = other.GetComponent<DroneBase>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
-                drone.TakeDamageServerRpc(damage, ownerTeam);
+                drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
                 Despawn();
                 return;
             }

@@ -6,6 +6,7 @@ using TMPro;
 using System.Collections.Generic;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.UI
 {
@@ -82,6 +83,22 @@ namespace TitanOrbit.UI
             Capsule,     // Ships
             Irregular,   // Asteroids
             Bullseye     // Markers (attack/defend)
+        }
+
+        private static float WrapDelta(float delta, float mapSize)
+        {
+            if (mapSize <= 0.001f) return delta;
+            return delta - mapSize * Mathf.Round(delta / mapSize);
+        }
+
+        private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
+        {
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            Vector3 fromWrapped = ToroidalMap.WrapPosition(from);
+            Vector3 toWrapped = ToroidalMap.WrapPosition(to);
+            dx = WrapDelta(toWrapped.x - fromWrapped.x, mapW);
+            dz = WrapDelta(toWrapped.z - fromWrapped.z, mapH);
         }
 
         private void Start()
@@ -1138,15 +1155,7 @@ namespace TitanOrbit.UI
                 if (!kv.Key.gameObject.activeInHierarchy) { toRemove.Add(kv.Key); continue; }
 
                 Vector3 worldPos = kv.Key.position;
-                float dx = worldPos.x - playerPos.x;
-                float dz = worldPos.z - playerPos.z;
-
-                // Toroidal distance (clamp to nearest wrap)
-                float mapW = 300f, mapH = 300f;
-                if (dx > mapW / 2) dx -= mapW;
-                if (dx < -mapW / 2) dx += mapW;
-                if (dz > mapH / 2) dz -= mapH;
-                if (dz < -mapH / 2) dz += mapH;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 if (dist > minimapRadius) { kv.Value.gameObject.SetActive(false); continue; }
@@ -1217,15 +1226,7 @@ namespace TitanOrbit.UI
                 
                 // Calculate distance to check if ship is within visible area
                 Vector3 worldPos = ship.transform.position;
-                float dx = worldPos.x - playerPos.x;
-                float dz = worldPos.z - playerPos.z;
-                
-                // Toroidal distance (clamp to nearest wrap)
-                float mapW = 300f, mapH = 300f;
-                if (dx > mapW / 2) dx -= mapW;
-                if (dx < -mapW / 2) dx += mapW;
-                if (dz > mapH / 2) dz -= mapH;
-                if (dz < -mapH / 2) dz += mapH;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
                 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool friendly = ship.ShipTeam == playerShip.ShipTeam && ship.ShipTeam != TeamManager.Team.None;
@@ -1259,15 +1260,7 @@ namespace TitanOrbit.UI
                 if (p is HomePlanet) continue;
                 
                 Vector3 worldPos = p.transform.position;
-                float dx = worldPos.x - playerPos.x;
-                float dz = worldPos.z - playerPos.z;
-                
-                // Toroidal distance (clamp to nearest wrap)
-                float mapW = 300f, mapH = 300f;
-                if (dx > mapW / 2) dx -= mapW;
-                if (dx < -mapW / 2) dx += mapW;
-                if (dz > mapH / 2) dz -= mapH;
-                if (dz < -mapH / 2) dz += mapH;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
                 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool isOutsideVisibleArea = dist > minimapRadius;
@@ -1313,15 +1306,7 @@ namespace TitanOrbit.UI
             foreach (var hp in FindObjectsOfType<HomePlanet>())
             {
                 Vector3 worldPos = hp.transform.position;
-                float dx = worldPos.x - playerPos.x;
-                float dz = worldPos.z - playerPos.z;
-                
-                // Toroidal distance (clamp to nearest wrap)
-                float mapW = 300f, mapH = 300f;
-                if (dx > mapW / 2) dx -= mapW;
-                if (dx < -mapW / 2) dx += mapW;
-                if (dz > mapH / 2) dz -= mapH;
-                if (dz < -mapH / 2) dz += mapH;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
                 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool isOutsideVisibleArea = dist > minimapRadius;
@@ -1390,15 +1375,7 @@ namespace TitanOrbit.UI
                 if (!marker.IsSpawned) continue;
                 
                 Vector3 worldPos = marker.transform.position;
-                float dx = worldPos.x - playerPos.x;
-                float dz = worldPos.z - playerPos.z;
-                
-                // Toroidal distance (clamp to nearest wrap)
-                float mapW = 300f, mapH = 300f;
-                if (dx > mapW / 2) dx -= mapW;
-                if (dx < -mapW / 2) dx += mapW;
-                if (dz > mapH / 2) dz -= mapH;
-                if (dz < -mapH / 2) dz += mapH;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
                 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool isOutsideVisibleArea = dist > currentRadius;

@@ -63,6 +63,8 @@ namespace TitanOrbit.Systems
 
             asteroid.MineGemsServerRpc(gemsMined, shipNetworkId);
             ship.AddGemsServerRpc(gemsMined);
+            if (ScoreSystem.Instance != null)
+                ScoreSystem.Instance.AwardMining(ship, gemsMined);
 
             // Visual feedback
             MiningFeedbackClientRpc(asteroidNetworkId, shipNetworkId, gemsMined);

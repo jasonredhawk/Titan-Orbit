@@ -28,6 +28,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float maxDistance = 30f; // ~3x previous range for space combat
         [SerializeField] private float minTravelBeforeHit = 0.5f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
+        private ulong ownerShipNetworkId;
 
         [Header("Bullet Visual (customizable VFX-style: core + particle tail)")]
         [Tooltip("Use a prefab instead of the built-in VFX. If set, color/scale still apply; tail params below are ignored for prefabs.")]
@@ -266,7 +267,7 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponentInParent<Starship>();
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
-                ship.TakeDamageServerRpc(damage, ownerTeam);
+                ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
                 DespawnBullet();
                 return true;
             }
@@ -274,7 +275,7 @@ namespace TitanOrbit.Entities
             DroneBase drone = other.GetComponentInParent<DroneBase>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
-                drone.TakeDamageServerRpc(damage, ownerTeam);
+                drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
                 DespawnBullet();
                 return true;
             }
@@ -329,14 +330,15 @@ namespace TitanOrbit.Entities
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)
         {
-            Initialize(bulletSpeed, bulletDamage, team, 1f, 0);
+            Initialize(bulletSpeed, bulletDamage, team, 0, 1f, 0);
         }
 
-        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, float visualScaleMultiplier, byte shapeIndex = 0)
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
             ownerTeam = team;
+            ownerShipNetworkId = ownerShipId;
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualShapeIndex = shapeIndex;
             // NetworkVariables set in OnNetworkSpawn
