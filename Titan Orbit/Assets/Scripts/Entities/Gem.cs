@@ -1,8 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Generation;
-using System.IO;
-using System.Text;
 
 namespace TitanOrbit.Entities
 {
@@ -12,50 +10,6 @@ namespace TitanOrbit.Entities
     [RequireComponent(typeof(Rigidbody))]
     public class Gem : NetworkBehaviour
     {
-        private const string DEBUG_LOG_FILE = "debug-e62f68.log";
-        private static string DebugLogPath
-        {
-            get
-            {
-                try
-                {
-                    string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
-                    if (!string.IsNullOrEmpty(projectRoot))
-                        return Path.Combine(projectRoot, DEBUG_LOG_FILE);
-                }
-                catch { }
-                return DEBUG_LOG_FILE;
-            }
-        }
-
-        private static string EscapeJson(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return "";
-            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
-        }
-
-        private static void DebugPerfLog(string runId, string hypothesisId, string location, string message, string dataJson)
-        {
-            try
-            {
-                string line =
-                    "{\"sessionId\":\"e62f68\",\"runId\":\"" + EscapeJson(runId) +
-                    "\",\"hypothesisId\":\"" + EscapeJson(hypothesisId) +
-                    "\",\"location\":\"" + EscapeJson(location) +
-                    "\",\"message\":\"" + EscapeJson(message) +
-                    "\",\"data\":" + dataJson +
-                    ",\"timestamp\":" + System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
-                File.AppendAllText(DebugLogPath, line + "\n", Encoding.UTF8);
-            }
-            catch { }
-        }
-
-        public static int ActiveServerGems => activeServerGems;
-        private static int activeServerGems = 0;
-        private static int fixedTicksThisWindow = 0;
-        private static int shipScanCallsThisWindow = 0;
-        private static int shipsEnumeratedThisWindow = 0;
-        private static float nextPerfLogTime = 0f;
         private static Starship[] cachedShips = new Starship[0];
         private static float nextShipCacheRefreshTime = 0f;
         private const float SHIP_CACHE_REFRESH_INTERVAL = 0.25f;
@@ -99,7 +53,6 @@ namespace TitanOrbit.Entities
                 value.Value = gemValue;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
                 if (rb != null) rb.linearDamping = slowdownDrag;
-                activeServerGems++;
             }
             
             // Update visual scale based on gem size (client-side)
@@ -110,10 +63,6 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             gemSize.OnValueChanged -= OnGemSizeChanged;
-            if (IsServer)
-            {
-                activeServerGems = Mathf.Max(0, activeServerGems - 1);
-            }
             base.OnNetworkDespawn();
         }
 
@@ -179,8 +128,6 @@ namespace TitanOrbit.Entities
 
             if (!IsServer) return;
             if (value.Value <= 0) return;
-
-            fixedTicksThisWindow++;
 
             // Check if gem has expired
             float elapsedTime = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
@@ -266,24 +213,6 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            if (Time.unscaledTime >= nextPerfLogTime)
-            {
-                // #region agent log
-                DebugPerfLog(
-                    "initial",
-                    "G1",
-                    "Gem.cs:FixedUpdate",
-                    "Gem perf aggregate",
-                    "{\"activeServerGems\":" + activeServerGems +
-                    ",\"fixedTicksWindow\":" + fixedTicksThisWindow +
-                    ",\"shipScanCallsWindow\":" + shipScanCallsThisWindow +
-                    ",\"shipsEnumeratedWindow\":" + shipsEnumeratedThisWindow + "}");
-                // #endregion
-                fixedTicksThisWindow = 0;
-                shipScanCallsThisWindow = 0;
-                shipsEnumeratedThisWindow = 0;
-                nextPerfLogTime = Time.unscaledTime + 1f;
-            }
         }
 
         private static Starship[] GetCachedShipsForServer()
@@ -291,8 +220,6 @@ namespace TitanOrbit.Entities
             if (Time.unscaledTime >= nextShipCacheRefreshTime || cachedShips == null)
             {
                 cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
-                shipScanCallsThisWindow++;
-                shipsEnumeratedThisWindow += cachedShips != null ? cachedShips.Length : 0;
                 nextShipCacheRefreshTime = Time.unscaledTime + SHIP_CACHE_REFRESH_INTERVAL;
             }
             return cachedShips ?? System.Array.Empty<Starship>();

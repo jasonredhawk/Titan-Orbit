@@ -108,7 +108,7 @@ namespace TitanOrbit.Editor
             networkManager.NetworkConfig.NetworkTransport = transport;
 
             // Assign Player Prefab so players spawn when connecting
-            GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+            GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
             if (starshipPrefab != null)
             {
                 networkManager.NetworkConfig.PlayerPrefab = starshipPrefab;
@@ -1996,7 +1996,7 @@ namespace TitanOrbit.Editor
             NetworkManager nm = Object.FindObjectOfType<NetworkManager>();
             if (nm != null)
             {
-                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
                 if (starshipPrefab != null)
                 {
                     nm.NetworkConfig.PlayerPrefab = starshipPrefab;
@@ -2046,7 +2046,7 @@ namespace TitanOrbit.Editor
                     var listProp2 = so2.FindProperty("List");
                     if (listProp2 != null)
                     {
-                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab" };
+                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
                         foreach (string path in storePrefabPaths)
                         {
                             var prefabObj = AssetDatabase.LoadAssetAtPath<GameObject>(path);

@@ -27,6 +27,7 @@ namespace TitanOrbit.Editor
         private const string HIREZ_EXAMPLES_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Prefabs/Examples";
         private const string HIREZ_MATERIALS_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Materials";
         private const string HIREZ_URP_MATERIALS_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Materials/GeneratedURP";
+        private const string STARTER_SHIP_PREFAB_PATH = "Assets/Prefabs/Ships/Starship_Lv1_0.prefab";
 
         private static readonly int[] CountPerLevel = { 2, 4, 6, 8, 9, 4 }; // levels 2-7
         private static readonly string[] StarSparrowColorVariants =
@@ -50,10 +51,12 @@ namespace TitanOrbit.Editor
         public static void CreateAll()
         {
             EnsureFolders();
+            EnsureStarterShipPrefabAsset();
             CreateOrLoadLevel1Starter();
             List<List<ShipData>> shipDataByLevel = CreateAllShipDataAssets();
             UpgradeTree tree = CreateOrLoadUpgradeTree(shipDataByLevel);
             CreateShipPrefabs(shipDataByLevel);
+            AssignStarterShipDataToDefaultPrefab();
             AssignUpgradeTreeInScene(tree);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -64,6 +67,7 @@ namespace TitanOrbit.Editor
         public static void RebuildShipPrefabs()
         {
             EnsureFolders();
+            EnsureStarterShipPrefabAsset();
             // Strictly lightweight rebuild: only assign existing example prefabs to ShipData.
             // No prefab cloning/saving, no material conversion, no visual reconstruction.
             var shipDataByLevel = new List<List<ShipData>>();
@@ -95,7 +99,7 @@ namespace TitanOrbit.Editor
                 }
             }
             CreateShipPrefabs(shipDataByLevel);
-            AssignStarterShipDataToFirstExample();
+            AssignStarterShipDataToDefaultPrefab();
             AssetDatabase.SaveAssets();
             Debug.Log($"Rebuild complete (reference-only): {shipDataByLevel.Sum(l => l.Count)} ShipData assets mapped to existing example prefabs.");
         }
@@ -138,6 +142,7 @@ namespace TitanOrbit.Editor
             data.shipName = "Starter";
             SetBaseStats(data, 1, 0f);
             data.weaponConfig = GetOrCreateWeaponConfig(1, 0);
+            data.shipPrefab = GetStarterShipPrefabAsset();
             AssetDatabase.CreateAsset(data, path);
         }
 
@@ -499,11 +504,16 @@ namespace TitanOrbit.Editor
             Debug.Log($"Assigned {assigned} ShipData assets to example prefabs (reused from {examples.Count} sources).");
         }
 
-        private static void AssignStarterShipDataToFirstExample()
+        private static void AssignStarterShipDataToDefaultPrefab()
         {
-            var examples = GetCombinedExampleShipPrefabs();
-            if (examples == null || examples.Count == 0) return;
-            GameObject first = examples[0];
+            GameObject first = GetStarterShipPrefabAsset();
+            if (first == null)
+            {
+                var examples = GetCombinedExampleShipPrefabs();
+                if (examples == null || examples.Count == 0) return;
+                first = FindPreferredStarterExamplePrefab(examples);
+            }
+
             string[] starterPaths =
             {
                 $"{SHIPS_DATA_FOLDER}/ShipData_Level1_0_Starter.asset",
@@ -518,6 +528,82 @@ namespace TitanOrbit.Editor
                 so.ApplyModifiedPropertiesWithoutUndo();
                 EditorUtility.SetDirty(starter);
             }
+        }
+
+        private static GameObject GetStarterShipPrefabAsset()
+        {
+            return AssetDatabase.LoadAssetAtPath<GameObject>(STARTER_SHIP_PREFAB_PATH);
+        }
+
+        private static GameObject EnsureStarterShipPrefabAsset()
+        {
+            EnsureAssetFolder(PREFABS_SHIPS_FOLDER);
+            var examples = GetCombinedExampleShipPrefabs();
+            if (examples == null || examples.Count == 0) return GetStarterShipPrefabAsset();
+            GameObject source = FindPreferredStarterExamplePrefab(examples);
+            if (source == null) return GetStarterShipPrefabAsset();
+
+            // Build from prefab contents to produce a real prefab asset root, not a variant-style PrefabInstance reference.
+            string sourcePath = AssetDatabase.GetAssetPath(source);
+            if (string.IsNullOrEmpty(sourcePath)) return GetStarterShipPrefabAsset();
+
+            GameObject sourceRoot = PrefabUtility.LoadPrefabContents(sourcePath);
+            try
+            {
+                sourceRoot.name = "Starship_Lv1_0";
+                PrefabUtility.SaveAsPrefabAsset(sourceRoot, STARTER_SHIP_PREFAB_PATH);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(sourceRoot);
+            }
+
+            GameObject starterPrefab = GetStarterShipPrefabAsset();
+            RegisterNetworkPrefab(starterPrefab);
+            return starterPrefab;
+        }
+
+        private static void RegisterNetworkPrefab(GameObject prefab)
+        {
+            if (prefab == null) return;
+            var defaultList = AssetDatabase.LoadAssetAtPath<ScriptableObject>("Assets/DefaultNetworkPrefabs.asset");
+            if (defaultList == null) return;
+
+            var so = new SerializedObject(defaultList);
+            var listProp = so.FindProperty("List");
+            if (listProp == null) return;
+
+            // Remove stale/invalid entries (including broken sub-object prefab refs) before adding starter.
+            for (int i = listProp.arraySize - 1; i >= 0; i--)
+            {
+                var prefabRefProp = listProp.GetArrayElementAtIndex(i).FindPropertyRelative("Prefab");
+                var prefabObj = prefabRefProp != null ? prefabRefProp.objectReferenceValue as GameObject : null;
+                if (prefabObj == null)
+                {
+                    listProp.DeleteArrayElementAtIndex(i);
+                    continue;
+                }
+
+                if (!PrefabUtility.IsPartOfPrefabAsset(prefabObj) || !AssetDatabase.IsMainAsset(prefabObj))
+                {
+                    listProp.DeleteArrayElementAtIndex(i);
+                }
+            }
+
+            for (int i = 0; i < listProp.arraySize; i++)
+            {
+                var existing = listProp.GetArrayElementAtIndex(i).FindPropertyRelative("Prefab");
+                if (existing != null && existing.objectReferenceValue == prefab)
+                {
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    return;
+                }
+            }
+
+            listProp.arraySize++;
+            listProp.GetArrayElementAtIndex(listProp.arraySize - 1).FindPropertyRelative("Prefab").objectReferenceValue = prefab;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(defaultList);
         }
 
         /// <summary>Builds visuals by copying one of the authored example prefabs (HiRez/StarSparrow), then scales to game proportions.</summary>
@@ -696,6 +782,23 @@ namespace TitanOrbit.Editor
                 .ThenBy(p => p.name, System.StringComparer.OrdinalIgnoreCase)
                 .ToList();
             return combinedExamplePrefabsCache;
+        }
+
+        private static GameObject FindPreferredStarterExamplePrefab(List<GameObject> examples)
+        {
+            if (examples == null || examples.Count == 0) return null;
+
+            // Keep starter visuals aligned with the modern StarSparrow fleet.
+            for (int i = 0; i < examples.Count; i++)
+            {
+                var prefab = examples[i];
+                if (prefab == null) continue;
+                string path = AssetDatabase.GetAssetPath(prefab);
+                if (!string.IsNullOrEmpty(path) && path.StartsWith(STARSPARROW_EXAMPLES_FOLDER))
+                    return prefab;
+            }
+
+            return examples[0];
         }
 
         private static void AddExamplePrefabsFromFolder(List<GameObject> list, string folder)
@@ -1257,6 +1360,8 @@ namespace TitanOrbit.Editor
         {
             var examples = GetCombinedExampleShipPrefabs();
             if (examples == null || examples.Count == 0) return;
+            var starterExample = FindPreferredStarterExamplePrefab(examples);
+            if (starterExample == null) return;
             string starshipPath = "Assets/Prefabs/Starship.prefab";
             var root = PrefabUtility.LoadPrefabContents(starshipPath);
             try
@@ -1270,7 +1375,7 @@ namespace TitanOrbit.Editor
                     firePoint = fp.transform;
                 }
                 ClearVisualChildren(root.transform, firePoint);
-                ApplyVisualFromExamplePrefab(root.transform, examples[0], firePoint);
+                ApplyVisualFromExamplePrefab(root.transform, starterExample, firePoint);
                 RemapExampleMaterialsToUrp(root.transform);
                 ScaleVisualChildren(root.transform, firePoint, 0.175f);
                 StripChildColliders(root.transform, firePoint);

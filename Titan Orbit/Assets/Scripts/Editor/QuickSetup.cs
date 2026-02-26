@@ -87,7 +87,7 @@ namespace TitanOrbit.Editor
             NetworkManager networkManager = Object.FindObjectOfType<NetworkManager>();
             if (networkManager != null)
             {
-                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
                 if (starshipPrefab != null)
                 {
                     networkManager.NetworkConfig.PlayerPrefab = starshipPrefab;

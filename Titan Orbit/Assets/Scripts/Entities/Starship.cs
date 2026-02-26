@@ -6,8 +6,6 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
-using System.IO;
-using System.Text;
 
 namespace TitanOrbit.Entities
 {
@@ -17,44 +15,6 @@ namespace TitanOrbit.Entities
     [RequireComponent(typeof(Rigidbody))]
     public class Starship : NetworkBehaviour
     {
-        private const string DEBUG_LOG_FILE = "debug-e62f68.log";
-        private static string DebugLogPath
-        {
-            get
-            {
-                try
-                {
-                    string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
-                    if (!string.IsNullOrEmpty(projectRoot))
-                        return Path.Combine(projectRoot, DEBUG_LOG_FILE);
-                }
-                catch { }
-                return DEBUG_LOG_FILE;
-            }
-        }
-
-        private static string EscapeJson(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return "";
-            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
-        }
-
-        private static void DebugPerfLog(string runId, string hypothesisId, string location, string message, string dataJson)
-        {
-            try
-            {
-                string line =
-                    "{\"sessionId\":\"e62f68\",\"runId\":\"" + EscapeJson(runId) +
-                    "\",\"hypothesisId\":\"" + EscapeJson(hypothesisId) +
-                    "\",\"location\":\"" + EscapeJson(location) +
-                    "\",\"message\":\"" + EscapeJson(message) +
-                    "\",\"data\":" + dataJson +
-                    ",\"timestamp\":" + System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
-                File.AppendAllText(DebugLogPath, line + "\n", Encoding.UTF8);
-            }
-            catch { }
-        }
-
         [Header("Ship Settings")]
         [SerializeField] private ShipData shipData;
         [SerializeField] private int shipLevel = 1;
@@ -306,19 +266,6 @@ namespace TitanOrbit.Entities
             // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
             if (shipData != null && weaponConfig == null)
                 SetShipData(shipData);
-
-            // #region agent log
-            DebugPerfLog(
-                "initial",
-                "H4",
-                "Starship.cs:OnNetworkSpawn",
-                "Ship spawned",
-                "{\"shipObject\":\"" + EscapeJson(name) +
-                "\",\"isServer\":" + (IsServer ? "true" : "false") +
-                ",\"isOwner\":" + (IsOwner ? "true" : "false") +
-                ",\"shipLevel\":" + shipLevel +
-                ",\"childCount\":" + transform.childCount + "}");
-            // #endregion
 
             // Ensure Y position is locked to 0
             Vector3 pos = transform.position;
@@ -1412,18 +1359,6 @@ namespace TitanOrbit.Entities
 
         public void SetShipData(ShipData data)
         {
-            // #region agent log
-            DebugPerfLog(
-                "initial",
-                "H4",
-                "Starship.cs:SetShipData",
-                "SetShipData invoked",
-                "{\"shipObject\":\"" + EscapeJson(name) +
-                "\",\"incomingShip\":\"" + EscapeJson(data != null ? data.shipName : "null") +
-                "\",\"incomingPrefab\":\"" + EscapeJson(data != null && data.shipPrefab != null ? data.shipPrefab.name : "null") +
-                "\",\"currentLevel\":" + shipLevel + "}");
-            // #endregion
-
             shipData = data;
             if (data != null)
             {
@@ -1467,31 +1402,10 @@ namespace TitanOrbit.Entities
 
             if (lastVisualApplyFrame == Time.frameCount && lastVisualApplyPrefab == shipPrefab)
             {
-                // #region agent log
-                DebugPerfLog(
-                    "post-fix",
-                    "H4",
-                    "Starship.cs:ApplyShipVisual:skip",
-                    "Skipped duplicate ApplyShipVisual in same frame",
-                    "{\"shipObject\":\"" + EscapeJson(name) +
-                    "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
-                    "\",\"frame\":" + Time.frameCount + "}");
-                // #endregion
                 return;
             }
             lastVisualApplyFrame = Time.frameCount;
             lastVisualApplyPrefab = shipPrefab;
-
-            // #region agent log
-            DebugPerfLog(
-                "initial",
-                "H1",
-                "Starship.cs:ApplyShipVisual:start",
-                "ApplyShipVisual start",
-                "{\"shipObject\":\"" + EscapeJson(name) +
-                "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
-                "\",\"existingChildren\":" + root.childCount + "}");
-            // #endregion
 
             GameObject instance = Instantiate(shipPrefab);
             Transform prefabRoot = instance.transform;
@@ -1564,38 +1478,6 @@ namespace TitanOrbit.Entities
             // Imported example prefabs may include many colliders/rigidbodies/scripts intended for editor setup.
             // Keep only visual components under the ship visual root to avoid heavy runtime overhead.
             StripNonVisualComponents(root, firePoint);
-
-            int rendererCount = root.GetComponentsInChildren<Renderer>(true).Length;
-            int colliderCount = root.GetComponentsInChildren<Collider>(true).Length;
-            int behaviourCount = root.GetComponentsInChildren<MonoBehaviour>(true).Length;
-            int rigidbodyCount = root.GetComponentsInChildren<Rigidbody>(true).Length;
-            int shadowCasterCount = 0;
-            int materialSlots = 0;
-            var renderers = root.GetComponentsInChildren<Renderer>(true);
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                var r = renderers[i];
-                if (r == null) continue;
-                if (r.shadowCastingMode != UnityEngine.Rendering.ShadowCastingMode.Off) shadowCasterCount++;
-                materialSlots += (r.sharedMaterials != null ? r.sharedMaterials.Length : 0);
-            }
-
-            // #region agent log
-            DebugPerfLog(
-                "initial",
-                "H1",
-                "Starship.cs:ApplyShipVisual:end",
-                "ApplyShipVisual end",
-                "{\"shipObject\":\"" + EscapeJson(name) +
-                "\",\"prefab\":\"" + EscapeJson(shipPrefab.name) +
-                "\",\"renderers\":" + rendererCount +
-                ",\"colliders\":" + colliderCount +
-                ",\"behaviours\":" + behaviourCount +
-                ",\"rigidbodies\":" + rigidbodyCount +
-                ",\"shadowCasters\":" + shadowCasterCount +
-                ",\"materialSlots\":" + materialSlots +
-                ",\"firePointNull\":" + (firePoint == null ? "true" : "false") + "}");
-            // #endregion
         }
 
         /// <summary>Removes expensive non-visual components from adopted visual hierarchy.</summary>
