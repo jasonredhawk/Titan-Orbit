@@ -17,11 +17,11 @@ namespace TitanOrbit.AI
     {
         public static AIStarshipManager Instance { get; private set; }
 
-        /// <summary>PlayerPrefs key for "AI ships enabled" (1 = on, 0 = off). Used by main menu toggle and here.</summary>
-        public const string PrefsKeyAIShipsEnabled = "TitanOrbit_AIShipsEnabled";
+        [Tooltip("Enable AI ships (editor-only; set in Inspector). No main-menu toggle.")]
+        [SerializeField] private bool aiShipsEnabled = true;
 
-        /// <summary>True when AI ships should be spawned (host/server reads this before spawning). Default true.</summary>
-        public static bool AIShipsEnabled => PlayerPrefs.GetInt(PrefsKeyAIShipsEnabled, 1) != 0;
+        /// <summary>True when AI ships should be spawned (host/server uses this). Set in Inspector on AIStarshipManager.</summary>
+        public static bool AIShipsEnabled => Instance != null && Instance.aiShipsEnabled;
 
         [Header("AI Spawn Settings")]
         [SerializeField] private GameObject starshipPrefab;

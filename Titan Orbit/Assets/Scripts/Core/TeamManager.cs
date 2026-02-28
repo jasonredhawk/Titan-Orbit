@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using System.Collections.Generic;
 using System.Linq;
+using TitanOrbit.Networking;
 
 namespace TitanOrbit.Core
 {
@@ -39,8 +40,16 @@ namespace TitanOrbit.Core
         private Dictionary<ulong, Team> playerTeams = new Dictionary<ulong, Team>();
         private Dictionary<Team, List<ulong>> teamPlayers = new Dictionary<Team, List<ulong>>();
 
+        private NetworkVariable<int> networkTeamACount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> networkTeamBCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> networkTeamCCount = new NetworkVariable<int>(0);
+
         public int MaxPlayersPerTeam => maxPlayersPerTeam;
         public int NumberOfTeams => numberOfTeams;
+
+        public int TeamACount => networkTeamACount.Value;
+        public int TeamBCount => networkTeamBCount.Value;
+        public int TeamCCount => networkTeamCCount.Value;
 
         private void Awake()
         {
@@ -76,9 +85,89 @@ namespace TitanOrbit.Core
             {
                 playerTeams[clientId] = assignedTeam;
                 teamPlayers[assignedTeam].Add(clientId);
+                SyncTeamCountsToNetwork();
             }
 
             return assignedTeam;
+        }
+
+        private void SyncTeamCountsToNetwork()
+        {
+            if (!IsServer) return;
+            networkTeamACount.Value = teamPlayers[Team.TeamA].Count;
+            networkTeamBCount.Value = teamPlayers[Team.TeamB].Count;
+            networkTeamCCount.Value = teamPlayers[Team.TeamC].Count;
+        }
+
+        public bool IsTeamOpen(Team team)
+        {
+            if (team == Team.None) return false;
+            return GetTeamPlayerCount(team) < maxPlayersPerTeam;
+        }
+
+        public bool TryReassignPlayer(ulong clientId, Team newTeam)
+        {
+            if (!IsServer || newTeam == Team.None) return false;
+            if (!IsTeamOpen(newTeam)) return false;
+            if (!playerTeams.ContainsKey(clientId)) return false;
+            Team currentTeam = playerTeams[clientId];
+            if (currentTeam == newTeam) return true;
+            teamPlayers[currentTeam].Remove(clientId);
+            playerTeams[clientId] = newTeam;
+            teamPlayers[newTeam].Add(clientId);
+            SyncTeamCountsToNetwork();
+            return true;
+        }
+
+        /// <summary>Server only: add a player to a team (first-time assignment, e.g. when they click Join from team selection).</summary>
+        public bool AddPlayerToTeam(ulong clientId, Team team)
+        {
+            if (!IsServer || team == Team.None) return false;
+            if (!IsTeamOpen(team)) return false;
+            if (playerTeams.ContainsKey(clientId)) return false; // already on a team, use TryReassignPlayer
+            playerTeams[clientId] = team;
+            teamPlayers[team].Add(clientId);
+            SyncTeamCountsToNetwork();
+            return true;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void RequestTeamServerRpc(Team preferredTeam, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            bool ok;
+            Team actualTeam;
+            if (GetPlayerTeam(clientId) == Team.None)
+            {
+                // First-time choice: add to preferred team and put ship in orbit
+                ok = AddPlayerToTeam(clientId, preferredTeam);
+                actualTeam = ok ? preferredTeam : Team.None;
+            }
+            else
+            {
+                ok = TryReassignPlayer(clientId, preferredTeam);
+                actualTeam = GetPlayerTeam(clientId);
+            }
+            if (ok && actualTeam != Team.None)
+            {
+                var playerObj = NetworkManager.Singleton.SpawnManager.GetPlayerNetworkObject(clientId);
+                if (playerObj != null)
+                {
+                    var ship = playerObj.GetComponent<TitanOrbit.Entities.Starship>();
+                    if (ship != null)
+                        ship.AssignTeamAndStartInOrbit(actualTeam);
+                }
+            }
+            ResponseTeamClientRpc(clientId, actualTeam, ok);
+        }
+
+        [ClientRpc]
+        public void ResponseTeamClientRpc(ulong clientId, Team assignedTeam, bool requestGranted)
+        {
+            if (NetworkManager.Singleton.LocalClientId == clientId && NetworkGameManager.Instance != null)
+            {
+                NetworkGameManager.Instance.OnTeamAssignmentResult(assignedTeam, requestGranted);
+            }
         }
 
         private Team GetTeamWithLeastPlayers()
@@ -143,6 +232,7 @@ namespace TitanOrbit.Core
                 Team team = playerTeams[clientId];
                 teamPlayers[team].Remove(clientId);
                 playerTeams.Remove(clientId);
+                SyncTeamCountsToNetwork();
             }
         }
 

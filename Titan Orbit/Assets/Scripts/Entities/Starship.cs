@@ -284,10 +284,20 @@ namespace TitanOrbit.Entities
                 currentGems.Value = 0f;
                 currentPeople.Value = 0f;
                 currentEnergy.Value = EffectiveEnergyCapacity;
-                // Team is set when NetworkGameManager.OnClientConnected runs (after spawn); try now in case it's already set
                 if (TeamManager.Instance != null)
                     shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
-                StartInOrbitAroundHomePlanet();
+                if (shipTeam.Value == TeamManager.Team.None)
+                {
+                    // Not yet chosen a team: hold ship at lobby position (off-world) until they click Join
+                    if (rb != null)
+                    {
+                        Vector3 lobbyPos = new Vector3(0f, -10000f, 0f); // below play area
+                        rb.position = lobbyPos;
+                        rb.linearVelocity = Vector3.zero;
+                    }
+                }
+                else
+                    StartInOrbitAroundHomePlanet();
             }
         }
 

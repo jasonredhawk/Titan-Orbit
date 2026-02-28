@@ -91,6 +91,19 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // Hide orbit UI until player has chosen a team
+            Starship localShip = null;
+            foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            {
+                if (ship.IsOwner) { localShip = ship; break; }
+            }
+            if (localShip == null || localShip.ShipTeam == TeamManager.Team.None)
+            {
+                gameObject.SetActive(false);
+                return;
+            }
+            gameObject.SetActive(true);
+
             if (orbitPanel != null && orbitPanel.activeSelf && currentShip != null && currentPlanet != null)
                 RefreshLabels();
         }

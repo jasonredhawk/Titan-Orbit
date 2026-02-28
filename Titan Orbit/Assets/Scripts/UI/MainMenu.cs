@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using Unity.Netcode;
 using TitanOrbit.Networking;
-using TitanOrbit.AI;
+using System.Threading.Tasks;
 
 namespace TitanOrbit.UI
 {
@@ -15,126 +15,225 @@ namespace TitanOrbit.UI
         [Header("UI References")]
         [SerializeField] private GameObject mainMenuPanel;
         [SerializeField] private GameObject lobbyPanel;
-        [SerializeField] private Button startServerButton;
-        [SerializeField] private Button startHostButton;
-        [SerializeField] private Button startClientButton;
-        [SerializeField] private Toggle aiShipsToggle;
+        [SerializeField] private GameObject teamSelectionPanel;
+        [SerializeField] private Button playButton;
+        [SerializeField] private Button hostOnlineButton;
+        [SerializeField] private Button joinOnlineButton;
+        [SerializeField] private Button teamAButton;
+        [SerializeField] private Button teamBButton;
+        [SerializeField] private Button teamCButton;
+        [SerializeField] private TextMeshProUGUI teamALabel;
+        [SerializeField] private TextMeshProUGUI teamBLabel;
+        [SerializeField] private TextMeshProUGUI teamCLabel;
+        [SerializeField] private TMP_InputField joinCodeInputField;
+        [SerializeField] private TextMeshProUGUI joinCodeDisplayText;
         [SerializeField] private TMP_InputField serverAddressInput;
         [SerializeField] private TextMeshProUGUI playerCountText;
         [SerializeField] private TextMeshProUGUI teamStatusText;
+        [SerializeField] private TextMeshProUGUI roomNameText;
+        [SerializeField] private TMP_InputField playerNameInputField;
 
         private void Start()
         {
-            if (startServerButton != null)
+            if (hostOnlineButton != null)
+                hostOnlineButton.onClick.AddListener(OnHostOnlineClicked);
+
+            if (joinOnlineButton != null)
             {
-                startServerButton.onClick.AddListener(OnStartServerClicked);
+                joinOnlineButton.onClick.AddListener(OnJoinOnlineClicked);
             }
 
-            if (startHostButton != null)
+            if (playButton != null)
             {
-                startHostButton.onClick.AddListener(OnStartHostClicked);
+                playButton.onClick.AddListener(OnPlayClicked);
             }
 
-            if (startClientButton != null)
-            {
-                startClientButton.onClick.AddListener(OnStartClientClicked);
-            }
+            NetworkGameManager.OnTeamChosen += OnTeamChosen;
 
-            if (aiShipsToggle != null)
+            if (teamAButton != null) teamAButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamA));
+            if (teamBButton != null) teamBButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamB));
+            if (teamCButton != null) teamCButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamC));
+
+            const string playerNameKey = "TitanOrbit_PlayerName";
+            if (playerNameInputField != null)
             {
-                aiShipsToggle.isOn = AIStarshipManager.AIShipsEnabled;
-                aiShipsToggle.onValueChanged.AddListener(OnAIShipsToggleChanged);
+                playerNameInputField.text = PlayerPrefs.GetString(playerNameKey, "");
+                playerNameInputField.onEndEdit.AddListener(s => { PlayerPrefs.SetString(playerNameKey, s ?? ""); PlayerPrefs.Save(); });
             }
         }
 
-        private void OnAIShipsToggleChanged(bool enabled)
+        private void OnDestroy()
         {
-            PlayerPrefs.SetInt(AIStarshipManager.PrefsKeyAIShipsEnabled, enabled ? 1 : 0);
-            PlayerPrefs.Save();
+            NetworkGameManager.OnTeamChosen -= OnTeamChosen;
+        }
+
+        private void OnTeamChosen(Core.TeamManager.Team team)
+        {
+            if (lobbyPanel != null) lobbyPanel.SetActive(false);
+            if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
         }
 
         private void Update()
         {
-            // Hide lobby panel once player spawns (game has started)
             if (lobbyPanel != null && lobbyPanel.activeSelf)
             {
-                // Check if player has spawned
-                foreach (var ship in FindObjectsOfType<TitanOrbit.Entities.Starship>())
+                UpdateLobbyInfo();
+                if (teamSelectionPanel != null && teamSelectionPanel.GetComponent<TeamSelectionUI>() != null)
+                    ; // TeamSelectionUI refreshes itself
+                else
+                    RefreshTeamSelectionUI();
+            }
+        }
+
+        private void RefreshTeamSelectionUI()
+        {
+            if (Core.TeamManager.Instance == null) return;
+            int max = Core.TeamManager.Instance.MaxPlayersPerTeam;
+            int a = Core.TeamManager.Instance.TeamACount;
+            int b = Core.TeamManager.Instance.TeamBCount;
+            int c = Core.TeamManager.Instance.TeamCCount;
+            if (teamALabel != null) teamALabel.text = $"Team A ({a}/{max})";
+            if (teamBLabel != null) teamBLabel.text = $"Team B ({b}/{max})";
+            if (teamCLabel != null) teamCLabel.text = $"Team C ({c}/{max})";
+            bool aOpen = a < max;
+            bool bOpen = b < max;
+            bool cOpen = c < max;
+            if (teamAButton != null) teamAButton.interactable = aOpen;
+            if (teamBButton != null) teamBButton.interactable = bOpen;
+            if (teamCButton != null) teamCButton.interactable = cOpen;
+        }
+
+        private void OnTeamClicked(Core.TeamManager.Team team)
+        {
+            if (Core.TeamManager.Instance == null) return;
+            Core.TeamManager.Instance.RequestTeamServerRpc(team);
+        }
+
+        private async void OnPlayClicked()
+        {
+            if (NetworkGameManager.Instance == null) return;
+            if (playButton != null) playButton.interactable = false;
+            try
+            {
+                string playerName = (playerNameInputField != null ? playerNameInputField.text : null) ?? "";
+                playerName = playerName.Trim();
+                if (!string.IsNullOrEmpty(playerName))
                 {
-                    if (ship.IsOwner)
-                    {
-                        // Player spawned, hide lobby
-                        lobbyPanel.SetActive(false);
-                        break;
-                    }
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", playerName);
+                    PlayerPrefs.Save();
+                }
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(playerName)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : playerName;
+
+                bool ok = await NetworkGameManager.Instance.PlayQuickJoinOrCreateAsync();
+                if (ok)
+                {
+                    ShowLobby();
+                    if (teamSelectionPanel != null) teamSelectionPanel.SetActive(true);
+                }
+                else
+                {
+                    Debug.LogError("Play failed. Check console and Unity Services.");
                 }
             }
-            
-            // Don't update lobby info anymore - we hide it when game starts
-            // UpdateLobbyInfo();
-        }
-
-        private void OnStartServerClicked()
-        {
-            if (NetworkGameManager.Instance != null)
+            finally
             {
-                NetworkGameManager.Instance.StartServer();
-                ShowLobby();
+                if (playButton != null) playButton.interactable = true;
             }
         }
 
-        private void OnStartHostClicked()
+        private async void OnHostOnlineClicked()
         {
-            if (NetworkGameManager.Instance != null)
+            if (NetworkGameManager.Instance == null) return;
+            if (hostOnlineButton != null) hostOnlineButton.interactable = false;
+            try
             {
-                NetworkGameManager.Instance.StartHost();
-                ShowLobby();
+                string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync();
+                if (!string.IsNullOrEmpty(joinCode))
+                {
+                    if (joinCodeDisplayText != null)
+                    {
+                        joinCodeDisplayText.gameObject.SetActive(true);
+                        joinCodeDisplayText.text = "Join code: " + joinCode;
+                    }
+                    else
+                    {
+                        Debug.Log("Host (Online) started. Share this join code: " + joinCode);
+                    }
+                    ShowLobby();
+                }
+                else
+                {
+                    Debug.LogError("Failed to start host with Relay. Check console and Unity Services setup.");
+                }
+            }
+            finally
+            {
+                if (hostOnlineButton != null) hostOnlineButton.interactable = true;
             }
         }
 
-        private void OnStartClientClicked()
+        private async void OnJoinOnlineClicked()
         {
-            if (NetworkGameManager.Instance != null)
+            if (NetworkGameManager.Instance == null) return;
+            string code = joinCodeInputField != null ? joinCodeInputField.text : (serverAddressInput != null ? serverAddressInput.text : null);
+            if (string.IsNullOrWhiteSpace(code))
             {
-                NetworkGameManager.Instance.StartClient();
-                ShowLobby();
+                Debug.LogWarning("Enter a join code first (or use the server address field).");
+                return;
+            }
+            if (joinOnlineButton != null) joinOnlineButton.interactable = false;
+            try
+            {
+                bool ok = await NetworkGameManager.Instance.StartClientWithRelayAsync(code);
+                if (ok)
+                    ShowLobby();
+                else
+                    Debug.LogError("Failed to join with Relay. Check the join code and connection.");
+            }
+            finally
+            {
+                if (joinOnlineButton != null) joinOnlineButton.interactable = true;
             }
         }
 
         private void ShowLobby()
         {
             if (mainMenuPanel != null)
-            {
                 mainMenuPanel.SetActive(false);
-            }
 
-            // Only show lobby briefly - it will auto-hide when player spawns
+            string playerName = (playerNameInputField != null ? playerNameInputField.text : null) ?? "";
+            playerName = playerName.Trim();
+            NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(playerName)
+                ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                : playerName;
+
             if (lobbyPanel != null)
-            {
                 lobbyPanel.SetActive(true);
-            }
+
+            if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(true);
         }
 
         private void UpdateLobbyInfo()
         {
+            if (roomNameText != null && NetworkGameManager.Instance != null)
+                roomNameText.text = "Room: " + (string.IsNullOrEmpty(NetworkGameManager.Instance.CurrentLobbyName) ? "—" : NetworkGameManager.Instance.CurrentLobbyName);
+
             if (playerCountText != null)
             {
-                // ConnectedClients can only be accessed on server
                 int playerCount = 0;
                 if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
-                {
                     playerCount = NetworkManager.Singleton.ConnectedClients.Count;
-                }
                 playerCountText.text = $"Players: {playerCount}/60";
             }
 
             if (teamStatusText != null && Core.TeamManager.Instance != null)
             {
-                // Update team status
                 int teamACount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamA);
                 int teamBCount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamB);
                 int teamCCount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamC);
-                
                 teamStatusText.text = $"Team A: {teamACount}/20 | Team B: {teamBCount}/20 | Team C: {teamCCount}/20";
             }
         }

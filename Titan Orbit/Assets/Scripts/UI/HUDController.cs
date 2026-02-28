@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
+using TitanOrbit.Networking;
 
 namespace TitanOrbit.UI
 {
@@ -15,6 +16,7 @@ namespace TitanOrbit.UI
     public class HUDController : MonoBehaviour
     {
         [Header("Ship Stats (Top-Left)")]
+        [SerializeField] private GameObject shipStatsPanel;
         [SerializeField] private Slider healthBar;
         [SerializeField] private TextMeshProUGUI healthText;
         [SerializeField] private Slider gemBar;
@@ -94,7 +96,31 @@ namespace TitanOrbit.UI
                 if (playerShip != null && viewedTeamIndex < 0)
                     viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip.ShipTeam));
             }
-            if (playerShip == null || playerShip.IsDead)
+
+            // Hide entire HUD until we have a local ship that has chosen a team (don't disable this GameObject so Update keeps running)
+            bool showInGamePanels = playerShip != null && playerShip.ShipTeam != TeamManager.Team.None;
+            if (shipStatsPanel != null)
+                shipStatsPanel.SetActive(showInGamePanels);
+            else
+            {
+                Transform root = transform.root;
+                if (root != null)
+                {
+                    Transform t = root.Find("ShipStatsPanel");
+                    if (t != null) t.gameObject.SetActive(showInGamePanels);
+                }
+            }
+            if (homePlanetPanel != null)
+                homePlanetPanel.SetActive(showInGamePanels);
+            if (leaderboardPanel != null)
+                leaderboardPanel.SetActive(showInGamePanels);
+            if (proximityRadar != null)
+                proximityRadar.SetActive(showInGamePanels);
+
+            if (!showInGamePanels)
+                return;
+
+            if (playerShip.IsDead)
             {
                 UpdateLeaderboardPanel();
                 return;
@@ -155,7 +181,7 @@ namespace TitanOrbit.UI
                 allShips.Add(ship);
                 string baseName = ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null
                     ? $"AI-{ship.NetworkObjectId % 1000}"
-                    : $"Player {ship.OwnerClientId}";
+                    : PlayerDisplayNames.GetDisplayName(ship.OwnerClientId, false);
                 shipNameLookup[ship.NetworkObjectId] = baseName;
             }
             if (allShips.Count == 0)
@@ -293,7 +319,7 @@ namespace TitanOrbit.UI
                 ScoreEntry row = rows[i];
                 string name = shipNameLookup.TryGetValue(row.ShipNetworkId, out string foundName)
                     ? foundName
-                    : (row.IsAI ? $"AI-{row.ShipNetworkId % 1000}" : $"Player {row.OwnerClientId}");
+                    : (row.IsAI ? PlayerDisplayNames.GetDisplayName(row.OwnerClientId, true) : PlayerDisplayNames.GetDisplayName(row.OwnerClientId, false));
 
                 string shortName = name.Length > 22 ? name.Substring(0, 22) : name;
                 LeaderboardRowWidgets widgets = leaderboardRows[i];

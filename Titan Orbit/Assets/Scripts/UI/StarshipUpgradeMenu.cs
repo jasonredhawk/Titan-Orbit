@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using TMPro;
 using TitanOrbit.Entities;
+using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
 
@@ -111,8 +112,8 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Only show upgrade menu when in play mode (local player ship exists)
-            if (playerShip == null)
+            // Only show upgrade menu when in play mode (local player ship exists) and has chosen a team
+            if (playerShip == null || playerShip.ShipTeam == TeamManager.Team.None)
             {
                 Hide();
                 return;

@@ -906,8 +906,16 @@ namespace TitanOrbit.UI
                 {
                     if (ship.IsOwner) { playerShip = ship; playerTransform = ship.transform; break; }
                 }
-                if (playerShip == null) return;
+                if (playerShip == null) { gameObject.SetActive(false); return; }
             }
+
+            // Hide minimap until player has chosen a team
+            if (playerShip.ShipTeam == TeamManager.Team.None)
+            {
+                gameObject.SetActive(false);
+                return;
+            }
+            gameObject.SetActive(true);
 
             UpdateBlips();
             

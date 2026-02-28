@@ -73,6 +73,93 @@ namespace TitanOrbit.Editor
             Debug.Log("Space background added. Assign a texture from Assets/DinV/Dynamic Space Background/Sprites/ if not auto-assigned.");
         }
 
+        [MenuItem("Titan Orbit/Add Play & Team Selection UI")]
+        public static void AddPlayAndTeamSelectionUI()
+        {
+            MainMenu mainMenu = Object.FindFirstObjectByType<MainMenu>();
+            if (mainMenu == null)
+            {
+                Debug.LogError("MainMenu not found in scene. Run Setup Game Scene first or add a Canvas with MainMenu.");
+                return;
+            }
+            SerializedObject so = new SerializedObject(mainMenu);
+            GameObject mainMenuPanel = so.FindProperty("mainMenuPanel").objectReferenceValue as GameObject;
+            GameObject lobbyPanel = so.FindProperty("lobbyPanel").objectReferenceValue as GameObject;
+            if (mainMenuPanel == null || lobbyPanel == null)
+            {
+                Debug.LogError("MainMenu mainMenuPanel or lobbyPanel is not assigned. Assign them in the Inspector first.");
+                return;
+            }
+            Sprite shiftButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Cut/Cut Frame Filled.png");
+            Sprite uiSprite = CreateWhiteSprite();
+            if (shiftButtonSprite == null) shiftButtonSprite = uiSprite;
+
+            GameObject playBtn = so.FindProperty("playButton").objectReferenceValue as GameObject;
+            if (playBtn == null)
+            {
+                playBtn = CreateShiftButton(mainMenuPanel.transform, "PlayButton", "PLAY", shiftButtonSprite);
+                SetRect(playBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, 116, 280, 64);
+                so.FindProperty("playButton").objectReferenceValue = playBtn.GetComponent<Button>();
+            }
+
+            GameObject teamPanel = so.FindProperty("teamSelectionPanel").objectReferenceValue as GameObject;
+            if (teamPanel == null)
+            {
+                Sprite shiftPanelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                    "Assets/Shift - Complete Sci-Fi UI/Textures/Placeholder/Placeholder HUD BG.png");
+                if (shiftPanelSprite == null) shiftPanelSprite = uiSprite;
+                teamPanel = CreateShiftPanel(lobbyPanel.transform, "TeamSelectionPanel", new Color(0.08f, 0.1f, 0.18f, 0.9f), shiftPanelSprite);
+                RectTransform tr = teamPanel.GetComponent<RectTransform>();
+                tr.anchorMin = new Vector2(0.5f, 0.08f);
+                tr.anchorMax = new Vector2(0.5f, 0.82f);
+                tr.pivot = new Vector2(0.5f, 0.5f);
+                tr.anchoredPosition = Vector2.zero;
+                tr.sizeDelta = new Vector2(960, 500);
+
+                var hlg = teamPanel.AddComponent<HorizontalLayoutGroup>();
+                hlg.spacing = 12f;
+                hlg.padding = new RectOffset(12, 12, 12, 12);
+                hlg.childAlignment = TextAnchor.MiddleCenter;
+                hlg.childControlWidth = true;
+                hlg.childControlHeight = true;
+                hlg.childForceExpandWidth = true;
+                hlg.childForceExpandHeight = false;
+
+                // Team colours (semi-transparent) matching TeamManager.GetTeamColor
+                Color teamAColor = new Color(0.9f, 0.25f, 0.25f, 0.45f);
+                Color teamBColor = new Color(0.25f, 0.4f, 0.9f, 0.45f);
+                Color teamCColor = new Color(0.25f, 0.85f, 0.35f, 0.45f);
+                CreateTeamPanelColumn(teamPanel.transform, "TeamAPanel", "Team A (0/20)", "Join A", teamAColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleA, out GameObject playersA, out GameObject statsA, out GameObject joinA);
+                CreateTeamPanelColumn(teamPanel.transform, "TeamBPanel", "Team B (0/20)", "Join B", teamBColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleB, out GameObject playersB, out GameObject statsB, out GameObject joinB);
+                CreateTeamPanelColumn(teamPanel.transform, "TeamCPanel", "Team C (0/20)", "Join C", teamCColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleC, out GameObject playersC, out GameObject statsC, out GameObject joinC);
+
+                TeamSelectionUI teamSelectionUI = teamPanel.AddComponent<TeamSelectionUI>();
+                SerializedObject tso = new SerializedObject(teamSelectionUI);
+                tso.FindProperty("teamAPanel.title").objectReferenceValue = titleA.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamAPanel.playersText").objectReferenceValue = playersA.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamAPanel.statsText").objectReferenceValue = statsA.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamAPanel.joinButton").objectReferenceValue = joinA.GetComponent<Button>();
+                tso.FindProperty("teamBPanel.title").objectReferenceValue = titleB.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamBPanel.playersText").objectReferenceValue = playersB.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamBPanel.statsText").objectReferenceValue = statsB.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamBPanel.joinButton").objectReferenceValue = joinB.GetComponent<Button>();
+                tso.FindProperty("teamCPanel.title").objectReferenceValue = titleC.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamCPanel.playersText").objectReferenceValue = playersC.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamCPanel.statsText").objectReferenceValue = statsC.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamCPanel.joinButton").objectReferenceValue = joinC.GetComponent<Button>();
+                tso.ApplyModifiedPropertiesWithoutUndo();
+
+                so.FindProperty("teamSelectionPanel").objectReferenceValue = teamPanel;
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            Debug.Log("Play button and Team Selection panel added. Save the scene.");
+        }
+
         [MenuItem("Titan Orbit/Fix Space Background Textures (Enable Tiling)")]
         public static void FixSpaceBackgroundTextures()
         {
@@ -124,6 +211,7 @@ namespace TitanOrbit.Editor
             
             // NetworkGameManager must be separate from NetworkManager GameObject
             obj.AddComponent<NetworkGameManager>();
+            obj.AddComponent<PlayerDisplayNames>();
             GameManager gameManager = obj.AddComponent<GameManager>();
             TeamManager teamManager = obj.AddComponent<TeamManager>();
             MatchManager matchManager = obj.AddComponent<MatchManager>();
@@ -310,24 +398,46 @@ namespace TitanOrbit.Editor
             titleTmp.color = new Color(0.4f, 0.85f, 1f, 1f);
             titleTmp.fontStyle = FontStyles.Bold;
             RectTransform titleRect = titleObj.GetComponent<RectTransform>();
-            titleRect.anchorMin = new Vector2(0.5f, 0.8f);
-            titleRect.anchorMax = new Vector2(0.5f, 0.9f);
+            titleRect.anchorMin = new Vector2(0.5f, 0.82f);
+            titleRect.anchorMax = new Vector2(0.5f, 0.92f);
             titleRect.pivot = new Vector2(0.5f, 0.5f);
             titleRect.anchoredPosition = Vector2.zero;
             titleRect.sizeDelta = new Vector2(800, 100);
 
-            // Buttons (Shift Sci-Fi style)
-            GameObject startHostBtn = CreateShiftButton(mainMenuPanel.transform, "StartHostButton", "START HOST", shiftButtonSprite);
-            SetRect(startHostBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, 40, 280, 64);
+            // Player name (optional; if empty, a random name is used when joining)
+            GameObject playerNameLabel = CreateText(mainMenuPanel.transform, "PlayerNameLabel", "Player name", 20, TextAnchor.MiddleCenter);
+            playerNameLabel.GetComponent<TextMeshProUGUI>().color = new Color(0.75f, 0.85f, 1f, 1f);
+            SetRect(playerNameLabel, 0.5f, 0.58f, 0.5f, 0.58f, 0, 0, 200, 28);
+            GameObject playerNameInputObj = new GameObject("PlayerNameInput");
+            playerNameInputObj.transform.SetParent(mainMenuPanel.transform, false);
+            RectTransform playerNameInputRect = playerNameInputObj.AddComponent<RectTransform>();
+            SetRect(playerNameInputObj, 0.5f, 0.50f, 0.5f, 0.50f, 0, 0, 280, 40);
+            Image playerNameBg = playerNameInputObj.AddComponent<Image>();
+            playerNameBg.color = new Color(0.12f, 0.14f, 0.22f, 0.95f);
+            if (shiftPanelSprite != null) { playerNameBg.sprite = shiftPanelSprite; playerNameBg.type = shiftPanelSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
+            TMP_InputField playerNameInput = playerNameInputObj.AddComponent<TMP_InputField>();
+            GameObject playerNameTextObj = CreateText(playerNameInputObj.transform, "Text", "", 18, TextAnchor.MiddleLeft);
+            RectTransform playerNameTextRect = playerNameTextObj.GetComponent<RectTransform>();
+            playerNameTextRect.anchorMin = Vector2.zero;
+            playerNameTextRect.anchorMax = Vector2.one;
+            playerNameTextRect.offsetMin = new Vector2(10, 4);
+            playerNameTextRect.offsetMax = new Vector2(-10, -4);
+            playerNameInput.textViewport = playerNameInputRect;
+            playerNameInput.textComponent = playerNameTextObj.GetComponent<TextMeshProUGUI>();
+            playerNameInput.textComponent.color = new Color(0.9f, 0.95f, 1f, 1f);
+            GameObject playerNamePlaceholderObj = CreateText(playerNameInputObj.transform, "Placeholder", "Optional", 18, TextAnchor.MiddleLeft);
+            playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>().color = new Color(0.5f, 0.55f, 0.65f, 0.8f);
+            playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>().text = "Optional";
+            RectTransform phRect = playerNamePlaceholderObj.GetComponent<RectTransform>();
+            phRect.anchorMin = Vector2.zero;
+            phRect.anchorMax = Vector2.one;
+            phRect.offsetMin = new Vector2(10, 4);
+            phRect.offsetMax = new Vector2(-10, -4);
+            playerNameInput.placeholder = playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>();
 
-            GameObject startServerBtn = CreateShiftButton(mainMenuPanel.transform, "StartServerButton", "START SERVER", shiftButtonSprite);
-            SetRect(startServerBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -36, 280, 64);
-
-            GameObject startClientBtn = CreateShiftButton(mainMenuPanel.transform, "StartClientButton", "START CLIENT", shiftButtonSprite);
-            SetRect(startClientBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, -112, 280, 64);
-
-            GameObject aiShipsToggleObj = CreateShiftToggle(mainMenuPanel.transform, "AIShipsToggle", "AI SHIPS", shiftRoundedSprite, uiSprite);
-            SetRect(aiShipsToggleObj, 0.5f, 0.5f, 0.5f, 0.5f, 0, -188, 280, 40);
+            // Play button (centered below player name)
+            GameObject playBtn = CreateShiftButton(mainMenuPanel.transform, "PlayButton", "PLAY", shiftButtonSprite);
+            SetRect(playBtn, 0.5f, 0.35f, 0.5f, 0.35f, 0, 0, 280, 64);
 
             // Lobby Panel (hidden initially, Shift style)
             GameObject lobbyPanel = CreateShiftPanel(canvasObj.transform, "LobbyPanel", new Color(0.06f, 0.08f, 0.14f, 0.95f), shiftPanelSprite);
@@ -338,25 +448,70 @@ namespace TitanOrbit.Editor
             lobbyRect.offsetMax = Vector2.zero;
             lobbyPanel.SetActive(false);
 
-            GameObject playerCountText = CreateText(lobbyPanel.transform, "PlayerCount", "Players: 0/60", 36, TextAnchor.MiddleCenter);
+            GameObject playerCountText = CreateText(lobbyPanel.transform, "PlayerCount", "Players: 0/60", 28, TextAnchor.MiddleCenter);
             playerCountText.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.9f, 1f, 1f);
-            SetRect(playerCountText, 0.5f, 0.7f, 0.5f, 0.7f, 0, 0, 400, 50);
+            SetRect(playerCountText, 0.5f, 0.90f, 0.5f, 0.90f, 0, 0, 400, 40);
 
-            GameObject teamStatusText = CreateText(lobbyPanel.transform, "TeamStatus", "Team A: 0/20 | Team B: 0/20 | Team C: 0/20", 24, TextAnchor.MiddleCenter);
+            GameObject roomNameText = CreateText(lobbyPanel.transform, "RoomName", "Room: —", 22, TextAnchor.MiddleCenter);
+            roomNameText.GetComponent<TextMeshProUGUI>().color = new Color(0.6f, 0.8f, 1f, 1f);
+            SetRect(roomNameText, 0.5f, 0.96f, 0.5f, 0.96f, 0, 0, 500, 32);
+
+            GameObject teamStatusText = CreateText(lobbyPanel.transform, "TeamStatus", "Team A: 0/20 | Team B: 0/20 | Team C: 0/20", 20, TextAnchor.MiddleCenter);
             teamStatusText.GetComponent<TextMeshProUGUI>().color = new Color(0.65f, 0.8f, 0.95f, 1f);
-            SetRect(teamStatusText, 0.5f, 0.6f, 0.5f, 0.6f, 0, 0, 800, 40);
+            SetRect(teamStatusText, 0.5f, 0.84f, 0.5f, 0.84f, 0, 0, 700, 28);
+
+            GameObject teamPanel = CreateShiftPanel(lobbyPanel.transform, "TeamSelectionPanel", new Color(0.08f, 0.1f, 0.18f, 0.9f), shiftPanelSprite);
+            RectTransform teamPanelRect = teamPanel.GetComponent<RectTransform>();
+            teamPanelRect.anchorMin = new Vector2(0.5f, 0.08f);
+            teamPanelRect.anchorMax = new Vector2(0.5f, 0.82f);
+            teamPanelRect.pivot = new Vector2(0.5f, 0.5f);
+            teamPanelRect.anchoredPosition = Vector2.zero;
+            teamPanelRect.sizeDelta = new Vector2(960, 500);
+            var teamHlg = teamPanel.AddComponent<HorizontalLayoutGroup>();
+            teamHlg.spacing = 12f;
+            teamHlg.padding = new RectOffset(12, 12, 12, 12);
+            teamHlg.childAlignment = TextAnchor.MiddleCenter;
+            teamHlg.childControlWidth = true;
+            teamHlg.childControlHeight = true;
+            teamHlg.childForceExpandWidth = true;
+            teamHlg.childForceExpandHeight = false;
+            // Team colours (semi-transparent) matching TeamManager.GetTeamColor
+            Color teamAColor = new Color(0.9f, 0.25f, 0.25f, 0.45f);
+            Color teamBColor = new Color(0.25f, 0.4f, 0.9f, 0.45f);
+            Color teamCColor = new Color(0.25f, 0.85f, 0.35f, 0.45f);
+            CreateTeamPanelColumn(teamPanel.transform, "TeamAPanel", "Team A (0/20)", "Join A", teamAColor, shiftPanelSprite, shiftButtonSprite,
+                out GameObject titleA, out GameObject playersA, out GameObject statsA, out GameObject joinA);
+            CreateTeamPanelColumn(teamPanel.transform, "TeamBPanel", "Team B (0/20)", "Join B", teamBColor, shiftPanelSprite, shiftButtonSprite,
+                out GameObject titleB, out GameObject playersB, out GameObject statsB, out GameObject joinB);
+            CreateTeamPanelColumn(teamPanel.transform, "TeamCPanel", "Team C (0/20)", "Join C", teamCColor, shiftPanelSprite, shiftButtonSprite,
+                out GameObject titleC, out GameObject playersC, out GameObject statsC, out GameObject joinC);
+            TeamSelectionUI teamSelectionUI = teamPanel.AddComponent<TeamSelectionUI>();
+            SerializedObject tso = new SerializedObject(teamSelectionUI);
+            tso.FindProperty("teamAPanel.title").objectReferenceValue = titleA.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamAPanel.playersText").objectReferenceValue = playersA.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamAPanel.statsText").objectReferenceValue = statsA.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamAPanel.joinButton").objectReferenceValue = joinA.GetComponent<Button>();
+            tso.FindProperty("teamBPanel.title").objectReferenceValue = titleB.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamBPanel.playersText").objectReferenceValue = playersB.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamBPanel.statsText").objectReferenceValue = statsB.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamBPanel.joinButton").objectReferenceValue = joinB.GetComponent<Button>();
+            tso.FindProperty("teamCPanel.title").objectReferenceValue = titleC.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamCPanel.playersText").objectReferenceValue = playersC.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamCPanel.statsText").objectReferenceValue = statsC.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamCPanel.joinButton").objectReferenceValue = joinC.GetComponent<Button>();
+            tso.ApplyModifiedPropertiesWithoutUndo();
 
             // Main Menu component on Canvas (stays active when panel hidden)
             MainMenu mainMenu = canvasObj.AddComponent<MainMenu>();
             SerializedObject mainMenuSO = new SerializedObject(mainMenu);
             mainMenuSO.FindProperty("mainMenuPanel").objectReferenceValue = mainMenuPanel;
             mainMenuSO.FindProperty("lobbyPanel").objectReferenceValue = lobbyPanel;
-            mainMenuSO.FindProperty("startServerButton").objectReferenceValue = startServerBtn.GetComponent<Button>();
-            mainMenuSO.FindProperty("startHostButton").objectReferenceValue = startHostBtn.GetComponent<Button>();
-            mainMenuSO.FindProperty("startClientButton").objectReferenceValue = startClientBtn.GetComponent<Button>();
-            mainMenuSO.FindProperty("aiShipsToggle").objectReferenceValue = aiShipsToggleObj.GetComponent<Toggle>();
+            mainMenuSO.FindProperty("playButton").objectReferenceValue = playBtn.GetComponent<Button>();
+            mainMenuSO.FindProperty("teamSelectionPanel").objectReferenceValue = teamPanel;
             mainMenuSO.FindProperty("playerCountText").objectReferenceValue = playerCountText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("teamStatusText").objectReferenceValue = teamStatusText.GetComponent<TextMeshProUGUI>();
+            mainMenuSO.FindProperty("roomNameText").objectReferenceValue = roomNameText.GetComponent<TextMeshProUGUI>();
+            mainMenuSO.FindProperty("playerNameInputField").objectReferenceValue = playerNameInput;
             mainMenuSO.ApplyModifiedPropertiesWithoutUndo();
 
             // HUD: ship stats (top-left), home planet stats (top-right). Gaming-style layout.
@@ -465,6 +620,7 @@ namespace TitanOrbit.Editor
 
             // Wire HUDController (ship stats top-left are now drawn by ShipStatsFpsHUD on the camera; no panel refs)
             var hudSO = new SerializedObject(hudController);
+            hudSO.FindProperty("shipStatsPanel").objectReferenceValue = shipStatsPanel;
             hudSO.FindProperty("homePlanetPanel").objectReferenceValue = homePanel;
             hudSO.FindProperty("homePlanetLevelText").objectReferenceValue = homeLevelTmp;
             hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemSlider;
@@ -626,13 +782,14 @@ namespace TitanOrbit.Editor
             return obj;
         }
 
-        /// <summary>Shift Sci-Fi UI style button: Cut Frame / rounded sprite with cyan accent colors.</summary>
-        private static GameObject CreateShiftButton(Transform parent, string name, string label, Sprite sprite)
+        /// <summary>Shift Sci-Fi UI style button: Cut Frame sprite. Optional buttonColor (default cyan).</summary>
+        private static GameObject CreateShiftButton(Transform parent, string name, string label, Sprite sprite, Color? buttonColor = null)
         {
+            Color color = buttonColor ?? new Color(0.25f, 0.55f, 0.9f, 0.95f);
             GameObject btnObj = new GameObject(name);
             btnObj.transform.SetParent(parent, false);
             Image img = btnObj.AddComponent<Image>();
-            img.color = new Color(0.25f, 0.55f, 0.9f, 0.95f);
+            img.color = color;
             img.sprite = sprite;
             img.type = sprite != null && sprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
 
@@ -652,14 +809,115 @@ namespace TitanOrbit.Editor
 
             Button btn = btnObj.AddComponent<Button>();
             ColorBlock colors = btn.colors;
-            colors.normalColor = new Color(0.25f, 0.55f, 0.9f, 0.95f);
-            colors.highlightedColor = new Color(0.4f, 0.7f, 1f, 1f);
-            colors.pressedColor = new Color(0.18f, 0.45f, 0.8f, 1f);
-            colors.selectedColor = new Color(0.3f, 0.6f, 0.95f, 1f);
+            colors.normalColor = color;
+            colors.highlightedColor = new Color(Mathf.Min(1f, color.r + 0.15f), Mathf.Min(1f, color.g + 0.15f), Mathf.Min(1f, color.b + 0.15f), 1f);
+            colors.pressedColor = new Color(Mathf.Max(0f, color.r - 0.1f), Mathf.Max(0f, color.g - 0.1f), Mathf.Max(0f, color.b - 0.1f), 1f);
+            colors.selectedColor = color;
             colors.disabledColor = new Color(0.2f, 0.25f, 0.35f, 0.7f);
             btn.colors = colors;
 
             return btnObj;
+        }
+
+        /// <summary>One team column: Shift panel with team colour, border, and clearly defined title / players / stats areas. Fixed height; Join at bottom.</summary>
+        private static void CreateTeamPanelColumn(Transform parent, string panelName, string titleText, string joinLabel,
+            Color panelColor, Sprite panelSprite, Sprite buttonSprite,
+            out GameObject titleObj, out GameObject playersObj, out GameObject statsObj, out GameObject joinBtnObj)
+        {
+            GameObject col = CreateShiftPanel(parent, panelName, panelColor, panelSprite);
+            var colLE = col.AddComponent<LayoutElement>();
+            colLE.preferredHeight = 500f;
+            colLE.flexibleWidth = 1f;
+
+            // Visible border using Unity UI Outline (draws outside the Image)
+            Color borderColor = new Color(
+                Mathf.Min(1f, panelColor.r + 0.35f),
+                Mathf.Min(1f, panelColor.g + 0.35f),
+                Mathf.Min(1f, panelColor.b + 0.35f),
+                1f);
+            Image colImage = col.GetComponent<Image>();
+            if (colImage != null)
+            {
+                Outline outline = col.AddComponent<Outline>();
+                outline.effectColor = borderColor;
+                outline.effectDistance = new Vector2(3, 3);
+                outline.useGraphicAlpha = false;
+            }
+
+            GameObject content = new GameObject("Content");
+            content.transform.SetParent(col.transform, false);
+            RectTransform contentRect = content.AddComponent<RectTransform>();
+            contentRect.anchorMin = Vector2.zero;
+            contentRect.anchorMax = Vector2.one;
+            contentRect.offsetMin = new Vector2(4, 4);
+            contentRect.offsetMax = new Vector2(-4, -4);
+
+            var vlg = content.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 6f;
+            vlg.padding = new RectOffset(6, 6, 6, 6);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            // Darker sub-panels so title / players / stats areas are clearly defined (Shift style)
+            Color areaTint = new Color(0.06f, 0.06f, 0.1f, 0.6f);
+
+            // Title bar
+            GameObject titleBar = CreateShiftPanel(content.transform, "TitleBar", areaTint, panelSprite);
+            var titleBarLE = titleBar.AddComponent<LayoutElement>();
+            titleBarLE.preferredHeight = 32f;
+            titleObj = CreateText(titleBar.transform, "Title", titleText, 18, TextAnchor.MiddleCenter);
+            titleObj.GetComponent<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
+            var titleTextRect = titleObj.GetComponent<RectTransform>();
+            titleTextRect.anchorMin = Vector2.zero;
+            titleTextRect.anchorMax = Vector2.one;
+            titleTextRect.offsetMin = new Vector2(4, 2);
+            titleTextRect.offsetMax = new Vector2(-4, -2);
+
+            // Players list area (clearly a distinct "list" zone)
+            GameObject playersPanel = CreateShiftPanel(content.transform, "PlayersPanel", areaTint, panelSprite);
+            var playersPanelLE = playersPanel.AddComponent<LayoutElement>();
+            playersPanelLE.preferredHeight = 200f;
+            playersPanelLE.flexibleHeight = 1f;
+            var playersPanelVlg = playersPanel.AddComponent<VerticalLayoutGroup>();
+            playersPanelVlg.spacing = 2f;
+            playersPanelVlg.padding = new RectOffset(6, 4, 6, 4);
+            playersPanelVlg.childControlWidth = true;
+            playersPanelVlg.childControlHeight = true;
+            playersPanelVlg.childForceExpandWidth = true;
+            playersPanelVlg.childForceExpandHeight = false;
+            GameObject playersHeader = CreateText(playersPanel.transform, "PlayersHeader", "PLAYERS", 11, TextAnchor.UpperLeft);
+            playersHeader.GetComponent<TextMeshProUGUI>().color = new Color(0.6f, 0.7f, 0.85f, 1f);
+            var playersHeaderLE = playersHeader.AddComponent<LayoutElement>();
+            playersHeaderLE.preferredHeight = 16f;
+            playersObj = CreateText(playersPanel.transform, "Players", "No players", 14, TextAnchor.UpperLeft);
+            var playersTmp = playersObj.GetComponent<TextMeshProUGUI>();
+            playersTmp.enableWordWrapping = true;
+            var playersListLE = playersObj.AddComponent<LayoutElement>();
+            playersListLE.flexibleHeight = 1f;
+            var playersTextRect = playersObj.GetComponent<RectTransform>();
+            playersTextRect.anchorMin = Vector2.zero;
+            playersTextRect.anchorMax = Vector2.one;
+            playersTextRect.offsetMin = Vector2.zero;
+            playersTextRect.offsetMax = Vector2.zero;
+
+            // Team stats: single compact line (home planet stats shown elsewhere; this is just a brief summary)
+            GameObject statsBar = CreateShiftPanel(content.transform, "StatsBar", areaTint, panelSprite);
+            var statsBarLE = statsBar.AddComponent<LayoutElement>();
+            statsBarLE.preferredHeight = 18f;
+            statsObj = CreateText(statsBar.transform, "Stats", "Home Lv.0 | Gems 0/0 | Planets 0", 11, TextAnchor.MiddleCenter);
+            statsObj.GetComponent<TextMeshProUGUI>().color = new Color(0.75f, 0.85f, 1f, 1f);
+            var statsTextRect = statsObj.GetComponent<RectTransform>();
+            statsTextRect.anchorMin = Vector2.zero;
+            statsTextRect.anchorMax = Vector2.one;
+            statsTextRect.offsetMin = new Vector2(4, 0);
+            statsTextRect.offsetMax = new Vector2(-4, 0);
+
+            joinBtnObj = CreateShiftButton(content.transform, "JoinButton", joinLabel, buttonSprite, new Color(panelColor.r, panelColor.g, panelColor.b, 0.9f));
+            var joinLE = joinBtnObj.AddComponent<LayoutElement>();
+            joinLE.preferredHeight = 56f;
         }
 
         /// <summary>Shift-style toggle: rounded background + checkmark, label to the right.</summary>

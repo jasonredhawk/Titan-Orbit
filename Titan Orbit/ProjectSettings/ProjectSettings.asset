@@ -903,7 +903,13 @@ PlayerSettings:
   XboxOneOverrideIdentityName: 
   XboxOneOverrideIdentityPublisher: 
   vrEditorSettings: {}
-  cloudServicesEnabled: {}
+  cloudServicesEnabled:
+    Build: 0
+    Game Performance: 0
+    Legacy Analytics: 0
+    Purchasing: 0
+    UDP: 0
+    Unity Ads: 0
   luminIcon:
     m_Name: 
     m_ModelFolderPath: 
@@ -925,11 +931,11 @@ PlayerSettings:
   captureStartupLogs: {}
   activeInputHandler: 1
   windowsGamepadBackendHint: 0
-  cloudProjectId: e375c2a7-2202-4ab3-93fb-6cf70bc1c4d5
+  cloudProjectId: 99d08853-6392-4ae9-9ea5-eb0097780216
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: Titan Orbit
-  organizationId: unity_41r7lwjwzlzvrg
+  projectName: TitanOrbit
+  organizationId: geofireflow
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}
