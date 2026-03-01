@@ -661,7 +661,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba7e456b88b2f1142aa5aae88e8dc4d1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
-  aiShipsEnabled: 1
+  aiShipsEnabled: 0
   starshipPrefab: {fileID: 0}
   aiShipData: {fileID: 0}
   minAIShipsPerTeam: 10
@@ -5105,7 +5105,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bd77682efa6bcb4a9816b21b3ab81db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  debugMode: 1
+  debugMode: 0
   maxPlayersPerTeam: 20
   numberOfTeams: 3
   matchDuration: 3600

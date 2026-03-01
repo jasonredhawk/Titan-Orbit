@@ -36,6 +36,7 @@ namespace TitanOrbit.UI
         private RectTransform minimapRect;
         private RectTransform edgeMarkerContainer; // Container for edge markers (outside mask)
         private Image borderImage; // Reference to the border image
+        private CanvasGroup canvasGroup; // Used to hide minimap until team chosen (keeps Update running so we can show again)
         private Button expandButton;
         private bool isExpanded = false;
         private Vector2 originalAnchoredPosition;
@@ -162,6 +163,11 @@ namespace TitanOrbit.UI
             
             // Store original minimap position and size for collapse
             StoreOriginalMinimapState();
+
+            // CanvasGroup: hide minimap visually until player has a team (don't SetActive(false) or Update would stop and we'd never show again)
+            canvasGroup = GetComponent<CanvasGroup>();
+            if (canvasGroup == null)
+                canvasGroup = gameObject.AddComponent<CanvasGroup>();
         }
         
         private void SetupMarkerMenu()
@@ -386,6 +392,20 @@ namespace TitanOrbit.UI
                 originalAnchorMin = minimapRect.anchorMin;
                 originalAnchorMax = minimapRect.anchorMax;
             }
+        }
+
+        /// <summary>Show or hide minimap using CanvasGroup so Update() keeps running and we can show again after team is chosen.</summary>
+        private void SetMinimapVisible(bool visible)
+        {
+            if (canvasGroup == null)
+            {
+                canvasGroup = GetComponent<CanvasGroup>();
+                if (canvasGroup == null)
+                    canvasGroup = gameObject.AddComponent<CanvasGroup>();
+            }
+            canvasGroup.alpha = visible ? 1f : 0f;
+            canvasGroup.interactable = visible;
+            canvasGroup.blocksRaycasts = visible;
         }
         
         private void SetupExpandButton()
@@ -906,16 +926,20 @@ namespace TitanOrbit.UI
                 {
                     if (ship.IsOwner) { playerShip = ship; playerTransform = ship.transform; break; }
                 }
-                if (playerShip == null) { gameObject.SetActive(false); return; }
+                if (playerShip == null)
+                {
+                    SetMinimapVisible(false);
+                    return;
+                }
             }
 
-            // Hide minimap until player has chosen a team
+            // Hide minimap until player has chosen a team (visually only, so Update keeps running)
             if (playerShip.ShipTeam == TeamManager.Team.None)
             {
-                gameObject.SetActive(false);
+                SetMinimapVisible(false);
                 return;
             }
-            gameObject.SetActive(true);
+            SetMinimapVisible(true);
 
             UpdateBlips();
             
