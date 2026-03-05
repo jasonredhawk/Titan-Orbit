@@ -19,6 +19,8 @@ namespace TitanOrbit.Systems
         [Header("Data")]
         [SerializeField] private ShipUnlockTable shipUnlockTable;
         [SerializeField] private List<CardData> allCards = new List<CardData>();
+        [Tooltip("AstroEagle ship prefabs (1–20) from UltimateSpaceshipsCreator/Prefabs/ModularExamples/AstroEagle. Assign in inspector or use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem.")]
+        [SerializeField] private GameObject[] astroEagleShipPrefabs = new GameObject[20];
 
         private void Awake()
         {
@@ -309,10 +311,18 @@ namespace TitanOrbit.Systems
             if (!homePlanet.TrySpendContributedGems(clientId, cost))
                 return;
 
-            // Apply the new chassis by setting ShipData and syncing chassis index for UI (grid dimensions).
+            // Apply the new chassis: use baseShipData if set, otherwise resolve AstroEagle prefab and apply visual only.
             if (chassis.baseShipData != null)
             {
                 ship.SetShipData(chassis.baseShipData);
+            }
+            else
+            {
+                GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
+                if (prefab != null)
+                    ship.ApplyShipVisualFromPrefab(prefab);
+                else
+                    Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}'. Use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem (with CardShopSystem in scene), then save.");
             }
             int chassisIndex = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
             ship.SetCurrentChassisIndex(chassisIndex);
@@ -336,7 +346,15 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void NotifyChassisPurchasedClientRpc(string chassisId, ulong shipNetworkId, ClientRpcParams rpcParams = default)
         {
-            // Hook for UI feedback (e.g. ship purchase confirmation).
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null) return;
+            if (chassisId != null && chassisId.StartsWith("AstroEagle_"))
+            {
+                GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
+                if (prefab != null)
+                    ship.ApplyShipVisualFromPrefab(prefab);
+            }
         }
 
         #endregion
@@ -364,6 +382,19 @@ namespace TitanOrbit.Systems
                     return entry.chassis;
             }
             return null;
+        }
+
+        /// <summary>Resolves AstroEagle ship prefab from chassisId (e.g. AstroEagle_01 -> index 0 -> astroEagleShipPrefabs[0]). Falls back to Resources.Load if array not filled.</summary>
+        private GameObject GetAstroEaglePrefabForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId) || !chassisId.StartsWith("AstroEagle_")) return null;
+            string numPart = chassisId.Substring("AstroEagle_".Length);
+            if (!int.TryParse(numPart, out int num) || num < 1 || num > 20) return null;
+            int index = num - 1;
+            if (astroEagleShipPrefabs != null && index < astroEagleShipPrefabs.Length && astroEagleShipPrefabs[index] != null)
+                return astroEagleShipPrefabs[index];
+            GameObject fallback = Resources.Load<GameObject>($"AstroEagle/AstroEagle{num}");
+            return fallback;
         }
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)

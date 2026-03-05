@@ -1722,6 +1722,19 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Replaces this ship's visual with the given prefab while keeping current ShipData stats. Used when purchasing a new chassis that only defines a model (e.g. AstroEagle variants).</summary>
+        public void ApplyShipVisualFromPrefab(GameObject shipPrefab)
+        {
+            if (shipPrefab == null) return;
+            if (shipData != null)
+            {
+                ApplyShipVisual(shipPrefab, shipData);
+                var composer = GetComponent<ShipVisualComposer>();
+                if (composer != null) composer.RebuildVisuals();
+                ApplyHullIdentityColor();
+            }
+        }
+
         /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>
         private void ApplyShipVisual(GameObject shipPrefab, ShipData data)
         {
