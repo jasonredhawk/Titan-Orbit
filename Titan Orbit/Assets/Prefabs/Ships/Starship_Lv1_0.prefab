@@ -212,7 +212,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 238687393
+  GlobalObjectIdHash: 1323896198
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -266,6 +266,9 @@ MonoBehaviour:
   rb: {fileID: 0}
   visualRoot: {fileID: 0}
   shipVisualScaleMultiplier: 0.175
+  maxBankAngle: 60
+  bankSensitivity: 20
+  bankSmoothing: 2
   respawnDelay: 5
 --- !u!114 &955555555555555555
 MonoBehaviour:

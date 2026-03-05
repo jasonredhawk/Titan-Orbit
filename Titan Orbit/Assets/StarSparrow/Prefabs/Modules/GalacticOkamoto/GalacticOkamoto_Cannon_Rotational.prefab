@@ -1,0 +1,191 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &8455558745181638477
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8595837349404826432}
+  m_Layer: 0
+  m_Name: GalacticOkamoto_Cannon_Rotational
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8595837349404826432
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8455558745181638477}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 1
+  m_Children:
+  - {fileID: 8695266132140984382}
+  - {fileID: 486569707279713306}
+  m_Father: {fileID: 0}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &6927576380465498558
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 8595837349404826432}
+    m_Modifications:
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_RootOrder
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.737
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.000000021855694
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4603556422892264502, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_Name
+      value: GalacticOkamoto_Cannon
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+--- !u!4 &8695266132140984382 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+  m_PrefabInstance: {fileID: 6927576380465498558}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &7237448016235738442
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 8595837349404826432}
+    m_Modifications:
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_RootOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.000000021855694
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414597083757791244, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_Name
+      value: GalacticOkamoto_Cylinder
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+--- !u!4 &486569707279713306 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+  m_PrefabInstance: {fileID: 7237448016235738442}
+  m_PrefabAsset: {fileID: 0}

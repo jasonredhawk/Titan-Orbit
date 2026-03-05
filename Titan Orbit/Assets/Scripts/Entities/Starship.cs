@@ -13,6 +13,7 @@ namespace TitanOrbit.Entities
     /// Base starship controller for player-controlled ships
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
+    [DefaultExecutionOrder(60000)] // Run last so banking is not overwritten by transform sync or other LateUpdates
     public class Starship : NetworkBehaviour
     {
         [Header("Ship Settings")]
@@ -115,10 +116,19 @@ namespace TitanOrbit.Entities
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
         [SerializeField] private Rigidbody rb;
-        [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced.")]
+        [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced. Also the transform we tilt for banking; if null at Start, a pivot is created so banking works.")]
         [SerializeField] private Transform visualRoot;
-        [Tooltip("Global visual downscale for imported ship example prefabs. Lower = much smaller ship visuals.")]
         [SerializeField] private float shipVisualScaleMultiplier = 0.175f;
+
+        [Header("Banking")]
+        [Tooltip("Maximum roll angle (degrees) when turning (Z axis). At max rotation speed, this roll is applied.")]
+        [SerializeField] private float maxBankAngle = 50f;
+        [Tooltip("Maximum pitch angle (degrees) from acceleration/braking (X axis).")]
+        [SerializeField] private float maxPitchAngle = 20f;
+        [Tooltip("How quickly roll (bank) catches up to the target.")]
+        [SerializeField] private float bankSmoothing = 15f;
+        [Tooltip("How quickly pitch catches up to the target.")]
+        [SerializeField] private float pitchSmoothing = 12f;
 
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
@@ -181,6 +191,13 @@ namespace TitanOrbit.Entities
         private bool hasReachedStableOrbitThisZoneEntry = false;
         private const float STABLE_ORBIT_HIDE_DELAY = 0.6f; // Keep menu visible this long after briefly dipping out of stable orbit
 
+        // Banking (visual lean into turn) - only used when visualRoot is set
+        private float currentBankAngle;
+        private float currentPitchAngle;
+        private Vector3 previousForward;
+        private float previousForwardSpeed;
+        private bool bankingInitialized;
+
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth => maxHealth * (1f + attrMaxHealth.Value * ATTR_MULTIPLIER_PER_LEVEL);
         public float CurrentGems => currentGems.Value;
@@ -208,6 +225,9 @@ namespace TitanOrbit.Entities
 
         private void Awake()
         {
+            // Run before OnNetworkSpawn/SetShipData so the BankPivot + Prefab structure exists.
+            EnsureVisualRootForBanking();
+
             if (rb == null) rb = GetComponent<Rigidbody>();
             if (inputHandler == null) inputHandler = GetComponent<PlayerInputHandler>();
             if (energyCapacity <= 0f) energyCapacity = 50f;
@@ -218,7 +238,7 @@ namespace TitanOrbit.Entities
             // Lock Y position - prevent elevation changes; no drag so ship can float frictionless when brakes off
             if (rb != null)
             {
-                rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+                //rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
                 rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Prevent tunnelling through planets/asteroids
                 rb.linearDamping = 0f; // Frictionless: velocity only changes from our code (thrust/brakes/recoil)
             }
@@ -233,6 +253,58 @@ namespace TitanOrbit.Entities
             // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
             if (GetComponent<ToroidalRenderer>() == null)
                 gameObject.AddComponent<ToroidalRenderer>();
+        }
+
+        private const string PREFAB_CONTAINER_NAME = "Prefab";
+
+        /// <summary>
+        /// Structure: Starship (empty) -> BankPivot -> Prefab -> [ship components].
+        /// The root is kept empty (no mesh). BankPivot is rotated for banking.
+        /// Prefab holds the loaded ship—Level 1 and upgrades are loaded the same way via ApplyShipVisual.
+        /// </summary>
+        private void EnsureVisualRootForBanking()
+        {
+            // Remove all existing visual children and mesh from root—start empty
+            for (int i = transform.childCount - 1; i >= 0; i--)
+                Object.Destroy(transform.GetChild(i).gameObject);
+
+            MeshFilter mf = GetComponent<MeshFilter>();
+            MeshRenderer mr = GetComponent<MeshRenderer>();
+            if (mf != null) Object.Destroy(mf);
+            if (mr != null) Object.Destroy(mr);
+
+            // Create BankPivot under Starship
+            GameObject pivot = new GameObject("BankPivot");
+            pivot.transform.SetParent(transform, false);
+            pivot.transform.localPosition = Vector3.zero;
+            pivot.transform.localRotation = Quaternion.identity;
+            pivot.transform.localScale = Vector3.one;
+
+            // Create Prefab container under BankPivot (holds Level 1 ship and upgraded ships)
+            GameObject prefabContainer = new GameObject(PREFAB_CONTAINER_NAME);
+            prefabContainer.transform.SetParent(pivot.transform, false);
+            prefabContainer.transform.localPosition = Vector3.zero;
+            prefabContainer.transform.localRotation = Quaternion.identity;
+            prefabContainer.transform.localScale = Vector3.one;
+
+            visualRoot = pivot.transform;
+        }
+
+        /// <summary>Returns the Prefab transform (StarshipMain -> BankPivot -> Prefab) where the loaded ship is added.</summary>
+        private Transform GetPrefabTransform()
+        {
+            if (visualRoot == null || visualRoot == transform) return transform;
+            Transform prefab = visualRoot.Find(PREFAB_CONTAINER_NAME);
+            if (prefab == null)
+            {
+                var go = new GameObject(PREFAB_CONTAINER_NAME);
+                prefab = go.transform;
+                prefab.SetParent(visualRoot, false);
+                prefab.localPosition = Vector3.zero;
+                prefab.localRotation = Quaternion.identity;
+                prefab.localScale = Vector3.one;
+            }
+            return prefab;
         }
 
         private static PhysicsMaterial shipRammingMaterial;
@@ -259,7 +331,8 @@ namespace TitanOrbit.Entities
         private void ApplyHullIdentityColor()
         {
             if (shipData == null || shipData.shipColor == Color.white) return;
-            var mr = GetComponent<Renderer>();
+            Renderer mr = visualRoot != null ? visualRoot.GetComponentInChildren<Renderer>() : null;
+            if (mr == null) mr = GetComponent<Renderer>();
             if (mr == null) return;
             if (hullColorBlock == null) hullColorBlock = new MaterialPropertyBlock();
             mr.GetPropertyBlock(hullColorBlock);
@@ -298,6 +371,19 @@ namespace TitanOrbit.Entities
                 }
                 else
                     StartInOrbitAroundHomePlanet();
+            }
+
+            // Initialize banking state so first LateUpdate doesn't spike
+            if (rb != null)
+            {
+                Vector3 fwd = rb.rotation * Vector3.forward;
+                fwd.y = 0f;
+                if (fwd.sqrMagnitude > 0.01f)
+                {
+                    fwd.Normalize();
+                    previousForward = fwd;
+                    bankingInitialized = true;
+                }
             }
         }
 
@@ -386,6 +472,63 @@ namespace TitanOrbit.Entities
             // If we're in orbit zone but trigger didn't fire (e.g. spawned there), detect it
             if (currentOrbitPlanet == null)
                 TryDetectOrbitZone();
+        }
+
+        private void LateUpdate()
+        {
+            // Banking: visual lean into turn. Run every frame in LateUpdate for smooth visuals (all ships).
+            if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
+            ApplyVisualBanking(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Updates banking (roll) and pitch from turn rate and acceleration, then sets visualRoot.localRotation.
+        /// Must run on a child of the root—never on the root itself (physics/NetworkTransform would overwrite).
+        /// </summary>
+        private void ApplyVisualBanking(float dt)
+        {
+            if (visualRoot == null || visualRoot == transform || rb == null) return;
+
+            Vector3 fwd = rb.rotation * Vector3.forward;
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude < 0.01f) return;
+            fwd.Normalize();
+
+            if (!bankingInitialized)
+            {
+                previousForward = fwd;
+                previousForwardSpeed = Vector3.Dot(rb.linearVelocity, fwd);
+                currentBankAngle = 0f;
+                currentPitchAngle = 0f;
+                bankingInitialized = true;
+                visualRoot.localRotation = Quaternion.identity;
+                return;
+            }
+
+            dt = Mathf.Max(dt, 0.0001f);
+
+            // Roll (Z): faster turn -> more roll, up to maxBankAngle. Positive signedAngle = turning right -> bank right (positive Z).
+            float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
+            float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
+            float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
+            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBankAngle;
+            float bankT = 1f - Mathf.Exp(-bankSmoothing * dt);
+            currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
+
+            // Pitch (X): accelerate -> nose up, brake -> nose down
+            float forwardSpeed = Vector3.Dot(rb.linearVelocity, fwd);
+            float forwardAccel = (forwardSpeed - previousForwardSpeed) / dt;
+            float accelNorm = 0f;
+            if (acceleration > 0.01f)
+                accelNorm = Mathf.Clamp(forwardAccel / acceleration, -1f, 1f);
+            float targetPitchAngle = accelNorm * maxPitchAngle;
+            float pitchT = 1f - Mathf.Exp(-pitchSmoothing * dt);
+            currentPitchAngle = Mathf.Lerp(currentPitchAngle, targetPitchAngle, pitchT);
+
+            visualRoot.localRotation = Quaternion.Euler(-currentPitchAngle, 0f, -currentBankAngle);
+
+            previousForward = fwd;
+            previousForwardSpeed = forwardSpeed;
         }
 
         private void FixedUpdate()
@@ -1417,22 +1560,18 @@ namespace TitanOrbit.Entities
                 energyRegenRate = data.baseEnergyRegenRate;
 
                 if (data.shipPrefab != null)
-                    ApplyShipVisual(data.shipPrefab);
-                if (data.visualScale > 0f)
-                {
-                    Transform root = visualRoot != null ? visualRoot : transform;
-                    float globalVisualScale = Mathf.Max(0.005f, shipVisualScaleMultiplier);
-                    root.localScale = Vector3.one * (data.visualScale * globalVisualScale);
-                }
+                    ApplyShipVisual(data.shipPrefab, data);
+                else
+                    Debug.LogWarning($"Starship: ShipData '{data.shipName}' has no shipPrefab. Assign a ship prefab (e.g. Level 1) so the ship visual loads.");
                 ApplyHullIdentityColor();
             }
         }
 
-        /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting).</summary>
-        private void ApplyShipVisual(GameObject shipPrefab)
+        /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>
+        private void ApplyShipVisual(GameObject shipPrefab, ShipData data)
         {
             if (shipPrefab == null) return;
-            Transform root = visualRoot != null ? visualRoot : transform;
+            Transform root = GetPrefabTransform();
 
             if (lastVisualApplyFrame == Time.frameCount && lastVisualApplyPrefab == shipPrefab)
             {
@@ -1443,25 +1582,7 @@ namespace TitanOrbit.Entities
 
             GameObject instance = Instantiate(shipPrefab);
             Transform prefabRoot = instance.transform;
-
-            // Copy hull from prefab root to our root (prefab has MeshFilter + MeshRenderer on root)
-            MeshFilter prefabMf = prefabRoot.GetComponent<MeshFilter>();
-            MeshRenderer prefabMr = prefabRoot.GetComponent<MeshRenderer>();
-            if (prefabMf != null && prefabMr != null)
-            {
-                MeshFilter ourMf = root.GetComponent<MeshFilter>();
-                if (ourMf == null) ourMf = root.gameObject.AddComponent<MeshFilter>();
-                if (ourMf != null && prefabMf.sharedMesh != null)
-                    ourMf.sharedMesh = prefabMf.sharedMesh;
-
-                MeshRenderer ourMr = root.GetComponent<MeshRenderer>();
-                if (ourMr == null) ourMr = root.gameObject.AddComponent<MeshRenderer>();
-                if (ourMr != null)
-                {
-                    ourMr.sharedMaterials = prefabMr.sharedMaterials;
-                    ourMr.enabled = prefabMr.enabled;
-                }
-            }
+            Vector3 prefabScale = prefabRoot.localScale;
 
             // Remove our current visual children, then adopt prefab root's children
             for (int i = root.childCount - 1; i >= 0; i--)
@@ -1476,6 +1597,25 @@ namespace TitanOrbit.Entities
                 foreach (var c in oldColliders) if (c != null) c.enabled = false;
 
                 Object.Destroy(oldChild.gameObject);
+            }
+
+            // Copy hull from prefab root to a Hull child (scale 1; parent container scale handles sizing)
+            MeshFilter prefabMf = prefabRoot.GetComponent<MeshFilter>();
+            MeshRenderer prefabMr = prefabRoot.GetComponent<MeshRenderer>();
+            if (prefabMf != null && prefabMr != null && prefabMf.sharedMesh != null)
+            {
+                var hullGo = new GameObject("Hull");
+                Transform hullParent = hullGo.transform;
+                hullParent.SetParent(root, false);
+                hullParent.localPosition = Vector3.zero;
+                hullParent.localRotation = Quaternion.identity;
+                hullParent.localScale = Vector3.one;
+
+                var ourMf = hullParent.gameObject.AddComponent<MeshFilter>();
+                ourMf.sharedMesh = prefabMf.sharedMesh;
+                var ourMr = hullParent.gameObject.AddComponent<MeshRenderer>();
+                ourMr.sharedMaterials = prefabMr.sharedMaterials;
+                ourMr.enabled = prefabMr.enabled;
             }
 
             Transform newFirePoint = null;
@@ -1493,6 +1633,10 @@ namespace TitanOrbit.Entities
                 child.localScale = localScl;
             }
             Destroy(instance);
+
+            // Scale parent container once (includes prefab root scale + game scale)
+            float gameScale = (data != null && data.visualScale > 0f ? data.visualScale : 1f) * Mathf.Max(0.005f, shipVisualScaleMultiplier);
+            root.localScale = Vector3.Scale(prefabScale, Vector3.one * gameScale);
 
             // Rebind FirePoint from the prefab child we just moved (don't use Find - old children may still be present until Destroy runs)
             if (newFirePoint != null)
