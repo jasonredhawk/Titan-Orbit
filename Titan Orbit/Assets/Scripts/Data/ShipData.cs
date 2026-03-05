@@ -41,5 +41,15 @@ namespace TitanOrbit.Data
         public Sprite shipSprite;
         public GameObject shipPrefab;
         public Color shipColor = Color.white;
+
+        [Header("Banking (per-ship)")]
+        [Tooltip("Maximum roll angle (degrees) when turning at max rotation speed.")]
+        public float maxBankAngle = 111f;
+        [Tooltip("Maximum pitch angle (degrees) from acceleration/braking.")]
+        public float maxPitchAngle = 77f;
+        [Tooltip("How quickly roll catches up to the target.")]
+        public float bankSmoothing = 2f;
+        [Tooltip("How quickly pitch catches up to the target.")]
+        public float pitchSmoothing = 2f;
     }
 }

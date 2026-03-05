@@ -120,15 +120,11 @@ namespace TitanOrbit.Entities
         [SerializeField] private Transform visualRoot;
         [SerializeField] private float shipVisualScaleMultiplier = 0.175f;
 
-        [Header("Banking")]
-        [Tooltip("Maximum roll angle (degrees) when turning (Z axis). At max rotation speed, this roll is applied.")]
-        [SerializeField] private float maxBankAngle = 50f;
-        [Tooltip("Maximum pitch angle (degrees) from acceleration/braking (X axis).")]
-        [SerializeField] private float maxPitchAngle = 20f;
-        [Tooltip("How quickly roll (bank) catches up to the target.")]
-        [SerializeField] private float bankSmoothing = 15f;
-        [Tooltip("How quickly pitch catches up to the target.")]
-        [SerializeField] private float pitchSmoothing = 12f;
+        [Header("Banking (fallback when shipData has no values)")]
+        [SerializeField] private float defaultMaxBankAngle = 111f;
+        [SerializeField] private float defaultMaxPitchAngle = 77f;
+        [SerializeField] private float defaultBankSmoothing = 2f;
+        [SerializeField] private float defaultPitchSmoothing = 2f;
 
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
@@ -507,12 +503,14 @@ namespace TitanOrbit.Entities
 
             dt = Mathf.Max(dt, 0.0001f);
 
+            float maxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
+            float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
             // Roll (Z): faster turn -> more roll, up to maxBankAngle. Positive signedAngle = turning right -> bank right (positive Z).
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
-            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBankAngle;
-            float bankT = 1f - Mathf.Exp(-bankSmoothing * dt);
+            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBank;
+            float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
             // Pitch (X): accelerate -> nose up, brake -> nose down
@@ -521,8 +519,10 @@ namespace TitanOrbit.Entities
             float accelNorm = 0f;
             if (acceleration > 0.01f)
                 accelNorm = Mathf.Clamp(forwardAccel / acceleration, -1f, 1f);
-            float targetPitchAngle = accelNorm * maxPitchAngle;
-            float pitchT = 1f - Mathf.Exp(-pitchSmoothing * dt);
+            float maxPitch = shipData != null ? shipData.maxPitchAngle : defaultMaxPitchAngle;
+            float pitchSmooth = shipData != null ? shipData.pitchSmoothing : defaultPitchSmoothing;
+            float targetPitchAngle = accelNorm * maxPitch;
+            float pitchT = 1f - Mathf.Exp(-pitchSmooth * dt);
             currentPitchAngle = Mathf.Lerp(currentPitchAngle, targetPitchAngle, pitchT);
 
             visualRoot.localRotation = Quaternion.Euler(-currentPitchAngle, 0f, -currentBankAngle);

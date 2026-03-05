@@ -18,13 +18,11 @@ namespace TitanOrbit.Entities
         [SerializeField] private Renderer[] accentRenderers;
 
         private Starship starship;
-        private Renderer[] allRenderers;
         private MaterialPropertyBlock propBlock;
 
         private void Awake()
         {
             starship = GetComponent<Starship>();
-            allRenderers = GetComponentsInChildren<Renderer>();
             propBlock = new MaterialPropertyBlock();
         }
 
@@ -49,15 +47,17 @@ namespace TitanOrbit.Entities
                 var valid = System.Array.FindAll(accentRenderers, r => r != null);
                 if (valid.Length > 0) return valid;
             }
+            // Fallback: find accent renderers by name (ship visual can be replaced at runtime)
             var list = new System.Collections.Generic.List<Renderer>();
-            foreach (var r in allRenderers)
+            foreach (var r in GetComponentsInChildren<Renderer>())
             {
                 if (r == null) continue;
                 string n = r.gameObject.name;
                 if (n == "Cockpit" || n.StartsWith("Engine") || n.StartsWith("Wing"))
                     list.Add(r);
             }
-            return list.Count > 0 ? list.ToArray() : allRenderers;
+            if (list.Count > 0) return list.ToArray();
+            return GetComponentsInChildren<Renderer>();
         }
 
         private Color GetTeamColor(TeamManager.Team team)
