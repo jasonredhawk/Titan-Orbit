@@ -16,6 +16,8 @@ namespace TitanOrbit.Entities
     public class Planet : NetworkBehaviour
     {
         [Header("Planet Settings")]
+        [Tooltip("Logical id for this planet used to link unique ship families and cards. 0 or negative = not bound to a specific family.")]
+        [SerializeField] private int planetId = 0;
         [SerializeField] private float baseMaxPopulation = 100f;
         [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
         [SerializeField] private float planetSize = 1f;
@@ -59,12 +61,24 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> growthRate = new NetworkVariable<float>(1f);
         private NetworkVariable<int> planetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
+        private NetworkVariable<int> planetIdNet = new NetworkVariable<int>(0);
 
+        public int PlanetId => planetIdNet.Value;
         public TeamManager.Team TeamOwnership => teamOwnership.Value;
         
         protected void SetInitialTeamOwnership(TeamManager.Team team)
         {
             teamOwnership.Value = team;
+        }
+
+        /// <summary>
+        /// Server-side setup helper: assign a stable logical id to this planet before it is spawned.
+        /// MapGenerator uses this to give each neutral planet a unique id that can be matched by cards/chassis.
+        /// </summary>
+        public void SetTemplatePlanetId(int id)
+        {
+            if (IsSpawned) return; // Only allow setting before network spawn
+            planetId = id;
         }
         public float CurrentPopulation => currentPopulation.Value;
         public float MaxPopulation => maxPopulation.Value;
@@ -97,6 +111,9 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
+                // Sync logical planet id from template field so all clients see the same PlanetId.
+                planetIdNet.Value = planetId;
+
                 // Home planets: Team A = Tropical1, Team B = Tropical2, Team C = Tropical3 (WaterMaterials 0,1,2). Regular: random from Materials.
                 if (materialPool != null)
                 {

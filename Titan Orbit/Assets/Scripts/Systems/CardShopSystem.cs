@@ -1,0 +1,393 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.Netcode;
+using TitanOrbit.Data;
+using TitanOrbit.Entities;
+using TitanOrbit.Core;
+
+namespace TitanOrbit.Systems
+{
+    /// <summary>
+    /// Planet-aware shop system for purchasing ships (chassis) and upgrade cards.
+    /// Home planets can sell the full unlocked collection; captured planets sell their unique family.
+    /// Uses contributed gems (same currency as the existing HomePlanetStoreSystem).
+    /// </summary>
+    public class CardShopSystem : NetworkBehaviour
+    {
+        public static CardShopSystem Instance { get; private set; }
+
+        [Header("Data")]
+        [SerializeField] private ShipUnlockTable shipUnlockTable;
+        [SerializeField] private List<CardData> allCards = new List<CardData>();
+
+        private void Awake()
+        {
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else if (Instance != this)
+            {
+                Destroy(gameObject);
+            }
+            if (allCards == null || allCards.Count == 0)
+                allCards = GetDefaultCards();
+        }
+
+        /// <summary>Creates a runtime list of exactly 20 default cards for the shop. Used when no cards are assigned in the inspector.</summary>
+        private static List<CardData> GetDefaultCards()
+        {
+            var list = new List<CardData>();
+            int id = 0;
+
+            CardData Add(string name, string desc, int level, int rar, float cost, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f)
+            {
+                var c = ScriptableObject.CreateInstance<CardData>();
+                c.cardId = "card_" + (id++);
+                c.displayName = name;
+                c.description = desc;
+                c.cardLevel = level;
+                c.rarity = Mathf.Clamp(rar, 1, 4);
+                c.slotType = slotType;
+                c.minHomePlanetLevel = 1;
+                c.originPlanetId = 0;
+                c.gemCost = cost;
+                c.damageMultiplier = dmgMul;
+                c.gemCapacityAdd = gemAdd;
+                c.energyRegenAdd = energyRegenAdd;
+                c.energyCapacityAdd = energyCapAdd;
+                c.maxHealthAdd = healthAdd;
+                c.healthRegenAdd = healthRegenAdd;
+                c.movementSpeedAdd = moveAdd;
+                c.rotationSpeedAdd = rotAdd;
+                c.bulletSpeedMultiplier = bulletSpeedMul;
+                list.Add(c);
+                return c;
+            }
+
+            // 20 distinct shop cards: variety of effects and levels (Weapon / Ship / Cargo slot types)
+            Add("Weapon Damage", "+5% weapon damage.", 1, 1, 15f, SlotType.Weapon, dmgMul: 1.05f);
+            Add("Gem Capacity", "+20 gem capacity.", 1, 1, 18f, SlotType.Cargo, gemAdd: 20f);
+            Add("Energy Regen", "+1.5 energy/sec.", 1, 1, 12f, SlotType.Ship, energyRegenAdd: 1.5f);
+            Add("Energy Capacity", "+10 energy capacity.", 1, 1, 14f, SlotType.Ship, energyCapAdd: 10f);
+            Add("Max Health", "+15 max health.", 1, 1, 16f, SlotType.Ship, healthAdd: 15f);
+            Add("Health Regen", "+0.3 health/sec.", 1, 1, 10f, SlotType.Ship, healthRegenAdd: 0.3f);
+            Add("Movement Speed", "+0.5 move speed.", 1, 1, 12f, SlotType.Ship, moveAdd: 0.5f);
+            Add("Rotation Speed", "+15 rotation speed.", 1, 1, 10f, SlotType.Ship, rotAdd: 15f);
+            Add("Bullet Speed", "+6% bullet speed.", 1, 1, 11f, SlotType.Weapon, bulletSpeedMul: 1.06f);
+            Add("Weapon Damage II", "+8% weapon damage.", 2, 1, 28f, SlotType.Weapon, dmgMul: 1.08f);
+            Add("Gem Capacity II", "+38 gem capacity.", 2, 1, 32f, SlotType.Cargo, gemAdd: 38f);
+            Add("Energy Regen II", "+3 energy/sec.", 2, 1, 24f, SlotType.Ship, energyRegenAdd: 3f);
+            Add("Max Health II", "+28 max health.", 2, 1, 30f, SlotType.Ship, healthAdd: 28f);
+            Add("Weapon Damage III", "+12% weapon damage.", 3, 1, 45f, SlotType.Weapon, dmgMul: 1.12f);
+            Add("Gem Capacity III", "+55 gem capacity.", 3, 1, 52f, SlotType.Cargo, gemAdd: 55f);
+            Add("Energy Regen III", "+4.5 energy/sec.", 3, 1, 40f, SlotType.Ship, energyRegenAdd: 4.5f);
+            Add("Max Health III", "+45 max health.", 3, 1, 48f, SlotType.Ship, healthAdd: 45f);
+            Add("Weapon Damage IV", "+18% weapon damage.", 4, 1, 65f, SlotType.Weapon, dmgMul: 1.18f);
+            Add("Gem Capacity IV", "+80 gem capacity.", 4, 1, 75f, SlotType.Cargo, gemAdd: 80f);
+            Add("Energy Regen IV", "+6 energy/sec.", 4, 1, 58f, SlotType.Ship, energyRegenAdd: 6f);
+
+            return list;
+        }
+
+        #region Query helpers (server-side)
+
+        /// <summary>
+        /// Returns the list of chassis that are unlocked for the given home planet level.
+        /// </summary>
+        public List<ShipChassisDefinition> GetUnlockedChassisForHomeLevel(int homePlanetLevel)
+        {
+            if (shipUnlockTable == null)
+                return new List<ShipChassisDefinition>();
+
+            return shipUnlockTable.GetUnlockedChassis(homePlanetLevel);
+        }
+
+        /// <summary>
+        /// Returns unlock entries (chassis + tier + cost) for the given home planet level.
+        /// At home: all unlocked entries. Else: only entries whose chassis matches the store planet (originPlanetId).
+        /// If no Ship Unlock Table is assigned, a runtime table is used and filled with 20 AstroEagle variants (tiers 2–6).
+        /// </summary>
+        public List<ShipUnlockEntry> GetUnlockedChassisEntriesForHomeLevel(int homePlanetLevel, bool isHomeStore, int storePlanetId)
+        {
+            if (shipUnlockTable == null)
+                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
+
+            var all = shipUnlockTable.GetUnlockedEntries(homePlanetLevel);
+            if (isHomeStore) return all;
+            var filtered = new List<ShipUnlockEntry>();
+            foreach (var entry in all)
+            {
+                if (entry?.chassis == null) continue;
+                if (entry.chassis.originPlanetId == storePlanetId)
+                    filtered.Add(entry);
+            }
+            return filtered;
+        }
+
+        /// <summary>Returns the chassis at the given index in the unlock table (for grid dimensions). Returns null if index is invalid.</summary>
+        public ShipChassisDefinition GetChassisByIndex(int index)
+        {
+            return shipUnlockTable != null ? shipUnlockTable.GetChassisByIndex(index) : null;
+        }
+
+        /// <summary>
+        /// Returns all cards that are allowed at the given home planet level and that match the origin planet filter.
+        /// If originPlanetId is 0, returns global/home cards; if positive, returns cards bound to that planet.
+        /// </summary>
+        public List<CardData> GetAvailableCardsForPlanet(int homePlanetLevel, int originPlanetIdFilter)
+        {
+            var result = new List<CardData>();
+            if (allCards == null) return result;
+
+            foreach (var card in allCards)
+            {
+                if (card == null) continue;
+                if (homePlanetLevel < card.minHomePlanetLevel) continue;
+
+                // originPlanetIdFilter == 0 => include global/home cards (originPlanetId <= 0)
+                // originPlanetIdFilter > 0  => include cards whose originPlanetId matches that planet
+                if (originPlanetIdFilter > 0)
+                {
+                    if (card.originPlanetId != originPlanetIdFilter) continue;
+                }
+                else
+                {
+                    if (card.originPlanetId > 0) continue;
+                }
+
+                result.Add(card);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Returns all cards that should appear in the home planet store for the given team:
+        /// - Global/home cards (originPlanetId &lt;= 0)
+        /// - Plus cards whose originPlanetId matches any planet currently owned by that team.
+        /// </summary>
+        public List<CardData> GetAvailableCardsForHomeStore(int homePlanetLevel, TeamManager.Team team)
+        {
+            var result = new List<CardData>();
+            if (allCards == null) return result;
+
+            // Build set of owned planet ids so we can include their family cards at home.
+            var ownedPlanetIds = new HashSet<int>();
+            if (team != TeamManager.Team.None)
+            {
+                foreach (var planet in FindObjectsOfType<Planet>())
+                {
+                    if (planet.TeamOwnership == team && planet.PlanetId > 0)
+                        ownedPlanetIds.Add(planet.PlanetId);
+                }
+            }
+
+            foreach (var card in allCards)
+            {
+                if (card == null) continue;
+                if (homePlanetLevel < card.minHomePlanetLevel) continue;
+
+                if (card.originPlanetId <= 0 || ownedPlanetIds.Contains(card.originPlanetId))
+                    result.Add(card);
+            }
+
+            return result;
+        }
+
+        #endregion
+
+        #region Purchases
+
+        /// <summary>
+        /// Server: purchase a card at the given planet for the given ship, using contributed gems.
+        /// The client passes the cardId and the planetNetworkId where they are docked.
+        /// </summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void PurchaseCardServerRpc(ulong planetNetworkId, ulong shipNetworkId, string cardId, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            if (string.IsNullOrEmpty(cardId)) return;
+
+            NetworkObject planetNet = GetNetworkObject(planetNetworkId);
+            Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
+            if (planet == null) return;
+
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+
+            // Determine home planet and home level for this team.
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return;
+            int homeLevel = homePlanet.HomePlanetLevel;
+
+            // Lookup card.
+            CardData card = FindCardById(cardId);
+            if (card == null) return;
+            if (homeLevel < card.minHomePlanetLevel) return;
+
+            // Slots: 1 per ship level, 1 card per slot. Only allow purchase if ship has an empty slot.
+            if (!ship.HasEmptySlot) return;
+
+            // Card level: ship can only equip cards with level <= ship level.
+            int cardLvl = Mathf.Max(1, card.cardLevel);
+            if (cardLvl > ship.ShipLevel) return;
+
+            // Planet gating: home planet sells all unlocked cards; captured planet sells its unique cards.
+            int originPlanetId = card.originPlanetId;
+            bool isHome = planet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isCapturedPlanet = !isHome && planet.TeamOwnership == ship.ShipTeam;
+
+            if (isHome)
+            {
+                // At home we allow any unlocked card whose originPlanetId <= 0 (global) or belongs to a captured planet.
+                if (originPlanetId > 0 && !TeamOwnsPlanetId(ship.ShipTeam, originPlanetId))
+                    return;
+            }
+            else if (isCapturedPlanet)
+            {
+                // At captured planet: only that planet's own cards (by originPlanetId).
+                if (originPlanetId != planet.PlanetId) // assumes Planet has PlanetId; otherwise this will be wired later.
+                    return;
+            }
+            else
+            {
+                // Neutral or enemy planet: no purchases.
+                return;
+            }
+
+            float cost = card.gemCost;
+            if (cost <= 0f) cost = 20f;
+
+            // Use contributed gems at the team's home planet as currency.
+            if (!homePlanet.TrySpendContributedGems(clientId, cost))
+                return;
+
+            // Add card to the ship's server-side loadout. UI/grid placement will be layered on later.
+            ship.AddCardFromServer(card);
+            NotifyCardPurchasedClientRpc(cardId, shipNetworkId, new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            });
+        }
+
+        /// <summary>
+        /// Server: purchase a chassis (ship) at the given planet, using contributed gems.
+        /// </summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void PurchaseChassisServerRpc(ulong planetNetworkId, ulong shipNetworkId, string chassisId, int tierLevel, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            if (string.IsNullOrEmpty(chassisId)) return;
+
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return;
+            int homeLevel = homePlanet.HomePlanetLevel;
+
+            ShipChassisDefinition chassis = FindChassisById(chassisId);
+            if (chassis == null) return;
+            if (homeLevel < chassis.minHomePlanetLevel) return;
+
+            // Simple gating: only allow purchase when docked at home or the chassis' origin planet.
+            NetworkObject planetNet = GetNetworkObject(planetNetworkId);
+            Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
+            if (planet == null) return;
+
+            bool isHome = planet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isOriginPlanet = chassis.originPlanetId > 0 && planet.PlanetId == chassis.originPlanetId;
+            if (!isHome && !isOriginPlanet) return;
+
+            // Gem cost for chassis uses the agreed formula 20 * Level^2 by default.
+            float baseCost = ShipUnlockTable.GetTierCost(tierLevel);
+            float cost = Mathf.Max(baseCost, 20f);
+
+            if (!homePlanet.TrySpendContributedGems(clientId, cost))
+                return;
+
+            // Apply the new chassis by setting ShipData and syncing chassis index for UI (grid dimensions).
+            if (chassis.baseShipData != null)
+            {
+                ship.SetShipData(chassis.baseShipData);
+            }
+            int chassisIndex = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
+            ship.SetCurrentChassisIndex(chassisIndex);
+
+            NotifyChassisPurchasedClientRpc(chassisId, shipNetworkId, new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            });
+        }
+
+        #endregion
+
+        #region Client notifications
+
+        [ClientRpc]
+        private void NotifyCardPurchasedClientRpc(string cardId, ulong shipNetworkId, ClientRpcParams rpcParams = default)
+        {
+            // Hook for UI feedback (e.g. floating text, SFX).
+        }
+
+        [ClientRpc]
+        private void NotifyChassisPurchasedClientRpc(string chassisId, ulong shipNetworkId, ClientRpcParams rpcParams = default)
+        {
+            // Hook for UI feedback (e.g. ship purchase confirmation).
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private CardData FindCardById(string cardId)
+        {
+            if (allCards == null) return null;
+            foreach (var card in allCards)
+            {
+                if (card == null) continue;
+                if (card.cardId == cardId) return card;
+            }
+            return null;
+        }
+
+        private ShipChassisDefinition FindChassisById(string chassisId)
+        {
+            if (shipUnlockTable == null || shipUnlockTable.entries == null) return null;
+            foreach (var entry in shipUnlockTable.entries)
+            {
+                if (entry?.chassis == null) continue;
+                if (entry.chassis.chassisId == chassisId)
+                    return entry.chassis;
+            }
+            return null;
+        }
+
+        private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None) return null;
+            foreach (var home in FindObjectsOfType<HomePlanet>())
+            {
+                if (home.AssignedTeam == team) return home;
+            }
+            return null;
+        }
+
+        private bool TeamOwnsPlanetId(TeamManager.Team team, int planetId)
+        {
+            if (team == TeamManager.Team.None || planetId <= 0) return false;
+            foreach (var planet in FindObjectsOfType<Planet>())
+            {
+                if (planet.PlanetId == planetId && planet.TeamOwnership == team)
+                    return true;
+            }
+            return false;
+        }
+
+        #endregion
+    }
+}
+

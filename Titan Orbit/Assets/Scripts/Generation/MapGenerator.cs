@@ -43,6 +43,7 @@ namespace TitanOrbit.Generation
         private System.Random random;
         private System.Collections.Generic.List<Vector3> asteroidPositions = new System.Collections.Generic.List<Vector3>();
         private System.Collections.Generic.List<Vector3> planetPositions = new System.Collections.Generic.List<Vector3>();
+        private int nextPlanetId = 1;
 
         public override void OnNetworkSpawn()
         {
@@ -83,6 +84,7 @@ namespace TitanOrbit.Generation
             ToroidalMap.SetMapSize(mapWidth, mapHeight);
             asteroidPositions.Clear();
             planetPositions.Clear();
+            nextPlanetId = 1;
 
             GenerateHomePlanets();
             GenerateNeutralPlanets();
@@ -129,6 +131,15 @@ namespace TitanOrbit.Generation
 
                 GameObject planetObj = Instantiate(planetPrefab, position, Quaternion.identity);
                 planetObj.transform.localScale = Vector3.one * size;
+
+                // Assign a unique logical id so this planet can be linked to a specific ship family / card origin.
+                Planet planet = planetObj.GetComponent<Planet>();
+                if (planet != null)
+                {
+                    planet.SetTemplatePlanetId(nextPlanetId);
+                    nextPlanetId++;
+                }
+
                 NetworkObject netObj = planetObj.GetComponent<NetworkObject>();
                 if (netObj != null) netObj.Spawn();
             }

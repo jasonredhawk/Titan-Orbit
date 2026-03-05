@@ -234,7 +234,6 @@ namespace TitanOrbit.Editor
             obj.AddComponent<ScoreSystem>();
             CaptureSystem captureSystem = obj.AddComponent<CaptureSystem>();
             UpgradeSystem upgradeSystem = obj.AddComponent<UpgradeSystem>();
-            AttributeUpgradeSystem attributeUpgradeSystem = obj.AddComponent<AttributeUpgradeSystem>();
             VisualEffectsManager visualEffectsManager = obj.AddComponent<VisualEffectsManager>();
             // Assign level-up VFX = Red Impact (same as bullet impact, same URP fix works)
             GameObject levelUpPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -248,6 +247,7 @@ namespace TitanOrbit.Editor
             }
             TitanOrbit.UI.MinimapMarkerManager minimapMarkerManager = obj.AddComponent<TitanOrbit.UI.MinimapMarkerManager>();
             HomePlanetStoreSystem homePlanetStoreSystem = obj.AddComponent<HomePlanetStoreSystem>();
+            TitanOrbit.Systems.CardShopSystem cardShopSystem = obj.AddComponent<TitanOrbit.Systems.CardShopSystem>();
             TitanOrbit.AI.AIStarshipManager aiStarshipManager = obj.AddComponent<TitanOrbit.AI.AIStarshipManager>();
             obj.AddComponent<TitanOrbit.AI.AIStarshipDebugVisualizer>(); // Debug: line + text above AI ships
 
@@ -560,6 +560,11 @@ namespace TitanOrbit.Editor
             (Image icon, Slider bar, TextMeshProUGUI value) Row3 = CreateShipStatRow(shipStatsPanel.transform, 2, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.95f, 0.25f, 0.2f, 1f), iconGems);
             (Image icon, Slider bar, TextMeshProUGUI value) Row4 = CreateShipStatRow(shipStatsPanel.transform, 3, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.9f, 0.75f, 0.3f, 1f), iconPeople);
 
+            const float orbitBtnSize = 20f;
+            const float orbitBtnGap = 4f;
+            AddOrbitButtonsToRow(Row3.bar.transform.parent, Row3.bar.GetComponent<RectTransform>(), rowHeight, orbitBtnSize, orbitBtnGap, shiftBarSprite, "Gems", true, out Button gemsDeposit, out Button _);
+            AddOrbitButtonsToRow(Row4.bar.transform.parent, Row4.bar.GetComponent<RectTransform>(), rowHeight, orbitBtnSize, orbitBtnGap, shiftBarSprite, "People", false, out Button peopleUp, out Button peopleDown);
+
             ShipStatsFpsStyleHUD shipStatsHud = shipStatsPanel.AddComponent<ShipStatsFpsStyleHUD>();
             SerializedObject shipHudSO = new SerializedObject(shipStatsHud);
             shipHudSO.FindProperty("iconHealth").objectReferenceValue = Row1.icon;
@@ -574,6 +579,9 @@ namespace TitanOrbit.Editor
             shipHudSO.FindProperty("valueEnergy").objectReferenceValue = Row2.value;
             shipHudSO.FindProperty("valueGems").objectReferenceValue = Row3.value;
             shipHudSO.FindProperty("valuePeople").objectReferenceValue = Row4.value;
+            shipHudSO.FindProperty("btnDepositGems").objectReferenceValue = gemsDeposit;
+            shipHudSO.FindProperty("btnLoadPeopleUp").objectReferenceValue = peopleUp;
+            shipHudSO.FindProperty("btnUnloadPeopleDown").objectReferenceValue = peopleDown;
             shipHudSO.ApplyModifiedPropertiesWithoutUndo();
 
             // —— Home planet stats panel (top-right) ——
@@ -674,69 +682,17 @@ namespace TitanOrbit.Editor
             mobileControlsObj.SetActive(Application.isMobilePlatform);
             mobileControlsObj.AddComponent<MobileControls>();
 
-            // Orbit panel (shown when ship is in home planet orbit - deposit gems, load/unload people, future store)
+            // Orbit panel: combined UI (grid + orbit actions + store) is built by OrbitStationUI at runtime.
             GameObject orbitPanelObj = CreatePanel(canvasObj.transform, "OrbitPanel", new Color(0.12f, 0.12f, 0.2f, 0.95f), uiSprite);
             RectTransform orbitRect = orbitPanelObj.GetComponent<RectTransform>();
             orbitRect.anchorMin = new Vector2(0.5f, 0.5f);
             orbitRect.anchorMax = new Vector2(0.5f, 0.5f);
             orbitRect.pivot = new Vector2(0.5f, 0.5f);
-            orbitRect.anchoredPosition = new Vector2(-220f, 60f); // Left and up so it doesn't cover the starship
+            orbitRect.anchoredPosition = new Vector2(-220f, 60f);
             orbitRect.sizeDelta = new Vector2(320, 280);
             orbitPanelObj.SetActive(false);
-            HomePlanetOrbitUI orbitUI = orbitPanelObj.AddComponent<HomePlanetOrbitUI>();
-            GameObject orbitTitle = CreateText(orbitPanelObj.transform, "Title", "Home Planet — In Orbit", 28, TextAnchor.MiddleCenter);
-            RectTransform orbitTitleRect = orbitTitle.GetComponent<RectTransform>();
-            orbitTitleRect.anchorMin = new Vector2(0, 1);
-            orbitTitleRect.anchorMax = new Vector2(1, 1);
-            orbitTitleRect.pivot = new Vector2(0.5f, 1);
-            orbitTitleRect.anchoredPosition = new Vector2(0, -20);
-            orbitTitleRect.sizeDelta = new Vector2(-30, 36);
-            GameObject orbitInfo = CreateText(orbitPanelObj.transform, "PlanetInfo", "Level 1 | Gems: 0 | Pop: 0/100", 16, TextAnchor.MiddleCenter);
-            RectTransform orbitInfoRect = orbitInfo.GetComponent<RectTransform>();
-            orbitInfoRect.anchorMin = new Vector2(0, 1);
-            orbitInfoRect.anchorMax = new Vector2(1, 1);
-            orbitInfoRect.pivot = new Vector2(0.5f, 1);
-            orbitInfoRect.anchoredPosition = new Vector2(0, -58);
-            orbitInfoRect.sizeDelta = new Vector2(-30, 24);
-            GameObject depositBtn = CreateButton(orbitPanelObj.transform, "DepositGemsButton", "Deposit Gems", uiSprite);
-            SetRectAnchorTop(depositBtn, 90, 36);
-            GameObject loadBtn = CreateButton(orbitPanelObj.transform, "LoadPeopleButton", "Load People", uiSprite);
-            SetRectAnchorTop(loadBtn, 132, 36);
-            GameObject unloadBtn = CreateButton(orbitPanelObj.transform, "UnloadPeopleButton", "Unload People", uiSprite);
-            SetRectAnchorTop(unloadBtn, 174, 36);
-            GameObject storeBtn = CreateButton(orbitPanelObj.transform, "StoreButton", "Store (coming soon)", uiSprite);
-            SetRectAnchorTop(storeBtn, 216, 36);
-            var orbitUISO = new SerializedObject(orbitUI);
-            orbitUISO.FindProperty("orbitPanel").objectReferenceValue = orbitPanelObj;
-            orbitUISO.FindProperty("titleText").objectReferenceValue = orbitTitle.GetComponent<TextMeshProUGUI>();
-            orbitUISO.FindProperty("planetInfoText").objectReferenceValue = orbitInfo.GetComponent<TextMeshProUGUI>();
-            orbitUISO.FindProperty("depositGemsButton").objectReferenceValue = depositBtn.GetComponent<Button>();
-            orbitUISO.FindProperty("depositGemsLabel").objectReferenceValue = depositBtn.GetComponentInChildren<TextMeshProUGUI>();
-            orbitUISO.FindProperty("loadPeopleButton").objectReferenceValue = loadBtn.GetComponent<Button>();
-            orbitUISO.FindProperty("loadPeopleLabel").objectReferenceValue = loadBtn.GetComponentInChildren<TextMeshProUGUI>();
-            orbitUISO.FindProperty("unloadPeopleButton").objectReferenceValue = unloadBtn.GetComponent<Button>();
-            orbitUISO.FindProperty("unloadPeopleLabel").objectReferenceValue = unloadBtn.GetComponentInChildren<TextMeshProUGUI>();
-            orbitUISO.FindProperty("storeButton").objectReferenceValue = storeBtn.GetComponent<Button>();
-            orbitUISO.FindProperty("storeLabel").objectReferenceValue = storeBtn.GetComponentInChildren<TextMeshProUGUI>();
-            orbitUISO.ApplyModifiedPropertiesWithoutUndo();
-
-            // Starship upgrade menu (9 attribute buttons at bottom of screen) — Shift Sci-Fi styling + icons
-            GameObject upgradeMenuObj = new GameObject("StarshipUpgradeMenu");
-            upgradeMenuObj.transform.SetParent(canvasObj.transform, false);
-            StarshipUpgradeMenu upgradeMenu = upgradeMenuObj.AddComponent<StarshipUpgradeMenu>();
-            SerializedObject upgradeMenuSO = new SerializedObject(upgradeMenu);
-            string shiftRoot = "Assets/Shift - Complete Sci-Fi UI/Textures";
-            upgradeMenuSO.FindProperty("panelSprite").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Placeholder/Placeholder HUD BG.png");
-            upgradeMenuSO.FindProperty("buttonSprite").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Border/Cut/Cut Frame Filled.png");
-            upgradeMenuSO.FindProperty("iconMovementSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Play.png");
-            upgradeMenuSO.FindProperty("iconEnergyCapacity").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Brightness.png");
-            upgradeMenuSO.FindProperty("iconFirePower").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Star Filled.png");
-            upgradeMenuSO.FindProperty("iconBulletSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Arrow Right.png");
-            upgradeMenuSO.FindProperty("iconMaxHealth").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Armor Glow.png");
-            upgradeMenuSO.FindProperty("iconHealthRegen").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Refresh.png");
-            upgradeMenuSO.FindProperty("iconRotationSpeed").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Swap.png");
-            upgradeMenuSO.FindProperty("iconEnergyRegen").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(shiftRoot + "/Icon/Gameplay.png");
-            upgradeMenuSO.ApplyModifiedPropertiesWithoutUndo();
+            orbitPanelObj.AddComponent<HomePlanetOrbitUI>();
+            orbitPanelObj.AddComponent<OrbitStationUI>();
 
             return canvasObj;
         }
@@ -1149,6 +1105,60 @@ namespace TitanOrbit.Editor
 
             Slider bar = barObj.GetComponent<Slider>();
             return (iconImg, bar, valueObj.GetComponent<TextMeshProUGUI>());
+        }
+
+        /// <summary>Adds orbit action button(s) at the end of a ship stat row. For Gems: one Deposit button. For People: Load (up) and Unload (down) buttons.</summary>
+        private static void AddOrbitButtonsToRow(Transform rowParent, RectTransform barRect, float rowHeight, float btnSize, float gap, Sprite buttonSprite, string rowName, bool singleDepositButton, out Button btnFirst, out Button btnSecond)
+        {
+            if (singleDepositButton)
+            {
+                float rightSpace = 34f + gap + btnSize;
+                barRect.offsetMax = new Vector2(-rightSpace, -2f);
+                btnFirst = CreateOrbitIconButton(rowParent, rowName + "Deposit", "↓", rowHeight, btnSize, gap, buttonSprite);
+                btnSecond = null;
+                RectTransform rect = btnFirst.GetComponent<RectTransform>();
+                rect.anchoredPosition = new Vector2(-(34f + gap + btnSize * 0.5f), 0f);
+                btnFirst.gameObject.SetActive(false);
+                return;
+            }
+            float rightSpaceTwo = 34f + gap + btnSize + gap + btnSize;
+            barRect.offsetMax = new Vector2(-rightSpaceTwo, -2f);
+            btnFirst = CreateOrbitIconButton(rowParent, rowName + "Up", "↑", rowHeight, btnSize, gap, buttonSprite);
+            btnSecond = CreateOrbitIconButton(rowParent, rowName + "Down", "↓", rowHeight, btnSize, gap, buttonSprite);
+            RectTransform upRect = btnFirst.GetComponent<RectTransform>();
+            RectTransform downRect = btnSecond.GetComponent<RectTransform>();
+            upRect.anchoredPosition = new Vector2(-(34f + gap + btnSize * 0.5f), 0f);
+            downRect.anchoredPosition = new Vector2(-(34f + gap + btnSize + gap + btnSize * 0.5f), 0f);
+            btnFirst.gameObject.SetActive(false);
+            btnSecond.gameObject.SetActive(false);
+        }
+
+        private static Button CreateOrbitIconButton(Transform parent, string name, string arrow, float rowHeight, float size, float gapFromValue, Sprite buttonSprite)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1, 0.5f);
+            rect.anchorMax = new Vector2(1, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(size, size);
+            Image img = go.AddComponent<Image>();
+            img.color = new Color(0.2f, 0.35f, 0.55f, 0.95f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            Button btn = go.AddComponent<Button>();
+            GameObject textGo = new GameObject("Arrow");
+            textGo.transform.SetParent(go.transform, false);
+            RectTransform textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+            TextMeshProUGUI tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = arrow;
+            tmp.fontSize = Mathf.RoundToInt(size * 0.85f);
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = new Color(1f, 1f, 1f, 0.95f);
+            return btn;
         }
 
         private static GameObject CreateProgressBar(Transform parent, string name, Sprite uiSprite, Color fillColor, bool useSliced = false)

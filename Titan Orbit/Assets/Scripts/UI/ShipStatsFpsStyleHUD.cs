@@ -27,6 +27,11 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI valueGems;
         [SerializeField] private TextMeshProUGUI valuePeople;
 
+        [Header("Orbit-only (shown at end of Gems/People bars when in orbit)")]
+        [SerializeField] private Button btnDepositGems;
+        [SerializeField] private Button btnLoadPeopleUp;
+        [SerializeField] private Button btnUnloadPeopleDown;
+
         private Starship _playerShip;
 
         private Starship GetPlayerShip()
@@ -56,6 +61,7 @@ namespace TitanOrbit.UI
                 if (valueEnergy != null) valueEnergy.text = "0";
                 if (valueGems != null) valueGems.text = "0";
                 if (valuePeople != null) valuePeople.text = "0";
+                SetOrbitButtonsVisible(false);
                 return;
             }
 
@@ -82,6 +88,53 @@ namespace TitanOrbit.UI
                 float cap = ship.PeopleCapacity;
                 barPeople.value = cap > 0 ? ship.CurrentPeople / cap : 0f;
                 if (valuePeople != null) valuePeople.text = Mathf.FloorToInt(ship.CurrentPeople).ToString();
+            }
+
+            SetOrbitButtonsVisible(ship.IsInOrbit);
+        }
+
+        private void SetOrbitButtonsVisible(bool visible)
+        {
+            if (btnDepositGems != null) btnDepositGems.gameObject.SetActive(visible);
+            if (btnLoadPeopleUp != null) btnLoadPeopleUp.gameObject.SetActive(visible);
+            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.gameObject.SetActive(visible);
+        }
+
+        private void OnEnable()
+        {
+            if (btnDepositGems != null) btnDepositGems.onClick.RemoveAllListeners();
+            if (btnLoadPeopleUp != null) btnLoadPeopleUp.onClick.RemoveAllListeners();
+            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.onClick.RemoveAllListeners();
+
+            if (btnDepositGems != null) btnDepositGems.onClick.AddListener(OnDepositGemsClick);
+            if (btnLoadPeopleUp != null) btnLoadPeopleUp.onClick.AddListener(OnLoadPeopleUp);
+            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.onClick.AddListener(OnUnloadPeopleDown);
+        }
+
+        private void OnDepositGemsClick()
+        {
+            var ship = GetPlayerShip();
+            if (ship == null) return;
+            ship.SetWantToDepositGemsServerRpc(!ship.WantToDepositGems);
+        }
+
+        private void OnLoadPeopleUp()
+        {
+            var ship = GetPlayerShip();
+            if (ship != null && ship.IsInOrbit)
+            {
+                ship.SetWantToLoadPeopleServerRpc(true);
+                ship.SetWantToUnloadPeopleServerRpc(false);
+            }
+        }
+
+        private void OnUnloadPeopleDown()
+        {
+            var ship = GetPlayerShip();
+            if (ship != null && ship.IsInOrbit)
+            {
+                ship.SetWantToUnloadPeopleServerRpc(true);
+                ship.SetWantToLoadPeopleServerRpc(false);
             }
         }
     }

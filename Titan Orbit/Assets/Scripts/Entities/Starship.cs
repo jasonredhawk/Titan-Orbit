@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Unity.Netcode;
@@ -155,18 +156,96 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> smallMinesCount = new NetworkVariable<int>(0);
         private NetworkVariable<int> largeMinesCount = new NetworkVariable<int>(0);
 
+        /// <summary>Index into ShipUnlockTable.entries for the current chassis (-1 = default/unknown grid). Synced so clients can show correct grid sizes.</summary>
+        private NetworkVariable<int> currentChassisIndex = new NetworkVariable<int>(-1);
+
+        [Header("Card Loadout (WIP)")]
+        [Tooltip("Equipped upgrade cards for this ship. Currently server-authoritative only; stats will be derived from ShipData + these cards in a later step.")]
+        [SerializeField] private List<CardData> equippedCards = new List<CardData>();
+
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
 
-        private float EffectiveMovementSpeed => movementSpeed * (1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float EffectiveEnergyCapacity => energyCapacity * (1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float DamageMultiplier => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
-        private float SpeedMultiplier => 1f + attrBulletSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
-        private float EffectiveHealthRegen => healthRegenRate * (1f + attrHealthRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float EffectiveRotationSpeed => rotationSpeed * (1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL);
-        private float EffectiveEnergyRegen => energyRegenRate * (1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL);
+        // Effective stats: base ShipData + attribute upgrades + card contributions.
+        private float EffectiveMovementSpeed
+        {
+            get
+            {
+                float baseWithCards = movementSpeed + GetCardMovementSpeedAdd();
+                float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
 
-        /// <summary>Mass increases with gems carried; affects acceleration, braking, and ramming damage. Base from ShipData when set.</summary>
-        private float EffectiveMass => Mathf.Max(0.5f, (shipData != null && shipData.baseMass > 0f ? shipData.baseMass : baseMass) + currentGems.Value * massPerGem);
+        private float EffectiveEnergyCapacity
+        {
+            get
+            {
+                float baseWithCards = energyCapacity + GetCardEnergyCapacityAdd();
+                float attrScale = 1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
+
+        private float DamageMultiplier
+        {
+            get
+            {
+                float attrScale = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                float cardScale = GetCardDamageMultiplier();
+                return attrScale * cardScale;
+            }
+        }
+
+        private float SpeedMultiplier
+        {
+            get
+            {
+                float attrScale = 1f + attrBulletSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                float cardScale = GetCardBulletSpeedMultiplier();
+                return attrScale * cardScale;
+            }
+        }
+
+        private float EffectiveHealthRegen
+        {
+            get
+            {
+                float baseWithCards = healthRegenRate + GetCardHealthRegenAdd();
+                float attrScale = 1f + attrHealthRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
+
+        private float EffectiveRotationSpeed
+        {
+            get
+            {
+                float baseWithCards = rotationSpeed + GetCardRotationSpeedAdd();
+                float attrScale = 1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
+
+        private float EffectiveEnergyRegen
+        {
+            get
+            {
+                float baseWithCards = energyRegenRate + GetCardEnergyRegenAdd();
+                float attrScale = 1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
+
+        /// <summary>Mass increases with gems carried and equipped cards; affects acceleration, braking, and ramming damage. Base from ShipData when set.</summary>
+        private float EffectiveMass
+        {
+            get
+            {
+                float baseValue = shipData != null && shipData.baseMass > 0f ? shipData.baseMass : baseMass;
+                float cardMass = GetCardMassContribution();
+                return Mathf.Max(0.5f, baseValue + cardMass + currentGems.Value * massPerGem);
+            }
+        }
 
         /// <summary>Mining ships (ice-breaker hull) deal more ramming damage to asteroids.</summary>
         private float HullRammingToAsteroidMultiplier => focusType == ShipFocusType.Miner ? minerRammingToAsteroidMultiplier : 1f;
@@ -195,14 +274,29 @@ namespace TitanOrbit.Entities
         private bool bankingInitialized;
 
         public float CurrentHealth => currentHealth.Value;
-        public float MaxHealth => maxHealth * (1f + attrMaxHealth.Value * ATTR_MULTIPLIER_PER_LEVEL);
+        public float MaxHealth
+        {
+            get
+            {
+                float baseWithCards = maxHealth + GetCardMaxHealthAdd();
+                float attrScale = 1f + attrMaxHealth.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
         public float CurrentGems => currentGems.Value;
         public bool IsDead => isDead.Value;
-        public float GemCapacity => gemCapacity;
+        public float GemCapacity => gemCapacity + GetCardGemCapacityAdd();
         public float CurrentPeople => currentPeople.Value;
         public float PeopleCapacity => peopleCapacity;
         public float CurrentEnergy => currentEnergy.Value;
         public float EnergyCapacity => EffectiveEnergyCapacity;
+        public IReadOnlyList<CardData> EquippedCards => equippedCards;
+
+        /// <summary>Number of card slots on this ship (1 per ship level). Each slot holds at most one card.</summary>
+        public int SlotCount => Mathf.Max(1, shipLevel);
+
+        /// <summary>True if there is at least one empty slot.</summary>
+        public bool HasEmptySlot => equippedCards != null && equippedCards.Count < SlotCount;
         public TeamManager.Team ShipTeam => shipTeam.Value;
         public int ShipLevel => shipLevel;
         public int BranchIndex => shipData != null ? shipData.branchIndex : 0;
@@ -216,6 +310,8 @@ namespace TitanOrbit.Entities
         public int LargeRocketsCount => largeRocketsCount.Value;
         public int SmallMinesCount => smallMinesCount.Value;
         public int LargeMinesCount => largeMinesCount.Value;
+        /// <summary>Chassis index in ShipUnlockTable (-1 = default). Used by UI for grid dimensions.</summary>
+        public int CurrentChassisIndex => currentChassisIndex.Value;
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -303,6 +399,14 @@ namespace TitanOrbit.Entities
             return prefab;
         }
 
+        /// <summary>
+        /// Exposes the prefab container so external systems (e.g. ShipVisualComposer) can attach card-driven parts.
+        /// </summary>
+        public Transform GetCardVisualRoot()
+        {
+            return GetPrefabTransform();
+        }
+
         private static PhysicsMaterial shipRammingMaterial;
         private static PhysicsMaterial GetOrCreateShipRammingMaterial()
         {
@@ -381,6 +485,8 @@ namespace TitanOrbit.Entities
                     bankingInitialized = true;
                 }
             }
+
+            // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
         }
 
         /// <summary>Server only: called by NetworkGameManager when team is assigned (after client connect). Sets team and starts in orbit.</summary>
@@ -1189,11 +1295,65 @@ namespace TitanOrbit.Entities
             // Show ship visuals again
             ShowShipVisuals();
             
-            // Respawn at home planet (for both player and AI ships)
-            RespawnAtHomePlanet();
+            // Respawn at origin planet (if chassis has one and team owns it), otherwise at home planet.
+            RespawnAtOriginOrHomePlanet();
         }
 
-        /// <summary>Server: respawn ship at home planet (called on death/respawn).</summary>
+        /// <summary>Server: respawn at the ship's chassis origin planet if team owns it, otherwise at home planet.</summary>
+        private void RespawnAtOriginOrHomePlanet()
+        {
+            if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
+
+            Planet respawnPlanet = null;
+            int chassisIndex = currentChassisIndex.Value;
+            if (chassisIndex >= 0 && CardShopSystem.Instance != null)
+            {
+                var chassis = CardShopSystem.Instance.GetChassisByIndex(chassisIndex);
+                if (chassis != null && chassis.originPlanetId > 0)
+                {
+                    foreach (var p in Object.FindObjectsByType<Planet>(FindObjectsSortMode.None))
+                    {
+                        if (p.PlanetId == chassis.originPlanetId && p.TeamOwnership == shipTeam.Value)
+                        {
+                            respawnPlanet = p;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (respawnPlanet == null)
+            {
+                foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+                {
+                    if (hp.AssignedTeam == shipTeam.Value) { respawnPlanet = hp; break; }
+                }
+            }
+
+            if (respawnPlanet == null) return;
+
+            PlaceShipInOrbitAround(respawnPlanet);
+        }
+
+        /// <summary>Server: place ship in orbit around the given planet (used for respawn).</summary>
+        private void PlaceShipInOrbitAround(Planet planet)
+        {
+            if (planet == null || rb == null) return;
+            float orbitRadius = planet.PlanetSize * 0.6f;
+            Vector3 planetPos = planet.transform.position;
+            Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
+            orbitPos.y = FIXED_Y_POSITION;
+            rb.position = orbitPos;
+
+            float innerWorld = planet.PlanetSize * 0.5f;
+            float outerWorld = planet.PlanetSize * 0.85f;
+            float targetSpeed = GetOrbitTargetSpeed(planet, orbitRadius, innerWorld, outerWorld);
+
+            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed);
+            currentVelocity = rb.linearVelocity;
+        }
+
+        /// <summary>Server: respawn ship at home planet (legacy fallback; prefer RespawnAtOriginOrHomePlanet).</summary>
         private void RespawnAtHomePlanet()
         {
             if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
@@ -1202,19 +1362,8 @@ namespace TitanOrbit.Entities
             {
                 if (hp.AssignedTeam == shipTeam.Value) { home = hp; break; }
             }
-            if (home == null) return;
-            float orbitRadius = home.PlanetSize * 0.6f;
-            Vector3 planetPos = home.transform.position;
-            Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
-            orbitPos.y = FIXED_Y_POSITION;
-            rb.position = orbitPos;
-
-            float innerWorld = home.PlanetSize * 0.5f;
-            float outerWorld = home.PlanetSize * 0.85f;
-            float targetSpeed = GetOrbitTargetSpeed(home, orbitRadius, innerWorld, outerWorld);
-
-            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed); // Tangent for clockwise orbit
-            currentVelocity = rb.linearVelocity;
+            if (home != null)
+                PlaceShipInOrbitAround(home);
         }
 
         /// <summary>Hide all renderers to make ship invisible when dead.</summary>
@@ -1560,7 +1709,13 @@ namespace TitanOrbit.Entities
                 energyRegenRate = data.baseEnergyRegenRate;
 
                 if (data.shipPrefab != null)
+                {
                     ApplyShipVisual(data.shipPrefab, data);
+                    // Allow an attached ShipVisualComposer to further customize visuals from equipped cards.
+                    var composer = GetComponent<ShipVisualComposer>();
+                    if (composer != null)
+                        composer.RebuildVisuals();
+                }
                 else
                     Debug.LogWarning($"Starship: ShipData '{data.shipName}' has no shipPrefab. Assign a ship prefab (e.g. Level 1) so the ship visual loads.");
                 ApplyHullIdentityColor();
@@ -1659,7 +1814,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Removes expensive non-visual components from adopted visual hierarchy.</summary>
-        private static void StripNonVisualComponents(Transform visualRootTransform, Transform keepFirePoint)
+        internal static void StripNonVisualComponents(Transform visualRootTransform, Transform keepFirePoint)
         {
             if (visualRootTransform == null) return;
 
@@ -1701,40 +1856,6 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Returns the current upgrade level for the given attribute (0 to ShipLevel).</summary>
-        public int GetAttributeLevel(AttributeUpgradeSystem.ShipAttributeType attributeType)
-        {
-            switch (attributeType)
-            {
-                case AttributeUpgradeSystem.ShipAttributeType.MovementSpeed: return attrMovementSpeed.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.EnergyCapacity: return attrEnergyCapacity.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.FirePower: return attrFirePower.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.BulletSpeed: return attrBulletSpeed.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.MaxHealth: return attrMaxHealth.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.HealthRegen: return attrHealthRegen.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.RotationSpeed: return attrRotationSpeed.Value;
-                case AttributeUpgradeSystem.ShipAttributeType.EnergyRegen: return attrEnergyRegen.Value;
-                default: return 0;
-            }
-        }
-
-        /// <summary>Server only: increments the attribute level. Caller must validate cost and max level.</summary>
-        public void IncrementAttributeLevel(AttributeUpgradeSystem.ShipAttributeType attributeType)
-        {
-            if (!IsServer) return;
-            switch (attributeType)
-            {
-                case AttributeUpgradeSystem.ShipAttributeType.MovementSpeed: attrMovementSpeed.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.EnergyCapacity: attrEnergyCapacity.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.FirePower: attrFirePower.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.BulletSpeed: attrBulletSpeed.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.MaxHealth: attrMaxHealth.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.HealthRegen: attrHealthRegen.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.RotationSpeed: attrRotationSpeed.Value++; break;
-                case AttributeUpgradeSystem.ShipAttributeType.EnergyRegen: attrEnergyRegen.Value++; break;
-            }
-        }
-
         /// <summary>Server only: resets all attribute upgrade levels to 0. Called when ship levels up.</summary>
         private void ResetAttributeLevels()
         {
@@ -1747,6 +1868,183 @@ namespace TitanOrbit.Entities
             attrHealthRegen.Value = 0;
             attrRotationSpeed.Value = 0;
             attrEnergyRegen.Value = 0;
+        }
+
+        #region Card stat helpers
+
+        private static float CardLevelScale(int level)
+        {
+            return level <= 1 ? 1f : 1f + (level - 1) * 0.35f; // L1=1, L2=1.35, L3=1.7, L4=2.05
+        }
+
+        private static float CardRarityScale(int rarity)
+        {
+            if (rarity <= 1) return 1f;
+            if (rarity == 2) return 1.25f;
+            if (rarity == 3) return 1.5f;
+            return 2f; // Epic
+        }
+
+        private float GetCardMovementSpeedAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.movementSpeedAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardRotationSpeedAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.rotationSpeedAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardMaxHealthAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.maxHealthAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardHealthRegenAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.healthRegenAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardEnergyCapacityAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.energyCapacityAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardEnergyRegenAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.energyRegenAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardGemCapacityAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.gemCapacityAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardDamageMultiplier()
+        {
+            if (equippedCards == null || equippedCards.Count == 0) return 1f;
+            float mul = 1f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                if (card.damageMultiplier > 0f)
+                {
+                    float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                    float bonus = (card.damageMultiplier - 1f) * scale + 1f;
+                    mul *= bonus;
+                }
+            }
+            return mul;
+        }
+
+        private float GetCardBulletSpeedMultiplier()
+        {
+            if (equippedCards == null || equippedCards.Count == 0) return 1f;
+            float mul = 1f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                if (card.bulletSpeedMultiplier > 0f)
+                {
+                    float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                    float bonus = (card.bulletSpeedMultiplier - 1f) * scale + 1f;
+                    mul *= bonus;
+                }
+            }
+            return mul;
+        }
+
+        private float GetCardMassContribution()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.massContribution * scale;
+            }
+            return sum;
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Server-only: add a card to this ship's loadout. Uses simple slots: 1 slot per ship level, 1 card per slot.
+        /// Only adds if there is an empty slot (first available).
+        /// </summary>
+        public void AddCardFromServer(CardData card)
+        {
+            if (!IsServer) return;
+            if (card == null) return;
+            if (equippedCards == null) equippedCards = new List<CardData>();
+            int maxSlots = SlotCount;
+            if (equippedCards.Count >= maxSlots) return;
+            if (!equippedCards.Contains(card))
+                equippedCards.Add(card);
+        }
+
+        /// <summary>Server-only: set the current chassis index (from ShipUnlockTable) so clients can show the correct card grid layout.</summary>
+        public void SetCurrentChassisIndex(int index)
+        {
+            if (!IsServer) return;
+            currentChassisIndex.Value = index;
         }
     }
 }

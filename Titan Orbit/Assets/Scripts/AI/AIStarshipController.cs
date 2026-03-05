@@ -1226,23 +1226,12 @@ namespace TitanOrbit.AI
             }
         }
 
-        /// <summary>Check if ship is fully maxed out (level 7 + all attributes maxed).</summary>
+        /// <summary>Check if ship is fully maxed out. Legacy attribute upgrades are being removed, so this now only checks ship level.</summary>
         private bool IsFullyMaxedOut()
         {
             if (starship == null) return true;
-            
-            // Check if ship is at max level (7)
-            if (starship.ShipLevel < 7) return false;
-            
-            // Check if all attributes are maxed (each can have up to ShipLevel upgrades)
-            int maxUpgrades = starship.ShipLevel; // Level 7 = 7 upgrades per attribute
-            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
-            {
-                if (starship.GetAttributeLevel(attr) < maxUpgrades)
-                    return false;
-            }
-            
-            return true;
+            // For now, consider level 7 as fully maxed.
+            return starship.ShipLevel >= 7;
         }
 
         /// <summary>Check if ship can level up RIGHT NOW (has full gems and meets requirements).</summary>
@@ -1281,66 +1270,22 @@ namespace TitanOrbit.AI
             return upgradeTree.GetAvailableUpgrades(starship.ShipLevel, starship.BranchIndex).Count > 0;
         }
 
-        /// <summary>Check if ship CAN upgrade any attribute (has potential - just needs gems).</summary>
+        /// <summary>Legacy attribute upgrades are disabled; always returns false.</summary>
         private bool CanUpgradeAnyAttributePotential()
         {
-            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return false;
-            
-            int currentLevel = starship.ShipLevel;
-            int maxUpgrades = currentLevel; // Level N = N upgrades per attribute
-            
-            // Check if any attribute can still be upgraded (regardless of current gems)
-            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
-            {
-                if (starship.GetAttributeLevel(attr) < maxUpgrades)
-                    return true; // Has potential to upgrade this attribute
-            }
-            
             return false;
         }
 
-        /// <summary>Check if ship can upgrade any attribute (has enough gems).</summary>
+        /// <summary>Legacy attribute upgrades are disabled; always returns false.</summary>
         private bool CanUpgradeAnyAttribute()
         {
-            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return false;
-            
-            int currentLevel = starship.ShipLevel;
-            int maxUpgrades = currentLevel; // Level N = N upgrades per attribute
-            float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(currentLevel);
-            
-            // Check if any attribute can be upgraded
-            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
-            {
-                if (starship.GetAttributeLevel(attr) < maxUpgrades && starship.CurrentGems >= upgradeCost)
-                    return true;
-            }
-            
             return false;
         }
 
-        /// <summary>Upgrade the next available attribute (lowest level first).</summary>
+        /// <summary>Legacy attribute upgrades are disabled; no-op.</summary>
         private void UpgradeNextAttribute()
         {
-            if (starship == null || Systems.AttributeUpgradeSystem.Instance == null) return;
-            if (!IsServerAuthority) return;
-            
-            int currentLevel = starship.ShipLevel;
-            int maxUpgrades = currentLevel;
-            float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(currentLevel);
-            
-            // Find the first attribute that can be upgraded
-            foreach (AttributeUpgradeSystem.ShipAttributeType attr in System.Enum.GetValues(typeof(AttributeUpgradeSystem.ShipAttributeType)))
-            {
-                if (starship.GetAttributeLevel(attr) < maxUpgrades && starship.CurrentGems >= upgradeCost)
-                {
-                    var shipNetObj = starship.GetComponent<NetworkObject>();
-                    if (shipNetObj != null)
-                    {
-                        Systems.AttributeUpgradeSystem.Instance.UpgradeAttributeServerRpc(shipNetObj.NetworkObjectId, attr);
-                    }
-                    return;
-                }
-            }
+            // Intentionally left blank while moving AI to card-based upgrades.
         }
 
         /// <summary>Attempt to level up the ship if possible.</summary>
@@ -1431,11 +1376,8 @@ namespace TitanOrbit.AI
                 }
                 else if (needsSomeGems && !needsFullGems)
                 {
-                    float upgradeCost = Systems.AttributeUpgradeSystem.Instance.GetUpgradeCost(starship.ShipLevel);
-                    if (starship.CurrentGems < upgradeCost)
-                    {
-                        needsMoreGems = true; // Need more gems for attribute upgrade
-                    }
+                    // Legacy attribute upgrades removed; we no longer distinguish between
+                    // "some gems" and "full gems" for leveling behavior.
                 }
                 
                 if (needsMoreGems)

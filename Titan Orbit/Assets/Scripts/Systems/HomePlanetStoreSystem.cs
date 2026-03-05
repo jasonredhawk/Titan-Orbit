@@ -47,6 +47,7 @@ namespace TitanOrbit.Systems
         public void ResponseContributedGemsClientRpc(float gems, ClientRpcParams rpcParams = default)
         {
             TitanOrbit.UI.HomePlanetStoreUI.OnContributedGemsReceived(gems);
+            TitanOrbit.UI.OrbitStationUI.OnContributedGemsReceived(gems);
         }
 
         /// <summary>Server: purchase item. Deducts from contributed gems and grants item to the player's ship.</summary>
