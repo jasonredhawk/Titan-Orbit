@@ -98,6 +98,56 @@ namespace TitanOrbit.Editor
             Debug.Log($"Assigned {assigned}/20 AstroEagle prefabs to CardShopSystem. Save the scene. Buying a ship in the Ships tab will now swap to the matching model.");
         }
 
+        [MenuItem("Titan Orbit/Fix AstroEagle Materials for URP")]
+        public static void FixAstroEagleMaterialsForURP()
+        {
+            const string materialsFolder = "Assets/UltimateSpaceshipsCreator/Materials/AstroEagle";
+            string[] guids = AssetDatabase.FindAssets("t:Material", new[] { materialsFolder });
+            Shader urpLit = Shader.Find("Universal Render Pipeline/Lit")
+                ?? Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (urpLit == null)
+            {
+                Debug.LogError("URP Lit shader not found. Ensure Universal RP is installed.");
+                return;
+            }
+            int fixedCount = 0;
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (mat == null || mat.shader == null) continue;
+                if (mat.shader.name.Contains("Universal Render Pipeline"))
+                    continue;
+                // Built-in Standard -> URP Lit: copy properties then swap shader
+                Texture mainTex = mat.HasProperty("_MainTex") ? mat.GetTexture("_MainTex") : null;
+                Color baseColor = mat.HasProperty("_Color") ? mat.GetColor("_Color") : Color.white;
+                Texture bumpMap = mat.HasProperty("_BumpMap") ? mat.GetTexture("_BumpMap") : null;
+                Texture metallicGlossMap = mat.HasProperty("_MetallicGlossMap") ? mat.GetTexture("_MetallicGlossMap") : null;
+                Texture emissionMap = mat.HasProperty("_EmissionMap") ? mat.GetTexture("_EmissionMap") : null;
+                Color emissionColor = mat.HasProperty("_EmissionColor") ? mat.GetColor("_EmissionColor") : Color.black;
+                float smoothness = mat.HasProperty("_Glossiness") ? mat.GetFloat("_Glossiness") : 0.5f;
+                float metallic = mat.HasProperty("_Metallic") ? mat.GetFloat("_Metallic") : 0f;
+                mat.shader = urpLit;
+                if (mainTex != null) mat.SetTexture("_BaseMap", mainTex);
+                mat.SetColor("_BaseColor", baseColor);
+                if (bumpMap != null) mat.SetTexture("_BumpMap", bumpMap);
+                if (metallicGlossMap != null) mat.SetTexture("_MetallicGlossMap", metallicGlossMap);
+                mat.SetFloat("_Smoothness", smoothness);
+                mat.SetFloat("_Metallic", metallic);
+                if (emissionMap != null)
+                {
+                    mat.SetTexture("_EmissionMap", emissionMap);
+                    mat.SetColor("_EmissionColor", emissionColor);
+                    mat.EnableKeyword("_EMISSION");
+                }
+                EditorUtility.SetDirty(mat);
+                fixedCount++;
+            }
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"AstroEagle materials: converted {fixedCount} materials to URP Lit. Total materials in folder: {guids.Length}.");
+        }
+
         [MenuItem("Titan Orbit/Add Space Background")]
         public static void AddSpaceBackground()
         {
