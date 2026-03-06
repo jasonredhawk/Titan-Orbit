@@ -570,6 +570,8 @@ namespace TitanOrbit.Entities
 
             float maxGems = GetMaxGemsForLevel(planetLevel.Value);
             currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
+            if (currentGems.Value >= maxGems - 0.001f)
+                currentGems.Value = maxGems;
 
             CheckLevelUp();
         }
@@ -582,7 +584,8 @@ namespace TitanOrbit.Entities
             if (currentLevel >= GetMaxLevel()) return;
 
             float maxForLevel = GetMaxGemsForLevel(currentLevel);
-            if (maxForLevel > 0f && currentGems.Value >= maxForLevel)
+            // Level up when gems reach exact max capacity (e.g. 100/100). Use small epsilon for float precision.
+            if (maxForLevel > 0f && currentGems.Value >= maxForLevel - 0.001f)
                 LevelUpServerRpc();
         }
 

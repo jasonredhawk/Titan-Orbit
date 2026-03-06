@@ -11,12 +11,15 @@ namespace TitanOrbit.Camera
     {
         [Header("Camera Settings")]
         [SerializeField] private Transform target;
-        [Tooltip("Offset at level 1. Y component scales with zoom (20% per level) so camera height matches view.")]
-        [SerializeField] private Vector3 offsetAtReferenceLevel = new Vector3(0, 20, 0);
+        [Tooltip("Offset from ship. Y scales with zoom so camera height matches view.")]
+        [SerializeField] private Vector3 offsetAtReferenceLevel = new Vector3(0, 40, 0);
 
         [Header("Distance by Ship Level")]
-        [Tooltip("Orthographic size at level 1. Zooms out 20% per level: size = orthographicSizeAtReferenceLevel * (1.2^(level-1)).")]
-        [SerializeField] private float orthographicSizeAtReferenceLevel = 12f;
+        [Tooltip("Orthographic size at level 6 (100% zoom out). Level 1 uses zoomScaleAtLevel1 of this; reaches this at level 6. Larger = more zoomed out.")]
+        [SerializeField] private float orthographicSizeAtReferenceLevel = 24f;
+        [Tooltip("Zoom scale at level 1 (e.g. 0.7 = slightly closer). Reaches 1.0 (100%) at level 6.")]
+        [Range(0.3f, 0.95f)]
+        [SerializeField] private float zoomScaleAtLevel1 = 0.7f;
         [Tooltip("Time in seconds to smoothly transition to new distance when level changes (0 = instant).")]
         [Min(0f)]
         [SerializeField] private float distanceChangeSmoothTime = 1.5f;
@@ -49,8 +52,9 @@ namespace TitanOrbit.Camera
             if (ship != null)
                 level = ship.ShipLevel;
 
-            // Same 20% per level as ship scale: zoom out by 1.2^(level-1)
-            float targetScale = Mathf.Pow(1.2f, level - 1);
+            // Level 1 = much closer (zoomScaleAtLevel1), level 6 = 100% zoom out (1.0). Linear interpolation.
+            float zoomT = level <= 1 ? 0f : Mathf.Clamp01((level - 1) / 5f);
+            float targetScale = Mathf.Lerp(zoomScaleAtLevel1, 1f, zoomT);
 
             if (distanceChangeSmoothTime > 0f)
                 currentScale = Mathf.SmoothDamp(currentScale, targetScale, ref scaleVelocity, distanceChangeSmoothTime);
