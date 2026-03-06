@@ -478,8 +478,8 @@ namespace TitanOrbit.UI
             tmp.color = Color.white;
             tmp.overflowMode = TextOverflowModes.Overflow;
             tmp.enableWordWrapping = false;
-            if (fontAsset != null) tmp.font = fontAsset;
             tmp.raycastTarget = false;
+            if (fontAsset != null) tmp.font = fontAsset;
             return btn;
         }
 
@@ -534,6 +534,7 @@ namespace TitanOrbit.UI
             tmp.alignment = TextAlignmentOptions.Left;
             tmp.color = Color.white;
             tmp.overflowMode = TextOverflowModes.Truncate;
+            tmp.raycastTarget = false;
             if (fontAsset != null) tmp.font = fontAsset;
             go.SetActive(false);
             return btn;
@@ -913,6 +914,7 @@ namespace TitanOrbit.UI
             buyLabel.fontSize = 11;
             buyLabel.alignment = TextAlignmentOptions.Center;
             buyLabel.color = Color.white;
+            buyLabel.raycastTarget = false;
             if (fontAsset != null) buyLabel.font = fontAsset;
         }
 
@@ -943,6 +945,7 @@ namespace TitanOrbit.UI
             tmp.fontSize = 14;
             tmp.alignment = TextAlignmentOptions.Left;
             tmp.color = Color.white;
+            tmp.raycastTarget = false;
             if (fontAsset != null) tmp.font = fontAsset;
             return btn;
         }
@@ -1181,6 +1184,7 @@ namespace TitanOrbit.UI
             labelTmp.enableWordWrapping = true;
             labelTmp.overflowMode = TextOverflowModes.Ellipsis;
             labelTmp.color = Color.white;
+            labelTmp.raycastTarget = false;
             if (fontAsset != null) labelTmp.font = fontAsset;
             var labelLE = labelGo.AddComponent<LayoutElement>();
             labelLE.flexibleHeight = 1f;
@@ -1206,12 +1210,14 @@ namespace TitanOrbit.UI
             buyLabel.fontSize = 11;
             buyLabel.alignment = TextAlignmentOptions.Center;
             buyLabel.color = Color.white;
+            buyLabel.raycastTarget = false;
             if (fontAsset != null) buyLabel.font = fontAsset;
 
             chassisButtons[index] = cardBtn;
             chassisLabels[index] = labelTmp;
             int idx = index;
             cardBtn.onClick.AddListener(() => OnBuyChassis(idx));
+            buyBtn.onClick.AddListener(() => OnBuyChassis(idx));
 
             GameObject prefab = CardShopSystem.Instance != null ? CardShopSystem.Instance.GetShipPrefabForChassisId(chassis.chassisId) : null;
             if (prefab != null)

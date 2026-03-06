@@ -15,17 +15,17 @@ namespace TitanOrbit.Camera
         [SerializeField] private Vector3 offsetAtReferenceLevel = new Vector3(0, 40, 0);
 
         [Header("Distance by Ship Level")]
-        [Tooltip("Orthographic size at level 6 (100% zoom out). Level 1 uses zoomScaleAtLevel1 of this; reaches this at level 6. Larger = more zoomed out.")]
-        [SerializeField] private float orthographicSizeAtReferenceLevel = 24f;
-        [Tooltip("Zoom scale at level 1 (e.g. 0.7 = slightly closer). Reaches 1.0 (100%) at level 6.")]
-        [Range(0.3f, 0.95f)]
-        [SerializeField] private float zoomScaleAtLevel1 = 0.7f;
+        [Tooltip("Orthographic size (view distance). Larger = more zoomed out. 12 = closer view, 24 = zoomed out.")]
+        [SerializeField] private float orthographicSizeAtReferenceLevel = 12f;
+        [Tooltip("Zoom scale at level 1 (e.g. 0.7 = slightly closer). Reaches 1.0 (100%) at level 6. 1 = no level-based zoom.")]
+        [Range(0.3f, 1f)]
+        [SerializeField] private float zoomScaleAtLevel1 = 1f;
         [Tooltip("Time in seconds to smoothly transition to new distance when level changes (0 = instant).")]
         [Min(0f)]
         [SerializeField] private float distanceChangeSmoothTime = 1.5f;
         [Tooltip("When you first spawn, camera starts this many times more zoomed out (bird's eye), then zooms in. 1 = no spawn zoom.")]
         [Min(1f)]
-        [SerializeField] private float spawnZoomScale = 2.5f;
+        [SerializeField] private float spawnZoomScale = 1f;
 
         private UnityEngine.Camera cam;
         private float currentScale = 1f;

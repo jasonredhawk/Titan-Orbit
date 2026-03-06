@@ -405,6 +405,7 @@ namespace TitanOrbit.UI
             tmp.fontSize = 16;
             tmp.alignment = TextAlignmentOptions.Left;
             tmp.color = Color.white;
+            tmp.raycastTarget = false;
             return btn;
         }
     }
