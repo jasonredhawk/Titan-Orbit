@@ -91,13 +91,35 @@ namespace TitanOrbit.Data
                         break;
                     case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; break;
                     case "Weapon":
-                        stats.weaponTransforms.Add(child);
-                        stats.weaponScales.Add(scaleFactor);
+                        // Handled below by name-contains-"Weapon" so any naming convention works
                         break;
                 }
             }
 
+            // Bullets only from components with "Weapon" in the name (any hierarchy level, any naming).
+            CollectWeaponTransformsRecursive(root, stats.weaponTransforms, stats.weaponScales);
+
             return stats;
+        }
+
+        /// <summary>
+        /// Recursively find all transforms whose name contains "Weapon" (case-insensitive) and add to lists.
+        /// Ensures bullets/fire points are only added to weapon components; supports any hierarchy depth and naming (e.g. Weapon, Weapon_L, AstroEagle_Weapon_2).
+        /// </summary>
+        private static void CollectWeaponTransformsRecursive(Transform parent, List<Transform> weaponTransforms, List<float> weaponScales)
+        {
+            if (parent == null || weaponTransforms == null || weaponScales == null) return;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                if (child == null) continue;
+                if (child.name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    weaponTransforms.Add(child);
+                    weaponScales.Add(GetScaleFactor(child));
+                }
+                CollectWeaponTransformsRecursive(child, weaponTransforms, weaponScales);
+            }
         }
 
         /// <summary>

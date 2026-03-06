@@ -2091,7 +2091,7 @@ namespace TitanOrbit.Entities
                 energyRegenRate = data.baseEnergyRegenRate + stats.cockpitCannonScaleTotal * PER_COCKPIT_ENERGY_REGEN;
             }
 
-            // Bullets (Weapon only): small projectiles, low energy; fire from weapon positions
+            // Bullets (Weapon only): one cannon per component with "Weapon" in the name; fire from each weapon position.
             int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
             float weaponScaleTotal = 0f;
             for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
@@ -2100,9 +2100,9 @@ namespace TitanOrbit.Entities
             float bulletDamageScale = 1f + weaponScaleTotal * PER_WEAPON_DAMAGE_SCALE;
             float bulletSpeedScale = 1f + weaponScaleTotal * PER_WEAPON_BULLET_SPEED_SCALE;
 
-            if (weaponCount > 0 && data != null)
+            if (weaponCount > 0)
             {
-                var baseBullet = (data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)
+                var baseBullet = (data != null && data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)
                     ? data.weaponConfig.cannons[0]
                     : GetDefaultWeaponConfig().cannons[0];
                 var bc = ScriptableObject.CreateInstance<WeaponConfig>();
