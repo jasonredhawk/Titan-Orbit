@@ -8,7 +8,9 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: DemoFloorMat
-  m_Shader: {fileID: 4800000, guid: 429def76850425146bd4e32b571ab184, type: 3}
+  m_Shader: {fileID: 4800000, guid: de4c64f8320e9e145823481683192ba3, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords:
   - _GLOSSYREFLECTIONS_OFF
@@ -21,6 +23,7 @@ Material:
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -276,6 +279,7 @@ Material:
     - _ZTestMode: 4
     - _ZWrite: 1
     m_Colors:
+    - _All1VfxLightDir: {r: 1, g: 0, b: 0, a: 0}
     - _BackFaceTint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
     - _Color: {r: 0.18100001, g: 0.18100001, b: 0.18100001, a: 1}
     - _ColorGradingDark: {r: 1, g: 1, b: 1, a: 1}
@@ -291,4 +295,6 @@ Material:
     - _Shape2Color: {r: 1, g: 1, b: 1, a: 1}
     - _Shape3Color: {r: 1, g: 1, b: 1, a: 1}
     - _ShapeColor: {r: 1, g: 1, b: 1, a: 1}
+    - globalCustomTime: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1

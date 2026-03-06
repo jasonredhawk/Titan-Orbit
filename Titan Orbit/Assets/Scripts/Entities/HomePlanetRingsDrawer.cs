@@ -6,7 +6,7 @@ namespace TitanOrbit.Entities
 {
     /// <summary>
     /// Draws Saturn-style tilted rings around a HomePlanet using Shapes immediate mode.
-    /// Ring count = Home Planet level (3–6). Starts with 3 rings at level 3, adds one per level.
+    /// Ring count = Home Planet level (1–6). Level 1 has 1 ring, adds one per level up to 6.
     /// </summary>
     [ExecuteAlways]
     public class HomePlanetRingsDrawer : ImmediateModeShapeDrawer
@@ -64,7 +64,7 @@ namespace TitanOrbit.Entities
             if (homePlanet == null) return;
 
             int level = homePlanet.HomePlanetLevel;
-            int ringCount = Mathf.Clamp(level, 3, 6);
+            int ringCount = Mathf.Clamp(level, 1, 6);
 
             using (Draw.Command(cam))
             {
@@ -93,7 +93,7 @@ namespace TitanOrbit.Entities
 
                 // Draw home-planet rings after orbit fill so ring bands are not visually clipped by the zone overlay.
                 Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
-                float alpha = Mathf.Clamp01(ringOpacity + (level - 3) * opacityPerLevel);
+                float alpha = Mathf.Clamp01(ringOpacity + (level - 1) * opacityPerLevel);
                 Color baseColor = TeamManager.GetTeamColor(homePlanet.TeamOwnership);
                 Color color = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
 

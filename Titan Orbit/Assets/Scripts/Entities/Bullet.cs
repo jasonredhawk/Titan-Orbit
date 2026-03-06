@@ -62,6 +62,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> bulletVisualScaleMultiplier = new NetworkVariable<float>(1f);
         private NetworkVariable<byte> bulletVisualShapeIndex = new NetworkVariable<byte>(0);
         private NetworkVariable<bool> bulletVisualNoTrail = new NetworkVariable<bool>(false);
+        private NetworkVariable<byte> bulletOwnerTeamByte = new NetworkVariable<byte>((byte)TeamManager.Team.None);
         private float cachedVisualScaleMultiplier = 1f;
         private byte cachedVisualShapeIndex;
         private bool cachedVisualNoTrail;
@@ -79,6 +80,21 @@ namespace TitanOrbit.Entities
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
 
+        private static readonly Color TeamAColor = new Color(1f, 0.3f, 0.3f);
+        private static readonly Color TeamBColor = new Color(0.3f, 0.5f, 1f);
+        private static readonly Color TeamCColor = new Color(0.3f, 1f, 0.4f);
+
+        private static Color GetTeamBulletColor(TeamManager.Team team)
+        {
+            switch (team)
+            {
+                case TeamManager.Team.TeamA: return TeamAColor;
+                case TeamManager.Team.TeamB: return TeamBColor;
+                case TeamManager.Team.TeamC: return TeamCColor;
+                default: return new Color(0.75f, 0.88f, 1f); // neutral bluish white
+            }
+        }
+
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
@@ -92,6 +108,12 @@ namespace TitanOrbit.Entities
             bulletVisualScaleMultiplier.OnValueChanged += OnVisualScaleChanged;
             bulletVisualShapeIndex.OnValueChanged += OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged += OnVisualNoTrailChanged;
+            bulletOwnerTeamByte.OnValueChanged += OnOwnerTeamChanged;
+        }
+
+        private void OnOwnerTeamChanged(byte oldVal, byte newVal)
+        {
+            UpdateVisual();
         }
 
         private void OnDestroy()
@@ -104,6 +126,7 @@ namespace TitanOrbit.Entities
             bulletVisualScaleMultiplier.OnValueChanged -= OnVisualScaleChanged;
             bulletVisualShapeIndex.OnValueChanged -= OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged -= OnVisualNoTrailChanged;
+            bulletOwnerTeamByte.OnValueChanged -= OnOwnerTeamChanged;
             if (proceduralMaterialInstance != null)
             {
                 Destroy(proceduralMaterialInstance);
@@ -142,6 +165,7 @@ namespace TitanOrbit.Entities
                 bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
                 bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
                 bulletVisualNoTrail.Value = cachedVisualNoTrail;
+                bulletOwnerTeamByte.Value = (byte)ownerTeam;
             }
 
             // Lock Y position to 0
@@ -375,7 +399,10 @@ namespace TitanOrbit.Entities
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualShapeIndex = shapeIndex;
             cachedVisualNoTrail = noTrailVisual;
-            // NetworkVariables set in OnNetworkSpawn
+            // Synced to clients for bullet color
+            if (IsServer && bulletOwnerTeamByte != null)
+                bulletOwnerTeamByte.Value = (byte)team;
+            // NetworkVariables for scale/shape set in OnNetworkSpawn
         }
 
         private void UpdateVisual()
@@ -391,6 +418,9 @@ namespace TitanOrbit.Entities
             float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
             float scale = bulletVisualScale * scaleMult;
             bool noTrailVisual = cachedVisualNoTrail || bulletVisualNoTrail.Value;
+            TeamManager.Team teamForColor = (TeamManager.Team)bulletOwnerTeamByte.Value;
+            if (teamForColor == TeamManager.Team.None) teamForColor = ownerTeam;
+            Color bulletColor = teamForColor != TeamManager.Team.None ? GetTeamBulletColor(teamForColor) : proceduralBulletColor;
 
             foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
                 r.enabled = false;
@@ -405,7 +435,7 @@ namespace TitanOrbit.Entities
             {
                 spawnedVisual = Instantiate(visualPrefab, transform);
                 FixVfxForUrp(spawnedVisual);
-                ApplyColorToVisual(spawnedVisual, proceduralBulletColor);
+                ApplyColorToVisual(spawnedVisual, bulletColor);
                 if (noTrailVisual)
                 {
                     var trails = spawnedVisual.GetComponentsInChildren<TrailRenderer>(true);
@@ -417,7 +447,7 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                spawnedVisual = CreateCustomizableVfxStyle(shape, scale, speed, noTrailVisual);
+                spawnedVisual = CreateCustomizableVfxStyle(shape, scale, speed, noTrailVisual, bulletColor);
                 if (spawnedVisual != null)
                     spawnedVisual.transform.SetParent(transform, false);
             }
@@ -474,7 +504,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Builds a VFX-style bullet: core + smooth TrailRenderer tail (no dotted particles).</summary>
-        private GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual)
+        private GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual, Color color)
         {
             if (proceduralMaterialInstance != null)
             {
@@ -483,9 +513,9 @@ namespace TitanOrbit.Entities
             }
             Material baseMat = proceduralBulletMaterial != null ? proceduralBulletMaterial : CreateDefaultBulletMaterial();
             proceduralMaterialInstance = new Material(baseMat);
-            proceduralMaterialInstance.color = proceduralBulletColor;
+            proceduralMaterialInstance.color = color;
             if (proceduralMaterialInstance.HasProperty("_BaseColor"))
-                proceduralMaterialInstance.SetColor("_BaseColor", proceduralBulletColor);
+                proceduralMaterialInstance.SetColor("_BaseColor", color);
 
             GameObject root = new GameObject("BulletVisual");
 
@@ -516,7 +546,7 @@ namespace TitanOrbit.Entities
                 trail.widthCurve = AnimationCurve.EaseInOut(0f, 1f, 1f, 0.02f);
                 Gradient grad = new Gradient();
                 grad.SetKeys(
-                    new GradientColorKey[] { new GradientColorKey(proceduralBulletColor, 0f), new GradientColorKey(proceduralBulletColor, 1f) },
+                    new GradientColorKey[] { new GradientColorKey(color, 0f), new GradientColorKey(color, 1f) },
                     new GradientAlphaKey[] {
                         new GradientAlphaKey(0.95f, 0f),
                         new GradientAlphaKey(0.5f, Mathf.Clamp01(1f - tailFade * 0.5f)),

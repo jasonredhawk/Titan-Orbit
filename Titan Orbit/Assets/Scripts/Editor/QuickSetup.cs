@@ -83,11 +83,13 @@ namespace TitanOrbit.Editor
                 }
             }
 
-            // Find NetworkManager and set player prefab (PlayerPrefab is on NetworkConfig, not NetworkManager)
+            // Find NetworkManager and set player prefab. Prefer base Starship (AstroEagle_01 in code); fallback to Starship_Lv1_0.
             NetworkManager networkManager = Object.FindObjectOfType<NetworkManager>();
             if (networkManager != null)
             {
-                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
+                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+                if (starshipPrefab == null)
+                    starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
                 if (starshipPrefab != null)
                 {
                     networkManager.NetworkConfig.PlayerPrefab = starshipPrefab;

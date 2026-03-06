@@ -24,13 +24,20 @@ namespace TitanOrbit.UI
         private Button[] shipChoiceButtons = new Button[2];
         private TextMeshProUGUI[] shipChoiceLabels = new TextMeshProUGUI[2];
 
+        private Starship _cachedLocalShip;
+        private float _lastLocalShipLookupTime = -999f;
+        private const float LocalShipLookupInterval = 0.3f;
+
         /// <summary>Find existing orbit UI or create one (with OrbitStationUI) so the popup appears when orbiting.</summary>
         public static HomePlanetOrbitUI GetOrCreate()
         {
             var existing = Object.FindFirstObjectByType<HomePlanetOrbitUI>();
             if (existing != null) return existing;
 
-            Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+            Canvas canvas = null;
+            var hud = Object.FindFirstObjectByType<HUDController>();
+            if (hud != null) canvas = hud.GetComponentInParent<Canvas>(true);
+            if (canvas == null) canvas = Object.FindFirstObjectByType<Canvas>();
             if (canvas == null)
             {
                 GameObject canvasObj = new GameObject("Canvas");
@@ -66,11 +73,21 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
-            // Hide orbit UI until player has chosen a team
-            Starship localShip = null;
-            foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            if (Time.time - _lastLocalShipLookupTime >= LocalShipLookupInterval)
             {
-                if (ship.IsOwner) { localShip = ship; break; }
+                _lastLocalShipLookupTime = Time.time;
+                _cachedLocalShip = null;
+                foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                {
+                    if (ship.IsOwner) { _cachedLocalShip = ship; break; }
+                }
+            }
+            Starship localShip = _cachedLocalShip;
+            // If we're currently showing the orbit menu (Starship called Show), keep active until Hide() is called.
+            if (currentShip != null)
+            {
+                gameObject.SetActive(true);
+                return;
             }
             if (localShip == null || localShip.ShipTeam == TeamManager.Team.None)
             {
@@ -84,6 +101,7 @@ namespace TitanOrbit.UI
         {
             currentShip = ship;
             currentPlanet = planet;
+            gameObject.SetActive(true); // Ensure orbit UI GameObject is active so panel can show (e.g. if it was disabled by Update when team was None)
             var orbitStation = GetComponent<OrbitStationUI>();
             if (orbitStation == null) orbitStation = gameObject.AddComponent<OrbitStationUI>();
             orbitStation.Show(ship, planet);

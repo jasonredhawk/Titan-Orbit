@@ -44,6 +44,29 @@ namespace TitanOrbit.Generation
         private System.Collections.Generic.List<Vector3> asteroidPositions = new System.Collections.Generic.List<Vector3>();
         private System.Collections.Generic.List<Vector3> planetPositions = new System.Collections.Generic.List<Vector3>();
         private int nextPlanetId = 1;
+        private bool hasGenerated;
+
+        private void Start()
+        {
+            if (NetworkManager.Singleton != null)
+            {
+                NetworkManager.Singleton.OnServerStarted += OnServerStarted;
+                if (NetworkManager.Singleton.IsServer)
+                    OnServerStarted();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (NetworkManager.Singleton != null)
+                NetworkManager.Singleton.OnServerStarted -= OnServerStarted;
+        }
+
+        private void OnServerStarted()
+        {
+            // Generate immediately; map generator is a scene object so it exists when server starts
+            EnsureMapGenerated();
+        }
 
         public override void OnNetworkSpawn()
         {
@@ -51,7 +74,20 @@ namespace TitanOrbit.Generation
             {
                 EnsureParents();
                 GenerateMap();
+                hasGenerated = true;
             }
+        }
+
+        /// <summary>Called by NetworkGameManager when server starts so map is generated even if this object's OnNetworkSpawn didn't run (e.g. scene management disabled).</summary>
+        public void EnsureMapGenerated()
+        {
+            if (hasGenerated) return;
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            EnsureParents();
+            GenerateMap();
+            hasGenerated = true;
+            int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
         }
 
         private void EnsureParents()
@@ -85,6 +121,13 @@ namespace TitanOrbit.Generation
             asteroidPositions.Clear();
             planetPositions.Clear();
             nextPlanetId = 1;
+
+            if (homePlanetPrefab == null)
+                Debug.LogWarning("MapGenerator: homePlanetPrefab is not assigned. Assign it in the Inspector (e.g. use Titan Orbit > Setup Game Scene or assign prefabs to MapGenerator).");
+            if (planetPrefab == null)
+                Debug.LogWarning("MapGenerator: planetPrefab is not assigned. Assign it in the Inspector.");
+            if (asteroidPrefab == null)
+                Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
 
             GenerateHomePlanets();
             GenerateNeutralPlanets();

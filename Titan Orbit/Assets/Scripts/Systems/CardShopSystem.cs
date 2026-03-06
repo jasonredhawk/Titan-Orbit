@@ -32,6 +32,11 @@ namespace TitanOrbit.Systems
             {
                 Destroy(gameObject);
             }
+            if (shipUnlockTable == null)
+                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
+            // Populate the 20 AstroEagle entries so GetChassisByIndex / GetShipPrefabForChassisIndex work at spawn
+            if (shipUnlockTable != null)
+                shipUnlockTable.GetUnlockedEntries(1);
             if (allCards == null || allCards.Count == 0)
                 allCards = GetDefaultCards();
         }
@@ -96,19 +101,19 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Returns the list of chassis that are unlocked for the given home planet level.
+        /// All home planets use the AstroEagle family (20 ships, tier progression 1–6). Creates runtime table if none assigned.
         /// </summary>
         public List<ShipChassisDefinition> GetUnlockedChassisForHomeLevel(int homePlanetLevel)
         {
             if (shipUnlockTable == null)
-                return new List<ShipChassisDefinition>();
-
+                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
             return shipUnlockTable.GetUnlockedChassis(homePlanetLevel);
         }
 
         /// <summary>
         /// Returns unlock entries (chassis + tier + cost) for the given home planet level.
-        /// At home: all unlocked entries. Else: only entries whose chassis matches the store planet (originPlanetId).
-        /// If no Ship Unlock Table is assigned, a runtime table is used and filled with 20 AstroEagle variants (tiers 2–6).
+        /// At home: all unlocked AstroEagle entries (1 at L1, +2 at L2, +3 at L3, +4 at L4, +5 at L5, +5 at L6 = 20 total).
+        /// Else: only entries whose chassis matches the store planet (originPlanetId). Creates runtime table if none assigned.
         /// </summary>
         public List<ShipUnlockEntry> GetUnlockedChassisEntriesForHomeLevel(int homePlanetLevel, bool isHomeStore, int storePlanetId)
         {
@@ -131,6 +136,18 @@ namespace TitanOrbit.Systems
         public ShipChassisDefinition GetChassisByIndex(int index)
         {
             return shipUnlockTable != null ? shipUnlockTable.GetChassisByIndex(index) : null;
+        }
+
+        /// <summary>Returns the ship prefab for the given chassis index (AstroEagle_01 = index 0, etc.). Used so the first ship can apply AstroEagle1 visual on spawn.</summary>
+        public GameObject GetShipPrefabForChassisIndex(int index)
+        {
+            if (index < 0) return null;
+            ShipChassisDefinition chassis = GetChassisByIndex(index);
+            if (chassis == null) return null;
+            GameObject prefab = GetAstroEaglePrefabForChassisId(chassis.chassisId);
+            if (prefab == null && astroEagleShipPrefabs != null && index < astroEagleShipPrefabs.Length)
+                prefab = astroEagleShipPrefabs[index];
+            return prefab;
         }
 
         /// <summary>
@@ -295,6 +312,8 @@ namespace TitanOrbit.Systems
             if (chassis == null) return;
             if (homeLevel < chassis.minHomePlanetLevel) return;
 
+            int chassisIndex = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
+
             // Simple gating: only allow purchase when docked at home or the chassis' origin planet.
             NetworkObject planetNet = GetNetworkObject(planetNetworkId);
             Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
@@ -319,15 +338,16 @@ namespace TitanOrbit.Systems
             else
             {
                 GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
+                if (prefab == null && chassisIndex >= 0 && chassisIndex < (astroEagleShipPrefabs?.Length ?? 0))
+                    prefab = astroEagleShipPrefabs[chassisIndex];
                 if (prefab != null)
                     ship.ApplyShipVisualFromPrefab(prefab);
                 else
-                    Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}'. Use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem (with CardShopSystem in scene), then save.");
+                    Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}' (index {chassisIndex}). Use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem (with CardShopSystem in scene), then save.");
             }
-            int chassisIndex = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
             ship.SetCurrentChassisIndex(chassisIndex);
 
-            NotifyChassisPurchasedClientRpc(chassisId, shipNetworkId, new ClientRpcParams
+            NotifyChassisPurchasedClientRpc(chassisId, chassisIndex, shipNetworkId, new ClientRpcParams
             {
                 Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
             });
@@ -344,17 +364,16 @@ namespace TitanOrbit.Systems
         }
 
         [ClientRpc]
-        private void NotifyChassisPurchasedClientRpc(string chassisId, ulong shipNetworkId, ClientRpcParams rpcParams = default)
+        private void NotifyChassisPurchasedClientRpc(string chassisId, int chassisIndex, ulong shipNetworkId, ClientRpcParams rpcParams = default)
         {
             NetworkObject shipNet = GetNetworkObject(shipNetworkId);
             Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
             if (ship == null) return;
-            if (chassisId != null && chassisId.StartsWith("AstroEagle_"))
-            {
-                GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
-                if (prefab != null)
-                    ship.ApplyShipVisualFromPrefab(prefab);
-            }
+            GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
+            if (prefab == null && chassisIndex >= 0 && chassisIndex < (astroEagleShipPrefabs?.Length ?? 0))
+                prefab = astroEagleShipPrefabs[chassisIndex];
+            if (prefab != null)
+                ship.ApplyShipVisualFromPrefab(prefab);
         }
 
         #endregion

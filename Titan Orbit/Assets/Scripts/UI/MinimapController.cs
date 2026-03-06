@@ -78,7 +78,7 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
         private float lastEntityCacheRefreshTime = -999f;
-        private const float EntityCacheRefreshInterval = 0.5f;
+        private const float EntityCacheRefreshInterval = 0.75f;
         private Starship[] cachedShips = new Starship[0];
         private Planet[] cachedPlanets = new Planet[0];
         private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
@@ -90,6 +90,10 @@ namespace TitanOrbit.UI
         private int skippedNullAsteroids = 0;
         private int skippedNullMarkers = 0;
         private const int MaxAsteroidBlips = 80;
+
+        private readonly List<Transform> blipsToRemove = new List<Transform>();
+        private readonly List<Transform> edgeMarkersToRemoveList = new List<Transform>();
+        private readonly List<Transform> markerEdgeMarkersToRemoveList = new List<Transform>();
 
         private enum BlipType
         {
@@ -933,12 +937,7 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Hide minimap until player has chosen a team (visually only, so Update keeps running)
-            if (playerShip.ShipTeam == TeamManager.Team.None)
-            {
-                SetMinimapVisible(false);
-                return;
-            }
+            // Show minimap whenever we have a local player ship (even if team not yet set, so it's visible in single-player or before team sync).
             SetMinimapVisible(true);
 
             UpdateBlips();
@@ -1201,12 +1200,12 @@ namespace TitanOrbit.UI
         {
             RefreshEntityCache();
             Vector3 playerPos = playerTransform.position;
-            var toRemove = new List<Transform>();
+            blipsToRemove.Clear();
 
             foreach (var kv in blips)
             {
-                if (kv.Key == null) { toRemove.Add(kv.Key); continue; }
-                if (!kv.Key.gameObject.activeInHierarchy) { toRemove.Add(kv.Key); continue; }
+                if (kv.Key == null) { blipsToRemove.Add(kv.Key); continue; }
+                if (!kv.Key.gameObject.activeInHierarchy) { blipsToRemove.Add(kv.Key); continue; }
 
                 Vector3 worldPos = kv.Key.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
@@ -1220,7 +1219,7 @@ namespace TitanOrbit.UI
                 kv.Value.anchoredPosition = new Vector2(normX * displaySize / 2f, normZ * displaySize / 2f);
             }
 
-            foreach (var t in toRemove)
+            foreach (var t in blipsToRemove)
             {
                 if (blips.TryGetValue(t, out var rt) && rt != null) Destroy(rt.gameObject);
                 blips.Remove(t);
@@ -1235,16 +1234,15 @@ namespace TitanOrbit.UI
                 edgeMarkerIsHomePlanet.Remove(t);
             }
             
-            // Clean up edge markers for planets that no longer exist
-            var edgeMarkersToRemove = new List<Transform>();
+            edgeMarkersToRemoveList.Clear();
             foreach (var kv in edgeMarkers)
             {
                 if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy)
                 {
-                    edgeMarkersToRemove.Add(kv.Key);
+                    edgeMarkersToRemoveList.Add(kv.Key);
                 }
             }
-            foreach (var t in edgeMarkersToRemove)
+            foreach (var t in edgeMarkersToRemoveList)
             {
                 if (edgeMarkers.TryGetValue(t, out var rt) && rt != null) Destroy(rt.gameObject);
                 edgeMarkers.Remove(t);
@@ -1252,16 +1250,15 @@ namespace TitanOrbit.UI
                 edgeMarkerIsHomePlanet.Remove(t);
             }
             
-            // Clean up edge markers for attack/defend markers that no longer exist
-            var markerEdgeMarkersToRemove = new List<Transform>();
+            markerEdgeMarkersToRemoveList.Clear();
             foreach (var kv in markerEdgeMarkers)
             {
                 if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy)
                 {
-                    markerEdgeMarkersToRemove.Add(kv.Key);
+                    markerEdgeMarkersToRemoveList.Add(kv.Key);
                 }
             }
-            foreach (var t in markerEdgeMarkersToRemove)
+            foreach (var t in markerEdgeMarkersToRemoveList)
             {
                 if (markerEdgeMarkers.TryGetValue(t, out var rt) && rt != null) Destroy(rt.gameObject);
                 markerEdgeMarkers.Remove(t);

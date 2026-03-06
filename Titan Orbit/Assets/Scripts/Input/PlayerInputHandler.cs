@@ -72,15 +72,13 @@ namespace TitanOrbit.Input
 
         private void Update()
         {
-            // Left-click = shoot
+            // Left-click = shoot (prefer new Input System; no legacy Input when Input System package is active)
             if (shootAction != null)
-            {
                 shootPressed = shootAction.IsPressed();
-            }
+            else if (Mouse.current != null)
+                shootPressed = Mouse.current.leftButton.isPressed;
             else
-            {
-                shootPressed = Mouse.current != null && Mouse.current.leftButton.isPressed;
-            }
+                shootPressed = false;
 
             // Right-click = move in facing direction
             moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;

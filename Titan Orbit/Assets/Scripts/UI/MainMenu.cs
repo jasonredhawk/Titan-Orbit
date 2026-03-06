@@ -59,6 +59,13 @@ namespace TitanOrbit.UI
             {
                 playerNameInputField.text = PlayerPrefs.GetString(playerNameKey, "");
                 playerNameInputField.onEndEdit.AddListener(s => { PlayerPrefs.SetString(playerNameKey, s ?? ""); PlayerPrefs.Save(); });
+                playerNameInputField.textComponent.fontSize = 60;
+                playerNameInputField.textComponent.alignment = TMPro.TextAlignmentOptions.Center;
+                if (playerNameInputField.placeholder as TextMeshProUGUI != null)
+                {
+                    (playerNameInputField.placeholder as TextMeshProUGUI).fontSize = 36;
+                    (playerNameInputField.placeholder as TextMeshProUGUI).alignment = TMPro.TextAlignmentOptions.Center;
+                }
             }
         }
 

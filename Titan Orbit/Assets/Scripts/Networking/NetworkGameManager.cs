@@ -71,6 +71,22 @@ namespace TitanOrbit.Networking
             }
         }
 
+        /// <summary>
+        /// If PlayerPrefab is not set, tries to assign from Resources/Prefabs/Starship so Play doesn't fail.
+        /// Call before StartHost / Play. Use menu Titan Orbit > Fix Player Prefab & Materials to assign in editor.
+        /// </summary>
+        private static void EnsurePlayerPrefabSet()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab != null)
+                return;
+            GameObject fallback = Resources.Load<GameObject>("Prefabs/Starship");
+            if (fallback != null && fallback.GetComponent<NetworkObject>() != null)
+            {
+                NetworkManager.Singleton.NetworkConfig.PlayerPrefab = fallback;
+                Debug.Log("Player Prefab was missing; assigned from Resources/Prefabs/Starship.");
+            }
+        }
+
         public void StartServer()
         {
             ApplyServerPort();
@@ -80,9 +96,10 @@ namespace TitanOrbit.Networking
 
         public void StartHost()
         {
+            EnsurePlayerPrefabSet();
             if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
             {
-                Debug.LogError("Player Prefab not set on NetworkManager! Use menu: Titan Orbit > Fix Player Prefab & Materials");
+                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
                 return;
             }
             ApplyServerPort();
@@ -115,9 +132,10 @@ namespace TitanOrbit.Networking
         /// <returns>Join code to share with clients, or null on failure.</returns>
         public async Task<string> StartHostWithRelayAsync()
         {
+            EnsurePlayerPrefabSet();
             if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
             {
-                Debug.LogError("Player Prefab not set on NetworkManager! Use menu: Titan Orbit > Fix Player Prefab & Materials");
+                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
                 return null;
             }
             try
@@ -188,9 +206,10 @@ namespace TitanOrbit.Networking
         /// <returns>True if we joined or created a game and started successfully.</returns>
         public async Task<bool> PlayQuickJoinOrCreateAsync()
         {
+            EnsurePlayerPrefabSet();
             if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
             {
-                Debug.LogError("Player Prefab not set on NetworkManager!");
+                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
                 return false;
             }
             try
@@ -273,9 +292,17 @@ namespace TitanOrbit.Networking
             if (IsServer)
             {
                 EnsureScoreSystemExists();
+                EnsureMapGenerated();
                 NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
             }
+        }
+
+        private void EnsureMapGenerated()
+        {
+            var mapGen = Object.FindFirstObjectByType<TitanOrbit.Generation.MapGenerator>();
+            if (mapGen != null)
+                mapGen.EnsureMapGenerated();
         }
 
         private void EnsureScoreSystemExists()

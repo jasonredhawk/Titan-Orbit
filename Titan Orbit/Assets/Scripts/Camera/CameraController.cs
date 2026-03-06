@@ -11,17 +11,12 @@ namespace TitanOrbit.Camera
     {
         [Header("Camera Settings")]
         [SerializeField] private Transform target;
-        [Tooltip("Offset at reference level (level 7). Actual offset Y scales with ship level.")]
+        [Tooltip("Offset at level 1. Y component scales with zoom (20% per level) so camera height matches view.")]
         [SerializeField] private Vector3 offsetAtReferenceLevel = new Vector3(0, 20, 0);
 
         [Header("Distance by Ship Level")]
-        [Tooltip("Ship level that uses the reference distance (current 'normal' zoom).")]
-        [SerializeField] private int referenceLevel = 7;
-        [Tooltip("Orthographic size at reference level (larger = more of the world visible).")]
+        [Tooltip("Orthographic size at level 1. Zooms out 20% per level: size = orthographicSizeAtReferenceLevel * (1.2^(level-1)).")]
         [SerializeField] private float orthographicSizeAtReferenceLevel = 12f;
-        [Tooltip("At level 1, camera distance is this fraction of reference (e.g. 0.7 = 70%, closer view).")]
-        [Range(0.5f, 1f)]
-        [SerializeField] private float level1DistanceScale = 0.7f;
         [Tooltip("Time in seconds to smoothly transition to new distance when level changes (0 = instant).")]
         [Min(0f)]
         [SerializeField] private float distanceChangeSmoothTime = 1.5f;
@@ -49,15 +44,13 @@ namespace TitanOrbit.Camera
         {
             if (target == null) return;
 
-            int level = referenceLevel;
+            int level = 1;
             var ship = target.GetComponent<Starship>();
             if (ship != null)
                 level = ship.ShipLevel;
 
-            float t = referenceLevel <= 1
-                ? 1f
-                : Mathf.Clamp01((float)(level - 1) / (referenceLevel - 1));
-            float targetScale = Mathf.Lerp(level1DistanceScale, 1f, t);
+            // Same 20% per level as ship scale: zoom out by 1.2^(level-1)
+            float targetScale = Mathf.Pow(1.2f, level - 1);
 
             if (distanceChangeSmoothTime > 0f)
                 currentScale = Mathf.SmoothDamp(currentScale, targetScale, ref scaleVelocity, distanceChangeSmoothTime);

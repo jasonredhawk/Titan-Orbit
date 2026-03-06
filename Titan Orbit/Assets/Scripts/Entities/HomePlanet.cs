@@ -17,8 +17,8 @@ namespace TitanOrbit.Entities
     public class HomePlanet : Planet
     {
         [Header("Home Planet Settings")]
-        [Tooltip("Max gems capacity per level. Level 3=800, 4=1600, 5=3200, 6=6400. Filling capacity levels up the planet.")]
-        private static readonly float[] MaxGemsPerLevel = { 0f, 0f, 0f, 800f, 1600f, 3200f, 6400f }; // Index = level (1-6)
+        [Tooltip("Max gems capacity per level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, 4=8×, 5=16×, 6=32×. Scale base to tune difficulty.")]
+        [SerializeField] private float baseMaxGemsLevel1 = 100f;
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
@@ -56,7 +56,7 @@ namespace TitanOrbit.Entities
             EnsureSolidColliderAndOrbitZone();
             if (IsServer)
             {
-                SetGrowthRate(GetGrowthRatePerSecond()); // 1 per 5 sec at level 3
+                SetGrowthRate(GetGrowthRatePerSecond()); // 1 per 5 sec at level 1, doubles per level
             }
             baseLocalScale = transform.localScale;
             RemoveOldCylinderRings();
@@ -86,25 +86,24 @@ namespace TitanOrbit.Entities
             return GetNeutralMaterial();
         }
 
-        /// <summary>Initial planet level. Home planets start at 3.</summary>
-        protected override int GetInitialPlanetLevel() => 3;
+        /// <summary>Initial planet level. Home planets start at 1.</summary>
+        protected override int GetInitialPlanetLevel() => 1;
 
         /// <summary>Max level for home planets is 6.</summary>
         protected override int GetMaxLevel() => 6;
 
-        /// <summary>Max gems capacity for a given level. Level 3=800, 4=1600, 5=3200, 6=6400.</summary>
+        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=100, 2=200, 3=400, 4=800, 5=1600, 6=3200 (when base=100).</summary>
         protected override float GetMaxGemsForLevel(int level)
         {
-            if (level >= 1 && level < MaxGemsPerLevel.Length)
-                return MaxGemsPerLevel[level];
-            return level >= 6 ? 6400f : 0f;
+            if (level < 1) return 0f;
+            return baseMaxGemsLevel1 * Mathf.Pow(2f, level - 1);
         }
 
-        /// <summary>Home planets: 1 person per 5 seconds at level 3, doubles each level (2 at 4, 4 at 5, 8 at 6 per 5 sec).</summary>
+        /// <summary>Home planets: 1 person per 5 seconds at level 1, doubles each level (2 at 2, 4 at 3, 8 at 4, … per 5 sec).</summary>
         protected override float GetGrowthRatePerSecond()
         {
             int level = PlanetLevel;
-            int exponent = Mathf.Max(0, level - 3); // Level 3 -> 1 per 5s, 4 -> 2, 5 -> 4, 6 -> 8 per 5s
+            int exponent = Mathf.Max(0, level - 1); // Level 1 -> 1 per 5s, 2 -> 2, 3 -> 4, 4 -> 8 per 5s
             float peoplePer5Sec = Mathf.Pow(2f, exponent);
             return peoplePer5Sec / 5f;
         }
@@ -145,6 +144,7 @@ namespace TitanOrbit.Entities
             if (assignedTeam.Value == TeamManager.Team.None)
             {
                 assignedTeam.Value = depositingTeam;
+                SetInitialTeamOwnership(depositingTeam); // So base.DepositGemsServerRpc updates currentGems (it checks teamOwnership)
             }
             else if (assignedTeam.Value != depositingTeam)
             {
@@ -281,7 +281,7 @@ namespace TitanOrbit.Entities
             {
                 return maxShipLevelPerPlanetLevel[planetLevel];
             }
-            return 6; // Default (e.g. planet level 3+)
+            return 6; // Default (e.g. planet level 1+)
         }
 
         /// <summary>Gems required to reach this level (same as max capacity for that level).</summary>

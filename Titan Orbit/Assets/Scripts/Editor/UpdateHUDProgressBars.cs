@@ -37,14 +37,6 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Find the home planet panel
-            GameObject homePanel = GameObject.Find("HomePlanetStatsPanel");
-            if (homePanel == null)
-            {
-                Debug.LogError("HomePlanetStatsPanel not found.");
-                return;
-            }
-
             Sprite uiSprite = CreateWhiteSprite();
 
             // Create gem progress bar for ship
@@ -91,28 +83,7 @@ namespace TitanOrbit.Editor
                 Debug.Log("Created People progress bar for ship.");
             }
 
-            // Create gem progress bar for home planet
-            Transform homeGemsTextTransform = homePanel.transform.Find("GemsText");
-            hudSO = new SerializedObject(hudController);
-            SerializedProperty homeGemBarProp = hudSO.FindProperty("homePlanetGemBar");
-            if (homeGemsTextTransform != null && (homeGemBarProp == null || homeGemBarProp.objectReferenceValue == null))
-            {
-                GameObject homeGemBarObj = CreateProgressBar(homePanel.transform, "HomeGemBar", uiSprite, new Color(0.95f, 0.85f, 0.5f, 1f));
-                RectTransform homeGemBarRect = homeGemBarObj.GetComponent<RectTransform>();
-                homeGemBarRect.anchorMin = new Vector2(0, 1);
-                homeGemBarRect.anchorMax = new Vector2(1, 1);
-                homeGemBarRect.pivot = new Vector2(0.5f, 1);
-                homeGemBarRect.anchoredPosition = new Vector2(0, -64);
-                homeGemBarRect.offsetMin = new Vector2(12, 0);
-                homeGemBarRect.offsetMax = new Vector2(-12, -24);
-                homeGemBarObj.transform.SetSiblingIndex(homeGemsTextTransform.GetSiblingIndex());
-                
-                hudSO = new SerializedObject(hudController);
-                hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemBarObj.GetComponent<Slider>();
-                hudSO.ApplyModifiedPropertiesWithoutUndo();
-                Debug.Log("Created Gem progress bar for home planet.");
-            }
-
+            // Home planet stats panel was removed; skip home panel bar creation
             Debug.Log("HUD progress bars update complete!");
         }
 

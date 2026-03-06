@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -79,10 +80,10 @@ namespace TitanOrbit.UI
 
         public static OrbitStationUI GetOrCreate()
         {
-            var existing = Object.FindFirstObjectByType<OrbitStationUI>();
+            var existing = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
             if (existing != null) return existing;
 
-            Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+            Canvas canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null)
             {
                 var go = new GameObject("Canvas");
@@ -103,7 +104,7 @@ namespace TitanOrbit.UI
         {
             lastReceivedGems = gems;
             pendingGemsRequest = false;
-            var ui = Object.FindFirstObjectByType<OrbitStationUI>();
+            var ui = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
             if (ui != null) ui.RefreshFromReceivedGems();
         }
 
@@ -135,18 +136,48 @@ namespace TitanOrbit.UI
             currentHomePlanet = null;
             if (ship != null)
             {
-                foreach (var h in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+                foreach (var h in UnityEngine.Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
                 {
                     if (h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
                 }
             }
             contributedGems = 0f;
             EnsurePanelExists();
-            if (rootPanel != null) rootPanel.SetActive(true);
+            // Always pin orbit panel to top-left under ship stats (overrides any saved/scene position).
+            var myRect = transform as RectTransform;
+            if (myRect != null)
+            {
+                myRect.anchorMin = new Vector2(0f, 1f);
+                myRect.anchorMax = new Vector2(0f, 1f);
+                myRect.pivot = new Vector2(0f, 1f);
+                myRect.anchoredPosition = new Vector2(LeftMargin, -TopOffsetBelowShipStats);
+                myRect.sizeDelta = new Vector2(Mathf.Max(PanelWidth, SlotPanelWidthConst), 720f);
+            }
+            if (rootPanel != null)
+            {
+                rootPanel.SetActive(true);
+                if (slotPanel != null) slotPanel.SetActive(true);
+                if (storePanel != null) storePanel.SetActive(true);
+                transform.SetAsLastSibling(); // Bring orbit panel to front so it draws above other HUD
+            }
             pendingGemsRequest = true;
             if (HomePlanetStoreSystem.Instance != null)
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
             RefreshAll();
+            RefreshStoreTabVisibility();
+            // Force layout rebuild so content (slots, store, scroll) gets correct size after panel becomes active.
+            if (rootPanel != null)
+            {
+                var rootRect = rootPanel.transform as RectTransform;
+                if (rootRect != null) UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rootRect);
+                if (storeContentRoot != null) UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+                if (slotGridRoot != null)
+                {
+                    var slotRect = slotGridRoot.transform as RectTransform;
+                    if (slotRect != null) UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(slotRect);
+                }
+                Canvas.ForceUpdateCanvases();
+            }
         }
 
         public void Hide()
@@ -173,20 +204,27 @@ namespace TitanOrbit.UI
         {
             if (rootPanel != null) return;
 
-            Canvas canvas = GetComponentInParent<Canvas>();
-            if (canvas == null) canvas = Object.FindFirstObjectByType<Canvas>();
+            Canvas canvas = GetComponentInParent<Canvas>(true);
+            if (canvas == null) canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null) return;
 
-            const float panelHeight = 720f;
+            // Always position this panel top-left under ShipStatsPanel (fixes center positioning in existing scenes).
+            var myRect = transform as RectTransform;
+            if (myRect == null) myRect = gameObject.AddComponent<RectTransform>();
+            myRect.anchorMin = new Vector2(0f, 1f);
+            myRect.anchorMax = new Vector2(0f, 1f);
+            myRect.pivot = new Vector2(0f, 1f);
+            myRect.anchoredPosition = new Vector2(LeftMargin, -TopOffsetBelowShipStats);
+            myRect.sizeDelta = new Vector2(Mathf.Max(PanelWidth, SlotPanelWidthConst), 720f);
+
+            // Build content as child of this panel so it appears under ShipStatsPanel (position comes from this transform).
             rootPanel = new GameObject("OrbitStationRoot");
-            rootPanel.transform.SetParent(canvas.transform, false);
-            rootPanel.transform.SetAsLastSibling();
+            rootPanel.transform.SetParent(transform, false);
             var rootRect = rootPanel.AddComponent<RectTransform>();
-            rootRect.anchorMin = new Vector2(0f, 1f);
-            rootRect.anchorMax = new Vector2(0f, 1f);
-            rootRect.pivot = new Vector2(0f, 1f);
-            rootRect.sizeDelta = new Vector2(Mathf.Max(PanelWidth, SlotPanelWidthConst), panelHeight);
-            rootRect.anchoredPosition = new Vector2(LeftMargin, -TopOffsetBelowShipStats);
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
             rootPanel.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
 
             // —— Independent Ship Slot Panel (6 wide, roomy cards) ——
@@ -304,7 +342,7 @@ namespace TitanOrbit.UI
             storeContentRoot.anchorMax = new Vector2(1f, 1f);
             storeContentRoot.pivot = new Vector2(0f, 1f);
             storeContentRoot.anchoredPosition = Vector2.zero;
-            storeContentRoot.sizeDelta = new Vector2(0f, 600f);
+            storeContentRoot.sizeDelta = new Vector2(Mathf.Max(PanelWidth - 24f, 360f), 800f); // updated below after content built
             storeScrollRect.content = storeContentRoot;
 
             // Cards tab content
@@ -376,7 +414,8 @@ namespace TitanOrbit.UI
             }
             float shipsContentHeight = -shipY + 20f;
 
-            storeContentRoot.sizeDelta = new Vector2(0f, Mathf.Max(cardsContentHeight, shipsContentHeight));
+            float contentWidth = Mathf.Max(PanelWidth - 24f, 360f);
+            storeContentRoot.sizeDelta = new Vector2(contentWidth, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
             itemTypes = (StoreItemType[])System.Enum.GetValues(typeof(StoreItemType));
             itemButtons = new Button[itemTypes.Length];
             itemLabels = new TextMeshProUGUI[itemTypes.Length];
@@ -800,16 +839,23 @@ namespace TitanOrbit.UI
             if (!pendingGemsRequest) contributedGems = lastReceivedGems;
             if (gemsText != null) gemsText.text = $"Your contributed gems: {contributedGems:F0}";
 
-            if (cardButtons == null || currentShip == null || currentHomePlanet == null || currentPlanet == null) return;
+            if (cardRoots == null || cardButtons == null || currentShip == null || currentPlanet == null) return;
             if (CardShopSystem.Instance == null)
             {
                 for (int i = 0; i < cardRoots.Length; i++)
                 {
                     if (cardRoots[i] != null) cardRoots[i].SetActive(false);
                 }
+                if (chassisButtons != null)
+                {
+                    for (int i = 0; i < chassisButtons.Length; i++)
+                    {
+                        if (chassisButtons[i] != null) chassisButtons[i].gameObject.SetActive(false);
+                    }
+                }
                 return;
             }
-            int homeLevel = currentHomePlanet.HomePlanetLevel;
+            int homeLevel = currentHomePlanet != null ? currentHomePlanet.HomePlanetLevel : 1;
             bool isHomeStore = currentPlanet is HomePlanet;
             List<CardData> availableCards = isHomeStore
                 ? CardShopSystem.Instance.GetAvailableCardsForHomeStore(homeLevel, currentShip.ShipTeam)
@@ -847,6 +893,16 @@ namespace TitanOrbit.UI
             }
 
             var unlocked = CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, isHomeStore, currentPlanet.PlanetId);
+            unlocked.Sort((a, b) =>
+            {
+                if (a == null || b == null) return 0;
+                int tierA = Mathf.Max(1, a.minHomePlanetLevel);
+                int tierB = Mathf.Max(1, b.minHomePlanetLevel);
+                if (tierA != tierB) return tierA.CompareTo(tierB);
+                string nameA = a.chassis != null ? a.chassis.displayName : "";
+                string nameB = b.chassis != null ? b.chassis.displayName : "";
+                return string.Compare(nameA, nameB, StringComparison.Ordinal);
+            });
             for (int i = 0; i < chassisButtons.Length; i++)
             {
                 ShipUnlockEntry entry = (i < unlocked.Count) ? unlocked[i] : null;

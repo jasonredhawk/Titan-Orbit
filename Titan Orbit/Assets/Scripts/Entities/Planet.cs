@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Data;
 using TitanOrbit.Systems;
+using TitanOrbit.UI;
 using TMPro;
 using SpaceGraphicsToolkit;
 using SpaceGraphicsToolkit.Atmosphere;
@@ -34,6 +35,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
         [SerializeField] private TextMeshPro populationText;
+        [Tooltip("When set, shows world-space progress bars (Pop/Gems/Level) instead of population text. Created at runtime if missing.")]
+        [SerializeField] private PlanetStatsDisplay planetStatsDisplay;
         [Tooltip("Tint intensity for regular planets (0 = no tint, 1 = full team color). Only applies to regular planets, not HomePlanets.")]
         [SerializeField] private float regularPlanetTintIntensity = 0.2f;
 
@@ -53,6 +56,9 @@ namespace TitanOrbit.Entities
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
         
         private MaterialPropertyBlock tintPropertyBlock;
+
+        private const float PopulationDisplayInterval = 0.2f;
+        private float lastPopulationDisplayUpdate = -999f;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
@@ -152,6 +158,8 @@ namespace TitanOrbit.Entities
                 EnsurePopulationTextPosition();
                 EnsurePopulationTextReadable();
             }
+
+            EnsurePlanetStatsDisplay();
 
             EnsureBodyColliderSize();
             EnsureOrbitZoneExists();
@@ -263,8 +271,12 @@ namespace TitanOrbit.Entities
                 }
             }
             
-            // Update population display every frame (handles client-side updates)
-            UpdatePopulationDisplay();
+            // Update population display periodically (OnValueChanged handles immediate updates; this catches drift)
+            if (Time.time - lastPopulationDisplayUpdate >= PopulationDisplayInterval)
+            {
+                lastPopulationDisplayUpdate = Time.time;
+                UpdatePopulationDisplay();
+            }
         }
 
         /// <summary>Rotate around the ring normal so body spin matches ring axis.</summary>
@@ -484,6 +496,13 @@ namespace TitanOrbit.Entities
 
         private void UpdatePopulationDisplay()
         {
+            if (planetStatsDisplay != null && planetStatsDisplay.isActiveAndEnabled)
+            {
+                planetStatsDisplay.Refresh();
+                if (populationText != null)
+                    populationText.gameObject.SetActive(false);
+                return;
+            }
             if (populationText == null) return;
             populationText.gameObject.SetActive(true);
             populationText.text = Mathf.RoundToInt(currentPopulation.Value).ToString();
@@ -492,6 +511,18 @@ namespace TitanOrbit.Entities
             var r = populationText.GetComponent<Renderer>();
             if (r != null) r.enabled = true;
             populationText.ForceMeshUpdate(true, false);
+        }
+
+        /// <summary>Add PlanetStatsDisplay at runtime so we show progress bars instead of single population text.</summary>
+        private void EnsurePlanetStatsDisplay()
+        {
+            if (planetStatsDisplay == null)
+                planetStatsDisplay = GetComponent<PlanetStatsDisplay>();
+            if (planetStatsDisplay == null)
+            {
+                planetStatsDisplay = gameObject.AddComponent<PlanetStatsDisplay>();
+            }
+            planetStatsDisplay.Init(this);
         }
 
         /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>

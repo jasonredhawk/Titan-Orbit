@@ -2,22 +2,30 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!21 &2100000
 Material:
-  serializedVersion: 6
+  serializedVersion: 8
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: CrackLighting3
-  m_Shader: {fileID: 4800000, guid: 6eb86e4931b506a408fd1477edec61ea, type: 3}
-  m_ShaderKeywords: ADDITIVECONFIG_ON ALPHAFADEINPUTSTREAM_ON ALPHAFADE_ON COLORRAMPGRAD_ON
-    COLORRAMP_ON GLOW_ON
+  m_Shader: {fileID: 4800000, guid: de4c64f8320e9e145823481683192ba3, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - ADDITIVECONFIG_ON
+  - ALPHAFADEINPUTSTREAM_ON
+  - ALPHAFADE_ON
+  - COLORRAMPGRAD_ON
+  - COLORRAMP_ON
+  - GLOW_ON
+  m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap:
-    RenderType: Transparent
+  stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -89,6 +97,7 @@ Material:
         m_Texture: {fileID: 2800000, guid: 48da24d771916524899d36e4bfe7f762, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    m_Ints: []
     m_Floats:
     - _Alpha: 1
     - _AlphaBrightness: 0
@@ -228,6 +237,7 @@ Material:
     - _ZWrite: 0
     - _ZoomAmount: 1.5
     m_Colors:
+    - _All1VfxLightDir: {r: 1, g: 0, b: 0, a: 0}
     - _BackFaceTint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _ColorGradingDark: {r: 1, g: 1, b: 1, a: 1}
@@ -242,6 +252,9 @@ Material:
     - _Shape2Color: {r: 1, g: 1, b: 1, a: 1}
     - _Shape3Color: {r: 1, g: 1, b: 1, a: 1}
     - _ShapeColor: {r: 1, g: 1, b: 1, a: 1}
+    - globalCustomTime: {r: 1, g: 0, b: 0, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!28 &28383894319206910
 Texture2D:
   m_ObjectHideFlags: 0
@@ -252,17 +265,21 @@ Texture2D:
   m_ImageContentsHash:
     serializedVersion: 2
     Hash: 00000000000000000000000000000000
-  m_ForcedFallbackFormat: 4
-  m_DownscaleFallback: 0
-  serializedVersion: 2
+  m_IsAlphaChannelOptional: 0
+  serializedVersion: 4
   m_Width: 64
   m_Height: 1
   m_CompleteImageSize: 256
+  m_MipsStripped: 0
   m_TextureFormat: 4
   m_MipCount: 1
   m_IsReadable: 1
+  m_IsPreProcessed: 0
+  m_IgnoreMipmapLimit: 0
+  m_MipmapLimitGroupName: 
   m_StreamingMipmaps: 0
   m_StreamingMipmapsPriority: 0
+  m_VTOnly: 0
   m_AlphaIsTransparency: 0
   m_ImageCount: 1
   m_TextureDimension: 2
@@ -276,9 +293,11 @@ Texture2D:
     m_WrapW: 1
   m_LightmapFormat: 0
   m_ColorSpace: 1
+  m_PlatformBlob: 
   image data: 256
   _typelessdata: 000000ff000000ff000004ff00010dff000216ff00021eff000327ff000330ff000439ff000541ff020947ff040e4bff06134fff081953ff0a1e57ff0c235bff0e285fff102d63ff123267ff14386bff163d6fff194273ff1b4777ff1d4c7cff1f5280ff215784ff235c88ff25618cff276690ff296b94ff2b7198ff2d769cff337da3ff3a85aaff418eb2ff4796b9ff4e9ec1ff55a6c8ff5caed0ff63b7d7ff6abfdfff71c7e6ff78cfeeff7fd8f5ff86e0fdff8be3ffff90e5ffff94e6ffff99e8ffff9de9ffffa1ebffffa6ecffffaaeeffffafefffffb3f1ffffb8f2ffffbcf4ffffc0f5ffffc5f7ffffc9f8ffffcefaffffd2fbffffd6fdffffdbfeffff
   m_StreamData:
+    serializedVersion: 2
     offset: 0
     size: 0
     path: 

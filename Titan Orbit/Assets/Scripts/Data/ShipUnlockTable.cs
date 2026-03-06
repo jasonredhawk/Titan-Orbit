@@ -30,7 +30,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Returns all entries that are unlocked at the given home planet level (for UI: show tier + cost per entry).
-        /// If the table has no entries, populates default 20 AstroEagle variants (tiers 1–6) so the Ships tab always has options.
+        /// All home planets use the same AstroEagle family (1 ship at L1, +2 at L2, +3 at L3, +4 at L4, +5 at L5, +5 at L6 = 20 total).
+        /// If the table is empty or has wrong content, populates/overwrites with the default 20 AstroEagle variants.
         /// </summary>
         public List<ShipUnlockEntry> GetUnlockedEntries(int homePlanetLevel)
         {
@@ -47,18 +48,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// When the table is empty, creates 20 AstroEagle chassis (versions 1–20) with one entry each.
-        /// Tiers 1–5: 3 ships each (ships 1–15). Tier 6: 5 ships (ships 16–20). Total 20 ships.
-        /// Home level 1 shows 3 ships; level 2 shows 6; … level 5 shows 15; level 6 shows all 20 (5 new at tier 6).
+        /// Ensures the table has exactly 20 AstroEagle chassis with correct tier progression for home planets.
+        /// Level 1: 1 ship (AstroEagle_01). Level 2: +2 (3 total). Level 3: +3 (6 total). Level 4: +4 (10 total). Level 5: +5 (15 total). Level 6: +5 (20 total).
+        /// Replaces existing entries if table is empty or doesn't match this progression (so home store is never broken).
         /// </summary>
         private void EnsureDefaultAstroEagleEntries()
         {
             if (entries == null) entries = new List<ShipUnlockEntry>();
-            if (entries.Count > 0) return;
+            // If we already have the correct 20 AstroEagle entries, keep them
+            if (entries.Count == 20 && entries[0]?.chassis != null && entries[0].chassis.chassisId == "AstroEagle_01")
+                return;
+            entries.Clear();
 
             const string family = "AstroEagle";
-            // Tier 1 = ships 1-3, tier 2 = 4-6, tier 3 = 7-9, tier 4 = 10-12, tier 5 = 13-15, tier 6 = 16-20
-            int[] tierByShipIndex = { 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6 };
+            // Level 1: ship 1. Level 2: ships 2,3. Level 3: ships 4,5,6. Level 4: 7-10. Level 5: 11-15. Level 6: 16-20.
+            int[] minLevelByShipIndex = { 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6 };
 
             for (int v = 0; v < 20; v++)
             {
@@ -68,13 +72,13 @@ namespace TitanOrbit.Data
                 chassis.shipFamily = family;
                 chassis.displayName = family + " " + num;
                 chassis.originPlanetId = 0;
-                chassis.minHomePlanetLevel = 1;
+                int minLevel = minLevelByShipIndex[v];
+                chassis.minHomePlanetLevel = minLevel;
 
-                int tier = tierByShipIndex[v];
                 entries.Add(new ShipUnlockEntry
                 {
                     chassis = chassis,
-                    minHomePlanetLevel = tier,
+                    minHomePlanetLevel = minLevel,
                     gemCost = 0f
                 });
             }

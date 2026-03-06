@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using Unity.Netcode;
+using UnityEngine.InputSystem;
 using TitanOrbit.Core;
 using TitanOrbit.Input;
 using TitanOrbit.Data;
@@ -41,7 +43,27 @@ namespace TitanOrbit.Entities
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
         [Tooltip("Recoil impulse per shot scales with bullet scale and damage. Bigger bullets push the ship back more; stationary ships can reverse.")]
-        [SerializeField] private float recoilStrength = 6.5f;
+        [SerializeField] private float recoilStrength = 1.2f;
+
+        /// <summary>Bullet fire points (Weapon components only; Cockpit cannons removed).</summary>
+        private List<Transform> bulletFirePoints = new List<Transform>();
+        /// <summary>Muzzle particle systems at each bullet (Weapon) position.</summary>
+        private List<ParticleSystem> bulletMuzzleParticleSystems = new List<ParticleSystem>();
+
+        [Header("Chassis VFX (Engine/Thruster)")]
+        [Tooltip("Optional: VFX prefab for engine components (movement). e.g. AllIn1VfxToolkit Blue Fire or Real Fire.")]
+        [SerializeField] private GameObject engineVfxPrefab;
+        [Tooltip("Optional: VFX prefab for thruster components (rotation). e.g. AllIn1VfxToolkit Fire Trail.")]
+        [SerializeField] private GameObject thrusterVfxPrefab;
+        private List<GameObject> engineVfxInstances = new List<GameObject>();
+        private List<GameObject> thrusterVfxInstances = new List<GameObject>();
+        private List<ParticleSystem> engineParticleSystems = new List<ParticleSystem>();
+        private List<ParticleSystem> thrusterParticleSystems = new List<ParticleSystem>();
+
+        private WeaponConfig weaponConfig;
+        /// <summary>Bullets from Weapon: light projectiles, low energy. Only weapons fire; cockpits do not.</summary>
+        private WeaponConfig bulletConfig;
+        private float[] bulletLastFireTime;
 
         [Header("Ramming")]
         [Tooltip("Base damage applied to ship and asteroid on impact (in addition to speed-based damage).")]
@@ -61,8 +83,6 @@ namespace TitanOrbit.Entities
         private float lastRamDamageTime = -999f;
         [Tooltip("When overlapping an asteroid (e.g. after respawn), ship is pushed outward at this speed for a smooth escape.")]
         [SerializeField] private float overlapEscapeSpeed = 4f;
-        private WeaponConfig weaponConfig;
-        private float[] cannonLastFireTime;
 
         private static WeaponConfig defaultWeaponConfig;
 
@@ -78,20 +98,20 @@ namespace TitanOrbit.Entities
             return defaultWeaponConfig;
         }
 
-        /// <summary>Always returns a valid config (from ship data or default). Use this instead of weaponConfig so client can fire without sync.</summary>
+        /// <summary>Always returns a valid config for legacy (bullets only). When chassis is applied, bulletConfig is set from Weapon components.</summary>
         private WeaponConfig EffectiveWeaponConfig =>
             (weaponConfig != null && weaponConfig.cannons != null && weaponConfig.cannons.Count > 0)
                 ? weaponConfig
                 : GetDefaultWeaponConfig();
 
-        private void EnsureCannonLastFireTime()
+        private void EnsureBulletLastFireTime()
         {
-            var wc = EffectiveWeaponConfig;
-            int n = wc.cannons.Count;
-            if (cannonLastFireTime == null || cannonLastFireTime.Length != n)
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            int bn = bulletWc.cannons != null ? bulletWc.cannons.Count : 0;
+            if (bulletLastFireTime == null || bulletLastFireTime.Length != bn)
             {
-                cannonLastFireTime = new float[n];
-                for (int i = 0; i < n; i++) cannonLastFireTime[i] = -999f;
+                bulletLastFireTime = new float[bn];
+                for (int i = 0; i < bn; i++) bulletLastFireTime[i] = -999f;
             }
         }
 
@@ -130,6 +150,8 @@ namespace TitanOrbit.Entities
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
         private GameObject lastVisualApplyPrefab;
+        /// <summary>Last chassis index we applied (so we re-apply when buying a new ship). -2 = never applied; server uses this to apply default AstroEagle_01 once.</summary>
+        private int _lastAppliedChassisIndex = -2;
 
         private NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
@@ -285,7 +307,24 @@ namespace TitanOrbit.Entities
         }
         public float CurrentGems => currentGems.Value;
         public bool IsDead => isDead.Value;
-        public float GemCapacity => gemCapacity + GetCardGemCapacityAdd();
+        /// <summary>Max gem capacity. Base = 20 * Level^2; level is max(shipLevel, chassis tier) so purchasing a higher-tier ship increases capacity. Plus card bonuses.</summary>
+        public float GemCapacity => 20f * EffectiveLevelForCapacity * EffectiveLevelForCapacity + GetCardGemCapacityAdd();
+
+        /// <summary>Level used for capacity and scale: max(ship level from upgrades, chassis tier from purchased ship). So buying a Level 2 chassis gives 20*2^2 = 80 capacity.</summary>
+        public int EffectiveLevelForCapacity
+        {
+            get
+            {
+                int chassisTier = 1;
+                if (CardShopSystem.Instance != null && currentChassisIndex.Value >= 0)
+                {
+                    var chassis = CardShopSystem.Instance.GetChassisByIndex(currentChassisIndex.Value);
+                    if (chassis != null && chassis.minHomePlanetLevel > 0)
+                        chassisTier = chassis.minHomePlanetLevel;
+                }
+                return Mathf.Max(shipLevel, chassisTier);
+            }
+        }
         public float CurrentPeople => currentPeople.Value;
         public float PeopleCapacity => peopleCapacity;
         public float CurrentEnergy => currentEnergy.Value;
@@ -315,8 +354,21 @@ namespace TitanOrbit.Entities
 
         private const float FIXED_Y_POSITION = 0f;
 
+        /// <summary>Scale increase per ship level (e.g. 1.2 = 20% bigger per level). Level 1 = 1.0, level 2 = 1.2, level 3 = 1.44. Used for ship visual, camera zoom, weapon scale/damage.</summary>
+        private const float SCALE_PER_LEVEL = 1.2f;
+        /// <summary>Scale factor for current ship level: 1.2^(level-1). Level 1 = 1, level 2 = 1.2, level 3 = 1.44, etc.</summary>
+        public float LevelScaleFactor => Mathf.Pow(SCALE_PER_LEVEL, shipLevel - 1);
+
+        /// <summary>Cached so we don't call GetComponent every frame in Update.</summary>
+        private bool _isAIControlled;
+        /// <summary>Base visual scale (from ShipData/chassis) without level. Applied scale = visualBaseScale * LevelScaleFactor.</summary>
+        private float visualBaseScale = 1f;
+        /// <summary>Prefab root localScale from the loaded model (for re-applying with level scale in LateUpdate).</summary>
+        private Vector3 lastPrefabScale = Vector3.one;
+
         private void Awake()
         {
+            _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             // Run before OnNetworkSpawn/SetShipData so the BankPivot + Prefab structure exists.
             EnsureVisualRootForBanking();
 
@@ -399,6 +451,20 @@ namespace TitanOrbit.Entities
             return prefab;
         }
 
+        /// <summary>Ensures firePoint is set so the owner can shoot. Creates a fallback under the prefab root if null (e.g. prefab has no FirePoint or ApplyShipVisual wasn't run).</summary>
+        private void EnsureFirePoint()
+        {
+            if (firePoint != null || !IsOwner) return;
+            Transform root = GetPrefabTransform();
+            if (root == null) return;
+            GameObject fp = new GameObject("FirePoint");
+            fp.transform.SetParent(root, false);
+            fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+            fp.transform.localRotation = Quaternion.identity;
+            fp.transform.localScale = Vector3.one;
+            firePoint = fp.transform;
+        }
+
         /// <summary>
         /// Exposes the prefab container so external systems (e.g. ShipVisualComposer) can attach card-driven parts.
         /// </summary>
@@ -442,6 +508,18 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            // Server: apply starter ship (chassis 0) first so SetShipData won't overwrite with a different prefab
+            if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
+            {
+                GameObject starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                if (starterPrefab != null)
+                {
+                    ApplyShipVisualFromPrefab(starterPrefab);
+                    SetCurrentChassisIndex(0);
+                    _lastAppliedChassisIndex = 0;
+                }
+            }
+
             // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
             if (shipData != null && weaponConfig == null)
                 SetShipData(shipData);
@@ -532,9 +610,31 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            // Server: ensure first ship (no chassis yet) gets AstroEagle_01 visual so the first ship created is the one we want
+            if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
+            {
+                GameObject prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                if (prefab != null)
+                {
+                    ApplyShipVisualFromPrefab(prefab);
+                    SetCurrentChassisIndex(0);
+                    _lastAppliedChassisIndex = 0;
+                }
+            }
+            // Owner: when chassis index is set (or synced), apply that ship visual so client sees the correct model
+            if (IsOwner && currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
+            {
+                GameObject prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+                if (prefab != null)
+                {
+                    ApplyShipVisualFromPrefab(prefab);
+                    _lastAppliedChassisIndex = currentChassisIndex.Value;
+                }
+            }
+
             if (!IsOwner) return;
             // AI ships have their own controller; skip player input and orbit UI logic
-            if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
+            if (_isAIControlled) return;
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
@@ -578,9 +678,69 @@ namespace TitanOrbit.Entities
 
         private void LateUpdate()
         {
-            // Banking: visual lean into turn. Run every frame in LateUpdate for smooth visuals (all ships).
+            // Apply 20% per level scale to prefab container so when ship levels up the visual updates
+            if (visualBaseScale > 0.001f && lastPrefabScale.sqrMagnitude > 0.001f)
+            {
+                Transform root = GetPrefabTransform();
+                if (root != null)
+                    root.localScale = Vector3.Scale(lastPrefabScale, Vector3.one * (visualBaseScale * LevelScaleFactor));
+            }
+            UpdateEngineAndThrusterVFX();
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             ApplyVisualBanking(Time.deltaTime);
+        }
+
+        private static readonly float ENGINE_VFX_SPEED_THRESHOLD = 0.5f;
+        private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_RAD = 0.15f;
+        private static readonly float ENGINE_VFX_EMISSION_RATE = 18f;
+        private static readonly float THRUSTER_VFX_EMISSION_RATE = 15f;
+        private bool lastEngineVfxMoving = false;
+        private bool lastThrusterVfxTurning = false;
+
+        private void UpdateEngineAndThrusterVFX()
+        {
+            if (rb == null) return;
+            if (!IsOwner) return;
+            if (engineVfxInstances.Count == 0 && thrusterVfxInstances.Count == 0) return;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float speed = vel.magnitude;
+            float angularRad = rb.angularVelocity.magnitude;
+            bool moving = speed >= ENGINE_VFX_SPEED_THRESHOLD;
+            bool turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD;
+            if (moving == lastEngineVfxMoving && turning == lastThrusterVfxTurning)
+                return;
+            lastEngineVfxMoving = moving;
+            lastThrusterVfxTurning = turning;
+
+            for (int i = 0; i < engineVfxInstances.Count; i++)
+            {
+                GameObject go = engineVfxInstances[i];
+                if (go != null) go.SetActive(moving);
+            }
+            for (int i = 0; i < thrusterVfxInstances.Count; i++)
+            {
+                GameObject go = thrusterVfxInstances[i];
+                if (go != null) go.SetActive(turning);
+            }
+            for (int i = 0; i < engineParticleSystems.Count; i++)
+            {
+                ParticleSystem ps = engineParticleSystems[i];
+                if (ps == null) continue;
+                var emission = ps.emission;
+                emission.enabled = true;
+                emission.rateOverTime = moving ? ENGINE_VFX_EMISSION_RATE : 0f;
+                if (moving && !ps.isPlaying) ps.Play();
+            }
+            for (int i = 0; i < thrusterParticleSystems.Count; i++)
+            {
+                ParticleSystem ps = thrusterParticleSystems[i];
+                if (ps == null) continue;
+                var emission = ps.emission;
+                emission.enabled = true;
+                emission.rateOverTime = turning ? THRUSTER_VFX_EMISSION_RATE : 0f;
+                if (turning && !ps.isPlaying) ps.Play();
+            }
         }
 
         /// <summary>
@@ -702,7 +862,10 @@ namespace TitanOrbit.Entities
         private void HandleInput()
         {
             if (inputHandler == null) return;
-            
+
+            // Ensure we have a fire point (e.g. if ApplyShipVisual wasn't run or prefab has no FirePoint child)
+            EnsureFirePoint();
+
             // Dead ships cannot process input
             if (isDead.Value)
             {
@@ -727,7 +890,7 @@ namespace TitanOrbit.Entities
 
             // Shooting input - pass fire position and direction from client (Vector3 avoids Quaternion sync issues)
             // Don't fire when clicking on UI (e.g. orbit menu buttons) or when dead
-            if (inputHandler.ShootPressed && CanAnyCannonFire() && firePoint != null && !IsPointerOverUI())
+            if (inputHandler.ShootPressed && CanFire() && firePoint != null && !IsPointerOverUI())
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
@@ -765,9 +928,20 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>True only when the pointer is over a UI element (Canvas/Graphic). Ignores 3D colliders so clicking the ship or world doesn't block shooting.</summary>
         private static bool IsPointerOverUI()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current == null) return false;
+            Vector2 pointerPosition = Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
+            var eventData = new PointerEventData(EventSystem.current) { position = pointerPosition };
+            var results = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(eventData, results);
+            foreach (var r in results)
+            {
+                if (r.gameObject != null && r.module is GraphicRaycaster)
+                    return true;
+            }
+            return false;
         }
 
         private void HandleMovement()
@@ -987,17 +1161,20 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private bool CanAnyCannonFire()
+        private bool CanFire()
         {
             if (isDead.Value) return false;
-            var wc = EffectiveWeaponConfig;
-            EnsureCannonLastFireTime();
-            for (int i = 0; i < wc.cannons.Count; i++)
+            EnsureBulletLastFireTime();
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            if (bulletWc.cannons != null)
             {
-                var c = wc.cannons[i];
-                if (currentEnergy.Value >= c.energyCostPerShot &&
-                    (i >= cannonLastFireTime.Length || Time.time - cannonLastFireTime[i] >= 1f / c.fireRate))
-                    return true;
+                for (int i = 0; i < bulletWc.cannons.Count; i++)
+                {
+                    var c = bulletWc.cannons[i];
+                    if (currentEnergy.Value >= c.energyCostPerShot &&
+                        (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / c.fireRate))
+                        return true;
+                }
             }
             return false;
         }
@@ -1006,70 +1183,89 @@ namespace TitanOrbit.Entities
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
         {
             if (CombatSystem.Instance == null) return;
-            var wc = EffectiveWeaponConfig;
-            EnsureCannonLastFireTime();
+            EnsureBulletLastFireTime();
             Vector3 forward = shipForward;
             forward.y = 0f;
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
             else forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward);
-            Vector3 fireOrigin = firePoint != null ? firePoint.position : shipPosition + forward * 2f;
+            Vector3 defaultFireOrigin = firePoint != null ? firePoint.position : shipPosition + forward * 2f;
             Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
             shipVel.y = 0f;
 
-            for (int i = 0; i < wc.cannons.Count; i++)
+            var bulletIndicesFired = new System.Collections.Generic.List<byte>();
+
+            // Fire bullets (Weapon only): small projectiles, low energy per shot
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            if (bulletWc.cannons != null)
             {
-                var c = wc.cannons[i];
-                if (currentEnergy.Value < c.energyCostPerShot) continue;
-                if (i < cannonLastFireTime.Length && Time.time - cannonLastFireTime[i] < 1f / c.fireRate) continue;
-
-                currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
-                if (i < cannonLastFireTime.Length) cannonLastFireTime[i] = Time.time;
-
-                float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
-                Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
-                int numShots = 1;
-                float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
-                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                for (int i = 0; i < bulletWc.cannons.Count; i++)
                 {
-                    numShots = Mathf.Max(1, c.spreadProjectileCount);
-                }
-                for (int s = 0; s < numShots; s++)
-                {
-                    Vector3 dir = baseDir;
-                    if (c.spreadType == CannonSpreadType.RandomSpread)
+                    var c = bulletWc.cannons[i];
+                    if (currentEnergy.Value < c.energyCostPerShot) continue;
+                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / c.fireRate) continue;
+
+                    currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
+                    bulletLastFireTime[i] = Time.time;
+                    bulletIndicesFired.Add((byte)i);
+
+                    Vector3 fireOrigin = defaultFireOrigin;
+                    if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
+                        fireOrigin = bulletFirePoints[i].position;
+                    else
                     {
-                        float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                        Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
+                        fireOrigin = defaultFireOrigin + offset;
                     }
-                    else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+
+                    float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
+                    Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
+                    int numShots = 1;
+                    float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
+                    if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                        numShots = Mathf.Max(1, c.spreadProjectileCount);
+                    for (int s = 0; s < numShots; s++)
                     {
-                        float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
-                        float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
-                    }
-                    Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
-                    float damage = c.damagePerBullet * DamageMultiplier;
-                    float speed = c.bulletSpeed * SpeedMultiplier;
-                    float scale = c.bulletScale * (0.65f + damage / 50f);
-                    byte shapeIndex = 0; // TODO: from weapon config or player preference
-                    CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin + offset, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, shapeIndex, shipVel);
-                    // Recoil: scaled down so it nudges the ship without throwing it; scales with bullet size and damage
-                    if (rb != null)
-                    {
-                        // Same impulse regardless of mass: empty ship feels more recoil, heavy ship absorbs it better
-                        float recoilImpulse = recoilStrength * scale * (0.25f + damage / 150f);
-                        rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                        Vector3 dir = baseDir;
+                        if (c.spreadType == CannonSpreadType.RandomSpread)
+                        {
+                            float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
+                            dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                        }
+                        else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                        {
+                            float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
+                            float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
+                            dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                        }
+                        float damage = c.damagePerBullet * DamageMultiplier * LevelScaleFactor;
+                        float speed = c.bulletSpeed * SpeedMultiplier;
+                        float scale = c.bulletScale * (0.65f + damage / 50f) * LevelScaleFactor;
+                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
+                        if (rb != null)
+                        {
+                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
+                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                        }
                     }
                 }
             }
-            FireClientRpc();
+
+            FireClientRpc(bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>());
         }
 
         [ClientRpc]
-        private void FireClientRpc()
+        private void FireClientRpc(byte[] bulletIndicesFired)
         {
-            // Visual/audio feedback for firing
+            if (bulletIndicesFired != null && bulletMuzzleParticleSystems != null)
+            {
+                for (int j = 0; j < bulletIndicesFired.Length; j++)
+                {
+                    int idx = bulletIndicesFired[j];
+                    if (idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
+                        bulletMuzzleParticleSystems[idx].Play();
+                }
+            }
         }
 
         /// <summary>Server-only: AI ships call this to fire at a target.</summary>
@@ -1077,7 +1273,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             if (isDead.Value) return;
-            if (!CanAnyCannonFire()) return;
+            if (!CanFire()) return;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
             else direction.Normalize();
@@ -1697,8 +1893,8 @@ namespace TitanOrbit.Entities
                 weaponConfig = data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0
                     ? data.weaponConfig
                     : GetDefaultWeaponConfig();
-                cannonLastFireTime = new float[weaponConfig.cannons.Count];
-                for (int i = 0; cannonLastFireTime != null && i < cannonLastFireTime.Length; i++) cannonLastFireTime[i] = -999f;
+                EnsureBulletLastFireTime();
+                for (int i = 0; bulletLastFireTime != null && i < bulletLastFireTime.Length; i++) bulletLastFireTime[i] = -999f;
 
                 maxHealth = data.baseMaxHealth;
                 healthRegenRate = data.baseHealthRegenRate;
@@ -1710,11 +1906,14 @@ namespace TitanOrbit.Entities
 
                 if (data.shipPrefab != null)
                 {
-                    ApplyShipVisual(data.shipPrefab, data);
-                    // Allow an attached ShipVisualComposer to further customize visuals from equipped cards.
-                    var composer = GetComponent<ShipVisualComposer>();
-                    if (composer != null)
-                        composer.RebuildVisuals();
+                    // When chassis already applied (e.g. starter ship at index 0), don't overwrite with ShipData's prefab
+                    if (currentChassisIndex.Value < 0)
+                    {
+                        ApplyShipVisual(data.shipPrefab, data);
+                        var composer = GetComponent<ShipVisualComposer>();
+                        if (composer != null)
+                            composer.RebuildVisuals();
+                    }
                 }
                 else
                     Debug.LogWarning($"Starship: ShipData '{data.shipName}' has no shipPrefab. Assign a ship prefab (e.g. Level 1) so the ship visual loads.");
@@ -1726,13 +1925,10 @@ namespace TitanOrbit.Entities
         public void ApplyShipVisualFromPrefab(GameObject shipPrefab)
         {
             if (shipPrefab == null) return;
-            if (shipData != null)
-            {
-                ApplyShipVisual(shipPrefab, shipData);
-                var composer = GetComponent<ShipVisualComposer>();
-                if (composer != null) composer.RebuildVisuals();
-                ApplyHullIdentityColor();
-            }
+            ApplyShipVisual(shipPrefab, shipData);
+            var composer = GetComponent<ShipVisualComposer>();
+            if (composer != null) composer.RebuildVisuals();
+            ApplyHullIdentityColor();
         }
 
         /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>
@@ -1802,8 +1998,12 @@ namespace TitanOrbit.Entities
             }
             Destroy(instance);
 
-            // Scale parent container once (includes prefab root scale + game scale)
-            float gameScale = (data != null && data.visualScale > 0f ? data.visualScale : 1f) * Mathf.Max(0.005f, shipVisualScaleMultiplier);
+            // Scale parent container once (includes prefab root scale + game scale + 20% per level)
+            float baseScale = (data != null && data.visualScale > 0f ? data.visualScale : 1f) * Mathf.Max(0.005f, shipVisualScaleMultiplier);
+            visualBaseScale = baseScale;
+            lastPrefabScale = prefabScale;
+            float levelScale = LevelScaleFactor;
+            float gameScale = baseScale * levelScale;
             root.localScale = Vector3.Scale(prefabScale, Vector3.one * gameScale);
 
             // Rebind FirePoint from the prefab child we just moved (don't use Find - old children may still be present until Destroy runs)
@@ -1824,6 +2024,210 @@ namespace TitanOrbit.Entities
             // Imported example prefabs may include many colliders/rigidbodies/scripts intended for editor setup.
             // Keep only visual components under the ship visual root to avoid heavy runtime overhead.
             StripNonVisualComponents(root, firePoint);
+
+            // Parse chassis component names (e.g. AstroEagle_Weapon, AstroEagle_Engine_2) and apply stats + weapon/muzzle setup.
+            ApplyChassisComponentStats(root, data);
+        }
+
+        private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
+        private static readonly float PER_ENGINE_MOVEMENT = 1.2f;
+        private static readonly float PER_TURN_COMPONENT_ROTATION = 12f;
+        private static readonly float PER_WING_GEM_CAPACITY = 18f;
+        private static readonly float PER_COCKPIT_PEOPLE = 2f;
+        private static readonly float PER_PART_PEOPLE = 1f;
+        /// <summary>Cannon energy: extra capacity and regen per Cockpit component.</summary>
+        private static readonly float PER_COCKPIT_ENERGY_CAPACITY = 15f;
+        private static readonly float PER_COCKPIT_ENERGY_REGEN = 1.5f;
+        /// <summary>Bullet energy: damage and energy cost scale per Weapon (proportionate).</summary>
+        private static readonly float PER_WEAPON_DAMAGE_SCALE = 0.15f;
+        private static readonly float PER_WEAPON_ENERGY_COST_SCALE = 0.25f;
+        private static readonly float PER_WEAPON_BULLET_SPEED_SCALE = 0.08f;
+        private static readonly float MUZZLE_BASE_SIZE = 0.18f;
+        private static readonly float MUZZLE_SIZE_PER_ENERGY = 0.04f;
+
+        private void ApplyChassisComponentStats(Transform root, ShipData data)
+        {
+            var stats = ChassisComponentStats.FromTransform(root, CHASSIS_FAMILY_PREFIX);
+
+            // Apply stat modifiers from components (on top of base from ShipData). Scale = bonus multiplier per component.
+            if (data != null)
+            {
+                movementSpeed = data.baseMovementSpeed + stats.engineScaleTotal * PER_ENGINE_MOVEMENT;
+                float turnScaleTotal = stats.thrusterScaleTotal + stats.tailScaleTotal + stats.finScaleTotal;
+                rotationSpeed = data.baseRotationSpeed + turnScaleTotal * PER_TURN_COMPONENT_ROTATION;
+                gemCapacity = data.baseGemCapacity + stats.wingScaleTotal * PER_WING_GEM_CAPACITY;
+                peopleCapacity = data.basePeopleCapacity + stats.cockpitScaleTotal * PER_COCKPIT_PEOPLE + stats.partScaleTotal * PER_PART_PEOPLE;
+            }
+
+            // Clear previous bullet state (from previous prefab). Cannons removed; only Weapon bullets.
+            bulletFirePoints.Clear();
+            foreach (var ps in bulletMuzzleParticleSystems)
+            {
+                if (ps != null && ps.gameObject != null)
+                    Object.Destroy(ps.gameObject);
+            }
+            bulletMuzzleParticleSystems.Clear();
+            foreach (var go in engineVfxInstances)
+            {
+                if (go != null) Object.Destroy(go);
+            }
+            engineVfxInstances.Clear();
+            engineParticleSystems.Clear();
+            foreach (var go in thrusterVfxInstances)
+            {
+                if (go != null) Object.Destroy(go);
+            }
+            thrusterVfxInstances.Clear();
+            thrusterParticleSystems.Clear();
+            lastEngineVfxMoving = false;
+            lastThrusterVfxTurning = false;
+
+            bulletConfig = null;
+
+            // Energy (capacity/regen) from Cockpit scale — cockpits no longer fire, only provide stats
+            if (data != null && stats.cockpitCannonCount > 0)
+            {
+                energyCapacity = data.baseEnergyCapacity + stats.cockpitCannonScaleTotal * PER_COCKPIT_ENERGY_CAPACITY;
+                energyRegenRate = data.baseEnergyRegenRate + stats.cockpitCannonScaleTotal * PER_COCKPIT_ENERGY_REGEN;
+            }
+
+            // Bullets (Weapon only): small projectiles, low energy; fire from weapon positions
+            int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
+            float weaponScaleTotal = 0f;
+            for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
+            if (weaponScaleTotal <= 0f && weaponCount > 0) weaponScaleTotal = weaponCount;
+            float bulletEnergyScale = 1f + weaponScaleTotal * PER_WEAPON_ENERGY_COST_SCALE;
+            float bulletDamageScale = 1f + weaponScaleTotal * PER_WEAPON_DAMAGE_SCALE;
+            float bulletSpeedScale = 1f + weaponScaleTotal * PER_WEAPON_BULLET_SPEED_SCALE;
+
+            if (weaponCount > 0 && data != null)
+            {
+                var baseBullet = (data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)
+                    ? data.weaponConfig.cannons[0]
+                    : GetDefaultWeaponConfig().cannons[0];
+                var bc = ScriptableObject.CreateInstance<WeaponConfig>();
+                bc.displayName = "ChassisBullets";
+                bc.cannons = new System.Collections.Generic.List<CannonConfig>();
+                for (int i = 0; i < weaponCount; i++)
+                {
+                    var c = baseBullet.Clone();
+                    c.energyCostPerShot *= bulletEnergyScale;
+                    c.damagePerBullet *= bulletDamageScale;
+                    c.bulletSpeed *= bulletSpeedScale;
+                    bc.cannons.Add(c);
+                    Transform pt = stats.weaponTransforms[i];
+                    if (pt == null) pt = firePoint;
+                    bulletFirePoints.Add(pt);
+                    float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
+                    float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
+                    ParticleSystem muzzle = CreateMuzzleParticleSystem(pt, muzzleScale);
+                    if (muzzle != null) bulletMuzzleParticleSystems.Add(muzzle);
+                }
+                bulletConfig = bc;
+            }
+
+            EnsureBulletLastFireTime();
+
+            // Engine VFX (movement) and Thruster VFX (rotation)
+            if (engineVfxPrefab != null && stats.engineTransforms != null)
+            {
+                foreach (Transform t in stats.engineTransforms)
+                {
+                    if (t == null) continue;
+                    GameObject go = Instantiate(engineVfxPrefab, t);
+                    go.transform.localPosition = Vector3.zero;
+                    go.transform.localRotation = Quaternion.identity;
+                    go.transform.localScale = Vector3.one;
+                    engineVfxInstances.Add(go);
+                    var psList = go.GetComponentsInChildren<ParticleSystem>(true);
+                    foreach (var ps in psList)
+                    {
+                        if (ps != null) engineParticleSystems.Add(ps);
+                    }
+                }
+            }
+            if (thrusterVfxPrefab != null && stats.thrusterTransforms != null)
+            {
+                foreach (Transform t in stats.thrusterTransforms)
+                {
+                    if (t == null) continue;
+                    GameObject go = Instantiate(thrusterVfxPrefab, t);
+                    go.transform.localPosition = Vector3.zero;
+                    go.transform.localRotation = Quaternion.identity;
+                    go.transform.localScale = Vector3.one;
+                    thrusterVfxInstances.Add(go);
+                    var psList = go.GetComponentsInChildren<ParticleSystem>(true);
+                    foreach (var ps in psList)
+                    {
+                        if (ps != null) thrusterParticleSystems.Add(ps);
+                    }
+                }
+            }
+        }
+
+        private static ParticleSystem CreateMuzzleParticleSystem(Transform parent, float visualScale = 0.18f)
+        {
+            if (parent == null) return null;
+            GameObject go = new GameObject("MuzzleFlash");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.playOnAwake = false;
+            main.duration = 0.1f;
+            main.loop = false;
+            main.startLifetime = 0.08f;
+            main.startSpeed = 2.5f;
+            main.startSize = Mathf.Max(0.12f, visualScale);
+            main.startColor = new Color(1f, 0.85f, 0.6f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var emission = ps.emission;
+            emission.enabled = true;
+            emission.rateOverTime = 0f;
+            int burstCount = Mathf.Clamp(Mathf.RoundToInt(4 * visualScale / 0.18f), 3, 12);
+            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, burstCount) });
+            var shape = ps.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Sphere;
+            shape.radius = Mathf.Max(0.02f, 0.02f * visualScale / 0.18f);
+
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            if (renderer != null)
+            {
+                Material urpMat = GetMuzzleFlashURPMaterial();
+                if (urpMat != null)
+                    renderer.sharedMaterial = urpMat;
+            }
+            return ps;
+        }
+
+        private static Material muzzleFlashURPMaterial;
+
+        private static Material GetMuzzleFlashURPMaterial()
+        {
+            if (muzzleFlashURPMaterial != null) return muzzleFlashURPMaterial;
+            Material fromResources = Resources.Load<Material>("Materials/MuzzleFlash");
+            if (fromResources != null)
+            {
+                muzzleFlashURPMaterial = fromResources;
+                return muzzleFlashURPMaterial;
+            }
+            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+                ?? Shader.Find("Universal Render Pipeline/Particles/Lit")
+                ?? Shader.Find("Particles/Standard Unlit")
+                ?? Shader.Find("Universal Render Pipeline/Lit")
+                ?? Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (shader == null) return null;
+            muzzleFlashURPMaterial = new Material(shader);
+            muzzleFlashURPMaterial.name = "MuzzleFlash_URP";
+            muzzleFlashURPMaterial.SetColor("_BaseColor", Color.white);
+            if (muzzleFlashURPMaterial.HasProperty("_Color"))
+                muzzleFlashURPMaterial.SetColor("_Color", Color.white);
+            muzzleFlashURPMaterial.renderQueue = 3000;
+            return muzzleFlashURPMaterial;
         }
 
         /// <summary>Removes expensive non-visual components from adopted visual hierarchy.</summary>

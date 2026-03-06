@@ -27,20 +27,10 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI shipTypeText;
         [SerializeField] private Image teamIndicator;
 
-        [Header("Home Planet Stats (Top-Right)")]
-        [SerializeField] private GameObject homePlanetPanel;
-        [SerializeField] private TextMeshProUGUI homePlanetLevelText;
-        [SerializeField] private Slider homePlanetGemBar;
-        [SerializeField] private TextMeshProUGUI homePlanetGemsText;
-
         [Header("Team Colors")]
         [SerializeField] private Color teamAColor = Color.red;
         [SerializeField] private Color teamBColor = Color.blue;
         [SerializeField] private Color teamCColor = Color.green;
-
-        [Header("Proximity Radar (planets around ship)")]
-        [SerializeField] private GameObject proximityRadar;
-        [SerializeField] private Key proximityRadarToggleKey = Key.R;
 
         [Header("Leaderboard (Right Side)")]
         [SerializeField] private GameObject leaderboardPanel;
@@ -51,6 +41,8 @@ namespace TitanOrbit.UI
         private Starship playerShip;
         private int viewedTeamIndex = -1;
         private float nextLeaderboardRefreshTime;
+        private float lastPlayerShipLookupTime = -999f;
+        private const float PlayerShipLookupInterval = 0.3f;
         private ScrollRect leaderboardScrollRect;
         private RectTransform leaderboardViewportRect;
         private RectTransform leaderboardContentRect;
@@ -75,26 +67,33 @@ namespace TitanOrbit.UI
             public TextMeshProUGUI scoreText;
         }
 
+        private void Start()
+        {
+            // Remove center proximity radar (no longer used)
+            Transform pr = transform.Find("ProximityRadar");
+            if (pr != null)
+                Destroy(pr.gameObject);
+        }
+
         private void Update()
         {
-            // Toggle proximity radar (when off, GameObject is inactive so no Update or rendering)
-            if (proximityRadar == null)
-                proximityRadar = transform.Find("ProximityRadar")?.gameObject;
-
             var keyboard = Keyboard.current;
-            if (proximityRadar != null && keyboard != null && keyboard[proximityRadarToggleKey].wasPressedThisFrame)
-                proximityRadar.SetActive(!proximityRadar.activeSelf);
             if (keyboard != null && keyboard[leaderboardToggleTeamKey].wasPressedThisFrame)
                 CycleViewedTeam();
 
-            if (playerShip == null)
+            if (playerShip == null || !playerShip.IsSpawned)
             {
-                foreach (var ship in FindObjectsOfType<Starship>())
+                if (Time.time - lastPlayerShipLookupTime >= PlayerShipLookupInterval)
                 {
-                    if (ship.IsOwner) { playerShip = ship; break; }
+                    lastPlayerShipLookupTime = Time.time;
+                    playerShip = null;
+                    foreach (var ship in FindObjectsOfType<Starship>())
+                    {
+                        if (ship.IsOwner) { playerShip = ship; break; }
+                    }
+                    if (playerShip != null && viewedTeamIndex < 0)
+                        viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip.ShipTeam));
                 }
-                if (playerShip != null && viewedTeamIndex < 0)
-                    viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip.ShipTeam));
             }
 
             // Hide entire HUD until we have a local ship that has chosen a team (don't disable this GameObject so Update keeps running)
@@ -110,12 +109,8 @@ namespace TitanOrbit.UI
                     if (t != null) t.gameObject.SetActive(showInGamePanels);
                 }
             }
-            if (homePlanetPanel != null)
-                homePlanetPanel.SetActive(showInGamePanels);
             if (leaderboardPanel != null)
                 leaderboardPanel.SetActive(showInGamePanels);
-            if (proximityRadar != null)
-                proximityRadar.SetActive(showInGamePanels);
 
             if (!showInGamePanels)
                 return;
@@ -157,8 +152,6 @@ namespace TitanOrbit.UI
             if (teamIndicator != null)
                 teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
 
-            // Home planet stats (top-right): show player's team base
-            UpdateHomePlanetPanel();
             UpdateLeaderboardPanel();
         }
 
@@ -603,37 +596,6 @@ namespace TitanOrbit.UI
             txt.alignment = TextAlignmentOptions.Center;
             txt.color = Color.white;
             txt.raycastTarget = false;
-        }
-
-        private void UpdateHomePlanetPanel()
-        {
-            HomePlanet homePlanet = GetHomePlanetForTeam(playerShip.ShipTeam);
-            if (homePlanetPanel != null)
-                homePlanetPanel.SetActive(homePlanet != null);
-            if (homePlanet == null)
-            {
-                if (homePlanetLevelText != null) homePlanetLevelText.text = "—";
-                if (homePlanetGemsText != null) homePlanetGemsText.text = "—";
-                return;
-            }
-            if (homePlanetLevelText != null)
-                homePlanetLevelText.text = $"Level {homePlanet.HomePlanetLevel}";
-            
-            if (homePlanetGemBar != null)
-                homePlanetGemBar.value = homePlanet.MaxGems > 0 ? homePlanet.CurrentGems / homePlanet.MaxGems : 0f;
-            
-            if (homePlanetGemsText != null)
-                homePlanetGemsText.text = $"{homePlanet.CurrentGems:F0} / {homePlanet.MaxGems:F0}";
-        }
-
-        private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
-        {
-            if (team == TeamManager.Team.None) return null;
-            foreach (var hp in FindObjectsOfType<HomePlanet>())
-            {
-                if (hp.AssignedTeam == team) return hp;
-            }
-            return null;
         }
 
         private Color GetTeamColor(Core.TeamManager.Team team)

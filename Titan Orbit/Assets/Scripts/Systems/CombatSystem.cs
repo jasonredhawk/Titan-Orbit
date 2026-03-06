@@ -18,6 +18,10 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject rocketPrefab;
         [SerializeField] private GameObject minePrefab;
         [SerializeField] private int maxBullets = 200; // Limit total bullets to prevent lag
+        [Tooltip("Global multiplier for bullet speed. Lower = slower bullets (e.g. 0.4 = 40% of configured speed).")]
+        [SerializeField] [Range(0.1f, 2f)] private float bulletSpeedMultiplier = 0.4f;
+
+        private static bool loggedBulletPrefabNull;
 
         private void Awake()
         {
@@ -29,12 +33,22 @@ namespace TitanOrbit.Systems
             {
                 Destroy(gameObject);
             }
+            if (bulletPrefab == null)
+                bulletPrefab = Resources.Load<GameObject>("Bullet");
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default)
         {
-            if (bulletPrefab == null) return;
+            if (bulletPrefab == null)
+            {
+                if (!loggedBulletPrefabNull)
+                {
+                    loggedBulletPrefabNull = true;
+                    Debug.LogWarning("CombatSystem: bulletPrefab is not assigned. Bullets will not spawn. Use menu Titan Orbit > Setup Game Scene (or assign Bullet prefab in Inspector) and save the scene.");
+                }
+                return;
+            }
             bool isAIBullet = false;
             if (ownerShipNetworkId != 0 && NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
             {
@@ -55,18 +69,20 @@ namespace TitanOrbit.Systems
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             else dir.Normalize();
 
+            float finalSpeed = speed * bulletSpeedMultiplier;
+
             Quaternion lookRot = Quaternion.LookRotation(dir, Vector3.up);
             GameObject bulletObj = Instantiate(bulletPrefab, position, lookRot);
             Bullet bullet = bulletObj.GetComponent<Bullet>();
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
             if (bullet != null)
-                bullet.Initialize(speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false);
+                bullet.Initialize(finalSpeed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false);
 
             if (bulletRb != null)
             {
                 Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
-                bulletRb.linearVelocity = dir * speed + flatShipVel;
+                bulletRb.linearVelocity = dir * finalSpeed + flatShipVel;
             }
 
             NetworkObject bulletNetObj = bulletObj.GetComponent<NetworkObject>();

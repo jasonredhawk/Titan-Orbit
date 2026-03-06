@@ -2,22 +2,40 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!21 &2100000
 Material:
-  serializedVersion: 6
+  serializedVersion: 8
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: PortalDistortion
-  m_Shader: {fileID: 4800000, guid: dc18713bda348b240a295c10f7e92458, type: 3}
-  m_ShaderKeywords: COLORRAMPGRAD_ON COLORRAMP_ON DISTORTUSECOL_ON DISTORT_ON ETC1_EXTERNAL_ALPHA
-    GLOW_ON HSV_ON MASK_ON POLARUVDISTORT_ON POLARUV_ON ROUNDWAVEUV_ON SCREENDISTORTION_ON
-    SHAPE1CONTRAST_ON SHAPE1DISTORT_ON SHAPE2DISTORT_ON TWISTUV_ON
+  m_Shader: {fileID: 4800000, guid: de4c64f8320e9e145823481683192ba3, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - COLORRAMPGRAD_ON
+  - COLORRAMP_ON
+  - DISTORTUSECOL_ON
+  - DISTORT_ON
+  - GLOW_ON
+  - HSV_ON
+  - MASK_ON
+  - POLARUVDISTORT_ON
+  - POLARUV_ON
+  - ROUNDWAVEUV_ON
+  - SCREENDISTORTION_ON
+  - SHAPE1CONTRAST_ON
+  - SHAPE1DISTORT_ON
+  - SHAPE2DISTORT_ON
+  - TWISTUV_ON
+  m_InvalidKeywords:
+  - ETC1_EXTERNAL_ALPHA
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -89,6 +107,7 @@ Material:
         m_Texture: {fileID: 2800000, guid: 48da24d771916524899d36e4bfe7f762, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    m_Ints: []
     m_Floats:
     - _Alpha: 1
     - _AlphaBrightness: 0
@@ -228,6 +247,7 @@ Material:
     - _ZWrite: 0
     - _ZoomAmount: 1.5
     m_Colors:
+    - _All1VfxLightDir: {r: 1, g: 0, b: 0, a: 0}
     - _BackFaceTint: {r: 0.5, g: 0.5, b: 0.5, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _ColorGradingDark: {r: 1, g: 1, b: 1, a: 1}
@@ -242,6 +262,9 @@ Material:
     - _Shape2Color: {r: 1.262588, g: 1.319508, b: 0.5847231, a: 1}
     - _Shape3Color: {r: 1, g: 1, b: 1, a: 1}
     - _ShapeColor: {r: 1, g: 1, b: 1, a: 1}
+    - globalCustomTime: {r: 1, g: 0, b: 0, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!28 &3965578252448850930
 Texture2D:
   m_ObjectHideFlags: 0
@@ -252,17 +275,21 @@ Texture2D:
   m_ImageContentsHash:
     serializedVersion: 2
     Hash: 00000000000000000000000000000000
-  m_ForcedFallbackFormat: 4
-  m_DownscaleFallback: 0
-  serializedVersion: 2
+  m_IsAlphaChannelOptional: 0
+  serializedVersion: 4
   m_Width: 64
   m_Height: 1
   m_CompleteImageSize: 256
+  m_MipsStripped: 0
   m_TextureFormat: 4
   m_MipCount: 1
   m_IsReadable: 1
+  m_IsPreProcessed: 0
+  m_IgnoreMipmapLimit: 0
+  m_MipmapLimitGroupName: 
   m_StreamingMipmaps: 0
   m_StreamingMipmapsPriority: 0
+  m_VTOnly: 0
   m_AlphaIsTransparency: 0
   m_ImageCount: 1
   m_TextureDimension: 2
@@ -276,9 +303,11 @@ Texture2D:
     m_WrapW: 1
   m_LightmapFormat: 0
   m_ColorSpace: 0
+  m_PlatformBlob: 
   image data: 256
   _typelessdata: 16879cff16889fff158aa1ff158ca3ff148ea5ff1490a7ff1392aaff1393acff1295aeff1297b0ff1199b2ff119bb5ff109cb7ff109eb9ff0fa0bbff0fa2beff0ea4c0ff0ea6c2ff0da7c4ff0da9c6ff0cabc9ff0cadcbff0bafcdff0bb0cfff0ab2d1ff0ab4d4ff09b6d6ff09b8d8ff08badaff08bbddff07bddfff07bfe1ff06c1e3ff06c3e5ff05c5e8ff05c6eaff04c8ecff04caeeff03ccf0ff03cef3ff02cff5ff02d1f7ff01d3f9ff01d5fcff00d7feff03d9ffff0adbffff10ddffff17dfffff1ee1ffff25e3ffff2ce5ffff32e8ffff39eaffff40ecffff47eeffff4ef0ffff54f2ffff5bf4ffff62f6ffff69f9ffff70fbffff76fdffff7dffffff
   m_StreamData:
+    serializedVersion: 2
     offset: 0
     size: 0
     path: 

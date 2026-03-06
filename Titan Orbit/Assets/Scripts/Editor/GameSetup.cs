@@ -35,6 +35,7 @@ namespace TitanOrbit.Editor
             GameObject gameManagersObj = CreateGameManagers();
             GameObject systemsObj = CreateSystems();
             GameObject mapGeneratorObj = CreateMapGenerator();
+            AssignMapGeneratorPrefabs();
             GameObject cameraObj = CreateCamera();
             GameObject lightingObj = CreateLighting();
             CreateSpaceBackground();
@@ -146,6 +147,67 @@ namespace TitanOrbit.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log($"AstroEagle materials: converted {fixedCount} materials to URP Lit. Total materials in folder: {guids.Length}.");
+        }
+
+        [MenuItem("Titan Orbit/Fix AllIn1VfxToolkit Demo Materials for URP")]
+        public static void FixAllIn1VfxToolkitDemoMaterialsForURP()
+        {
+            const string materialsFolder = "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Materials";
+            string[] guids = AssetDatabase.FindAssets("t:Material", new[] { materialsFolder });
+            Shader urpVfx = Shader.Find("AllIn1Vfx/AllIn1VfxSRPBatch");
+            if (urpVfx == null)
+            {
+                Debug.LogWarning("AllIn1Vfx/AllIn1VfxSRPBatch shader not found. AllIn1VfxToolkit may need to be set to URP mode, or materials may already use it.");
+                return;
+            }
+            int fixedCount = 0;
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (mat == null || mat.shader == null) continue;
+                if (mat.shader.name.Contains("AllIn1VfxSRPBatch") || mat.shader.name.Contains("Universal Render Pipeline"))
+                    continue;
+                if (!mat.shader.name.Contains("AllIn1Vfx"))
+                    continue;
+                mat.shader = urpVfx;
+                EditorUtility.SetDirty(mat);
+                fixedCount++;
+            }
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"AllIn1VfxToolkit Demo materials: switched {fixedCount} to URP shader (AllIn1VfxSRPBatch). Total in folder: {guids.Length}. Purple particles on engine/thruster VFX should be fixed.");
+        }
+
+        [MenuItem("Titan Orbit/Assign Engine and Thruster VFX to Starships")]
+        public static void AssignEngineAndThrusterVfxToStarships()
+        {
+            const string enginePath = "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Blue Fire.prefab";
+            const string thrusterPath = "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Fire Trail.prefab";
+            GameObject enginePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(enginePath);
+            GameObject thrusterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(thrusterPath);
+            if (enginePrefab == null)
+            {
+                Debug.LogWarning($"Engine VFX prefab not found at {enginePath}. Use Blue Fire for engine movement.");
+                return;
+            }
+            if (thrusterPrefab == null)
+            {
+                Debug.LogWarning($"Thruster VFX prefab not found at {thrusterPath}. Use Fire Trail for thruster rotation.");
+            }
+            var starships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
+            int assigned = 0;
+            foreach (var ship in starships)
+            {
+                if (ship == null) continue;
+                SerializedObject so = new SerializedObject(ship);
+                SerializedProperty engineProp = so.FindProperty("engineVfxPrefab");
+                SerializedProperty thrusterProp = so.FindProperty("thrusterVfxPrefab");
+                if (engineProp != null) { engineProp.objectReferenceValue = enginePrefab; assigned++; }
+                if (thrusterProp != null) { thrusterProp.objectReferenceValue = thrusterPrefab; assigned++; }
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+            Debug.Log($"Assigned Engine VFX (Blue Fire) and Thruster VFX (Fire Trail) to {starships.Length} Starship(s). Save the scene. AstroEagle ships will show engine/thruster particles when visual is applied.");
         }
 
         [MenuItem("Titan Orbit/Add Space Background")]
@@ -276,8 +338,10 @@ namespace TitanOrbit.Editor
             NetworkManager networkManager = obj.AddComponent<NetworkManager>();
             networkManager.NetworkConfig.NetworkTransport = transport;
 
-            // Assign Player Prefab so players spawn when connecting
-            GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
+            // Assign Player Prefab so players spawn when connecting. Prefer base Starship (chassis 0 = AstroEagle_01 applied in code); fallback to Starship_Lv1_0.
+            GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+            if (starshipPrefab == null)
+                starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
             if (starshipPrefab != null)
             {
                 networkManager.NetworkConfig.PlayerPrefab = starshipPrefab;
@@ -350,8 +414,95 @@ namespace TitanOrbit.Editor
             GameObject obj = new GameObject("MapGenerator");
             obj.AddComponent<NetworkObject>(); // Required for NetworkBehaviour components
             MapGenerator mapGenerator = obj.AddComponent<MapGenerator>();
-
             return obj;
+        }
+
+        [MenuItem("Titan Orbit/Assign MapGenerator Prefabs")]
+        public static void AssignMapGeneratorPrefabs()
+        {
+            MapGenerator mapGen = Object.FindFirstObjectByType<MapGenerator>();
+            if (mapGen == null)
+            {
+                Debug.LogWarning("MapGenerator not found in scene. Run Titan Orbit > Setup Game Scene first.");
+                return;
+            }
+            GameObject homePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/HomePlanet.prefab");
+            GameObject planetPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Planet.prefab");
+            GameObject asteroidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Asteroid.prefab");
+            SerializedObject so = new SerializedObject(mapGen);
+            int assigned = 0;
+            if (homePrefab != null) { so.FindProperty("homePlanetPrefab").objectReferenceValue = homePrefab; assigned++; }
+            if (planetPrefab != null) { so.FindProperty("planetPrefab").objectReferenceValue = planetPrefab; assigned++; }
+            if (asteroidPrefab != null) { so.FindProperty("asteroidPrefab").objectReferenceValue = asteroidPrefab; assigned++; }
+            so.ApplyModifiedPropertiesWithoutUndo();
+            if (assigned < 3)
+                Debug.LogWarning($"MapGenerator: assigned {assigned}/3 prefabs (HomePlanet, Planet, Asteroid). Missing prefabs in Assets/Prefabs/ - run Create Basic Prefabs or create them.");
+            else
+                Debug.Log("MapGenerator prefabs assigned (HomePlanet, Planet, Asteroid). Save the scene.");
+        }
+
+        [MenuItem("Titan Orbit/Assign CombatSystem Prefabs")]
+        public static void AssignCombatSystemPrefabs()
+        {
+            CombatSystem combat = Object.FindFirstObjectByType<CombatSystem>();
+            if (combat == null)
+            {
+                Debug.LogWarning("CombatSystem not found in scene. Run Titan Orbit > Setup Game Scene first.");
+                return;
+            }
+            SerializedObject so = new SerializedObject(combat);
+            int assigned = 0;
+            GameObject bulletPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Bullet.prefab");
+            if (bulletPrefab != null) { so.FindProperty("bulletPrefab").objectReferenceValue = bulletPrefab; assigned++; }
+            GameObject rocketPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/RocketProjectile.prefab");
+            if (rocketPrefab != null) { var p = so.FindProperty("rocketPrefab"); if (p != null) { p.objectReferenceValue = rocketPrefab; assigned++; } }
+            GameObject minePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Mine.prefab");
+            if (minePrefab != null) { var p = so.FindProperty("minePrefab"); if (p != null) { p.objectReferenceValue = minePrefab; assigned++; } }
+            so.ApplyModifiedPropertiesWithoutUndo();
+            if (assigned == 0)
+                Debug.LogWarning("CombatSystem: no prefabs found in Assets/Prefabs/ (Bullet, RocketProjectile, Mine).");
+            else
+                Debug.Log($"CombatSystem prefabs assigned ({assigned}). Bullet assigned: {bulletPrefab != null}. Save the scene.");
+        }
+
+        [MenuItem("Titan Orbit/Add Minimap to Scene")]
+        public static void AddMinimapToScene()
+        {
+            if (Object.FindFirstObjectByType<MinimapController>() != null)
+            {
+                Debug.Log("Minimap already exists in scene. No change.");
+                return;
+            }
+
+            Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogWarning("No Canvas found in scene. Run Titan Orbit > Setup Game Scene first.");
+                return;
+            }
+
+            Sprite uiSprite = CreateWhiteSprite();
+            GameObject minimapObj = CreatePanel(canvas.transform, "Minimap", new Color(0, 0, 0, 0.4f), uiSprite);
+            RectTransform minimapRect = minimapObj.GetComponent<RectTransform>();
+            minimapRect.anchorMin = new Vector2(1, 0);
+            minimapRect.anchorMax = new Vector2(1, 0);
+            minimapRect.pivot = new Vector2(1, 0);
+            minimapRect.anchoredPosition = new Vector2(-20, 20);
+            float minimapSize = 384f;
+            minimapRect.sizeDelta = new Vector2(minimapSize, minimapSize);
+            MinimapController minimapController = minimapObj.AddComponent<MinimapController>();
+            var minimapSO = new SerializedObject(minimapController);
+            minimapSO.FindProperty("displaySize").floatValue = minimapSize;
+            minimapSO.ApplyModifiedPropertiesWithoutUndo();
+
+            GameObject minimapBorder = CreatePanel(minimapObj.transform, "Border", new Color(0.2f, 0.2f, 0.3f, 0.8f), uiSprite);
+            RectTransform borderRect = minimapBorder.GetComponent<RectTransform>();
+            borderRect.anchorMin = Vector2.zero;
+            borderRect.anchorMax = Vector2.one;
+            borderRect.offsetMin = new Vector2(5, 5);
+            borderRect.offsetMax = new Vector2(-5, -5);
+
+            Debug.Log("Minimap added to scene. Save the scene.");
         }
 
         private static GameObject CreateCamera()
@@ -493,29 +644,34 @@ namespace TitanOrbit.Editor
             GameObject playerNameInputObj = new GameObject("PlayerNameInput");
             playerNameInputObj.transform.SetParent(mainMenuPanel.transform, false);
             RectTransform playerNameInputRect = playerNameInputObj.AddComponent<RectTransform>();
-            SetRect(playerNameInputObj, 0.5f, 0.50f, 0.5f, 0.50f, 0, 0, 280, 40);
+            SetRect(playerNameInputObj, 0.5f, 0.50f, 0.5f, 0.50f, 0, 0, 400, 72);
             Image playerNameBg = playerNameInputObj.AddComponent<Image>();
             playerNameBg.color = new Color(0.12f, 0.14f, 0.22f, 0.95f);
             if (shiftPanelSprite != null) { playerNameBg.sprite = shiftPanelSprite; playerNameBg.type = shiftPanelSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
             TMP_InputField playerNameInput = playerNameInputObj.AddComponent<TMP_InputField>();
-            GameObject playerNameTextObj = CreateText(playerNameInputObj.transform, "Text", "", 18, TextAnchor.MiddleLeft);
+            GameObject playerNameTextObj = CreateText(playerNameInputObj.transform, "Text", "", 60, TextAnchor.MiddleCenter);
             RectTransform playerNameTextRect = playerNameTextObj.GetComponent<RectTransform>();
             playerNameTextRect.anchorMin = Vector2.zero;
             playerNameTextRect.anchorMax = Vector2.one;
-            playerNameTextRect.offsetMin = new Vector2(10, 4);
-            playerNameTextRect.offsetMax = new Vector2(-10, -4);
+            playerNameTextRect.offsetMin = new Vector2(12, 6);
+            playerNameTextRect.offsetMax = new Vector2(-12, -6);
             playerNameInput.textViewport = playerNameInputRect;
             playerNameInput.textComponent = playerNameTextObj.GetComponent<TextMeshProUGUI>();
             playerNameInput.textComponent.color = new Color(0.9f, 0.95f, 1f, 1f);
-            GameObject playerNamePlaceholderObj = CreateText(playerNameInputObj.transform, "Placeholder", "Optional", 18, TextAnchor.MiddleLeft);
-            playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>().color = new Color(0.5f, 0.55f, 0.65f, 0.8f);
-            playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>().text = "Optional";
+            playerNameInput.textComponent.fontSize = 60;
+            playerNameInput.textComponent.alignment = TMPro.TextAlignmentOptions.Center;
+            GameObject playerNamePlaceholderObj = CreateText(playerNameInputObj.transform, "Placeholder", "Optional", 36, TextAnchor.MiddleCenter);
+            TextMeshProUGUI placeholderTmp = playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>();
+            placeholderTmp.color = new Color(0.5f, 0.55f, 0.65f, 0.8f);
+            placeholderTmp.text = "Optional";
+            placeholderTmp.fontSize = 36;
+            placeholderTmp.alignment = TMPro.TextAlignmentOptions.Center;
             RectTransform phRect = playerNamePlaceholderObj.GetComponent<RectTransform>();
             phRect.anchorMin = Vector2.zero;
             phRect.anchorMax = Vector2.one;
-            phRect.offsetMin = new Vector2(10, 4);
-            phRect.offsetMax = new Vector2(-10, -4);
-            playerNameInput.placeholder = playerNamePlaceholderObj.GetComponent<TextMeshProUGUI>();
+            phRect.offsetMin = new Vector2(12, 6);
+            phRect.offsetMax = new Vector2(-12, -6);
+            playerNameInput.placeholder = placeholderTmp;
 
             // Play button (centered below player name)
             GameObject playBtn = CreateShiftButton(mainMenuPanel.transform, "PlayButton", "PLAY", shiftButtonSprite);
@@ -666,55 +822,14 @@ namespace TitanOrbit.Editor
             shipHudSO.FindProperty("btnUnloadPeopleDown").objectReferenceValue = peopleDown;
             shipHudSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // —— Home planet stats panel (top-right) ——
-            Color homePanelColor = new Color(0.06f, 0.07f, 0.12f, 0.94f);
-            GameObject homePanel = CreatePanel(canvasObj.transform, "HomePlanetStatsPanel", homePanelColor, uiSprite);
-            RectTransform homeRect = homePanel.GetComponent<RectTransform>();
-            homeRect.anchorMin = new Vector2(1, 1);
-            homeRect.anchorMax = new Vector2(1, 1);
-            homeRect.pivot = new Vector2(1, 1);
-            homeRect.anchoredPosition = new Vector2(-16, -16);
-            homeRect.sizeDelta = new Vector2(260, 100);
-            AddPanelBorder(homePanel, new Color(0.22f, 0.28f, 0.4f, 0.7f), uiSprite);
-
-            GameObject homeTitle = CreateText(homePanel.transform, "Title", "HOME BASE", 14, TextAnchor.UpperRight);
-            homeTitle.GetComponent<TextMeshProUGUI>().color = new Color(0.7f, 0.78f, 0.95f);
-            homeTitle.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
-            SetRectStretchTop(homeTitle, 12, 10, 12, 20);
-            GameObject homeLevelObj = CreateText(homePanel.transform, "LevelText", "Level 3", 20, TextAnchor.UpperRight);
-            homeLevelObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
-            SetRectStretchTop(homeLevelObj, 12, 36, 12, 26);
-            
-            // Home planet gem progress bar
-            GameObject homeGemBarObj = CreateProgressBar(homePanel.transform, "HomeGemBar", uiSprite, new Color(0.95f, 0.85f, 0.5f, 1f));
-            RectTransform homeGemBarRect = homeGemBarObj.GetComponent<RectTransform>();
-            homeGemBarRect.anchorMin = new Vector2(0, 1);
-            homeGemBarRect.anchorMax = new Vector2(1, 1);
-            homeGemBarRect.pivot = new Vector2(0.5f, 1);
-            homeGemBarRect.anchoredPosition = new Vector2(0, -64);
-            homeGemBarRect.offsetMin = new Vector2(12, 0);
-            homeGemBarRect.offsetMax = new Vector2(-12, -24);
-            GameObject homeGemsObj = CreateText(homePanel.transform, "GemsText", "0 / 800", 18, TextAnchor.UpperRight);
-            homeGemsObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.TopRight;
-            homeGemsObj.GetComponent<TextMeshProUGUI>().color = new Color(0.95f, 0.85f, 0.5f);
-            SetRectStretchTop(homeGemsObj, 12, 64, 12, 24);
-
-            TextMeshProUGUI homeLevelTmp = homeLevelObj.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI homeGemsTmp = homeGemsObj.GetComponent<TextMeshProUGUI>();
-            Slider homeGemSlider = homeGemBarObj.GetComponent<Slider>();
-
             // Proximity radar (planets/home planets around starship - size = proximity)
             GameObject proximityRadarObj = new GameObject("ProximityRadar");
             proximityRadarObj.transform.SetParent(hudObj.transform, false);
             proximityRadarObj.AddComponent<TitanOrbit.UI.ProximityRadarHUD>();
 
-            // Wire HUDController (ship stats top-left are now drawn by ShipStatsFpsHUD on the camera; no panel refs)
+            // Wire HUDController (ship stats top-left; home planet panel removed)
             var hudSO = new SerializedObject(hudController);
             hudSO.FindProperty("shipStatsPanel").objectReferenceValue = shipStatsPanel;
-            hudSO.FindProperty("homePlanetPanel").objectReferenceValue = homePanel;
-            hudSO.FindProperty("homePlanetLevelText").objectReferenceValue = homeLevelTmp;
-            hudSO.FindProperty("homePlanetGemBar").objectReferenceValue = homeGemSlider;
-            hudSO.FindProperty("homePlanetGemsText").objectReferenceValue = homeGemsTmp;
             hudSO.FindProperty("proximityRadar").objectReferenceValue = proximityRadarObj;
             hudSO.ApplyModifiedPropertiesWithoutUndo();
 
@@ -764,14 +879,18 @@ namespace TitanOrbit.Editor
             mobileControlsObj.SetActive(Application.isMobilePlatform);
             mobileControlsObj.AddComponent<MobileControls>();
 
-            // Orbit panel: combined UI (grid + orbit actions + store) is built by OrbitStationUI at runtime.
+            // Orbit panel: top-left under ShipStatsPanel; content built by OrbitStationUI at runtime.
+            const float orbitPanelWidth = 420f;
+            const float orbitPanelLeft = 12f;
+            const float orbitPanelTopOffset = 168f; // below ShipStatsPanel (~128 + margin)
+            const float orbitPanelHeight = 720f;
             GameObject orbitPanelObj = CreatePanel(canvasObj.transform, "OrbitPanel", new Color(0.12f, 0.12f, 0.2f, 0.95f), uiSprite);
             RectTransform orbitRect = orbitPanelObj.GetComponent<RectTransform>();
-            orbitRect.anchorMin = new Vector2(0.5f, 0.5f);
-            orbitRect.anchorMax = new Vector2(0.5f, 0.5f);
-            orbitRect.pivot = new Vector2(0.5f, 0.5f);
-            orbitRect.anchoredPosition = new Vector2(-220f, 60f);
-            orbitRect.sizeDelta = new Vector2(320, 280);
+            orbitRect.anchorMin = new Vector2(0f, 1f);
+            orbitRect.anchorMax = new Vector2(0f, 1f);
+            orbitRect.pivot = new Vector2(0f, 1f);
+            orbitRect.anchoredPosition = new Vector2(orbitPanelLeft, -orbitPanelTopOffset);
+            orbitRect.sizeDelta = new Vector2(orbitPanelWidth, orbitPanelHeight);
             orbitPanelObj.SetActive(false);
             orbitPanelObj.AddComponent<HomePlanetOrbitUI>();
             orbitPanelObj.AddComponent<OrbitStationUI>();
@@ -2343,19 +2462,45 @@ namespace TitanOrbit.Editor
         [MenuItem("Titan Orbit/Fix Player Prefab & Materials")]
         public static void FixSetup()
         {
-            // Assign Player Prefab to NetworkManager
+            // Assign Player Prefab to NetworkManager. Prefer base Starship (AstroEagle_01 applied in code); fallback to Starship_Lv1_0.
             NetworkManager nm = Object.FindObjectOfType<NetworkManager>();
             if (nm != null)
             {
-                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
+                GameObject starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+                if (starshipPrefab == null)
+                    starshipPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Ships/Starship_Lv1_0.prefab");
                 if (starshipPrefab != null)
                 {
                     nm.NetworkConfig.PlayerPrefab = starshipPrefab;
+                    // Ensure the player prefab is in the network prefabs list so it can spawn
+                    var defaultListPlayer = AssetDatabase.LoadAssetAtPath<ScriptableObject>("Assets/DefaultNetworkPrefabs.asset");
+                    if (defaultListPlayer != null && starshipPrefab.GetComponent<NetworkObject>() != null)
+                    {
+                        var soPlayer = new SerializedObject(defaultListPlayer);
+                        var listPropPlayer = soPlayer.FindProperty("List");
+                        if (listPropPlayer != null)
+                        {
+                            bool found = false;
+                            for (int i = 0; i < listPropPlayer.arraySize; i++)
+                            {
+                                var prefabRef = listPropPlayer.GetArrayElementAtIndex(i).FindPropertyRelative("Prefab");
+                                if (prefabRef != null && prefabRef.objectReferenceValue == starshipPrefab) { found = true; break; }
+                            }
+                            if (!found)
+                            {
+                                listPropPlayer.arraySize++;
+                                listPropPlayer.GetArrayElementAtIndex(listPropPlayer.arraySize - 1).FindPropertyRelative("Prefab").objectReferenceValue = starshipPrefab;
+                                soPlayer.ApplyModifiedPropertiesWithoutUndo();
+                                AssetDatabase.SaveAssets();
+                                Debug.Log($"Player prefab {starshipPrefab.name} added to DefaultNetworkPrefabs.");
+                            }
+                        }
+                    }
                     Debug.Log("Player Prefab assigned to NetworkManager.");
                 }
                 else
                 {
-                    Debug.LogWarning("Starship prefab not found. Run 'Create Basic Prefabs' first.");
+                    Debug.LogWarning("Starship prefab not found at Assets/Prefabs/Starship.prefab or Assets/Prefabs/Ships/Starship_Lv1_0.prefab. Run 'Create Basic Prefabs' or Quick Setup first.");
                 }
 
                 // Add Gem prefab to Network Prefabs list (required for spawning gems)
@@ -2397,7 +2542,7 @@ namespace TitanOrbit.Editor
                     var listProp2 = so2.FindProperty("List");
                     if (listProp2 != null)
                     {
-                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
+                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/Starship.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
                         foreach (string path in storePrefabPaths)
                         {
                             var prefabObj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
@@ -2622,6 +2767,36 @@ namespace TitanOrbit.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("Prefab materials fixed for URP.");
+        }
+
+        [MenuItem("Titan Orbit/Create MuzzleFlash Material (Resources)")]
+        public static void CreateMuzzleFlashMaterialInResources()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                AssetDatabase.CreateFolder("Assets", "Resources");
+            if (!AssetDatabase.IsValidFolder("Assets/Resources/Materials"))
+                AssetDatabase.CreateFolder("Assets/Resources", "Materials");
+            string path = "Assets/Resources/Materials/MuzzleFlash.mat";
+            Material existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            Shader urpLit = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (urpLit == null)
+            {
+                Debug.LogError("URP Lit shader not found. Cannot create MuzzleFlash material.");
+                return;
+            }
+            Material mat = existing != null ? existing : new Material(urpLit);
+            mat.shader = urpLit;
+            mat.name = "MuzzleFlash";
+            mat.SetColor("_BaseColor", Color.white);
+            if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
+            mat.renderQueue = 3000;
+            if (existing == null)
+                AssetDatabase.CreateAsset(mat, path);
+            else
+                EditorUtility.SetDirty(mat);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("MuzzleFlash material created at Assets/Resources/Materials/MuzzleFlash.mat. Muzzle flashes will load this at runtime and no longer appear purple.");
         }
 
         private static Material CreateAndSaveMaterial(string name, Color color, int renderQueue = -1)

@@ -40,6 +40,17 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> attackDefendMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> attackDefendMarkerImages = new Dictionary<Transform, Image>();
 
+        private const float EntityCacheRefreshInterval = 0.5f;
+        private float lastEntityCacheTime = -999f;
+        private Planet[] cachedPlanets = new Planet[0];
+        private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
+        private MinimapMarker[] cachedMarkers = new MinimapMarker[0];
+        private float lastPlayerShipLookupTime = -999f;
+        private const float PlayerShipLookupInterval = 0.3f;
+        private readonly HashSet<Transform> seenSet = new HashSet<Transform>();
+        private readonly List<Transform> toRemoveList = new List<Transform>();
+        private readonly List<Transform> attackDefendToRemoveList = new List<Transform>();
+
         private const float MapWidth = 300f;
         private const float MapHeight = 300f;
         private const int ArrowSpriteSize = 48;
@@ -102,9 +113,14 @@ namespace TitanOrbit.UI
 
             if (playerShip == null || !playerShip.IsOwner)
             {
-                foreach (var ship in FindObjectsOfType<Starship>())
+                if (Time.time - lastPlayerShipLookupTime >= PlayerShipLookupInterval)
                 {
-                    if (ship.IsOwner) { playerShip = ship; break; }
+                    lastPlayerShipLookupTime = Time.time;
+                    playerShip = null;
+                    foreach (var ship in FindObjectsOfType<Starship>())
+                    {
+                        if (ship.IsOwner) { playerShip = ship; break; }
+                    }
                 }
                 if (playerShip == null) return;
             }
@@ -115,44 +131,45 @@ namespace TitanOrbit.UI
 
         private void UpdateMarkers()
         {
+            if (Time.time - lastEntityCacheTime >= EntityCacheRefreshInterval)
+            {
+                lastEntityCacheTime = Time.time;
+                cachedPlanets = FindObjectsOfType<Planet>();
+                cachedHomePlanets = FindObjectsOfType<HomePlanet>();
+                cachedMarkers = FindObjectsOfType<MinimapMarker>();
+            }
+
             Vector3 playerPos = playerShip.transform.position;
             float radius = (radarRect != null ? radarRect.sizeDelta.x : 400f) / 2f;
 
-            // Track which transforms we've seen this frame
-            var seen = new HashSet<Transform>();
+            seenSet.Clear();
 
-            // Planets
-            foreach (var p in FindObjectsOfType<Planet>())
+            foreach (var p in cachedPlanets)
             {
-                if (p is HomePlanet) continue;
+                if (p == null || p is HomePlanet) continue;
                 UpdateEntityMarker(p.transform, playerPos, radius, false, p.TeamOwnership);
-                seen.Add(p.transform);
+                seenSet.Add(p.transform);
             }
-
-            // Home planets
-            foreach (var hp in FindObjectsOfType<HomePlanet>())
+            foreach (var hp in cachedHomePlanets)
             {
+                if (hp == null) continue;
                 UpdateEntityMarker(hp.transform, playerPos, radius, true, hp.TeamOwnership);
-                seen.Add(hp.transform);
+                seenSet.Add(hp.transform);
             }
-            
-            // Attack/defend markers
-            var allMarkers = FindObjectsOfType<MinimapMarker>();
-            foreach (var marker in allMarkers)
+            foreach (var marker in cachedMarkers)
             {
-                if (!marker.IsSpawned) continue;
+                if (marker == null || !marker.IsSpawned) continue;
                 UpdateAttackDefendMarker(marker.transform, playerPos, radius, marker.Type, marker.Team);
-                seen.Add(marker.transform);
+                seenSet.Add(marker.transform);
             }
 
-            // Remove markers for destroyed entities
-            var toRemove = new List<Transform>();
+            toRemoveList.Clear();
             foreach (var t in markers.Keys)
             {
-                if (t == null || !t.gameObject.activeInHierarchy || !seen.Contains(t))
-                    toRemove.Add(t);
+                if (t == null || !t.gameObject.activeInHierarchy || !seenSet.Contains(t))
+                    toRemoveList.Add(t);
             }
-            foreach (var t in toRemove)
+            foreach (var t in toRemoveList)
             {
                 if (markers.TryGetValue(t, out var rt) && rt != null)
                     Destroy(rt.gameObject);
@@ -161,14 +178,13 @@ namespace TitanOrbit.UI
                 markerIsHomePlanet.Remove(t);
             }
             
-            // Remove attack/defend markers for destroyed markers
-            var attackDefendToRemove = new List<Transform>();
+            attackDefendToRemoveList.Clear();
             foreach (var t in attackDefendMarkers.Keys)
             {
-                if (t == null || !t.gameObject.activeInHierarchy || !seen.Contains(t))
-                    attackDefendToRemove.Add(t);
+                if (t == null || !t.gameObject.activeInHierarchy || !seenSet.Contains(t))
+                    attackDefendToRemoveList.Add(t);
             }
-            foreach (var t in attackDefendToRemove)
+            foreach (var t in attackDefendToRemoveList)
             {
                 if (attackDefendMarkers.TryGetValue(t, out var rt) && rt != null)
                     Destroy(rt.gameObject);
