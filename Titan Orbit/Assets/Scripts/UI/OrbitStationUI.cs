@@ -48,6 +48,14 @@ namespace TitanOrbit.UI
         private Button tabShipsButton;
         private int activeStoreTab = 0; // 0 = Cards, 1 = Ships
         private const int MaxStoreShips = 80;
+        private const int MaxShipCards = 20;
+        private const float ShipCardPreviewSize = 80f;
+        private const float ShipCardWidth = 140f;
+        private const float ShipCardHeight = 88f;
+        private const float ShipRowSpacing = 8f;
+        private const int ShipPreviewRenderSize = 128;
+        private Transform shipPreviewsRoot;
+        private Transform shipsRowsContainer;
         private Starship currentShip;
         private Planet currentPlanet;
         private HomePlanet currentHomePlanet;
@@ -165,6 +173,7 @@ namespace TitanOrbit.UI
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
             RefreshAll();
             RefreshStoreTabVisibility();
+            RefreshShipsTab();
             // Force layout rebuild so content (slots, store, scroll) gets correct size after panel becomes active.
             if (rootPanel != null)
             {
@@ -202,11 +211,20 @@ namespace TitanOrbit.UI
 
         private void EnsurePanelExists()
         {
-            if (rootPanel != null) return;
+            if (rootPanel != null && rootPanel) return;
+
+            rootPanel = null;
+            storeContentRoot = null;
+            cardsTabContent = null;
+            shipsTabContent = null;
+            shipsRowsContainer = null;
+            shipPreviewsRoot = null;
 
             Canvas canvas = GetComponentInParent<Canvas>(true);
             if (canvas == null) canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null) return;
+
+            if (transform == null || !transform) return;
 
             // Always position this panel top-left under ShipStatsPanel (fixes center positioning in existing scenes).
             var myRect = transform as RectTransform;
@@ -391,7 +409,7 @@ namespace TitanOrbit.UI
             }
             float cardsContentHeight = -y + 20f;
 
-            // Ships tab content
+            // Ships tab content — fixed list of ship slots (like Cards tab), populated when tab is shown
             shipsTabContent = new GameObject("ShipsTabContent");
             shipsTabContent.transform.SetParent(storeContentRoot, false);
             var shipsContentRect = shipsTabContent.AddComponent<RectTransform>();
@@ -399,20 +417,27 @@ namespace TitanOrbit.UI
             shipsContentRect.anchorMax = new Vector2(1f, 1f);
             shipsContentRect.offsetMin = Vector2.zero;
             shipsContentRect.offsetMax = Vector2.zero;
-            chassisButtons = new Button[MaxStoreShips];
-            chassisLabels = new TextMeshProUGUI[MaxStoreShips];
-            shipUnlockEntries = new ShipUnlockEntry[MaxStoreShips];
+            chassisButtons = new Button[MaxShipCards];
+            chassisLabels = new TextMeshProUGUI[MaxShipCards];
+            shipUnlockEntries = new ShipUnlockEntry[MaxShipCards];
             float shipY = 0f;
             CreateRowLabel(shipsTabContent.transform, "Available Ships (unlocked by home planet level)", ref shipY);
             shipY -= 6f;
-            for (int i = 0; i < MaxStoreShips; i++)
+            for (int i = 0; i < MaxShipCards; i++)
             {
-                chassisButtons[i] = CreateActionButton(shipsTabContent.transform, "Chassis", ref shipY, PanelWidth - 32f);
+                chassisButtons[i] = CreateShipSlotButton(shipsTabContent.transform, ref shipY);
                 chassisLabels[i] = chassisButtons[i].GetComponentInChildren<TextMeshProUGUI>();
                 int idx = i;
                 chassisButtons[i].onClick.AddListener(() => OnBuyChassis(idx));
             }
-            float shipsContentHeight = -shipY + 20f;
+            shipsRowsContainer = null;
+            shipPreviewsRoot = new GameObject("ShipPreviewsRoot").transform;
+            shipPreviewsRoot.SetParent(transform, false);
+            shipPreviewsRoot.localPosition = Vector3.zero;
+            shipPreviewsRoot.localRotation = Quaternion.identity;
+            shipPreviewsRoot.localScale = Vector3.one;
+
+            float shipsContentHeight = Mathf.Max(650f, MaxShipCards * 40f + 60f);
 
             float contentWidth = Mathf.Max(PanelWidth - 24f, 360f);
             storeContentRoot.sizeDelta = new Vector2(contentWidth, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
@@ -420,6 +445,7 @@ namespace TitanOrbit.UI
             itemButtons = new Button[itemTypes.Length];
             itemLabels = new TextMeshProUGUI[itemTypes.Length];
             RefreshStoreTabVisibility();
+            RefreshShipsTab();
             UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
             if (canvas != null) Canvas.ForceUpdateCanvases();
         }
@@ -462,12 +488,99 @@ namespace TitanOrbit.UI
             if (cardsTabContent == null || shipsTabContent == null || tabCardsButton == null || tabShipsButton == null) return;
             cardsTabContent.SetActive(activeStoreTab == 0);
             shipsTabContent.SetActive(activeStoreTab == 1);
+            if (shipPreviewsRoot != null)
+                shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
             if (storeScrollRect != null && storeScrollRect.content != null)
                 storeScrollRect.verticalNormalizedPosition = 1f;
+            if (activeStoreTab == 1)
+                EnsureShipsTabPopulated();
             var cardsImg = tabCardsButton.GetComponent<Image>();
             var shipsImg = tabShipsButton.GetComponent<Image>();
             if (cardsImg != null) cardsImg.color = activeStoreTab == 0 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
             if (shipsImg != null) shipsImg.color = activeStoreTab == 1 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
+        }
+
+        private void EnsureShipsTabPopulated()
+        {
+            EnsurePanelExists();
+            RefreshShipsTab();
+        }
+
+        private Button CreateShipSlotButton(Transform parent, ref float y)
+        {
+            var go = new GameObject("ShipSlot");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, y);
+            rect.sizeDelta = new Vector2(-24f, 36f);
+            y -= 40f;
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.15f, 0.28f, 0.5f, 0.95f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            var btn = go.AddComponent<Button>();
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 4f);
+            textRect.offsetMax = new Vector2(-8f, -4f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = "";
+            tmp.fontSize = 14;
+            tmp.alignment = TextAlignmentOptions.Left;
+            tmp.color = Color.white;
+            tmp.overflowMode = TextOverflowModes.Truncate;
+            if (fontAsset != null) tmp.font = fontAsset;
+            go.SetActive(false);
+            return btn;
+        }
+
+        private void RefreshShipsTab()
+        {
+            if (chassisButtons == null || chassisLabels == null) return;
+            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 6;
+            List<ShipUnlockEntry> unlocked = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, true, 0)
+                : new List<ShipUnlockEntry>();
+            if (unlocked == null) unlocked = new List<ShipUnlockEntry>();
+            if (unlocked.Count > 0)
+            {
+                unlocked.Sort((a, b) =>
+                {
+                    if (a == null || b == null) return 0;
+                    int tierA = Mathf.Max(1, a.minHomePlanetLevel);
+                    int tierB = Mathf.Max(1, b.minHomePlanetLevel);
+                    if (tierA != tierB) return tierA.CompareTo(tierB);
+                    string nameA = a.chassis != null ? a.chassis.displayName : "";
+                    string nameB = b.chassis != null ? b.chassis.displayName : "";
+                    return string.Compare(nameA, nameB, StringComparison.Ordinal);
+                });
+            }
+            for (int i = 0; i < chassisButtons.Length; i++)
+            {
+                shipUnlockEntries[i] = null;
+                if (chassisButtons[i] != null)
+                {
+                    chassisButtons[i].gameObject.SetActive(i < unlocked.Count);
+                    if (i < unlocked.Count)
+                    {
+                        ShipUnlockEntry entry = unlocked[i];
+                        shipUnlockEntries[i] = entry;
+                        ShipChassisDefinition chassis = entry?.chassis;
+                        int tierLevel = Mathf.Max(1, entry.minHomePlanetLevel);
+                        float cost = entry.gemCost > 0f ? entry.gemCost : ShipUnlockTable.GetTierCost(tierLevel);
+                        string family = chassis != null && !string.IsNullOrEmpty(chassis.shipFamily) ? chassis.shipFamily : "Ship";
+                        string name = chassis != null ? chassis.displayName : "Ship";
+                        chassisButtons[i].interactable = contributedGems >= cost;
+                        if (chassisLabels[i] != null)
+                            chassisLabels[i].text = $"Lv.{tierLevel} • {name} ({family}) — {cost:F0}g";
+                    }
+                }
+            }
         }
 
         private void CreateSectionLabel(Transform parent, string name, string text, ref float y)
@@ -846,13 +959,7 @@ namespace TitanOrbit.UI
                 {
                     if (cardRoots[i] != null) cardRoots[i].SetActive(false);
                 }
-                if (chassisButtons != null)
-                {
-                    for (int i = 0; i < chassisButtons.Length; i++)
-                    {
-                        if (chassisButtons[i] != null) chassisButtons[i].gameObject.SetActive(false);
-                    }
-                }
+                RefreshShipsTab();
                 return;
             }
             int homeLevel = currentHomePlanet != null ? currentHomePlanet.HomePlanetLevel : 1;
@@ -892,45 +999,274 @@ namespace TitanOrbit.UI
                 }
             }
 
-            var unlocked = CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, isHomeStore, currentPlanet.PlanetId);
-            unlocked.Sort((a, b) =>
+            // Ships tab: refresh the fixed list of ship slots
+            RefreshShipsTab();
+        }
+
+        private void BuildShipsTabByLevel(List<ShipUnlockEntry> unlocked, float contributedGems)
+        {
+            if (shipsRowsContainer == null || shipPreviewsRoot == null)
             {
-                if (a == null || b == null) return 0;
-                int tierA = Mathf.Max(1, a.minHomePlanetLevel);
-                int tierB = Mathf.Max(1, b.minHomePlanetLevel);
-                if (tierA != tierB) return tierA.CompareTo(tierB);
-                string nameA = a.chassis != null ? a.chassis.displayName : "";
-                string nameB = b.chassis != null ? b.chassis.displayName : "";
-                return string.Compare(nameA, nameB, StringComparison.Ordinal);
-            });
+                EnsurePanelExists();
+                if (shipsRowsContainer == null || shipPreviewsRoot == null) return;
+            }
             for (int i = 0; i < chassisButtons.Length; i++)
             {
-                ShipUnlockEntry entry = (i < unlocked.Count) ? unlocked[i] : null;
-                shipUnlockEntries[i] = entry;
-                ShipChassisDefinition chassis = entry?.chassis;
-                bool show = chassis != null;
-                if (chassisButtons[i] != null)
+                chassisButtons[i] = null;
+                chassisLabels[i] = null;
+                shipUnlockEntries[i] = null;
+            }
+            for (int c = shipsRowsContainer.childCount - 1; c >= 0; c--)
+            {
+                var child = shipsRowsContainer.GetChild(c);
+                if (child != null && child.gameObject != null) Destroy(child.gameObject);
+            }
+            for (int c = shipPreviewsRoot.childCount - 1; c >= 0; c--)
+            {
+                Transform t = shipPreviewsRoot.GetChild(c);
+                if (t == null || !t) continue;
+                GameObject go = t.gameObject;
+                var cam = go.GetComponentInChildren<UnityEngine.Camera>();
+                if (cam != null && cam.targetTexture != null)
                 {
-                    chassisButtons[i].gameObject.SetActive(show);
-                    if (show)
-                    {
-                        int tierLevel = Mathf.Max(1, entry.minHomePlanetLevel);
-                        float cost = entry.gemCost > 0f ? entry.gemCost : ShipUnlockTable.GetTierCost(tierLevel);
-                        chassisButtons[i].interactable = contributedGems >= cost;
-                    }
+                    cam.targetTexture.Release();
+                    cam.targetTexture = null;
                 }
-                if (chassisLabels != null && i < chassisLabels.Length && chassisLabels[i] != null)
+                Destroy(go);
+            }
+
+            if (unlocked == null || unlocked.Count == 0)
+            {
+                AddNoShipsPlaceholderRow();
+                return;
+            }
+
+            var byTier = new Dictionary<int, List<ShipUnlockEntry>>();
+            foreach (var entry in unlocked)
+            {
+                if (entry?.chassis == null) continue;
+                int tier = Mathf.Max(1, entry.minHomePlanetLevel);
+                if (!byTier.ContainsKey(tier)) byTier[tier] = new List<ShipUnlockEntry>();
+                byTier[tier].Add(entry);
+            }
+            var tiersDesc = new List<int>(byTier.Keys);
+            tiersDesc.Sort((a, b) => b.CompareTo(a));
+
+            int globalIndex = 0;
+            foreach (int tier in tiersDesc)
+            {
+                var entries = byTier[tier];
+                if (entries == null || entries.Count == 0) continue;
+                GameObject rowGo = new GameObject("ShipRow_Lv" + tier);
+                rowGo.transform.SetParent(shipsRowsContainer, false);
+                var rowRect = rowGo.AddComponent<RectTransform>();
+                rowRect.sizeDelta = new Vector2(0f, ShipCardHeight);
+                var rowLE = rowGo.AddComponent<LayoutElement>();
+                rowLE.preferredHeight = ShipCardHeight;
+                rowLE.minHeight = ShipCardHeight;
+                var rowLayout = rowGo.AddComponent<HorizontalLayoutGroup>();
+                rowLayout.spacing = 8f;
+                rowLayout.childAlignment = TextAnchor.MiddleCenter;
+                rowLayout.childControlWidth = false;
+                rowLayout.childControlHeight = true;
+                rowLayout.childForceExpandWidth = false;
+                rowLayout.childForceExpandHeight = true;
+
+                foreach (var entry in entries)
                 {
-                    if (show)
-                    {
-                        int tierLevel = Mathf.Max(1, entry.minHomePlanetLevel);
-                        float cost = entry.gemCost > 0f ? entry.gemCost : ShipUnlockTable.GetTierCost(tierLevel);
-                        string family = string.IsNullOrEmpty(chassis.shipFamily) ? "Ship" : chassis.shipFamily;
-                        chassisLabels[i].text = $"Lv.{tierLevel} • {chassis.displayName} ({family}) — {cost:F0} gems";
-                    }
-                    else chassisLabels[i].text = string.Empty;
+                    if (globalIndex >= MaxShipCards) break;
+                    CreateShipCard(rowGo.transform, entry, globalIndex, contributedGems);
+                    shipUnlockEntries[globalIndex] = entry;
+                    globalIndex++;
                 }
             }
+            float totalHeight = tiersDesc.Count * (ShipCardHeight + ShipRowSpacing) + 60f;
+            var shipsRowsRect = shipsRowsContainer as RectTransform;
+            if (shipsRowsRect != null)
+            {
+                shipsRowsRect.sizeDelta = new Vector2(shipsRowsRect.sizeDelta.x, Mathf.Max(400f, totalHeight));
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipsRowsRect);
+            }
+            if (storeContentRoot != null)
+            {
+                float contentH = storeContentRoot.sizeDelta.y;
+                if (totalHeight + 80f > contentH)
+                    storeContentRoot.sizeDelta = new Vector2(storeContentRoot.sizeDelta.x, totalHeight + 80f);
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+            }
+        }
+
+        private void AddNoShipsPlaceholderRow()
+        {
+            if (shipsRowsContainer == null) return;
+            GameObject rowGo = new GameObject("ShipRow_Empty");
+            rowGo.transform.SetParent(shipsRowsContainer, false);
+            var rowRect = rowGo.AddComponent<RectTransform>();
+            rowRect.sizeDelta = new Vector2(0f, ShipCardHeight);
+            var rowLE = rowGo.AddComponent<LayoutElement>();
+            rowLE.preferredHeight = ShipCardHeight;
+            var tmp = rowGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = "No ships available. Dock at your home planet or level up to unlock more.";
+            tmp.fontSize = 14;
+            tmp.color = new Color(0.85f, 0.9f, 1f, 0.95f);
+            tmp.enableWordWrapping = true;
+            if (fontAsset != null) tmp.font = fontAsset;
+            var shipsRowsRect = shipsRowsContainer as RectTransform;
+            if (shipsRowsRect != null)
+            {
+                shipsRowsRect.sizeDelta = new Vector2(shipsRowsRect.sizeDelta.x, Mathf.Max(400f, ShipCardHeight + 60f));
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipsRowsRect);
+            }
+            if (storeContentRoot != null) UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+        }
+
+        private void CreateShipCard(Transform rowParent, ShipUnlockEntry entry, int index, float contributedGems)
+        {
+            ShipChassisDefinition chassis = entry?.chassis;
+            if (chassis == null) return;
+            int tierLevel = Mathf.Max(1, entry.minHomePlanetLevel);
+            float cost = entry.gemCost > 0f ? entry.gemCost : ShipUnlockTable.GetTierCost(tierLevel);
+            string family = string.IsNullOrEmpty(chassis.shipFamily) ? "Ship" : chassis.shipFamily;
+            bool canAfford = contributedGems >= cost;
+
+            GameObject cardGo = new GameObject("ShipCard_" + index);
+            cardGo.transform.SetParent(rowParent, false);
+            var cardRect = cardGo.AddComponent<RectTransform>();
+            cardRect.sizeDelta = new Vector2(ShipCardWidth, ShipCardHeight);
+            var cardLE = cardGo.AddComponent<LayoutElement>();
+            cardLE.preferredWidth = ShipCardWidth;
+            cardLE.preferredHeight = ShipCardHeight;
+            var cardImg = cardGo.AddComponent<Image>();
+            cardImg.color = new Color(0.15f, 0.28f, 0.5f, 0.95f);
+            if (buttonSprite != null) { cardImg.sprite = buttonSprite; cardImg.type = Image.Type.Sliced; }
+            var cardBtn = cardGo.AddComponent<Button>();
+
+            var horz = cardGo.AddComponent<HorizontalLayoutGroup>();
+            horz.spacing = 6f;
+            horz.padding = new RectOffset(4, 4, 4, 4);
+            horz.childAlignment = TextAnchor.MiddleLeft;
+            horz.childControlWidth = true;
+            horz.childControlHeight = true;
+            horz.childForceExpandWidth = false;
+            horz.childForceExpandHeight = true;
+
+            var previewGo = new GameObject("Preview");
+            previewGo.transform.SetParent(cardGo.transform, false);
+            var previewRect = previewGo.AddComponent<RectTransform>();
+            previewRect.sizeDelta = new Vector2(ShipCardPreviewSize, ShipCardPreviewSize);
+            var previewLE = previewGo.AddComponent<LayoutElement>();
+            previewLE.preferredWidth = ShipCardPreviewSize;
+            previewLE.preferredHeight = ShipCardPreviewSize;
+            var rawImg = previewGo.AddComponent<RawImage>();
+            rawImg.color = new Color(0.08f, 0.1f, 0.18f, 0.95f);
+
+            var contentGo = new GameObject("Content");
+            contentGo.transform.SetParent(cardGo.transform, false);
+            var contentLE = contentGo.AddComponent<LayoutElement>();
+            contentLE.flexibleWidth = 1f;
+            contentLE.preferredHeight = ShipCardHeight - 8f;
+            var contentVlg = contentGo.AddComponent<VerticalLayoutGroup>();
+            contentVlg.spacing = 4f;
+            contentVlg.childAlignment = TextAnchor.UpperLeft;
+            contentVlg.childControlWidth = true;
+            contentVlg.childControlHeight = true;
+            contentVlg.childForceExpandWidth = true;
+            contentVlg.childForceExpandHeight = false;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(contentGo.transform, false);
+            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = $"Lv.{tierLevel} • {chassis.displayName} ({family}) — {cost:F0}g";
+            labelTmp.fontSize = 11;
+            labelTmp.enableWordWrapping = true;
+            labelTmp.overflowMode = TextOverflowModes.Ellipsis;
+            labelTmp.color = Color.white;
+            if (fontAsset != null) labelTmp.font = fontAsset;
+            var labelLE = labelGo.AddComponent<LayoutElement>();
+            labelLE.flexibleHeight = 1f;
+
+            var buyGo = new GameObject("BuyButton");
+            buyGo.transform.SetParent(contentGo.transform, false);
+            var buyRect = buyGo.AddComponent<RectTransform>();
+            buyRect.sizeDelta = new Vector2(0f, 24f);
+            var buyImg = buyGo.AddComponent<Image>();
+            buyImg.color = canAfford ? new Color(0.2f, 0.4f, 0.65f, 0.95f) : new Color(0.2f, 0.2f, 0.25f, 0.95f);
+            if (buttonSprite != null) { buyImg.sprite = buttonSprite; buyImg.type = Image.Type.Sliced; }
+            var buyBtn = buyGo.AddComponent<Button>();
+            buyBtn.interactable = canAfford;
+            var buyLabelGo = new GameObject("Text");
+            buyLabelGo.transform.SetParent(buyGo.transform, false);
+            var buyLabelRect = buyLabelGo.AddComponent<RectTransform>();
+            buyLabelRect.anchorMin = Vector2.zero;
+            buyLabelRect.anchorMax = Vector2.one;
+            buyLabelRect.offsetMin = Vector2.zero;
+            buyLabelRect.offsetMax = Vector2.zero;
+            var buyLabel = buyLabelGo.AddComponent<TextMeshProUGUI>();
+            buyLabel.text = $"Buy {cost:F0}g";
+            buyLabel.fontSize = 11;
+            buyLabel.alignment = TextAlignmentOptions.Center;
+            buyLabel.color = Color.white;
+            if (fontAsset != null) buyLabel.font = fontAsset;
+
+            chassisButtons[index] = cardBtn;
+            chassisLabels[index] = labelTmp;
+            int idx = index;
+            cardBtn.onClick.AddListener(() => OnBuyChassis(idx));
+
+            GameObject prefab = CardShopSystem.Instance != null ? CardShopSystem.Instance.GetShipPrefabForChassisId(chassis.chassisId) : null;
+            if (prefab != null)
+                SetupShipPreview(prefab, rawImg, previewRect);
+        }
+
+        private void SetupShipPreview(GameObject shipPrefab, RawImage targetImage, RectTransform previewRect)
+        {
+            if (shipPreviewsRoot == null || targetImage == null) return;
+            RenderTexture rt = new RenderTexture(ShipPreviewRenderSize, ShipPreviewRenderSize, 16);
+            rt.name = "ShipPreviewRT";
+            targetImage.texture = rt;
+
+            GameObject previewRootGo = new GameObject("ShipPreview");
+            previewRootGo.transform.SetParent(shipPreviewsRoot, false);
+            previewRootGo.transform.localPosition = Vector3.zero;
+            previewRootGo.transform.localRotation = Quaternion.identity;
+            previewRootGo.transform.localScale = Vector3.one;
+
+            var camGo = new GameObject("PreviewCamera");
+            camGo.transform.SetParent(previewRootGo.transform, false);
+            camGo.transform.localPosition = new Vector3(0f, 8f, 0f);
+            camGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var cam = camGo.AddComponent<UnityEngine.Camera>();
+            cam.orthographic = true;
+            cam.orthographicSize = 4f;
+            cam.targetTexture = rt;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.08f, 0.1f, 0.18f, 1f);
+            cam.cullingMask = 1 << 0;
+            cam.enabled = true;
+
+            GameObject instance = Instantiate(shipPrefab);
+            instance.transform.SetParent(previewRootGo.transform, false);
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.identity;
+            instance.transform.localScale = Vector3.one * 0.35f;
+            var no = instance.GetComponent<Unity.Netcode.NetworkObject>();
+            if (no != null) no.enabled = false;
+            var ship = instance.GetComponent<TitanOrbit.Entities.Starship>();
+            if (ship != null) ship.enabled = false;
+            foreach (var rb in instance.GetComponentsInChildren<Rigidbody>(true))
+                rb.isKinematic = true;
+
+            var lightGo = new GameObject("PreviewLight");
+            lightGo.transform.SetParent(previewRootGo.transform, false);
+            lightGo.transform.localPosition = new Vector3(2f, 6f, 2f);
+            lightGo.transform.LookAt(previewRootGo.transform.position);
+            var lightComp = lightGo.AddComponent<Light>();
+            lightComp.type = LightType.Directional;
+            lightComp.intensity = 0.9f;
+            lightComp.cullingMask = 1 << 0;
+
+            var rotator = previewRootGo.AddComponent<ShipPreviewRotateToMouse>();
+            rotator.SetPreviewRect(previewRect);
         }
 
         private void RefreshSlots()

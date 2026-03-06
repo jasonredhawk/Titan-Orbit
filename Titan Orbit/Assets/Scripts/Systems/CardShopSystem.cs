@@ -150,6 +150,14 @@ namespace TitanOrbit.Systems
             return prefab;
         }
 
+        /// <summary>Returns the ship prefab for the given chassis ID (e.g. AstroEagle_01). Used by UI for ship previews.</summary>
+        public GameObject GetShipPrefabForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId)) return null;
+            int index = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
+            return GetShipPrefabForChassisIndex(index);
+        }
+
         /// <summary>
         /// Returns all cards that are allowed at the given home planet level and that match the origin planet filter.
         /// If originPlanetId is 0, returns global/home cards; if positive, returns cards bound to that planet.

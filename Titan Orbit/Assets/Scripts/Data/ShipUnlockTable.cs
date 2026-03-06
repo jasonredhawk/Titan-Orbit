@@ -44,6 +44,17 @@ namespace TitanOrbit.Data
                 if (homePlanetLevel >= entry.minHomePlanetLevel)
                     result.Add(entry);
             }
+            if (result.Count == 0 && homePlanetLevel >= 1)
+            {
+                entries.Clear();
+                EnsureDefaultAstroEagleEntries();
+                foreach (var entry in entries)
+                {
+                    if (entry?.chassis == null) continue;
+                    if (homePlanetLevel >= entry.minHomePlanetLevel)
+                        result.Add(entry);
+                }
+            }
             return result;
         }
 

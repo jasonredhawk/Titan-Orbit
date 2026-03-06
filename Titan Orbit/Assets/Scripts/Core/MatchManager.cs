@@ -65,6 +65,7 @@ namespace TitanOrbit.Core
 
         private void Update()
         {
+            if (!IsSpawned) return;
             if (IsServer && matchStarted.Value)
             {
                 matchTimer.Value += Time.deltaTime;

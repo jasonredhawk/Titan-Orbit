@@ -922,12 +922,20 @@ namespace TitanOrbit.UI
                     displaySize = newSize;
                 }
             }
+
+            // Clear stale reference if player ship was destroyed
+            if (playerShip != null && !playerShip)
+            {
+                playerShip = null;
+                playerTransform = null;
+            }
             
             if (playerShip == null || !playerShip.IsOwner)
             {
                 RefreshEntityCache();
                 foreach (var ship in cachedShips)
                 {
+                    if (ship == null || !ship) continue;
                     if (ship.IsOwner) { playerShip = ship; playerTransform = ship.transform; break; }
                 }
                 if (playerShip == null)
@@ -1198,6 +1206,8 @@ namespace TitanOrbit.UI
 
         private void UpdateBlips()
         {
+            if (playerTransform == null || playerShip == null || !playerShip)
+                return;
             RefreshEntityCache();
             Vector3 playerPos = playerTransform.position;
             blipsToRemove.Clear();
