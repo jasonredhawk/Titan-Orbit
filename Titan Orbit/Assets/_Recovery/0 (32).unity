@@ -133,7 +133,6 @@ GameObject:
   - component: {fileID: 35114409}
   - component: {fileID: 35114408}
   - component: {fileID: 35114407}
-  - component: {fileID: 35114413}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -208,7 +207,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
   target: {fileID: 0}
   offsetAtReferenceLevel: {x: 0, y: 40, z: 0}
-  orthographicSizeAtReferenceLevel: 9
+  orthographicSizeAtReferenceLevel: 12
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
@@ -278,50 +277,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &35114413
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 35114406}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
-  m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
-  m_CameraType: 0
-  m_Cameras: []
-  m_RendererIndex: -1
-  m_VolumeLayerMask:
-    serializedVersion: 2
-    m_Bits: 1
-  m_VolumeTrigger: {fileID: 0}
-  m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
-  m_Antialiasing: 0
-  m_AntialiasingQuality: 2
-  m_StopNaN: 0
-  m_Dithering: 0
-  m_ClearDepth: 1
-  m_AllowXRRendering: 1
-  m_AllowHDROutput: 1
-  m_UseScreenCoordOverride: 0
-  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
-  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
-  m_RequiresDepthTexture: 0
-  m_RequiresColorTexture: 0
-  m_TaaSettings:
-    m_Quality: 3
-    m_FrameInfluence: 0.1
-    m_JitterScale: 1
-    m_MipBias: 0
-    m_VarianceClampScale: 0.9
-    m_ContrastAdaptiveSharpening: 0
-  m_Version: 2
 --- !u!1 &37013000
 GameObject:
   m_ObjectHideFlags: 0
@@ -431,7 +386,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 293168534
+  GlobalObjectIdHash: 2903738722
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -1989,6 +1944,59 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 278863896}
   m_CullTransparentMesh: 1
+--- !u!1 &284668902
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 284668904}
+  - component: {fileID: 284668903}
+  m_Layer: 0
+  m_Name: LoadingScreenController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &284668903
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 284668902}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 999cf1f53e84b204aacdff1c6fc60580, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.LoadingScreenController
+  loadingPanel: {fileID: 0}
+  progressBar: {fileID: 0}
+  progressText: {fileID: 0}
+  statusText: {fileID: 0}
+  cameraController: {fileID: 35114410}
+  loadingOrthoSize: 180
+  loadingCameraHeight: 200
+  mainMenu: {fileID: 617451041}
+  minLoadingDisplayTime: 1
+--- !u!4 &284668904
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 284668902}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &333096948
 GameObject:
   m_ObjectHideFlags: 0
@@ -3372,7 +3380,7 @@ MonoBehaviour:
   mainMenuPanel: {fileID: 949318590}
   lobbyPanel: {fileID: 1626147336}
   teamSelectionPanel: {fileID: 1610342774}
-  loadingScreenController: {fileID: 0}
+  loadingScreenController: {fileID: 284668903}
   playButton: {fileID: 891683474}
   hostOnlineButton: {fileID: 0}
   joinOnlineButton: {fileID: 0}
@@ -4743,7 +4751,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1190214820
+  GlobalObjectIdHash: 3523717525
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -4785,7 +4793,7 @@ MonoBehaviour:
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  numberOfPlanets: 17
+  numberOfPlanets: 20
   minPlanetSize: 4
   maxPlanetSize: 12
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
@@ -4797,7 +4805,7 @@ MonoBehaviour:
   planetsParent: {fileID: 0}
   asteroidsParent: {fileID: 0}
   homePlanetsParent: {fileID: 0}
-  batchDelaySeconds: 0
+  batchDelaySeconds: 0.02
   asteroidsPerBatch: 20
 --- !u!1 &848080610
 GameObject:
@@ -7616,7 +7624,6 @@ MonoBehaviour:
   scrollScale: 0.03
   textureTiling: 2
   depthOffset: 150
-  sizeMargin: 1.15
 --- !u!4 &1481144357
 Transform:
   m_ObjectHideFlags: 0
@@ -8489,7 +8496,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3484772252
+  GlobalObjectIdHash: 1046501728
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -10984,3 +10991,4 @@ SceneRoots:
   - {fileID: 1481144357}
   - {fileID: 617451046}
   - {fileID: 227923453}
+  - {fileID: 284668904}

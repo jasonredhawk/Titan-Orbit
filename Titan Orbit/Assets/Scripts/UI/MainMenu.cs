@@ -16,6 +16,7 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject mainMenuPanel;
         [SerializeField] private GameObject lobbyPanel;
         [SerializeField] private GameObject teamSelectionPanel;
+        [SerializeField] private LoadingScreenController loadingScreenController;
         [SerializeField] private Button playButton;
         [SerializeField] private Button hostOnlineButton;
         [SerializeField] private Button joinOnlineButton;
@@ -136,8 +137,11 @@ namespace TitanOrbit.UI
                 bool ok = await NetworkGameManager.Instance.PlayQuickJoinOrCreateAsync();
                 if (ok)
                 {
-                    ShowLobby();
-                    if (teamSelectionPanel != null) teamSelectionPanel.SetActive(true);
+                    if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
+                    if (loadingScreenController != null)
+                        loadingScreenController.ShowLoading();
+                    else
+                        ShowLobby();
                 }
                 else
                 {
@@ -221,6 +225,29 @@ namespace TitanOrbit.UI
 
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(true);
+        }
+
+        /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
+        public void ShowLobbyAndTeamSelection()
+        {
+            if (mainMenuPanel != null)
+                mainMenuPanel.SetActive(false);
+
+            string playerName = (playerNameInputField != null ? playerNameInputField.text : null) ?? "";
+            playerName = playerName.Trim();
+            NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(playerName)
+                ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                : playerName;
+
+            if (lobbyPanel != null)
+            {
+                lobbyPanel.SetActive(true);
+            }
+
+            if (teamSelectionPanel != null)
+            {
+                teamSelectionPanel.SetActive(true);
+            }
         }
 
         private void UpdateLobbyInfo()

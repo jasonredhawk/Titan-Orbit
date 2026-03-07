@@ -345,6 +345,8 @@ namespace TitanOrbit.Systems
             }
             else
             {
+                // No baseShipData: set ship level from tier so orbit UI shows correct slot count (level 2 = 2 slots, etc.)
+                ship.SetShipLevelFromTier(tierLevel);
                 GameObject prefab = GetAstroEaglePrefabForChassisId(chassisId);
                 if (prefab == null && chassisIndex >= 0 && chassisIndex < (astroEagleShipPrefabs?.Length ?? 0))
                     prefab = astroEagleShipPrefabs[chassisIndex];
@@ -390,7 +392,13 @@ namespace TitanOrbit.Systems
 
         private CardData FindCardById(string cardId)
         {
-            if (allCards == null) return null;
+            return GetCardById(cardId);
+        }
+
+        /// <summary>Public lookup for resolving card IDs to CardData (e.g. for client-side equipped card display).</summary>
+        public CardData GetCardById(string cardId)
+        {
+            if (allCards == null || string.IsNullOrEmpty(cardId)) return null;
             foreach (var card in allCards)
             {
                 if (card == null) continue;

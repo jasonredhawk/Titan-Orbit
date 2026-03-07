@@ -27,6 +27,8 @@ namespace TitanOrbit.Camera
         [Header("Placement")]
         [Tooltip("Distance below camera for the background plane (further = more parallax)")]
         [SerializeField] private float depthOffset = 150f;
+        [Tooltip("Extra margin beyond visible area to prevent edge gaps on wide screens")]
+        [SerializeField] private float sizeMargin = 1.15f;
 
         private MeshRenderer meshRenderer;
         private Material bgMaterial;
@@ -96,7 +98,11 @@ namespace TitanOrbit.Camera
 
             // Horizontal plane (XZ) facing up for top-down camera
             quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            float quadSize = targetCamera.orthographicSize * 4f; // Cover view with margin
+            float orthoSize = targetCamera.orthographicSize;
+            float aspect = targetCamera.aspect > 0.01f ? targetCamera.aspect : (float)Screen.width / Mathf.Max(1, Screen.height);
+            float visibleHeight = 2f * orthoSize;
+            float visibleWidth = 2f * orthoSize * aspect;
+            float quadSize = Mathf.Max(visibleWidth, visibleHeight) * sizeMargin;
             quad.transform.localScale = new Vector3(quadSize, quadSize, 1f);
 
             Object.Destroy(quad.GetComponent<Collider>()); // No physics needed

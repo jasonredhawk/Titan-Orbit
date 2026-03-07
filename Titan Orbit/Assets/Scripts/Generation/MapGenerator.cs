@@ -3,12 +3,14 @@ using Unity.Netcode;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
+using System.Collections;
 
 namespace TitanOrbit.Generation
 {
     /// <summary>
     /// Generates procedural maps with seed-based randomization
     /// Uses parent containers for organization. Asteroids are clustered and never overlap.
+    /// Supports progressive generation for loading screen visualization.
     /// </summary>
     public class MapGenerator : NetworkBehaviour
     {
@@ -23,7 +25,7 @@ namespace TitanOrbit.Generation
 
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
-        [SerializeField] private int numberOfPlanets = 20;
+        [SerializeField] private int numberOfPlanets = 17;
         [SerializeField] private float minPlanetSize = 4f;
         [SerializeField] private float maxPlanetSize = 12f;
 
@@ -39,6 +41,20 @@ namespace TitanOrbit.Generation
         [SerializeField] private Transform planetsParent;
         [SerializeField] private Transform asteroidsParent;
         [SerializeField] private Transform homePlanetsParent;
+
+        [Header("Loading Screen")]
+        [Tooltip("Delay per batch during progressive generation (seconds). 0 = instant generation (no lag).")]
+        [SerializeField] private float batchDelaySeconds = 0f;
+        [Tooltip("Asteroids per batch during progressive generation.")]
+        [SerializeField] private int asteroidsPerBatch = 20;
+
+        /// <summary>Loading progress 0-1. Synced to clients for progress bar.</summary>
+        private NetworkVariable<float> loadingProgress = new NetworkVariable<float>(0f);
+        /// <summary>True when map generation is complete.</summary>
+        private NetworkVariable<bool> loadingComplete = new NetworkVariable<bool>(false);
+
+        public float LoadingProgress => loadingProgress.Value;
+        public bool LoadingComplete => loadingComplete.Value;
 
         private System.Random random;
         private System.Collections.Generic.List<Vector3> asteroidPositions = new System.Collections.Generic.List<Vector3>();
@@ -72,9 +88,7 @@ namespace TitanOrbit.Generation
         {
             if (IsServer)
             {
-                EnsureParents();
-                GenerateMap();
-                hasGenerated = true;
+                EnsureMapGenerated();
             }
         }
 
@@ -83,11 +97,19 @@ namespace TitanOrbit.Generation
         {
             if (hasGenerated) return;
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
-            EnsureParents();
-            GenerateMap();
             hasGenerated = true;
+            EnsureParents();
+            if (batchDelaySeconds > 0f && gameObject.activeInHierarchy)
+                StartCoroutine(GenerateMapProgressive());
+            else
+            {
+                GenerateMapImmediate();
+                loadingProgress.Value = 1f;
+                loadingComplete.Value = true;
+            }
             int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+            if (hasGenerated)
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
         }
 
         private void EnsureParents()
@@ -112,7 +134,95 @@ namespace TitanOrbit.Generation
             }
         }
 
-        private void GenerateMap()
+        private IEnumerator GenerateMapProgressive()
+        {
+            if (seed == 0) seed = System.Environment.TickCount;
+            random = new System.Random(seed);
+
+            ToroidalMap.SetMapSize(mapWidth, mapHeight);
+            asteroidPositions.Clear();
+            planetPositions.Clear();
+            nextPlanetId = 1;
+
+            if (homePlanetPrefab == null)
+                Debug.LogWarning("MapGenerator: homePlanetPrefab is not assigned. Assign it in the Inspector (e.g. use Titan Orbit > Setup Game Scene or assign prefabs to MapGenerator).");
+            if (planetPrefab == null)
+                Debug.LogWarning("MapGenerator: planetPrefab is not assigned. Assign it in the Inspector.");
+            if (asteroidPrefab == null)
+                Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
+
+            int totalSteps = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            if (totalSteps == 0) totalSteps = 1;
+            int completed = 0;
+
+            GenerateHomePlanets();
+            completed += homePlanetPrefab != null ? 3 : 0;
+            loadingProgress.Value = (float)completed / totalSteps;
+            yield return new WaitForSeconds(batchDelaySeconds);
+
+            for (int i = 0; i < numberOfPlanets; i++)
+            {
+                if (planetPrefab != null)
+                {
+                    GenerateSingleNeutralPlanet(i);
+                    completed++;
+                    loadingProgress.Value = (float)completed / totalSteps;
+                }
+                if (batchDelaySeconds > 0f && i % 2 == 1)
+                    yield return new WaitForSeconds(batchDelaySeconds * 0.5f);
+            }
+
+            if (asteroidPrefab != null)
+            {
+                if (AsteroidRespawnManager.Instance != null)
+                    AsteroidRespawnManager.Instance.SetPrefab(asteroidPrefab);
+
+                Vector3[] clusterCenters = new Vector3[asteroidClusters];
+                for (int c = 0; c < asteroidClusters; c++)
+                    clusterCenters[c] = GetRandomPositionAvoiding(15f, planetPositions, new System.Collections.Generic.List<Vector3>());
+
+                int perCluster = Mathf.CeilToInt((float)numberOfAsteroids / asteroidClusters);
+                int spawned = 0;
+                for (int c = 0; c < asteroidClusters && spawned < numberOfAsteroids; c++)
+                {
+                    Vector3 center = clusterCenters[c];
+                    for (int i = 0; i < perCluster && spawned < numberOfAsteroids; i++)
+                    {
+                        Vector3 position = GetPositionInCluster(center);
+                        if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
+                        if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
+
+                        asteroidPositions.Add(position);
+                        float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
+                        float linearScale = 0.35f * Mathf.Pow(size, 1f / 3f);
+                        Vector3 scale = new Vector3(
+                            linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
+                            linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
+                            linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
+                        );
+
+                        GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));
+                        asteroidObj.transform.localScale = scale;
+                        NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
+                        if (netObj != null) netObj.Spawn();
+                        spawned++;
+                        completed++;
+                        loadingProgress.Value = (float)completed / totalSteps;
+
+                        if (spawned % asteroidsPerBatch == 0)
+                            yield return new WaitForSeconds(batchDelaySeconds);
+                    }
+                }
+            }
+
+            hasGenerated = true;
+            loadingProgress.Value = 1f;
+            loadingComplete.Value = true;
+            int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+        }
+
+        private void GenerateMapImmediate()
         {
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
@@ -161,31 +271,35 @@ namespace TitanOrbit.Generation
             }
         }
 
+        private void GenerateSingleNeutralPlanet(int index)
+        {
+            if (planetPrefab == null) return;
+
+            float minDist = 30f;
+            Vector3 position = GetRandomPositionAvoiding(minDist, planetPositions, asteroidPositions);
+            planetPositions.Add(position);
+            float size = GetRandomFloat(minPlanetSize, maxPlanetSize);
+
+            GameObject planetObj = Instantiate(planetPrefab, position, Quaternion.identity);
+            planetObj.transform.localScale = Vector3.one * size;
+
+            Planet planet = planetObj.GetComponent<Planet>();
+            if (planet != null)
+            {
+                planet.SetTemplatePlanetId(nextPlanetId);
+                nextPlanetId++;
+            }
+
+            NetworkObject netObj = planetObj.GetComponent<NetworkObject>();
+            if (netObj != null) netObj.Spawn();
+        }
+
         private void GenerateNeutralPlanets()
         {
             if (planetPrefab == null) return;
 
-            float minDist = 30f; // Larger planets need more spacing
             for (int i = 0; i < numberOfPlanets; i++)
-            {
-                Vector3 position = GetRandomPositionAvoiding(minDist, planetPositions, asteroidPositions);
-                planetPositions.Add(position);
-                float size = GetRandomFloat(minPlanetSize, maxPlanetSize);
-
-                GameObject planetObj = Instantiate(planetPrefab, position, Quaternion.identity);
-                planetObj.transform.localScale = Vector3.one * size;
-
-                // Assign a unique logical id so this planet can be linked to a specific ship family / card origin.
-                Planet planet = planetObj.GetComponent<Planet>();
-                if (planet != null)
-                {
-                    planet.SetTemplatePlanetId(nextPlanetId);
-                    nextPlanetId++;
-                }
-
-                NetworkObject netObj = planetObj.GetComponent<NetworkObject>();
-                if (netObj != null) netObj.Spawn();
-            }
+                GenerateSingleNeutralPlanet(i);
         }
 
         private void GenerateAsteroids()

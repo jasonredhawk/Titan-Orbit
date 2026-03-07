@@ -63,7 +63,12 @@ namespace TitanOrbit.UI
         private static float lastReceivedGems;
         private static bool pendingGemsRequest;
 
+        private Button btnOrbitDepositGems;
         private GameObject slotGridRoot;
+        private RectTransform slotPanelRect;
+        private RectTransform slotGridRect;
+        private RectTransform storePanelRect;
+        private TextMeshProUGUI loadoutSectionLabel;
         private GameObject[] slotBoxes;
         private Image[] slotBgImages;
         private Image[] slotBorderImages;
@@ -118,6 +123,8 @@ namespace TitanOrbit.UI
 
         private float storeRefreshAccum;
         private const float StoreRefreshInterval = 0.35f;
+        private float contributedGemsRequestAccum;
+        private const float ContributedGemsRequestInterval = 1f; // Request contributed gems periodically so deposits show up
 
         private void Awake()
         {
@@ -129,11 +136,18 @@ namespace TitanOrbit.UI
         {
             if (rootPanel == null || !rootPanel.activeSelf || currentShip == null || currentPlanet == null) return;
             storeRefreshAccum += Time.deltaTime;
+            contributedGemsRequestAccum += Time.deltaTime;
             if (storeRefreshAccum >= StoreRefreshInterval)
             {
                 storeRefreshAccum = 0f;
                 RefreshStoreLabels();
                 RefreshSlots();
+            }
+            // Periodically request contributed gems so deposits show up without closing/reopening
+            if (contributedGemsRequestAccum >= ContributedGemsRequestInterval && HomePlanetStoreSystem.Instance != null)
+            {
+                contributedGemsRequestAccum = 0f;
+                HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
             }
         }
 
@@ -248,11 +262,12 @@ namespace TitanOrbit.UI
             // —— Independent Ship Slot Panel (6 wide, roomy cards) ——
             int slotGridRows = Mathf.Min(2, (MaxSlotRows + SlotGridColumns - 1) / SlotGridColumns);
             float slotGridTotalH = slotGridRows * SlotCardHeight + (slotGridRows - 1) * SlotCellSpacing;
-            float slotPanelHeight = SlotPanelHeaderHeight + 8f + slotGridTotalH + 12f;
+            const float orbitActionsHeight = 36f;
+            float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
 
             slotPanel = new GameObject("ShipSlotPanel");
             slotPanel.transform.SetParent(rootPanel.transform, false);
-            var slotPanelRect = slotPanel.AddComponent<RectTransform>();
+            slotPanelRect = slotPanel.AddComponent<RectTransform>();
             slotPanelRect.anchorMin = new Vector2(0f, 1f);
             slotPanelRect.anchorMax = new Vector2(1f, 1f);
             slotPanelRect.pivot = new Vector2(0.5f, 1f);
@@ -264,11 +279,14 @@ namespace TitanOrbit.UI
             if (panelBackgroundSprite != null) { slotPanelImg.sprite = panelBackgroundSprite; slotPanelImg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
 
             float slotY = -8f;
-            CreateSectionLabel(slotPanel.transform, "Loadout", "Ship Loadout", ref slotY);
+            btnOrbitDepositGems = CreateOrbitActionButton(slotPanel.transform, "Deposit Gems", ref slotY);
+            if (btnOrbitDepositGems != null) btnOrbitDepositGems.onClick.AddListener(OnOrbitDepositGemsClick);
+            slotY -= 8f;
+            loadoutSectionLabel = CreateSectionLabelWithRef(slotPanel.transform, "Loadout", "Ship Loadout (click card to remove)", ref slotY);
             slotY -= 8f;
             slotGridRoot = new GameObject("SlotGrid");
             slotGridRoot.transform.SetParent(slotPanel.transform, false);
-            var slotGridRect = slotGridRoot.AddComponent<RectTransform>();
+            slotGridRect = slotGridRoot.AddComponent<RectTransform>();
             slotGridRect.anchorMin = new Vector2(0f, 1f);
             slotGridRect.anchorMax = new Vector2(1f, 1f);
             slotGridRect.pivot = new Vector2(0.5f, 1f);
@@ -287,13 +305,18 @@ namespace TitanOrbit.UI
             slotTitleTexts = new TextMeshProUGUI[MaxSlotRows];
             slotDescTexts = new TextMeshProUGUI[MaxSlotRows];
             for (int i = 0; i < MaxSlotRows; i++)
+            {
                 CreateSlotBoxForGrid(slotGridRoot.transform, SlotCardWidth, SlotCardHeight, i, out slotBoxes[i], out slotBgImages[i], out slotBorderImages[i], out slotLevelTexts[i], out slotTitleTexts[i], out slotDescTexts[i]);
+                int idx = i;
+                var slotBtn = slotBoxes[i].GetComponent<Button>();
+                if (slotBtn != null) slotBtn.onClick.AddListener(() => OnRemoveCard(idx));
+            }
 
             // —— Store Panel (tabs: Cards | Ships) ——
             float storePanelTop = slotPanelHeight + 8f;
             storePanel = new GameObject("StorePanel");
             storePanel.transform.SetParent(rootPanel.transform, false);
-            var storePanelRect = storePanel.AddComponent<RectTransform>();
+            storePanelRect = storePanel.AddComponent<RectTransform>();
             storePanelRect.anchorMin = new Vector2(0f, 0f);
             storePanelRect.anchorMax = new Vector2(1f, 1f);
             storePanelRect.offsetMin = new Vector2(12f, 12f);
@@ -337,7 +360,7 @@ namespace TitanOrbit.UI
             scrollViewRect.anchorMin = new Vector2(0f, 0f);
             scrollViewRect.anchorMax = new Vector2(1f, 1f);
             scrollViewRect.offsetMin = new Vector2(12f, 12f);
-            scrollViewRect.offsetMax = new Vector2(-12f, storeY);
+            scrollViewRect.offsetMax = new Vector2(-28f, storeY); // Leave room for scrollbar
             storeScrollRect = scrollViewGo.AddComponent<ScrollRect>();
             storeScrollRect.horizontal = false;
             storeScrollRect.vertical = true;
@@ -352,7 +375,7 @@ namespace TitanOrbit.UI
             viewport.AddComponent<RectMask2D>();
             var viewportImg = viewport.AddComponent<Image>();
             viewportImg.color = new Color(1f, 1f, 1f, 0.01f);
-            viewportImg.raycastTarget = false;
+            viewportImg.raycastTarget = true; // Required for ScrollRect to receive drag events
             storeScrollRect.viewport = viewportRect;
             storeContentRoot = new GameObject("StoreContent").AddComponent<RectTransform>();
             storeContentRoot.SetParent(viewport.transform, false);
@@ -361,14 +384,25 @@ namespace TitanOrbit.UI
             storeContentRoot.pivot = new Vector2(0f, 1f);
             storeContentRoot.anchoredPosition = Vector2.zero;
             storeContentRoot.sizeDelta = new Vector2(Mathf.Max(PanelWidth - 24f, 360f), 800f); // updated below after content built
+            var contentSizeFitter = storeContentRoot.gameObject.AddComponent<ContentSizeFitter>();
+            contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            var contentVlg = storeContentRoot.gameObject.AddComponent<VerticalLayoutGroup>();
+            contentVlg.childAlignment = TextAnchor.UpperCenter;
+            contentVlg.childControlWidth = true;
+            contentVlg.childControlHeight = true;
+            contentVlg.childForceExpandWidth = true;
+            contentVlg.childForceExpandHeight = false;
+            contentVlg.spacing = 0f;
             storeScrollRect.content = storeContentRoot;
 
             // Cards tab content
             cardsTabContent = new GameObject("CardsTabContent");
             cardsTabContent.transform.SetParent(storeContentRoot, false);
             var cardsContentRect = cardsTabContent.AddComponent<RectTransform>();
-            cardsContentRect.anchorMin = new Vector2(0f, 0f);
+            cardsContentRect.anchorMin = new Vector2(0f, 1f);
             cardsContentRect.anchorMax = new Vector2(1f, 1f);
+            cardsContentRect.pivot = new Vector2(0.5f, 1f);
             cardsContentRect.offsetMin = Vector2.zero;
             cardsContentRect.offsetMax = Vector2.zero;
             float y = 0f;
@@ -408,13 +442,17 @@ namespace TitanOrbit.UI
                 cardButtons[i].onClick.AddListener(() => OnBuyCard(idx));
             }
             float cardsContentHeight = -y + 20f;
+            var cardsLayoutEl = cardsTabContent.AddComponent<LayoutElement>();
+            cardsLayoutEl.preferredHeight = cardsContentHeight;
+            cardsLayoutEl.flexibleWidth = 1f;
 
             // Ships tab content — fixed list of ship slots (like Cards tab), populated when tab is shown
             shipsTabContent = new GameObject("ShipsTabContent");
             shipsTabContent.transform.SetParent(storeContentRoot, false);
             var shipsContentRect = shipsTabContent.AddComponent<RectTransform>();
-            shipsContentRect.anchorMin = new Vector2(0f, 0f);
+            shipsContentRect.anchorMin = new Vector2(0f, 1f);
             shipsContentRect.anchorMax = new Vector2(1f, 1f);
+            shipsContentRect.pivot = new Vector2(0.5f, 1f);
             shipsContentRect.offsetMin = Vector2.zero;
             shipsContentRect.offsetMax = Vector2.zero;
             chassisButtons = new Button[MaxShipCards];
@@ -438,9 +476,49 @@ namespace TitanOrbit.UI
             shipPreviewsRoot.localScale = Vector3.one;
 
             float shipsContentHeight = Mathf.Max(650f, MaxShipCards * 40f + 60f);
+            var shipsLayoutEl = shipsTabContent.AddComponent<LayoutElement>();
+            shipsLayoutEl.preferredHeight = shipsContentHeight;
+            shipsLayoutEl.flexibleWidth = 1f;
 
             float contentWidth = Mathf.Max(PanelWidth - 24f, 360f);
             storeContentRoot.sizeDelta = new Vector2(contentWidth, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
+
+            // Vertical scrollbar for store
+            var scrollbarGo = new GameObject("StoreScrollbar");
+            scrollbarGo.transform.SetParent(storePanel.transform, false);
+            var scrollbarRect = scrollbarGo.AddComponent<RectTransform>();
+            scrollbarRect.anchorMin = new Vector2(1f, 0f);
+            scrollbarRect.anchorMax = new Vector2(1f, 1f);
+            scrollbarRect.pivot = new Vector2(1f, 1f);
+            scrollbarRect.anchoredPosition = Vector2.zero;
+            scrollbarRect.offsetMin = new Vector2(-20f, 12f);
+            scrollbarRect.offsetMax = new Vector2(-12f, storeY);
+            var scrollbar = scrollbarGo.AddComponent<Scrollbar>();
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            var scrollbarBg = scrollbarGo.AddComponent<Image>();
+            scrollbarBg.color = new Color(0.1f, 0.12f, 0.18f, 0.8f);
+            var scrollbarHandleArea = new GameObject("Sliding Area");
+            scrollbarHandleArea.transform.SetParent(scrollbarGo.transform, false);
+            var handleAreaRect = scrollbarHandleArea.AddComponent<RectTransform>();
+            handleAreaRect.anchorMin = Vector2.zero;
+            handleAreaRect.anchorMax = Vector2.one;
+            handleAreaRect.offsetMin = new Vector2(2f, 2f);
+            handleAreaRect.offsetMax = new Vector2(-2f, -2f);
+            var scrollbarHandle = new GameObject("Handle");
+            scrollbarHandle.transform.SetParent(scrollbarHandleArea.transform, false);
+            var handleRect = scrollbarHandle.AddComponent<RectTransform>();
+            handleRect.anchorMin = new Vector2(0f, 0f);
+            handleRect.anchorMax = new Vector2(1f, 1f);
+            handleRect.offsetMin = Vector2.zero;
+            handleRect.offsetMax = Vector2.zero;
+            var handleImg = scrollbarHandle.AddComponent<Image>();
+            handleImg.color = new Color(0.35f, 0.45f, 0.65f, 0.95f);
+            if (buttonSprite != null) { handleImg.sprite = buttonSprite; handleImg.type = Image.Type.Sliced; }
+            scrollbar.handleRect = handleRect;
+            scrollbar.targetGraphic = handleImg;
+            storeScrollRect.verticalScrollbar = scrollbar;
+            storeScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+
             itemTypes = (StoreItemType[])System.Enum.GetValues(typeof(StoreItemType));
             itemButtons = new Button[itemTypes.Length];
             itemLabels = new TextMeshProUGUI[itemTypes.Length];
@@ -491,7 +569,10 @@ namespace TitanOrbit.UI
             if (shipPreviewsRoot != null)
                 shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
             if (storeScrollRect != null && storeScrollRect.content != null)
+            {
                 storeScrollRect.verticalNormalizedPosition = 1f;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(storeScrollRect.content);
+            }
             if (activeStoreTab == 1)
                 EnsureShipsTabPopulated();
             var cardsImg = tabCardsButton.GetComponent<Image>();
@@ -586,6 +667,11 @@ namespace TitanOrbit.UI
 
         private void CreateSectionLabel(Transform parent, string name, string text, ref float y)
         {
+            CreateSectionLabelWithRef(parent, name, text, ref y);
+        }
+
+        private TextMeshProUGUI CreateSectionLabelWithRef(Transform parent, string name, string text, ref float y)
+        {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var rect = go.AddComponent<RectTransform>();
@@ -603,6 +689,7 @@ namespace TitanOrbit.UI
             tmp.overflowMode = TextOverflowModes.Overflow;
             tmp.enableWordWrapping = false;
             if (fontAsset != null) tmp.font = fontAsset;
+            return tmp;
         }
 
         private void CreateRowLabel(Transform parent, string text, ref float y)
@@ -638,6 +725,7 @@ namespace TitanOrbit.UI
             bgImage = boxRoot.AddComponent<Image>();
             bgImage.color = new Color(0.18f, 0.22f, 0.32f, 0.95f);
             if (buttonSprite != null) { bgImage.sprite = buttonSprite; bgImage.type = Image.Type.Sliced; }
+            boxRoot.AddComponent<Button>(); // Click to remove card (handler set in EnsurePanelExists)
 
             var borderGo = new GameObject("Border");
             borderGo.transform.SetParent(boxRoot.transform, false);
@@ -1275,10 +1363,81 @@ namespace TitanOrbit.UI
             rotator.SetPreviewRect(previewRect);
         }
 
+        private Button CreateOrbitActionButton(Transform parent, string label, ref float y)
+        {
+            var go = new GameObject("Btn_" + label.Replace(" ", ""));
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, y);
+            rect.sizeDelta = new Vector2(-24f, 32f);
+            y -= 36f;
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.2f, 0.35f, 0.55f, 0.95f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            var btn = go.AddComponent<Button>();
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 4f);
+            textRect.offsetMax = new Vector2(-8f, -4f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 14;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            if (fontAsset != null) tmp.font = fontAsset;
+            tmp.raycastTarget = false;
+            return btn;
+        }
+
+        private void OnOrbitDepositGemsClick()
+        {
+            if (currentShip == null) return;
+            currentShip.SetWantToDepositGemsServerRpc(!currentShip.WantToDepositGems);
+            // Request contributed gems soon so UI updates as gems deposit
+            contributedGemsRequestAccum = ContributedGemsRequestInterval - 0.5f;
+        }
+
         private void RefreshSlots()
         {
             if (currentShip == null || slotBoxes == null) return;
+
+            // Refresh Deposit Gems button: show active state, disable when no gems or can't deposit at this planet
+            if (btnOrbitDepositGems != null && currentPlanet != null)
+            {
+                bool canDeposit = (currentPlanet is HomePlanet hp && (hp.AssignedTeam == TeamManager.Team.None || hp.AssignedTeam == currentShip.ShipTeam))
+                    || (currentPlanet.TeamOwnership == currentShip.ShipTeam);
+                bool hasGems = currentShip.CurrentGems > 0f;
+                btnOrbitDepositGems.interactable = canDeposit && hasGems;
+                var btnImg = btnOrbitDepositGems.GetComponent<Image>();
+                var btnText = btnOrbitDepositGems.GetComponentInChildren<TextMeshProUGUI>();
+                if (btnImg != null)
+                    btnImg.color = currentShip.WantToDepositGems ? new Color(0.3f, 0.6f, 0.35f, 0.98f) : new Color(0.2f, 0.35f, 0.55f, 0.95f);
+                if (btnText != null)
+                    btnText.text = currentShip.WantToDepositGems ? "Depositing Gems..." : "Deposit Gems";
+            }
             int slotCount = currentShip.SlotCount;
+
+            // Resize slot panel and grid to match ship's slot count (level 2 = 2 slots, level 3 = 3 slots, etc.)
+            if (slotPanelRect != null && slotGridRect != null && storePanelRect != null)
+            {
+                const float orbitActionsHeight = 36f;
+                int effectiveSlotRows = Mathf.Max(1, Mathf.Min(MaxSlotRows / SlotGridColumns, Mathf.CeilToInt((float)slotCount / SlotGridColumns)));
+                float slotGridTotalH = effectiveSlotRows * SlotCardHeight + (effectiveSlotRows - 1) * SlotCellSpacing;
+                float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
+                slotPanelRect.offsetMin = new Vector2(12f, -slotPanelHeight);
+                slotPanelRect.offsetMax = new Vector2(-12f, 0f);
+                slotGridRect.sizeDelta = new Vector2(-24f, slotGridTotalH);
+                float storePanelTop = slotPanelHeight + 8f;
+                storePanelRect.offsetMax = new Vector2(-12f, -storePanelTop);
+            }
+            if (loadoutSectionLabel != null)
+                loadoutSectionLabel.text = $"Ship Loadout ({slotCount} slot{(slotCount != 1 ? "s" : "")}) — click card to remove";
             var cards = currentShip.EquippedCards;
             for (int i = 0; i < slotBoxes.Length; i++)
             {
@@ -1304,18 +1463,28 @@ namespace TitanOrbit.UI
                     slotBorderImages[i].enabled = true;
                     slotBorderImages[i].color = card != null ? GetSlotTypeBorderColor(card.slotType) : new Color(0.35f, 0.4f, 0.5f, 0.8f);
                 }
+                var slotBtn = slotBoxes[i].GetComponent<Button>();
+                if (slotBtn != null) slotBtn.interactable = (card != null); // Only clickable when slot has a card (to remove)
             }
+        }
+
+        private void OnRemoveCard(int slotIndex)
+        {
+            if (currentShip == null) return;
+            var cards = currentShip.EquippedCards;
+            if (cards == null || slotIndex < 0 || slotIndex >= cards.Count) return;
+            currentShip.RemoveCardServerRpc(slotIndex);
         }
 
         private void OnBuyCard(int index)
         {
-            if (currentShip == null || currentHomePlanet == null || CardShopSystem.Instance == null) return;
+            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
             if (cardEntries == null || index < 0 || index >= cardEntries.Length) return;
             CardData card = cardEntries[index];
             if (card == null) return;
-            var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
-            if (homeNo == null || !homeNo.IsSpawned) return;
-            CardShopSystem.Instance.PurchaseCardServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, card.cardId);
+            var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
+            if (planetNo == null || !planetNo.IsSpawned) return;
+            CardShopSystem.Instance.PurchaseCardServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, card.cardId);
             pendingGemsRequest = true;
             if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
         }

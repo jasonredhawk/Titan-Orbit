@@ -118,6 +118,15 @@ namespace TitanOrbit.UI
             if (!Application.isPlaying) return;
             if (!force && Time.time - lastEntityCacheRefreshTime < EntityCacheRefreshInterval) return;
 
+            // #region agent log
+            var logPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "debug-102f96.log");
+            try
+            {
+                var line = "{\"sessionId\":\"102f96\",\"location\":\"MinimapController.cs:RefreshEntityCache\",\"message\":\"5x FindObjectsByType\",\"data\":{\"frame\":" + Time.frameCount + "},\"timestamp\":" + (long)(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalMilliseconds + ",\"hypothesisId\":\"C\"}\n";
+                System.IO.File.AppendAllText(logPath, line);
+            }
+            catch { }
+            // #endregion
             cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
             cachedPlanets = FindObjectsByType<Planet>(FindObjectsSortMode.None);
             cachedHomePlanets = FindObjectsByType<HomePlanet>(FindObjectsSortMode.None);

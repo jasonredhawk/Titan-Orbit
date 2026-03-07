@@ -304,6 +304,53 @@ namespace TitanOrbit.Editor
             Debug.Log("Play button and Team Selection panel added. Save the scene.");
         }
 
+        [MenuItem("Titan Orbit/Add Loading Screen")]
+        public static void AddLoadingScreen()
+        {
+            MainMenu mainMenu = Object.FindFirstObjectByType<MainMenu>();
+            if (mainMenu == null)
+            {
+                Debug.LogError("MainMenu not found in scene. Run Setup Game Scene first.");
+                return;
+            }
+
+            LoadingScreenController loadingCtrl = Object.FindFirstObjectByType<LoadingScreenController>();
+            if (loadingCtrl == null)
+            {
+                GameObject loadingObj = new GameObject("LoadingScreenController");
+                loadingCtrl = loadingObj.AddComponent<LoadingScreenController>();
+            }
+
+            Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogError("Canvas not found. Run Setup Game Scene first.");
+                return;
+            }
+
+            SerializedObject so = new SerializedObject(mainMenu);
+            var loadingProp = so.FindProperty("loadingScreenController");
+            if (loadingProp != null)
+                loadingProp.objectReferenceValue = loadingCtrl;
+
+            SerializedObject lso = new SerializedObject(loadingCtrl);
+            var mainMenuProp = lso.FindProperty("mainMenu");
+            if (mainMenuProp != null)
+                mainMenuProp.objectReferenceValue = mainMenu;
+
+            var camCtrl = Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            if (camCtrl != null)
+            {
+                var camProp = lso.FindProperty("cameraController");
+                if (camProp != null)
+                    camProp.objectReferenceValue = camCtrl;
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            lso.ApplyModifiedPropertiesWithoutUndo();
+            Debug.Log("Loading screen added. MainMenu will show it after Play. Save the scene.");
+        }
+
         [MenuItem("Titan Orbit/Fix Space Background Textures (Enable Tiling)")]
         public static void FixSpaceBackgroundTextures()
         {
@@ -750,6 +797,16 @@ namespace TitanOrbit.Editor
             mainMenuSO.FindProperty("teamStatusText").objectReferenceValue = teamStatusText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("roomNameText").objectReferenceValue = roomNameText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("playerNameInputField").objectReferenceValue = playerNameInput;
+
+            // Loading screen (shown after Play, before team selection)
+            GameObject loadingScreenObj = new GameObject("LoadingScreenController");
+            loadingScreenObj.transform.SetParent(canvasObj.transform, false);
+            LoadingScreenController loadingCtrl = loadingScreenObj.AddComponent<LoadingScreenController>();
+            SerializedObject loadingSO = new SerializedObject(loadingCtrl);
+            loadingSO.FindProperty("mainMenu").objectReferenceValue = mainMenu;
+            loadingSO.ApplyModifiedPropertiesWithoutUndo();
+            mainMenuSO.FindProperty("loadingScreenController").objectReferenceValue = loadingCtrl;
+
             mainMenuSO.ApplyModifiedPropertiesWithoutUndo();
 
             // HUD: ship stats (top-left), home planet stats (top-right). Gaming-style layout.

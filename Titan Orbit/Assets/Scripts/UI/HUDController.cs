@@ -87,6 +87,15 @@ namespace TitanOrbit.UI
                 {
                     lastPlayerShipLookupTime = Time.time;
                     playerShip = null;
+                    // #region agent log
+                    try
+                    {
+                        var logPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "debug-102f96.log");
+                        var line = "{\"sessionId\":\"102f96\",\"location\":\"HUDController.cs:Update\",\"message\":\"FindObjectsOfType Starship\",\"data\":{\"frame\":" + Time.frameCount + "},\"timestamp\":" + (long)(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalMilliseconds + ",\"hypothesisId\":\"D\"}\n";
+                        System.IO.File.AppendAllText(logPath, line);
+                    }
+                    catch { }
+                    // #endregion
                     foreach (var ship in FindObjectsOfType<Starship>())
                     {
                         if (ship.IsOwner) { playerShip = ship; break; }
@@ -162,6 +171,15 @@ namespace TitanOrbit.UI
             if (Time.time < nextLeaderboardRefreshTime) return;
             nextLeaderboardRefreshTime = Time.time + Mathf.Max(0.1f, leaderboardRefreshInterval);
 
+            // #region agent log
+            try
+            {
+                var logPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "debug-102f96.log");
+                var line = "{\"sessionId\":\"102f96\",\"location\":\"HUDController.cs:UpdateLeaderboardPanel\",\"message\":\"FindObjectsOfType Starship leaderboard\",\"data\":{\"frame\":" + Time.frameCount + "},\"timestamp\":" + (long)(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalMilliseconds + ",\"hypothesisId\":\"D\"}\n";
+                System.IO.File.AppendAllText(logPath, line);
+            }
+            catch { }
+            // #endregion
             if (viewedTeamIndex < 0)
                 viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip != null ? playerShip.ShipTeam : TeamManager.Team.TeamA));
 

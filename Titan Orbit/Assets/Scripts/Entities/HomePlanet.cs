@@ -137,14 +137,15 @@ namespace TitanOrbit.Entities
             zone.SetPlanet(this);
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public new void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        /// <summary>Server-only: apply gem deposit. Call this directly from server code instead of RPC when already on server.</summary>
+        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
         {
+            if (!IsServer) return;
             // Only allow team members to deposit gems
             if (assignedTeam.Value == TeamManager.Team.None)
             {
                 assignedTeam.Value = depositingTeam;
-                SetInitialTeamOwnership(depositingTeam); // So base.DepositGemsServerRpc updates currentGems (it checks teamOwnership)
+                SetInitialTeamOwnership(depositingTeam);
             }
             else if (assignedTeam.Value != depositingTeam)
             {
@@ -156,8 +157,23 @@ namespace TitanOrbit.Entities
                 contributedGemsByClientId[depositingClientId] = 0f;
             contributedGemsByClientId[depositingClientId] += amount;
 
-            // Call base to handle gem deposit and leveling
-            base.DepositGemsServerRpc(amount, depositingTeam, depositingClientId);
+            base.DepositGemsFromServer(amount, depositingTeam, depositingClientId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public new void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        {
+            DepositGemsFromServer(amount, depositingTeam, depositingClientId);
+        }
+
+        /// <summary>Server: add to contributed gems without depositing to planet level. Used when depositing at a captured planet (planet gets level gems; home gets store credit).</summary>
+        public void AddContributedGemsFromServer(ulong clientId, float amount)
+        {
+            if (!IsServer) return;
+            if (amount <= 0f) return;
+            if (!contributedGemsByClientId.ContainsKey(clientId))
+                contributedGemsByClientId[clientId] = 0f;
+            contributedGemsByClientId[clientId] += amount;
         }
 
         /// <summary>Server: get contributed gems for a client. Used by store UI.</summary>

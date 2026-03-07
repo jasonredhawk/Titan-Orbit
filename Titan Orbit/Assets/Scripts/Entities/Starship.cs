@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -12,6 +13,19 @@ using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
 {
+    /// <summary>Serializable card ID for syncing equipped loadout to clients. Uses FixedString64Bytes for NetworkList compatibility (non-nullable value type).</summary>
+    public struct EquippedCardId : INetworkSerializable, System.IEquatable<EquippedCardId>
+    {
+        public FixedString64Bytes cardId;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref cardId);
+        }
+
+        public bool Equals(EquippedCardId other) => cardId.Equals(other.cardId);
+    }
+
     /// <summary>
     /// Base starship controller for player-controlled ships
     /// </summary>
@@ -181,9 +195,15 @@ namespace TitanOrbit.Entities
         /// <summary>Index into ShipUnlockTable.entries for the current chassis (-1 = default/unknown grid). Synced so clients can show correct grid sizes.</summary>
         private NetworkVariable<int> currentChassisIndex = new NetworkVariable<int>(-1);
 
+        /// <summary>Ship level synced to clients so orbit UI shows correct slot count (level 2 = 2 slots, etc.).</summary>
+        private NetworkVariable<int> networkShipLevel = new NetworkVariable<int>(1);
+
         [Header("Card Loadout (WIP)")]
-        [Tooltip("Equipped upgrade cards for this ship. Currently server-authoritative only; stats will be derived from ShipData + these cards in a later step.")]
+        [Tooltip("Equipped upgrade cards for this ship. Server-authoritative; synced to clients via equippedCardIds for UI display.")]
         [SerializeField] private List<CardData> equippedCards = new List<CardData>();
+
+        /// <summary>Synced list of equipped card IDs so clients can display loadout. Server keeps this in sync with equippedCards.</summary>
+        private NetworkList<EquippedCardId> equippedCardIds;
 
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
 
@@ -329,15 +349,34 @@ namespace TitanOrbit.Entities
         public float PeopleCapacity => peopleCapacity;
         public float CurrentEnergy => currentEnergy.Value;
         public float EnergyCapacity => EffectiveEnergyCapacity;
-        public IReadOnlyList<CardData> EquippedCards => equippedCards;
+        public IReadOnlyList<CardData> EquippedCards => GetEquippedCardsForDisplay();
+
+        private readonly List<CardData> _clientEquippedCardsCache = new List<CardData>();
+
+        private IReadOnlyList<CardData> GetEquippedCardsForDisplay()
+        {
+            if (IsServer)
+                return equippedCards ?? (IReadOnlyList<CardData>)new List<CardData>();
+            _clientEquippedCardsCache.Clear();
+            if (equippedCardIds != null && Systems.CardShopSystem.Instance != null)
+            {
+                for (int i = 0; i < equippedCardIds.Count; i++)
+                {
+                    var card = Systems.CardShopSystem.Instance.GetCardById(equippedCardIds[i].cardId.ToString());
+                    if (card != null)
+                        _clientEquippedCardsCache.Add(card);
+                }
+            }
+            return _clientEquippedCardsCache;
+        }
 
         /// <summary>Number of card slots on this ship (1 per ship level). Each slot holds at most one card.</summary>
-        public int SlotCount => Mathf.Max(1, shipLevel);
+        public int SlotCount => (IsSpawned && networkShipLevel != null) ? Mathf.Max(1, networkShipLevel.Value) : Mathf.Max(1, shipLevel);
 
         /// <summary>True if there is at least one empty slot.</summary>
         public bool HasEmptySlot => equippedCards != null && equippedCards.Count < SlotCount;
         public TeamManager.Team ShipTeam => shipTeam.Value;
-        public int ShipLevel => shipLevel;
+        public int ShipLevel => (IsSpawned && networkShipLevel != null) ? networkShipLevel.Value : shipLevel;
         public int BranchIndex => shipData != null ? shipData.branchIndex : 0;
         public ShipFocusType FocusType => focusType;
         public bool IsInOrbit => currentOrbitPlanet != null;
@@ -397,6 +436,8 @@ namespace TitanOrbit.Entities
             // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
             if (GetComponent<ToroidalRenderer>() == null)
                 gameObject.AddComponent<ToroidalRenderer>();
+
+            equippedCardIds = new NetworkList<EquippedCardId>();
         }
 
         private const string PREFAB_CONTAINER_NAME = "Prefab";
@@ -490,6 +531,7 @@ namespace TitanOrbit.Entities
 
         private void OnDestroy()
         {
+            equippedCardIds?.Dispose();
             // Cancel any pending respawn invokes
             CancelInvoke(nameof(RespawnServerRpc));
         }
@@ -508,6 +550,20 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            // Server: sync initial ship level so clients show correct slot count
+            if (IsServer && networkShipLevel != null)
+                networkShipLevel.Value = Mathf.Max(1, shipLevel);
+
+            // Server: sync existing equipped cards to NetworkList (e.g. from save or late-join)
+            if (IsServer && equippedCardIds != null && equippedCards != null)
+            {
+                for (int i = equippedCardIds.Count; i < equippedCards.Count; i++)
+                {
+                    if (i < equippedCards.Count && equippedCards[i] != null)
+                        equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(equippedCards[i].cardId) });
+                }
+            }
+
             // Server: apply starter ship (chassis 0) first so SetShipData won't overwrite with a different prefab
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
             {
@@ -824,6 +880,9 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
+                // Server must detect orbit zone when ship spawns inside (OnTriggerEnter doesn't fire for objects that start inside)
+                if (currentOrbitPlanet == null)
+                    TryDetectOrbitZoneServer();
                 HandleDeath();
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
@@ -1430,13 +1489,19 @@ namespace TitanOrbit.Entities
                 if (ScoreSystem.Instance != null)
                     ScoreSystem.Instance.AwardDeposit(this, amount);
                 ulong clientId = OwnerClientId;
+                // Call direct server method (we're on server); avoids RPC invocation issues when server calls itself
                 if (currentOrbitPlanet is HomePlanet homePlanet)
                 {
-                    homePlanet.DepositGemsServerRpc(amount, shipTeam.Value, clientId);
+                    // At home: deposit to planet level AND add to contributed gems (store credit)
+                    homePlanet.DepositGemsFromServer(amount, shipTeam.Value, clientId);
                 }
                 else
                 {
-                    currentOrbitPlanet.DepositGemsServerRpc(amount, shipTeam.Value, clientId);
+                    // At captured planet: deposit to planet level, AND add to home planet's contributed gems (store credit)
+                    currentOrbitPlanet.DepositGemsFromServer(amount, shipTeam.Value, clientId);
+                    HomePlanet shipHome = GetHomePlanetForTeam(shipTeam.Value);
+                    if (shipHome != null)
+                        shipHome.AddContributedGemsFromServer(clientId, amount);
                 }
             }
             if (currentGems.Value <= 0.001f)
@@ -1549,15 +1614,21 @@ namespace TitanOrbit.Entities
             currentVelocity = rb.linearVelocity;
         }
 
+        private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None) return null;
+            foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+            {
+                if (hp != null && hp.AssignedTeam == team) return hp;
+            }
+            return null;
+        }
+
         /// <summary>Server: respawn ship at home planet (legacy fallback; prefer RespawnAtOriginOrHomePlanet).</summary>
         private void RespawnAtHomePlanet()
         {
             if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
-            HomePlanet home = null;
-            foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
-            {
-                if (hp.AssignedTeam == shipTeam.Value) { home = hp; break; }
-            }
+            HomePlanet home = GetHomePlanetForTeam(shipTeam.Value);
             if (home != null)
                 PlaceShipInOrbitAround(home);
         }
@@ -1826,6 +1897,26 @@ namespace TitanOrbit.Entities
             wantToDepositGems.Value = value;
         }
 
+        /// <summary>Server-only: detect if ship is inside a planet's orbit zone (e.g. after spawning there). OnTriggerEnter doesn't fire for objects that start inside.</summary>
+        private void TryDetectOrbitZoneServer()
+        {
+            if (!IsServer || rb == null || currentOrbitPlanet != null) return;
+            foreach (var planet in Object.FindObjectsOfType<Planet>())
+            {
+                if (planet == null) continue;
+                Vector3 toShip = rb.position - planet.transform.position;
+                toShip.y = 0f;
+                float dist = toShip.magnitude;
+                float inner = planet.PlanetSize * 0.5f;
+                float outer = planet.PlanetSize * 0.85f;
+                if (dist >= inner && dist <= outer)
+                {
+                    currentOrbitPlanet = planet;
+                    break;
+                }
+            }
+        }
+
         /// <summary>Owner-only: detect if we're inside a planet's orbit zone (e.g. after spawning there).</summary>
         private void TryDetectOrbitZone()
         {
@@ -1888,6 +1979,8 @@ namespace TitanOrbit.Entities
                 if (IsServer && data.shipLevel > shipLevel)
                     ResetAttributeLevels();
                 shipLevel = data.shipLevel;
+                if (IsServer && networkShipLevel != null)
+                    networkShipLevel.Value = Mathf.Max(1, shipLevel);
                 focusType = data.focusType;
                 movementSpeed = data.baseMovementSpeed;
                 weaponConfig = data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0
@@ -2451,10 +2544,34 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (card == null) return;
             if (equippedCards == null) equippedCards = new List<CardData>();
+            if (equippedCardIds == null) return;
             int maxSlots = SlotCount;
             if (equippedCards.Count >= maxSlots) return;
             if (!equippedCards.Contains(card))
+            {
                 equippedCards.Add(card);
+                equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(card.cardId) });
+            }
+        }
+
+        /// <summary>
+        /// Server-only: remove a card from the given slot index. Players can always remove a card to make space for a new one.
+        /// </summary>
+        public void RemoveCardFromServer(int slotIndex)
+        {
+            if (!IsServer) return;
+            if (equippedCards == null) return;
+            if (slotIndex < 0 || slotIndex >= equippedCards.Count) return;
+            equippedCards.RemoveAt(slotIndex);
+            if (equippedCardIds != null && slotIndex < equippedCardIds.Count)
+                equippedCardIds.RemoveAt(slotIndex);
+        }
+
+        /// <summary>Client calls this to request removal of a card at the given slot. Only the ship owner can remove cards.</summary>
+        [ServerRpc(RequireOwnership = true)]
+        public void RemoveCardServerRpc(int slotIndex)
+        {
+            RemoveCardFromServer(slotIndex);
         }
 
         /// <summary>Server-only: set the current chassis index (from ShipUnlockTable) so clients can show the correct card grid layout.</summary>
@@ -2462,6 +2579,16 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             currentChassisIndex.Value = index;
+        }
+
+        /// <summary>Server-only: set ship level from chassis tier when upgrading without baseShipData (e.g. AstroEagle variants). Syncs to clients so orbit UI shows correct slot count.</summary>
+        public void SetShipLevelFromTier(int tierLevel)
+        {
+            if (!IsServer) return;
+            int level = Mathf.Max(1, tierLevel);
+            shipLevel = level;
+            if (networkShipLevel != null)
+                networkShipLevel.Value = level;
         }
     }
 }

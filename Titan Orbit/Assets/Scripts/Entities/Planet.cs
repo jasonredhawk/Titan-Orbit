@@ -553,18 +553,17 @@ namespace TitanOrbit.Entities
         /// <summary>Max level for this planet type. Override in HomePlanet for 6.</summary>
         protected virtual int GetMaxLevel() => 3; // Regular planets max level 3
 
-        [ServerRpc(RequireOwnership = false)]
-        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        /// <summary>Server-only: apply gem deposit. Call this directly from server code (e.g. TickOrbitGemDeposit) instead of RPC to avoid RPC invocation issues when server calls itself.</summary>
+        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
         {
+            if (!IsServer) return;
             // Only allow same team to deposit gems
             if (teamOwnership.Value == TeamManager.Team.None)
             {
-                // Neutral planet: can't deposit until captured
                 return;
             }
-            else if (teamOwnership.Value != depositingTeam)
+            if (teamOwnership.Value != depositingTeam)
             {
-                // Enemy team: can't deposit
                 return;
             }
 
@@ -574,6 +573,12 @@ namespace TitanOrbit.Entities
                 currentGems.Value = maxGems;
 
             CheckLevelUp();
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void DepositGemsServerRpc(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        {
+            DepositGemsFromServer(amount, depositingTeam, depositingClientId);
         }
 
         private void CheckLevelUp()
