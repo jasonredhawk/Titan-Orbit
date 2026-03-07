@@ -110,6 +110,67 @@ namespace TitanOrbit.Editor
             Debug.Log("ProximityRadar added to HUD.");
         }
 
+        [MenuItem("Titan Orbit/Set All Starships Attribute Scale Exaggeration to 50%")]
+        public static void SetAllStarshipsAttributeScaleExaggeration()
+        {
+            int count = 0;
+            string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab");
+            foreach (string guid in prefabGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null) continue;
+                var starship = prefab.GetComponent<TitanOrbit.Entities.Starship>();
+                if (starship != null)
+                {
+                    SerializedObject so = new SerializedObject(starship);
+                    SerializedProperty prop = so.FindProperty("attributeScaleExaggeration");
+                    if (prop != null)
+                    {
+                        prop.floatValue = 0.5f;
+                        so.ApplyModifiedPropertiesWithoutUndo();
+                        EditorUtility.SetDirty(prefab);
+                        count++;
+                    }
+                }
+            }
+            var sceneShips = Object.FindObjectsByType<TitanOrbit.Entities.Starship>(FindObjectsSortMode.None);
+            foreach (var starship in sceneShips)
+            {
+                if (starship == null) continue;
+                SerializedObject so = new SerializedObject(starship);
+                SerializedProperty prop = so.FindProperty("attributeScaleExaggeration");
+                if (prop != null)
+                {
+                    prop.floatValue = 0.5f;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    count++;
+                }
+            }
+            AssetDatabase.SaveAssets();
+            Debug.Log($"Set attributeScaleExaggeration to 0.5 (50%) on {count} Starship(s). Save the scene if you have it open.");
+        }
+
+        [MenuItem("Titan Orbit/Add Ship Attribute Upgrade HUD")]
+        public static void AddShipAttributeUpgradeHUD()
+        {
+            GameObject hudObj = GameObject.Find("HUD");
+            if (hudObj == null)
+            {
+                Debug.LogError("HUD GameObject not found. Make sure the scene has been set up.");
+                return;
+            }
+
+            if (hudObj.GetComponent<ShipAttributeUpgradeHUD>() != null)
+            {
+                Debug.Log("ShipAttributeUpgradeHUD already exists on HUD.");
+                return;
+            }
+
+            UnityEditor.Undo.AddComponent<ShipAttributeUpgradeHUD>(hudObj);
+            Debug.Log("ShipAttributeUpgradeHUD added to HUD. Save the scene.");
+        }
+
         private static Sprite CreateWhiteSprite()
         {
             Texture2D tex = new Texture2D(1, 1);

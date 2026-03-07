@@ -19,10 +19,16 @@ namespace TitanOrbit.Data
         public List<Transform> weaponTransforms = new List<Transform>();
         /// <summary>Transforms for Cockpit components (cannon fire positions). Any name starting with family_Cockpit counts, e.g. AstroEagle_Cockpit, AstroEagle_Cockpit_Base_1.</summary>
         public List<Transform> cockpitCannonTransforms = new List<Transform>();
-        /// <summary>Engine component transforms (for engine VFX).</summary>
+        /// <summary>Engine component transforms (for engine VFX and attribute scaling).</summary>
         public List<Transform> engineTransforms = new List<Transform>();
-        /// <summary>Thruster component transforms (for thruster VFX).</summary>
+        /// <summary>Thruster component transforms (for thruster VFX and attribute scaling).</summary>
         public List<Transform> thrusterTransforms = new List<Transform>();
+        /// <summary>Cockpit component transforms (for attribute scaling: Max Health, Max Population).</summary>
+        public List<Transform> cockpitTransforms = new List<Transform>();
+        /// <summary>Wing component transforms (for attribute scaling: Max Gems, Max Health).</summary>
+        public List<Transform> wingTransforms = new List<Transform>();
+        /// <summary>Part component transforms (for attribute scaling: Max Health, Max Gems).</summary>
+        public List<Transform> partTransforms = new List<Transform>();
 
         /// <summary>Sum of scale factors (avg of x,y,z) per component; used as bonus multiplier.</summary>
         public float engineScaleTotal;
@@ -78,18 +84,19 @@ namespace TitanOrbit.Data
                 {
                     case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineTransforms.Add(child); break;
                     case "Thruster": stats.thrusterCount++; stats.thrusterScaleTotal += scaleFactor; stats.thrusterTransforms.Add(child); break;
-                    case "Wing": stats.wingCount++; stats.wingScaleTotal += scaleFactor; break;
+                    case "Wing": stats.wingCount++; stats.wingScaleTotal += scaleFactor; stats.wingTransforms.Add(child); break;
                     case "Tail": stats.tailCount++; stats.tailScaleTotal += scaleFactor; break;
                     case "Fin": stats.finCount++; stats.finScaleTotal += scaleFactor; break;
                     case "Cockpit":
                         stats.cockpitCount++;
                         stats.cockpitScaleTotal += scaleFactor;
+                        stats.cockpitTransforms.Add(child);
                         // All Cockpit components are cannon fire positions (AstroEagle_Cockpit, AstroEagle_Cockpit_Base_1, etc.)
                         stats.cockpitCannonCount++;
                         stats.cockpitCannonScaleTotal += scaleFactor;
                         stats.cockpitCannonTransforms.Add(child);
                         break;
-                    case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; break;
+                    case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; stats.partTransforms.Add(child); break;
                     case "Weapon":
                         // Handled below by name-contains-"Weapon" so any naming convention works
                         break;

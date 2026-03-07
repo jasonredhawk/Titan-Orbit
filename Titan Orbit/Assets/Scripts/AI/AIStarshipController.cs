@@ -30,13 +30,13 @@ namespace TitanOrbit.AI
         [SerializeField] private float miningRange = 3f;
         [SerializeField] private float gemCollectionProximity = 30f; // Only collect gems within this range; otherwise return to asteroids
         [Tooltip("How often AI re-evaluates targets and state (seconds). Higher = less CPU, slightly slower reactions.")]
-        [SerializeField] private float updateInterval = 0.75f; // Slower than 0.5f to reduce load and feel less "twitchy"
+        [SerializeField] private float updateInterval = 1f; // 1s default to reduce lag with many AI ships
         [SerializeField] private float orbitSpeed = 0.8f;
         [SerializeField] private float attackRange = 3f; // Range at which to attack enemy ships (close proximity only - very short range)
         [Tooltip("When farther than this from any player ship, AI runs at reduced rate and does not shoot (saves CPU off-screen).")]
         [SerializeField] private float offScreenDistance = 70f;
         [Tooltip("When off-screen, how often AI updates (seconds).")]
-        [SerializeField] private float offScreenUpdateInterval = 1.5f;
+        [SerializeField] private float offScreenUpdateInterval = 2.5f; // Slower when far from players to reduce lag
 
         private Starship starship;
         private Rigidbody rb;
@@ -78,14 +78,15 @@ namespace TitanOrbit.AI
         
         // Cached object lists to avoid expensive FindObjectsOfType calls every update
         private static float lastCacheRefreshTime = 0f;
-        private static float cacheRefreshInterval = 1.5f; // Refresh cache every 1.5s (was 1s) to reduce cost
+        private static float cacheRefreshInterval = 2f; // Refresh cache every 2s to reduce cost
         private static Asteroid[] cachedAsteroids = new Asteroid[0];
         private static Gem[] cachedGems = new Gem[0];
         private static Planet[] cachedPlanets = new Planet[0];
         private static Starship[] cachedShips = new Starship[0];
+        private static float lastPlayerShipsRefreshTime = 0f;
+        private static System.Collections.Generic.List<Starship> cachedPlayerShips = new System.Collections.Generic.List<Starship>(8);
         private float lastOffScreenUpdateTime = -999f; // When off-screen, only run UpdateAI at this interval
-        private float lastRegenTime = -999f;
-        private const float REGEN_TICK_INTERVAL = 0.25f; // Regen only every 0.25s to reduce cost
+        private AIStarshipDebugSync cachedDebugSync;
 
         public AIBehaviorType BehaviorType => behaviorType;
         public TeamManager.Team AssignedTeam => assignedTeam;
@@ -94,6 +95,7 @@ namespace TitanOrbit.AI
         {
             starship = GetComponent<Starship>();
             rb = GetComponent<Rigidbody>();
+            cachedDebugSync = GetComponent<AIStarshipDebugSync>();
         }
 
         /// <summary>True when we should run AI (server only).</summary>
@@ -114,29 +116,14 @@ namespace TitanOrbit.AI
             TryEnterOrbitZoneIfInRange();
         }
 
-        private void Update()
-        {
-            if (!IsServerAuthority) return;
-            if (starship == null || starship.IsDead) return;
-
-            // Throttle regen to reduce reflection cost (was every frame)
-            if (Time.time - lastRegenTime >= REGEN_TICK_INTERVAL)
-            {
-                lastRegenTime = Time.time;
-                HandleHealthRegen();
-                HandleEnergyRegen();
-            }
-        }
-
         private void FixedUpdate()
         {
             if (!IsServerAuthority) return;
             if (starship == null) return;
             
             // Always sync debug data (even when dead, so text can show state transitions)
-            var debugSync = GetComponent<AIStarshipDebugSync>();
-            if (debugSync != null)
-                debugSync.SetDebug(targetPosition, (int)currentState);
+            if (cachedDebugSync != null)
+                cachedDebugSync.SetDebug(targetPosition, (int)currentState);
             
             if (starship.IsDead) return;
 
@@ -173,71 +160,30 @@ namespace TitanOrbit.AI
         /// <summary>Distance to nearest player-owned ship (no AIShipMarker). Used for off-screen throttling.</summary>
         private float GetDistanceToNearestPlayerShip()
         {
-            RefreshObjectCache();
+            RefreshPlayerShipsCache();
             Vector3 myPos = rb != null ? rb.position : transform.position;
             float nearest = float.MaxValue;
-            foreach (var ship in cachedShips)
+            foreach (var ship in cachedPlayerShips)
             {
                 if (ship == null || ship == starship || ship.IsDead) continue;
-                if (ship.GetComponent<AIShipMarker>() != null) continue; // Skip AI ships
                 float d = ToroidalMap.ToroidalDistance(myPos, ship.transform.position);
                 if (d < nearest) nearest = d;
             }
             return nearest;
         }
 
-        private void HandleHealthRegen()
+        private static void RefreshPlayerShipsCache()
         {
-            // Health can regen even when at zero - regen is allowed
-            // Only prevent regen when dead
-            if (starship.IsDead) return;
-            // AI ships regen health on server (same logic as Starship.HandleHealthRegen)
-            if (starship.CurrentHealth < starship.MaxHealth)
+            if (!Application.isPlaying) return;
+            if (Time.time - lastPlayerShipsRefreshTime < 1f) return; // Refresh every 1s
+            lastPlayerShipsRefreshTime = Time.time;
+            RefreshObjectCache();
+            cachedPlayerShips.Clear();
+            foreach (var ship in cachedShips)
             {
-                float regenRate = 1f; // Base regen rate per second
-                float regen = regenRate * Time.deltaTime;
-                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
-                
-                // Access NetworkVariable via reflection (Starship doesn't expose it publicly)
-                var healthField = typeof(Starship).GetField("currentHealth", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (healthField != null)
-                {
-                    var healthVar = healthField.GetValue(starship) as NetworkVariable<float>;
-                    if (healthVar != null && IsServerAuthority)
-                    {
-                        float newHealth = healthVar.Value + regen;
-                        healthVar.Value = Mathf.Min(newHealth, starship.MaxHealth);
-                        // Safety check: clamp health to zero minimum
-                        if (healthVar.Value < 0f)
-                        {
-                            healthVar.Value = 0f;
-                        }
-                    }
-                }
-            }
-        }
-
-        private void HandleEnergyRegen()
-        {
-            // AI ships regen energy on server (same logic as Starship.HandleEnergyRegen)
-            if (starship.CurrentEnergy < starship.EnergyCapacity)
-            {
-                float regenRate = 5f; // Base regen rate per second
-                float regen = regenRate * Time.deltaTime;
-                if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
-                
-                // Access NetworkVariable via reflection (Starship doesn't expose it publicly)
-                var energyField = typeof(Starship).GetField("currentEnergy", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (energyField != null)
-                {
-                    var energyVar = energyField.GetValue(starship) as NetworkVariable<float>;
-                    if (energyVar != null && IsServerAuthority)
-                    {
-                        energyVar.Value = Mathf.Min(energyVar.Value + regen, starship.EnergyCapacity);
-                    }
-                }
+                if (ship == null || ship.IsDead) continue;
+                if (ship.GetComponent<AIShipMarker>() != null) continue; // Skip AI ships
+                cachedPlayerShips.Add(ship);
             }
         }
 
@@ -1032,36 +978,14 @@ namespace TitanOrbit.AI
         /// <summary>Refresh cached object lists periodically to avoid expensive FindObjectsOfType calls.</summary>
         private static void RefreshObjectCache()
         {
-            // Only refresh in play mode (Time.time is only available during play)
             if (!Application.isPlaying) return;
-            
-            if (Time.time - lastCacheRefreshTime >= cacheRefreshInterval)
-            {
-                // Refresh cache and filter out null/destroyed objects
-                var asteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
-                var gems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
-                var planets = Object.FindObjectsByType<Planet>(FindObjectsSortMode.None);
-                var ships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
+            if (Time.time - lastCacheRefreshTime < cacheRefreshInterval) return;
 
-                // Filter out null/destroyed objects
-                System.Collections.Generic.List<Asteroid> validAsteroids = new System.Collections.Generic.List<Asteroid>();
-                foreach (var a in asteroids) if (a != null && a.gameObject != null) validAsteroids.Add(a);
-                cachedAsteroids = validAsteroids.ToArray();
-                
-                System.Collections.Generic.List<Gem> validGems = new System.Collections.Generic.List<Gem>();
-                foreach (var g in gems) if (g != null && g.gameObject != null) validGems.Add(g);
-                cachedGems = validGems.ToArray();
-                
-                System.Collections.Generic.List<Planet> validPlanets = new System.Collections.Generic.List<Planet>();
-                foreach (var p in planets) if (p != null && p.gameObject != null) validPlanets.Add(p);
-                cachedPlanets = validPlanets.ToArray();
-                
-                System.Collections.Generic.List<Starship> validShips = new System.Collections.Generic.List<Starship>();
-                foreach (var s in ships) if (s != null && s.gameObject != null) validShips.Add(s);
-                cachedShips = validShips.ToArray();
-                
-                lastCacheRefreshTime = Time.time;
-            }
+            lastCacheRefreshTime = Time.time;
+            cachedAsteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+            cachedGems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
+            cachedPlanets = Object.FindObjectsByType<Planet>(FindObjectsSortMode.None);
+            cachedShips = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
         }
 
         /// <summary>Find nearest gem within maxRange. Used for CollectingGems - only pursue gems in close proximity.</summary>

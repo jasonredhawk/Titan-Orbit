@@ -74,6 +74,25 @@ namespace TitanOrbit.Entities
         private List<ParticleSystem> engineParticleSystems = new List<ParticleSystem>();
         private List<ParticleSystem> thrusterParticleSystems = new List<ParticleSystem>();
 
+        [Header("Component Attribute Scaling")]
+        [Tooltip("Scale exaggeration per attribute level. 0.5 = 50% bigger per upgrade. Cockpit/Wing/Weapon/Engine/Thruster/Parts scale by their linked attributes.")]
+        [SerializeField] private float attributeScaleExaggeration = 0.5f;
+
+        private List<Transform> cockpitScaleTransforms = new List<Transform>();
+        private List<Vector3> cockpitBaseScales = new List<Vector3>();
+        private List<Transform> wingScaleTransforms = new List<Transform>();
+        private List<Vector3> wingBaseScales = new List<Vector3>();
+        private List<Transform> weaponScaleTransforms = new List<Transform>();
+        private List<Vector3> weaponBaseScales = new List<Vector3>();
+        private List<Transform> engineScaleTransforms = new List<Transform>();
+        private List<Vector3> engineBaseScales = new List<Vector3>();
+        private List<Transform> thrusterScaleTransforms = new List<Transform>();
+        private List<Vector3> thrusterBaseScales = new List<Vector3>();
+        private List<Transform> partScaleTransforms = new List<Transform>();
+        private List<Vector3> partBaseScales = new List<Vector3>();
+        private List<float> muzzleBaseSizes = new List<float>();
+        private List<float> muzzleBaseSpeeds = new List<float>();
+
         private WeaponConfig weaponConfig;
         /// <summary>Bullets from Weapon: light projectiles, low energy. Only weapons fire; cockpits do not.</summary>
         private WeaponConfig bulletConfig;
@@ -185,6 +204,8 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> attrHealthRegen = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrRotationSpeed = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrEnergyRegen = new NetworkVariable<int>(0);
+        private NetworkVariable<int> attrGemCapacity = new NetworkVariable<int>(0);
+        private NetworkVariable<int> attrPeopleCapacity = new NetworkVariable<int>(0);
 
         // Store inventory (rockets and mines)
         private NetworkVariable<int> smallRocketsCount = new NetworkVariable<int>(0);
@@ -278,6 +299,17 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for bullet size and muzzle particles.</summary>
+        private float WeaponComponentScaleMultiplier
+        {
+            get
+            {
+                float ex = attributeScaleExaggeration > 0f ? attributeScaleExaggeration : 0.5f;
+                float cardWeapon = (GetCardDamageMultiplier() - 1f) * 10f + (GetCardBulletSpeedMultiplier() - 1f) * 10f;
+                return 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
+            }
+        }
+
         /// <summary>Mass increases with gems carried and equipped cards; affects acceleration, braking, and ramming damage. Base from ShipData when set.</summary>
         private float EffectiveMass
         {
@@ -327,8 +359,16 @@ namespace TitanOrbit.Entities
         }
         public float CurrentGems => currentGems.Value;
         public bool IsDead => isDead.Value;
-        /// <summary>Max gem capacity. Base = 20 * Level^2; level is max(shipLevel, chassis tier) so purchasing a higher-tier ship increases capacity. Plus card bonuses.</summary>
-        public float GemCapacity => 20f * EffectiveLevelForCapacity * EffectiveLevelForCapacity + GetCardGemCapacityAdd();
+        /// <summary>Max gem capacity. Base = 20 * Level^2; level is max(shipLevel, chassis tier) so purchasing a higher-tier ship increases capacity. Plus card bonuses and attribute upgrades.</summary>
+        public float GemCapacity
+        {
+            get
+            {
+                float baseWithCards = 20f * EffectiveLevelForCapacity * EffectiveLevelForCapacity + GetCardGemCapacityAdd();
+                float attrScale = 1f + attrGemCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return baseWithCards * attrScale;
+            }
+        }
 
         /// <summary>Level used for capacity and scale: max(ship level from upgrades, chassis tier from purchased ship). So buying a Level 2 chassis gives 20*2^2 = 80 capacity.</summary>
         public int EffectiveLevelForCapacity
@@ -346,7 +386,14 @@ namespace TitanOrbit.Entities
             }
         }
         public float CurrentPeople => currentPeople.Value;
-        public float PeopleCapacity => peopleCapacity;
+        public float PeopleCapacity
+        {
+            get
+            {
+                float attrScale = 1f + attrPeopleCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                return peopleCapacity * attrScale;
+            }
+        }
         public float CurrentEnergy => currentEnergy.Value;
         public float EnergyCapacity => EffectiveEnergyCapacity;
         public IReadOnlyList<CardData> EquippedCards => GetEquippedCardsForDisplay();
@@ -390,6 +437,31 @@ namespace TitanOrbit.Entities
         public int LargeMinesCount => largeMinesCount.Value;
         /// <summary>Chassis index in ShipUnlockTable (-1 = default). Used by UI for grid dimensions.</summary>
         public int CurrentChassisIndex => currentChassisIndex.Value;
+
+        /// <summary>Attribute upgrade levels for Ship Attribute Upgrade HUD. Index: 0=FirePower, 1=BulletSpeed, 2=MaxHealth, 3=HealthRegen, 4=EnergyCapacity, 5=EnergyRegen, 6=MovementSpeed, 7=RotationSpeed, 8=GemCapacity, 9=PeopleCapacity.</summary>
+        public int GetAttributeLevel(int index)
+        {
+            return index switch
+            {
+                0 => attrFirePower.Value,
+                1 => attrBulletSpeed.Value,
+                2 => attrMaxHealth.Value,
+                3 => attrHealthRegen.Value,
+                4 => attrEnergyCapacity.Value,
+                5 => attrEnergyRegen.Value,
+                6 => attrMovementSpeed.Value,
+                7 => attrRotationSpeed.Value,
+                8 => attrGemCapacity.Value,
+                9 => attrPeopleCapacity.Value,
+                _ => 0
+            };
+        }
+
+        /// <summary>Cost per attribute upgrade: ShipLevel * 5 gems.</summary>
+        public int AttributeUpgradeCost => ShipLevel * 5;
+
+        /// <summary>Max attribute upgrades per stat = ShipLevel.</summary>
+        public int MaxAttributeUpgrades => ShipLevel;
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -666,6 +738,13 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            // Server: regen for ALL ships (including AI) - run before IsOwner check
+            if (IsServer && !isDead.Value)
+            {
+                HandleHealthRegen();
+                HandleEnergyRegen();
+            }
+
             // Server: ensure first ship (no chassis yet) gets AstroEagle_01 visual so the first ship created is the one we want
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
@@ -694,7 +773,7 @@ namespace TitanOrbit.Entities
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
-            if (IsLocalPlayerShip())
+            if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
                 bool stable = currentOrbitPlanet != null && !movePressed && IsInStableOrbit();
@@ -725,8 +804,6 @@ namespace TitanOrbit.Entities
                     orbitUI.Show(this, currentOrbitPlanet);
             }
             wasMovePressedLastFrame = movePressed;
-            HandleHealthRegen();
-            HandleEnergyRegen();
             // If we're in orbit zone but trigger didn't fire (e.g. spawned there), detect it
             if (currentOrbitPlanet == null)
                 TryDetectOrbitZone();
@@ -741,9 +818,74 @@ namespace TitanOrbit.Entities
                 if (root != null)
                     root.localScale = Vector3.Scale(lastPrefabScale, Vector3.one * (visualBaseScale * LevelScaleFactor));
             }
+            ApplyComponentAttributeScaling();
             UpdateEngineAndThrusterVFX();
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             ApplyVisualBanking(Time.deltaTime);
+        }
+
+        /// <summary>Scale ship components by attribute upgrade levels and equipped cards. Cockpit: Health+People. Wing: Gems+Health. Weapon: FirePower+BulletSpeed. Engine: MoveSpeed. Thruster: TurnSpeed. Parts: Health+Gems.</summary>
+        private void ApplyComponentAttributeScaling()
+        {
+            float ex = attributeScaleExaggeration > 0f ? attributeScaleExaggeration : 0.5f;
+            float cardCockpit = GetCardMaxHealthAdd() / 50f + GetCardPeopleCapacityAdd() / 5f;
+            float cardWing = GetCardGemCapacityAdd() / 50f + GetCardMaxHealthAdd() / 50f;
+            float cardWeapon = (GetCardDamageMultiplier() - 1f) * 10f + (GetCardBulletSpeedMultiplier() - 1f) * 10f;
+            float cardEngine = GetCardMovementSpeedAdd() / 2f;
+            float cardThruster = GetCardRotationSpeedAdd() / 15f;
+            float cardPart = GetCardMaxHealthAdd() / 50f + GetCardGemCapacityAdd() / 50f;
+
+            float cockpitScale = 1f + ((attrMaxHealth.Value + attrPeopleCapacity.Value) * 0.5f + cardCockpit * 0.5f) * ex;
+            float wingScale = 1f + ((attrGemCapacity.Value + attrMaxHealth.Value) * 0.5f + cardWing * 0.5f) * ex;
+            float weaponScale = 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
+            float engineScale = 1f + (attrMovementSpeed.Value + cardEngine) * ex;
+            float thrusterScale = 1f + (attrRotationSpeed.Value + cardThruster) * ex;
+            float partScale = 1f + ((attrMaxHealth.Value + attrGemCapacity.Value) * 0.5f + cardPart * 0.5f) * ex;
+
+            for (int i = 0; i < cockpitScaleTransforms.Count; i++)
+            {
+                if (cockpitScaleTransforms[i] != null && i < cockpitBaseScales.Count)
+                    cockpitScaleTransforms[i].localScale = cockpitBaseScales[i] * cockpitScale;
+            }
+            for (int i = 0; i < wingScaleTransforms.Count; i++)
+            {
+                if (wingScaleTransforms[i] != null && i < wingBaseScales.Count)
+                    wingScaleTransforms[i].localScale = wingBaseScales[i] * wingScale;
+            }
+            for (int i = 0; i < weaponScaleTransforms.Count; i++)
+            {
+                if (weaponScaleTransforms[i] != null && i < weaponBaseScales.Count)
+                    weaponScaleTransforms[i].localScale = weaponBaseScales[i] * weaponScale;
+            }
+            for (int i = 0; i < engineScaleTransforms.Count; i++)
+            {
+                if (engineScaleTransforms[i] != null && i < engineBaseScales.Count)
+                    engineScaleTransforms[i].localScale = engineBaseScales[i] * engineScale;
+            }
+            for (int i = 0; i < thrusterScaleTransforms.Count; i++)
+            {
+                if (thrusterScaleTransforms[i] != null && i < thrusterBaseScales.Count)
+                    thrusterScaleTransforms[i].localScale = thrusterBaseScales[i] * thrusterScale;
+            }
+            for (int i = 0; i < partScaleTransforms.Count; i++)
+            {
+                if (partScaleTransforms[i] != null && i < partBaseScales.Count)
+                    partScaleTransforms[i].localScale = partBaseScales[i] * partScale;
+            }
+
+            // Muzzle particles: scale size and speed by weapon attributes and cards
+            float muzzleSpeedScale = 1f + (attrBulletSpeed.Value + (GetCardBulletSpeedMultiplier() - 1f) * 10f) * 0.5f * ex;
+            for (int i = 0; i < bulletMuzzleParticleSystems.Count; i++)
+            {
+                var ps = bulletMuzzleParticleSystems[i];
+                if (ps == null) continue;
+                if (i < muzzleBaseSizes.Count && i < muzzleBaseSpeeds.Count)
+                {
+                    var main = ps.main;
+                    main.startSize = muzzleBaseSizes[i] * weaponScale;
+                    main.startSpeed = muzzleBaseSpeeds[i] * muzzleSpeedScale;
+                }
+            }
         }
 
         private static readonly float ENGINE_VFX_SPEED_THRESHOLD = 0.5f;
@@ -1230,8 +1372,9 @@ namespace TitanOrbit.Entities
                 for (int i = 0; i < bulletWc.cannons.Count; i++)
                 {
                     var c = bulletWc.cannons[i];
+                    float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
                     if (currentEnergy.Value >= c.energyCostPerShot &&
-                        (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / c.fireRate))
+                        (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / effectiveFireRate))
                         return true;
                 }
             }
@@ -1262,7 +1405,8 @@ namespace TitanOrbit.Entities
                 {
                     var c = bulletWc.cannons[i];
                     if (currentEnergy.Value < c.energyCostPerShot) continue;
-                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / c.fireRate) continue;
+                    float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
 
                     currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
                     bulletLastFireTime[i] = Time.time;
@@ -1299,7 +1443,7 @@ namespace TitanOrbit.Entities
                         }
                         float damage = c.damagePerBullet * DamageMultiplier * LevelScaleFactor;
                         float speed = c.bulletSpeed * SpeedMultiplier;
-                        float scale = c.bulletScale * (0.65f + damage / 50f) * LevelScaleFactor;
+                        float scale = c.bulletScale * (0.65f + damage / 50f) * LevelScaleFactor * WeaponComponentScaleMultiplier;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
                         if (rb != null)
                         {
@@ -1874,6 +2018,32 @@ namespace TitanOrbit.Entities
             wantToDepositGems.Value = value;
         }
 
+        /// <summary>Purchase an attribute upgrade. Index 0-9: FirePower, BulletSpeed, MaxHealth, HealthRegen, EnergyCapacity, EnergyRegen, MovementSpeed, RotationSpeed, GemCapacity, PeopleCapacity. Cost = ShipLevel * 5 gems per upgrade.</summary>
+        [ServerRpc(RequireOwnership = true)]
+        public void UpgradeAttributeServerRpc(int attributeIndex)
+        {
+            if (attributeIndex < 0 || attributeIndex > 9) return;
+            int currentLevel = GetAttributeLevel(attributeIndex);
+            if (currentLevel >= MaxAttributeUpgrades) return;
+            int cost = AttributeUpgradeCost;
+            if (currentGems.Value < cost - 0.01f) return;
+
+            RemoveGemsServerRpc(cost);
+            switch (attributeIndex)
+            {
+                case 0: attrFirePower.Value++; break;
+                case 1: attrBulletSpeed.Value++; break;
+                case 2: attrMaxHealth.Value++; break;
+                case 3: attrHealthRegen.Value++; break;
+                case 4: attrEnergyCapacity.Value++; break;
+                case 5: attrEnergyRegen.Value++; break;
+                case 6: attrMovementSpeed.Value++; break;
+                case 7: attrRotationSpeed.Value++; break;
+                case 8: attrGemCapacity.Value++; break;
+                case 9: attrPeopleCapacity.Value++; break;
+            }
+        }
+
         /// <summary>Server-only: set wantToLoadPeople (for AI ships; bypasses RPC ownership).</summary>
         public void SetWantToLoadPeopleFromServer(bool value)
         {
@@ -1942,9 +2112,10 @@ namespace TitanOrbit.Entities
         /// <summary>True if this ship is the local player's ship (not AI or other players).</summary>
         private bool IsLocalPlayerShip()
         {
-            if (NetworkManager.Singleton == null) return false;
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.SpawnManager == null) return false;
             var localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
-            return localPlayer != null && localPlayer == GetComponent<NetworkObject>();
+            var netObj = GetComponent<NetworkObject>();
+            return localPlayer != null && netObj != null && localPlayer == netObj;
         }
 
         /// <summary>Called by PlanetOrbitZone when ship enters the orbit/loading zone. Menu is shown only once in stable orbit (see Update).</summary>
@@ -1962,7 +2133,7 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == planet)
             {
                 currentOrbitPlanet = null;
-                if (IsLocalPlayerShip())
+                if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
                 {
                     var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
                     orbitUI.Hide();
@@ -1975,9 +2146,12 @@ namespace TitanOrbit.Entities
             shipData = data;
             if (data != null)
             {
-                // When ship levels up, reset all ability upgrades so player can re-upgrade 0..newLevel per attribute
+                // When ship levels up, reset all ability upgrades and remove all cards
                 if (IsServer && data.shipLevel > shipLevel)
+                {
                     ResetAttributeLevels();
+                    ClearAllCardsFromServer();
+                }
                 shipLevel = data.shipLevel;
                 if (IsServer && networkShipLevel != null)
                     networkShipLevel.Value = Mathf.Max(1, shipLevel);
@@ -2152,6 +2326,22 @@ namespace TitanOrbit.Entities
                 peopleCapacity = data.basePeopleCapacity + stats.cockpitScaleTotal * PER_COCKPIT_PEOPLE + stats.partScaleTotal * PER_PART_PEOPLE;
             }
 
+            // Clear component scale caches for attribute-based scaling
+            cockpitScaleTransforms.Clear();
+            cockpitBaseScales.Clear();
+            wingScaleTransforms.Clear();
+            wingBaseScales.Clear();
+            weaponScaleTransforms.Clear();
+            weaponBaseScales.Clear();
+            engineScaleTransforms.Clear();
+            engineBaseScales.Clear();
+            thrusterScaleTransforms.Clear();
+            thrusterBaseScales.Clear();
+            partScaleTransforms.Clear();
+            partBaseScales.Clear();
+            muzzleBaseSizes.Clear();
+            muzzleBaseSpeeds.Clear();
+
             // Clear previous bullet state (from previous prefab). Cannons removed; only Weapon bullets.
             bulletFirePoints.Clear();
             foreach (var ps in bulletMuzzleParticleSystems)
@@ -2214,12 +2404,63 @@ namespace TitanOrbit.Entities
                     float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
                     float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
                     ParticleSystem muzzle = CreateMuzzleParticleSystem(pt, muzzleScale);
-                    if (muzzle != null) bulletMuzzleParticleSystems.Add(muzzle);
+                    if (muzzle != null)
+                    {
+                        bulletMuzzleParticleSystems.Add(muzzle);
+                        muzzleBaseSizes.Add(muzzleScale);
+                        muzzleBaseSpeeds.Add(2.5f);
+                    }
+                    if (stats.weaponTransforms != null && i < stats.weaponTransforms.Count)
+                    {
+                        Transform wt = stats.weaponTransforms[i];
+                        if (wt != null)
+                        {
+                            weaponScaleTransforms.Add(wt);
+                            weaponBaseScales.Add(wt.localScale);
+                        }
+                    }
                 }
                 bulletConfig = bc;
             }
 
             EnsureBulletLastFireTime();
+
+            // Populate component scale caches for attribute-based scaling
+            if (stats.cockpitTransforms != null)
+            {
+                foreach (Transform t in stats.cockpitTransforms)
+                {
+                    if (t != null) { cockpitScaleTransforms.Add(t); cockpitBaseScales.Add(t.localScale); }
+                }
+            }
+            if (stats.wingTransforms != null)
+            {
+                foreach (Transform t in stats.wingTransforms)
+                {
+                    if (t != null) { wingScaleTransforms.Add(t); wingBaseScales.Add(t.localScale); }
+                }
+            }
+            if (stats.engineTransforms != null)
+            {
+                foreach (Transform t in stats.engineTransforms)
+                {
+                    if (t != null) { engineScaleTransforms.Add(t); engineBaseScales.Add(t.localScale); }
+                }
+            }
+            if (stats.thrusterTransforms != null)
+            {
+                foreach (Transform t in stats.thrusterTransforms)
+                {
+                    if (t != null) { thrusterScaleTransforms.Add(t); thrusterBaseScales.Add(t.localScale); }
+                }
+            }
+            if (stats.partTransforms != null)
+            {
+                foreach (Transform t in stats.partTransforms)
+                {
+                    if (t != null) { partScaleTransforms.Add(t); partBaseScales.Add(t.localScale); }
+                }
+            }
 
             // Engine VFX (movement) and Thruster VFX (rotation)
             if (engineVfxPrefab != null && stats.engineTransforms != null)
@@ -2366,6 +2607,16 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Server only: removes all equipped cards. Called when ship levels up.</summary>
+        private void ClearAllCardsFromServer()
+        {
+            if (!IsServer) return;
+            if (equippedCards != null) equippedCards.Clear();
+            if (equippedCardIds != null) equippedCardIds.Clear();
+            var composer = GetComponent<ShipVisualComposer>();
+            if (composer != null) composer.RebuildVisuals();
+        }
+
         /// <summary>Server only: resets all attribute upgrade levels to 0. Called when ship levels up.</summary>
         private void ResetAttributeLevels()
         {
@@ -2378,6 +2629,8 @@ namespace TitanOrbit.Entities
             attrHealthRegen.Value = 0;
             attrRotationSpeed.Value = 0;
             attrEnergyRegen.Value = 0;
+            attrGemCapacity.Value = 0;
+            attrPeopleCapacity.Value = 0;
         }
 
         #region Card stat helpers
@@ -2482,6 +2735,19 @@ namespace TitanOrbit.Entities
                 if (card == null) continue;
                 float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
                 sum += card.gemCapacityAdd * scale;
+            }
+            return sum;
+        }
+
+        private float GetCardPeopleCapacityAdd()
+        {
+            if (equippedCards == null) return 0f;
+            float sum = 0f;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                sum += card.peopleCapacityAdd * scale;
             }
             return sum;
         }
