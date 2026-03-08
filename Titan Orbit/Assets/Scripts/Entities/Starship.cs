@@ -2352,11 +2352,10 @@ namespace TitanOrbit.Entities
         }
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
-        /// <summary>Stats from components. Engines and thrusters: both apply force and scale top speed equally.</summary>
-        private static readonly float PER_ENGINE_MAX_SPEED = 6f;
-        private static readonly float PER_THRUSTER_MAX_SPEED = 6f;
-        private static readonly float PER_ENGINE_THRUST = 126f;
-        private static readonly float PER_THRUSTER_THRUST = 126f;
+        /// <summary>Engines: top speed and acceleration. Thrusters: acceleration and turning speed.</summary>
+        private static readonly float PER_ENGINE_MAX_SPEED = 3f;
+        private static readonly float PER_ENGINE_THRUST = 55f;
+        private static readonly float PER_THRUSTER_THRUST = 55f;
         private static readonly float PER_ENGINE_MASS = 1.6f;
         private static readonly float PER_THRUSTER_MASS = 0.6f;
         private static readonly float PER_WING_MASS = 0.8f;
@@ -2399,13 +2398,11 @@ namespace TitanOrbit.Entities
             var stats = ChassisComponentStats.FromTransform(root, prefix);
 
             // Stats derived solely from components (no ship level scaling)
-            // Engines and thrusters: both apply force and scale top speed equally.
+            // Engines: top speed and acceleration. Thrusters: acceleration and turning speed.
             float thrustFromEngines = stats.engineScaleTotal * PER_ENGINE_THRUST;
             float thrustFromThrusters = stats.thrusterScaleTotal * PER_THRUSTER_THRUST;
             componentEngineThrust = (thrustFromEngines + thrustFromThrusters) > 0f ? Mathf.Max(2f, thrustFromEngines + thrustFromThrusters) : 0f;
-            float speedFromEngines = stats.engineScaleTotal > 0f ? Mathf.Pow(Mathf.Max(0.25f, stats.engineScaleTotal), 0.25f) * PER_ENGINE_MAX_SPEED : 0f;
-            float speedFromThrusters = stats.thrusterScaleTotal > 0f ? Mathf.Pow(Mathf.Max(0.25f, stats.thrusterScaleTotal), 0.25f) * PER_THRUSTER_MAX_SPEED : 0f;
-            componentEngineMaxSpeed = (speedFromEngines + speedFromThrusters) > 0f ? Mathf.Max(2f, speedFromEngines + speedFromThrusters) : 0f;
+            componentEngineMaxSpeed = stats.engineScaleTotal > 0f ? Mathf.Max(2f, stats.engineScaleTotal * PER_ENGINE_MAX_SPEED) : 0f;
 
             float weaponScaleTotal = 0f;
             for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];

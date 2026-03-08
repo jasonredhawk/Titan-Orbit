@@ -7,6 +7,31 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.Entities
 {
     /// <summary>
+    /// Shared cache for drone target lookups. Refreshes periodically to avoid FindObjectsOfType every FixedUpdate per drone.
+    /// </summary>
+    public static class DroneTargetCache
+    {
+        private static Starship[] cachedShips = new Starship[0];
+        private static Bullet[] cachedBullets = new Bullet[0];
+        private static Asteroid[] cachedAsteroids = new Asteroid[0];
+        private static float lastRefreshTime = -999f;
+        private const float RefreshInterval = 0.25f;
+
+        public static void RefreshIfNeeded()
+        {
+            if (Time.time - lastRefreshTime < RefreshInterval) return;
+            lastRefreshTime = Time.time;
+            cachedShips = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
+            cachedBullets = Object.FindObjectsByType<Bullet>(FindObjectsSortMode.None);
+            cachedAsteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+        }
+
+        public static Starship[] Ships => cachedShips;
+        public static Bullet[] Bullets => cachedBullets;
+        public static Asteroid[] Asteroids => cachedAsteroids;
+    }
+
+    /// <summary>
     /// Base for drones that swarm around the player's starship. Has HP, can be destroyed by enemy fire.
     /// Subclasses: Fighter (attack enemy ships), Shield (block bullets), Mining (shoot asteroids).
     /// </summary>
@@ -175,13 +200,14 @@ namespace TitanOrbit.Entities
         private Starship FindNearestEnemyShip()
         {
             if (ownerShip == null) return null;
+            DroneTargetCache.RefreshIfNeeded();
             TeamManager.Team myTeam = ownerShip.ShipTeam;
             Vector3 myPos = transform.position;
             Starship nearest = null;
             float nearestSq = targetRange * targetRange;
-            foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            foreach (var ship in DroneTargetCache.Ships)
             {
-                if (ship.IsDead || ship.ShipTeam == myTeam) continue;
+                if (ship == null || ship.IsDead || ship.ShipTeam == myTeam) continue;
                 float sq = (ToroidalMap.WrapPosition(ship.transform.position - myPos)).sqrMagnitude;
                 if (sq < nearestSq) { nearestSq = sq; nearest = ship; }
             }
@@ -233,9 +259,10 @@ namespace TitanOrbit.Entities
         private Bullet FindIncomingBulletTowardShip()
         {
             if (ownerShip == null) return null;
+            DroneTargetCache.RefreshIfNeeded();
             Vector3 shipPos = ownerShip.transform.position;
             shipPos.y = 0f;
-            Bullet[] bullets = Object.FindObjectsByType<Bullet>(FindObjectsSortMode.None);
+            Bullet[] bullets = DroneTargetCache.Bullets;
             Bullet best = null;
             float bestScore = float.MaxValue;
             foreach (var b in bullets)
@@ -298,12 +325,13 @@ namespace TitanOrbit.Entities
 
         private Asteroid FindNearestAsteroid()
         {
+            DroneTargetCache.RefreshIfNeeded();
             Vector3 myPos = transform.position;
             Asteroid nearest = null;
             float nearestSq = targetRange * targetRange;
-            foreach (var ast in Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None))
+            foreach (var ast in DroneTargetCache.Asteroids)
             {
-                if (ast.IsDestroyed) continue;
+                if (ast == null || ast.IsDestroyed) continue;
                 float sq = (ToroidalMap.WrapPosition(ast.transform.position - myPos)).sqrMagnitude;
                 if (sq < nearestSq) { nearestSq = sq; nearest = ast; }
             }

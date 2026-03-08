@@ -63,6 +63,9 @@ namespace TitanOrbit.Core
             Debug.Log("Match started!");
         }
 
+        private float nextWinCheckTime;
+        private const float WinCheckInterval = 2f;
+
         private void Update()
         {
             if (!IsSpawned) return;
@@ -70,8 +73,12 @@ namespace TitanOrbit.Core
             {
                 matchTimer.Value += Time.deltaTime;
 
-                // Check win conditions
-                CheckWinConditions();
+                // Check win conditions (throttled to avoid FindObjectsOfType every frame)
+                if (Time.time >= nextWinCheckTime)
+                {
+                    nextWinCheckTime = Time.time + WinCheckInterval;
+                    CheckWinConditions();
+                }
 
                 // Check match duration
                 if (matchTimer.Value >= matchDuration)

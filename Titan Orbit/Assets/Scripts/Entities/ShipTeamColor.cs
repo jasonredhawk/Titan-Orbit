@@ -19,11 +19,20 @@ namespace TitanOrbit.Entities
 
         private Starship starship;
         private MaterialPropertyBlock propBlock;
+        private Renderer[] cachedRenderers;
+        private float lastCacheTime = -999f;
+        private const float CacheRefreshInterval = 1f;
 
         private void Awake()
         {
             starship = GetComponent<Starship>();
             propBlock = new MaterialPropertyBlock();
+        }
+
+        private void OnEnable()
+        {
+            cachedRenderers = null;
+            lastCacheTime = -999f;
         }
 
         private void Update()
@@ -47,7 +56,10 @@ namespace TitanOrbit.Entities
                 var valid = System.Array.FindAll(accentRenderers, r => r != null);
                 if (valid.Length > 0) return valid;
             }
-            // Fallback: find accent renderers by name (ship visual can be replaced at runtime)
+            // Cache fallback result to avoid GetComponentsInChildren every frame
+            if (cachedRenderers != null && Time.time - lastCacheTime < CacheRefreshInterval)
+                return cachedRenderers;
+            lastCacheTime = Time.time;
             var list = new System.Collections.Generic.List<Renderer>();
             foreach (var r in GetComponentsInChildren<Renderer>())
             {
@@ -56,8 +68,8 @@ namespace TitanOrbit.Entities
                 if (n == "Cockpit" || n.StartsWith("Engine") || n.StartsWith("Wing"))
                     list.Add(r);
             }
-            if (list.Count > 0) return list.ToArray();
-            return GetComponentsInChildren<Renderer>();
+            cachedRenderers = list.Count > 0 ? list.ToArray() : GetComponentsInChildren<Renderer>();
+            return cachedRenderers;
         }
 
         private Color GetTeamColor(TeamManager.Team team)
