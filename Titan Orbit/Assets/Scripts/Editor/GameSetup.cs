@@ -1477,6 +1477,13 @@ namespace TitanOrbit.Editor
             return obj;
         }
 
+        [MenuItem("Titan Orbit/Create People Transport Prefab")]
+        public static void CreatePeopleTransportPrefabOnly()
+        {
+            CreatePeopleTransportPrefab();
+            Debug.Log("PeopleTransport prefab created. Run 'Fix Duplicate Network Prefabs' to register it.");
+        }
+
         [MenuItem("Titan Orbit/Create Basic Prefabs")]
         public static void CreateBasicPrefabs()
         {
@@ -1486,6 +1493,7 @@ namespace TitanOrbit.Editor
             CreateAsteroidPrefab();
             CreateBulletPrefab();
             CreateGemPrefab();
+            CreatePeopleTransportPrefab();
 
             Debug.Log("Basic prefabs created in Assets/Prefabs/");
         }
@@ -2208,6 +2216,30 @@ namespace TitanOrbit.Editor
             Debug.Log($"Created prefab: {path}");
         }
 
+        private static void CreatePeopleTransportPrefab()
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "PeopleTransport";
+            go.transform.localScale = Vector3.one * 0.25f;
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            SphereCollider col = go.AddComponent<SphereCollider>();
+            col.isTrigger = true;
+            col.radius = 1f;
+            Rigidbody rb = go.AddComponent<Rigidbody>();
+            rb.useGravity = false;
+            rb.linearDamping = 0f;
+            rb.isKinematic = false;
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr != null) mr.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PeopleTransport", new Color(0.95f, 0.8f, 0.4f));
+            go.AddComponent<NetworkObject>();
+            go.AddComponent<TitanOrbit.Entities.PeopleTransportProjectile>();
+            string path = "Assets/Prefabs/PeopleTransport.prefab";
+            EnsurePrefabDirectory();
+            PrefabUtility.SaveAsPrefabAsset(go, path);
+            Object.DestroyImmediate(go);
+            Debug.Log($"Created prefab: {path}");
+        }
+
         /// <summary>
         /// Creates a crystal gem mesh: two points (top and bottom) and one waist ring with random facets. Flat shading.
         /// </summary>
@@ -2602,7 +2634,7 @@ namespace TitanOrbit.Editor
                     var listProp2 = so2.FindProperty("List");
                     if (listProp2 != null)
                     {
-                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/Starship.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
+                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/PeopleTransport.prefab", "Assets/Prefabs/Starship.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
                         foreach (string path in storePrefabPaths)
                         {
                             var prefabObj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
@@ -2669,18 +2701,24 @@ namespace TitanOrbit.Editor
                 Debug.Log("Drone prefabs assigned to HomePlanetStoreSystem.");
             }
 
-            // Assign gem prefab to GemSpawner
+            // Assign gem and people transport prefabs to GemSpawner
             GemSpawner gemSpawner = Object.FindObjectOfType<GemSpawner>();
             if (gemSpawner != null)
             {
+                var so = new SerializedObject(gemSpawner);
                 var gemPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Gem.prefab");
                 if (gemPrefab != null)
                 {
-                    var so = new SerializedObject(gemSpawner);
                     so.FindProperty("gemPrefab").objectReferenceValue = gemPrefab;
-                    so.ApplyModifiedPropertiesWithoutUndo();
                     Debug.Log("Gem prefab assigned to GemSpawner.");
                 }
+                var peoplePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
+                if (peoplePrefab != null)
+                {
+                    so.FindProperty("peopleTransportPrefab").objectReferenceValue = peoplePrefab;
+                    Debug.Log("PeopleTransport prefab assigned to GemSpawner.");
+                }
+                so.ApplyModifiedPropertiesWithoutUndo();
             }
 
             // Assign asteroid prefab to AsteroidRespawnManager

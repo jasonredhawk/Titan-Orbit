@@ -208,7 +208,7 @@ namespace TitanOrbit.Editor
             if (level == 7) { mine *= 1.5f; health *= 2f; cap *= 1.8f; }
             data.baseMovementSpeed = GetMovementSpeedForLevel(level);
             data.baseMaxHealth = health;
-            data.baseHealthRegenRate = 1.2f;
+            data.baseHealthRegenRate = 6f;
             data.baseRotationSpeed = 180f;
             data.baseGemCapacity = cap;
             data.basePeopleCapacity = 10f + (level - 1) * 2f;

@@ -87,6 +87,40 @@ namespace TitanOrbit.Systems
             // For now, we'll rely on ShipData
         }
 
+        /// <summary>Server-only: auto-level ships in orbit when planet levels up. Ships with full base gems (no card bonuses) get free upgrade to match new planet level.</summary>
+        public void TryAutoLevelShipsInOrbit(Planet planetThatLeveledUp)
+        {
+            if (planetThatLeveledUp == null || upgradeTree == null || !IsServer) return;
+            int newPlanetLevel = planetThatLeveledUp.PlanetLevel;
+            if (newPlanetLevel <= 1) return;
+
+            foreach (Starship ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            {
+                if (ship.IsDead || ship.CurrentOrbitPlanet != planetThatLeveledUp) continue;
+                if (ship.ShipLevel >= 7) continue;
+
+                HomePlanet shipHome = GetHomePlanetForTeam(ship.ShipTeam);
+                int maxShipLevel = shipHome != null ? shipHome.GetMaxShipLevelForPlanetLevel(shipHome.HomePlanetLevel) : 6;
+                if (ship.ShipLevel >= maxShipLevel) continue;
+                if (ship.ShipLevel >= newPlanetLevel) continue;
+
+                const float fullEpsilon = 0.01f;
+                if (ship.CurrentGems < ship.BaseGemCapacity - fullEpsilon) continue;
+
+                int nextLevel = ship.ShipLevel + 1;
+                if (nextLevel == 7 && (shipHome == null || !shipHome.IsFullGemsForLevel7Unlock() || shipHome.HomePlanetLevel < 6)) continue;
+
+                var available = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
+                if (available.Count == 0) continue;
+
+                var upgradeNode = available[0];
+                if (upgradeNode.shipData != null)
+                {
+                    ship.SetShipData(upgradeNode.shipData);
+                }
+            }
+        }
+
         /// <summary>True when ship is full of gems and can upgrade. Ship level cannot exceed home planet level; level 7 requires planet 6 + full gems.</summary>
         public bool CanUpgradeStarshipLevel(Starship ship)
         {

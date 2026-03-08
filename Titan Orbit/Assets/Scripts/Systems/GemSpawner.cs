@@ -16,6 +16,7 @@ namespace TitanOrbit.Systems
         public static GemSpawner Instance { get; private set; }
 
         [SerializeField] private GameObject gemPrefab;
+        [SerializeField] private GameObject peopleTransportPrefab;
         [SerializeField] private float explosionSpeed = 4f;
         [SerializeField] private float explosionRadius = 1.5f;
 
@@ -34,6 +35,59 @@ namespace TitanOrbit.Systems
 #else
             return null;
 #endif
+        }
+
+        private GameObject GetPeopleTransportPrefab()
+        {
+            if (peopleTransportPrefab != null) return peopleTransportPrefab;
+#if UNITY_EDITOR
+            peopleTransportPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
+            return peopleTransportPrefab;
+#else
+            return null;
+#endif
+        }
+
+        /// <summary>Spawns people beaming from planet to ship (load).</summary>
+        public void SpawnPeopleLoad(Vector3 planetPosition, Vector3 shipPosition, float amount, ulong shipNetworkObjectId, TitanOrbit.Core.TeamManager.Team team)
+        {
+            SpawnPeopleTransport(planetPosition, shipPosition, amount, shipNetworkObjectId, true, team, 0);
+        }
+
+        /// <summary>Spawns people beaming from ship to planet (unload).</summary>
+        public void SpawnPeopleUnload(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
+        {
+            SpawnPeopleTransport(shipPosition, planetPosition, amount, planetNetworkObjectId, false, team, shipNetworkObjectId);
+        }
+
+        private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
+        {
+            GameObject prefab = GetPeopleTransportPrefab();
+            if (prefab == null || amount <= 0f) return;
+
+            Vector3 dir = (toPos - fromPos);
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
+            else dir.Normalize();
+
+            Vector3 pos = fromPos;
+            float speed = 6f;
+
+            GameObject obj = Instantiate(prefab, pos, Quaternion.identity);
+            Rigidbody rb = obj.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = dir * speed;
+                rb.linearDamping = 0f;
+            }
+
+            NetworkObject netObj = obj.GetComponent<NetworkObject>();
+            if (netObj != null)
+            {
+                netObj.Spawn();
+                var p = obj.GetComponent<PeopleTransportProjectile>();
+                if (p != null) p.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId);
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -158,8 +212,8 @@ namespace TitanOrbit.Systems
             }
         }
 
-        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Gem flies to planet and is absorbed on contact. Size scales with amount (deposit rate).</summary>
-        public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
+        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value and size = ship level. shipLevel gems per second.</summary>
+        public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, int shipLevel, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null || amount <= 0f) return;
@@ -169,10 +223,10 @@ namespace TitanOrbit.Systems
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             else dir.Normalize();
 
-            // Spawn at ship position (inside orbit zone) - gem will fly toward planet and absorb on planet body contact only
             Vector3 pos = shipPosition;
             float depositSpeed = 8f;
-            float sizeMult = Mathf.Lerp(0.5f, 1.8f, Mathf.Clamp01(amount / 10f));
+            // Size scales with gem value (ship level): level 1 = 0.6, level 7 = 1.4
+            float sizeMult = Mathf.Lerp(0.6f, 1.4f, Mathf.Clamp01((amount - 1f) / 6f));
 
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = gemObj.GetComponent<Rigidbody>();

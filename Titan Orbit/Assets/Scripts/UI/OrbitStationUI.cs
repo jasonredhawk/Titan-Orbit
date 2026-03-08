@@ -87,6 +87,8 @@ namespace TitanOrbit.UI
         private Button[] chassisButtons;
         private TextMeshProUGUI[] chassisLabels;
         private ShipUnlockEntry[] shipUnlockEntries;
+        private GameObject upgradeShipRow;
+        private Button upgradeShipButton;
         private StoreItemType[] itemTypes;
         private Button[] itemButtons;
         private TextMeshProUGUI[] itemLabels;
@@ -151,13 +153,16 @@ namespace TitanOrbit.UI
             }
         }
 
+        private float _lastHomePlanetLookupTime = -999f;
+        private const float HomePlanetLookupInterval = 1f;
+
         public void Show(Starship ship, Planet planet)
         {
             currentShip = ship;
             currentPlanet = planet;
-            currentHomePlanet = null;
-            if (ship != null)
+            if (ship != null && (currentHomePlanet == null || Time.time - _lastHomePlanetLookupTime >= HomePlanetLookupInterval))
             {
+                _lastHomePlanetLookupTime = Time.time;
                 foreach (var h in UnityEngine.Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
                 {
                     if (h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
@@ -207,7 +212,7 @@ namespace TitanOrbit.UI
         {
             currentShip = null;
             currentPlanet = null;
-            currentHomePlanet = null;
+            currentHomePlanet = null; // Clear so next Show does fresh lookup
             if (rootPanel != null) rootPanel.SetActive(false);
         }
 
@@ -459,6 +464,9 @@ namespace TitanOrbit.UI
             chassisLabels = new TextMeshProUGUI[MaxShipCards];
             shipUnlockEntries = new ShipUnlockEntry[MaxShipCards];
             float shipY = 0f;
+            upgradeShipRow = CreateUpgradeShipRow(shipsTabContent.transform, ref shipY);
+            upgradeShipButton = upgradeShipRow != null ? upgradeShipRow.GetComponentInChildren<Button>() : null;
+            if (upgradeShipButton != null) upgradeShipButton.onClick.AddListener(OnUpgradeShipLevel);
             CreateRowLabel(shipsTabContent.transform, "Available Ships (unlocked by home planet level)", ref shipY);
             shipY -= 6f;
             for (int i = 0; i < MaxShipCards; i++)
@@ -621,6 +629,49 @@ namespace TitanOrbit.UI
             return btn;
         }
 
+        private GameObject CreateUpgradeShipRow(Transform parent, ref float y)
+        {
+            var go = new GameObject("UpgradeShipRow");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, y);
+            rect.sizeDelta = new Vector2(-24f, 36f);
+            y -= 40f;
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.2f, 0.45f, 0.35f, 0.95f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            var btn = go.AddComponent<Button>();
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 4f);
+            textRect.offsetMax = new Vector2(-8f, -4f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = "";
+            tmp.fontSize = 14;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
+            if (fontAsset != null) tmp.font = fontAsset;
+            go.SetActive(false);
+            return go;
+        }
+
+        private void OnUpgradeShipLevel()
+        {
+            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
+            var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
+            if (planetNo == null || !planetNo.IsSpawned) return;
+            CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId);
+            pendingGemsRequest = true;
+            if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+        }
+
         private void RefreshShipsTab()
         {
             if (chassisButtons == null || chassisLabels == null) return;
@@ -631,6 +682,22 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, isHome, storePlanetId)
                 : new List<ShipUnlockEntry>();
             if (unlocked == null) unlocked = new List<ShipUnlockEntry>();
+
+            int nextLevel = 0;
+            float upgradeCost = 0f;
+            bool canUpgrade = currentShip != null && currentPlanet != null && CardShopSystem.Instance != null
+                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, currentPlanet, out nextLevel, out upgradeCost, out _);
+            if (upgradeShipRow != null)
+            {
+                upgradeShipRow.SetActive(canUpgrade);
+                if (canUpgrade)
+                {
+                    var tmp = upgradeShipRow.GetComponentInChildren<TextMeshProUGUI>();
+                    if (tmp != null) tmp.text = $"Upgrade to Level {nextLevel} — {upgradeCost:F0}g";
+                    if (upgradeShipButton != null) upgradeShipButton.interactable = contributedGems >= upgradeCost;
+                }
+            }
+
             if (unlocked.Count > 0)
             {
                 unlocked.Sort((a, b) =>

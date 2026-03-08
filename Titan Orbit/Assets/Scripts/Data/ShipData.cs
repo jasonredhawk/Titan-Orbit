@@ -25,7 +25,7 @@ namespace TitanOrbit.Data
         [Tooltip("Weapon config: cannons, rate, energy, damage, spread. Same bullet skin for all ships.")]
         public WeaponConfig weaponConfig;
         public float baseMaxHealth = 100f;
-        public float baseHealthRegenRate = 1f;
+        public float baseHealthRegenRate = 6f;
         public float baseRotationSpeed = 180f;
         public float baseGemCapacity = 100f;
         public float basePeopleCapacity = 10f;

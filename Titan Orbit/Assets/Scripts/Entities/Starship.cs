@@ -164,7 +164,7 @@ namespace TitanOrbit.Entities
 
         [Header("Health")]
         [SerializeField] private float maxHealth = 100f;
-        [SerializeField] private float healthRegenRate = 1f;
+        [SerializeField] private float healthRegenRate = 6f;
 
         [Header("Capacity (ship level only - upgrades with ship level)")]
         [SerializeField] private float gemCapacity = 100f;
@@ -359,9 +359,12 @@ namespace TitanOrbit.Entities
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
         private bool wasMovePressedLastFrame;
-        private float depositAccumulator; // Gems accumulated for deposit projectile (spawned at intervals)
+        private float depositAccumulator; // Gems accumulated for deposit (1 gem per spawn, interval = 1/(shipLevel*2) sec)
         private float lastDepositSpawnTime = -999f;
-        private const float DEPOSIT_SPAWN_INTERVAL = 0.25f;
+        private float peopleLoadAccumulator;
+        private float peopleUnloadAccumulator;
+        private float lastPeopleSpawnTime = -999f;
+        private float peopleInTransit; // People in projectiles heading to this ship (load only)
 
         // Banking (visual lean into turn) - only used when visualRoot is set. No pitch.
         private float currentBankAngle;
@@ -391,6 +394,9 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Base gem capacity without card bonuses (20 * Level^2). Used for auto-level check when planet levels up.</summary>
+        public float BaseGemCapacity => 20f * ShipLevel * ShipLevel;
+
         /// <summary>Level used for capacity and scale: max(ship level from upgrades, chassis tier from purchased ship). So buying a Level 2 chassis gives 20*2^2 = 80 capacity.</summary>
         public int EffectiveLevelForCapacity
         {
@@ -407,6 +413,12 @@ namespace TitanOrbit.Entities
             }
         }
         public float CurrentPeople => currentPeople.Value;
+        /// <summary>Server-only: release people-in-transit when a load projectile delivers. Call from PeopleTransportProjectile.</summary>
+        public void ReleasePeopleInTransit(float amount)
+        {
+            if (IsServer)
+                peopleInTransit = Mathf.Max(0f, peopleInTransit - amount);
+        }
         public float PeopleCapacity
         {
             get
@@ -458,6 +470,8 @@ namespace TitanOrbit.Entities
         public int LargeMinesCount => largeMinesCount.Value;
         /// <summary>Chassis index in ShipUnlockTable (-1 = default). Used by UI for grid dimensions.</summary>
         public int CurrentChassisIndex => currentChassisIndex.Value;
+        /// <summary>Chassis ID (e.g. AstroEagle_01) for upgrade/shop logic.</summary>
+        public string CurrentChassisId => currentChassisId.Value.ToString();
 
         /// <summary>Attribute upgrade levels for Ship Attribute Upgrade HUD. Index: 0=FirePower, 1=BulletSpeed, 2=MaxHealth, 3=HealthRegen, 4=EnergyCapacity, 5=EnergyRegen, 6=MovementSpeed, 7=RotationSpeed, 8=GemCapacity, 9=PeopleCapacity.</summary>
         public int GetAttributeLevel(int index)
@@ -1006,15 +1020,11 @@ namespace TitanOrbit.Entities
 
             float maxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
-            // Roll (Z): only bank when thrusting; amount proportional to movement speed. No thrust = rotate only, no bank.
+            // Roll (Z): bank whenever turning; amount based on turn rate, independent of forward speed.
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
-            bool isThrusting = (inputHandler != null && inputHandler.MoveForwardPressed) || moveDirection.sqrMagnitude > 0.01f;
-            float speed = rb.linearVelocity.magnitude;
-            float maxSpeed = EffectiveMaxSpeed;
-            float speedFactor = (maxSpeed > 0.01f && isThrusting) ? Mathf.Clamp01(speed / maxSpeed) : 0f;
-            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBank * speedFactor;
+            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBank;
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
@@ -1603,10 +1613,16 @@ namespace TitanOrbit.Entities
             // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
-        /// <summary>Server: auto load people from planets we own, auto unload onto neutral or enemy planets.</summary>
+        /// <summary>Server: auto load people from planets we own, auto unload onto neutral or enemy planets. People beam up/down as projectiles.</summary>
         private void TickOrbitPopulationTransfer()
         {
-            if (currentOrbitPlanet == null) return;
+            if (currentOrbitPlanet == null)
+            {
+                peopleLoadAccumulator = 0f;
+                peopleUnloadAccumulator = 0f;
+                return;
+            }
+            float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
 
             float rate = shipLevel * Time.fixedDeltaTime; // e.g. level 1 = 1 per second
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
@@ -1615,35 +1631,52 @@ namespace TitanOrbit.Entities
             bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
                 || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
 
+            float now = (float)NetworkManager.Singleton.ServerTime.Time;
+            float peopleInterval = shipLevel > 0 ? 1f / shipLevel : 1f; // 1 person per spawn, shipLevel per second
+            bool shouldSpawnPeople = (now - lastPeopleSpawnTime) >= peopleInterval;
+
             if (friendly)
             {
-                // Auto load from planets we own
-                float space = PeopleCapacity - currentPeople.Value;
                 float available = currentOrbitPlanet.CurrentPopulation;
-                float amount = Mathf.Min(rate, space, available);
-                if (amount > 0f)
+                float amount = Mathf.Min(rate, peopleSpaceAvailable, available);
+                if (amount > 0f) peopleLoadAccumulator += amount;
+
+                if (shouldSpawnPeople && peopleLoadAccumulator >= 1f && peopleSpaceAvailable >= 1f && available >= 1f && GemSpawner.Instance != null)
                 {
-                    currentOrbitPlanet.RemovePopulationServerRpc(amount);
-                    AddPeopleServerRpc(amount);
-                    if (ScoreSystem.Instance != null)
-                        ScoreSystem.Instance.AwardFriendlyLoad(this, amount);
+                    currentOrbitPlanet.RemovePopulationServerRpc(1f);
+                    peopleLoadAccumulator -= 1f;
+                    peopleInTransit += 1f;
+                    lastPeopleSpawnTime = now;
+
+                    Vector3 planetPos = currentOrbitPlanet.transform.position;
+                    Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    var shipNo = GetComponent<NetworkObject>();
+                    if (shipNo != null)
+                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, 1f, shipNo.NetworkObjectId, shipTeam.Value);
                 }
             }
             else
             {
-                // Auto unload onto neutral or enemy planets (capture)
                 float amount = Mathf.Min(rate, currentPeople.Value);
-                if (amount > 0f)
+                if (amount > 0f) peopleUnloadAccumulator += amount;
+
+                if (shouldSpawnPeople && peopleUnloadAccumulator >= 1f && GemSpawner.Instance != null)
                 {
-                    RemovePeopleServerRpc(amount);
-                    currentOrbitPlanet.AddPopulationServerRpc(amount, shipTeam.Value); // enemy/neutral: decreases their pop, adds ours
-                    if (ScoreSystem.Instance != null)
-                        ScoreSystem.Instance.AwardHostileUnload(this, amount);
+                    RemovePeopleServerRpc(1f);
+                    peopleUnloadAccumulator -= 1f;
+                    lastPeopleSpawnTime = now;
+
+                    Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    Vector3 planetPos = currentOrbitPlanet.transform.position;
+                    var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
+                    var shipNo = GetComponent<NetworkObject>();
+                    if (planetNo != null && shipNo != null)
+                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, 1f, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
                 }
             }
         }
 
-        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team). Ship expels gems toward planet; planet absorbs on contact. Gem size scales with deposit rate.</summary>
+        /// <summary>Server: continuous gem deposit at 5 × shipLevel gems per second. Each gem value and size = shipLevel.</summary>
         private void TickOrbitGemDeposit()
         {
             if (currentOrbitPlanet == null)
@@ -1652,22 +1685,17 @@ namespace TitanOrbit.Entities
                 return;
             }
             
-            // Check if planet is owned by same team (or is home planet with assigned team)
             bool canDeposit = false;
             if (currentOrbitPlanet is HomePlanet home)
-            {
                 canDeposit = home.AssignedTeam == shipTeam.Value;
-            }
             else
-            {
                 canDeposit = currentOrbitPlanet.TeamOwnership == shipTeam.Value;
-            }
             
             if (!canDeposit) return;
             if (currentGems.Value <= 0f) return;
 
-            // shipLevel gems per 0.5 sec = shipLevel * 2 per second
-            float rate = shipLevel * 2f * Time.fixedDeltaTime;
+            float gemsPerSec = 5f * shipLevel;
+            float rate = gemsPerSec * shipLevel * Time.fixedDeltaTime; // value per tick (5×shipLevel gems/sec, each worth shipLevel)
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
@@ -1675,21 +1703,20 @@ namespace TitanOrbit.Entities
 
             depositAccumulator += amount;
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
-            bool shouldSpawn = depositAccumulator >= 0.05f && (now - lastDepositSpawnTime) >= DEPOSIT_SPAWN_INTERVAL;
+            float gemValue = shipLevel;
+            float gemInterval = gemsPerSec > 0f ? 1f / gemsPerSec : 1f; // 5×shipLevel gems per second
+            bool shouldSpawn = depositAccumulator >= gemValue && currentGems.Value >= gemValue && (now - lastDepositSpawnTime) >= gemInterval;
             if (shouldSpawn && GemSpawner.Instance != null)
             {
-                float toExpel = depositAccumulator;
-                RemoveGemsServerRpc(toExpel);
-                depositAccumulator = 0f;
+                RemoveGemsServerRpc(gemValue);
+                depositAccumulator -= gemValue;
                 lastDepositSpawnTime = now;
 
                 Vector3 shipPos = rb != null ? rb.position : transform.position;
                 Vector3 planetPos = currentOrbitPlanet.transform.position;
                 var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                 if (planetNo != null)
-                {
-                    GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, toExpel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
-                }
+                    GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, gemValue, shipLevel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
             }
         }
 
@@ -1711,7 +1738,8 @@ namespace TitanOrbit.Entities
                 }
             }
             isDead.Value = true;
-            
+            peopleInTransit = 0f;
+
             // Stop all movement immediately when dead
             if (rb != null)
             {
@@ -2375,18 +2403,18 @@ namespace TitanOrbit.Entities
         private static readonly float PER_WING_ROTATION = 35f;
         private static readonly float PER_FIN_ROTATION = 25f;
         private static readonly float PER_WING_GEM_CAPACITY = 25f;
-        private static readonly float PER_WING_HEALTH_REGEN = 0.3f;
+        private static readonly float PER_WING_HEALTH_REGEN = 1.5f;
         private static readonly float PER_COCKPIT_PEOPLE = 5f;
         private static readonly float PER_COCKPIT_MAX_HEALTH = 15f;
         private static readonly float PER_COCKPIT_ENERGY_CAPACITY = 50f;
         private static readonly float PER_COCKPIT_ENERGY_REGEN = 5f;
         private static readonly float PER_PART_PEOPLE = 2f;
         private static readonly float PER_PART_MAX_HEALTH = 35f;
-        private static readonly float PER_PART_HEALTH_REGEN = 0.3f;
+        private static readonly float PER_PART_HEALTH_REGEN = 1.5f;
         private static readonly float PER_PART_GEM_CAPACITY = 25f;
         private static readonly float MIN_ROTATION_SPEED = 60f;
         private static readonly float MIN_MAX_HEALTH = 20f;
-        private static readonly float MIN_HEALTH_REGEN = 0.2f;
+        private static readonly float MIN_HEALTH_REGEN = 1f;
         private static readonly float MIN_GEM_CAPACITY = 20f;
         private static readonly float MIN_PEOPLE_CAPACITY = 1f;
         private static readonly float MIN_ENERGY_CAPACITY = 10f;

@@ -160,7 +160,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2177445015
+  GlobalObjectIdHash: 640012190
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -184,7 +184,7 @@ MonoBehaviour:
   shipData: {fileID: 0}
   shipLevel: 1
   focusType: 0
-  movementSpeed: 8
+  engineThrust: 12
   rotationSpeed: 180
   acceleration: 32
   brakeDeceleration: 7
@@ -206,11 +206,11 @@ MonoBehaviour:
   ramTickInterval: 0.25
   overlapEscapeSpeed: 4
   maxHealth: 100
-  healthRegenRate: 1
+  healthRegenRate: 6
   gemCapacity: 100
   peopleCapacity: 10
   baseMass: 1
-  massPerGem: 0.005
+  massPerGem: 0.01
   energyCapacity: 50
   energyRegenRate: 5
   inputHandler: {fileID: 0}
@@ -218,9 +218,7 @@ MonoBehaviour:
   visualRoot: {fileID: 0}
   shipVisualScaleMultiplier: 0.175
   defaultMaxBankAngle: 111
-  defaultMaxPitchAngle: 77
   defaultBankSmoothing: 2
-  defaultPitchSmoothing: 2
   equippedCards: []
   respawnDelay: 5
 --- !u!114 &5045969774804743468

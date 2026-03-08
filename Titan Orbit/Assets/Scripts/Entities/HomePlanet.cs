@@ -191,7 +191,7 @@ namespace TitanOrbit.Entities
             return true;
         }
 
-        /// <summary>Override to add scale pulse effect when home planet levels up.</summary>
+        /// <summary>Override to add scale pulse effect and auto-level ships when home planet levels up.</summary>
         protected override void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {
             base.OnPlanetLevelChanged(previousLevel, newLevel);

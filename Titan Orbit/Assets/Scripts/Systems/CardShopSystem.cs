@@ -178,6 +178,40 @@ namespace TitanOrbit.Systems
             return "AstroEagle_01";
         }
 
+        /// <summary>Returns true if the ship can purchase a level upgrade (same ship family, next tier). Cost = same as other ships of that tier. Out params: nextLevel, cost, chassisId.</summary>
+        public bool CanPurchaseShipLevelUpgrade(Starship ship, Planet storePlanet, out int nextLevel, out float cost, out string chassisId)
+        {
+            nextLevel = 0;
+            cost = 0f;
+            chassisId = null;
+            if (ship == null || storePlanet == null || shipUnlockTable == null) return false;
+            if (ship.ShipLevel >= 6) return false; // Level 7 is special (planet 6 + full gems) - not handled as simple purchase for now
+
+            string currentCid = ship.CurrentChassisId;
+            if (string.IsNullOrEmpty(currentCid)) return false;
+            int usIdx = currentCid.IndexOf('_');
+            if (usIdx <= 0) return false;
+            string shipFamily = currentCid.Substring(0, usIdx);
+
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return false;
+            int homeLevel = homePlanet.HomePlanetLevel;
+            nextLevel = ship.ShipLevel + 1;
+            if (nextLevel > homeLevel) return false; // Planet level gates ship level
+
+            bool isHome = storePlanet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isCaptured = !isHome && storePlanet.TeamOwnership == ship.ShipTeam;
+            if (!isHome && !isCaptured) return false;
+
+            int nextChassisIndex = ShipUnlockTable.GetFirstChassisIndexForTier(nextLevel);
+            if (nextChassisIndex >= 20) return false;
+
+            chassisId = $"{shipFamily}_{(nextChassisIndex + 1):D2}";
+
+            cost = ShipUnlockTable.GetTierCost(nextLevel);
+            return true;
+        }
+
         /// <summary>
         /// Returns all cards that are allowed at the given home planet level and that match the origin planet filter.
         /// If originPlanetId is 0, returns global/home cards; if positive, returns cards bound to that planet.
@@ -209,6 +243,11 @@ namespace TitanOrbit.Systems
             return result;
         }
 
+        private static HashSet<int> _cachedOwnedPlanetIds = new HashSet<int>();
+        private static TeamManager.Team _cachedOwnedPlanetTeam = TeamManager.Team.None;
+        private static float _lastOwnedPlanetsRefresh = -999f;
+        private const float OwnedPlanetsCacheInterval = 1.5f;
+
         /// <summary>
         /// Returns all cards that should appear in the home planet store for the given team:
         /// - Global/home cards (originPlanetId &lt;= 0)
@@ -219,16 +258,18 @@ namespace TitanOrbit.Systems
             var result = new List<CardData>();
             if (allCards == null) return result;
 
-            // Build set of owned planet ids so we can include their family cards at home.
-            var ownedPlanetIds = new HashSet<int>();
-            if (team != TeamManager.Team.None)
+            if (team != TeamManager.Team.None && (team != _cachedOwnedPlanetTeam || Time.time - _lastOwnedPlanetsRefresh >= OwnedPlanetsCacheInterval))
             {
+                _cachedOwnedPlanetTeam = team;
+                _lastOwnedPlanetsRefresh = Time.time;
+                _cachedOwnedPlanetIds.Clear();
                 foreach (var planet in FindObjectsOfType<Planet>())
                 {
                     if (planet.TeamOwnership == team && planet.PlanetId > 0)
-                        ownedPlanetIds.Add(planet.PlanetId);
+                        _cachedOwnedPlanetIds.Add(planet.PlanetId);
                 }
             }
+            var ownedPlanetIds = team != TeamManager.Team.None ? _cachedOwnedPlanetIds : new HashSet<int>();
 
             foreach (var card in allCards)
             {
@@ -394,6 +435,39 @@ namespace TitanOrbit.Systems
             });
         }
 
+        /// <summary>
+        /// Server: purchase a level upgrade for the current ship (same family, next tier). Cost = same as other ships of that tier. Uses contributed gems.
+        /// </summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void PurchaseShipLevelUpgradeServerRpc(ulong planetNetworkId, ulong shipNetworkId, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+
+            NetworkObject planetNet = GetNetworkObject(planetNetworkId);
+            Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
+            if (planet == null) return;
+
+            if (!CanPurchaseShipLevelUpgrade(ship, planet, out int nextLevel, out float cost, out _))
+                return;
+
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return;
+            if (!homePlanet.TrySpendContributedGems(clientId, cost))
+                return;
+
+            // Same ship: only increase level (more slots, higher capacity). Keep visual, chassis, cards, and attribute upgrades.
+            ship.SetShipLevelFromTier(nextLevel);
+
+            NotifyShipLevelUpgradedClientRpc(shipNetworkId, nextLevel, new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            });
+        }
+
         #endregion
 
         #region Client notifications
@@ -415,6 +489,12 @@ namespace TitanOrbit.Systems
                 prefab = astroEagleShipPrefabs[chassisIndex];
             if (prefab != null)
                 ship.ApplyShipVisualFromPrefab(prefab);
+        }
+
+        [ClientRpc]
+        private void NotifyShipLevelUpgradedClientRpc(ulong shipNetworkId, int newLevel, ClientRpcParams rpcParams = default)
+        {
+            // Level is already synced via networkShipLevel. No visual change - same ship, more slots/abilities.
         }
 
         #endregion

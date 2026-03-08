@@ -620,10 +620,7 @@ namespace TitanOrbit.Entities
 
         protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {
-            if (newLevel > previousLevel)
-            {
-                // Level-up VFX is played from LevelUpClientRpc only (once per client)
-            }
+            // Ships no longer auto-level. Players purchase level upgrades at the store (same cost as other ships of that tier).
         }
 
         /// <summary>Max population = planet size * level^1.5 (e.g. home size 20 level 3 ≈ 104; regular size 10 level 1 = 10).</summary>

@@ -150,6 +150,13 @@ namespace TitanOrbit.Data
             return 20f * level * level;
         }
 
+        /// <summary>First chassis index for a given tier (0-based). Tier 1=0, 2=1, 3=3, 4=6, 5=10, 6=15.</summary>
+        public static int GetFirstChassisIndexForTier(int tier)
+        {
+            if (tier <= 1) return 0;
+            return (tier * (tier - 1)) / 2;
+        }
+
         /// <summary>Returns the chassis at the given index in the entries list, or null if out of range.</summary>
         public ShipChassisDefinition GetChassisByIndex(int index)
         {

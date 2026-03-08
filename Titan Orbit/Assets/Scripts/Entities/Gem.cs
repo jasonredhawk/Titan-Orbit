@@ -125,13 +125,13 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. Size scales with amount.</summary>
+        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. sizeMultiplier scales with ship level.</summary>
         public void InitializeForDeposit(float amount, float sizeMultiplier, ulong targetPlanetNetworkObjectId, TeamManager.Team team, ulong clientId)
         {
             if (IsServer)
             {
                 gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = 0.5f;
+                asteroidPhysicalSize.Value = 0.85f * sizeMultiplier; // Scale with ship level
                 value.Value = amount;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = targetPlanetNetworkObjectId;
