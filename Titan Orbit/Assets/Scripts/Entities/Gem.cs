@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 
@@ -31,6 +32,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> asteroidPhysicalSize = new NetworkVariable<float>(0.5f); // Asteroid scale for "half asteroid" gem size
         private NetworkVariable<float> spawnTime = new NetworkVariable<float>(0f); // Server time when gem was spawned
         private NetworkVariable<ulong> expelledByShipId = new NetworkVariable<ulong>(0); // When non-zero: victim ship cannot collect for 3 sec
+        private NetworkVariable<ulong> depositTargetPlanetId = new NetworkVariable<ulong>(0); // When non-zero: deposit gem flying toward planet
+        private NetworkVariable<int> depositTeam = new NetworkVariable<int>((int)TeamManager.Team.None);
+        private NetworkVariable<ulong> depositClientId = new NetworkVariable<ulong>(0);
         private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
         private Rigidbody rb;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
@@ -103,6 +107,7 @@ namespace TitanOrbit.Entities
                 asteroidPhysicalSize.Value = asteroidScale;
                 value.Value = gemValue;
                 expelledByShipId.Value = 0;
+                depositTargetPlanetId.Value = 0;
             }
         }
 
@@ -115,8 +120,88 @@ namespace TitanOrbit.Entities
                 asteroidPhysicalSize.Value = 0.5f; // Default for ship gems
                 value.Value = gemValue;
                 expelledByShipId.Value = expelledByShipNetworkId;
+                depositTargetPlanetId.Value = 0;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
+        }
+
+        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. Size scales with amount.</summary>
+        public void InitializeForDeposit(float amount, float sizeMultiplier, ulong targetPlanetNetworkObjectId, TeamManager.Team team, ulong clientId)
+        {
+            if (IsServer)
+            {
+                gemSize.Value = sizeMultiplier;
+                asteroidPhysicalSize.Value = 0.5f;
+                value.Value = amount;
+                expelledByShipId.Value = 0;
+                depositTargetPlanetId.Value = targetPlanetNetworkObjectId;
+                depositTeam.Value = (int)team;
+                depositClientId.Value = clientId;
+                spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
+                if (rb != null) rb.linearDamping = 0f; // No slowdown - fly straight to planet
+            }
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if (!IsServer) return;
+            if (value.Value <= 0) return;
+            if (depositTargetPlanetId.Value == 0) return;
+
+            // Only absorb when hitting the planet body, not the orbit zone (so gem can travel through orbit zone first)
+            if (other.GetComponent<PlanetOrbitZone>() != null || other.GetComponent<HomePlanetOrbitZone>() != null)
+                return;
+
+            Planet planet = other.GetComponent<Planet>();
+            if (planet == null) return;
+            var planetNo = planet.GetComponent<NetworkObject>();
+            if (planetNo == null || planetNo.NetworkObjectId != depositTargetPlanetId.Value) return;
+
+            float amount = value.Value;
+            var team = (TeamManager.Team)depositTeam.Value;
+            ulong clientId = depositClientId.Value;
+
+            if (planet is HomePlanet homePlanet)
+            {
+                homePlanet.DepositGemsFromServer(amount, team, clientId);
+            }
+            else
+            {
+                planet.DepositGemsFromServer(amount, team, clientId);
+                HomePlanet shipHome = GetHomePlanetForTeam(team);
+                if (shipHome != null)
+                    shipHome.AddContributedGemsFromServer(clientId, amount);
+            }
+
+            if (ScoreSystem.Instance != null)
+            {
+                Starship depositor = FindDepositorShip(clientId);
+                if (depositor != null)
+                    ScoreSystem.Instance.AwardDeposit(depositor, amount);
+            }
+
+            value.Value = 0;
+            var no = GetComponent<NetworkObject>();
+            if (no != null) no.Despawn();
+        }
+
+        private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None) return null;
+            foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+            {
+                if (hp.AssignedTeam == team) return hp;
+            }
+            return null;
+        }
+
+        private static Starship FindDepositorShip(ulong clientId)
+        {
+            foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            {
+                if (ship.OwnerClientId == clientId) return ship;
+            }
+            return null;
         }
 
         private void FixedUpdate()
@@ -130,8 +215,20 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (value.Value <= 0) return;
 
-            // Check if gem has expired
             float elapsedTime = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+
+            // Deposit gems: skip ship attraction, only check expiry (planet contact handled in OnTriggerEnter)
+            if (depositTargetPlanetId.Value != 0)
+            {
+                if (elapsedTime >= lifetimeSeconds)
+                {
+                    var no = GetComponent<NetworkObject>();
+                    if (no != null) no.Despawn();
+                }
+                return;
+            }
+
+            // Check if gem has expired
             if (elapsedTime >= lifetimeSeconds)
             {
                 // Gem expired - despawn it

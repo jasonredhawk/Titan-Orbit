@@ -158,6 +158,39 @@ namespace TitanOrbit.Systems
             }
         }
 
+        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Gem flies to planet and is absorbed on contact. Size scales with amount (deposit rate).</summary>
+        public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
+        {
+            GameObject prefab = GetGemPrefab();
+            if (prefab == null || amount <= 0f) return;
+
+            Vector3 dir = (planetPosition - shipPosition);
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
+            else dir.Normalize();
+
+            // Spawn at ship position (inside orbit zone) - gem will fly toward planet and absorb on planet body contact only
+            Vector3 pos = shipPosition;
+            float depositSpeed = 8f;
+            float sizeMult = Mathf.Lerp(0.5f, 1.8f, Mathf.Clamp01(amount / 10f));
+
+            GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
+            Rigidbody rb = gemObj.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = dir * depositSpeed;
+                rb.angularVelocity = new Vector3(Random.Range(-2f, 2f), Random.Range(-2f, 2f), Random.Range(-2f, 2f));
+            }
+
+            NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
+            if (netObj != null)
+            {
+                netObj.Spawn();
+                Gem gem = gemObj.GetComponent<Gem>();
+                if (gem != null) gem.InitializeForDeposit(amount, sizeMult, planetNetworkObjectId, depositingTeam, depositingClientId);
+            }
+        }
+
         private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId)
         {
             Vector2 dir2 = Random.insideUnitCircle.normalized;

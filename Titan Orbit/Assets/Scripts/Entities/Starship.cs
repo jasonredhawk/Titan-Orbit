@@ -359,6 +359,9 @@ namespace TitanOrbit.Entities
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
         private bool wasMovePressedLastFrame;
+        private float depositAccumulator; // Gems accumulated for deposit projectile (spawned at intervals)
+        private float lastDepositSpawnTime = -999f;
+        private const float DEPOSIT_SPAWN_INTERVAL = 0.25f;
 
         // Banking (visual lean into turn) - only used when visualRoot is set. No pitch.
         private float currentBankAngle;
@@ -1640,10 +1643,14 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team). Auto-deposits when in orbit.</summary>
+        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team). Ship expels gems toward planet; planet absorbs on contact. Gem size scales with deposit rate.</summary>
         private void TickOrbitGemDeposit()
         {
-            if (currentOrbitPlanet == null) return;
+            if (currentOrbitPlanet == null)
+            {
+                depositAccumulator = 0f;
+                return;
+            }
             
             // Check if planet is owned by same team (or is home planet with assigned team)
             bool canDeposit = false;
@@ -1664,25 +1671,24 @@ namespace TitanOrbit.Entities
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
-            if (amount > 0f)
+            if (amount <= 0f) return;
+
+            depositAccumulator += amount;
+            float now = (float)NetworkManager.Singleton.ServerTime.Time;
+            bool shouldSpawn = depositAccumulator >= 0.05f && (now - lastDepositSpawnTime) >= DEPOSIT_SPAWN_INTERVAL;
+            if (shouldSpawn && GemSpawner.Instance != null)
             {
-                RemoveGemsServerRpc(amount);
-                if (ScoreSystem.Instance != null)
-                    ScoreSystem.Instance.AwardDeposit(this, amount);
-                ulong clientId = OwnerClientId;
-                // Call direct server method (we're on server); avoids RPC invocation issues when server calls itself
-                if (currentOrbitPlanet is HomePlanet homePlanet)
+                float toExpel = depositAccumulator;
+                RemoveGemsServerRpc(toExpel);
+                depositAccumulator = 0f;
+                lastDepositSpawnTime = now;
+
+                Vector3 shipPos = rb != null ? rb.position : transform.position;
+                Vector3 planetPos = currentOrbitPlanet.transform.position;
+                var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
+                if (planetNo != null)
                 {
-                    // At home: deposit to planet level AND add to contributed gems (store credit)
-                    homePlanet.DepositGemsFromServer(amount, shipTeam.Value, clientId);
-                }
-                else
-                {
-                    // At captured planet: deposit to planet level, AND add to home planet's contributed gems (store credit)
-                    currentOrbitPlanet.DepositGemsFromServer(amount, shipTeam.Value, clientId);
-                    HomePlanet shipHome = GetHomePlanetForTeam(shipTeam.Value);
-                    if (shipHome != null)
-                        shipHome.AddContributedGemsFromServer(clientId, amount);
+                    GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, toExpel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
                 }
             }
         }
