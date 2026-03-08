@@ -71,18 +71,6 @@ namespace TitanOrbit.UI
         {
             if (playerShip == null)
             {
-                // #region agent log
-                if (Time.frameCount % 60 == 0)
-                {
-                    var logPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "debug-102f96.log");
-                    try
-                    {
-                        var line = "{\"sessionId\":\"102f96\",\"location\":\"ShipCardGridUI.cs:Update\",\"message\":\"FindObjectsByType playerShip null\",\"data\":{\"frame\":" + Time.frameCount + "},\"timestamp\":" + (long)(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalMilliseconds + ",\"hypothesisId\":\"B\"}\n";
-                        System.IO.File.AppendAllText(logPath, line);
-                    }
-                    catch { }
-                }
-                // #endregion
                 foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
                 {
                     if (ship.IsOwner) { playerShip = ship; break; }

@@ -83,18 +83,6 @@ namespace TitanOrbit.Core
 
         private void CheckWinConditions()
         {
-            // #region agent log
-            if (Time.frameCount % 60 == 0)
-            {
-                var logPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "debug-102f96.log");
-                try
-                {
-                    var line = "{\"sessionId\":\"102f96\",\"location\":\"MatchManager.cs:CheckWinConditions\",\"message\":\"CheckWinConditions\",\"data\":{\"frame\":" + Time.frameCount + "},\"timestamp\":" + (long)(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalMilliseconds + ",\"hypothesisId\":\"A\"}\n";
-                    System.IO.File.AppendAllText(logPath, line);
-                }
-                catch { }
-            }
-            // #endregion
             // Check if any team has captured all planets
             // This is handled by CaptureSystem, but we check here too
             Planet[] allPlanets = FindObjectsOfType<Planet>();

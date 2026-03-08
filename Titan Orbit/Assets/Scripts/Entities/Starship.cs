@@ -190,9 +190,7 @@ namespace TitanOrbit.Entities
 
         [Header("Banking (fallback when shipData has no values)")]
         [SerializeField] private float defaultMaxBankAngle = 111f;
-        [SerializeField] private float defaultMaxPitchAngle = 10f;
         [SerializeField] private float defaultBankSmoothing = 2f;
-        [SerializeField] private float defaultPitchSmoothing = 2f;
 
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
@@ -362,11 +360,9 @@ namespace TitanOrbit.Entities
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
         private bool wasMovePressedLastFrame;
 
-        // Banking (visual lean into turn) - only used when visualRoot is set
+        // Banking (visual lean into turn) - only used when visualRoot is set. No pitch.
         private float currentBankAngle;
-        private float currentPitchAngle;
         private Vector3 previousForward;
-        private float previousForwardSpeed;
         private bool bankingInitialized;
 
         public float CurrentHealth => currentHealth.Value;
@@ -982,7 +978,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Updates banking (roll) and pitch from turn rate and acceleration, then sets visualRoot.localRotation.
+        /// Updates banking (roll) from turn rate. No pitch. Sets visualRoot.localRotation.
         /// Must run on a child of the root—never on the root itself (physics/NetworkTransform would overwrite).
         /// </summary>
         private void ApplyVisualBanking(float dt)
@@ -997,9 +993,7 @@ namespace TitanOrbit.Entities
             if (!bankingInitialized)
             {
                 previousForward = fwd;
-                previousForwardSpeed = Vector3.Dot(rb.linearVelocity, fwd);
                 currentBankAngle = 0f;
-                currentPitchAngle = 0f;
                 bankingInitialized = true;
                 visualRoot.localRotation = Quaternion.identity;
                 return;
@@ -1021,21 +1015,9 @@ namespace TitanOrbit.Entities
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
-            // Pitch (X): accelerate -> nose up, brake -> nose down. Effective accel = thrust/mass.
-            float forwardSpeed = Vector3.Dot(rb.linearVelocity, fwd);
-            float forwardAccel = (forwardSpeed - previousForwardSpeed) / dt;
-            float effectiveAccel = rb.mass > 0.01f ? EffectiveEngineThrust / rb.mass : 1f;
-            float accelNorm = effectiveAccel > 0.01f ? Mathf.Clamp(forwardAccel / effectiveAccel, -1f, 1f) : 0f;
-            float maxPitch = shipData != null ? shipData.maxPitchAngle : defaultMaxPitchAngle;
-            float pitchSmooth = shipData != null ? shipData.pitchSmoothing : defaultPitchSmoothing;
-            float targetPitchAngle = accelNorm * maxPitch;
-            float pitchT = 1f - Mathf.Exp(-pitchSmooth * dt);
-            currentPitchAngle = Mathf.Lerp(currentPitchAngle, targetPitchAngle, pitchT);
-
-            visualRoot.localRotation = Quaternion.Euler(-currentPitchAngle, 0f, -currentBankAngle);
+            visualRoot.localRotation = Quaternion.Euler(0f, 0f, -currentBankAngle);
 
             previousForward = fwd;
-            previousForwardSpeed = forwardSpeed;
         }
 
         private void FixedUpdate()
@@ -2199,11 +2181,10 @@ namespace TitanOrbit.Entities
             shipData = data;
             if (data != null)
             {
-                // When ship levels up, reset all ability upgrades and remove all cards
+                // When ship levels up, reset attribute upgrades only (keep cards)
                 if (IsServer && data.shipLevel > shipLevel)
                 {
                     ResetAttributeLevels();
-                    ClearAllCardsFromServer();
                 }
                 shipLevel = data.shipLevel;
                 if (IsServer && networkShipLevel != null)
@@ -2371,8 +2352,9 @@ namespace TitanOrbit.Entities
         }
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
-        /// <summary>Stats from components. Engines and thrusters: both apply force. Engines only: scale top speed.</summary>
+        /// <summary>Stats from components. Engines and thrusters: both apply force and scale top speed equally.</summary>
         private static readonly float PER_ENGINE_MAX_SPEED = 6f;
+        private static readonly float PER_THRUSTER_MAX_SPEED = 6f;
         private static readonly float PER_ENGINE_THRUST = 126f;
         private static readonly float PER_THRUSTER_THRUST = 126f;
         private static readonly float PER_ENGINE_MASS = 1.6f;
@@ -2417,11 +2399,13 @@ namespace TitanOrbit.Entities
             var stats = ChassisComponentStats.FromTransform(root, prefix);
 
             // Stats derived solely from components (no ship level scaling)
-            // Engines and thrusters: both apply force. Engines only: scale top speed.
+            // Engines and thrusters: both apply force and scale top speed equally.
             float thrustFromEngines = stats.engineScaleTotal * PER_ENGINE_THRUST;
             float thrustFromThrusters = stats.thrusterScaleTotal * PER_THRUSTER_THRUST;
             componentEngineThrust = (thrustFromEngines + thrustFromThrusters) > 0f ? Mathf.Max(2f, thrustFromEngines + thrustFromThrusters) : 0f;
-            componentEngineMaxSpeed = stats.engineScaleTotal > 0f ? Mathf.Max(2f, Mathf.Pow(Mathf.Max(0.25f, stats.engineScaleTotal), 0.25f) * PER_ENGINE_MAX_SPEED) : 0f;
+            float speedFromEngines = stats.engineScaleTotal > 0f ? Mathf.Pow(Mathf.Max(0.25f, stats.engineScaleTotal), 0.25f) * PER_ENGINE_MAX_SPEED : 0f;
+            float speedFromThrusters = stats.thrusterScaleTotal > 0f ? Mathf.Pow(Mathf.Max(0.25f, stats.thrusterScaleTotal), 0.25f) * PER_THRUSTER_MAX_SPEED : 0f;
+            componentEngineMaxSpeed = (speedFromEngines + speedFromThrusters) > 0f ? Mathf.Max(2f, speedFromEngines + speedFromThrusters) : 0f;
 
             float weaponScaleTotal = 0f;
             for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
@@ -2727,12 +2711,19 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server only: resets all attribute upgrades and removes all equipped cards. Call when ship levels up or when buying a new chassis.</summary>
+        /// <summary>Server only: resets all attribute upgrades and removes all equipped cards. Available for full reset if needed.</summary>
         public void ResetCardsAndAttributesFromServer()
         {
             if (!IsServer) return;
             ResetAttributeLevels();
             ClearAllCardsFromServer();
+        }
+
+        /// <summary>Server only: resets attribute upgrades only. Keeps equipped cards/slots. Call when buying a new chassis.</summary>
+        public void ResetAttributesOnlyFromServer()
+        {
+            if (!IsServer) return;
+            ResetAttributeLevels();
         }
 
         /// <summary>Server only: removes all equipped cards. Called when ship levels up.</summary>

@@ -386,7 +386,7 @@ namespace TitanOrbit.Systems
             }
             ship.SetCurrentChassisIndex(chassisIndex);
             ship.SetCurrentChassisId(chassisId);
-            ship.ResetCardsAndAttributesFromServer();
+            ship.ResetAttributesOnlyFromServer();
 
             NotifyChassisPurchasedClientRpc(chassisId, chassisIndex, shipNetworkId, new ClientRpcParams
             {
