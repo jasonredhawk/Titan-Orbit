@@ -101,6 +101,8 @@ namespace TitanOrbit.UI
 
         private Vector2 _storeScrollLastMousePos;
         private bool _storeScrollDragging;
+        /// <summary>Track which tab was active so we only reset scroll position when switching tabs, not when using the scrollbar.</summary>
+        private int _lastActiveStoreTab = -1;
 
         public static OrbitStationUI GetOrCreate()
         {
@@ -172,33 +174,40 @@ namespace TitanOrbit.UI
             if (canvas == null) return;
 
             Vector2 mousePos;
+            bool pointerDown;
+            float scrollY;
 #if ENABLE_INPUT_SYSTEM
             if (Mouse.current == null) return;
             mousePos = Mouse.current.position.ReadValue();
-            bool pointerDown = Mouse.current.leftButton.isPressed;
-            float scrollY = Mouse.current.scroll.ReadValue().y;
+            pointerDown = Mouse.current.leftButton.isPressed;
+            scrollY = Mouse.current.scroll.ReadValue().y;
 #else
-            mousePos = Input.mousePosition;
-            bool pointerDown = Input.GetMouseButton(0);
-            float scrollY = Input.mouseScrollDelta.y;
+            mousePos = UnityEngine.Input.mousePosition;
+            pointerDown = UnityEngine.Input.GetMouseButton(0);
+            scrollY = UnityEngine.Input.mouseScrollDelta.y;
 #endif
 
             RectTransform viewport = storeScrollRect.viewport;
-            bool overViewport = RectTransformUtility.RectangleContainsScreenPoint(viewport, mousePos, canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera);
+            RectTransform content = storeScrollRect.content;
+            UnityEngine.Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            bool overViewport = RectTransformUtility.RectangleContainsScreenPoint(viewport, mousePos, cam);
 
             float viewportHeight = viewport.rect.height;
-            float contentHeight = storeScrollRect.content.rect.height;
+            float contentHeight = content.sizeDelta.y;
             float scrollable = contentHeight - viewportHeight;
             if (scrollable <= 0f) return;
 
-            const float scrollWheelScale = 0.02f;
+            const float scrollWheelScale = 0.04f;
             const float dragScale = 1f;
+
+            float currentY = content.anchoredPosition.y;
 
             if (Mathf.Abs(scrollY) > 0.001f && overViewport)
             {
-                float step = scrollY * scrollWheelScale;
-                float next = storeScrollRect.verticalNormalizedPosition - step;
-                storeScrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
+                float delta = scrollY * scrollWheelScale * scrollable;
+                float nextY = Mathf.Clamp(currentY - delta, -scrollable, 0f);
+                content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
+                storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
             }
 
             if (pointerDown)
@@ -207,10 +216,10 @@ namespace TitanOrbit.UI
                 {
                     if (_storeScrollDragging)
                     {
-                        float deltaY = _storeScrollLastMousePos.y - mousePos.y; // positive when pointer moved up
-                        float step = (deltaY / scrollable) * dragScale; // drag up -> see lower content -> decrease normalized
-                        float next = storeScrollRect.verticalNormalizedPosition - step;
-                        storeScrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
+                        float deltaY = _storeScrollLastMousePos.y - mousePos.y;
+                        float nextY = Mathf.Clamp(currentY + (deltaY * dragScale), -scrollable, 0f);
+                        content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
+                        storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
                     }
                     _storeScrollLastMousePos = mousePos;
                     _storeScrollDragging = true;
@@ -653,25 +662,33 @@ namespace TitanOrbit.UI
         private void RefreshStoreTabVisibility()
         {
             if (cardsTabContent == null || shipsTabContent == null || tabCardsButton == null || tabShipsButton == null) return;
+
+            bool tabChanged = _lastActiveStoreTab != activeStoreTab;
+            _lastActiveStoreTab = activeStoreTab;
+
             cardsTabContent.SetActive(activeStoreTab == 0);
             shipsTabContent.SetActive(activeStoreTab == 1);
             if (shipPreviewsRoot != null)
                 shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
+
             if (storeScrollRect != null && storeScrollRect.content != null)
             {
-                storeScrollRect.verticalNormalizedPosition = 1f;
-                LayoutRebuilder.ForceRebuildLayoutImmediate(storeScrollRect.content);
-                Canvas.ForceUpdateCanvases();
-                // Ensure content is taller than viewport so scrolling is possible
-                RectTransform content = storeScrollRect.content;
-                RectTransform viewport = storeScrollRect.viewport;
-                if (viewport != null && content != null)
+                if (tabChanged)
                 {
-                    float viewportHeight = viewport.rect.height;
-                    float contentHeight = activeStoreTab == 0 ? _cardsContentHeight : _shipsContentHeight;
-                    float minContentHeight = viewportHeight + 50f;
-                    if (content.sizeDelta.y < minContentHeight)
-                        content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
+                    // Only when switching tabs: reset scroll and rebuild layout. Do NOT do this on every call or when user clicks items.
+                    storeScrollRect.verticalNormalizedPosition = 1f;
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(storeScrollRect.content);
+                    Canvas.ForceUpdateCanvases();
+                    RectTransform content = storeScrollRect.content;
+                    RectTransform viewport = storeScrollRect.viewport;
+                    if (viewport != null && content != null)
+                    {
+                        float viewportHeight = viewport.rect.height;
+                        float contentHeight = activeStoreTab == 0 ? _cardsContentHeight : _shipsContentHeight;
+                        float minContentHeight = viewportHeight + 50f;
+                        if (content.sizeDelta.y < minContentHeight)
+                            content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
+                    }
                 }
             }
             if (activeStoreTab == 1)
