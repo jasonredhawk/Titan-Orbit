@@ -1032,7 +1032,7 @@ namespace TitanOrbit.Entities
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
-            bool isThrusting = moveDirection.sqrMagnitude > 0.01f;
+            bool isThrusting = (inputHandler != null && inputHandler.MoveForwardPressed) || moveDirection.sqrMagnitude > 0.01f;
             float speed = rb.linearVelocity.magnitude;
             float maxSpeed = EffectiveMaxSpeed;
             float speedFactor = (maxSpeed > 0.01f && isThrusting) ? Mathf.Clamp01(speed / maxSpeed) : 0f;
@@ -1225,12 +1225,12 @@ namespace TitanOrbit.Entities
                 }
                 else
                 {
-                    // At max speed: rotate velocity toward new direction without exceeding max (prevents overspeed when banking/turning)
-                    Vector3 targetVel = moveDirection * maxSpeed;
-                    float maxRad = EffectiveRotationSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime;
-                    Vector3 steered = Vector3.RotateTowards(currentVelocity, targetVel, maxRad, maxSpeed);
-                    steered.y = 0f;
-                    rb.linearVelocity = steered.normalized * Mathf.Min(steered.magnitude, maxSpeed);
+                    // At max speed: apply steering force only (perpendicular to velocity) so we turn without overspeeding. Keeps physics intact.
+                    Vector3 velNorm = currentVelocity.normalized;
+                    Vector3 thrustVec = moveDirection * EffectiveEngineThrust;
+                    float alongVel = Vector3.Dot(thrustVec, velNorm);
+                    Vector3 steerForce = thrustVec - velNorm * alongVel; // Remove forward component; only steer
+                    rb.AddForce(steerForce, ForceMode.Force);
                 }
             }
             else
