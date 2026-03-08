@@ -15,6 +15,8 @@ namespace TitanOrbit.Entities
         [Header("Zone Bounds")]
         [Tooltip("Outer radius (orbit zone edge) in planet local space.")]
         [SerializeField] private float outerRadius = 0.85f;
+        [Tooltip("Draw the orbit zone this far below the planet (local Y) so ships and gems render above it.")]
+        [SerializeField] private float heightBelowPlanet = 1f;
 
         [Header("Border")]
         [Tooltip("Thickness of the border ring. Very thick by default so orbit zone is unmissable.")]
@@ -67,9 +69,10 @@ namespace TitanOrbit.Entities
             float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
             Color color = new Color(tint.r, tint.g, tint.b, alpha);
 
-            // Ring in XZ plane (flat on ground) so it's visible from top-down camera
+            // Ring in XZ plane (flat on ground) so it's visible from top-down camera; offset below planet so gameplay is above it
             Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
-            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix * Matrix4x4.Rotate(flatXZ);
+            Vector3 offsetBelow = new Vector3(0f, -heightBelowPlanet, 0f);
+            Matrix4x4 worldMatrix = planet.transform.localToWorldMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
 
             using (Draw.Command(cam))
             {

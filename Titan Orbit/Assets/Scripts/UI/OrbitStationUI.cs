@@ -202,12 +202,12 @@ namespace TitanOrbit.UI
 
             float currentY = content.anchoredPosition.y;
 
-            if (Mathf.Abs(scrollY) > 0.001f && overViewport)
+            // Mouse wheel: apply whenever orbit panel is open and we have scroll input (no hit test so it always works)
+            if (Mathf.Abs(scrollY) > 0.001f)
             {
                 float delta = scrollY * scrollWheelScale * scrollable;
-                float nextY = Mathf.Clamp(currentY - delta, -scrollable, 0f);
-                content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
-                storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
+                ApplyStoreScrollByDelta(-delta);
+                return; // applied wheel, skip drag handling this frame
             }
 
             if (pointerDown)
@@ -229,6 +229,65 @@ namespace TitanOrbit.UI
             }
             else
                 _storeScrollDragging = false;
+        }
+
+        /// <summary>Scroll the store list by a delta in content space (positive = scroll down/see lower items).</summary>
+        private void ApplyStoreScrollByDelta(float deltaY)
+        {
+            if (storeScrollRect == null || storeScrollRect.content == null || storeScrollRect.viewport == null) return;
+            RectTransform content = storeScrollRect.content;
+            float viewportHeight = storeScrollRect.viewport.rect.height;
+            float contentHeight = content.sizeDelta.y;
+            float scrollable = contentHeight - viewportHeight;
+            if (scrollable <= 0f) return;
+            float currentY = content.anchoredPosition.y;
+            float nextY = Mathf.Clamp(currentY + deltaY, -scrollable, 0f);
+            content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
+            storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
+        }
+
+        private void OnStoreScrollUp()
+        {
+            float viewportHeight = storeScrollRect != null && storeScrollRect.viewport != null ? storeScrollRect.viewport.rect.height : 200f;
+            ApplyStoreScrollByDelta(viewportHeight * 0.4f);
+        }
+
+        private void OnStoreScrollDown()
+        {
+            float viewportHeight = storeScrollRect != null && storeScrollRect.viewport != null ? storeScrollRect.viewport.rect.height : 200f;
+            ApplyStoreScrollByDelta(-viewportHeight * 0.4f);
+        }
+
+        private Button CreateStoreScrollButton(Transform parent, string label, bool atTop, float storeY, float height)
+        {
+            var go = new GameObject("StoreScroll_" + label);
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1f, atTop ? 1f : 0f);
+            rect.anchorMax = new Vector2(1f, atTop ? 1f : 0f);
+            rect.pivot = new Vector2(1f, atTop ? 1f : 0f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.offsetMin = new Vector2(-28f, atTop ? storeY - height : 12f);
+            rect.offsetMax = new Vector2(-12f, atTop ? storeY : 12f + height);
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.2f, 0.3f, 0.5f, 0.95f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            var btn = go.AddComponent<Button>();
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 14;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
+            if (fontAsset != null) tmp.font = fontAsset;
+            return btn;
         }
 
         private float _lastHomePlanetLookupTime = -999f;
@@ -581,7 +640,8 @@ namespace TitanOrbit.UI
             float contentWidth = Mathf.Max(PanelWidth - 24f, 360f);
             storeContentRoot.sizeDelta = new Vector2(contentWidth, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
 
-            // Vertical scrollbar for store
+            // Vertical scrollbar for store + scroll up/down buttons
+            const float scrollBtnHeight = 28f;
             var scrollbarGo = new GameObject("StoreScrollbar");
             scrollbarGo.transform.SetParent(storePanel.transform, false);
             var scrollbarRect = scrollbarGo.AddComponent<RectTransform>();
@@ -589,8 +649,8 @@ namespace TitanOrbit.UI
             scrollbarRect.anchorMax = new Vector2(1f, 1f);
             scrollbarRect.pivot = new Vector2(1f, 1f);
             scrollbarRect.anchoredPosition = Vector2.zero;
-            scrollbarRect.offsetMin = new Vector2(-20f, 12f);
-            scrollbarRect.offsetMax = new Vector2(-12f, storeY);
+            scrollbarRect.offsetMin = new Vector2(-20f, 12f + scrollBtnHeight);
+            scrollbarRect.offsetMax = new Vector2(-12f, storeY - scrollBtnHeight);
             var scrollbar = scrollbarGo.AddComponent<Scrollbar>();
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
             var scrollbarBg = scrollbarGo.AddComponent<Image>();
@@ -616,6 +676,12 @@ namespace TitanOrbit.UI
             scrollbar.targetGraphic = handleImg;
             storeScrollRect.verticalScrollbar = scrollbar;
             storeScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+
+            // Scroll Up / Scroll Down buttons (reliable scroll without wheel/drag)
+            Button storeScrollUpBtn = CreateStoreScrollButton(storePanel.transform, "▲", true, storeY, scrollBtnHeight);
+            Button storeScrollDownBtn = CreateStoreScrollButton(storePanel.transform, "▼", false, storeY, scrollBtnHeight);
+            if (storeScrollUpBtn != null) storeScrollUpBtn.onClick.AddListener(OnStoreScrollUp);
+            if (storeScrollDownBtn != null) storeScrollDownBtn.onClick.AddListener(OnStoreScrollDown);
 
             itemTypes = (StoreItemType[])System.Enum.GetValues(typeof(StoreItemType));
             itemButtons = new Button[itemTypes.Length];

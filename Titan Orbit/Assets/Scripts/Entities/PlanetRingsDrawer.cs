@@ -36,6 +36,8 @@ namespace TitanOrbit.Entities
         [Tooltip("Alpha at inner edge of orbit zone.")]
         [Range(0f, 1f)]
         [SerializeField] private float orbitZoneInnerAlpha = 0.3f;
+        [Tooltip("Draw the orbit zone this far below the planet (local Y) so ships and gems render above it.")]
+        [SerializeField] private float orbitZoneHeightBelowPlanet = 1f;
 
         private Planet planet;
 
@@ -79,7 +81,8 @@ namespace TitanOrbit.Entities
                 if (drawOrbitZoneFill)
                 {
                     Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
-                    Draw.Matrix = planetMatrix * Matrix4x4.Rotate(flatXZ);
+                    Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
+                    Draw.Matrix = planetMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
                     float zoneRadius = (orbitZoneInnerRadius + orbitZoneOuterRadius) * 0.5f;
                     float zoneThickness = orbitZoneOuterRadius - orbitZoneInnerRadius;
                     Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
