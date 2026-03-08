@@ -23,11 +23,11 @@ namespace TitanOrbit.Data
         public List<Transform> engineTransforms = new List<Transform>();
         /// <summary>Thruster component transforms (for thruster VFX and attribute scaling).</summary>
         public List<Transform> thrusterTransforms = new List<Transform>();
-        /// <summary>Cockpit component transforms (for attribute scaling: Max Health, Max Population).</summary>
+        /// <summary>Cockpit component transforms (for attribute scaling: Health, People, Energy).</summary>
         public List<Transform> cockpitTransforms = new List<Transform>();
-        /// <summary>Wing component transforms (for attribute scaling: Max Gems, Max Health).</summary>
+        /// <summary>Wing component transforms (for attribute scaling: Gems, Health, HealthRegen, TurnSpeed).</summary>
         public List<Transform> wingTransforms = new List<Transform>();
-        /// <summary>Part component transforms (for attribute scaling: Max Health, Max Gems).</summary>
+        /// <summary>Part/Hull component transforms (for attribute scaling: Health, HealthRegen, Gems, People).</summary>
         public List<Transform> partTransforms = new List<Transform>();
 
         /// <summary>Sum of scale factors (avg of x,y,z) per component; used as bonus multiplier.</summary>

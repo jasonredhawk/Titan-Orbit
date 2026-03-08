@@ -16,8 +16,12 @@ namespace TitanOrbit.Core
 
         [Header("Game Settings")]
         [SerializeField] private int maxPlayersPerTeam = 20;
+        [Tooltip("Scale exaggeration per attribute level for all ships. 0.15 = 15% bigger per upgrade. Overrides per-ship value when set > 0.")]
+        [SerializeField] private float attributeScaleExaggeration = 0.15f;
 
         public bool DebugMode => debugMode;
+        /// <summary>Attribute scale exaggeration for ship components (15% default). Ships use this when > 0, else their own value.</summary>
+        public float AttributeScaleExaggeration => attributeScaleExaggeration;
         [SerializeField] private int numberOfTeams = 3;
         [SerializeField] private float matchDuration = 3600f; // 60 minutes default
 

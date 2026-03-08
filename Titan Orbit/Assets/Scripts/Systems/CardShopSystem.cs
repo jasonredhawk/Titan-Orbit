@@ -356,6 +356,7 @@ namespace TitanOrbit.Systems
                     Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}' (index {chassisIndex}). Use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem (with CardShopSystem in scene), then save.");
             }
             ship.SetCurrentChassisIndex(chassisIndex);
+            ship.ResetCardsAndAttributesFromServer();
 
             NotifyChassisPurchasedClientRpc(chassisId, chassisIndex, shipNetworkId, new ClientRpcParams
             {

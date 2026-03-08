@@ -110,7 +110,7 @@ namespace TitanOrbit.Editor
             Debug.Log("ProximityRadar added to HUD.");
         }
 
-        [MenuItem("Titan Orbit/Set All Starships Attribute Scale Exaggeration to 50%")]
+        [MenuItem("Titan Orbit/Set All Starships Attribute Scale Exaggeration to 15%")]
         public static void SetAllStarshipsAttributeScaleExaggeration()
         {
             int count = 0;
@@ -127,7 +127,7 @@ namespace TitanOrbit.Editor
                     SerializedProperty prop = so.FindProperty("attributeScaleExaggeration");
                     if (prop != null)
                     {
-                        prop.floatValue = 0.5f;
+                        prop.floatValue = 0.15f;
                         so.ApplyModifiedPropertiesWithoutUndo();
                         EditorUtility.SetDirty(prefab);
                         count++;
@@ -142,13 +142,13 @@ namespace TitanOrbit.Editor
                 SerializedProperty prop = so.FindProperty("attributeScaleExaggeration");
                 if (prop != null)
                 {
-                    prop.floatValue = 0.5f;
+                    prop.floatValue = 0.15f;
                     so.ApplyModifiedPropertiesWithoutUndo();
                     count++;
                 }
             }
             AssetDatabase.SaveAssets();
-            Debug.Log($"Set attributeScaleExaggeration to 0.5 (50%) on {count} Starship(s). Save the scene if you have it open.");
+            Debug.Log($"Set attributeScaleExaggeration to 0.15 (15%) on {count} Starship(s). Save the scene if you have it open.");
         }
 
         [MenuItem("Titan Orbit/Add Ship Attribute Upgrade HUD")]
