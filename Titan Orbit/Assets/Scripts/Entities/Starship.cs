@@ -190,7 +190,7 @@ namespace TitanOrbit.Entities
 
         [Header("Banking (fallback when shipData has no values)")]
         [SerializeField] private float defaultMaxBankAngle = 111f;
-        [SerializeField] private float defaultMaxPitchAngle = 18f;
+        [SerializeField] private float defaultMaxPitchAngle = 10f;
         [SerializeField] private float defaultBankSmoothing = 2f;
         [SerializeField] private float defaultPitchSmoothing = 2f;
 
@@ -359,11 +359,6 @@ namespace TitanOrbit.Entities
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
         private bool wasMovePressedLastFrame;
-        /// <summary>When &lt; 0 we're stable (or not in zone). When >= 0, time when we first dropped out of stable orbit (for menu hide delay).</summary>
-        private float lastTimeStableOrbitLost = -1f;
-        /// <summary>True only after we've been in stable orbit at least once this zone entry; prevents menu showing on zone entry before stable.</summary>
-        private bool hasReachedStableOrbitThisZoneEntry = false;
-        private const float STABLE_ORBIT_HIDE_DELAY = 0.6f; // Keep menu visible this long after briefly dipping out of stable orbit
 
         // Banking (visual lean into turn) - only used when visualRoot is set
         private float currentBankAngle;
@@ -799,31 +794,10 @@ namespace TitanOrbit.Entities
             if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                bool stable = currentOrbitPlanet != null && !movePressed && IsInStableOrbit();
-                if (stable)
-                {
-                    lastTimeStableOrbitLost = -1f;
-                    hasReachedStableOrbitThisZoneEntry = true;
-                }
-                else if (currentOrbitPlanet != null && !movePressed)
-                {
-                    if (lastTimeStableOrbitLost < 0f)
-                        lastTimeStableOrbitLost = Time.time;
-                }
-                else
-                {
-                    lastTimeStableOrbitLost = -1f;
-                    if (currentOrbitPlanet == null)
-                        hasReachedStableOrbitThisZoneEntry = false;
-                }
-
-                float notStableDuration = lastTimeStableOrbitLost >= 0f ? Time.time - lastTimeStableOrbitLost : 0f;
-                bool allowHideDelay = hasReachedStableOrbitThisZoneEntry && currentOrbitPlanet != null && !movePressed && notStableDuration < STABLE_ORBIT_HIDE_DELAY;
-                bool keepMenuVisible = stable || allowHideDelay;
-
-                if (movePressed || currentOrbitPlanet == null || !keepMenuVisible)
+                // Show orbit menu immediately when in orbit zone (no stable-orbit wait)
+                if (movePressed || currentOrbitPlanet == null)
                     orbitUI.Hide();
-                else if (currentOrbitPlanet != null && !movePressed && keepMenuVisible)
+                else
                     orbitUI.Show(this, currentOrbitPlanet);
             }
             wasMovePressedLastFrame = movePressed;
@@ -1443,6 +1417,7 @@ namespace TitanOrbit.Entities
         private bool CanFire()
         {
             if (isDead.Value) return false;
+            if (currentOrbitPlanet != null) return false; // Cannot fire while in orbit zone
             EnsureBulletLastFireTime();
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
             if (bulletWc.cannons != null)
@@ -1463,6 +1438,7 @@ namespace TitanOrbit.Entities
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
         {
             if (CombatSystem.Instance == null) return;
+            if (currentOrbitPlanet != null) return; // Cannot fire while in orbit zone
             EnsureBulletLastFireTime();
             Vector3 forward = shipForward;
             forward.y = 0f;
@@ -1681,10 +1657,10 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team).</summary>
+        /// <summary>Server: continuous gem deposit at shipLevel gems per 0.5s while in orbit at planet (same team). Auto-deposits when in orbit.</summary>
         private void TickOrbitGemDeposit()
         {
-            if (currentOrbitPlanet == null || !wantToDepositGems.Value) return;
+            if (currentOrbitPlanet == null) return;
             
             // Check if planet is owned by same team (or is home planet with assigned team)
             bool canDeposit = false;
@@ -1698,7 +1674,7 @@ namespace TitanOrbit.Entities
             }
             
             if (!canDeposit) return;
-            if (currentGems.Value <= 0f) { wantToDepositGems.Value = false; return; }
+            if (currentGems.Value <= 0f) return;
 
             // shipLevel gems per 0.5 sec = shipLevel * 2 per second
             float rate = shipLevel * 2f * Time.fixedDeltaTime;
@@ -1726,8 +1702,6 @@ namespace TitanOrbit.Entities
                         shipHome.AddContributedGemsFromServer(clientId, amount);
                 }
             }
-            if (currentGems.Value <= 0.001f)
-                wantToDepositGems.Value = false;
         }
 
         [Header("Respawn Settings")]
@@ -2381,7 +2355,7 @@ namespace TitanOrbit.Entities
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
         /// <summary>Stats from components. Engines: force (acceleration) and max speed (cap).</summary>
-        private static readonly float PER_ENGINE_THRUST = 28f;
+        private static readonly float PER_ENGINE_THRUST = 42f;
         private static readonly float PER_ENGINE_MAX_SPEED = 6f;
         private static readonly float PER_ENGINE_MASS = 1.6f;
         private static readonly float PER_THRUSTER_MASS = 0.6f;

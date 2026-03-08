@@ -90,7 +90,7 @@ namespace TitanOrbit.UI
                 if (valuePeople != null) valuePeople.text = Mathf.FloorToInt(ship.CurrentPeople).ToString();
             }
 
-            SetOrbitButtonsVisible(ship.IsInOrbit);
+            SetOrbitButtonsVisible(false); // Upload/download/deposit buttons removed; gems auto-deposit in orbit
         }
 
         private void SetOrbitButtonsVisible(bool visible)
