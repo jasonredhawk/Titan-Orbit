@@ -625,8 +625,10 @@ namespace TitanOrbit.UI
         {
             if (chassisButtons == null || chassisLabels == null) return;
             int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 6;
+            bool isHome = currentPlanet is HomePlanet;
+            int storePlanetId = currentPlanet != null ? currentPlanet.PlanetId : 0;
             List<ShipUnlockEntry> unlocked = CardShopSystem.Instance != null
-                ? CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, true, 0)
+                ? CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, isHome, storePlanetId)
                 : new List<ShipUnlockEntry>();
             if (unlocked == null) unlocked = new List<ShipUnlockEntry>();
             if (unlocked.Count > 0)

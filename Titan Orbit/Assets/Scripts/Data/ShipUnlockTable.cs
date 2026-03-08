@@ -25,7 +25,9 @@ namespace TitanOrbit.Data
     [CreateAssetMenu(fileName = "ShipUnlockTable", menuName = "Titan Orbit/Ship Unlock Table")]
     public class ShipUnlockTable : ScriptableObject
     {
-        [Tooltip("All chassis that can be purchased, with their minimum home planet levels and gem costs.")]
+        [Tooltip("Planet-to-ship-family mapping. When set, each planet gets its own ship collection from ModularExamples.")]
+        public PlanetShipFamilyConfig planetShipFamilyConfig;
+        [Tooltip("All chassis that can be purchased (legacy AstroEagle when planetShipFamilyConfig is null).")]
         public List<ShipUnlockEntry> entries = new List<ShipUnlockEntry>();
 
         /// <summary>
@@ -93,6 +95,37 @@ namespace TitanOrbit.Data
                     gemCost = 0f
                 });
             }
+        }
+
+        /// <summary>
+        /// Returns entries for the given planet's ship family (when planetShipFamilyConfig is set). Same tier progression (1-20 ships, levels 1-6).
+        /// </summary>
+        public List<ShipUnlockEntry> GetUnlockedEntriesForPlanet(int homePlanetLevel, int planetId)
+        {
+            var result = new List<ShipUnlockEntry>();
+            if (planetShipFamilyConfig == null || planetShipFamilyConfig.families == null || planetShipFamilyConfig.families.Count == 0)
+            {
+                return GetUnlockedEntries(homePlanetLevel);
+            }
+            var family = planetShipFamilyConfig.GetFamilyForPlanet(planetId);
+            if (family == null || string.IsNullOrEmpty(family.familyName)) return result;
+
+            int[] minLevelByShipIndex = { 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6 };
+            int count = family.prefabs != null ? Mathf.Min(20, family.prefabs.Length) : 20;
+            for (int v = 0; v < count; v++)
+            {
+                int minLevel = minLevelByShipIndex[Mathf.Min(v, minLevelByShipIndex.Length - 1)];
+                if (homePlanetLevel < minLevel) continue;
+                var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
+                int num = v + 1;
+                chassis.chassisId = $"{family.familyName}_{num:D2}";
+                chassis.shipFamily = family.familyName;
+                chassis.displayName = $"{family.familyName} {num}";
+                chassis.originPlanetId = planetId;
+                chassis.minHomePlanetLevel = minLevel;
+                result.Add(new ShipUnlockEntry { chassis = chassis, minHomePlanetLevel = minLevel, gemCost = 0f });
+            }
+            return result;
         }
 
         /// <summary>

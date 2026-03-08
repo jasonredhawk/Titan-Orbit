@@ -229,6 +229,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>Index into ShipUnlockTable.entries for the current chassis (-1 = default/unknown grid). Synced so clients can show correct grid sizes.</summary>
         private NetworkVariable<int> currentChassisIndex = new NetworkVariable<int>(-1);
+        /// <summary>Chassis ID (e.g. CraizanStar_05) when using planet ship families. Used to resolve prefab from correct family.</summary>
+        private NetworkVariable<FixedString64Bytes> currentChassisId = new NetworkVariable<FixedString64Bytes>(default);
 
         /// <summary>Ship level synced to clients so orbit UI shows correct slot count (level 2 = 2 slots, etc.).</summary>
         private NetworkVariable<int> networkShipLevel = new NetworkVariable<int>(1);
@@ -657,11 +659,13 @@ namespace TitanOrbit.Entities
             // Server: apply starter ship (chassis 0) first so SetShipData won't overwrite with a different prefab
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
             {
-                GameObject starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
+                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
                 if (starterPrefab != null)
                 {
                     ApplyShipVisualFromPrefab(starterPrefab);
                     SetCurrentChassisIndex(0);
+                    if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
                 }
             }
@@ -763,21 +767,24 @@ namespace TitanOrbit.Entities
                 HandleEnergyRegen();
             }
 
-            // Server: ensure first ship (no chassis yet) gets AstroEagle_01 visual so the first ship created is the one we want
+            // Server: ensure first ship (no chassis yet) gets starter visual (AstroEagle_01 or first family's ship 1)
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
-                GameObject prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
+                GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
                 if (prefab != null)
                 {
                     ApplyShipVisualFromPrefab(prefab);
                     SetCurrentChassisIndex(0);
+                    if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
                 }
             }
             // Owner: when chassis index is set (or synced), apply that ship visual so client sees the correct model
             if (IsOwner && currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
             {
-                GameObject prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+                string cid = currentChassisId.Value.ToString();
+                GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
                 if (prefab != null)
                 {
                     ApplyShipVisualFromPrefab(prefab);
@@ -1611,7 +1618,7 @@ namespace TitanOrbit.Entities
             // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
-        /// <summary>Server: continuous load/unload at shipLevel people per second while in orbit.</summary>
+        /// <summary>Server: auto load people from planets we own, auto unload onto neutral or enemy planets.</summary>
         private void TickOrbitPopulationTransfer()
         {
             if (currentOrbitPlanet == null) return;
@@ -1620,11 +1627,12 @@ namespace TitanOrbit.Entities
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
 
-            if (wantToLoadPeople.Value)
+            bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
+                || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
+
+            if (friendly)
             {
-                bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
-                    || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
-                if (!friendly) return;
+                // Auto load from planets we own
                 float space = PeopleCapacity - currentPeople.Value;
                 float available = currentOrbitPlanet.CurrentPopulation;
                 float amount = Mathf.Min(rate, space, available);
@@ -1635,25 +1643,18 @@ namespace TitanOrbit.Entities
                     if (ScoreSystem.Instance != null)
                         ScoreSystem.Instance.AwardFriendlyLoad(this, amount);
                 }
-                // Reset toggle when ship is full or planet has no one left
-                if (currentPeople.Value >= PeopleCapacity - 0.001f || available <= 0f)
-                    wantToLoadPeople.Value = false;
             }
-            else if (wantToUnloadPeople.Value)
+            else
             {
+                // Auto unload onto neutral or enemy planets (capture)
                 float amount = Mathf.Min(rate, currentPeople.Value);
                 if (amount > 0f)
                 {
-                    bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
-                        || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
                     RemovePeopleServerRpc(amount);
-                    currentOrbitPlanet.AddPopulationServerRpc(amount, shipTeam.Value); // friendly: adds pop; enemy/neutral: decreases (capture)
-                    if (!friendly && ScoreSystem.Instance != null)
+                    currentOrbitPlanet.AddPopulationServerRpc(amount, shipTeam.Value); // enemy/neutral: decreases their pop, adds ours
+                    if (ScoreSystem.Instance != null)
                         ScoreSystem.Instance.AwardHostileUnload(this, amount);
                 }
-                // Reset toggle when ship has no people left
-                if (currentPeople.Value <= 0.001f)
-                    wantToUnloadPeople.Value = false;
             }
         }
 
@@ -2349,14 +2350,31 @@ namespace TitanOrbit.Entities
             // Keep only visual components under the ship visual root to avoid heavy runtime overhead.
             StripNonVisualComponents(root, firePoint);
 
-            // Parse chassis component names (e.g. AstroEagle_Weapon, AstroEagle_Engine_2) and apply stats + weapon/muzzle setup.
-            ApplyChassisComponentStats(root, data);
+            // Parse chassis component names (e.g. AstroEagle_Weapon, CraizanStar_Engine_2). Derive family from prefab name.
+            string familyPrefix = DeriveFamilyPrefixFromPrefab(shipPrefab);
+            ApplyChassisComponentStats(root, data, familyPrefix);
+        }
+
+        /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>
+        private static string DeriveFamilyPrefixFromPrefab(GameObject prefab)
+        {
+            if (prefab == null) return "AstroEagle";
+            string name = prefab.name;
+            if (string.IsNullOrEmpty(name)) return "AstroEagle";
+            int cloneIdx = name.IndexOf("(Clone)");
+            if (cloneIdx > 0) name = name.Substring(0, cloneIdx).TrimEnd();
+            int i = name.Length - 1;
+            while (i >= 0 && char.IsDigit(name[i])) i--;
+            if (i < name.Length - 1)
+                name = name.Substring(0, i + 1);
+            return string.IsNullOrEmpty(name) ? "AstroEagle" : name;
         }
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
-        /// <summary>Stats from components. Engines: force (acceleration) and max speed (cap).</summary>
-        private static readonly float PER_ENGINE_THRUST = 42f;
+        /// <summary>Stats from components. Engines and thrusters: both apply force. Engines only: scale top speed.</summary>
         private static readonly float PER_ENGINE_MAX_SPEED = 6f;
+        private static readonly float PER_ENGINE_THRUST = 126f;
+        private static readonly float PER_THRUSTER_THRUST = 126f;
         private static readonly float PER_ENGINE_MASS = 1.6f;
         private static readonly float PER_THRUSTER_MASS = 0.6f;
         private static readonly float PER_WING_MASS = 0.8f;
@@ -2393,15 +2411,17 @@ namespace TitanOrbit.Entities
         private static readonly float MUZZLE_BASE_SIZE = 0.18f;
         private static readonly float MUZZLE_SIZE_PER_ENERGY = 0.04f;
 
-        private void ApplyChassisComponentStats(Transform root, ShipData data)
+        private void ApplyChassisComponentStats(Transform root, ShipData data, string familyPrefix = null)
         {
-            var stats = ChassisComponentStats.FromTransform(root, CHASSIS_FAMILY_PREFIX);
+            string prefix = !string.IsNullOrEmpty(familyPrefix) ? familyPrefix : CHASSIS_FAMILY_PREFIX;
+            var stats = ChassisComponentStats.FromTransform(root, prefix);
 
             // Stats derived solely from components (no ship level scaling)
-            float engineThrustVal = stats.engineScaleTotal * PER_ENGINE_THRUST;
-            componentEngineThrust = Mathf.Max(2f, engineThrustVal);
-            // Fourth-root scaling so max speed grows slowly with engine count (sqrt was still too fast)
-            componentEngineMaxSpeed = Mathf.Max(2f, Mathf.Pow(Mathf.Max(0.25f, stats.engineScaleTotal), 0.25f) * PER_ENGINE_MAX_SPEED);
+            // Engines and thrusters: both apply force. Engines only: scale top speed.
+            float thrustFromEngines = stats.engineScaleTotal * PER_ENGINE_THRUST;
+            float thrustFromThrusters = stats.thrusterScaleTotal * PER_THRUSTER_THRUST;
+            componentEngineThrust = (thrustFromEngines + thrustFromThrusters) > 0f ? Mathf.Max(2f, thrustFromEngines + thrustFromThrusters) : 0f;
+            componentEngineMaxSpeed = stats.engineScaleTotal > 0f ? Mathf.Max(2f, Mathf.Pow(Mathf.Max(0.25f, stats.engineScaleTotal), 0.25f) * PER_ENGINE_MAX_SPEED) : 0f;
 
             float weaponScaleTotal = 0f;
             for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
@@ -2940,6 +2960,13 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             currentChassisIndex.Value = index;
+        }
+
+        /// <summary>Server-only: set chassis ID when purchasing from planet-specific family (e.g. CraizanStar_05). Enables correct prefab resolution.</summary>
+        public void SetCurrentChassisId(string chassisId)
+        {
+            if (!IsServer) return;
+            currentChassisId.Value = string.IsNullOrEmpty(chassisId) ? default : new FixedString64Bytes(chassisId);
         }
 
         /// <summary>Server-only: set ship level from chassis tier when upgrading without baseShipData (e.g. AstroEagle variants). Syncs to clients so orbit UI shows correct slot count.</summary>

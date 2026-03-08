@@ -158,18 +158,9 @@ namespace TitanOrbit.UI
             if (chassisButtons != null && currentShip != null && currentHomePlanet != null && currentStorePlanet != null && CardShopSystem.Instance != null)
             {
                 int homeLevel = currentHomePlanet.HomePlanetLevel;
-                var unlockedAll = CardShopSystem.Instance.GetUnlockedChassisForHomeLevel(homeLevel);
                 bool isHomeStore = currentStorePlanet is HomePlanet;
                 int storePlanetId = currentStorePlanet.PlanetId;
-
-                var unlocked = new System.Collections.Generic.List<ShipChassisDefinition>();
-                foreach (var chassisDef in unlockedAll)
-                {
-                    if (isHomeStore || chassisDef.originPlanetId == storePlanetId)
-                    {
-                        unlocked.Add(chassisDef);
-                    }
-                }
+                var unlocked = CardShopSystem.Instance.GetUnlockedChassisForStore(homeLevel, isHomeStore, storePlanetId);
 
                 if (chassisEntries == null || chassisEntries.Length != chassisButtons.Length)
                     chassisEntries = new ShipChassisDefinition[chassisButtons.Length];
