@@ -26,7 +26,7 @@ namespace TitanOrbit.Core
             if (Application.isMobilePlatform)
             {
                 Application.targetFrameRate = mobileTargetFrameRate;
-                
+
                 if (reduceQualityOnMobile)
                 {
                     QualitySettings.SetQualityLevel(1); // Low quality on mobile

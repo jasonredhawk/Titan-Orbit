@@ -58,6 +58,15 @@ namespace TitanOrbit.UI
         private const float LeaderboardRowSpacing = 8f;
         private const float LeaderboardContentPadding = 4f;
 
+        // Reused collections to avoid allocations every leaderboard refresh (reduces GC and progressive lag)
+        private readonly List<Starship> _cachedAllShips = new List<Starship>(32);
+        private readonly Dictionary<ulong, string> _cachedShipNameLookup = new Dictionary<ulong, string>(32);
+        private readonly Dictionary<ulong, ScoreEntry> _cachedScoreByShipId = new Dictionary<ulong, ScoreEntry>(32);
+        private readonly List<Starship> _cachedTeamShips = new List<Starship>(32);
+        private readonly List<ScoreEntry> _cachedRows = new List<ScoreEntry>(32);
+        private float _lastStarshipFindTime = -999f;
+        private const float StarshipFindInterval = 0.35f;
+
         private class LeaderboardRowWidgets
         {
             public GameObject root;
@@ -87,9 +96,20 @@ namespace TitanOrbit.UI
                 {
                     lastPlayerShipLookupTime = Time.time;
                     playerShip = null;
-                    foreach (var ship in FindObjectsOfType<Starship>())
+                    // Use cached ship list if recently refreshed to avoid extra FindObjectsOfType
+                    if (Time.time - _lastStarshipFindTime < StarshipFindInterval + 0.1f && _cachedAllShips.Count > 0)
                     {
-                        if (ship.IsOwner) { playerShip = ship; break; }
+                        for (int i = 0; i < _cachedAllShips.Count; i++)
+                        {
+                            if (_cachedAllShips[i].IsOwner) { playerShip = _cachedAllShips[i]; break; }
+                        }
+                    }
+                    if (playerShip == null)
+                    {
+                        foreach (var ship in FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                        {
+                            if (ship.IsOwner) { playerShip = ship; break; }
+                        }
                     }
                     if (playerShip != null && viewedTeamIndex < 0)
                         viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip.ShipTeam));
@@ -166,18 +186,28 @@ namespace TitanOrbit.UI
                 viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip != null ? playerShip.ShipTeam : TeamManager.Team.TeamA));
 
             TeamManager.Team viewedTeam = teamOrder[Mathf.Clamp(viewedTeamIndex, 0, teamOrder.Length - 1)];
-            Dictionary<ulong, string> shipNameLookup = new Dictionary<ulong, string>();
-            List<Starship> allShips = new List<Starship>();
-            foreach (var ship in FindObjectsOfType<Starship>())
+
+            // Refresh cached ships list periodically to avoid FindObjectsOfType every refresh
+            if (Time.time - _lastStarshipFindTime >= StarshipFindInterval)
             {
-                if (ship == null || !ship.IsSpawned) continue;
-                allShips.Add(ship);
+                _lastStarshipFindTime = Time.time;
+                _cachedAllShips.Clear();
+                foreach (var ship in FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                {
+                    if (ship != null && ship.IsSpawned)
+                        _cachedAllShips.Add(ship);
+                }
+            }
+
+            _cachedShipNameLookup.Clear();
+            foreach (var ship in _cachedAllShips)
+            {
                 string baseName = ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null
                     ? $"AI-{ship.NetworkObjectId % 1000}"
                     : PlayerDisplayNames.GetDisplayName(ship.OwnerClientId, false);
-                shipNameLookup[ship.NetworkObjectId] = baseName;
+                _cachedShipNameLookup[ship.NetworkObjectId] = baseName;
             }
-            if (allShips.Count == 0)
+            if (_cachedAllShips.Count == 0)
             {
                 for (int i = 0; i < leaderboardRows.Count; i++)
                     leaderboardRows[i].root.SetActive(false);
@@ -188,38 +218,38 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            Dictionary<ulong, ScoreEntry> scoreByShipId = new Dictionary<ulong, ScoreEntry>();
+            _cachedScoreByShipId.Clear();
             if (ScoreSystem.Instance != null && ScoreSystem.Instance.Entries != null)
             {
                 foreach (var entry in ScoreSystem.Instance.Entries)
-                    scoreByShipId[entry.ShipNetworkId] = entry;
+                    _cachedScoreByShipId[entry.ShipNetworkId] = entry;
             }
 
-            List<Starship> teamShips = new List<Starship>();
-            for (int i = 0; i < allShips.Count; i++)
+            _cachedTeamShips.Clear();
+            for (int i = 0; i < _cachedAllShips.Count; i++)
             {
-                if (allShips[i].ShipTeam == viewedTeam)
-                    teamShips.Add(allShips[i]);
+                if (_cachedAllShips[i].ShipTeam == viewedTeam)
+                    _cachedTeamShips.Add(_cachedAllShips[i]);
             }
 
             // If selected team is empty, fall back to local player's current team so teammates are visible by default.
             TeamManager.Team myTeam = playerShip != null ? playerShip.ShipTeam : TeamManager.Team.None;
-            if (teamShips.Count == 0 && myTeam != TeamManager.Team.None && myTeam != viewedTeam)
+            if (_cachedTeamShips.Count == 0 && myTeam != TeamManager.Team.None && myTeam != viewedTeam)
             {
                 viewedTeamIndex = TeamToIndex(myTeam);
                 viewedTeam = teamOrder[Mathf.Clamp(viewedTeamIndex, 0, teamOrder.Length - 1)];
-                teamShips.Clear();
-                for (int i = 0; i < allShips.Count; i++)
+                _cachedTeamShips.Clear();
+                for (int i = 0; i < _cachedAllShips.Count; i++)
                 {
-                    if (allShips[i].ShipTeam == viewedTeam)
-                        teamShips.Add(allShips[i]);
+                    if (_cachedAllShips[i].ShipTeam == viewedTeam)
+                        _cachedTeamShips.Add(_cachedAllShips[i]);
                 }
             }
 
-            bool showingAllTeams = teamShips.Count == 0;
+            bool showingAllTeams = _cachedTeamShips.Count == 0;
             if (showingAllTeams)
             {
-                teamShips.AddRange(allShips);
+                _cachedTeamShips.AddRange(_cachedAllShips);
                 leaderboardTitleText.text = "All Teams Leaderboard   [TAB]";
             }
             else
@@ -227,17 +257,17 @@ namespace TitanOrbit.UI
                 leaderboardTitleText.text = $"{viewedTeam} Leaderboard   [TAB]";
             }
 
-            List<ScoreEntry> rows = new List<ScoreEntry>();
-            for (int i = 0; i < teamShips.Count; i++)
+            _cachedRows.Clear();
+            for (int i = 0; i < _cachedTeamShips.Count; i++)
             {
-                Starship ship = teamShips[i];
-                if (scoreByShipId.TryGetValue(ship.NetworkObjectId, out ScoreEntry scored))
+                Starship ship = _cachedTeamShips[i];
+                if (_cachedScoreByShipId.TryGetValue(ship.NetworkObjectId, out ScoreEntry scored))
                 {
-                    rows.Add(scored);
+                    _cachedRows.Add(scored);
                 }
                 else
                 {
-                    rows.Add(new ScoreEntry
+                    _cachedRows.Add(new ScoreEntry
                     {
                         ShipNetworkId = ship.NetworkObjectId,
                         OwnerClientId = ship.OwnerClientId,
@@ -252,7 +282,7 @@ namespace TitanOrbit.UI
                     });
                 }
             }
-            rows.Sort((a, b) =>
+            _cachedRows.Sort((a, b) =>
             {
                 int byScore = b.Score.CompareTo(a.Score);
                 if (byScore != 0) return byScore;
@@ -261,7 +291,7 @@ namespace TitanOrbit.UI
                 return a.OwnerClientId.CompareTo(b.OwnerClientId);
             });
 
-            if (rows.Count == 0)
+            if (_cachedRows.Count == 0)
             {
                 for (int i = 0; i < leaderboardRows.Count; i++)
                     leaderboardRows[i].root.SetActive(false);
@@ -281,9 +311,9 @@ namespace TitanOrbit.UI
             float bestHealed = 0f;
             ulong bestTransporterId = 0;
             float bestTransported = 0f;
-            for (int i = 0; i < rows.Count; i++)
+            for (int i = 0; i < _cachedRows.Count; i++)
             {
-                ScoreEntry row = rows[i];
+                ScoreEntry row = _cachedRows[i];
                 if (row.Kills > bestKills)
                 {
                     bestKills = row.Kills;
@@ -306,11 +336,11 @@ namespace TitanOrbit.UI
                 }
             }
 
-            EnsureLeaderboardRowCount(rows.Count);
-            for (int i = 0; i < rows.Count; i++)
+            EnsureLeaderboardRowCount(_cachedRows.Count);
+            for (int i = 0; i < _cachedRows.Count; i++)
             {
-                ScoreEntry row = rows[i];
-                string name = shipNameLookup.TryGetValue(row.ShipNetworkId, out string foundName)
+                ScoreEntry row = _cachedRows[i];
+                string name = _cachedShipNameLookup.TryGetValue(row.ShipNetworkId, out string foundName)
                     ? foundName
                     : (row.IsAI ? PlayerDisplayNames.GetDisplayName(row.OwnerClientId, true) : PlayerDisplayNames.GetDisplayName(row.OwnerClientId, false));
 
@@ -328,16 +358,26 @@ namespace TitanOrbit.UI
                     bestTransported > 0f && row.ShipNetworkId == bestTransporterId
                 );
             }
-            for (int i = rows.Count; i < leaderboardRows.Count; i++)
+            for (int i = _cachedRows.Count; i < leaderboardRows.Count; i++)
                 leaderboardRows[i].root.SetActive(false);
-            LayoutLeaderboardRows(rows.Count);
+            LayoutLeaderboardRows(_cachedRows.Count);
         }
 
         private void EnsureLeaderboardRowCount(int count)
         {
+            // Grow if needed
             while (leaderboardRows.Count < count)
             {
                 leaderboardRows.Add(CreateLeaderboardRow(leaderboardRows.Count));
+            }
+            // Shrink when count drops to avoid unbounded growth (reduces progressive lag from hundreds of row GameObjects)
+            const int maxKeepExtra = 4;
+            while (leaderboardRows.Count > count + maxKeepExtra)
+            {
+                int last = leaderboardRows.Count - 1;
+                if (leaderboardRows[last].root != null)
+                    Destroy(leaderboardRows[last].root);
+                leaderboardRows.RemoveAt(last);
             }
         }
 

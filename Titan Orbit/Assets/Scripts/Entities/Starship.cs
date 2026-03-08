@@ -53,7 +53,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float orbitSpeed = 0.8f; // Baseline linear speed while orbiting; modified by planet size and radius
         [SerializeField] private float orbitRadiusPullStrength = 2.5f; // Push in/out when outside zone band; stronger = quicker stabilization
         [Tooltip("How quickly the ship's existing velocity is steered toward the ideal orbit velocity. Higher = snappier capture, lower = more drift-through.")]
-        [SerializeField] private float orbitCaptureResponsiveness = 2.2f;
+        [SerializeField] private float orbitCaptureResponsiveness = 3.5f;
 
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
@@ -99,6 +99,19 @@ namespace TitanOrbit.Entities
         private List<Vector3> partBasePositions = new List<Vector3>();
         private List<float> muzzleBaseSizes = new List<float>();
         private List<float> muzzleBaseSpeeds = new List<float>();
+
+        /// <summary>Cached card stat sums, refreshed once per frame to avoid iterating equippedCards 16+ times in LateUpdate.</summary>
+        private int _cardStatsCacheFrame = -1;
+        private float _cachedCardMovementSpeedAdd;
+        private float _cachedCardRotationSpeedAdd;
+        private float _cachedCardMaxHealthAdd;
+        private float _cachedCardHealthRegenAdd;
+        private float _cachedCardEnergyCapacityAdd;
+        private float _cachedCardEnergyRegenAdd;
+        private float _cachedCardGemCapacityAdd;
+        private float _cachedCardPeopleCapacityAdd;
+        private float _cachedCardDamageMultiplier = 1f;
+        private float _cachedCardBulletSpeedMultiplier = 1f;
 
         /// <summary>Mass from chassis components (Engine, Thruster, Wing, Cockpit, Part, etc.). Used when chassis applied.</summary>
         private float componentMass = 0f;
@@ -828,6 +841,7 @@ namespace TitanOrbit.Entities
 
         private void LateUpdate()
         {
+            RefreshCardStatsCache();
             if (visualBaseScale > 0.001f && lastPrefabScale.sqrMagnitude > 0.001f)
             {
                 Transform root = GetPrefabTransform();
@@ -850,6 +864,50 @@ namespace TitanOrbit.Entities
                 if (attributeScaleExaggeration > 0f)
                     return Mathf.Approximately(attributeScaleExaggeration, 0.5f) ? 0.15f : attributeScaleExaggeration;
                 return 0.15f;
+            }
+        }
+
+        /// <summary>Refreshes cached card stat sums once per frame so we don't iterate equippedCards 16+ times in LateUpdate and property getters.</summary>
+        private void RefreshCardStatsCache()
+        {
+            int frame = Time.frameCount;
+            if (_cardStatsCacheFrame == frame) return;
+            _cardStatsCacheFrame = frame;
+
+            _cachedCardMovementSpeedAdd = 0f;
+            _cachedCardRotationSpeedAdd = 0f;
+            _cachedCardMaxHealthAdd = 0f;
+            _cachedCardHealthRegenAdd = 0f;
+            _cachedCardEnergyCapacityAdd = 0f;
+            _cachedCardEnergyRegenAdd = 0f;
+            _cachedCardGemCapacityAdd = 0f;
+            _cachedCardPeopleCapacityAdd = 0f;
+            _cachedCardDamageMultiplier = 1f;
+            _cachedCardBulletSpeedMultiplier = 1f;
+
+            if (equippedCards == null) return;
+            foreach (var card in equippedCards)
+            {
+                if (card == null) continue;
+                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
+                _cachedCardMovementSpeedAdd += card.movementSpeedAdd * scale;
+                _cachedCardRotationSpeedAdd += card.rotationSpeedAdd * scale;
+                _cachedCardMaxHealthAdd += card.maxHealthAdd * scale;
+                _cachedCardHealthRegenAdd += card.healthRegenAdd * scale;
+                _cachedCardEnergyCapacityAdd += card.energyCapacityAdd * scale;
+                _cachedCardEnergyRegenAdd += card.energyRegenAdd * scale;
+                _cachedCardGemCapacityAdd += card.gemCapacityAdd * scale;
+                _cachedCardPeopleCapacityAdd += card.peopleCapacityAdd * scale;
+                if (card.damageMultiplier > 0f)
+                {
+                    float bonus = (card.damageMultiplier - 1f) * scale + 1f;
+                    _cachedCardDamageMultiplier *= bonus;
+                }
+                if (card.bulletSpeedMultiplier > 0f)
+                {
+                    float bonus = (card.bulletSpeedMultiplier - 1f) * scale + 1f;
+                    _cachedCardBulletSpeedMultiplier *= bonus;
+                }
             }
         }
 
@@ -1173,15 +1231,18 @@ namespace TitanOrbit.Entities
             if (EventSystem.current == null) return false;
             Vector2 pointerPosition = Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
             var eventData = new PointerEventData(EventSystem.current) { position = pointerPosition };
-            var results = new List<RaycastResult>();
-            EventSystem.current.RaycastAll(eventData, results);
-            foreach (var r in results)
+            if (s_raycastResults == null) s_raycastResults = new List<RaycastResult>();
+            s_raycastResults.Clear();
+            EventSystem.current.RaycastAll(eventData, s_raycastResults);
+            foreach (var r in s_raycastResults)
             {
                 if (r.gameObject != null && r.module is GraphicRaycaster)
                     return true;
             }
             return false;
         }
+
+        private static List<RaycastResult> s_raycastResults;
 
         private void HandleMovement()
         {
@@ -1271,13 +1332,14 @@ namespace TitanOrbit.Entities
 
             desiredOrbitVelocity += radialCorrection;
 
-            // Blend from current velocity toward desired orbit velocity. Heavier ship = more momentum = slower to align.
+            // Blend from current velocity toward desired orbit velocity. Use sqrt(mass) so heavy ships still snap into orbit reasonably.
             Vector3 currentVel = rb.linearVelocity;
             currentVel.y = 0f;
 
             float mass = Mathf.Max(0.5f, rb.mass);
             float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
-            float alignRate = (orbitCaptureResponsiveness * gravityFactor) / mass;
+            float massFactor = Mathf.Sqrt(mass); // Softer than linear: heavy ships align faster than before
+            float alignRate = (orbitCaptureResponsiveness * gravityFactor) / massFactor;
             float t = Mathf.Clamp01(alignRate * Time.fixedDeltaTime);
 
             Vector3 blendedVelocity = Vector3.Lerp(currentVel, desiredOrbitVelocity, t);
@@ -1676,7 +1738,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server: continuous gem deposit at 5 × shipLevel gems per second. Each gem value and size = shipLevel.</summary>
+        /// <summary>Server: 1 gem per second. Each gem value = shipLevel × 5; size shows value.</summary>
         private void TickOrbitGemDeposit()
         {
             if (currentOrbitPlanet == null)
@@ -1694,8 +1756,8 @@ namespace TitanOrbit.Entities
             if (!canDeposit) return;
             if (currentGems.Value <= 0f) return;
 
-            float gemsPerSec = 5f * shipLevel;
-            float rate = gemsPerSec * shipLevel * Time.fixedDeltaTime; // value per tick (5×shipLevel gems/sec, each worth shipLevel)
+            float gemValue = shipLevel * 5f; // e.g. level 3 = 15 value per gem
+            float rate = gemValue * Time.fixedDeltaTime; // 1 gem per second
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
@@ -1703,8 +1765,7 @@ namespace TitanOrbit.Entities
 
             depositAccumulator += amount;
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
-            float gemValue = shipLevel;
-            float gemInterval = gemsPerSec > 0f ? 1f / gemsPerSec : 1f; // 5×shipLevel gems per second
+            const float gemInterval = 1f; // always 1 gem per second
             bool shouldSpawn = depositAccumulator >= gemValue && currentGems.Value >= gemValue && (now - lastDepositSpawnTime) >= gemInterval;
             if (shouldSpawn && GemSpawner.Instance != null)
             {
@@ -1717,6 +1778,19 @@ namespace TitanOrbit.Entities
                 var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                 if (planetNo != null)
                     GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, gemValue, shipLevel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
+            }
+
+            // Deposit remainder: when gems are below one full "gem value", spawn one final gem so the ship empties completely.
+            if (!shouldSpawn && currentGems.Value > 0f && currentGems.Value < gemValue && GemSpawner.Instance != null)
+            {
+                float remainder = currentGems.Value;
+                RemoveGemsServerRpc(remainder);
+                depositAccumulator = 0f;
+                Vector3 shipPos = rb != null ? rb.position : transform.position;
+                Vector3 planetPos = currentOrbitPlanet.transform.position;
+                var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
+                if (planetNo != null)
+                    GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, remainder, shipLevel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
             }
         }
 
@@ -2508,6 +2582,11 @@ namespace TitanOrbit.Entities
             lastEngineVfxMoving = false;
             lastThrusterVfxTurning = false;
 
+            // Destroy previous runtime-created WeaponConfig to avoid ScriptableObject leak when transforming ship
+            if (bulletConfig != null)
+            {
+                Object.Destroy(bulletConfig);
+            }
             bulletConfig = null;
 
             // Bullets (Weapon only): one cannon per component with "Weapon" in the name; fire from each weapon position.
@@ -2763,6 +2842,7 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (equippedCards != null) equippedCards.Clear();
             if (equippedCardIds != null) equippedCardIds.Clear();
+            _cardStatsCacheFrame = -1;
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
         }
@@ -2800,140 +2880,64 @@ namespace TitanOrbit.Entities
 
         private float GetCardMovementSpeedAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.movementSpeedAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardMovementSpeedAdd;
         }
 
         private float GetCardRotationSpeedAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.rotationSpeedAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardRotationSpeedAdd;
         }
 
         private float GetCardMaxHealthAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.maxHealthAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardMaxHealthAdd;
         }
 
         private float GetCardHealthRegenAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.healthRegenAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardHealthRegenAdd;
         }
 
         private float GetCardEnergyCapacityAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.energyCapacityAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardEnergyCapacityAdd;
         }
 
         private float GetCardEnergyRegenAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.energyRegenAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardEnergyRegenAdd;
         }
 
         private float GetCardGemCapacityAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.gemCapacityAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardGemCapacityAdd;
         }
 
         private float GetCardPeopleCapacityAdd()
         {
-            if (equippedCards == null) return 0f;
-            float sum = 0f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                sum += card.peopleCapacityAdd * scale;
-            }
-            return sum;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardPeopleCapacityAdd;
         }
 
         private float GetCardDamageMultiplier()
         {
             if (equippedCards == null || equippedCards.Count == 0) return 1f;
-            float mul = 1f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                if (card.damageMultiplier > 0f)
-                {
-                    float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                    float bonus = (card.damageMultiplier - 1f) * scale + 1f;
-                    mul *= bonus;
-                }
-            }
-            return mul;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardDamageMultiplier;
         }
 
         private float GetCardBulletSpeedMultiplier()
         {
             if (equippedCards == null || equippedCards.Count == 0) return 1f;
-            float mul = 1f;
-            foreach (var card in equippedCards)
-            {
-                if (card == null) continue;
-                if (card.bulletSpeedMultiplier > 0f)
-                {
-                    float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                    float bonus = (card.bulletSpeedMultiplier - 1f) * scale + 1f;
-                    mul *= bonus;
-                }
-            }
-            return mul;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardBulletSpeedMultiplier;
         }
 
         #endregion
@@ -2954,6 +2958,7 @@ namespace TitanOrbit.Entities
             {
                 equippedCards.Add(card);
                 equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(card.cardId) });
+                _cardStatsCacheFrame = -1;
             }
         }
 
@@ -2966,6 +2971,7 @@ namespace TitanOrbit.Entities
             if (equippedCards == null) return;
             if (slotIndex < 0 || slotIndex >= equippedCards.Count) return;
             equippedCards.RemoveAt(slotIndex);
+            _cardStatsCacheFrame = -1;
             if (equippedCardIds != null && slotIndex < equippedCardIds.Count)
                 equippedCardIds.RemoveAt(slotIndex);
         }

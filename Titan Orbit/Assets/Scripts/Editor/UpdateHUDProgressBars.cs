@@ -87,6 +87,43 @@ namespace TitanOrbit.Editor
             Debug.Log("HUD progress bars update complete!");
         }
 
+        /// <summary>Aligns gem and people progress bars with health/energy by setting all bar right edges to -40.</summary>
+        [MenuItem("Titan Orbit/Align Ship Stat Progress Bars")]
+        public static void AlignShipStatBars()
+        {
+            GameObject shipPanel = GameObject.Find("ShipStatsPanel");
+            if (shipPanel == null)
+            {
+                Debug.LogError("ShipStatsPanel not found. Open a scene that has the HUD.");
+                return;
+            }
+            const float barRight = 40f;
+            int fixedCount = 0;
+            for (int r = 0; r <= 3; r++)
+            {
+                Transform row = shipPanel.transform.Find("Row" + r);
+                if (row == null) continue;
+                Transform bar = row.Find("Bar");
+                if (bar == null) continue;
+                RectTransform barRect = bar.GetComponent<RectTransform>();
+                if (barRect == null) continue;
+                if (barRect.offsetMax.x != -barRight)
+                {
+                    barRect.offsetMax = new Vector2(-barRight, barRect.offsetMax.y);
+                    fixedCount++;
+                    EditorUtility.SetDirty(barRect);
+                }
+            }
+            if (fixedCount > 0)
+            {
+                Debug.Log($"Aligned {fixedCount} ship stat bar(s). Save the scene to keep the change.");
+            }
+            else
+            {
+                Debug.Log("Ship stat bars are already aligned (or structure differs).");
+            }
+        }
+
         [MenuItem("Titan Orbit/Add Proximity Radar to HUD")]
         public static void AddProximityRadar()
         {

@@ -7,6 +7,9 @@ using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace TitanOrbit.UI
 {
@@ -93,6 +96,12 @@ namespace TitanOrbit.UI
         private Button[] itemButtons;
         private TextMeshProUGUI[] itemLabels;
 
+        private float _cardsContentHeight;
+        private float _shipsContentHeight;
+
+        private Vector2 _storeScrollLastMousePos;
+        private bool _storeScrollDragging;
+
         public static OrbitStationUI GetOrCreate()
         {
             var existing = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
@@ -151,6 +160,66 @@ namespace TitanOrbit.UI
                 contributedGemsRequestAccum = 0f;
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
             }
+            // Fallback: apply mouse scroll and drag to store ScrollRect when pointer is over the viewport (works even if event system doesn't deliver to children)
+            ApplyStoreScrollFallback();
+        }
+
+        private void ApplyStoreScrollFallback()
+        {
+            if (storeScrollRect == null || storeScrollRect.viewport == null || storeScrollRect.content == null || !storeScrollRect.vertical) return;
+
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null) return;
+
+            Vector2 mousePos;
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current == null) return;
+            mousePos = Mouse.current.position.ReadValue();
+            bool pointerDown = Mouse.current.leftButton.isPressed;
+            float scrollY = Mouse.current.scroll.ReadValue().y;
+#else
+            mousePos = Input.mousePosition;
+            bool pointerDown = Input.GetMouseButton(0);
+            float scrollY = Input.mouseScrollDelta.y;
+#endif
+
+            RectTransform viewport = storeScrollRect.viewport;
+            bool overViewport = RectTransformUtility.RectangleContainsScreenPoint(viewport, mousePos, canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera);
+
+            float viewportHeight = viewport.rect.height;
+            float contentHeight = storeScrollRect.content.rect.height;
+            float scrollable = contentHeight - viewportHeight;
+            if (scrollable <= 0f) return;
+
+            const float scrollWheelScale = 0.02f;
+            const float dragScale = 1f;
+
+            if (Mathf.Abs(scrollY) > 0.001f && overViewport)
+            {
+                float step = scrollY * scrollWheelScale;
+                float next = storeScrollRect.verticalNormalizedPosition - step;
+                storeScrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
+            }
+
+            if (pointerDown)
+            {
+                if (overViewport)
+                {
+                    if (_storeScrollDragging)
+                    {
+                        float deltaY = _storeScrollLastMousePos.y - mousePos.y; // positive when pointer moved up
+                        float step = (deltaY / scrollable) * dragScale; // drag up -> see lower content -> decrease normalized
+                        float next = storeScrollRect.verticalNormalizedPosition - step;
+                        storeScrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
+                    }
+                    _storeScrollLastMousePos = mousePos;
+                    _storeScrollDragging = true;
+                }
+                else
+                    _storeScrollDragging = false;
+            }
+            else
+                _storeScrollDragging = false;
         }
 
         private float _lastHomePlanetLookupTime = -999f;
@@ -369,6 +438,7 @@ namespace TitanOrbit.UI
             storeScrollRect = scrollViewGo.AddComponent<ScrollRect>();
             storeScrollRect.horizontal = false;
             storeScrollRect.vertical = true;
+            storeScrollRect.movementType = ScrollRect.MovementType.Clamped;
             storeScrollRect.scrollSensitivity = 20f;
             var viewport = new GameObject("Viewport");
             viewport.transform.SetParent(scrollViewGo.transform, false);
@@ -381,6 +451,7 @@ namespace TitanOrbit.UI
             var viewportImg = viewport.AddComponent<Image>();
             viewportImg.color = new Color(1f, 1f, 1f, 0.01f);
             viewportImg.raycastTarget = true; // Required for ScrollRect to receive drag events
+            viewport.AddComponent<ScrollRectForwarder>();
             storeScrollRect.viewport = viewportRect;
             storeContentRoot = new GameObject("StoreContent").AddComponent<RectTransform>();
             storeContentRoot.SetParent(viewport.transform, false);
@@ -389,9 +460,15 @@ namespace TitanOrbit.UI
             storeContentRoot.pivot = new Vector2(0f, 1f);
             storeContentRoot.anchoredPosition = Vector2.zero;
             storeContentRoot.sizeDelta = new Vector2(Mathf.Max(PanelWidth - 24f, 360f), 800f); // updated below after content built
+            var contentBg = storeContentRoot.gameObject.AddComponent<Image>();
+            contentBg.color = new Color(0f, 0f, 0f, 0.01f);
+            contentBg.raycastTarget = true;
+            storeContentRoot.gameObject.AddComponent<ScrollRectForwarder>();
             var contentSizeFitter = storeContentRoot.gameObject.AddComponent<ContentSizeFitter>();
             contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            // Disable so we control content height explicitly (ContentSizeFitter can prevent scrolling)
+            contentSizeFitter.enabled = false;
             var contentVlg = storeContentRoot.gameObject.AddComponent<VerticalLayoutGroup>();
             contentVlg.childAlignment = TextAnchor.UpperCenter;
             contentVlg.childControlWidth = true;
@@ -443,10 +520,13 @@ namespace TitanOrbit.UI
             for (int i = 0; i < maxStoreCards; i++)
             {
                 CreateStoreCard(cardGridGo.transform, cardCellW, cardCellH, i, out cardRoots[i], out cardBgImages[i], out cardTitleTexts[i], out cardLevelTexts[i], out cardDescTexts[i], out cardButtons[i]);
+                if (cardRoots[i] != null)
+                    cardRoots[i].AddComponent<ScrollRectForwarder>();
                 int idx = i;
                 cardButtons[i].onClick.AddListener(() => OnBuyCard(idx));
             }
             float cardsContentHeight = -y + 20f;
+            _cardsContentHeight = cardsContentHeight;
             var cardsLayoutEl = cardsTabContent.AddComponent<LayoutElement>();
             cardsLayoutEl.preferredHeight = cardsContentHeight;
             cardsLayoutEl.flexibleWidth = 1f;
@@ -484,6 +564,7 @@ namespace TitanOrbit.UI
             shipPreviewsRoot.localScale = Vector3.one;
 
             float shipsContentHeight = Mathf.Max(650f, MaxShipCards * 40f + 60f);
+            _shipsContentHeight = shipsContentHeight;
             var shipsLayoutEl = shipsTabContent.AddComponent<LayoutElement>();
             shipsLayoutEl.preferredHeight = shipsContentHeight;
             shipsLayoutEl.flexibleWidth = 1f;
@@ -580,6 +661,18 @@ namespace TitanOrbit.UI
             {
                 storeScrollRect.verticalNormalizedPosition = 1f;
                 LayoutRebuilder.ForceRebuildLayoutImmediate(storeScrollRect.content);
+                Canvas.ForceUpdateCanvases();
+                // Ensure content is taller than viewport so scrolling is possible
+                RectTransform content = storeScrollRect.content;
+                RectTransform viewport = storeScrollRect.viewport;
+                if (viewport != null && content != null)
+                {
+                    float viewportHeight = viewport.rect.height;
+                    float contentHeight = activeStoreTab == 0 ? _cardsContentHeight : _shipsContentHeight;
+                    float minContentHeight = viewportHeight + 50f;
+                    if (content.sizeDelta.y < minContentHeight)
+                        content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
+                }
             }
             if (activeStoreTab == 1)
                 EnsureShipsTabPopulated();
@@ -626,6 +719,7 @@ namespace TitanOrbit.UI
             tmp.raycastTarget = false;
             if (fontAsset != null) tmp.font = fontAsset;
             go.SetActive(false);
+            go.AddComponent<ScrollRectForwarder>();
             return btn;
         }
 
@@ -659,6 +753,7 @@ namespace TitanOrbit.UI
             tmp.raycastTarget = false;
             if (fontAsset != null) tmp.font = fontAsset;
             go.SetActive(false);
+            go.AddComponent<ScrollRectForwarder>();
             return go;
         }
 
@@ -778,6 +873,7 @@ namespace TitanOrbit.UI
             tmp.color = new Color(0.85f, 0.9f, 1f, 0.95f);
             tmp.overflowMode = TextOverflowModes.Overflow;
             tmp.enableWordWrapping = false;
+            tmp.raycastTarget = false;
             if (fontAsset != null) tmp.font = fontAsset;
         }
 
@@ -1372,6 +1468,7 @@ namespace TitanOrbit.UI
 
             chassisButtons[index] = cardBtn;
             chassisLabels[index] = labelTmp;
+            cardGo.AddComponent<ScrollRectForwarder>();
             int idx = index;
             cardBtn.onClick.AddListener(() => OnBuyChassis(idx));
             buyBtn.onClick.AddListener(() => OnBuyChassis(idx));

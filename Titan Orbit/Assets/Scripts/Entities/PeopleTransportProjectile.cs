@@ -19,7 +19,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> team = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> spawningShipId = new NetworkVariable<ulong>(0);
         private Rigidbody rb;
-        private const float magnetSpeed = 14f;
+        private const float magnetSpeed = 8f;
 
         private void Awake()
         {

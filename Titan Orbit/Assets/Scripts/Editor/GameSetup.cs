@@ -1368,13 +1368,12 @@ namespace TitanOrbit.Editor
             return (iconImg, bar, valueObj.GetComponent<TextMeshProUGUI>());
         }
 
-        /// <summary>Adds orbit action button(s) at the end of a ship stat row. For Gems: one Deposit button. For People: Load (up) and Unload (down) buttons.</summary>
+        /// <summary>Adds orbit action button(s) at the end of a ship stat row. For Gems: one Deposit button. For People: Load (up) and Unload (down) buttons. Does not shrink the bar so all four rows stay aligned.</summary>
         private static void AddOrbitButtonsToRow(Transform rowParent, RectTransform barRect, float rowHeight, float btnSize, float gap, Sprite buttonSprite, string rowName, bool singleDepositButton, out Button btnFirst, out Button btnSecond)
         {
+            // Keep bar rect unchanged so gem/people bars line up with health/energy (same offsetMax -40 as CreateShipStatRow)
             if (singleDepositButton)
             {
-                float rightSpace = 34f + gap + btnSize;
-                barRect.offsetMax = new Vector2(-rightSpace, -2f);
                 btnFirst = CreateOrbitIconButton(rowParent, rowName + "Deposit", "↓", rowHeight, btnSize, gap, buttonSprite);
                 btnSecond = null;
                 RectTransform rect = btnFirst.GetComponent<RectTransform>();
@@ -1382,8 +1381,6 @@ namespace TitanOrbit.Editor
                 btnFirst.gameObject.SetActive(false);
                 return;
             }
-            float rightSpaceTwo = 34f + gap + btnSize + gap + btnSize;
-            barRect.offsetMax = new Vector2(-rightSpaceTwo, -2f);
             btnFirst = CreateOrbitIconButton(rowParent, rowName + "Up", "↑", rowHeight, btnSize, gap, buttonSprite);
             btnSecond = CreateOrbitIconButton(rowParent, rowName + "Down", "↓", rowHeight, btnSize, gap, buttonSprite);
             RectTransform upRect = btnFirst.GetComponent<RectTransform>();

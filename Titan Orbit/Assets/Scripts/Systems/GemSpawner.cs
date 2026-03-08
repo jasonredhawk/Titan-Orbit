@@ -212,7 +212,7 @@ namespace TitanOrbit.Systems
             }
         }
 
-        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value and size = ship level. shipLevel gems per second.</summary>
+        /// <summary>Spawns a gem expelled from ship toward planet for deposit. 1 gem/sec. Value = shipLevel×5; size shows value.</summary>
         public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, int shipLevel, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             GameObject prefab = GetGemPrefab();
@@ -225,8 +225,8 @@ namespace TitanOrbit.Systems
 
             Vector3 pos = shipPosition;
             float depositSpeed = 8f;
-            // Size scales with gem value (ship level): level 1 = 0.6, level 7 = 1.4
-            float sizeMult = Mathf.Lerp(0.6f, 1.4f, Mathf.Clamp01((amount - 1f) / 6f));
+            // Size scales with gem value (e.g. level 3 = 15 value = 1.5 size)
+            float sizeMult = Mathf.Clamp(amount / 10f, 0.5f, 3f);
 
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = gemObj.GetComponent<Rigidbody>();
