@@ -98,7 +98,8 @@ namespace TitanOrbit.UI
         private enum BlipType
         {
             Circle,      // Planets, Gems
-            Capsule,     // Ships
+            Capsule,     // Non-player ships
+            Triangle,    // Player ship (directional)
             Irregular,   // Asteroids
             Bullseye     // Markers (attack/defend)
         }
@@ -1276,7 +1277,23 @@ namespace TitanOrbit.UI
             }
 
             // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 16f, BlipType.Capsule), true);
+            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 18f, BlipType.Triangle), true);
+            // Rotate player triangle to point along ship forward direction and tint with team color
+            if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
+            {
+                Vector3 fwd = playerTransform.forward;
+                Vector2 dir = new Vector2(fwd.x, fwd.z);
+                if (dir.sqrMagnitude < 0.0001f) dir = Vector2.up;
+                else dir.Normalize();
+                float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                playerRt.localEulerAngles = new Vector3(0f, 0f, angle - 90f);
+
+                // Apply team color to player blip
+                TeamManager.Team playerTeam = playerShip.ShipTeam;
+                Color playerColor = playerTeam == TeamManager.Team.None ? Color.white : GetTeamColor(playerTeam);
+                float currentSize = playerRt.sizeDelta.x;
+                UpdateBlip(playerTransform, playerColor, currentSize);
+            }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
             float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
@@ -1445,11 +1462,9 @@ namespace TitanOrbit.UI
                     continue;
                 }
                 asteroidIdx++;
-                // Use physical scale (transform) for minimap size, not normalized AsteroidSize (1-50)
-                // Raw asteroid scale is ~0.3 to 1.5 world units
+                // Match blip size to world size: same mapping as planets/home (world units → pixels)
                 float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
-                // Keep asteroid blips small: physical size 0.3–1.5 → blip ~2–5 px (no sizeScaleFactor so they don’t match planet scale)
-                float asteroidBlipSize = Mathf.Clamp(physicalSize * worldToMinimapScale * asteroidBlipScaleFactor, 2f, 6f);
+                float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
                 if (blips.ContainsKey(a.transform))
                 {
                     UpdateBlip(a.transform, asteroidColor, asteroidBlipSize);
@@ -1663,6 +1678,31 @@ namespace TitanOrbit.UI
                     break;
                 }
                     
+                case BlipType.Triangle:
+                {
+                    // Slightly tall, directional triangle so the tip indicates forward
+                    float height = textureSize * 0.8f;
+                    float halfBase = textureSize * 0.24f;
+                    Vector2 p1 = new Vector2(centerX, centerY + height * 0.5f);          // Sharp tip
+                    Vector2 p2 = new Vector2(centerX - halfBase, centerY - height * 0.5f); // Left base
+                    Vector2 p3 = new Vector2(centerX + halfBase, centerY - height * 0.5f); // Right base
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            Vector2 p = new Vector2(x, y);
+                            float d1 = Sign(p, p1, p2);
+                            float d2 = Sign(p, p2, p3);
+                            float d3 = Sign(p, p3, p1);
+                            bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+                            bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+                            bool inside = !(hasNeg && hasPos);
+                            pixels[y * textureSize + x] = inside ? Color.white : Color.clear;
+                        }
+                    }
+                    break;
+                }
+                    
                 case BlipType.Irregular:
                 {
                     // Diamond/rhombus shape for asteroids - clear and compact on minimap
@@ -1734,6 +1774,7 @@ namespace TitanOrbit.UI
             {
                 case BlipType.Circle: spriteName = "Circle"; break;
                 case BlipType.Capsule: spriteName = "Capsule"; break;
+                case BlipType.Triangle: spriteName = "Triangle"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
             }
