@@ -138,11 +138,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private float minerRammingSelfDamageMultiplier = 0.35f;
         [Tooltip("Damage per second to asteroid (and self) while sustaining contact (ramming).")]
         [SerializeField] private float ramDamagePerSecond = 18f;
-        [Tooltip("Interval between sustained ram damage ticks (seconds).")]
+        [Tooltip("Interval between sustained ram damage ticks (seconds). Unused when continuous ram damage is applied every frame.")]
         [SerializeField] private float ramTickInterval = 0.25f;
-        private float lastRamDamageTime = -999f;
         [Tooltip("When overlapping an asteroid (e.g. after respawn), ship is pushed outward at this speed for a smooth escape.")]
         [SerializeField] private float overlapEscapeSpeed = 4f;
+        [Tooltip("Small continuous nudge away from asteroid on contact. Kept low so it feels like a bump, not a launch. Scaled by asteroid size.")]
+        [SerializeField] private float asteroidCollisionPushbackSpeed = 0.2f;
 
         private static WeaponConfig defaultWeaponConfig;
 
@@ -384,10 +385,19 @@ namespace TitanOrbit.Entities
         private bool triggeredGalacticZoomThisOrbit;
         private bool depositedAnyGemsThisOrbit;
 
-        // Banking (visual lean into turn) - only used when visualRoot is set. No pitch.
+        // Banking (visual lean into turn) - only used when visualRoot is set.
         private float currentBankAngle;
         private Vector3 previousForward;
         private bool bankingInitialized;
+        
+        // Pitch from asteroid impacts (visual only, up/down tilt on visualRoot)
+        [Header("Collision Pitch")]
+        [Tooltip("Maximum pitch angle (degrees) the ship can visually tilt from asteroid impacts.")]
+        [SerializeField] private float maxCollisionPitchAngle = 20f;
+        [Tooltip("Pitch smoothing speed. Higher = snappier response to new pitch (approximate lerp speed).")]
+        [SerializeField] private float collisionPitchSpeed = 1f;
+        private float currentCollisionPitchAngle;
+        private float targetCollisionPitchAngle;
 
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth
@@ -1068,7 +1078,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Updates banking (roll) from turn rate. No pitch. Sets visualRoot.localRotation.
+        /// Updates banking (roll) from turn rate and blends in collision pitch.
         /// Must run on a child of the root—never on the root itself (physics/NetworkTransform would overwrite).
         /// </summary>
         private void ApplyVisualBanking(float dt)
@@ -1101,7 +1111,15 @@ namespace TitanOrbit.Entities
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
-            visualRoot.localRotation = Quaternion.Euler(0f, 0f, -currentBankAngle);
+            // Smooth collision pitch toward target
+            float pitchT = 1f - Mathf.Exp(-Mathf.Max(collisionPitchSpeed, 0.01f) * dt);
+            currentCollisionPitchAngle = Mathf.Lerp(currentCollisionPitchAngle, targetCollisionPitchAngle, pitchT);
+
+            // Clamp pitch to configured max
+            currentCollisionPitchAngle = Mathf.Clamp(currentCollisionPitchAngle, -maxCollisionPitchAngle, maxCollisionPitchAngle);
+
+            // Combine pitch (X) and bank (Z)
+            visualRoot.localRotation = Quaternion.Euler(currentCollisionPitchAngle, 0f, -currentBankAngle);
 
             previousForward = fwd;
         }
@@ -2107,21 +2125,32 @@ namespace TitanOrbit.Entities
 
             // Keep only the "pushing in" component so we don't slide sideways
             Vector3 ramVelocity = intoAsteroid * pushAmount;
-            rb.linearVelocity = new Vector3(ramVelocity.x, 0f, ramVelocity.z);
+            // Small continuous nudge away from asteroid (little bump), scaled by asteroid size.
+            float sizeScale = Mathf.Clamp(asteroid.AsteroidSize / 35f, 0.5f, 1.5f); // gentle size scaling
+            Vector3 pushDir = normal; // away from asteroid
+            Vector3 pushVel = pushDir * (asteroidCollisionPushbackSpeed * sizeScale);
+            Vector3 newVel = ramVelocity + pushVel;
+            rb.linearVelocity = new Vector3(newVel.x, 0f, newVel.z);
             currentVelocity = rb.linearVelocity;
 
-            // Sustained ramming damage (tick at interval). Scaled by mass (pressure) and hull type.
-            if (Time.time - lastRamDamageTime >= ramTickInterval)
-            {
-                lastRamDamageTime = Time.time;
-                float mass = Mathf.Max(0.5f, rb.mass);
-                float baseTick = ramDamagePerSecond * ramTickInterval;
-                float massScale = Mathf.Sqrt(mass); // so damage scales with mass but not too harshly
-                float tickToAsteroid = baseTick * massScale * HullRammingToAsteroidMultiplier;
-                float tickToSelf = baseTick * massScale * HullRammingSelfDamageMultiplier;
-                asteroid.TakeDamageServerRpc(tickToAsteroid);
-                TakeDamageServerRpc(tickToSelf, TeamManager.Team.None);
-            }
+            // Update visual collision pitch: tilt slightly away from asteroid based on hit strength and size.
+            float hitStrength = Mathf.Clamp01(pushAmount / Mathf.Max(0.1f, EffectiveMaxSpeed));
+            float pitchSizeScale = Mathf.Clamp(asteroid.AsteroidSize / 35f, 0.3f, 1.5f);
+            float desiredPitch = maxCollisionPitchAngle * hitStrength * pitchSizeScale;
+            // Normal points from asteroid to ship; use it to determine left/right sign for pitch (nose up/down)
+            Vector3 shipRight = transform.right;
+            shipRight.y = 0f;
+            float sideSign = Mathf.Sign(Vector3.Dot(shipRight, pushDir));
+            targetCollisionPitchAngle = desiredPitch * sideSign;
+
+            // Continuous ramming damage every frame to both asteroid and ship (scaled by fixedDeltaTime so DPS = ramDamagePerSecond).
+            float mass = Mathf.Max(0.5f, rb.mass);
+            float massScale = Mathf.Sqrt(mass);
+            float dt = Time.fixedDeltaTime;
+            float toAsteroid = ramDamagePerSecond * dt * massScale * HullRammingToAsteroidMultiplier;
+            float toSelf = ramDamagePerSecond * dt * massScale * HullRammingSelfDamageMultiplier;
+            if (toAsteroid > 0f) asteroid.TakeDamageServerRpc(toAsteroid);
+            if (toSelf > 0f) TakeDamageServerRpc(toSelf, TeamManager.Team.None);
         }
 
         [ServerRpc(RequireOwnership = false)]
