@@ -49,6 +49,12 @@ namespace TitanOrbit.Entities
 
         private const float FIXED_Y_POSITION = 0f;
 
+        /// <summary>Radius at gem value 1 (matches MapGenerator MIN_ASTEROID_RADIUS).</summary>
+        private const float MIN_ASTEROID_RADIUS = 0.35f;
+        /// <summary>Radius at gem value 70 = 10x smallest (matches MapGenerator MAX_ASTEROID_RADIUS).</summary>
+        private const float MAX_ASTEROID_RADIUS = 0.35f * 10f;
+        private const float MAX_GEM_VALUE = 70f;
+
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
@@ -105,22 +111,16 @@ namespace TitanOrbit.Entities
                 spawnPosition = transform.position;
                 spawnScale = transform.localScale;
                 float rawSize = Mathf.Max(0.01f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
-                const float asteroidScaleBase = 0.35f;
-                float normalizedSize = Mathf.Pow(rawSize / asteroidScaleBase, 3f);
-                normalizedSize = Mathf.Clamp(normalizedSize, 1f, 50f);
+                // Gem value 1-70: map radius [MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS] to [1, 70]
+                float radiusSpan = MAX_ASTEROID_RADIUS - MIN_ASTEROID_RADIUS;
+                float normalizedSize = 1f + (MAX_GEM_VALUE - 1f) * (Mathf.Clamp(rawSize, MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS) - MIN_ASTEROID_RADIUS) / radiusSpan;
                 asteroidSize = normalizedSize;
-                
-                // Total gem value = asteroid size (both 1-50, volume-proportional)
+
+                // Total gem value = asteroid size (1-70)
                 maxGems.Value = normalizedSize;
                 remainingGems.Value = maxGems.Value;
-                
-                // HP scales more aggressively for larger asteroids based on raw physical size
-                // Small asteroids (rawSize 0.3): baseHealth * 0.3 = ~15 HP
-                // Large asteroids (rawSize 1.5): baseHealth * rawSize^2 * healthScalingMultiplier = much more HP
-                // This makes large asteroids significantly tankier
-                // Formula: baseHealth * rawSize * (1 + rawSize * (healthScalingMultiplier - 1))
-                // For rawSize 0.3: 0.3 * (1 + 0.3 * 2) = 0.3 * 1.6 = 0.48
-                // For rawSize 1.5: 1.5 * (1 + 1.5 * 2) = 1.5 * 4 = 6.0
+
+                // HP scales with physical size (proportionate to radius / volume)
                 float healthMultiplier = rawSize * (1f + rawSize * (healthScalingMultiplier - 1f));
                 health.Value = baseHealth * healthMultiplier;
                 isDestroyed.Value = false;

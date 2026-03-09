@@ -96,14 +96,14 @@ namespace TitanOrbit.Systems
             GameObject prefab = GetGemPrefab();
             if (prefab == null) return;
 
-            // asteroidSize and totalValue both 1-50 (volume-proportional); asteroidPhysicalSize is world scale for gem cap
+            // asteroidSize and totalValue both 1-70; asteroidPhysicalSize is world scale for gem cap
             if (asteroidSize <= 1.5f && totalValue <= 2f)
             {
                 SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f, asteroidPhysicalSize);
                 return;
             }
 
-            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (50f - 1f));
+            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (70f - 1f));
             
             int gemCount;
             float minGemValue, maxGemValue;
@@ -112,27 +112,27 @@ namespace TitanOrbit.Systems
             {
                 gemCount = Random.Range(2, 5);
                 minGemValue = 1f;
-                maxGemValue = 15f;
+                maxGemValue = 22f;
             }
             else if (normalizedSize < 0.7f)
             {
                 gemCount = Random.Range(2, 5);
                 minGemValue = 1f;
-                maxGemValue = 35f;
+                maxGemValue = 50f;
             }
             else
             {
                 if (normalizedSize >= 0.9f)
                 {
                     gemCount = Random.Range(1, 4);
-                    minGemValue = 20f;
-                    maxGemValue = 50f;
+                    minGemValue = 28f;
+                    maxGemValue = 70f;
                 }
                 else
                 {
                     gemCount = Random.Range(2, 4);
-                    minGemValue = 10f;
-                    maxGemValue = 45f;
+                    minGemValue = 14f;
+                    maxGemValue = 63f;
                 }
             }
             
@@ -145,24 +145,17 @@ namespace TitanOrbit.Systems
                 float gemValue;
                 if (isLast)
                 {
-                    // Last gem gets remaining value, clamped to max 50
-                    gemValue = Mathf.Clamp(remainingValue, minGemValue, Mathf.Min(maxGemValue, 50f));
+                    gemValue = Mathf.Clamp(remainingValue, minGemValue, Mathf.Min(maxGemValue, 70f));
                 }
                 else
                 {
-                    // Distribute value proportionally
                     float avgValuePerGem = remainingValue / (gemCount - i);
-                    gemValue = Mathf.Clamp(avgValuePerGem * Random.Range(0.7f, 1.3f), minGemValue, Mathf.Min(maxGemValue, 50f));
+                    gemValue = Mathf.Clamp(avgValuePerGem * Random.Range(0.7f, 1.3f), minGemValue, Mathf.Min(maxGemValue, 70f));
                 }
+
+                gemValue = Mathf.Clamp(gemValue, 1f, 70f);
                 
-                // Clamp gem value to 1-50 range (hard cap at 50)
-                gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                
-                // Calculate size multiplier based on value
-                // Value 1-10: size 0.3-0.6
-                // Value 11-25: size 0.6-1.0
-                // Value 26-40: size 1.0-1.4
-                // Value 41-50: size 1.4-2.0
+                // Value 1-70: size multipliers scaled up from 1-50
                 float sizeMultiplier;
                 if (gemValue <= 10f)
                 {
@@ -172,13 +165,13 @@ namespace TitanOrbit.Systems
                 {
                     sizeMultiplier = Mathf.Lerp(0.6f, 1.0f, (gemValue - 10f) / 15f);
                 }
-                else if (gemValue <= 40f)
+                else if (gemValue <= 45f)
                 {
-                    sizeMultiplier = Mathf.Lerp(1.0f, 1.4f, (gemValue - 25f) / 15f);
+                    sizeMultiplier = Mathf.Lerp(1.0f, 1.5f, (gemValue - 25f) / 20f);
                 }
                 else
                 {
-                    sizeMultiplier = Mathf.Lerp(1.4f, 2.0f, (gemValue - 40f) / 10f);
+                    sizeMultiplier = Mathf.Lerp(1.5f, 2.2f, (gemValue - 45f) / 25f);
                 }
                 
                 // Add some random variation to size
