@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
@@ -39,6 +40,9 @@ namespace TitanOrbit.Entities
         public bool IsDestroyed => isDestroyed.Value;
 
         public bool CanBeMined() => !isDestroyed.Value && remainingGems.Value > 0;
+
+        // Tracks how much damage each ship dealt to this asteroid (server only).
+        private readonly Dictionary<ulong, float> damageByShip = new Dictionary<ulong, float>();
 
         [ServerRpc(RequireOwnership = false)]
         public void MineGemsServerRpc(float amount, ulong minerNetworkId)
@@ -124,6 +128,7 @@ namespace TitanOrbit.Entities
                 float healthMultiplier = rawSize * (1f + rawSize * (healthScalingMultiplier - 1f));
                 health.Value = baseHealth * healthMultiplier;
                 isDestroyed.Value = false;
+                damageByShip.Clear();
                 
                 // Set up rotation - deterministic based on position (same for all clients)
                 // Use position hash to ensure same rotation for all clients
@@ -187,9 +192,17 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void TakeDamageServerRpc(float damage)
+        public void TakeDamageServerRpc(float damage, ulong attackerShipNetworkId = 0)
         {
             if (isDestroyed.Value) return;
+
+            if (damage > 0f && attackerShipNetworkId != 0)
+            {
+                if (damageByShip.TryGetValue(attackerShipNetworkId, out float existing))
+                    damageByShip[attackerShipNetworkId] = existing + damage;
+                else
+                    damageByShip[attackerShipNetworkId] = damage;
+            }
 
             health.Value = Mathf.Max(0, health.Value - damage);
             if (health.Value <= 0)
@@ -208,13 +221,29 @@ namespace TitanOrbit.Entities
             Vector3 scale = transform.localScale;
             float physicalSize = (scale.x + scale.y + scale.z) / 3f;
 
+            // Determine which ship dealt the most damage to this asteroid.
+            ulong topDamagerShipId = 0;
+            if (damageByShip.Count > 0)
+            {
+                float maxDamage = 0f;
+                foreach (var kvp in damageByShip)
+                {
+                    if (kvp.Value > maxDamage)
+                    {
+                        maxDamage = kvp.Value;
+                        topDamagerShipId = kvp.Key;
+                    }
+                }
+            }
+            damageByShip.Clear();
+
             // Spawn gems (100x value in debug mode for faster testing)
             if (GemSpawner.Instance != null)
             {
                 float gemValue = remainingGems.Value;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     gemValue *= 100f;
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize);
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize, topDamagerShipId);
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption (100x faster in debug)

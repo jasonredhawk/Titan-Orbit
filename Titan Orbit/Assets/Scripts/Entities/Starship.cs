@@ -136,14 +136,15 @@ namespace TitanOrbit.Entities
         [SerializeField] private float minerRammingToAsteroidMultiplier = 1.4f;
         [Tooltip("Mining ships take this fraction of ramming self-damage (stronger hull). Fighter = 1, Miner = 0.35.")]
         [SerializeField] private float minerRammingSelfDamageMultiplier = 0.35f;
-        [Tooltip("Damage per second to asteroid (and self) while sustaining contact (ramming).")]
-        [SerializeField] private float ramDamagePerSecond = 18f;
-        [Tooltip("Interval between sustained ram damage ticks (seconds). Unused when continuous ram damage is applied every frame.")]
+        [Tooltip("Approximate damage per second to asteroid (and self) while you are actively pushing into an asteroid. Tuned so sustained collisions overwhelm regen.")]
+        [SerializeField] private float ramDamagePerSecond = 30f;
+        [Tooltip("Interval between collision ramming ticks (seconds). Every tick applies a small pushback and mutual damage while in contact with an asteroid.")]
         [SerializeField] private float ramTickInterval = 0.25f;
+        private float lastRamDamageTime = -999f;
         [Tooltip("When overlapping an asteroid (e.g. after respawn), ship is pushed outward at this speed for a smooth escape.")]
         [SerializeField] private float overlapEscapeSpeed = 4f;
-        [Tooltip("Small continuous nudge away from asteroid on contact. Kept low so it feels like a bump, not a launch. Scaled by asteroid size.")]
-        [SerializeField] private float asteroidCollisionPushbackSpeed = 0.2f;
+        [Tooltip("Base pushback speed applied on each collision tick while in contact with an asteroid. Higher = stronger bounce. Scaled by asteroid size.")]
+        [SerializeField] private float asteroidCollisionPushbackSpeed = 1.0f;
 
         private static WeaponConfig defaultWeaponConfig;
 
@@ -1672,24 +1673,53 @@ namespace TitanOrbit.Entities
             if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
             if (isDead.Value) return;
 
-            if (currentHealth.Value > 0f)
+            // Gem expulsion tuning: how quickly gems are lost once health hits 0.
+            // Lower values = slower gem loss; higher values = faster loss.
+            const float GemExpulsionPerDamage = 0.3f;              // gems expelled per 1 damage
+            const float MaxLethalExpulsionFraction = 0.4f;         // at most 40% of current gems on the lethal hit
+            const float MaxPostDeathExpulsionFraction = 0.2f;      // at most 20% of current gems per hit after death
+
+            float healthBefore = currentHealth.Value;
+            bool wasAlive = healthBefore > 0f;
+
+            if (wasAlive)
             {
                 // Phase 1: Reduce health until it reaches zero
-                currentHealth.Value = Mathf.Max(0f, currentHealth.Value - damage);
+                float newHealth = Mathf.Max(0f, healthBefore - damage);
+                currentHealth.Value = newHealth;
+
+                // Any excess damage beyond what was needed to reach 0 is converted into gem expulsion (scaled and capped).
+                float excessDamage = Mathf.Max(0f, damage - healthBefore);
+                if (excessDamage > 0f && currentGems.Value > 0f)
+                {
+                    float desired = excessDamage * GemExpulsionPerDamage;
+                    float maxForThisHit = currentGems.Value * MaxLethalExpulsionFraction;
+                    float gemsToExpel = Mathf.Min(desired, maxForThisHit);
+                    if (gemsToExpel > 0f)
+                    {
+                        currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
+                        if (GemSpawner.Instance != null)
+                        {
+                            ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
+                            GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
+                        }
+                    }
+                }
             }
             else
             {
-                // Phase 2: Health is zero - bullets drain gems and expel them
-                float gemsToExpel = Mathf.Min(damage, currentGems.Value);
-                if (gemsToExpel > 0f && GemSpawner.Instance != null)
+                // Phase 2: Health is already zero - incoming damage drains gems and expels them, but at a throttled rate.
+                float desired = damage * GemExpulsionPerDamage;
+                float maxForThisHit = currentGems.Value * MaxPostDeathExpulsionFraction;
+                float gemsToExpel = Mathf.Min(desired, maxForThisHit);
+                if (gemsToExpel > 0f)
                 {
                     currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
-                    ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
-                    GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
-                }
-                else if (gemsToExpel > 0f)
-                {
-                    currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
+                    if (GemSpawner.Instance != null)
+                    {
+                        ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
+                        GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
+                    }
                 }
             }
 
@@ -2049,38 +2079,49 @@ namespace TitanOrbit.Entities
             ContactPoint contact = collision.GetContact(0);
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
 
-            if (asteroid != null && !asteroid.IsDestroyed && contact.separation < 0f)
-            {
-                // Overlapping (e.g. asteroid respawned on ship): gentle escape push
-                Vector3 normal = contact.normal;
-                normal.y = 0f;
-                if (normal.sqrMagnitude > 0.01f)
-                {
-                    normal.Normalize();
-                    Vector3 vel = rb.linearVelocity;
-                    vel.y = 0f;
-                    vel += normal * (overlapEscapeSpeed * Time.fixedDeltaTime);
-                    rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
-                    currentVelocity = rb.linearVelocity;
-                }
-                return;
-            }
-
             if (asteroid != null && !asteroid.IsDestroyed)
             {
+                // Spawn collision spark VFX at contact point
+                if (VisualEffectsManager.Instance != null)
+                {
+                    Vector3 hitPos = contact.point;
+                    if (hitPos == Vector3.zero)
+                        hitPos = transform.position;
+                    Vector3 normal = contact.normal;
+                    if (normal.sqrMagnitude < 0.0001f)
+                        normal = (transform.position - asteroid.transform.position).normalized;
+                    VisualEffectsManager.Instance.SpawnAsteroidCollisionEffectServerRpc(hitPos, normal);
+                }
+
+                if (contact.separation < 0f)
+                {
+                    // Overlapping (e.g. asteroid respawned on ship): gentle escape push
+                    Vector3 normal = contact.normal;
+                    normal.y = 0f;
+                    if (normal.sqrMagnitude > 0.01f)
+                    {
+                        normal.Normalize();
+                        Vector3 vel = rb.linearVelocity;
+                        vel.y = 0f;
+                        vel += normal * (overlapEscapeSpeed * Time.fixedDeltaTime);
+                        rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
+                        currentVelocity = rb.linearVelocity;
+                    }
+                    return;
+                }
+
                 var no = asteroid.GetComponent<NetworkObject>();
                 if (no != null && no.IsSpawned)
                 {
                     float impactSpeed = collision.relativeVelocity.magnitude;
                     impactSpeed = Mathf.Max(0f, impactSpeed - 0.5f);
-                    float mass = Mathf.Max(0.5f, rb.mass);
-                    float momentum = mass * impactSpeed;
-                    float damage = baseRammingDamage + rammingDamagePerSpeedUnit * impactSpeed + rammingMomentumDamageScale * momentum;
-                    damage = Mathf.Max(2f, damage);
+                    // One-shot impact damage on first contact, scaled by speed and clamped so it hurts but doesn't one-shot.
+                    float damageFromSpeed = baseRammingDamage + rammingDamagePerSpeedUnit * impactSpeed;
+                    float damage = Mathf.Clamp(damageFromSpeed, 1f, 12f);
 
                     float toAsteroid = damage * HullRammingToAsteroidMultiplier;
                     float toSelf = damage * HullRammingSelfDamageMultiplier;
-                    asteroid.TakeDamageServerRpc(toAsteroid);
+                    asteroid.TakeDamageServerRpc(toAsteroid, NetworkObjectId);
                     TakeDamageServerRpc(toSelf, TeamManager.Team.None);
                 }
             }
@@ -2125,12 +2166,7 @@ namespace TitanOrbit.Entities
 
             // Keep only the "pushing in" component so we don't slide sideways
             Vector3 ramVelocity = intoAsteroid * pushAmount;
-            // Small continuous nudge away from asteroid (little bump), scaled by asteroid size.
-            float sizeScale = Mathf.Clamp(asteroid.AsteroidSize / 35f, 0.5f, 1.5f); // gentle size scaling
-            Vector3 pushDir = normal; // away from asteroid
-            Vector3 pushVel = pushDir * (asteroidCollisionPushbackSpeed * sizeScale);
-            Vector3 newVel = ramVelocity + pushVel;
-            rb.linearVelocity = new Vector3(newVel.x, 0f, newVel.z);
+            rb.linearVelocity = new Vector3(ramVelocity.x, 0f, ramVelocity.z);
             currentVelocity = rb.linearVelocity;
 
             // Update visual collision pitch: tilt slightly away from asteroid based on hit strength and size.
@@ -2140,17 +2176,34 @@ namespace TitanOrbit.Entities
             // Normal points from asteroid to ship; use it to determine left/right sign for pitch (nose up/down)
             Vector3 shipRight = transform.right;
             shipRight.y = 0f;
-            float sideSign = Mathf.Sign(Vector3.Dot(shipRight, pushDir));
+            float sideSign = Mathf.Sign(Vector3.Dot(shipRight, normal));
             targetCollisionPitchAngle = desiredPitch * sideSign;
 
-            // Continuous ramming damage every frame to both asteroid and ship (scaled by fixedDeltaTime so DPS = ramDamagePerSecond).
-            float mass = Mathf.Max(0.5f, rb.mass);
-            float massScale = Mathf.Sqrt(mass);
-            float dt = Time.fixedDeltaTime;
-            float toAsteroid = ramDamagePerSecond * dt * massScale * HullRammingToAsteroidMultiplier;
-            float toSelf = ramDamagePerSecond * dt * massScale * HullRammingSelfDamageMultiplier;
-            if (toAsteroid > 0f) asteroid.TakeDamageServerRpc(toAsteroid);
-            if (toSelf > 0f) TakeDamageServerRpc(toSelf, TeamManager.Team.None);
+            // Every ramTickInterval while pushing in, apply a noticeable pushback "bounce" and mutual damage.
+            float now = Time.time;
+            if (now - lastRamDamageTime >= ramTickInterval)
+            {
+                lastRamDamageTime = now;
+
+                // Pushback impulse: away from asteroid, scaled by size.
+                float sizeScale = Mathf.Clamp(asteroid.AsteroidSize / 35f, 0.5f, 1.5f);
+                Vector3 pushDir = normal; // away from asteroid
+                Vector3 extraVel = pushDir * (asteroidCollisionPushbackSpeed * sizeScale);
+                Vector3 newVel = rb.linearVelocity + extraVel;
+                rb.linearVelocity = new Vector3(newVel.x, 0f, newVel.z);
+                currentVelocity = rb.linearVelocity;
+
+                // Damage per tick: small chip based on how hard we're pushing.
+                float intensity = Mathf.Clamp01(pushAmount / Mathf.Max(0.1f, EffectiveMaxSpeed)); // 0..1
+                float perSecondAtThisPush = ramDamagePerSecond * intensity;
+                // Ensure each tick does a noticeable chunk of damage so regen cannot keep up under sustained collision.
+                float perTick = Mathf.Max(3f, perSecondAtThisPush * ramTickInterval);
+                float toAsteroid = perTick * HullRammingToAsteroidMultiplier;
+                float toSelf = perTick * HullRammingSelfDamageMultiplier;
+                if (toAsteroid > 0.0001f) asteroid.TakeDamageServerRpc(toAsteroid, NetworkObjectId);
+                if (toSelf > 0.0001f) TakeDamageServerRpc(toSelf, TeamManager.Team.None);
+            }
+
         }
 
         [ServerRpc(RequireOwnership = false)]

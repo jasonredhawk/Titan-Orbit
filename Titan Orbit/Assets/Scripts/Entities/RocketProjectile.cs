@@ -105,7 +105,7 @@ namespace TitanOrbit.Entities
             Asteroid asteroid = other.GetComponent<Asteroid>();
             if (asteroid != null && !asteroid.IsDestroyed)
             {
-                asteroid.TakeDamageServerRpc(damage);
+                asteroid.TakeDamageServerRpc(damage, ownerShipNetworkId);
                 Despawn();
             }
         }

@@ -4453,12 +4453,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
   target: {fileID: 0}
   offsetAtReferenceLevel: {x: 0, y: 40, z: 0}
-  orthographicSizeAtReferenceLevel: 12
+  orthographicSizeAtReferenceLevel: 9
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomOrthoSize: 80
-  galacticZoomOutDuration: 8
+  galacticZoomOrthoSize: 100
+  galacticZoomOutDuration: 10
   galacticZoomInDuration: 0.5
   spaceBackground: {fileID: 0}
 --- !u!20 &919287955
@@ -6285,6 +6285,8 @@ MonoBehaviour:
   bulletTrailEffect: {fileID: 0}
   levelUpEffect: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   levelUpEffectScale: 4
+  gemPickupTextPrefab: {fileID: 0}
+  gemPickupTextDuration: 1
 --- !u!114 &1176614071
 MonoBehaviour:
   m_ObjectHideFlags: 0

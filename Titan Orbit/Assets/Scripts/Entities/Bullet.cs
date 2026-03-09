@@ -310,13 +310,13 @@ namespace TitanOrbit.Entities
             if (other == null) return false;
 
             // Use GetComponentInParent to handle child colliders (e.g. ship sub-meshes)
-            Asteroid asteroid = other.GetComponentInParent<Asteroid>();
+                Asteroid asteroid = other.GetComponentInParent<Asteroid>();
             if (asteroid != null && !asteroid.IsDestroyed)
             {
                 float appliedDamage = damage;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
-                asteroid.TakeDamageServerRpc(appliedDamage);
+                    asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
                 DespawnBullet();
                 return true;
             }

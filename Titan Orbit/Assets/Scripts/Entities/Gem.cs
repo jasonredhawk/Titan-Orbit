@@ -18,8 +18,8 @@ namespace TitanOrbit.Entities
 
         [SerializeField] private float gemValue = 10f;
         [SerializeField] private float pickupRadius = 2f;
-        [SerializeField] private float stopSpeedThreshold = 0.3f;
-        [SerializeField] private float slowdownDrag = 4f;
+        [SerializeField] private float stopSpeedThreshold = 0.15f;
+        [SerializeField] private float slowdownDrag = 1.5f;
         [SerializeField] private float baseScale = 0.48f; // Base visual scale; final scale = baseScale * value^(1/3) * ...
         [SerializeField] private float visualScaleMultiplier = 2.2f; // Global scale so value-1 gems are visible; value-70 is larger volume
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears
@@ -35,6 +35,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<ulong> depositTargetPlanetId = new NetworkVariable<ulong>(0); // When non-zero: deposit gem flying toward planet
         private NetworkVariable<int> depositTeam = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> depositClientId = new NetworkVariable<ulong>(0);
+        private NetworkVariable<ulong> magnetPriorityShipId = new NetworkVariable<ulong>(0); // Ship that dealt most damage to source asteroid
         private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
         private Rigidbody rb;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
@@ -99,7 +100,7 @@ namespace TitanOrbit.Entities
             effectivePickupRadius = pickupRadius * valueScale * lifetimeRemaining;
         }
 
-        public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f)
+        public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0)
         {
             if (IsServer)
             {
@@ -108,6 +109,7 @@ namespace TitanOrbit.Entities
                 value.Value = gemValue;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = 0;
+                magnetPriorityShipId.Value = priorityShipNetworkId;
             }
         }
 
@@ -265,7 +267,9 @@ namespace TitanOrbit.Entities
             ulong expelledId = expelledByShipId.Value;
             Vector3 gemPos = rb != null ? rb.position : transform.position;
             Starship nearestShip = null;
-            float nearestDist = currentPickupRadius;
+            float nearestDist = float.MaxValue;
+            bool nearestIsPriority = false;
+            ulong priorityShipId = magnetPriorityShipId.Value;
             Starship[] ships = GetCachedShipsForServer();
             foreach (Starship ship in ships)
             {
@@ -277,10 +281,25 @@ namespace TitanOrbit.Entities
                         continue; // Victim cannot collect yet
                 }
                 float dist = ToroidalMap.ToroidalDistance(gemPos, ship.transform.position);
-                if (dist < nearestDist)
+
+                // Base magnet pickup range; doubled if this ship dealt the most damage to the source asteroid.
+                float range = currentPickupRadius;
+                bool isPriority = false;
+                if (priorityShipId != 0)
+                {
+                    var shipNo = ship.GetComponent<NetworkObject>();
+                    if (shipNo != null && shipNo.NetworkObjectId == priorityShipId)
+                    {
+                        range *= 2f;
+                        isPriority = true;
+                    }
+                }
+
+                if (dist < range && dist < nearestDist)
                 {
                     nearestDist = dist;
                     nearestShip = ship;
+                    nearestIsPriority = isPriority;
                 }
             }
 
@@ -296,24 +315,37 @@ namespace TitanOrbit.Entities
                 // Collect when very close (toroidal distance)
                 if (dist <= collectRadius)
                 {
-                    float toAdd = Mathf.Min(value.Value, nearestShip.GemCapacity - nearestShip.CurrentGems);
+                    float capacityLeft = Mathf.Max(0f, nearestShip.GemCapacity - nearestShip.CurrentGems);
+                    if (capacityLeft <= 0f)
+                        return;
+
+                    // Ship only gains up to its remaining capacity, but the entire gem is consumed.
+                    float toAdd = Mathf.Min(value.Value, capacityLeft);
+                    if (toAdd <= 0f)
+                        return;
+
                     nearestShip.AddGemsServerRpc(toAdd);
-                    if (toAdd > 0f && ScoreSystem.Instance != null)
+
+                    if (ScoreSystem.Instance != null)
                         ScoreSystem.Instance.AwardMining(nearestShip, toAdd);
-                    value.Value -= toAdd;
-                    if (value.Value <= 0)
-                    {
-                        var no = GetComponent<NetworkObject>();
-                        if (no != null) no.Despawn();
-                    }
+
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, nearestShip.ShipTeam);
+
+                    // Consume the whole gem regardless of how much was added to the ship.
+                    value.Value = 0f;
+                    var no = GetComponent<NetworkObject>();
+                    if (no != null) no.Despawn();
                     return;
                 }
 
                 // Magnetic pull toward ship (XZ only, toroidal direction)
                 if (rb != null)
                 {
-                    Vector3 targetVel = toShip * magnetSpeed;
-                    rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, magnetSpeed * Time.fixedDeltaTime * 4f);
+                    float magnetMultiplier = nearestIsPriority ? 2f : 1f;
+                    float speed = magnetSpeed * magnetMultiplier;
+                    Vector3 targetVel = toShip * speed;
+                    rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
                     rb.linearDamping = 0f;
                 }
                 return;

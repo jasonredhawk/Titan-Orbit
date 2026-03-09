@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Systems
 {
@@ -18,6 +19,13 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject levelUpEffect;
         [Tooltip("Base scale for level-up VFX (e.g. 4.0). Final scale is this value multiplied by a planet-size factor.")]
         [SerializeField] private float levelUpEffectScale = 4f;
+        [Header("Asteroid Collision")]
+        [Tooltip("Particles spawned where ships collide with asteroids (e.g. sparks).")]
+        [SerializeField] private GameObject asteroidCollisionEffect;
+        [SerializeField] private float asteroidCollisionEffectDuration = 2f;
+        [Header("Gem Pickup Text")]
+        [SerializeField] private GameObject gemPickupTextPrefab;
+        [SerializeField] private float gemPickupTextDuration = 1f;
 
         private void Awake()
         {
@@ -77,6 +85,48 @@ namespace TitanOrbit.Systems
                 GameObject effect = Instantiate(captureEffect, position, Quaternion.identity);
                 Destroy(effect, 3f);
             }
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnGemPickupTextServerRpc(Vector3 position, float amount, TeamManager.Team team)
+        {
+            SpawnGemPickupTextClientRpc(position, amount, (int)team);
+        }
+
+        [ClientRpc]
+        private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
+        {
+            if (gemPickupTextPrefab == null) return;
+
+            GameObject go = Instantiate(gemPickupTextPrefab, position, Quaternion.identity);
+            var text = go.GetComponent<GemPickupText>() ?? go.AddComponent<GemPickupText>();
+            if (text != null)
+            {
+                text.Initialize(Mathf.RoundToInt(amount), (TeamManager.Team)teamInt, gemPickupTextDuration);
+            }
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnAsteroidCollisionEffectServerRpc(Vector3 position, Vector3 normal)
+        {
+            SpawnAsteroidCollisionEffectClientRpc(position, normal);
+        }
+
+        [ClientRpc]
+        private void SpawnAsteroidCollisionEffectClientRpc(Vector3 position, Vector3 normal)
+        {
+            if (asteroidCollisionEffect == null) return;
+
+            Quaternion rotation = Quaternion.identity;
+            if (normal.sqrMagnitude > 0.0001f)
+            {
+                normal.Normalize();
+                rotation = Quaternion.LookRotation(normal, Vector3.up);
+            }
+
+            GameObject effect = Instantiate(asteroidCollisionEffect, position, rotation);
+            FixAllIn1VfxForUrp(effect);
+            Destroy(effect, asteroidCollisionEffectDuration);
         }
 
         /// <summary>Play level-up burst. Uses prefab VFX only (same URP fix as bullet impact), scaled by planet size.</summary>

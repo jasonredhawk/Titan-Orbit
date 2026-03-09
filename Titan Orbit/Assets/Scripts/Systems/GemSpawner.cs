@@ -91,7 +91,7 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnGemsServerRpc(Vector3 asteroidCenter, float totalValue, float asteroidSize = 1f, float asteroidPhysicalSize = 0.5f)
+        public void SpawnGemsServerRpc(Vector3 asteroidCenter, float totalValue, float asteroidSize = 1f, float asteroidPhysicalSize = 0.5f, ulong primaryDamagerShipId = 0)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null) return;
@@ -99,7 +99,7 @@ namespace TitanOrbit.Systems
             // asteroidSize and totalValue both 1-70; asteroidPhysicalSize is world scale for gem cap
             if (asteroidSize <= 1.5f && totalValue <= 2f)
             {
-                SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f, asteroidPhysicalSize);
+                SpawnGem(prefab, asteroidCenter, Mathf.Max(1f, totalValue), 0.3f, asteroidPhysicalSize, primaryDamagerShipId);
                 return;
             }
 
@@ -177,7 +177,7 @@ namespace TitanOrbit.Systems
                 // Add some random variation to size
                 sizeMultiplier *= Random.Range(0.9f, 1.1f);
                 
-                SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier, asteroidPhysicalSize);
+                SpawnGem(prefab, asteroidCenter, gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId);
                 remainingValue -= gemValue;
                 
                 if (remainingValue <= 0) break;
@@ -265,7 +265,7 @@ namespace TitanOrbit.Systems
             }
         }
 
-        private void SpawnGem(GameObject prefab, Vector3 asteroidCenter, float gemValue, float sizeMultiplier, float asteroidPhysicalSize)
+        private void SpawnGem(GameObject prefab, Vector3 asteroidCenter, float gemValue, float sizeMultiplier, float asteroidPhysicalSize, ulong primaryDamagerShipId)
         {
             // Random direction in XZ plane, slightly outward
             Vector2 dir2 = Random.insideUnitCircle.normalized;
@@ -289,7 +289,7 @@ namespace TitanOrbit.Systems
             {
                 netObj.Spawn();
                 Gem gem = gemObj.GetComponent<Gem>();
-                if (gem != null) gem.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize);
+                if (gem != null) gem.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId);
             }
         }
     }
