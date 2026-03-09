@@ -132,5 +132,21 @@ namespace TitanOrbit.Camera
             if (bgMaterial != null)
                 Object.Destroy(bgMaterial);
         }
+
+        /// <summary>
+        /// Temporarily hide/show the background quad without destroying it. Used for galactic zoom-out.
+        /// </summary>
+        public void SetTemporarilyHidden(bool hidden)
+        {
+            if (meshRenderer == null)
+            {
+                EnsureBackgroundQuad();
+            }
+
+            if (meshRenderer != null)
+            {
+                meshRenderer.enabled = !hidden;
+            }
+        }
     }
 }

@@ -379,6 +379,11 @@ namespace TitanOrbit.Entities
         private float lastPeopleSpawnTime = -999f;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
 
+        // Galactic zoom tracking (server-side)
+        private bool hadGemsWhileInOrbitThisOrbit;
+        private bool triggeredGalacticZoomThisOrbit;
+        private bool depositedAnyGemsThisOrbit;
+
         // Banking (visual lean into turn) - only used when visualRoot is set. No pitch.
         private float currentBankAngle;
         private Vector3 previousForward;
@@ -824,6 +829,16 @@ namespace TitanOrbit.Entities
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
+
+            // When the local player begins moving (e.g. right click), trigger camera zoom-in if a galactic zoom is active.
+            if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
+            {
+                var camController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+                if (camController != null)
+                {
+                    camController.TriggerGalacticZoomReturn();
+                }
+            }
             if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
             {
                 var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
@@ -1744,6 +1759,9 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == null)
             {
                 depositAccumulator = 0f;
+                hadGemsWhileInOrbitThisOrbit = false;
+                depositedAnyGemsThisOrbit = false;
+                triggeredGalacticZoomThisOrbit = false;
                 return;
             }
             
@@ -1755,6 +1773,9 @@ namespace TitanOrbit.Entities
             
             if (!canDeposit) return;
             if (currentGems.Value <= 0f) return;
+
+            // Track that we had gems to deposit during this orbit session (server only).
+            hadGemsWhileInOrbitThisOrbit = true;
 
             float gemValue = shipLevel * 5f; // e.g. level 3 = 15 value per gem
             float rate = gemValue * Time.fixedDeltaTime; // 1 gem per second
@@ -1777,7 +1798,10 @@ namespace TitanOrbit.Entities
                 Vector3 planetPos = currentOrbitPlanet.transform.position;
                 var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                 if (planetNo != null)
+                {
                     GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, gemValue, shipLevel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
+                    depositedAnyGemsThisOrbit = true;
+                }
             }
 
             // Deposit remainder: when gems are below one full "gem value", spawn one final gem so the ship empties completely.
@@ -1790,7 +1814,25 @@ namespace TitanOrbit.Entities
                 Vector3 planetPos = currentOrbitPlanet.transform.position;
                 var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                 if (planetNo != null)
+                {
                     GemSpawner.Instance.SpawnDepositGem(shipPos, planetPos, remainder, shipLevel, planetNo.NetworkObjectId, shipTeam.Value, OwnerClientId);
+                    depositedAnyGemsThisOrbit = true;
+                }
+            }
+
+            // When all carried gems have been fully deposited during this orbit session, trigger galactic zoom on the owning client.
+            if (!triggeredGalacticZoomThisOrbit && depositedAnyGemsThisOrbit && currentGems.Value <= 0.0001f)
+            {
+                triggeredGalacticZoomThisOrbit = true;
+
+                var sendParams = new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new ulong[] { OwnerClientId }
+                    }
+                };
+                TriggerGalacticZoomClientRpc(sendParams);
             }
         }
 
@@ -2094,6 +2136,19 @@ namespace TitanOrbit.Entities
             currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
         }
 
+        /// <summary>Client: start the galactic zoom-out camera animation on the owning player after all gems are deposited.</summary>
+        [ClientRpc]
+        private void TriggerGalacticZoomClientRpc(ClientRpcParams rpcParams = default)
+        {
+            if (!IsOwner) return;
+
+            var camController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            if (camController != null)
+            {
+                camController.StartGalacticZoomOut();
+            }
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void AddSmallRocketsServerRpc(int count) { smallRocketsCount.Value += count; }
         [ServerRpc(RequireOwnership = false)]
@@ -2266,6 +2321,9 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return;
             currentOrbitPlanet = planet;
+            hadGemsWhileInOrbitThisOrbit = false;
+            depositedAnyGemsThisOrbit = false;
+            triggeredGalacticZoomThisOrbit = false;
             // Menu shows in Update when IsInStableOrbit() is true, not on zone entry
         }
 
@@ -2276,6 +2334,9 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == planet)
             {
                 currentOrbitPlanet = null;
+                hadGemsWhileInOrbitThisOrbit = false;
+                depositedAnyGemsThisOrbit = false;
+                triggeredGalacticZoomThisOrbit = false;
                 if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
                 {
                     var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();

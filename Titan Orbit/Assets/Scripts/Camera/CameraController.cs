@@ -27,9 +27,27 @@ namespace TitanOrbit.Camera
         [Min(1f)]
         [SerializeField] private float spawnZoomScale = 1f;
 
+        [Header("Galactic Zoom")]
+        [Tooltip("Orthographic size used for far-map view. Actual galactic zoom stops halfway between default zoom and this value.")]
+        [SerializeField] private float galacticZoomOrthoSize = 180f;
+        [Tooltip("Seconds to smoothly zoom out to galactic view after depositing all gems.")]
+        [Min(0.1f)]
+        [SerializeField] private float galacticZoomOutDuration = 8f;
+        [Tooltip("Seconds to zoom back in to default gameplay zoom when the player moves.")]
+        [Min(0.05f)]
+        [SerializeField] private float galacticZoomInDuration = 2f;
+        [Tooltip("Optional: space background that can be hidden while zoomed out.")]
+        [SerializeField] private ScrollingSpaceBackground spaceBackground;
+
         private UnityEngine.Camera cam;
         private float currentScale = 1f;
         private float scaleVelocity;
+
+        // Galactic zoom state
+        private bool galacticZoomActive;
+        private bool galacticZoomReturning;
+        private float galacticZoomElapsed;
+        private float galacticZoomStartSize;
 
         private void Awake()
         {
@@ -37,6 +55,11 @@ namespace TitanOrbit.Camera
             if (cam == null)
             {
                 cam = gameObject.AddComponent<UnityEngine.Camera>();
+            }
+
+            if (spaceBackground == null)
+            {
+                spaceBackground = FindFirstObjectByType<ScrollingSpaceBackground>();
             }
 
             // Set up camera for top-down view
@@ -61,8 +84,47 @@ namespace TitanOrbit.Camera
             else
                 currentScale = targetScale;
 
+            float defaultOrthoSize = orthographicSizeAtReferenceLevel * currentScale;
+
             if (cam.orthographic)
-                cam.orthographicSize = orthographicSizeAtReferenceLevel * currentScale;
+            {
+                if (!galacticZoomActive)
+                {
+                    cam.orthographicSize = defaultOrthoSize;
+                }
+                else
+                {
+                    galacticZoomElapsed += Time.deltaTime;
+
+                    // Target zoomed-out size is halfway between current default zoom and the far-map size.
+                    float halfwayOutSize = Mathf.Lerp(defaultOrthoSize, galacticZoomOrthoSize, 0.5f);
+
+                    if (!galacticZoomReturning)
+                    {
+                        float tOut = galacticZoomOutDuration > 0.0001f
+                            ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomOutDuration)
+                            : 1f;
+                        float size = Mathf.Lerp(galacticZoomStartSize, halfwayOutSize, tOut);
+                        cam.orthographicSize = size;
+                    }
+                    else
+                    {
+                        float tIn = galacticZoomInDuration > 0.0001f
+                            ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomInDuration)
+                            : 1f;
+                        float size = Mathf.Lerp(galacticZoomStartSize, defaultOrthoSize, tIn);
+                        cam.orthographicSize = size;
+
+                        if (tIn >= 1f - 0.0001f)
+                        {
+                            galacticZoomActive = false;
+                            galacticZoomReturning = false;
+                            if (spaceBackground != null)
+                                spaceBackground.SetTemporarilyHidden(false);
+                        }
+                    }
+                }
+            }
 
             Vector3 offset = new Vector3(
                 offsetAtReferenceLevel.x,
@@ -82,6 +144,33 @@ namespace TitanOrbit.Camera
                 currentScale = spawnZoomScale;
                 scaleVelocity = 0f;
             }
+        }
+
+        /// <summary>Begin galactic zoom out toward a large orthographic size.</summary>
+        public void StartGalacticZoomOut()
+        {
+            if (cam == null) return;
+
+            galacticZoomActive = true;
+            galacticZoomReturning = false;
+            galacticZoomElapsed = 0f;
+            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : orthographicSizeAtReferenceLevel * currentScale;
+
+            if (spaceBackground != null)
+            {
+                spaceBackground.SetTemporarilyHidden(true);
+            }
+        }
+
+        /// <summary>Trigger fast zoom back in to the default gameplay zoom.</summary>
+        public void TriggerGalacticZoomReturn()
+        {
+            if (!galacticZoomActive || galacticZoomReturning || cam == null)
+                return;
+
+            galacticZoomReturning = true;
+            galacticZoomElapsed = 0f;
+            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : orthographicSizeAtReferenceLevel * currentScale;
         }
     }
 }
