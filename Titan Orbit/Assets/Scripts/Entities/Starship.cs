@@ -1675,9 +1675,10 @@ namespace TitanOrbit.Entities
 
             // Gem expulsion tuning: how quickly gems are lost once health hits 0.
             // Lower values = slower gem loss; higher values = faster loss.
-            const float GemExpulsionPerDamage = 0.3f;              // gems expelled per 1 damage
-            const float MaxLethalExpulsionFraction = 0.4f;         // at most 40% of current gems on the lethal hit
-            const float MaxPostDeathExpulsionFraction = 0.2f;      // at most 20% of current gems per hit after death
+            // Rough target: about 50% of damage value comes out as gems, with caps so a single hit doesn't dump everything.
+            const float GemExpulsionPerDamage = 0.5f;              // gems expelled per 1 damage
+            const float MaxLethalExpulsionFraction = 0.6f;         // at most 60% of current gems on the lethal hit
+            const float MaxPostDeathExpulsionFraction = 0.4f;      // at most 40% of current gems per hit after death
 
             float healthBefore = currentHealth.Value;
             bool wasAlive = healthBefore > 0f;

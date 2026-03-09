@@ -18,8 +18,8 @@ namespace TitanOrbit.Entities
 
         [SerializeField] private float gemValue = 10f;
         [SerializeField] private float pickupRadius = 2f;
-        [SerializeField] private float stopSpeedThreshold = 0.15f;
-        [SerializeField] private float slowdownDrag = 1.5f;
+        [SerializeField] private float stopSpeedThreshold = 0.05f;
+        [SerializeField] private float slowdownDrag = 0.5f;
         [SerializeField] private float baseScale = 0.48f; // Base visual scale; final scale = baseScale * value^(1/3) * ...
         [SerializeField] private float visualScaleMultiplier = 2.2f; // Global scale so value-1 gems are visible; value-70 is larger volume
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears

@@ -17,8 +17,8 @@ namespace TitanOrbit.Systems
 
         [SerializeField] private GameObject gemPrefab;
         [SerializeField] private GameObject peopleTransportPrefab;
-        [SerializeField] private float explosionSpeed = 4f;
-        [SerializeField] private float explosionRadius = 1.5f;
+        [SerializeField] private float explosionSpeed = 7f;
+        [SerializeField] private float explosionRadius = 2.2f;
 
         private void Awake()
         {
