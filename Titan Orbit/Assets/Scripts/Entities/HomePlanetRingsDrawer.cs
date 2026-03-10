@@ -87,8 +87,9 @@ namespace TitanOrbit.Entities
                     Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
                     Matrix4x4 homeMatrix = homePlanet.transform.localToWorldMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
                     Draw.Matrix = homeMatrix;
-                    float zoneRadius = (orbitZoneInnerRadius + orbitZoneOuterRadius) * 0.5f;
-                    float zoneThickness = orbitZoneOuterRadius - orbitZoneInnerRadius;
+                    float outerRadiusRuntime = homePlanet.GetOrbitZoneOuterRadiusLocal();
+                    float zoneRadius = (orbitZoneInnerRadius + outerRadiusRuntime) * 0.5f;
+                    float zoneThickness = outerRadiusRuntime - orbitZoneInnerRadius;
                     Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
                     Color outerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
                     Draw.Ring(Vector3.zero, Quaternion.identity, zoneRadius, zoneThickness, DiscColors.Radial(innerColor, outerColor));

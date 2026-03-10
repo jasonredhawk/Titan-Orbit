@@ -30,7 +30,7 @@ namespace TitanOrbit.UI
         [Header("Team Colors")]
         [SerializeField] private Color teamAColor = Color.red;
         [SerializeField] private Color teamBColor = Color.blue;
-        [SerializeField] private Color teamCColor = Color.green;
+        [SerializeField] private Color teamCColor = new Color(0.2f, 0.7f, 0.28f);
 
         [Header("Leaderboard (Right Side)")]
         [SerializeField] private GameObject leaderboardPanel;
@@ -640,6 +640,8 @@ namespace TitanOrbit.UI
 
         private Color GetTeamColor(Core.TeamManager.Team team)
         {
+            if (Core.TeamManager.Instance != null)
+                return Core.TeamManager.GetTeamColor(team);
             switch (team)
             {
                 case Core.TeamManager.Team.TeamA:

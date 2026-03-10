@@ -58,7 +58,7 @@ namespace TitanOrbit.UI
         [Header("Team Colors")]
         [SerializeField] private Color teamAColor = new Color(1f, 0.3f, 0.3f);
         [SerializeField] private Color teamBColor = new Color(0.3f, 0.5f, 1f);
-        [SerializeField] private Color teamCColor = new Color(0.3f, 1f, 0.4f);
+        [SerializeField] private Color teamCColor = new Color(0.2f, 0.7f, 0.28f);
         [SerializeField] private Color planetColor = new Color(0.6f, 0.6f, 0.6f);
         [SerializeField] private Color homePlanetColor = new Color(1f, 0.9f, 0.2f);
         [SerializeField] private Color asteroidColor = new Color(0.8f, 0.8f, 0.8f); // Light grey for better visibility
@@ -595,7 +595,7 @@ namespace TitanOrbit.UI
         {
             if (minimapRect == null) return;
             
-            // Move to center of screen and expand
+            // Same minimap: only change zoom (visible radius) and circle size. Content and coordinate system unchanged.
             Canvas canvas = GetComponentInParent<Canvas>();
             if (canvas != null)
             {
@@ -628,10 +628,8 @@ namespace TitanOrbit.UI
                 minimapRect.anchoredPosition = Vector2.zero;
                 minimapRect.sizeDelta = new Vector2(calculatedExpandedSize, calculatedExpandedSize);
                 
-                // Update display size for calculations
+                // Same minimap: larger circle (displaySize) and more zoom (minimapRadius = fullMapRadius)
                 displaySize = calculatedExpandedSize;
-                
-                // Temporarily increase minimap radius to show full map
                 minimapRadius = fullMapRadius;
                 
                 // Update mask and background
@@ -693,7 +691,7 @@ namespace TitanOrbit.UI
         {
             if (minimapRect == null) return;
             
-            // Restore original position and size
+            // Same minimap: restore smaller circle and zoomed-in radius
             minimapRect.anchorMin = originalAnchorMin;
             minimapRect.anchorMax = originalAnchorMax;
             minimapRect.pivot = new Vector2(1, 0);
@@ -1460,29 +1458,27 @@ namespace TitanOrbit.UI
                         edgeMarkers[hp.transform].gameObject.SetActive(false);
                     }
                     
-                    // Use team color for home planets
+                    // Use team color for home planets; same blip treatment as planets (rings + population text)
                     Color homeBlipColor = hp.TeamOwnership == TeamManager.Team.None 
                         ? homePlanetColor 
                         : GetTeamColor(hp.TeamOwnership);
-                    // Get actual home planet size from transform scale (fallback to PlanetSize property)
                     float actualHomeSize = (hp.transform.localScale.x + hp.transform.localScale.y + hp.transform.localScale.z) / 3f;
                     if (actualHomeSize < 0.1f) actualHomeSize = hp.PlanetSize;
-                    // Use same scale factor for all entities - directly proportional to world size
                     float homeBlipSize = actualHomeSize * worldToMinimapScale * sizeScaleFactor;
                     if (blips.ContainsKey(hp.transform))
                     {
                         blips[hp.transform].gameObject.SetActive(true);
-                        UpdateBlip(hp.transform, homeBlipColor, homeBlipSize);
+                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize);
                     }
                     else
                     {
-                        EnsureBlip(hp.transform, () => CreateBlip(homeBlipColor, homeBlipSize, BlipType.Circle));
+                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize));
                     }
                 }
             }
 
             int asteroidIdx = 0;
-            // Build list of (asteroid, distance) so we can show only the closest MaxAsteroidBlips (stable set, no swirl)
+            int maxAsteroids = isExpanded ? int.MaxValue : MaxAsteroidBlips;
             var asteroidDistances = new List<(Asteroid a, float dist)>(cachedAsteroids.Length);
             foreach (var a in cachedAsteroids)
             {
@@ -1495,7 +1491,7 @@ namespace TitanOrbit.UI
             foreach (var pair in asteroidDistances)
             {
                 var a = pair.a;
-                if (asteroidIdx >= MaxAsteroidBlips)
+                if (asteroidIdx >= maxAsteroids)
                 {
                     if (blips.TryGetValue(a.transform, out var hideRt) && hideRt != null)
                         hideRt.gameObject.SetActive(false);
@@ -1695,9 +1691,11 @@ namespace TitanOrbit.UI
         private void AddLevelRingsToContainer(RectTransform container, int level, float blipSize)
         {
             if (container == null || level < 1) return;
-            Sprite ringSprite = CreateRingSprite(24);
+            Sprite ringSprite = CreateRingSprite(32);
             if (ringSprite == null) return;
-            float ringStep = blipSize * 0.25f;
+            // Consistent scale: each ring is a fixed fraction of blip size so they stay just outside the blip in both minimized and expanded
+            const float ringStartFraction = 0.52f;  // just outside blip radius (0.5)
+            const float ringStepFraction = 0.08f;
             for (int i = 0; i < level; i++)
             {
                 var ringGo = new GameObject("Ring" + i);
@@ -1707,11 +1705,12 @@ namespace TitanOrbit.UI
                 ringRect.anchorMax = new Vector2(0.5f, 0.5f);
                 ringRect.pivot = new Vector2(0.5f, 0.5f);
                 ringRect.anchoredPosition = Vector2.zero;
-                float r = blipSize * 0.5f + (i + 1) * ringStep;
+                float radiusFraction = ringStartFraction + i * ringStepFraction;
+                float r = blipSize * radiusFraction;
                 ringRect.sizeDelta = new Vector2(r * 2f, r * 2f);
                 var img = ringGo.AddComponent<Image>();
                 img.sprite = ringSprite;
-                img.color = new Color(1f, 1f, 1f, 0.7f);
+                img.color = new Color(1f, 1f, 1f, 0.35f);
                 img.raycastTarget = false;
             }
         }
@@ -1723,8 +1722,9 @@ namespace TitanOrbit.UI
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Bilinear;
             float center = textureSize / 2f;
-            float innerRadius = center - 3f;
-            float outerRadius = center - 0.5f;
+            // Thicker ring for better visibility on minimap
+            float innerRadius = center - 2.8f;
+            float outerRadius = center - 0.2f;
             for (int y = 0; y < textureSize; y++)
             {
                 for (int x = 0; x < textureSize; x++)
@@ -1768,6 +1768,22 @@ namespace TitanOrbit.UI
                     for (int i = ringsGo.childCount - 1; i >= 0; i--)
                         Destroy(ringsGo.GetChild(i).gameObject);
                     AddLevelRingsToContainer(ringsGo.GetComponent<RectTransform>(), needed, size);
+                }
+                else
+                {
+                    // Resize existing rings to match current blip size (same fraction of blip so consistent when expand/collapse)
+                    const float ringStartFraction = 0.52f;
+                    const float ringStepFraction = 0.08f;
+                    for (int i = 0; i < ringsGo.childCount; i++)
+                    {
+                        var ringRect = ringsGo.GetChild(i).GetComponent<RectTransform>();
+                        if (ringRect != null)
+                        {
+                            float radiusFraction = ringStartFraction + i * ringStepFraction;
+                            float r = size * radiusFraction;
+                            ringRect.sizeDelta = new Vector2(r * 2f, r * 2f);
+                        }
+                    }
                 }
             }
         }
@@ -1942,6 +1958,8 @@ namespace TitanOrbit.UI
 
         private Color GetTeamColor(TeamManager.Team team)
         {
+            if (TeamManager.Instance != null)
+                return TeamManager.GetTeamColor(team);
             switch (team)
             {
                 case TeamManager.Team.TeamA: return teamAColor;

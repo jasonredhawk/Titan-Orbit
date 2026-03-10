@@ -14,15 +14,16 @@ namespace TitanOrbit.Entities
     public class PlanetConnectionShapesVisual : ImmediateModeShapeDrawer
     {
         [Header("Lines")]
-        [SerializeField] private float lineThickness = 0.4f;
-        [SerializeField] private float lineHeight = 0.6f;
-        [SerializeField] private float lineAlpha = 1f;
+        [SerializeField] private float lineThickness = 0.7f;
+        [Tooltip("Use same Y as triangles so lines are on the same plane and visible on main map.")]
+        [SerializeField] private float lineHeight = -0.6f;
+        [SerializeField] private float lineAlpha = 0.4f;
 
         [Header("Triangles")]
         [SerializeField] private float triangleHeight = -0.6f;
-        [SerializeField] private float triangleAlpha = 0.12f;
+        [SerializeField] private float triangleAlpha = 0.04f;
         [SerializeField] private float triangleBorderThickness = 0.15f;
-        [SerializeField] private float triangleBorderAlpha = 0.5f;
+        [SerializeField] private float triangleBorderAlpha = 0.22f;
 
         public override void DrawShapes(UnityEngine.Camera cam)
         {
@@ -87,6 +88,10 @@ namespace TitanOrbit.Entities
                 if (edges != null)
                 {
                     Vector3 camPos = cam.transform.position;
+                    float mapW = ToroidalMap.GetMapWidth();
+                    float mapH = ToroidalMap.GetMapHeight();
+                    // Lines: use Volumetric3D so they render on the XZ map plane. Flat2D forces XY and makes lines invisible from above.
+                    Draw.LineGeometry = LineGeometry.Volumetric3D;
                     foreach (var e in edges)
                     {
                         if (e.A == null || e.B == null)
@@ -102,9 +107,24 @@ namespace TitanOrbit.Entities
 
                         Color baseColor = TeamManager.GetTeamColor(e.Team);
                         Color lineColor = new Color(baseColor.r, baseColor.g, baseColor.b, lineAlpha);
-                        Draw.Line(a, b, lineThickness, LineEndCap.Round, lineColor);
+                        DrawLineWithWraps(a, b, mapW, mapH, lineColor);
                     }
                 }
+            }
+        }
+
+        private void DrawLineWithWraps(Vector3 a, Vector3 b, float mapW, float mapH, Color lineColor)
+        {
+            Draw.Line(a, b, lineThickness, LineEndCap.Round, lineColor);
+            Vector3[] offsets = {
+                new Vector3(mapW, 0f, 0f),
+                new Vector3(-mapW, 0f, 0f),
+                new Vector3(0f, 0f, mapH),
+                new Vector3(0f, 0f, -mapH)
+            };
+            foreach (var off in offsets)
+            {
+                Draw.Line(a + off, b + off, lineThickness, LineEndCap.Round, lineColor);
             }
         }
 

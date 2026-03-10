@@ -52,8 +52,31 @@ namespace TitanOrbit.Entities
         [Tooltip("Spin speed in degrees/second. Clockwise when viewed from the positive ring axis.")]
         [SerializeField] private float spinDegreesPerSecond = 2f;
 
+        /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85). Grows 5% per planet level.</summary>
+        private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f;
+        private const float OrbitZoneGrowthPerLevel = 0.05f;
+
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
+
+        /// <summary>Orbit zone outer radius in planet-local space. Base is 1.5x original (0.85); +5% per planet level.</summary>
+        public float GetOrbitZoneOuterRadiusLocal()
+        {
+            int level = Mathf.Max(1, planetLevel.Value);
+            return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitZoneGrowthPerLevel, level - 1);
+        }
+
+        /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes.</summary>
+        protected virtual void RefreshOrbitZoneRadius()
+        {
+            var oz = GetComponentInChildren<PlanetOrbitZone>();
+            if (oz != null)
+            {
+                var col = oz.GetComponent<SphereCollider>();
+                if (col != null)
+                    col.radius = GetOrbitZoneOuterRadiusLocal();
+            }
+        }
         
         private MaterialPropertyBlock tintPropertyBlock;
 
@@ -441,15 +464,14 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Orbit zone: surface (0.5) to outer (0.85 local). Ships orbit at whatever radius they enter; farther = slower.
+        /// Orbit zone: surface (0.5) to outer (scaled by level: 1.5x base, +5% per level). Ships orbit at whatever radius they enter; farther = slower.
         /// </summary>
         private void EnsureOrbitZoneExists()
         {
             PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
             if (existing != null)
             {
-                var col = existing.GetComponent<SphereCollider>();
-                if (col != null) col.radius = 0.85f;
+                RefreshOrbitZoneRadius();
                 EnsureOrbitZoneVisual(existing.gameObject);
                 return;
             }
@@ -459,7 +481,7 @@ namespace TitanOrbit.Entities
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.85f;
+            orbitCollider.radius = GetOrbitZoneOuterRadiusLocal();
             PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             zone.SetPlanet(this);
             EnsureOrbitZoneVisual(orbitZoneObj);
@@ -654,6 +676,7 @@ namespace TitanOrbit.Entities
 
         protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {
+            RefreshOrbitZoneRadius();
             // Ships no longer auto-level. Players purchase level upgrades at the store (same cost as other ships of that tier).
         }
 

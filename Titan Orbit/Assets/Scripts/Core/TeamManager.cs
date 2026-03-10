@@ -32,7 +32,7 @@ namespace TitanOrbit.Core
             {
                 case Team.TeamA: return new Color(0.9f, 0.25f, 0.25f);
                 case Team.TeamB: return new Color(0.25f, 0.4f, 0.9f);
-                case Team.TeamC: return new Color(0.25f, 0.85f, 0.35f);
+                case Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
                 default: return Color.white;
             }
         }

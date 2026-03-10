@@ -47,6 +47,11 @@ namespace SpaceGraphicsToolkit
 			UpdateInstance(); matrices.Remove(k); matrices.Add(k, v); properties.SetMatrix(k, v);
 		}
 
+		public void SetColor(int k, Color v)
+		{
+			UpdateInstance(); colors.Remove(k); colors.Add(k, v); properties.SetColor(k, v);
+		}
+
 		public void Clear(int k)
 		{
 			if (textures.Remove(k) == true ||

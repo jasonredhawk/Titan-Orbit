@@ -199,9 +199,30 @@ namespace TitanOrbit.Entities
         /// <summary>
         /// Client-side visual highlight for asteroids under a team's triangle territory.
         /// Does not affect gameplay, only tint. Pass Team.None to clear highlight.
+        /// Asteroids use SgtPlanet (Graphics.DrawMesh + MaterialPropertyBlock); we set _Color on its Properties.
         /// </summary>
         public void SetTerritoryHighlight(TeamManager.Team team)
         {
+            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            if (sgt != null)
+            {
+                if (originalColor == null && sgt.Material != null)
+                {
+                    if (sgt.Material.HasProperty("_Color"))
+                        originalColor = sgt.Material.GetColor("_Color");
+                    else
+                        originalColor = new Color(0.5f, 0.5f, 0.5f);
+                }
+                if (originalColor == null) return;
+
+                Color color = team == TeamManager.Team.None
+                    ? originalColor.Value
+                    : Color.Lerp(originalColor.Value, TeamManager.GetTeamColor(team), 0.7f);
+                int id = Shader.PropertyToID("_Color");
+                sgt.Properties.SetColor(id, color);
+                return;
+            }
+
             if (asteroidRenderer == null)
                 asteroidRenderer = GetComponentInChildren<Renderer>();
             if (asteroidRenderer == null)
@@ -225,7 +246,6 @@ namespace TitanOrbit.Entities
             }
 
             Color teamCol = TeamManager.GetTeamColor(team);
-            // Blend neutral asteroid color with team color for a clear but not overpowering tint.
             Color tinted = Color.Lerp(baseCol, teamCol, 0.7f);
             if (mat.HasProperty("_Color"))
                 mat.SetColor("_Color", tinted);
@@ -303,11 +323,22 @@ namespace TitanOrbit.Entities
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     gemValue *= 100f;
 
-                // Territory triangles can boost gem yield for asteroids within their area.
+                // Bonus only for same team as triangle: 5% per home planet level. Enemies get no bonus.
                 float bonusMultiplier = 1f;
-                if (Systems.PlanetConnectionSystem.Instance != null)
+                var conn = Systems.PlanetConnectionSystem.Instance;
+                if (conn != null)
                 {
-                    bonusMultiplier = Systems.PlanetConnectionSystem.Instance.GetGemBonusMultiplierAtPosition(pos);
+                    TeamManager.Team asteroidTeam = conn.GetTeamAtPosition(pos);
+                    if (asteroidTeam != TeamManager.Team.None && topDamagerShipId != 0)
+                    {
+                        var nm = Unity.Netcode.NetworkManager.Singleton;
+                        if (nm != null && nm.SpawnManager != null && nm.SpawnManager.SpawnedObjects.TryGetValue(topDamagerShipId, out Unity.Netcode.NetworkObject netObj))
+                        {
+                            var ship = netObj != null ? netObj.GetComponent<Starship>() : null;
+                            if (ship != null && ship.ShipTeam == asteroidTeam)
+                                bonusMultiplier = 1f + 0.05f * Systems.PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
+                        }
+                    }
                 }
 
                 gemValue *= Mathf.Max(1f, bonusMultiplier);

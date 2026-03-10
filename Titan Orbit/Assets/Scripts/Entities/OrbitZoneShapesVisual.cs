@@ -13,7 +13,7 @@ namespace TitanOrbit.Entities
     public class OrbitZoneShapesVisual : ImmediateModeShapeDrawer
     {
         [Header("Zone Bounds")]
-        [Tooltip("Outer radius (orbit zone edge) in planet local space.")]
+        [Tooltip("Outer radius (orbit zone edge) in planet local space. Overridden at runtime by planet level (1.5x base + 5% per level).")]
         [SerializeField] private float outerRadius = 0.85f;
         [Tooltip("Draw the orbit zone this far below the planet (local Y) so ships and gems render above it.")]
         [SerializeField] private float heightBelowPlanet = 1f;
@@ -69,6 +69,8 @@ namespace TitanOrbit.Entities
             float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
             Color color = new Color(tint.r, tint.g, tint.b, alpha);
 
+            float radius = planet.GetOrbitZoneOuterRadiusLocal();
+
             // Ring in XZ plane (flat on ground) so it's visible from top-down camera; offset below planet so gameplay is above it
             Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
             Vector3 offsetBelow = new Vector3(0f, -heightBelowPlanet, 0f);
@@ -83,7 +85,7 @@ namespace TitanOrbit.Entities
                 Draw.Matrix = worldMatrix;
 
                 // Single circular border at orbit zone outer edge (clearly visible)
-                Draw.Ring(Vector3.zero, Quaternion.identity, outerRadius, borderThickness, color);
+                Draw.Ring(Vector3.zero, Quaternion.identity, radius, borderThickness, color);
             }
         }
 

@@ -61,6 +61,18 @@ namespace TitanOrbit.Systems
             );
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) gemsMined *= 100f;
 
+            // Same team as asteroid's triangle gets 5% per home planet level; enemy gets no bonus.
+            if (PlanetConnectionSystem.Instance != null)
+            {
+                Vector3 canonicalPos = ToroidalMap.WrapPosition(asteroid.transform.position);
+                TeamManager.Team asteroidTeam = PlanetConnectionSystem.Instance.GetTeamAtPosition(canonicalPos);
+                if (ship.ShipTeam == asteroidTeam && asteroidTeam != TeamManager.Team.None)
+                {
+                    int homeLevel = PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
+                    gemsMined *= 1f + 0.05f * homeLevel;
+                }
+            }
+
             asteroid.MineGemsServerRpc(gemsMined, shipNetworkId);
             ship.AddGemsServerRpc(gemsMined);
             if (ScoreSystem.Instance != null)

@@ -273,7 +273,7 @@ namespace TitanOrbit.Editor
                 // Team colours (semi-transparent) matching TeamManager.GetTeamColor
                 Color teamAColor = new Color(0.9f, 0.25f, 0.25f, 0.45f);
                 Color teamBColor = new Color(0.25f, 0.4f, 0.9f, 0.45f);
-                Color teamCColor = new Color(0.25f, 0.85f, 0.35f, 0.45f);
+                Color teamCColor = new Color(0.2f, 0.7f, 0.28f, 0.45f);
                 CreateTeamPanelColumn(teamPanel.transform, "TeamAPanel", "Team A (0/20)", "Join A", teamAColor, shiftPanelSprite, shiftButtonSprite,
                     out GameObject titleA, out GameObject playersA, out GameObject statsA, out GameObject joinA);
                 CreateTeamPanelColumn(teamPanel.transform, "TeamBPanel", "Team B (0/20)", "Join B", teamBColor, shiftPanelSprite, shiftButtonSprite,
@@ -763,7 +763,7 @@ namespace TitanOrbit.Editor
             // Team colours (semi-transparent) matching TeamManager.GetTeamColor
             Color teamAColor = new Color(0.9f, 0.25f, 0.25f, 0.45f);
             Color teamBColor = new Color(0.25f, 0.4f, 0.9f, 0.45f);
-            Color teamCColor = new Color(0.25f, 0.85f, 0.35f, 0.45f);
+            Color teamCColor = new Color(0.2f, 0.7f, 0.28f, 0.45f);
             CreateTeamPanelColumn(teamPanel.transform, "TeamAPanel", "Team A (0/20)", "Join A", teamAColor, shiftPanelSprite, shiftButtonSprite,
                 out GameObject titleA, out GameObject playersA, out GameObject statsA, out GameObject joinA);
             CreateTeamPanelColumn(teamPanel.transform, "TeamBPanel", "Team B (0/20)", "Join B", teamBColor, shiftPanelSprite, shiftButtonSprite,
@@ -1759,7 +1759,7 @@ namespace TitanOrbit.Editor
             if (neutralMat == null) neutralMat = CreateAndSaveMaterial("TitanOrbit_Planet", new Color(0.5f, 0.5f, 0.5f));
             if (teamAMat == null) teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f));
             if (teamBMat == null) teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f));
-            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f));
+            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.2f, 0.7f, 0.28f));
 
             GameObject planet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             planet.name = "Planet";
@@ -1780,7 +1780,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.85f;
+            orbitCollider.radius = 0.85f * 1.5f; // Orbit zone base at level 1 (1.5x original); runtime refreshes by level
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
@@ -1857,7 +1857,7 @@ namespace TitanOrbit.Editor
             if (neutralMat == null) neutralMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet", new Color(0.5f, 0.5f, 0.5f));
             if (teamAMat == null) teamAMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f));
             if (teamBMat == null) teamBMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f));
-            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f));
+            if (teamCMat == null) teamCMat = CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.2f, 0.7f, 0.28f));
 
             GameObject homePlanet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             homePlanet.name = "HomePlanet";
@@ -1878,7 +1878,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.85f;
+            orbitCollider.radius = 0.85f * 1.5f; // Orbit zone base at level 1 (1.5x original); runtime refreshes by level
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
@@ -2782,7 +2782,7 @@ namespace TitanOrbit.Editor
                 { "TitanOrbit_HomePlanet", CreateAndSaveMaterial("TitanOrbit_HomePlanet", Color.yellow) },
                 { "TitanOrbit_HomePlanet_TeamA", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamA", new Color(0.9f, 0.25f, 0.25f)) },
                 { "TitanOrbit_HomePlanet_TeamB", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamB", new Color(0.25f, 0.4f, 0.9f)) },
-                { "TitanOrbit_HomePlanet_TeamC", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.25f, 0.85f, 0.35f)) },
+                { "TitanOrbit_HomePlanet_TeamC", CreateAndSaveMaterial("TitanOrbit_HomePlanet_TeamC", new Color(0.2f, 0.7f, 0.28f)) },
                 { "TitanOrbit_Asteroid", CreateAndSaveMaterial("TitanOrbit_Asteroid", new Color(0.5f, 0.35f, 0.2f)) },
                 { "TitanOrbit_Bullet", CreateAndSaveMaterial("TitanOrbit_Bullet", Color.yellow) },
                 { "TitanOrbit_Gem", CreateAndSaveMaterial("TitanOrbit_Gem", new Color(0.85f, 0.15f, 0.2f)) },

@@ -108,8 +108,22 @@ namespace TitanOrbit.Entities
             return peoplePer5Sec / 5f;
         }
 
+        /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes. Home planets may use HomePlanetOrbitZone.</summary>
+        protected override void RefreshOrbitZoneRadius()
+        {
+            var homeOz = GetComponentInChildren<HomePlanetOrbitZone>();
+            if (homeOz != null)
+            {
+                var col = homeOz.GetComponent<SphereCollider>();
+                if (col != null)
+                    col.radius = GetOrbitZoneOuterRadiusLocal();
+                return;
+            }
+            base.RefreshOrbitZoneRadius();
+        }
+
         /// <summary>
-        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to 0.85. Base Planet may already create zone; we fix sizes.
+        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to outer (level-scaled). Base Planet may already create zone; we fix sizes.
         /// </summary>
         private void EnsureSolidColliderAndOrbitZone()
         {
@@ -122,8 +136,7 @@ namespace TitanOrbit.Entities
             PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
             if (existing != null)
             {
-                var col = existing.GetComponent<SphereCollider>();
-                if (col != null) col.radius = 0.85f;
+                RefreshOrbitZoneRadius();
                 return;
             }
             GameObject orbitZoneObj = new GameObject("OrbitZone");
@@ -132,7 +145,7 @@ namespace TitanOrbit.Entities
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCol = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCol.isTrigger = true;
-            orbitCol.radius = 0.85f;
+            orbitCol.radius = GetOrbitZoneOuterRadiusLocal();
             PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             zone.SetPlanet(this);
         }

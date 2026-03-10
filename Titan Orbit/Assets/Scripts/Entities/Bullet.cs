@@ -80,18 +80,19 @@ namespace TitanOrbit.Entities
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
 
-        private static readonly Color TeamAColor = new Color(1f, 0.3f, 0.3f);
-        private static readonly Color TeamBColor = new Color(0.3f, 0.5f, 1f);
-        private static readonly Color TeamCColor = new Color(0.3f, 1f, 0.4f);
-
         private static Color GetTeamBulletColor(TeamManager.Team team)
         {
+            if (team == TeamManager.Team.None)
+                return new Color(0.75f, 0.88f, 1f); // neutral bluish white
+            if (TeamManager.Instance != null)
+                return TeamManager.GetTeamColor(team);
+            // Fallback when TeamManager not ready (e.g. in tests)
             switch (team)
             {
-                case TeamManager.Team.TeamA: return TeamAColor;
-                case TeamManager.Team.TeamB: return TeamBColor;
-                case TeamManager.Team.TeamC: return TeamCColor;
-                default: return new Color(0.75f, 0.88f, 1f); // neutral bluish white
+                case TeamManager.Team.TeamA: return new Color(1f, 0.3f, 0.3f);
+                case TeamManager.Team.TeamB: return new Color(0.3f, 0.5f, 1f);
+                case TeamManager.Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
+                default: return new Color(0.75f, 0.88f, 1f);
             }
         }
 

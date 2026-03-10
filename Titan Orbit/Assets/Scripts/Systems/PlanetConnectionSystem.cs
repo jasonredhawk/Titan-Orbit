@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -8,12 +9,13 @@ using TitanOrbit.Generation;
 
 namespace TitanOrbit.Systems
 {
-    /// <summary>
-    /// Maintains persistent, capture-driven connections between same‑team planets.
-    /// Triangles and edges are only added when a planet is captured; they do not shift or recompute.
-    /// Rules: new capture adds one triangle to the two closest team planets; if captured inside an
-    /// existing triangle, that triangle is replaced by three new triangles (new planet to each corner).
-    /// </summary>
+        /// <summary>
+        /// Maintains persistent, capture-driven connections between same‑team planets.
+        /// Triangles and edges are only added when a planet is captured; they do not shift or recompute.
+        /// Rules: new capture adds one triangle to the two closest team planets; if captured inside an
+        /// existing triangle, that triangle is replaced by three new triangles (new planet to each corner).
+        /// First law: no edges shall cross. New triangles are only added when all three angles are acute.
+        /// </summary>
     public class PlanetConnectionSystem : MonoBehaviour
     {
         public static PlanetConnectionSystem Instance { get; private set; }
@@ -41,6 +43,8 @@ namespace TitanOrbit.Systems
 
         [Header("Computation")]
         [SerializeField] private float recomputeInterval = 0.5f;
+        [Tooltip("Delay between each planet when animating the rebuild (links/triangles light up one by one).")]
+        [SerializeField] private float rebuildStepDelay = 0.08f;
 
         [Header("Bonuses")]
         [Tooltip("Per‑planet max population and growth bonus per triangle, as a fraction (e.g. 0.05 = +5% per effective triangle).")]
@@ -53,6 +57,7 @@ namespace TitanOrbit.Systems
         private readonly Dictionary<Planet, TeamManager.Team> _previousTeamPerPlanet = new Dictionary<Planet, TeamManager.Team>();
         private readonly Dictionary<Planet, float> planetBonusByPlanet = new Dictionary<Planet, float>();
         private float lastRecomputeTime = -999f;
+        private Coroutine _rebuildCoroutine;
 
         public IReadOnlyList<PlanetEdge> CurrentEdges => edges;
         public IReadOnlyList<PlanetTriangle> CurrentTriangles => triangles;
@@ -112,7 +117,9 @@ namespace TitanOrbit.Systems
             if (allPlanets == null || allPlanets.Length == 0)
                 return;
 
-            // Detect ownership changes and update persistent edges/triangles (capture-driven).
+            // Detect ownership changes and track which teams need a full graph rebuild.
+            var dirtyTeams = new HashSet<TeamManager.Team>();
+
             foreach (Planet p in allPlanets)
             {
                 if (p == null) continue;
@@ -122,9 +129,14 @@ namespace TitanOrbit.Systems
                 if (current != previous)
                 {
                     if (previous != TeamManager.Team.None)
+                    {
                         RemoveEdgesAndTrianglesContaining(p, previous);
+                        dirtyTeams.Add(previous);
+                    }
                     if (current != TeamManager.Team.None)
-                        OnPlanetCaptured(p, current);
+                    {
+                        dirtyTeams.Add(current);
+                    }
                     _previousTeamPerPlanet[p] = current;
                 }
             }
@@ -136,7 +148,29 @@ namespace TitanOrbit.Systems
             edges.RemoveAll(e => e.A == null || e.B == null);
             triangles.RemoveAll(t => t.A == null || t.B == null || t.C == null);
 
-            // Recompute bonuses from persistent triangles.
+            // When any capture/loss happened: clear ALL links (screen goes blank), then animate rebuild one planet at a time.
+            if (dirtyTeams.Count > 0)
+            {
+                if (_rebuildCoroutine != null)
+                    StopCoroutine(_rebuildCoroutine);
+                edges.Clear();
+                triangles.Clear();
+                var teamsWithPlanets = new HashSet<TeamManager.Team>();
+                foreach (var p in allPlanets)
+                {
+                    if (p == null) continue;
+                    if (p.TeamOwnership != TeamManager.Team.None)
+                        teamsWithPlanets.Add(p.TeamOwnership);
+                }
+                _rebuildCoroutine = StartCoroutine(RebuildAllGraphsAnimated(teamsWithPlanets, allPlanets));
+                return;
+            }
+
+            ApplyBonusesFromTriangles(allPlanets);
+        }
+
+        private void ApplyBonusesFromTriangles(Planet[] allPlanets)
+        {
             planetBonusByPlanet.Clear();
             foreach (var tri in triangles)
             {
@@ -160,71 +194,164 @@ namespace TitanOrbit.Systems
             }
         }
 
+        /// <summary>Animates the rebuild: one planet at a time, add its two triangles (and edges) so they light up in sequence.</summary>
+        private IEnumerator RebuildAllGraphsAnimated(HashSet<TeamManager.Team> teamsWithPlanets, Planet[] allPlanets)
+        {
+            foreach (var team in teamsWithPlanets)
+            {
+                var teamPlanets = new List<Planet>();
+                foreach (var p in allPlanets)
+                {
+                    if (p == null) continue;
+                    if (p.TeamOwnership != team) continue;
+                    teamPlanets.Add(p);
+                }
+                foreach (Planet p in teamPlanets)
+                {
+                    AddEdgesAndTrianglesForPlanet(p, team, teamPlanets);
+                    yield return new WaitForSeconds(rebuildStepDelay);
+                }
+            }
+            _rebuildCoroutine = null;
+            ApplyBonusesFromTriangles(allPlanets);
+        }
+
         private void RemoveEdgesAndTrianglesContaining(Planet planet, TeamManager.Team team)
         {
             edges.RemoveAll(e => e.Team == team && (e.A == planet || e.B == planet));
             triangles.RemoveAll(t => t.Team == team && (t.A == planet || t.B == planet || t.C == planet));
         }
 
-        private void OnPlanetCaptured(Planet newPlanet, TeamManager.Team team)
-        {
-            List<Planet> others = new List<Planet>();
-            foreach (var p in FindObjectsOfType<Planet>())
-            {
-                if (p == null || p == newPlanet || p.TeamOwnership != team) continue;
-                others.Add(p);
-            }
-
-            if (others.Count == 0) return;
-            if (others.Count == 1)
-            {
-                AddEdge(newPlanet, others[0], team);
-                return;
-            }
-
-            Vector2 newPos = new Vector2(newPlanet.ToroidalPosition.x, newPlanet.ToroidalPosition.z);
-            newPos = ToroidalMapWrapXZ(newPos);
-            PlanetTriangle? containing = null;
-            foreach (var t in triangles)
-            {
-                if (t.Team != team) continue;
-                if (PointInTriangleXZCanonical(newPos, t))
-                {
-                    containing = t;
-                    break;
-                }
-            }
-
-            if (containing.HasValue)
-            {
-                PlanetTriangle tri = containing.Value;
-                triangles.Remove(tri);
-                AddEdge(newPlanet, tri.A, team);
-                AddEdge(newPlanet, tri.B, team);
-                AddEdge(newPlanet, tri.C, team);
-                AddTriangle(newPlanet, tri.A, tri.B, team);
-                AddTriangle(newPlanet, tri.B, tri.C, team);
-                AddTriangle(newPlanet, tri.C, tri.A, team);
-                return;
-            }
-
-            // Not inside any triangle: add one new triangle to the two closest team planets.
-            var sorted = others
-                .Select(o => (planet: o, dist: ToroidalMap.ToroidalDistance(newPlanet.ToroidalPosition, o.ToroidalPosition)))
-                .OrderBy(x => x.dist)
-                .ToList();
-            Planet closest = sorted[0].planet;
-            Planet secondClosest = sorted[1].planet;
-            AddEdge(newPlanet, closest, team);
-            AddEdge(newPlanet, secondClosest, team);
-            if (!HasEdge(closest, secondClosest, team))
-                AddEdge(closest, secondClosest, team);
-            AddTriangle(newPlanet, closest, secondClosest, team);
-        }
-
         private bool HasEdge(Planet a, Planet b, TeamManager.Team team)
         {
             return edges.Exists(e => e.Team == team && ((e.A == a && e.B == b) || (e.A == b && e.B == a)));
+        }
+
+        /// <summary>
+        /// Adds up to two triangles for planet P with its three closest teammates (Q,R,S): (P,Q,R) and (P,R,S).
+        /// Used for animated rebuild so we can add one planet's triangles per step.
+        /// </summary>
+        private void AddEdgesAndTrianglesForPlanet(Planet p, TeamManager.Team team, List<Planet> teamPlanets)
+        {
+            var others = teamPlanets
+                .Where(o => o != p)
+                .OrderBy(o => ToroidalMap.ToroidalDistance(p.ToroidalPosition, o.ToroidalPosition))
+                .ToList();
+            if (others.Count < 2) return;
+
+            Planet q = others[0];
+            Planet r = others[1];
+            AddEdge(p, q, team);
+            AddEdge(p, r, team);
+            AddEdge(q, r, team);
+            if (HasEdge(p, q, team) && HasEdge(p, r, team) && HasEdge(q, r, team) && !HasTriangle(p, q, r, team))
+                AddTriangle(p, q, r, team);
+
+            if (others.Count < 3) return;
+            Planet s = others[2];
+            AddEdge(p, s, team);
+            AddEdge(r, s, team);
+            if (HasEdge(p, r, team) && HasEdge(p, s, team) && HasEdge(r, s, team) && !HasTriangle(p, r, s, team))
+                AddTriangle(p, r, s, team);
+        }
+
+        /// <summary>
+        /// Rebuilds edges and triangles for the given team. All links were already cleared globally.
+        /// Rule: for each captured planet P, form two triangles with its three closest other planets (Q,R,S).
+        /// Lines may cross.
+        /// </summary>
+        private void RebuildTeamGraph(TeamManager.Team team)
+        {
+            Planet[] allPlanets = FindObjectsOfType<Planet>();
+            var teamPlanets = new List<Planet>();
+            foreach (var p in allPlanets)
+            {
+                if (p == null) continue;
+                if (p.TeamOwnership != team) continue;
+                teamPlanets.Add(p);
+            }
+
+            int n = teamPlanets.Count;
+            if (n < 2) return;
+
+            foreach (Planet p in teamPlanets)
+                AddEdgesAndTrianglesForPlanet(p, team, teamPlanets);
+        }
+
+        /// <summary>
+        /// True if the segment (a,b) would cross any existing edge that does not share an endpoint
+        /// (first law: no lines shall cross). Checks in canonical XZ space.
+        /// </summary>
+        private bool WouldEdgeCrossExisting(Planet a, Planet b, TeamManager.Team team)
+        {
+            Vector2 a2 = ToroidalMapWrapXZ(new Vector2(a.ToroidalPosition.x, a.ToroidalPosition.z));
+            Vector2 b2 = ToroidalMapWrapXZ(new Vector2(b.ToroidalPosition.x, b.ToroidalPosition.z));
+            foreach (var e in edges)
+            {
+                if (e.A == null || e.B == null) continue;
+                if (e.A == a || e.A == b || e.B == a || e.B == b) continue; // share endpoint -> no crossing
+                Vector2 c2 = ToroidalMapWrapXZ(new Vector2(e.A.ToroidalPosition.x, e.A.ToroidalPosition.z));
+                Vector2 d2 = ToroidalMapWrapXZ(new Vector2(e.B.ToroidalPosition.x, e.B.ToroidalPosition.z));
+                if (SegmentsCrossInterior(a2, b2, c2, d2))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>True if the two segments intersect at an interior point (not at an endpoint). All coordinates in same local space.</summary>
+        private static bool SegmentsCrossInterior(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4)
+        {
+            Vector2 v1 = p2 - p1;
+            Vector2 v2 = p4 - p3;
+            float cross = Cross(v1, v2);
+            if (Mathf.Approximately(cross, 0f)) return false; // parallel
+            Vector2 w = p1 - p3;
+            float t = Cross(w, v2) / cross;
+            float s = Cross(w, v1) / cross;
+            const float eps = 1e-5f;
+            return t > eps && t < 1f - eps && s > eps && s < 1f - eps;
+        }
+
+        /// <summary>Whether we already have a triangle with these three planets (order-independent).</summary>
+        private bool HasTriangle(Planet a, Planet b, Planet c, TeamManager.Team team)
+        {
+            foreach (var t in triangles)
+            {
+                if (t.Team != team) continue;
+                var set = new HashSet<Planet> { t.A, t.B, t.C };
+                if (set.Count != 3) continue;
+                if (set.Contains(a) && set.Contains(b) && set.Contains(c)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>After edges are updated, add any new triangles for this team: triples that are fully connected and not yet a triangle.</summary>
+        private void TryAddNewTrianglesForTeam(TeamManager.Team team)
+        {
+            var teamPlanets = new List<Planet>();
+            foreach (var e in edges)
+            {
+                if (e.Team != team) continue;
+                if (e.A != null && !teamPlanets.Contains(e.A)) teamPlanets.Add(e.A);
+                if (e.B != null && !teamPlanets.Contains(e.B)) teamPlanets.Add(e.B);
+            }
+            if (teamPlanets.Count < 3) return;
+            for (int i = 0; i < teamPlanets.Count; i++)
+            {
+                Planet a = teamPlanets[i];
+                for (int j = i + 1; j < teamPlanets.Count; j++)
+                {
+                    Planet b = teamPlanets[j];
+                    if (!HasEdge(a, b, team)) continue;
+                    for (int k = j + 1; k < teamPlanets.Count; k++)
+                    {
+                        Planet c = teamPlanets[k];
+                        if (!HasEdge(b, c, team) || !HasEdge(c, a, team)) continue;
+                        if (HasTriangle(a, b, c, team)) continue;
+                        AddTriangle(a, b, c, team);
+                    }
+                }
+            }
         }
 
         private void AddEdge(Planet a, Planet b, TeamManager.Team team)
@@ -309,6 +436,25 @@ namespace TitanOrbit.Systems
             }
 
             return team;
+        }
+
+        /// <summary>Returns the home planet instance for the given team; null if none.</summary>
+        private static HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None) return null;
+            foreach (var hp in UnityEngine.Object.FindObjectsByType<HomePlanet>(UnityEngine.FindObjectsSortMode.None))
+            {
+                if (hp != null && hp.AssignedTeam == team)
+                    return hp;
+            }
+            return null;
+        }
+
+        /// <summary>Returns the home planet level for the given team (1 if no home planet found). Used for team-asteroid gem bonus.</summary>
+        public static int GetHomePlanetLevelForTeam(TeamManager.Team team)
+        {
+            HomePlanet home = FindHomePlanetForTeam(team);
+            return home != null ? home.PlanetLevel : 1;
         }
 
         private static bool PointInTriangleXZ(Vector2 p, PlanetTriangle tri)

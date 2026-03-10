@@ -1,11 +1,13 @@
 using UnityEngine;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Systems
 {
     /// <summary>
     /// Periodically tints asteroids that are inside team triangles, using PlanetConnectionSystem data.
+    /// Uses canonical (wrapped) position so asteroids stay correct on a toroidal map when display copies move.
     /// Visual-only; does not affect gameplay values.
     /// </summary>
     public class AsteroidTerritoryHighlighter : MonoBehaviour
@@ -32,8 +34,8 @@ namespace TitanOrbit.Systems
                 if (asteroid == null || asteroid.IsDestroyed)
                     continue;
 
-                Vector3 pos = asteroid.transform.position;
-                TeamManager.Team team = conn.GetTeamAtPosition(pos);
+                Vector3 canonicalPos = ToroidalMap.WrapPosition(asteroid.transform.position);
+                TeamManager.Team team = conn.GetTeamAtPosition(canonicalPos);
                 asteroid.SetTerritoryHighlight(team);
             }
         }

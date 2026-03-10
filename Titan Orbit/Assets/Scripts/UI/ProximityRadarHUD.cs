@@ -26,7 +26,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Color homePlanetColor = new Color(1f, 0.9f, 0.2f);
         [SerializeField] private Color teamAColor = new Color(1f, 0.3f, 0.3f);
         [SerializeField] private Color teamBColor = new Color(0.3f, 0.5f, 1f);
-        [SerializeField] private Color teamCColor = new Color(0.3f, 1f, 0.4f);
+        [SerializeField] private Color teamCColor = new Color(0.2f, 0.7f, 0.28f);
 
         private RectTransform radarRect;
         private RectTransform markerContainer;
@@ -283,6 +283,8 @@ namespace TitanOrbit.UI
 
         private Color GetTeamColor(TeamManager.Team team)
         {
+            if (TeamManager.Instance != null)
+                return TeamManager.GetTeamColor(team);
             switch (team)
             {
                 case TeamManager.Team.TeamA: return teamAColor;

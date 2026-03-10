@@ -793,7 +793,7 @@ namespace TitanOrbit.Entities
             rb.position = orbitPos;
 
             float innerWorld = home.PlanetSize * 0.5f;
-            float outerWorld = home.PlanetSize * 0.85f;
+            float outerWorld = home.PlanetSize * home.GetOrbitZoneOuterRadiusLocal();
             float targetSpeed = GetOrbitTargetSpeed(home, orbitRadius, innerWorld, outerWorld);
 
             rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed); // Tangent for clockwise orbit
@@ -1349,7 +1349,7 @@ namespace TitanOrbit.Entities
 
             // Orbit zone: inner 0.5 to outer 0.85 (world = planet size * local). Ship keeps whatever radius it entered.
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = currentOrbitPlanet.PlanetSize * 0.85f;
+            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
             Vector3 radial = toShip / dist;
 
             // Clockwise tangent (viewed from above): (radial.z, 0, -radial.x).
@@ -1441,7 +1441,7 @@ namespace TitanOrbit.Entities
             toShip.y = 0f;
             float dist = toShip.magnitude;
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = currentOrbitPlanet.PlanetSize * 0.85f;
+            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
             if (dist < innerWorld || dist > outerWorld) return false;
 
             Vector3 radial = toShip / dist;
@@ -1985,7 +1985,7 @@ namespace TitanOrbit.Entities
             rb.position = orbitPos;
 
             float innerWorld = planet.PlanetSize * 0.5f;
-            float outerWorld = planet.PlanetSize * 0.85f;
+            float outerWorld = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
             float targetSpeed = GetOrbitTargetSpeed(planet, orbitRadius, innerWorld, outerWorld);
 
             rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed);
@@ -2359,7 +2359,7 @@ namespace TitanOrbit.Entities
                 toShip.y = 0f;
                 float dist = toShip.magnitude;
                 float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * 0.85f;
+                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
                 if (dist >= inner && dist <= outer)
                 {
                     currentOrbitPlanet = planet;
@@ -2380,7 +2380,7 @@ namespace TitanOrbit.Entities
                 toShip.y = 0f;
                 float dist = toShip.magnitude;
                 float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * 0.85f;
+                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
                 if (dist >= inner && dist <= outer)
                 {
                     currentOrbitPlanet = planet;

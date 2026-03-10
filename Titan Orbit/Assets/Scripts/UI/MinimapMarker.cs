@@ -160,11 +160,13 @@ namespace TitanOrbit.UI
         
         private Color GetTeamColor(TeamManager.Team team)
         {
+            if (TeamManager.Instance != null)
+                return TeamManager.GetTeamColor(team);
             switch (team)
             {
                 case TeamManager.Team.TeamA: return new Color(1f, 0.3f, 0.3f);
                 case TeamManager.Team.TeamB: return new Color(0.3f, 0.5f, 1f);
-                case TeamManager.Team.TeamC: return new Color(0.3f, 1f, 0.4f);
+                case TeamManager.Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
                 default: return Color.white;
             }
         }
