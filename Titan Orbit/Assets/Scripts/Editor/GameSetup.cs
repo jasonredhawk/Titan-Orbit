@@ -1780,7 +1780,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.85f * 1.5f; // Orbit zone base at level 1 (1.5x original); runtime refreshes by level
+            orbitCollider.radius = 0.85f * 1.5f * 0.75f; // Orbit zone base at level 1 (75% of previous size); runtime refreshes by level
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
@@ -1878,7 +1878,7 @@ namespace TitanOrbit.Editor
             orbitZoneObj.transform.localScale = Vector3.one;
             SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
-            orbitCollider.radius = 0.85f * 1.5f; // Orbit zone base at level 1 (1.5x original); runtime refreshes by level
+            orbitCollider.radius = 0.85f * 1.5f * 0.75f; // Orbit zone base at level 1 (75% of previous size); runtime refreshes by level
             PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);

@@ -43,8 +43,8 @@ namespace TitanOrbit.Systems
 
         [Header("Computation")]
         [SerializeField] private float recomputeInterval = 0.5f;
-        [Tooltip("Delay between each planet when animating the rebuild (links/triangles light up one by one).")]
-        [SerializeField] private float rebuildStepDelay = 0.08f;
+        [Tooltip("Delay between each planet when animating the rebuild. 0 = one frame per planet (smooth, no lagged blits).")]
+        [SerializeField] private float rebuildStepDelay = 0f;
 
         [Header("Bonuses")]
         [Tooltip("Per‑planet max population and growth bonus per triangle, as a fraction (e.g. 0.05 = +5% per effective triangle).")]
@@ -194,9 +194,10 @@ namespace TitanOrbit.Systems
             }
         }
 
-        /// <summary>Animates the rebuild: one planet at a time, add its two triangles (and edges) so they light up in sequence.</summary>
+        /// <summary>Animates the rebuild: one planet per frame (or per step delay) so updates are smooth with no lagged blits.</summary>
         private IEnumerator RebuildAllGraphsAnimated(HashSet<TeamManager.Team> teamsWithPlanets, Planet[] allPlanets)
         {
+            WaitForSeconds stepWait = rebuildStepDelay > 0f ? new WaitForSeconds(rebuildStepDelay) : null;
             foreach (var team in teamsWithPlanets)
             {
                 var teamPlanets = new List<Planet>();
@@ -209,7 +210,10 @@ namespace TitanOrbit.Systems
                 foreach (Planet p in teamPlanets)
                 {
                     AddEdgesAndTrianglesForPlanet(p, team, teamPlanets);
-                    yield return new WaitForSeconds(rebuildStepDelay);
+                    if (stepWait != null)
+                        yield return stepWait;
+                    else
+                        yield return null; // One frame per planet = smooth, no stutter
                 }
             }
             _rebuildCoroutine = null;
@@ -228,8 +232,8 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// Adds up to two triangles for planet P with its three closest teammates (Q,R,S): (P,Q,R) and (P,R,S).
-        /// Used for animated rebuild so we can add one planet's triangles per step.
+        /// Adds two triangles for planet P with its three closest teammates (Q, R, S): (P,Q,R) and (P,R,S).
+        /// Used for animated rebuild so we add one planet's triangles per step. Lines can cross.
         /// </summary>
         private void AddEdgesAndTrianglesForPlanet(Planet p, TeamManager.Team team, List<Planet> teamPlanets)
         {
@@ -257,8 +261,7 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Rebuilds edges and triangles for the given team. All links were already cleared globally.
-        /// Rule: for each captured planet P, form two triangles with its three closest other planets (Q,R,S).
-        /// Lines may cross.
+        /// Rule: for each captured planet P, form two triangles with its three closest other planets (P,Q,R) and (P,R,S). Lines may cross.
         /// </summary>
         private void RebuildTeamGraph(TeamManager.Team team)
         {

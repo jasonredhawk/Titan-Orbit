@@ -265,7 +265,7 @@ namespace TitanOrbit.Entities
                 float baseThrust = componentEngineThrust > 0f ? componentEngineThrust : engineThrust;
                 float baseWithCards = baseThrust + GetCardMovementSpeedAdd();
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return baseWithCards * attrScale;
+                return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier;
             }
         }
         /// <summary>Max speed from engines. More engines = higher cap. Scaled by attr/cards.</summary>
@@ -276,7 +276,22 @@ namespace TitanOrbit.Entities
                 float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
                 float baseWithCards = baseSpeed + GetCardMovementSpeedAdd() * 0.5f;
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return Mathf.Max(2f, baseWithCards * attrScale);
+                float speed = Mathf.Max(2f, baseWithCards * attrScale);
+                return speed * FriendlyTerritoryMovementMultiplier;
+            }
+        }
+
+        /// <summary>When in a friendly triangle, ships move 5% per home planet level faster. Otherwise 1.</summary>
+        private float FriendlyTerritoryMovementMultiplier
+        {
+            get
+            {
+                if (PlanetConnectionSystem.Instance == null || shipTeam.Value == TeamManager.Team.None) return 1f;
+                Vector3 pos = ToroidalMap.WrapPosition(transform.position);
+                TeamManager.Team teamAtPos = PlanetConnectionSystem.Instance.GetTeamAtPosition(pos);
+                if (teamAtPos != shipTeam.Value) return 1f;
+                int homeLevel = PlanetConnectionSystem.GetHomePlanetLevelForTeam(shipTeam.Value);
+                return 1f + 0.05f * homeLevel;
             }
         }
 
@@ -1407,7 +1422,7 @@ namespace TitanOrbit.Entities
             float sizeMultiplier = Mathf.Lerp(0.8f, 1.4f, sizeNorm);     // Small → big planet
             float radiusMultiplier = Mathf.Lerp(0.7f, 1.6f, radiusFactor); // Outer → inner orbit
 
-            return orbitSpeed * sizeMultiplier * radiusMultiplier;
+            return orbitSpeed * sizeMultiplier * radiusMultiplier * FriendlyTerritoryMovementMultiplier;
         }
 
         /// <summary>

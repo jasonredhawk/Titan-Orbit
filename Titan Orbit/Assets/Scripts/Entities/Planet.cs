@@ -52,8 +52,8 @@ namespace TitanOrbit.Entities
         [Tooltip("Spin speed in degrees/second. Clockwise when viewed from the positive ring axis.")]
         [SerializeField] private float spinDegreesPerSecond = 2f;
 
-        /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85). Grows 5% per planet level.</summary>
-        private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f;
+        /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85, then scaled to 75% of that). Grows 5% per planet level.</summary>
+        private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
         private const float OrbitZoneGrowthPerLevel = 0.05f;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>

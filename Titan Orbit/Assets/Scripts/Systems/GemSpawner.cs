@@ -19,6 +19,9 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject peopleTransportPrefab;
         [SerializeField] private float explosionSpeed = 2f;
         [SerializeField] private float explosionRadius = 1f;
+        [Tooltip("Asteroid gem burst - kept much lower so gems don't fly away.")]
+        [SerializeField] private float asteroidExplosionSpeed = 0.6f;
+        [SerializeField] private float asteroidExplosionRadius = 0.5f;
 
         private void Awake()
         {
@@ -271,13 +274,13 @@ namespace TitanOrbit.Systems
             Vector2 dir2 = Random.insideUnitCircle.normalized;
             if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
             Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
-            Vector3 pos = asteroidCenter + dir * explosionRadius * Random.Range(0.3f, 1f);
+            Vector3 pos = asteroidCenter + dir * asteroidExplosionRadius * Random.Range(0.3f, 1f);
 
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = gemObj.GetComponent<Rigidbody>();
             if (rb != null)
             {
-                rb.linearVelocity = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+                rb.linearVelocity = dir * asteroidExplosionSpeed * Random.Range(0.8f, 1.2f);
                 rb.angularVelocity = new Vector3(
                     Random.Range(-1.5f, 1.5f),
                     Random.Range(-1.5f, 1.5f),

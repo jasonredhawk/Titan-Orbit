@@ -14,10 +14,10 @@ namespace TitanOrbit.Entities
     public class PlanetConnectionShapesVisual : ImmediateModeShapeDrawer
     {
         [Header("Lines")]
-        [SerializeField] private float lineThickness = 0.7f;
+        [SerializeField] private float lineThickness = 0.21f;
         [Tooltip("Use same Y as triangles so lines are on the same plane and visible on main map.")]
         [SerializeField] private float lineHeight = -0.6f;
-        [SerializeField] private float lineAlpha = 0.4f;
+        [SerializeField] private float lineAlpha = 0.2f;
 
         [Header("Triangles")]
         [SerializeField] private float triangleHeight = -0.6f;
