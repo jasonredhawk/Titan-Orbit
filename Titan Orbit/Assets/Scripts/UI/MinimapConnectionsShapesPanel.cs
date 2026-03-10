@@ -108,9 +108,9 @@ namespace TitanOrbit.UI
             float displayHalf = minimap.DisplaySize * 0.5f;
             float scaleX = displayHalf / radius;
             float scaleZ = displayHalf / radius;
+            Vector2 stableCenter = rect.center;
 
             // Triangles first (background), then borders, then lines.
-            // Use unwrapped positions and clip to circle so geometry stays inside the minimap mask.
             if (triangles != null)
             {
                 foreach (var tri in triangles)
@@ -118,15 +118,16 @@ namespace TitanOrbit.UI
                     if (tri.A == null || tri.B == null || tri.C == null)
                         continue;
 
-                    Vector3 aCanon = tri.A.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, tri.B.ToroidalPosition);
-                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, tri.C.ToroidalPosition);
+                    PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet b, out Planet c);
+                    Vector3 aCanon = anchor.ToroidalPosition;
+                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, b.ToroidalPosition);
+                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, c.ToroidalPosition);
                     if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa, out bool inA))
                         continue;
                     Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
                     Vector2 pc = pa + new Vector2(cLocal.x * scaleX, cLocal.y * scaleZ);
-                    bool inB = (pb - center).sqrMagnitude <= circleRadius * circleRadius;
-                    bool inC = (pc - center).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inB = (pb - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inC = (pc - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
                     if (!inA && !inB && !inC)
                         continue;
 
@@ -134,7 +135,7 @@ namespace TitanOrbit.UI
                     Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
                     Color borderColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
 
-                    DrawTriangleClippedToCircle(center, circleRadius, pa, pb, pc, fillColor, borderColor);
+                    DrawTriangleClippedToCircle(stableCenter, circleRadius, pa, pb, pc, fillColor, borderColor);
                 }
             }
 
@@ -145,17 +146,18 @@ namespace TitanOrbit.UI
                     if (e.A == null || e.B == null)
                         continue;
 
-                    Vector3 aCanon = e.A.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, e.B.ToroidalPosition);
+                    PlanetConnectionSystem.GetStableEdgeOrder(e, out Planet ea, out Planet eb);
+                    Vector3 aCanon = ea.ToroidalPosition;
+                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, eb.ToroidalPosition);
                     if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa, out bool inA))
                         continue;
                     Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
-                    bool inB = (pb - center).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inB = (pb - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
                     if (!inA && !inB)
                         continue;
 
                     Color lineColor = new Color(TeamManager.GetTeamColor(e.Team).r, TeamManager.GetTeamColor(e.Team).g, TeamManager.GetTeamColor(e.Team).b, 1f);
-                    if (ClipSegmentToCircle(center, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
+                    if (ClipSegmentToCircle(stableCenter, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
                         Draw.Line(paOut, pbOut, lineThickness, LineEndCap.Round, lineColor);
                 }
             }

@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
+using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using System;
 using System.IO;
@@ -129,37 +130,38 @@ namespace TitanOrbit.UI
             float circleRadius = Mathf.Min(halfW, halfH);
             // Use DisplaySize/2 for projection so triangle positions match blips (blips use normX * displaySize/2)
             float displayHalf = _minimap.DisplaySize * 0.5f;
+            // Use stable center: content pivot is (0.5,0.5) so local center is (0,0); avoids flip when rect layout varies
+            Vector2 stableCenter = Vector2.zero;
 
             // Triangles first (fill then border), then lines
-            // Use unwrapped positions (A + shortest offsets for B,C) so we draw the short triangle, not the long way.
-            // Clip to circle so geometry stays inside the minimap mask.
             if (triangles != null)
             {
                 foreach (var tri in triangles)
                 {
                     if (tri.A == null || tri.B == null || tri.C == null) continue;
-                    Vector3 aCanon = tri.A.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, tri.B.ToroidalPosition);
-                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, tri.C.ToroidalPosition);
-                    if (!TryProject(center, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out bool inA)) continue;
+                    PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet b, out Planet c);
+                    Vector3 aCanon = anchor.ToroidalPosition;
+                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, b.ToroidalPosition);
+                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, c.ToroidalPosition);
+                    if (!TryProject(stableCenter, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out bool inA)) continue;
                     float scaleX = displayHalf / radius;
                     float scaleZ = displayHalf / radius;
                     Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
                     Vector2 pc = pa + new Vector2(cLocal.x * scaleX, cLocal.y * scaleZ);
-                    bool inB = (pb - center).sqrMagnitude <= circleRadius * circleRadius;
-                    bool inC = (pc - center).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inB = (pb - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inC = (pc - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
                     if (!inA && !inB && !inC) continue;
 
                     Color baseColor = TeamManager.GetTeamColor(tri.Team);
                     Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
                     Color borderColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
 
-                    AddTriangleClippedToCircle(vh, center, circleRadius, pa, pb, pc, fillColor);
-                    if (ClipSegmentToCircle(center, circleRadius, pa, pb, out Vector2 paPb, out Vector2 pbPa))
+                    AddTriangleClippedToCircle(vh, stableCenter, circleRadius, pa, pb, pc, fillColor);
+                    if (ClipSegmentToCircle(stableCenter, circleRadius, pa, pb, out Vector2 paPb, out Vector2 pbPa))
                         AddLine(vh, paPb, pbPa, triangleBorderPx, borderColor);
-                    if (ClipSegmentToCircle(center, circleRadius, pb, pc, out Vector2 pbPc, out Vector2 pcPb))
+                    if (ClipSegmentToCircle(stableCenter, circleRadius, pb, pc, out Vector2 pbPc, out Vector2 pcPb))
                         AddLine(vh, pbPc, pcPb, triangleBorderPx, borderColor);
-                    if (ClipSegmentToCircle(center, circleRadius, pc, pa, out Vector2 pcPa, out Vector2 paPc))
+                    if (ClipSegmentToCircle(stableCenter, circleRadius, pc, pa, out Vector2 pcPa, out Vector2 paPc))
                         AddLine(vh, pcPa, paPc, triangleBorderPx, borderColor);
                 }
             }
@@ -169,17 +171,18 @@ namespace TitanOrbit.UI
                 foreach (var e in edges)
                 {
                     if (e.A == null || e.B == null) continue;
-                    Vector3 aCanon = e.A.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, e.B.ToroidalPosition);
-                    if (!TryProject(center, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out bool inA)) continue;
+                    PlanetConnectionSystem.GetStableEdgeOrder(e, out Planet ea, out Planet eb);
+                    Vector3 aCanon = ea.ToroidalPosition;
+                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, eb.ToroidalPosition);
+                    if (!TryProject(stableCenter, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out bool inA)) continue;
                     float scaleX = displayHalf / radius;
                     float scaleZ = displayHalf / radius;
                     Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
-                    bool inB = (pb - center).sqrMagnitude <= circleRadius * circleRadius;
+                    bool inB = (pb - stableCenter).sqrMagnitude <= circleRadius * circleRadius;
                     if (!inA && !inB) continue;
 
                     Color lineColor = TeamManager.GetTeamColor(e.Team);
-                    if (ClipSegmentToCircle(center, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
+                    if (ClipSegmentToCircle(stableCenter, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
                         AddLine(vh, paOut, pbOut, lineThicknessPx, lineColor);
                 }
             }

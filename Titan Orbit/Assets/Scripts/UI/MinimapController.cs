@@ -1421,11 +1421,11 @@ namespace TitanOrbit.UI
                     if (blips.ContainsKey(p.transform))
                     {
                         blips[p.transform].gameObject.SetActive(true);
-                        UpdateBlip(p.transform, planetBlipColor, planetBlipSize);
+                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize);
                     }
                     else
                     {
-                        EnsureBlip(p.transform, () => CreateBlip(planetBlipColor, planetBlipSize, BlipType.Circle));
+                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize));
                     }
                 }
             }
@@ -1655,6 +1655,121 @@ namespace TitanOrbit.UI
             rt.pivot = new Vector2(0.5f, 0.5f);
 
             return rt;
+        }
+
+        private RectTransform CreatePlanetBlip(Planet p, Color color, float size)
+        {
+            if (minimapContent == null || p == null) return null;
+            RectTransform rt = CreateBlip(color, size, BlipType.Circle);
+            if (rt == null) return null;
+
+            // Population text (child)
+            var textGo = new GameObject("PopulationText");
+            textGo.transform.SetParent(rt, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = new Vector2(0.5f, 0.5f);
+            textRect.anchorMax = new Vector2(0.5f, 0.5f);
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.anchoredPosition = Vector2.zero;
+            textRect.sizeDelta = new Vector2(size * 1.2f, size * 0.6f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = Mathf.RoundToInt(p.CurrentPopulation).ToString();
+            tmp.fontSize = Mathf.Max(8, size * 0.45f);
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
+
+            // Level rings container
+            var ringsGo = new GameObject("LevelRings");
+            ringsGo.transform.SetParent(rt, false);
+            var ringsRect = ringsGo.AddComponent<RectTransform>();
+            ringsRect.anchorMin = Vector2.zero;
+            ringsRect.anchorMax = Vector2.one;
+            ringsRect.offsetMin = Vector2.zero;
+            ringsRect.offsetMax = Vector2.zero;
+            AddLevelRingsToContainer(ringsRect, p.PlanetLevel, size);
+
+            return rt;
+        }
+
+        private void AddLevelRingsToContainer(RectTransform container, int level, float blipSize)
+        {
+            if (container == null || level < 1) return;
+            Sprite ringSprite = CreateRingSprite(24);
+            if (ringSprite == null) return;
+            float ringStep = blipSize * 0.25f;
+            for (int i = 0; i < level; i++)
+            {
+                var ringGo = new GameObject("Ring" + i);
+                ringGo.transform.SetParent(container, false);
+                var ringRect = ringGo.AddComponent<RectTransform>();
+                ringRect.anchorMin = new Vector2(0.5f, 0.5f);
+                ringRect.anchorMax = new Vector2(0.5f, 0.5f);
+                ringRect.pivot = new Vector2(0.5f, 0.5f);
+                ringRect.anchoredPosition = Vector2.zero;
+                float r = blipSize * 0.5f + (i + 1) * ringStep;
+                ringRect.sizeDelta = new Vector2(r * 2f, r * 2f);
+                var img = ringGo.AddComponent<Image>();
+                img.sprite = ringSprite;
+                img.color = new Color(1f, 1f, 1f, 0.7f);
+                img.raycastTarget = false;
+            }
+        }
+
+        private static Sprite _ringSpriteCache;
+        private static Sprite CreateRingSprite(int textureSize)
+        {
+            if (_ringSpriteCache != null) return _ringSpriteCache;
+            Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
+            texture.filterMode = FilterMode.Bilinear;
+            float center = textureSize / 2f;
+            float innerRadius = center - 3f;
+            float outerRadius = center - 0.5f;
+            for (int y = 0; y < textureSize; y++)
+            {
+                for (int x = 0; x < textureSize; x++)
+                {
+                    float dx = x - center;
+                    float dy = y - center;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist >= innerRadius && dist <= outerRadius)
+                        texture.SetPixel(x, y, Color.white);
+                    else
+                        texture.SetPixel(x, y, Color.clear);
+                }
+            }
+            texture.Apply();
+            _ringSpriteCache = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f));
+            _ringSpriteCache.name = "MinimapRing";
+            return _ringSpriteCache;
+        }
+
+        private void UpdatePlanetBlip(RectTransform blipRt, Planet p, Color color, float size)
+        {
+            if (blipRt == null || p == null) return;
+            blipRt.sizeDelta = new Vector2(size, size);
+            if (blipRt.GetComponent<Image>() is Image img)
+                img.color = color;
+
+            var textGo = blipRt.Find("PopulationText");
+            if (textGo != null && textGo.GetComponent<TextMeshProUGUI>() is TextMeshProUGUI tmp)
+            {
+                tmp.text = Mathf.RoundToInt(p.CurrentPopulation).ToString();
+                tmp.fontSize = Mathf.Max(8, size * 0.45f);
+            }
+
+            var ringsGo = blipRt.Find("LevelRings");
+            if (ringsGo != null)
+            {
+                int currentRings = ringsGo.childCount;
+                int needed = p.PlanetLevel;
+                if (currentRings != needed)
+                {
+                    for (int i = ringsGo.childCount - 1; i >= 0; i--)
+                        Destroy(ringsGo.GetChild(i).gameObject);
+                    AddLevelRingsToContainer(ringsGo.GetComponent<RectTransform>(), needed, size);
+                }
+            }
         }
 
         private Sprite CreateBlipSprite(int size, BlipType blipType)

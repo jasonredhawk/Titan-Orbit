@@ -65,9 +65,10 @@ namespace TitanOrbit.Entities
                         if (tri.A == null || tri.B == null || tri.C == null)
                             continue;
 
-                        Vector3 aCanon = tri.A.ToroidalPosition;
-                        Vector2 bOff = ToroidalMap.ShortestOffsetXZ(aCanon, tri.B.ToroidalPosition);
-                        Vector2 cOff = ToroidalMap.ShortestOffsetXZ(aCanon, tri.C.ToroidalPosition);
+                        PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet bPlanet, out Planet cPlanet);
+                        Vector3 aCanon = anchor.ToroidalPosition;
+                        Vector2 bOff = ToroidalMap.ShortestOffsetXZ(aCanon, bPlanet.ToroidalPosition);
+                        Vector2 cOff = ToroidalMap.ShortestOffsetXZ(aCanon, cPlanet.ToroidalPosition);
                         Vector3 a = ToroidalMap.GetDisplayPosition(aCanon, camPos);
                         Vector3 b = a + new Vector3(bOff.x, 0f, bOff.y);
                         Vector3 c = a + new Vector3(cOff.x, 0f, cOff.y);
@@ -91,8 +92,9 @@ namespace TitanOrbit.Entities
                         if (e.A == null || e.B == null)
                             continue;
 
-                        Vector3 aCanon = e.A.ToroidalPosition;
-                        Vector2 bOff = ToroidalMap.ShortestOffsetXZ(aCanon, e.B.ToroidalPosition);
+                        PlanetConnectionSystem.GetStableEdgeOrder(e, out Planet ea, out Planet eb);
+                        Vector3 aCanon = ea.ToroidalPosition;
+                        Vector2 bOff = ToroidalMap.ShortestOffsetXZ(aCanon, eb.ToroidalPosition);
                         Vector3 a = ToroidalMap.GetDisplayPosition(aCanon, camPos);
                         Vector3 b = a + new Vector3(bOff.x, 0f, bOff.y);
                         a.y = lineHeight;

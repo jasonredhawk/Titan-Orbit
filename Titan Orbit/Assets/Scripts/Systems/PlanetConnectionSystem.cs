@@ -57,6 +57,26 @@ namespace TitanOrbit.Systems
         public IReadOnlyList<PlanetEdge> CurrentEdges => edges;
         public IReadOnlyList<PlanetTriangle> CurrentTriangles => triangles;
 
+        /// <summary>Returns triangle vertices with a stable anchor (smallest PlanetId) so drawing does not flip when camera moves.</summary>
+        public static void GetStableTriangleOrder(PlanetTriangle tri, out Planet anchor, out Planet b, out Planet c)
+        {
+            int idA = tri.A != null ? tri.A.PlanetId : int.MaxValue;
+            int idB = tri.B != null ? tri.B.PlanetId : int.MaxValue;
+            int idC = tri.C != null ? tri.C.PlanetId : int.MaxValue;
+            if (idA <= idB && idA <= idC) { anchor = tri.A; b = tri.B; c = tri.C; return; }
+            if (idB <= idA && idB <= idC) { anchor = tri.B; b = tri.A; c = tri.C; return; }
+            anchor = tri.C; b = tri.A; c = tri.B;
+        }
+
+        /// <summary>Returns edge endpoints with stable order (smallest PlanetId first) so drawing does not flip.</summary>
+        public static void GetStableEdgeOrder(PlanetEdge e, out Planet a, out Planet b)
+        {
+            if (e.A == null) { a = e.B; b = e.A; return; }
+            if (e.B == null) { a = e.A; b = e.B; return; }
+            if (e.A.PlanetId <= e.B.PlanetId) { a = e.A; b = e.B; return; }
+            a = e.B; b = e.A;
+        }
+
         private void Awake()
         {
             BootTrace.Mark("PlanetConnectionSystem.Awake - enter");
