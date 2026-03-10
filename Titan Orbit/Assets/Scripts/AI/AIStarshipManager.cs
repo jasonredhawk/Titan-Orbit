@@ -39,18 +39,22 @@ namespace TitanOrbit.AI
 
         private void Awake()
         {
+            BootTrace.Mark("AIStarshipManager.Awake - enter");
             if (Instance == null)
             {
                 Instance = this;
+                BootTrace.Mark("AIStarshipManager.Awake - instance set");
             }
             else
             {
+                BootTrace.Mark("AIStarshipManager.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
             }
         }
 
         public override void OnNetworkSpawn()
         {
+            BootTrace.Mark("AIStarshipManager.OnNetworkSpawn - enter (IsServer=" + IsServer + ")");
             if (IsServer)
             {
                 // Initialize team lists
@@ -61,6 +65,7 @@ namespace TitanOrbit.AI
                         aiShipsByTeam[team] = new List<Starship>();
                     }
                 }
+                BootTrace.Mark("AIStarshipManager.OnNetworkSpawn - team lists initialized");
             }
         }
 
@@ -75,6 +80,7 @@ namespace TitanOrbit.AI
             // Skip spawning if player disabled AI ships (main menu checkbox)
             if (!AIShipsEnabled)
             {
+                BootTrace.Mark("AIStarshipManager.Update - AIShipsDisabled, skipping spawn");
                 hasSpawnedAI = true;
                 return;
             }
@@ -82,9 +88,11 @@ namespace TitanOrbit.AI
             // Wait a bit for the scene to fully initialize
             if (Time.time < 2f) return;
 
+            BootTrace.Mark("AIStarshipManager.Update - spawning AI ships for all teams");
             // Spawn AI ships for each team
             SpawnAIShipsForAllTeams();
             hasSpawnedAI = true;
+            BootTrace.Mark("AIStarshipManager.Update - finished spawning AI ships");
         }
 
         private void SpawnAIShipsForAllTeams()

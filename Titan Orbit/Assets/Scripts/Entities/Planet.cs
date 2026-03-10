@@ -69,9 +69,23 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<int> planetIdNet = new NetworkVariable<int>(0);
 
+        /// <summary>
+        /// Connection bonuses from planet‑to‑planet territory triangles.
+        /// Values are fractional multipliers: 0.1 = +10% max population / growth.
+        /// Server‑authored, but read on all clients via properties.
+        /// </summary>
+        private float connectionMaxPopulationBonusFraction = 0f;
+        private float connectionGrowthBonusFraction = 0f;
+
         public int PlanetId => planetIdNet.Value;
         public TeamManager.Team TeamOwnership => teamOwnership.Value;
-        
+
+        /// <summary>
+        /// Toroidal (canonical) position for this planet. Use for connection/triangle logic and consistent wrapping.
+        /// Wraps transform position to the map tile; stable regardless of which display copy is visible.
+        /// </summary>
+        public Vector3 ToroidalPosition => ToroidalMap.WrapPosition(transform.position);
+
         protected void SetInitialTeamOwnership(TeamManager.Team team)
         {
             teamOwnership.Value = team;
@@ -87,8 +101,8 @@ namespace TitanOrbit.Entities
             planetId = id;
         }
         public float CurrentPopulation => currentPopulation.Value;
-        public float MaxPopulation => maxPopulation.Value;
-        public float GrowthRate => growthRate.Value;
+        public float MaxPopulation => maxPopulation.Value * (1f + Mathf.Max(0f, connectionMaxPopulationBonusFraction));
+        public float GrowthRate => GetGrowthRatePerSecond();
         public int PlanetLevel => planetLevel.Value;
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
@@ -259,15 +273,19 @@ namespace TitanOrbit.Entities
 
             if (IsServer)
             {
-                // Grow population over time if not at max
-                if (currentPopulation.Value < maxPopulation.Value && teamOwnership.Value != TeamManager.Team.None)
+                // Grow population over time if not at max (including territory bonuses).
+                if (teamOwnership.Value != TeamManager.Team.None)
                 {
-                    float growth = GetGrowthRatePerSecond() * Time.deltaTime;
-                    if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
-                    currentPopulation.Value = Mathf.Min(
-                        currentPopulation.Value + growth,
-                        maxPopulation.Value
-                    );
+                    float effectiveMax = MaxPopulation;
+                    if (currentPopulation.Value < effectiveMax)
+                    {
+                        float growth = GetGrowthRatePerSecond() * Time.deltaTime;
+                        if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
+                        currentPopulation.Value = Mathf.Min(
+                            currentPopulation.Value + growth,
+                            effectiveMax
+                        );
+                    }
                 }
             }
             
@@ -528,8 +546,11 @@ namespace TitanOrbit.Entities
         /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>
         protected virtual float GetGrowthRatePerSecond()
         {
-            // Use stored growthRate.Value (which doubles on level up) instead of constant baseGrowthRate
-            return growthRate.Value > 0f ? growthRate.Value : baseGrowthRate;
+            // Use stored growthRate.Value (which doubles on level up) instead of constant baseGrowthRate,
+            // then apply any connection bonus from planet‑to‑planet triangles.
+            float baseRate = growthRate.Value > 0f ? growthRate.Value : baseGrowthRate;
+            float bonusFactor = 1f + Mathf.Max(0f, connectionGrowthBonusFraction);
+            return baseRate * bonusFactor;
         }
 
         /// <summary>Server: update synced growth rate (e.g. when planet levels up).</summary>
@@ -537,6 +558,19 @@ namespace TitanOrbit.Entities
         {
             if (IsServer)
                 growthRate.Value = rate;
+        }
+
+        /// <summary>
+        /// Server‑only: apply connection bonuses from territory triangles.
+        /// Both arguments are fractional (e.g. 0.1 = +10%).
+        /// </summary>
+        public void SetConnectionBonuses(float maxPopBonusFraction, float growthBonusFraction)
+        {
+            if (!IsServer)
+                return;
+
+            connectionMaxPopulationBonusFraction = Mathf.Max(0f, maxPopBonusFraction);
+            connectionGrowthBonusFraction = Mathf.Max(0f, growthBonusFraction);
         }
 
         /// <summary>Initial planet level. Override in HomePlanet to start at 3.</summary>
@@ -636,7 +670,7 @@ namespace TitanOrbit.Entities
             // Same-team planet: add population (reinforce)
             if (teamOwnership.Value != TeamManager.Team.None && teamOwnership.Value == sourceTeam)
             {
-                currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, maxPopulation.Value);
+                currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, MaxPopulation);
                 return;
             }
             // Neutral or enemy: unload decreases their population (capture attempt)

@@ -97,7 +97,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 394966698
+  GlobalObjectIdHash: 3088555637
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -122,6 +122,7 @@ MonoBehaviour:
   baseHealth: 50
   respawnTime: 30
   healthScalingMultiplier: 3
+  asteroidRenderer: {fileID: 0}
 --- !u!114 &5559720503998006109
 MonoBehaviour:
   m_ObjectHideFlags: 0

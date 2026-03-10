@@ -75,7 +75,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 394966698
+  GlobalObjectIdHash: 3088555637
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -244,6 +244,7 @@ MonoBehaviour:
   orbitZoneOuterRadius: 0.85
   orbitZoneTint: {r: 0.5, g: 0.7, b: 0.95, a: 1}
   orbitZoneInnerAlpha: 0.3
+  orbitZoneHeightBelowPlanet: 1
 --- !u!1 &5037814961464842442
 GameObject:
   m_ObjectHideFlags: 0
@@ -326,6 +327,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.OrbitZoneShapesVisual
   useCullingMasks: 0
   outerRadius: 0.85
+  heightBelowPlanet: 1
   borderThickness: 0.22
   tint: {r: 1, g: 1, b: 1, a: 1}
   alphaWhenNotOrbiting: 1

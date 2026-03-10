@@ -1,5 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Systems;
+using TitanOrbit.Entities;
 
 namespace TitanOrbit.Core
 {
@@ -42,13 +44,25 @@ namespace TitanOrbit.Core
 
         private void Awake()
         {
+            BootTrace.Clear();
+            BootTrace.Mark("GameManager.Awake - enter");
+
             if (Instance == null)
             {
                 Instance = this;
                 DontDestroyOnLoad(gameObject);
+
+                BootTrace.Mark("GameManager.Awake - creating PlanetConnectionSystems");
+                var systemsGo = new GameObject("PlanetConnectionSystems");
+                DontDestroyOnLoad(systemsGo);
+                systemsGo.AddComponent<PlanetConnectionSystem>();
+                systemsGo.AddComponent<AsteroidTerritoryHighlighter>();
+                systemsGo.AddComponent<PlanetConnectionShapesVisual>();
+                BootTrace.Mark("GameManager.Awake - PlanetConnectionSystems created");
             }
             else
             {
+                BootTrace.Mark("GameManager.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
             }
         }

@@ -100,17 +100,31 @@ namespace TitanOrbit.Generation
         /// <summary>Called by NetworkGameManager when server starts so map is generated even if this object's OnNetworkSpawn didn't run (e.g. scene management disabled).</summary>
         public void EnsureMapGenerated()
         {
-            if (hasGenerated) return;
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            BootTrace.Mark("MapGenerator.EnsureMapGenerated - enter");
+            if (hasGenerated)
+            {
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - already generated, skipping");
+                return;
+            }
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+            {
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - not server or NetworkManager missing");
+                return;
+            }
             hasGenerated = true;
             EnsureParents();
             if (batchDelaySeconds > 0f && gameObject.activeInHierarchy)
+            {
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - starting progressive generation");
                 StartCoroutine(GenerateMapProgressive());
+            }
             else
             {
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - calling GenerateMapImmediate");
                 GenerateMapImmediate();
                 loadingProgress.Value = 1f;
                 loadingComplete.Value = true;
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
             }
             int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
             if (hasGenerated)
@@ -141,6 +155,7 @@ namespace TitanOrbit.Generation
 
         private IEnumerator GenerateMapProgressive()
         {
+            BootTrace.Mark("MapGenerator.GenerateMapProgressive - begin");
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
 
@@ -163,6 +178,7 @@ namespace TitanOrbit.Generation
             GenerateHomePlanets();
             completed += homePlanetPrefab != null ? 3 : 0;
             loadingProgress.Value = (float)completed / totalSteps;
+            BootTrace.Mark("MapGenerator.GenerateMapProgressive - after home planets");
             yield return new WaitForSeconds(batchDelaySeconds);
 
             for (int i = 0; i < numberOfPlanets; i++)
@@ -176,6 +192,7 @@ namespace TitanOrbit.Generation
                 if (batchDelaySeconds > 0f && i % 2 == 1)
                     yield return new WaitForSeconds(batchDelaySeconds * 0.5f);
             }
+            BootTrace.Mark("MapGenerator.GenerateMapProgressive - after neutral planets");
 
             if (asteroidPrefab != null)
             {
@@ -197,16 +214,16 @@ namespace TitanOrbit.Generation
                         if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
                         if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
 
-                    asteroidPositions.Add(position);
-                    float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
-                    float linearScale = Mathf.Lerp(MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS, (size - 1f) / (maxAsteroidSize - 1f));
-                    Vector3 scale = new Vector3(
-                        linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
-                        linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
-                        linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
-                    );
+                        asteroidPositions.Add(position);
+                        float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
+                        float linearScale = Mathf.Lerp(MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS, (size - 1f) / (maxAsteroidSize - 1f));
+                        Vector3 scale = new Vector3(
+                            linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
+                            linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
+                            linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
+                        );
 
-                    GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));
+                        GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));
                         asteroidObj.transform.localScale = scale;
                         NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
                         if (netObj != null) netObj.Spawn();
@@ -225,10 +242,12 @@ namespace TitanOrbit.Generation
             loadingComplete.Value = true;
             int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
             Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+            BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
         private void GenerateMapImmediate()
         {
+            BootTrace.Mark("MapGenerator.GenerateMapImmediate - begin");
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
 
@@ -245,8 +264,11 @@ namespace TitanOrbit.Generation
                 Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
 
             GenerateHomePlanets();
+            BootTrace.Mark("MapGenerator.GenerateMapImmediate - after home planets");
             GenerateNeutralPlanets();
+            BootTrace.Mark("MapGenerator.GenerateMapImmediate - after neutral planets");
             GenerateAsteroids();
+            BootTrace.Mark("MapGenerator.GenerateMapImmediate - after asteroids");
         }
 
         private void GenerateHomePlanets()

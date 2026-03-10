@@ -38,12 +38,15 @@ namespace TitanOrbit.Networking
 
         private void Awake()
         {
+            BootTrace.Mark("NetworkGameManager.Awake - enter");
             if (Instance == null)
             {
                 Instance = this;
+                BootTrace.Mark("NetworkGameManager.Awake - instance set");
             }
             else
             {
+                BootTrace.Mark("NetworkGameManager.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
             }
         }
@@ -289,10 +292,14 @@ namespace TitanOrbit.Networking
 
         public override void OnNetworkSpawn()
         {
+            BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - enter (IsServer=" + IsServer + ")");
             if (IsServer)
             {
+                BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - EnsureScoreSystemExists");
                 EnsureScoreSystemExists();
+                BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - EnsureMapGenerated");
                 EnsureMapGenerated();
+                BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - subscribing client callbacks");
                 NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
             }
@@ -300,9 +307,17 @@ namespace TitanOrbit.Networking
 
         private void EnsureMapGenerated()
         {
+            BootTrace.Mark("NetworkGameManager.EnsureMapGenerated - locating MapGenerator");
             var mapGen = Object.FindFirstObjectByType<TitanOrbit.Generation.MapGenerator>();
             if (mapGen != null)
+            {
+                BootTrace.Mark("NetworkGameManager.EnsureMapGenerated - calling MapGenerator.EnsureMapGenerated");
                 mapGen.EnsureMapGenerated();
+            }
+            else
+            {
+                BootTrace.Mark("NetworkGameManager.EnsureMapGenerated - no MapGenerator found");
+            }
         }
 
         private void EnsureScoreSystemExists()

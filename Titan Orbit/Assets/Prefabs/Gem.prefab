@@ -155,7 +155,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 394966698
+  GlobalObjectIdHash: 3088555637
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -178,8 +178,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Gem
   gemValue: 10
   pickupRadius: 2
-  stopSpeedThreshold: 0.3
-  slowdownDrag: 4
+  stopSpeedThreshold: 0.05
+  slowdownDrag: 0.5
   baseScale: 0.48
   visualScaleMultiplier: 2.2
   lifetimeSeconds: 20

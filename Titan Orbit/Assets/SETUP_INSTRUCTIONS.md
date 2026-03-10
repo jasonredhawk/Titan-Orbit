@@ -186,6 +186,31 @@ All prefabs use Unity primitives. To replace:
 
 ## 🔧 Troubleshooting
 
+### Editor crashes on Play (D3D12 “upload buffer too small” / “Device removal”)
+
+If the Unity **Editor** closes or freezes right after pressing Play, and the log shows:
+- `d3d12: upload buffer was too small for the requested resource!`
+- `D3D12Fence::Wait ... Device removal`
+- `Unrecoverable D3D12 device error!`
+
+**Fix: run the Editor with Direct3D 11 instead of D3D12.**
+
+1. **Close Unity** completely.
+2. **Create a shortcut** to the Unity Editor (or use Unity Hub’s “Add” to add the project, then right‑click the project → “Open with” and edit the command).
+3. **Add this argument** to the end of the Target path (after the closing quote):
+   ```text
+    -force-d3d11
+   ```
+   Example (your path may differ):
+   ```text
+   "C:\Program Files\Unity\Hub\Editor\6000.3.6f1\Editor\Unity.exe" -force-d3d11
+   ```
+4. **Open the project** using that shortcut (or configure Unity Hub to pass `-force-d3d11` when opening this project).
+
+The game will run on D3D11 in the Editor and the crash should stop. Builds can still use D3D12 if you leave the Player graphics API as-is.
+
+---
+
 ### Prefabs Not Found
 - Make sure prefabs are in `Assets/Prefabs/`
 - Check prefab references in Inspector
@@ -204,6 +229,19 @@ All prefabs use Unity primitives. To replace:
 - Check MapGenerator has prefabs assigned
 - Verify MapGenerator is in scene
 - Check console for errors
+
+### Minimap connection lines/triangles not showing
+
+The minimap can show team connection lines and territory triangles (same as in the world view). If they don’t appear:
+
+1. **Use the built-in setup** so the right Canvas is used:
+   - Use **Titan Orbit > Quick Setup (All)** or **Titan Orbit > Setup Game Scene**. That adds **TitanOrbitShapesCanvas** to the main Canvas and creates the **MinimapConnectionsShapesPanel** under the Minimap at runtime.
+
+2. **Check hierarchy**: The **Minimap** must be a direct child of the **Canvas** that has the **TitanOrbitShapesCanvas** component. If you added the Minimap to a different Canvas or duplicated the UI, the connections panel may not find the Shapes canvas.
+
+3. **You need connection data**: There must be at least two **same-team** planets (captured by the same team) for edges/lines to appear, and three for triangles. Join a team, capture two or more planets, then check the minimap again.
+
+4. **Diagnostic logging**: Select the **Minimap** in the hierarchy at runtime (or the **MinimapConnectionsShapesPanel** child if it exists). In the Inspector, find **MinimapConnectionsShapesPanel** and enable **Debug Log**. Enter Play and check the Console for `[MinimapConnections]` messages. They will tell you whether the panel is drawing, if the rect is valid, and if there are edges/triangles.
 
 ## 📝 Next Steps
 

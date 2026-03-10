@@ -160,7 +160,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 640012190
+  GlobalObjectIdHash: 498798022
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -191,7 +191,7 @@ MonoBehaviour:
   recoilDecayPerSecond: 6
   orbitSpeed: 0.8
   orbitRadiusPullStrength: 2.5
-  orbitCaptureResponsiveness: 2.2
+  orbitCaptureResponsiveness: 3.5
   firePoint: {fileID: 3386720834924451872}
   recoilStrength: 1.2
   engineVfxPrefab: {fileID: 0}
@@ -202,9 +202,10 @@ MonoBehaviour:
   rammingMomentumDamageScale: 0.4
   minerRammingToAsteroidMultiplier: 1.4
   minerRammingSelfDamageMultiplier: 0.35
-  ramDamagePerSecond: 18
+  ramDamagePerSecond: 30
   ramTickInterval: 0.25
   overlapEscapeSpeed: 4
+  asteroidCollisionPushbackSpeed: 1
   maxHealth: 100
   healthRegenRate: 6
   gemCapacity: 100
@@ -220,6 +221,8 @@ MonoBehaviour:
   defaultMaxBankAngle: 111
   defaultBankSmoothing: 2
   equippedCards: []
+  maxCollisionPitchAngle: 20
+  collisionPitchSpeed: 1
   respawnDelay: 5
 --- !u!114 &5045969774804743468
 MonoBehaviour:

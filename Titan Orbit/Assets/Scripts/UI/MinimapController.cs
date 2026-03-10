@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using Shapes;
 
 namespace TitanOrbit.UI
 {
@@ -114,6 +115,16 @@ namespace TitanOrbit.UI
             dz -= mapH * Mathf.Round(dz / mapH);
         }
 
+        // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
+        public float MinimapRadius => minimapRadius;
+        public float DisplaySize => displaySize;
+        public Vector3 PlayerPosition => playerTransform != null ? playerTransform.position : Vector3.zero;
+
+        public void GetToroidalDeltaForMinimap(Vector3 from, Vector3 to, out float dx, out float dz)
+        {
+            GetToroidalDelta(from, to, out dx, out dz);
+        }
+
         private void RefreshEntityCache(bool force = false)
         {
             if (!Application.isPlaying) return;
@@ -173,6 +184,35 @@ namespace TitanOrbit.UI
             canvasGroup = GetComponent<CanvasGroup>();
             if (canvasGroup == null)
                 canvasGroup = gameObject.AddComponent<CanvasGroup>();
+
+            // Ensure the parent canvas has an ImmediateModeCanvas (TitanOrbitShapesCanvas) so Shapes panels render.
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas != null && canvas.GetComponent<ImmediateModeCanvas>() == null)
+            {
+                canvas.gameObject.AddComponent<TitanOrbit.UI.TitanOrbitShapesCanvas>();
+            }
+
+            // Ensure a panel exists for drawing planet connection lines/triangles on the minimap.
+            // Parent under minimapContent so the circular Mask clips triangles/lines to the circle.
+            var connectionsUI = GetComponentInChildren<MinimapConnectionsUI>(true);
+            if (connectionsUI == null)
+            {
+                GameObject panelObj = new GameObject("MinimapConnectionsUI");
+                panelObj.transform.SetParent(minimapContent != null ? minimapContent : minimapRect, false);
+                panelObj.transform.SetAsLastSibling(); // Draw on top of content/blips so lines and triangles are visible
+                var rt = panelObj.AddComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                connectionsUI = panelObj.AddComponent<MinimapConnectionsUI>();
+            }
+            else
+            {
+                if (minimapContent != null && connectionsUI.transform.parent != minimapContent)
+                    connectionsUI.transform.SetParent(minimapContent, false);
+                connectionsUI.transform.SetAsLastSibling(); // Ensure it draws on top (in case it was created with old order)
+            }
         }
         
         private void SetupMarkerMenu()

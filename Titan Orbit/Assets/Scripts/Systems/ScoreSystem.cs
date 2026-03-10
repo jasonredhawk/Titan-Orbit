@@ -76,12 +76,15 @@ namespace TitanOrbit.Systems
 
         private void Awake()
         {
+            BootTrace.Mark("ScoreSystem.Awake - enter");
             if (Instance == null)
             {
                 Instance = this;
+                BootTrace.Mark("ScoreSystem.Awake - instance set");
             }
             else
             {
+                BootTrace.Mark("ScoreSystem.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
                 return;
             }
@@ -100,8 +103,12 @@ namespace TitanOrbit.Systems
 
         public override void OnNetworkSpawn()
         {
+            BootTrace.Mark("ScoreSystem.OnNetworkSpawn - enter (IsServer=" + IsServer + ")");
             if (IsServer)
+            {
+                BootTrace.Mark("ScoreSystem.OnNetworkSpawn - initial SyncTrackedShips");
                 SyncTrackedShips();
+            }
         }
 
         private void Update()
@@ -109,6 +116,7 @@ namespace TitanOrbit.Systems
             if (!IsServer || !IsSpawned) return;
             if (Time.time < nextShipSyncTime) return;
             nextShipSyncTime = Time.time + Mathf.Max(0.25f, shipSyncInterval);
+            BootTrace.Mark("ScoreSystem.Update - SyncTrackedShips");
             SyncTrackedShips();
         }
 

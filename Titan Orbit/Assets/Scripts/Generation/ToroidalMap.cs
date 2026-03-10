@@ -103,5 +103,22 @@ namespace TitanOrbit.Generation
 
             return direction.normalized;
         }
+
+        /// <summary>
+        /// Shortest signed offset from one canonical position to another in XZ (for toroidal point-in-triangle).
+        /// Result x is in (-mapWidth/2, mapWidth/2], z in (-mapHeight/2, mapHeight/2].
+        /// </summary>
+        public static Vector2 ShortestOffsetXZ(Vector3 fromCanonical, Vector3 toCanonical)
+        {
+            float dx = toCanonical.x - fromCanonical.x;
+            float dz = toCanonical.z - fromCanonical.z;
+            float halfW = mapWidth / 2f;
+            float halfH = mapHeight / 2f;
+            if (dx > halfW) dx -= mapWidth;
+            else if (dx <= -halfW) dx += mapWidth;
+            if (dz > halfH) dz -= mapHeight;
+            else if (dz <= -halfH) dz += mapHeight;
+            return new Vector2(dx, dz);
+        }
     }
 }

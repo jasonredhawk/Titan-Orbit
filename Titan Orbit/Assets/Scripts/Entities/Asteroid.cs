@@ -26,6 +26,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> health = new NetworkVariable<float>(50f);
         private NetworkVariable<bool> isDestroyed = new NetworkVariable<bool>(false);
 
+        [Header("Visual")]
+        [SerializeField] private Renderer asteroidRenderer;
+
         private Vector3 spawnPosition;
         private Vector3 spawnScale;
         private float asteroidSize = 1f;
@@ -33,6 +36,8 @@ namespace TitanOrbit.Entities
         private Collider col;
         private Vector3 rotationAxis;
         private float rotationSpeed;
+
+        private Color? originalColor;
 
         public float RemainingGems => remainingGems.Value;
         public float MaxGems => maxGems.Value;
@@ -63,6 +68,10 @@ namespace TitanOrbit.Entities
         {
             rb = GetComponent<Rigidbody>();
             col = GetComponent<Collider>();
+
+            if (asteroidRenderer == null)
+                asteroidRenderer = GetComponentInChildren<Renderer>();
+            CacheOriginalColor();
             
             // Ensure proper collision detection for kinematic objects to detect fast-moving bullets/ships
             if (rb != null)
@@ -86,6 +95,19 @@ namespace TitanOrbit.Entities
                     col.sharedMaterial = GetOrCreateAsteroidRammingMaterial();
                 }
             }
+        }
+
+        private void CacheOriginalColor()
+        {
+            if (asteroidRenderer == null)
+                return;
+            var mat = asteroidRenderer.sharedMaterial;
+            if (mat == null)
+                return;
+            if (mat.HasProperty("_Color"))
+                originalColor = mat.GetColor("_Color");
+            else if (mat.HasProperty("_BaseColor"))
+                originalColor = mat.GetColor("_BaseColor");
         }
 
         private static PhysicsMaterial asteroidRammingMaterial;
@@ -174,6 +196,43 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>
+        /// Client-side visual highlight for asteroids under a team's triangle territory.
+        /// Does not affect gameplay, only tint. Pass Team.None to clear highlight.
+        /// </summary>
+        public void SetTerritoryHighlight(TeamManager.Team team)
+        {
+            if (asteroidRenderer == null)
+                asteroidRenderer = GetComponentInChildren<Renderer>();
+            if (asteroidRenderer == null)
+                return;
+
+            if (originalColor == null)
+                CacheOriginalColor();
+            if (originalColor == null)
+                return;
+
+            Material mat = asteroidRenderer.material;
+            Color baseCol = originalColor.Value;
+
+            if (team == TeamManager.Team.None)
+            {
+                if (mat.HasProperty("_Color"))
+                    mat.SetColor("_Color", baseCol);
+                else if (mat.HasProperty("_BaseColor"))
+                    mat.SetColor("_BaseColor", baseCol);
+                return;
+            }
+
+            Color teamCol = TeamManager.GetTeamColor(team);
+            // Blend neutral asteroid color with team color for a clear but not overpowering tint.
+            Color tinted = Color.Lerp(baseCol, teamCol, 0.7f);
+            if (mat.HasProperty("_Color"))
+                mat.SetColor("_Color", tinted);
+            else if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", tinted);
+        }
+
         private void EnsurePhysicsState()
         {
             if (rb != null)
@@ -243,6 +302,15 @@ namespace TitanOrbit.Entities
                 float gemValue = remainingGems.Value;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     gemValue *= 100f;
+
+                // Territory triangles can boost gem yield for asteroids within their area.
+                float bonusMultiplier = 1f;
+                if (Systems.PlanetConnectionSystem.Instance != null)
+                {
+                    bonusMultiplier = Systems.PlanetConnectionSystem.Instance.GetGemBonusMultiplierAtPosition(pos);
+                }
+
+                gemValue *= Mathf.Max(1f, bonusMultiplier);
                 GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize, topDamagerShipId);
             }
 
