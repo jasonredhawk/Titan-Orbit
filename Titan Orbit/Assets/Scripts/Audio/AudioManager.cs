@@ -21,7 +21,12 @@ namespace TitanOrbit.Audio
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
+        [Tooltip("Ship weapon fire. Assign laser_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip shootSound;
+        [Tooltip("Collision and impact (ship-asteroid, bullet hit). Assign cannon_01 from ShootingSound folder.")]
+        [SerializeField] private AudioClip impactSound;
+        [Tooltip("Gem pickup. Assign magic_03 from ShootingSound folder.")]
+        [SerializeField] private AudioClip gemCollectSound;
         [SerializeField] private AudioClip miningSound;
         [SerializeField] private AudioClip captureSound;
         [SerializeField] private AudioClip explosionSound;
@@ -79,6 +84,16 @@ namespace TitanOrbit.Audio
         public void PlayShootSound()
         {
             PlaySFX(shootSound);
+        }
+
+        public void PlayImpactSound()
+        {
+            PlaySFX(impactSound);
+        }
+
+        public void PlayGemCollectSound()
+        {
+            PlaySFX(gemCollectSound);
         }
 
         public void PlayMiningSound()

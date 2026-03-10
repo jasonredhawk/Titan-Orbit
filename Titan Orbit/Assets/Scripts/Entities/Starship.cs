@@ -10,6 +10,7 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.Audio;
 
 namespace TitanOrbit.Entities
 {
@@ -1636,6 +1637,8 @@ namespace TitanOrbit.Entities
                         bulletMuzzleParticleSystems[idx].Play();
                 }
             }
+            if (bulletIndicesFired != null && bulletIndicesFired.Length > 0 && AudioManager.Instance != null)
+                AudioManager.Instance.PlayShootSound();
         }
 
         /// <summary>Server-only: AI ships call this to fire at a target.</summary>
@@ -2139,8 +2142,16 @@ namespace TitanOrbit.Entities
                     float toSelf = damage * HullRammingSelfDamageMultiplier;
                     asteroid.TakeDamageServerRpc(toAsteroid, NetworkObjectId);
                     TakeDamageServerRpc(toSelf, TeamManager.Team.None);
+                    PlayCollisionImpactSoundClientRpc();
                 }
             }
+        }
+
+        [ClientRpc]
+        private void PlayCollisionImpactSoundClientRpc()
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayImpactSound();
         }
 
         /// <summary>
@@ -2223,9 +2234,18 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void AddGemsServerRpc(float amount)
+        public void AddGemsServerRpc(float amount, bool playCollectSound = false)
         {
             currentGems.Value = Mathf.Min(currentGems.Value + amount, GemCapacity);
+            if (playCollectSound)
+                PlayGemCollectSoundClientRpc();
+        }
+
+        [ClientRpc]
+        private void PlayGemCollectSoundClientRpc()
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayGemCollectSound();
         }
 
         [ServerRpc(RequireOwnership = false)]

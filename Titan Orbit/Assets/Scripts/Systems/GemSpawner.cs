@@ -20,8 +20,8 @@ namespace TitanOrbit.Systems
         [SerializeField] private float explosionSpeed = 2f;
         [SerializeField] private float explosionRadius = 1f;
         [Tooltip("Asteroid gem burst - kept much lower so gems don't fly away.")]
-        [SerializeField] private float asteroidExplosionSpeed = 0.6f;
-        [SerializeField] private float asteroidExplosionRadius = 0.5f;
+        [SerializeField] private float asteroidExplosionSpeed = 2.2f;
+        [SerializeField] private float asteroidExplosionRadius = 1.4f;
 
         private void Awake()
         {

@@ -133,6 +133,7 @@ GameObject:
   - component: {fileID: 19838571}
   - component: {fileID: 19838570}
   - component: {fileID: 19838569}
+  - component: {fileID: 19838575}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -211,9 +212,9 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomOrthoSize: 180
-  galacticZoomOutDuration: 8
-  galacticZoomInDuration: 2
+  galacticZoomOrthoSize: 360
+  galacticZoomOutDuration: 5
+  galacticZoomInDuration: 0.5
   spaceBackground: {fileID: 0}
 --- !u!20 &19838573
 Camera:
@@ -281,6 +282,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &19838575
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 19838568}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1 &84397210
 GameObject:
   m_ObjectHideFlags: 0
@@ -894,10 +939,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 197afb2a3dc5777448b6c99341f43632, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.VisualEffectsManager
-  explosionEffect: {fileID: 0}
-  miningEffect: {fileID: 0}
-  captureEffect: {fileID: 0}
-  bulletTrailEffect: {fileID: 0}
+  explosionEffect: {fileID: 179617693071064624, guid: 76557be7663b50b4b9e3239617c76343, type: 3}
+  miningEffect: {fileID: 6678588679366763109, guid: 09c387cf0bd54034daad364798d579b4, type: 3}
+  captureEffect: {fileID: 647104670885987435, guid: 4779b010dbd1403488ea49e9d17ffd85, type: 3}
+  bulletTrailEffect: {fileID: 7493796544200936264, guid: 625a5893477f7b94da52aa0c2e1eb1d8, type: 3}
   levelUpEffect: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   levelUpEffectScale: 4
   asteroidCollisionEffect: {fileID: 0}
@@ -1005,6 +1050,8 @@ MonoBehaviour:
   peopleTransportPrefab: {fileID: 0}
   explosionSpeed: 7
   explosionRadius: 2.2
+  asteroidExplosionSpeed: 2
+  asteroidExplosionRadius: 1
 --- !u!114 &198458865
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10765,7 +10812,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bd77682efa6bcb4a9816b21b3ab81db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  debugMode: 1
+  debugMode: 0
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3

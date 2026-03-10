@@ -324,7 +324,7 @@ namespace TitanOrbit.Entities
                     if (toAdd <= 0f)
                         return;
 
-                    nearestShip.AddGemsServerRpc(toAdd);
+                    nearestShip.AddGemsServerRpc(toAdd, true);
 
                     if (ScoreSystem.Instance != null)
                         ScoreSystem.Instance.AwardMining(nearestShip, toAdd);

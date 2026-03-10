@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Audio;
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
@@ -382,8 +383,10 @@ namespace TitanOrbit.Entities
         [ClientRpc]
         private void SpawnImpactEffectClientRpc(Vector3 position)
         {
-            if (impactEffectPrefab == null) return;
-            SpawnImpactAt(position);
+            if (impactEffectPrefab != null)
+                SpawnImpactAt(position);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayImpactSound();
         }
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)

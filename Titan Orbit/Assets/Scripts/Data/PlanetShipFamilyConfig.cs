@@ -29,7 +29,18 @@ namespace TitanOrbit.Data
         public ShipFamilyEntry GetFamilyForPlanet(int planetId)
         {
             if (families == null || families.Count == 0) return null;
-            int index = planetId % families.Count;
+            // Prefer explicit mapping by id (so each planet can have a unique set).
+            // Fallback to index/cycle only if entries don't specify ids or a match isn't found.
+            for (int i = 0; i < families.Count; i++)
+            {
+                var f = families[i];
+                if (f != null && f.planetId == planetId)
+                    return f;
+            }
+
+            int safeId = planetId;
+            if (safeId < 0) safeId = 0;
+            int index = safeId % families.Count;
             return families[index];
         }
 
