@@ -208,10 +208,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
   target: {fileID: 0}
   offsetAtReferenceLevel: {x: 0, y: 40, z: 0}
-  orthographicSizeAtReferenceLevel: 12
+  orthographicSizeAtReferenceLevel: 9
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
+  galacticZoomEnabled: 0
   galacticZoomOrthoSize: 360
   galacticZoomOutDuration: 5
   galacticZoomInDuration: 0.5
@@ -874,10 +875,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 28ffa805b0c2446459407a13bff17aaa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.CardShopSystem
-  shipUnlockTable: {fileID: 0}
   planetShipFamilyConfig: {fileID: 11400000, guid: 5feac2562027f1c4b985388fe704de15, type: 2}
   allCards: []
-  astroEagleShipPrefabs: []
 --- !u!114 &198458855
 MonoBehaviour:
   m_ObjectHideFlags: 0

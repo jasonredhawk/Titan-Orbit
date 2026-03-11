@@ -71,22 +71,22 @@ MonoBehaviour:
     bulletSpeedPerLevel: 4
     fireRate: 6
     fireRatePerLevel: 1
-    healthCap: 146
-    healthCapPerLevel: 31.5
-    healthRegen: 36
-    healthRegenPerLevel: 9.75
-    energyCap: 86
-    energyCapPerLevel: 27
-    energyRegen: 30
-    energyRegenPerLevel: 8
+    healthCap: 145.75565
+    healthCapPerLevel: 31.451128
+    healthRegen: 35.91855
+    healthRegenPerLevel: 9.733709
+    energyCap: 85.91855
+    energyCapPerLevel: 26.975563
+    energyRegen: 29.951128
+    energyRegenPerLevel: 7.9918547
     moveSpeed: 16
     moveSpeedPerLevel: 4
-    turnSpeed: 24
-    turnSpeedPerLevel: 6
-    maxGems: 91
-    maxGemsPerLevel: 20.5
-    maxPeople: 30
-    maxPeoplePerLevel: 6.5
+    turnSpeed: 54
+    turnSpeedPerLevel: 12
+    maxGems: 90.91855
+    maxGemsPerLevel: 20.48371
+    maxPeople: 29.918547
+    maxPeoplePerLevel: 6.4837093
   matchedComponentIds:
   - Cockpit
   - Cockpit_Base_1
@@ -94,11 +94,37 @@ MonoBehaviour:
   - Engine_2
   - Part_1
   - Part_2
+  - Part_2
+  - Tail
   - Tail
   - Thruster
   - Weapon
+  - Weapon
+  - Weapon
+  - Weapon
+  - Wing_1
   - Wing_1
   - Wing_1_Mirrored
+  - Wing_1_Mirrored
+  matchedScaleFactors:
+  - 0.9837092
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
 --- !u!1001 &1188271010049598894
 PrefabInstance:
   m_ObjectHideFlags: 0

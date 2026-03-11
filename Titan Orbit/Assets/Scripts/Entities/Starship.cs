@@ -227,6 +227,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> attrMovementSpeed = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrEnergyCapacity = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrFirePower = new NetworkVariable<int>(0);
+        private NetworkVariable<int> attrFireRate = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrBulletSpeed = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrMaxHealth = new NetworkVariable<int>(0);
         private NetworkVariable<int> attrHealthRegen = new NetworkVariable<int>(0);
@@ -532,21 +533,23 @@ namespace TitanOrbit.Entities
         /// <summary>Chassis ID (e.g. AstroEagle_01) for upgrade/shop logic.</summary>
         public string CurrentChassisId => currentChassisId.Value.ToString();
 
-        /// <summary>Attribute upgrade levels for Ship Attribute Upgrade HUD. Index: 0=FirePower, 1=BulletSpeed, 2=MaxHealth, 3=HealthRegen, 4=EnergyCapacity, 5=EnergyRegen, 6=MovementSpeed, 7=RotationSpeed, 8=GemCapacity, 9=PeopleCapacity.</summary>
+        /// <summary>Attribute upgrade levels for Ship Attribute Upgrade HUD.
+        /// Index: 0=FirePower, 1=FireRate, 2=BulletSpeed, 3=MaxHealth, 4=HealthRegen, 5=EnergyCapacity, 6=EnergyRegen, 7=MovementSpeed, 8=RotationSpeed, 9=GemCapacity, 10=PeopleCapacity.</summary>
         public int GetAttributeLevel(int index)
         {
             return index switch
             {
                 0 => attrFirePower.Value,
-                1 => attrBulletSpeed.Value,
-                2 => attrMaxHealth.Value,
-                3 => attrHealthRegen.Value,
-                4 => attrEnergyCapacity.Value,
-                5 => attrEnergyRegen.Value,
-                6 => attrMovementSpeed.Value,
-                7 => attrRotationSpeed.Value,
-                8 => attrGemCapacity.Value,
-                9 => attrPeopleCapacity.Value,
+                1 => attrFireRate.Value,
+                2 => attrBulletSpeed.Value,
+                3 => attrMaxHealth.Value,
+                4 => attrHealthRegen.Value,
+                5 => attrEnergyCapacity.Value,
+                6 => attrEnergyRegen.Value,
+                7 => attrMovementSpeed.Value,
+                8 => attrRotationSpeed.Value,
+                9 => attrGemCapacity.Value,
+                10 => attrPeopleCapacity.Value,
                 _ => 0
             };
         }
@@ -2375,15 +2378,16 @@ namespace TitanOrbit.Entities
             switch (attributeIndex)
             {
                 case 0: attrFirePower.Value++; break;
-                case 1: attrBulletSpeed.Value++; break;
-                case 2: attrMaxHealth.Value++; break;
-                case 3: attrHealthRegen.Value++; break;
-                case 4: attrEnergyCapacity.Value++; break;
-                case 5: attrEnergyRegen.Value++; break;
-                case 6: attrMovementSpeed.Value++; break;
-                case 7: attrRotationSpeed.Value++; break;
-                case 8: attrGemCapacity.Value++; break;
-                case 9: attrPeopleCapacity.Value++; break;
+                case 1: attrFireRate.Value++; break;
+                case 2: attrBulletSpeed.Value++; break;
+                case 3: attrMaxHealth.Value++; break;
+                case 4: attrHealthRegen.Value++; break;
+                case 5: attrEnergyCapacity.Value++; break;
+                case 6: attrEnergyRegen.Value++; break;
+                case 7: attrMovementSpeed.Value++; break;
+                case 8: attrRotationSpeed.Value++; break;
+                case 9: attrGemCapacity.Value++; break;
+                case 10: attrPeopleCapacity.Value++; break;
             }
         }
 
@@ -2877,22 +2881,33 @@ namespace TitanOrbit.Entities
                 bc.displayName = "ChassisBullets";
                 bc.cannons = new System.Collections.Generic.List<CannonConfig>();
 
-                float perLvl = Mathf.Max(0, level - 1);
-                float effDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvl) : 0f;
-                float effBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvl) : 0f;
-                float effFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvl) : 0f;
+                // Per-level scaling for weapon abilities comes from the ship's attribute upgrade levels,
+                // not from ship level. Example: a level 3 ship that upgraded Fire Power 3 times has
+                // attrFirePower = 3, so perLvlFirePower = 2 and contributes 2 * firePowerPerLevel.
+                int firePowerUpgrades = attrFirePower.Value;
+                int bulletSpeedUpgrades = attrBulletSpeed.Value;
+                int fireRateUpgrades = attrFireRate.Value;
+
+                float perLvlFirePower = firePowerUpgrades > 0 ? firePowerUpgrades - 1 : 0f;
+                float perLvlBulletSpeed = bulletSpeedUpgrades > 0 ? bulletSpeedUpgrades - 1 : 0f;
+                float perLvlFireRate = fireRateUpgrades > 0 ? fireRateUpgrades - 1 : 0f;
+
+                float effDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvlFirePower) : 0f;
+                float effBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvlBulletSpeed) : 0f;
+                float effFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvlFireRate) : 0f;
 
                 for (int i = 0; i < weaponCount; i++)
                 {
                     var c = baseBullet.Clone();
                     if (usePreviewStats)
                     {
-                        // Definition stats are additive contributions (e.g. firePower 5, bulletSpeed 5), not absolute cannon values.
-                        // Base cannon is typically damage 8, speed 20; add definition sum so bullets are proper size and range.
-                        c.damagePerBullet = baseBullet.damagePerBullet + effDamage;
-                        c.bulletSpeed = baseBullet.bulletSpeed + effBulletSpeed;
-                        c.fireRate = Mathf.Max(0.5f, baseBullet.fireRate + effFireRate);
-                        c.energyCostPerShot = Mathf.Max(0.5f, c.damagePerBullet * 0.25f);
+                        // When using ShipFamilyStatsPreview, all weapon abilities come purely from the family stats.
+                        // Fire Power, Bullet Speed, and Fire Rate are taken directly from the summed stats (plus per-level),
+                        // with no baseBullet contribution or clamping.
+                        c.damagePerBullet = effDamage / effFireRate;
+                        c.bulletSpeed = effBulletSpeed;
+                        c.fireRate = effFireRate;
+                        c.energyCostPerShot = c.damagePerBullet;
                     }
                     else
                     {

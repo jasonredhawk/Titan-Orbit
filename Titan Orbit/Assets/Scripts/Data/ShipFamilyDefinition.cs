@@ -143,7 +143,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Scale stats by transform. Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
+        /// Scale stats by transform.
+        /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
+        ///          Other weapon properties (health, energy, etc.) are NOT scaled by transform.
         /// Non-weapons: all stats scale by x*y*z.
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(ShipComponentAbilityStats stats, Transform t, string componentId)
@@ -157,7 +159,6 @@ namespace TitanOrbit.Data
             {
                 float firePowerScale = x * y;       // size of bullet, damage
                 float fireRateScale = 1f / z;       // smaller z = faster rate of fire
-                float otherScale = x * y * z;       // health/energy/etc on weapon use full scale
                 return new ShipComponentAbilityStats
                 {
                     firePower = stats.firePower * firePowerScale,
@@ -166,22 +167,23 @@ namespace TitanOrbit.Data
                     bulletSpeedPerLevel = stats.bulletSpeedPerLevel * firePowerScale,
                     fireRate = stats.fireRate * fireRateScale,
                     fireRatePerLevel = stats.fireRatePerLevel * fireRateScale,
-                    healthCap = stats.healthCap * otherScale,
-                    healthCapPerLevel = stats.healthCapPerLevel * otherScale,
-                    healthRegen = stats.healthRegen * otherScale,
-                    healthRegenPerLevel = stats.healthRegenPerLevel * otherScale,
-                    energyCap = stats.energyCap * otherScale,
-                    energyCapPerLevel = stats.energyCapPerLevel * otherScale,
-                    energyRegen = stats.energyRegen * otherScale,
-                    energyRegenPerLevel = stats.energyRegenPerLevel * otherScale,
-                    moveSpeed = stats.moveSpeed * otherScale,
-                    moveSpeedPerLevel = stats.moveSpeedPerLevel * otherScale,
-                    turnSpeed = stats.turnSpeed * otherScale,
-                    turnSpeedPerLevel = stats.turnSpeedPerLevel * otherScale,
-                    maxGems = stats.maxGems * otherScale,
-                    maxGemsPerLevel = stats.maxGemsPerLevel * otherScale,
-                    maxPeople = stats.maxPeople * otherScale,
-                    maxPeoplePerLevel = stats.maxPeoplePerLevel * otherScale
+                    // All other properties are left unscaled for weapons so z-scale only affects fire rate and xy-scale only affects fire power/bullet.
+                    healthCap = stats.healthCap,
+                    healthCapPerLevel = stats.healthCapPerLevel,
+                    healthRegen = stats.healthRegen,
+                    healthRegenPerLevel = stats.healthRegenPerLevel,
+                    energyCap = stats.energyCap,
+                    energyCapPerLevel = stats.energyCapPerLevel,
+                    energyRegen = stats.energyRegen,
+                    energyRegenPerLevel = stats.energyRegenPerLevel,
+                    moveSpeed = stats.moveSpeed,
+                    moveSpeedPerLevel = stats.moveSpeedPerLevel,
+                    turnSpeed = stats.turnSpeed,
+                    turnSpeedPerLevel = stats.turnSpeedPerLevel,
+                    maxGems = stats.maxGems,
+                    maxGemsPerLevel = stats.maxGemsPerLevel,
+                    maxPeople = stats.maxPeople,
+                    maxPeoplePerLevel = stats.maxPeoplePerLevel
                 };
             }
 

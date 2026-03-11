@@ -28,6 +28,8 @@ namespace TitanOrbit.Camera
         [SerializeField] private float spawnZoomScale = 1f;
 
         [Header("Galactic Zoom")]
+        [Tooltip("Master toggle for the galactic zoom-out effect. Disable to keep gameplay zoom only.")]
+        [SerializeField] private bool galacticZoomEnabled = true;
         [Tooltip("Orthographic size used for far-map view. Actual galactic zoom stops halfway between default zoom and this value.")]
         [SerializeField] private float galacticZoomOrthoSize = 180f;
         [Tooltip("Seconds to smoothly zoom out to galactic view after depositing all gems.")]
@@ -149,6 +151,9 @@ namespace TitanOrbit.Camera
         /// <summary>Begin galactic zoom out toward a large orthographic size.</summary>
         public void StartGalacticZoomOut()
         {
+            if (!galacticZoomEnabled)
+                return;
+
             if (cam == null) return;
 
             galacticZoomActive = true;
@@ -165,7 +170,7 @@ namespace TitanOrbit.Camera
         /// <summary>Trigger fast zoom back in to the default gameplay zoom.</summary>
         public void TriggerGalacticZoomReturn()
         {
-            if (!galacticZoomActive || galacticZoomReturning || cam == null)
+            if (!galacticZoomEnabled || !galacticZoomActive || galacticZoomReturning || cam == null)
                 return;
 
             galacticZoomReturning = true;

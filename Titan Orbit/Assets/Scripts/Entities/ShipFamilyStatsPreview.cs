@@ -30,9 +30,13 @@ namespace TitanOrbit.Entities
         [Tooltip("Normalized scale (x*y*z) applied per matched component; same order as Matched Component Ids.")]
         [SerializeField] private List<float> matchedScaleFactors = new List<float>();
 
+        [Tooltip("Scaled stats per matched component; same order as Matched Component Ids.")]
+        [SerializeField] private List<ShipComponentAbilityStats> perComponentStats = new List<ShipComponentAbilityStats>();
+
         public ShipComponentAbilityStats TotalStats => totalStats;
         public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
         public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
+        public IReadOnlyList<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
         /// <summary>Ship family definition used for stats (so runtime can apply the same stats from prefab).</summary>
         public ShipFamilyDefinition ShipFamily => shipFamily;
 
@@ -73,6 +77,7 @@ namespace TitanOrbit.Entities
             totalStats = default;
             matchedComponentIds.Clear();
             matchedScaleFactors.Clear();
+            perComponentStats.Clear();
 
             if (shipFamily == null)
                 return;
@@ -107,6 +112,7 @@ namespace TitanOrbit.Entities
                     totalStats.AddInPlace(scaled);
                     matchedComponentIds.Add(componentId);
                     matchedScaleFactors.Add(ShipComponentAbilityStats.GetNormalizedScaleFromTransform(t));
+                    perComponentStats.Add(scaled);
                 }
             }
         }

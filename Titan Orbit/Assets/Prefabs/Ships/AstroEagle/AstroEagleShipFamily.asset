@@ -29,8 +29,8 @@ MonoBehaviour:
       healthRegenPerLevel: 1
       energyCap: 5
       energyCapPerLevel: 1.5
-      energyRegen: 3
-      energyRegenPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       turnSpeed: 0
@@ -54,8 +54,8 @@ MonoBehaviour:
       healthRegenPerLevel: 1
       energyCap: 5
       energyCapPerLevel: 1.5
-      energyRegen: 3
-      energyRegenPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       turnSpeed: 0
@@ -79,8 +79,8 @@ MonoBehaviour:
       healthRegenPerLevel: 2
       energyCap: 10
       energyCapPerLevel: 3
-      energyRegen: 6
-      energyRegenPerLevel: 1
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       turnSpeed: 0
@@ -106,8 +106,8 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
+      moveSpeed: 3
+      moveSpeedPerLevel: 1
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -131,8 +131,8 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 16
-      moveSpeedPerLevel: 4
+      moveSpeed: 5
+      moveSpeedPerLevel: 1
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -283,8 +283,8 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 8
-      turnSpeedPerLevel: 2
+      turnSpeed: 30
+      turnSpeedPerLevel: 10
       maxGems: 3
       maxGemsPerLevel: 0.5
       maxPeople: 0
@@ -308,8 +308,8 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 8
-      turnSpeedPerLevel: 2
+      turnSpeed: 20
+      turnSpeedPerLevel: 5
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -317,18 +317,18 @@ MonoBehaviour:
   - componentId: Weapon
     displayName: Weapon 1
     stats:
-      firePower: 5
-      firePowerPerLevel: 1.5
-      bulletSpeed: 5
-      bulletSpeedPerLevel: 1
-      fireRate: 1.5
-      fireRatePerLevel: 0.25
+      firePower: 10
+      firePowerPerLevel: 10
+      bulletSpeed: 30
+      bulletSpeedPerLevel: 5
+      fireRate: 0.5
+      fireRatePerLevel: 0
       healthCap: 0
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15
-      energyCapPerLevel: 5
+      energyCap: 30
+      energyCapPerLevel: 10
       energyRegen: 3
       energyRegenPerLevel: 1
       moveSpeed: 0

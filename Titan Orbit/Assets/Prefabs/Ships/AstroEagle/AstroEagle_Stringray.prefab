@@ -57,35 +57,50 @@ MonoBehaviour:
   shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
   familyIdOverride: 
   totalStats:
-    firePower: 10
-    firePowerPerLevel: 3
-    bulletSpeed: 10
-    bulletSpeedPerLevel: 2
-    fireRate: 3
-    fireRatePerLevel: 0.5
-    healthCap: 72
-    healthCapPerLevel: 19
-    healthRegen: 17
-    healthRegenPerLevel: 5
-    energyCap: 8
-    energyCapPerLevel: 2
-    energyRegen: 15
-    energyRegenPerLevel: 4.5
-    moveSpeed: 32
-    moveSpeedPerLevel: 8
-    turnSpeed: 48
-    turnSpeedPerLevel: 12
-    maxGems: 88
-    maxGemsPerLevel: 17.5
+    firePower: 10.084387
+    firePowerPerLevel: 3.0253162
+    bulletSpeed: 10.084387
+    bulletSpeedPerLevel: 2.0168774
+    fireRate: 2.987423
+    fireRatePerLevel: 0.49790382
+    healthCap: 128.42268
+    healthCapPerLevel: 35.471798
+    healthRegen: 32.569656
+    healthRegenPerLevel: 10.189886
+    energyCap: 41.12631
+    energyCapPerLevel: 12.584473
+    energyRegen: 36.645763
+    energyRegenPerLevel: 11.715255
+    moveSpeed: 31.860043
+    moveSpeedPerLevel: 7.9650106
+    turnSpeed: 118.178
+    turnSpeedPerLevel: 28.108057
+    maxGems: 194.54352
+    maxGemsPerLevel: 38.717175
     maxPeople: 5
     maxPeoplePerLevel: 1
   matchedComponentIds:
   - Cockpit
   - Engine_2
+  - Engine_2
   - Tail
   - Thruster
+  - Thruster
+  - Weapon
   - Weapon
   - Wing_4
+  - Wing_4
+  matchedScaleFactors:
+  - 1
+  - 0.99562633
+  - 0.99562633
+  - 1.9152597
+  - 0.99562633
+  - 0.99562633
+  - 1.0126852
+  - 1.0126833
+  - 2.2974715
+  - 2.2974715
 --- !u!1001 &120543042012321421
 PrefabInstance:
   m_ObjectHideFlags: 0

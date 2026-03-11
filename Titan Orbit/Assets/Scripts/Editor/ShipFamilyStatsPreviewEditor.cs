@@ -105,6 +105,10 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.LabelField("Matched Components (stats scaled by transform)", EditorStyles.boldLabel);
                 var ids = preview.MatchedComponentIds;
                 var scales = preview.MatchedScaleFactors;
+                var perStats = preview.PerComponentStats;
+
+                bool showPerComponent = EditorGUILayout.Foldout(true, "Per-Component Ability Breakdown");
+                EditorGUI.indentLevel++;
                 for (int i = 0; i < ids.Count; i++)
                 {
                     string label = ids[i];
@@ -114,7 +118,49 @@ namespace TitanOrbit.Editor
                     if (isWeapon)
                         label += " [weapon: xy=power, 1/z=rate]";
                     EditorGUILayout.LabelField("- " + label);
+
+                    if (showPerComponent && perStats != null && i < perStats.Count)
+                    {
+                        var s = perStats[i];
+                        using (new EditorGUI.DisabledScope(true))
+                        {
+                            EditorGUI.indentLevel++;
+                            EditorGUILayout.LabelField("Offense", EditorStyles.miniBoldLabel);
+                            EditorGUILayout.FloatField("  Fire Power", s.firePower);
+                            EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerLevel);
+                            EditorGUILayout.FloatField("  Bullet Speed", s.bulletSpeed);
+                            EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerLevel);
+                            EditorGUILayout.FloatField("  Fire Rate (shots/s)", s.fireRate);
+                            EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerLevel);
+
+                            EditorGUILayout.LabelField("Health", EditorStyles.miniBoldLabel);
+                            EditorGUILayout.FloatField("  Health Cap", s.healthCap);
+                            EditorGUILayout.FloatField("  Health Cap / Level", s.healthCapPerLevel);
+                            EditorGUILayout.FloatField("  Health Regen", s.healthRegen);
+                            EditorGUILayout.FloatField("  Health Regen / Level", s.healthRegenPerLevel);
+
+                            EditorGUILayout.LabelField("Energy", EditorStyles.miniBoldLabel);
+                            EditorGUILayout.FloatField("  Energy Cap", s.energyCap);
+                            EditorGUILayout.FloatField("  Energy Cap / Level", s.energyCapPerLevel);
+                            EditorGUILayout.FloatField("  Energy Regen", s.energyRegen);
+                            EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerLevel);
+
+                            EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
+                            EditorGUILayout.FloatField("  Move Speed", s.moveSpeed);
+                            EditorGUILayout.FloatField("  Move Speed / Level", s.moveSpeedPerLevel);
+                            EditorGUILayout.FloatField("  Turn Speed", s.turnSpeed);
+                            EditorGUILayout.FloatField("  Turn Speed / Level", s.turnSpeedPerLevel);
+
+                            EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
+                            EditorGUILayout.FloatField("  Max Gems", s.maxGems);
+                            EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerLevel);
+                            EditorGUILayout.FloatField("  Max People", s.maxPeople);
+                            EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerLevel);
+                            EditorGUI.indentLevel--;
+                        }
+                    }
                 }
+                EditorGUI.indentLevel--;
             }
         }
     }
