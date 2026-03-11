@@ -18,10 +18,17 @@ namespace TitanOrbit.Audio
         [Header("Audio Sources")]
         [SerializeField] private AudioSource musicSource;
         [SerializeField] private AudioSource sfxSource;
+        [Tooltip("Optional pool for weapon fire (one sound per cannon with different pitch). If empty, created at runtime.")]
+        [SerializeField] private AudioSource[] weaponSoundSources;
+        private int nextWeaponSoundIndex;
+
+        private const int WEAPON_SOUND_POOL_SIZE = 6;
+        private const float WEAPON_PITCH_MIN = 0.5f;
+        private const float WEAPON_PITCH_MAX = 2.5f;
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
-        [Tooltip("Ship weapon fire. Assign laser_01 from ShootingSound folder.")]
+        [Tooltip("Weapon fire (one shot per cannon, pitch varies by bullet size/speed). Assign e.g. laser_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip shootSound;
         [Tooltip("Collision and impact (ship-asteroid, bullet hit). Assign cannon_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip impactSound;
@@ -65,6 +72,8 @@ namespace TitanOrbit.Audio
                 sfxSource.outputAudioMixerGroup = sfxGroup;
             }
 
+            EnsureWeaponSoundPool();
+
             if (playMusicOnStart && backgroundMusic != null)
             {
                 PlayBackgroundMusic();
@@ -84,6 +93,40 @@ namespace TitanOrbit.Audio
         public void PlayShootSound()
         {
             PlaySFX(shootSound);
+        }
+
+        /// <summary>
+        /// Play weapon fire sound with pitch derived from bullet size and speed.
+        /// Bigger bullet = lower pitch (deeper); faster bullet = higher pitch (shorter playback).
+        /// Call once per weapon/cannon that fired.
+        /// </summary>
+        /// <param name="pitch">Pitch multiplier. Clamped to 0.5–2.5. Higher = higher tone and shorter length.</param>
+        public void PlayWeaponShootSound(float pitch)
+        {
+            if (shootSound == null) return;
+            EnsureWeaponSoundPool();
+            if (weaponSoundSources == null || weaponSoundSources.Length == 0) { PlaySFX(shootSound); return; }
+            float p = Mathf.Clamp(pitch, WEAPON_PITCH_MIN, WEAPON_PITCH_MAX);
+            AudioSource src = weaponSoundSources[nextWeaponSoundIndex % weaponSoundSources.Length];
+            nextWeaponSoundIndex = (nextWeaponSoundIndex + 1) % weaponSoundSources.Length;
+            if (src != null)
+            {
+                src.pitch = p;
+                src.PlayOneShot(shootSound, sfxVolume);
+            }
+        }
+
+        private void EnsureWeaponSoundPool()
+        {
+            if (weaponSoundSources != null && weaponSoundSources.Length > 0) return;
+            weaponSoundSources = new AudioSource[WEAPON_SOUND_POOL_SIZE];
+            for (int i = 0; i < WEAPON_SOUND_POOL_SIZE; i++)
+            {
+                var src = gameObject.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.outputAudioMixerGroup = sfxGroup;
+                weaponSoundSources[i] = src;
+            }
         }
 
         public void PlayImpactSound()

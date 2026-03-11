@@ -45,6 +45,44 @@ namespace TitanOrbit.Editor
             Debug.Log("Game scene setup complete! All GameObjects have been created.");
         }
 
+        [MenuItem("Titan Orbit/Add AudioManager to Scene")]
+        [MenuItem("GameObject/Titan Orbit/Add AudioManager to Scene", false, 10)]
+        public static void AddAudioManagerToScene()
+        {
+            if (Object.FindFirstObjectByType<AudioManager>() != null)
+            {
+                Debug.Log("AudioManager already exists in the scene. Select it in the Hierarchy to assign sounds.");
+                Selection.activeObject = Object.FindFirstObjectByType<AudioManager>().gameObject;
+                return;
+            }
+            GameObject audioObj = CreateAudioManager();
+            if (audioObj != null)
+            {
+                Undo.RegisterCreatedObjectUndo(audioObj, "Add AudioManager to Scene");
+                Selection.activeGameObject = audioObj;
+                Debug.Log("AudioManager added to scene. Select it in the Hierarchy and assign 'Shoot Sound' (and other clips) in the Inspector.");
+            }
+        }
+
+        [MenuItem("Titan Orbit/Create AudioManager Prefab")]
+        public static void CreateAudioManagerPrefab()
+        {
+            string prefabDir = "Assets/Prefabs";
+            if (!AssetDatabase.IsValidFolder("Assets/Prefabs"))
+                prefabDir = "Assets";
+            string path = $"{prefabDir}/AudioManager.prefab";
+            GameObject temp = CreateAudioManager();
+            if (temp == null) return;
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(temp, path);
+            Object.DestroyImmediate(temp);
+            if (prefab != null)
+            {
+                AssetDatabase.SaveAssets();
+                Selection.activeObject = prefab;
+                Debug.Log($"AudioManager prefab created at {path}. Drag it into your scene and assign 'Shoot Sound' in the Inspector.");
+            }
+        }
+
         [MenuItem("Titan Orbit/Assign Level-Up VFX (Red Impact – same as bullets)")]
         public static void AssignLevelUpVfx()
         {

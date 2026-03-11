@@ -659,18 +659,10 @@ namespace TitanOrbit.Entities
             return prefab;
         }
 
-        /// <summary>Ensures firePoint is set so the owner can shoot. Creates a fallback under the prefab root if null (e.g. prefab has no FirePoint or ApplyShipVisual wasn't run).</summary>
+        /// <summary>No longer creates a fallback; bullets fire only from Weapon component positions (bulletFirePoints).</summary>
         private void EnsureFirePoint()
         {
-            if (firePoint != null || !IsOwner) return;
-            Transform root = GetPrefabTransform();
-            if (root == null) return;
-            GameObject fp = new GameObject("FirePoint");
-            fp.transform.SetParent(root, false);
-            fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
-            fp.transform.localRotation = Quaternion.identity;
-            fp.transform.localScale = Vector3.one;
-            firePoint = fp.transform;
+            // Intentionally do not create a FirePoint GameObject. Only Weapon components provide fire positions.
         }
 
         /// <summary>
@@ -1265,9 +1257,8 @@ namespace TitanOrbit.Entities
                 moveDirection = Vector3.zero;
             }
 
-            // Shooting input - pass fire position and direction from client (Vector3 avoids Quaternion sync issues)
-            // Don't fire when clicking on UI (e.g. orbit menu buttons) or when dead
-            if (inputHandler.ShootPressed && CanFire() && firePoint != null && !IsPointerOverUI())
+            // Shooting: only from Weapon components (bulletFirePoints). No firePoint fallback.
+            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !IsPointerOverUI())
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
@@ -1589,7 +1580,7 @@ namespace TitanOrbit.Entities
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
             else forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward);
-            Vector3 defaultFireOrigin = firePoint != null ? firePoint.position : shipPosition + forward * 2f;
+            Vector3 defaultFireOrigin = shipPosition + forward * 2f;
             Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
             shipVel.y = 0f;
 
@@ -1668,7 +1659,28 @@ namespace TitanOrbit.Entities
                 }
             }
             if (bulletIndicesFired != null && bulletIndicesFired.Length > 0 && AudioManager.Instance != null)
-                AudioManager.Instance.PlayShootSound();
+            {
+                for (int j = 0; j < bulletIndicesFired.Length; j++)
+                {
+                    int idx = bulletIndicesFired[j];
+                    float pitch = GetWeaponSoundPitchForCannon(idx);
+                    AudioManager.Instance.PlayWeaponShootSound(pitch);
+                }
+            }
+        }
+
+        /// <summary>Pitch for weapon sound: bigger bullet = lower (deeper), faster bullet = higher (shorter). Used by FireClientRpc.</summary>
+        private float GetWeaponSoundPitchForCannon(int cannonIndex)
+        {
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            if (bulletWc?.cannons == null || cannonIndex < 0 || cannonIndex >= bulletWc.cannons.Count) return 1f;
+            var c = bulletWc.cannons[cannonIndex];
+            float damage = c.damagePerBullet * DamageMultiplier;
+            float speed = c.bulletSpeed * SpeedMultiplier;
+            float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
+            float scaleClamped = Mathf.Max(0.25f, scale);
+            const float refSpeed = 20f;
+            return (speed / refSpeed) / scaleClamped;
         }
 
         /// <summary>Server-only: AI ships call this to fire at a target.</summary>
@@ -1690,13 +1702,13 @@ namespace TitanOrbit.Entities
             if (isDead.Value) return;
             bool useLarge = preferLarge && ConsumeLargeRocket();
             if (!useLarge && !ConsumeSmallRocket()) return;
-            if (firePoint == null) return;
             Vector3 dir = transform.forward;
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             else dir.Normalize();
+            Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position + dir * 2f;
             if (CombatSystem.Instance != null)
-                CombatSystem.Instance.SpawnRocketServerRpc(firePoint.position, dir, useLarge, shipTeam.Value, NetworkObjectId);
+                CombatSystem.Instance.SpawnRocketServerRpc(spawnPos, dir, useLarge, shipTeam.Value, NetworkObjectId);
         }
 
         [ServerRpc]
@@ -2583,12 +2595,16 @@ namespace TitanOrbit.Entities
             // All starship prefabs should have this component with Ship Family assigned so Starship gets proper summed stats.
             ShipComponentAbilityStats? previewStats = null;
             ShipFamilyDefinition previewFamilyDef = null;
+            System.Collections.Generic.List<string> matchedComponentIds = null;
+            System.Collections.Generic.List<ShipComponentAbilityStats> perComponentStatsList = null;
             var preview = instance.GetComponentInChildren<ShipFamilyStatsPreview>(true);
             if (preview != null && preview.ShipFamily != null)
             {
                 preview.RecalculateFromChildren();
                 previewStats = preview.TotalStats;
                 previewFamilyDef = preview.ShipFamily;
+                matchedComponentIds = new System.Collections.Generic.List<string>(preview.MatchedComponentIds);
+                perComponentStatsList = new System.Collections.Generic.List<ShipComponentAbilityStats>(preview.PerComponentStats);
             }
             else if (preview == null || preview.ShipFamily == null)
             {
@@ -2651,20 +2667,11 @@ namespace TitanOrbit.Entities
             lastPrefabScale = prefabScale;
             root.localScale = Vector3.Scale(prefabScale, Vector3.one * baseScale);
 
-            // Rebind FirePoint from the prefab child we just moved (don't use Find - old children may still be present until Destroy runs)
+            // Rebind FirePoint only if the prefab provided one; never create a fallback. Bullets fire only from Weapon components.
             if (newFirePoint != null)
                 firePoint = newFirePoint;
             else
-            {
-                // Always create a fresh fallback when upgraded prefab doesn't provide FirePoint.
-                // Avoid binding to an old child queued for Destroy (can become null next frame).
-                GameObject fp = new GameObject("FirePoint");
-                fp.transform.SetParent(root, false);
-                fp.transform.localPosition = new Vector3(0f, 0f, 0.55f);
-                fp.transform.localRotation = Quaternion.identity;
-                fp.transform.localScale = Vector3.one;
-                firePoint = fp.transform;
-            }
+                firePoint = null;
 
             // Imported example prefabs may include many colliders/rigidbodies/scripts intended for editor setup.
             // Keep only visual components under the ship visual root to avoid heavy runtime overhead.
@@ -2672,7 +2679,7 @@ namespace TitanOrbit.Entities
 
             // Parse chassis component names (e.g. AstroEagle_Weapon, CraizanStar_Engine_2). Derive family from prefab name.
             string familyPrefix = DeriveFamilyPrefixFromPrefab(shipPrefab);
-            ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef);
+            ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef, matchedComponentIds, perComponentStatsList);
         }
 
         /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>
@@ -2747,7 +2754,9 @@ namespace TitanOrbit.Entities
         private static readonly float MUZZLE_SIZE_PER_ENERGY = 0.04f;
 
         private void ApplyChassisComponentStats(Transform root, ShipData data, string familyPrefix = null,
-            ShipComponentAbilityStats? previewStats = null, ShipFamilyDefinition previewFamilyDef = null)
+            ShipComponentAbilityStats? previewStats = null, ShipFamilyDefinition previewFamilyDef = null,
+            System.Collections.Generic.IReadOnlyList<string> matchedComponentIds = null,
+            System.Collections.Generic.IReadOnlyList<ShipComponentAbilityStats> perComponentStats = null)
         {
             string prefix = !string.IsNullOrEmpty(familyPrefix) ? familyPrefix : CHASSIS_FAMILY_PREFIX;
             var stats = ChassisComponentStats.FromTransform(root, prefix);
@@ -2881,9 +2890,7 @@ namespace TitanOrbit.Entities
                 bc.displayName = "ChassisBullets";
                 bc.cannons = new System.Collections.Generic.List<CannonConfig>();
 
-                // Per-level scaling for weapon abilities comes from the ship's attribute upgrade levels,
-                // not from ship level. Example: a level 3 ship that upgraded Fire Power 3 times has
-                // attrFirePower = 3, so perLvlFirePower = 2 and contributes 2 * firePowerPerLevel.
+                // Per-level scaling for weapon abilities comes from the ship's attribute upgrade levels.
                 int firePowerUpgrades = attrFirePower.Value;
                 int bulletSpeedUpgrades = attrBulletSpeed.Value;
                 int fireRateUpgrades = attrFireRate.Value;
@@ -2892,21 +2899,50 @@ namespace TitanOrbit.Entities
                 float perLvlBulletSpeed = bulletSpeedUpgrades > 0 ? bulletSpeedUpgrades - 1 : 0f;
                 float perLvlFireRate = fireRateUpgrades > 0 ? fireRateUpgrades - 1 : 0f;
 
-                float effDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvlFirePower) : 0f;
-                float effBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvlBulletSpeed) : 0f;
-                float effFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvlFireRate) : 0f;
+                // Fallback summed stats when we don't have per-weapon lookup (e.g. no preview or weapon not in list).
+                float fallbackDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvlFirePower) : 0f;
+                float fallbackBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvlBulletSpeed) : 0f;
+                float fallbackFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvlFireRate) : 0f;
+                if (fallbackFireRate < 0.01f) fallbackFireRate = 0.01f;
 
                 for (int i = 0; i < weaponCount; i++)
                 {
                     var c = baseBullet.Clone();
-                    if (usePreviewStats)
+                    if (usePreviewStats && matchedComponentIds != null && perComponentStats != null && stats.weaponTransforms != null && i < stats.weaponTransforms.Count)
                     {
-                        // When using ShipFamilyStatsPreview, all weapon abilities come purely from the family stats.
-                        // Fire Power, Bullet Speed, and Fire Rate are taken directly from the summed stats (plus per-level),
-                        // with no baseBullet contribution or clamping.
-                        c.damagePerBullet = effDamage / effFireRate;
-                        c.bulletSpeed = effBulletSpeed;
-                        c.fireRate = effFireRate;
+                        Transform wt = stats.weaponTransforms[i];
+                        string componentId = (wt != null && !string.IsNullOrEmpty(prefix) && wt.name.StartsWith(prefix + "_", System.StringComparison.OrdinalIgnoreCase))
+                            ? wt.name.Substring(prefix.Length + 1)
+                            : (wt != null ? wt.name : "");
+                        int compIdx = -1;
+                        for (int k = 0; k < matchedComponentIds.Count; k++)
+                        {
+                            if (matchedComponentIds[k] == componentId) { compIdx = k; break; }
+                        }
+                        if (compIdx >= 0 && compIdx < perComponentStats.Count)
+                        {
+                            ShipComponentAbilityStats comp = perComponentStats[compIdx];
+                            float wp = comp.firePower + comp.firePowerPerLevel * perLvlFirePower;
+                            float bs = comp.bulletSpeed + comp.bulletSpeedPerLevel * perLvlBulletSpeed;
+                            float fr = Mathf.Max(0.01f, comp.fireRate + comp.fireRatePerLevel * perLvlFireRate);
+                            c.damagePerBullet = wp / fr;
+                            c.bulletSpeed = bs;
+                            c.fireRate = fr;
+                            c.energyCostPerShot = c.damagePerBullet;
+                        }
+                        else
+                        {
+                            c.damagePerBullet = fallbackDamage / fallbackFireRate;
+                            c.bulletSpeed = fallbackBulletSpeed;
+                            c.fireRate = fallbackFireRate;
+                            c.energyCostPerShot = c.damagePerBullet;
+                        }
+                    }
+                    else if (usePreviewStats)
+                    {
+                        c.damagePerBullet = fallbackDamage / fallbackFireRate;
+                        c.bulletSpeed = fallbackBulletSpeed;
+                        c.fireRate = fallbackFireRate;
                         c.energyCostPerShot = c.damagePerBullet;
                     }
                     else
@@ -2917,7 +2953,7 @@ namespace TitanOrbit.Entities
                     }
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];
-                    if (pt == null) pt = firePoint;
+                    if (pt == null) pt = transform;
                     bulletFirePoints.Add(pt);
                     float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
                     float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
