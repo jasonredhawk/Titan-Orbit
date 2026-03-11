@@ -4,6 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using TitanOrbit.Data;
+using TitanOrbit.Entities;
 
 namespace TitanOrbit.Editor
 {
@@ -42,7 +43,54 @@ namespace TitanOrbit.Editor
                 {
                     BuildUpgradeTreeFromFolder(def);
                 }
+
+                if (GUILayout.Button("Add Ship Family Stats Preview To All Upgrade Tree Prefabs"))
+                {
+                    AddShipFamilyStatsPreviewToUpgradeTreePrefabs(def);
+                }
             }
+        }
+
+        /// <summary>Adds ShipFamilyStatsPreview to each prefab in the upgrade tree if missing; assigns this definition as Ship Family.</summary>
+        private static void AddShipFamilyStatsPreviewToUpgradeTreePrefabs(ShipFamilyDefinition def)
+        {
+            if (def == null || def.upgradeTree == null || def.upgradeTree.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Prefabs", "Upgrade tree is empty. Build the upgrade tree first.", "OK");
+                return;
+            }
+            int added = 0;
+            int updated = 0;
+            foreach (var entry in def.upgradeTree)
+            {
+                if (entry?.prefab == null) continue;
+                string path = AssetDatabase.GetAssetPath(entry.prefab);
+                if (string.IsNullOrEmpty(path)) continue;
+                GameObject contents = PrefabUtility.LoadPrefabContents(path);
+                if (contents == null) continue;
+                try
+                {
+                    var preview = contents.GetComponent<ShipFamilyStatsPreview>();
+                    if (preview == null)
+                    {
+                        preview = contents.AddComponent<ShipFamilyStatsPreview>();
+                        added++;
+                    }
+                    else
+                        updated++;
+                    var so = new SerializedObject(preview);
+                    so.FindProperty("shipFamily").objectReferenceValue = def;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    PrefabUtility.SaveAsPrefabAsset(contents, path);
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(contents);
+                }
+            }
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorUtility.DisplayDialog("Done", $"Added ShipFamilyStatsPreview to {added} prefab(s), updated Ship Family on {updated} existing. All upgrade tree prefabs now use this definition for summed stats.", "OK");
         }
 
         private static void ScanFolderAndPopulate(ShipFamilyDefinition def)
@@ -261,6 +309,7 @@ namespace TitanOrbit.Editor
             AssetDatabase.Refresh();
         }
 
+        /// <summary>Sum component stats for prefab. Non-weapons: scale by x*y*z. Weapons: fire power/bullet by x*y, fire rate by 1/z.</summary>
         private static ShipComponentAbilityStats SumStatsForPrefab(GameObject prefab, ShipFamilyDefinition def, string familyId)
         {
             var total = new ShipComponentAbilityStats();
@@ -281,7 +330,8 @@ namespace TitanOrbit.Editor
 
                 if (def.TryGetStatsForComponent(componentId, out var stats))
                 {
-                    total.AddInPlace(stats);
+                    ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
+                    total.AddInPlace(scaled);
                 }
             }
 

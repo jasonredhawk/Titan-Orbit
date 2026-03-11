@@ -44,7 +44,10 @@ namespace TitanOrbit.Editor
 
             if (preview == null || preview.TotalStats.Equals(default(TitanOrbit.Data.ShipComponentAbilityStats)))
             {
-                EditorGUILayout.HelpBox("No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit).", MessageType.Info);
+                EditorGUILayout.HelpBox(
+                    "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
+                    "Non-weapons: stats scale by x×y×z. Weapons: fire power & bullet scale by x×y (size); fire rate scales by 1/z (smaller z = faster).",
+                    MessageType.Info);
             }
 
             // Force a recalc in edit mode so the UI stays fresh while renaming parts.
@@ -99,10 +102,18 @@ namespace TitanOrbit.Editor
 
             if (preview != null && preview.MatchedComponentIds != null && preview.MatchedComponentIds.Count > 0)
             {
-                EditorGUILayout.LabelField("Matched Components", EditorStyles.boldLabel);
-                foreach (var id in preview.MatchedComponentIds)
+                EditorGUILayout.LabelField("Matched Components (stats scaled by transform)", EditorStyles.boldLabel);
+                var ids = preview.MatchedComponentIds;
+                var scales = preview.MatchedScaleFactors;
+                for (int i = 0; i < ids.Count; i++)
                 {
-                    EditorGUILayout.LabelField("- " + id);
+                    string label = ids[i];
+                    bool isWeapon = TitanOrbit.Data.ShipComponentAbilityStats.IsWeaponComponent(label);
+                    if (scales != null && i < scales.Count && scales[i] != 1f)
+                        label += " (scale " + scales[i].ToString("F2") + "×)";
+                    if (isWeapon)
+                        label += " [weapon: xy=power, 1/z=rate]";
+                    EditorGUILayout.LabelField("- " + label);
                 }
             }
         }

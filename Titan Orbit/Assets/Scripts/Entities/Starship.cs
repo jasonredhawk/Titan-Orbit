@@ -2575,6 +2575,22 @@ namespace TitanOrbit.Entities
             Transform prefabRoot = instance.transform;
             Vector3 prefabScale = prefabRoot.localScale;
 
+            // Read ShipFamilyStatsPreview from prefab instance before reparenting (instance is destroyed later).
+            // All starship prefabs should have this component with Ship Family assigned so Starship gets proper summed stats.
+            ShipComponentAbilityStats? previewStats = null;
+            ShipFamilyDefinition previewFamilyDef = null;
+            var preview = instance.GetComponentInChildren<ShipFamilyStatsPreview>(true);
+            if (preview != null && preview.ShipFamily != null)
+            {
+                preview.RecalculateFromChildren();
+                previewStats = preview.TotalStats;
+                previewFamilyDef = preview.ShipFamily;
+            }
+            else if (preview == null || preview.ShipFamily == null)
+            {
+                WarnOnceMissingShipFamilyStatsPreview(shipPrefab, preview != null);
+            }
+
             // Remove our current visual children, then adopt prefab root's children
             for (int i = root.childCount - 1; i >= 0; i--)
             {
@@ -2652,7 +2668,7 @@ namespace TitanOrbit.Entities
 
             // Parse chassis component names (e.g. AstroEagle_Weapon, CraizanStar_Engine_2). Derive family from prefab name.
             string familyPrefix = DeriveFamilyPrefixFromPrefab(shipPrefab);
-            ApplyChassisComponentStats(root, data, familyPrefix);
+            ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef);
         }
 
         /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>
@@ -2668,6 +2684,21 @@ namespace TitanOrbit.Entities
             if (i < name.Length - 1)
                 name = name.Substring(0, i + 1);
             return string.IsNullOrEmpty(name) ? "AstroEagle" : name;
+        }
+
+        private static readonly HashSet<int> _warnedMissingPreviewPrefabIds = new HashSet<int>();
+
+        /// <summary>Warn once per prefab that ShipFamilyStatsPreview is missing or has no Ship Family assigned. Starship uses it for proper summed ability stats.</summary>
+        private static void WarnOnceMissingShipFamilyStatsPreview(GameObject prefab, bool hasComponentNoFamily)
+        {
+            if (prefab == null) return;
+            int id = prefab.GetInstanceID();
+            if (_warnedMissingPreviewPrefabIds.Contains(id)) return;
+            _warnedMissingPreviewPrefabIds.Add(id);
+            if (hasComponentNoFamily)
+                Debug.LogWarning($"Starship prefab '{prefab.name}' has ShipFamilyStatsPreview but no Ship Family assigned. Assign the ShipFamilyDefinition (e.g. AstroEagle) so the ship uses proper summed ability stats.");
+            else
+                Debug.LogWarning($"Starship prefab '{prefab.name}' has no ShipFamilyStatsPreview. Add ShipFamilyStatsPreview to the prefab root and assign Ship Family so the ship uses proper summed ability stats. Use Titan Orbit > Add Ship Family Stats Preview To Upgrade Tree Prefabs on the ShipFamilyDefinition.");
         }
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
@@ -2711,20 +2742,49 @@ namespace TitanOrbit.Entities
         private static readonly float MUZZLE_BASE_SIZE = 0.18f;
         private static readonly float MUZZLE_SIZE_PER_ENERGY = 0.04f;
 
-        private void ApplyChassisComponentStats(Transform root, ShipData data, string familyPrefix = null)
+        private void ApplyChassisComponentStats(Transform root, ShipData data, string familyPrefix = null,
+            ShipComponentAbilityStats? previewStats = null, ShipFamilyDefinition previewFamilyDef = null)
         {
             string prefix = !string.IsNullOrEmpty(familyPrefix) ? familyPrefix : CHASSIS_FAMILY_PREFIX;
             var stats = ChassisComponentStats.FromTransform(root, prefix);
 
+            int level = ShipLevel;
+            bool usePreviewStats = previewStats.HasValue && previewFamilyDef != null;
+            float weaponScaleTotal = 0f;
+            for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
+
+            if (usePreviewStats)
+            {
+                ShipComponentAbilityStats s = previewStats.Value;
+                float perLvl = Mathf.Max(0, level - 1);
+
+                maxHealth = Mathf.Max(MIN_MAX_HEALTH, s.healthCap + s.healthCapPerLevel * perLvl);
+                healthRegenRate = Mathf.Max(MIN_HEALTH_REGEN, s.healthRegen + s.healthRegenPerLevel * perLvl);
+                energyCapacity = Mathf.Max(MIN_ENERGY_CAPACITY, s.energyCap + s.energyCapPerLevel * perLvl);
+                energyRegenRate = Mathf.Max(MIN_ENERGY_REGEN, s.energyRegen + s.energyRegenPerLevel * perLvl);
+                rotationSpeed = Mathf.Max(MIN_ROTATION_SPEED, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
+                gemCapacity = Mathf.Max(MIN_GEM_CAPACITY, s.maxGems + s.maxGemsPerLevel * perLvl);
+                peopleCapacity = Mathf.Max(MIN_PEOPLE_CAPACITY, s.maxPeople + s.maxPeoplePerLevel * perLvl);
+
+                float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
+                // Match legacy scale: PER_ENGINE_THRUST=55, PER_ENGINE_MAX_SPEED=3 per "engine scale". Definition moveSpeed ~8 per engine.
+                componentEngineThrust = moveVal > 0f ? Mathf.Max(2f, moveVal * (PER_ENGINE_THRUST / 8f)) : 0f;
+                componentEngineMaxSpeed = moveVal > 0f ? Mathf.Max(2f, moveVal * (PER_ENGINE_MAX_SPEED / 8f)) : 0f;
+
+                componentMass = stats.engineScaleTotal * PER_ENGINE_MASS + stats.thrusterScaleTotal * PER_THRUSTER_MASS
+                    + stats.wingScaleTotal * PER_WING_MASS + stats.cockpitScaleTotal * PER_COCKPIT_MASS
+                    + stats.partScaleTotal * PER_PART_MASS + stats.tailScaleTotal * PER_TAIL_MASS
+                    + stats.finScaleTotal * PER_FIN_MASS + weaponScaleTotal * PER_WEAPON_MASS;
+                componentMass = Mathf.Max(0.5f, componentMass);
+            }
+            else
+            {
             // Stats derived solely from components (no ship level scaling)
-            // Engines: top speed and acceleration. Thrusters: acceleration and turning speed.
             float thrustFromEngines = stats.engineScaleTotal * PER_ENGINE_THRUST;
             float thrustFromThrusters = stats.thrusterScaleTotal * PER_THRUSTER_THRUST;
             componentEngineThrust = (thrustFromEngines + thrustFromThrusters) > 0f ? Mathf.Max(2f, thrustFromEngines + thrustFromThrusters) : 0f;
             componentEngineMaxSpeed = stats.engineScaleTotal > 0f ? Mathf.Max(2f, stats.engineScaleTotal * PER_ENGINE_MAX_SPEED) : 0f;
 
-            float weaponScaleTotal = 0f;
-            for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
             componentMass = stats.engineScaleTotal * PER_ENGINE_MASS + stats.thrusterScaleTotal * PER_THRUSTER_MASS
                 + stats.wingScaleTotal * PER_WING_MASS + stats.cockpitScaleTotal * PER_COCKPIT_MASS
                 + stats.partScaleTotal * PER_PART_MASS + stats.tailScaleTotal * PER_TAIL_MASS
@@ -2747,6 +2807,7 @@ namespace TitanOrbit.Entities
             peopleCapacity = Mathf.Max(MIN_PEOPLE_CAPACITY, peopleVal);
             energyCapacity = Mathf.Max(MIN_ENERGY_CAPACITY, energyCapVal);
             energyRegenRate = Mathf.Max(MIN_ENERGY_REGEN, energyRegenVal);
+            }
 
             // Clear component scale caches for attribute-based scaling
             cockpitScaleTransforms.Clear();
@@ -2815,12 +2876,30 @@ namespace TitanOrbit.Entities
                 var bc = ScriptableObject.CreateInstance<WeaponConfig>();
                 bc.displayName = "ChassisBullets";
                 bc.cannons = new System.Collections.Generic.List<CannonConfig>();
+
+                float perLvl = Mathf.Max(0, level - 1);
+                float effDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvl) : 0f;
+                float effBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvl) : 0f;
+                float effFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvl) : 0f;
+
                 for (int i = 0; i < weaponCount; i++)
                 {
                     var c = baseBullet.Clone();
-                    c.energyCostPerShot *= bulletEnergyScale;
-                    c.damagePerBullet *= bulletDamageScale;
-                    c.bulletSpeed *= bulletSpeedScale;
+                    if (usePreviewStats)
+                    {
+                        // Definition stats are additive contributions (e.g. firePower 5, bulletSpeed 5), not absolute cannon values.
+                        // Base cannon is typically damage 8, speed 20; add definition sum so bullets are proper size and range.
+                        c.damagePerBullet = baseBullet.damagePerBullet + effDamage;
+                        c.bulletSpeed = baseBullet.bulletSpeed + effBulletSpeed;
+                        c.fireRate = Mathf.Max(0.5f, baseBullet.fireRate + effFireRate);
+                        c.energyCostPerShot = Mathf.Max(0.5f, c.damagePerBullet * 0.25f);
+                    }
+                    else
+                    {
+                        c.energyCostPerShot *= bulletEnergyScale;
+                        c.damagePerBullet *= bulletDamageScale;
+                        c.bulletSpeed *= bulletSpeedScale;
+                    }
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];
                     if (pt == null) pt = firePoint;

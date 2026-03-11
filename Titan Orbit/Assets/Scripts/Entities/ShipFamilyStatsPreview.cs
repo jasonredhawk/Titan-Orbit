@@ -6,9 +6,10 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Attach to a ship prefab (optionally alongside Starship) to preview the summed ability stats
-    /// of all child components whose names follow the pattern Family_ComponentId (e.g. AstroEagle_Cockpit).
-    /// Stats are looked up from a ShipFamilyDefinition ScriptableObject.
+    /// All starship prefabs should have this component on the root. Starship.cs reads it at runtime to get
+    /// summed ability stats (health, energy, fire power, etc.) from the ShipFamilyDefinition and component scales.
+    /// Attach to the prefab root; assign Ship Family to the matching ShipFamilyDefinition (e.g. AstroEagle).
+    /// Child names must follow Family_ComponentId (e.g. AstroEagle_Cockpit, AstroEagle_Weapon_1).
     /// </summary>
     [ExecuteAlways]
     public class ShipFamilyStatsPreview : MonoBehaviour
@@ -23,11 +24,17 @@ namespace TitanOrbit.Entities
         [Header("Aggregated Stats (read-only)")]
         [SerializeField] private ShipComponentAbilityStats totalStats;
 
-        [Tooltip("Optional: the unique component ids found under this prefab, for debugging.")]
+        [Tooltip("Optional: component ids found under this prefab (one per matched transform).")]
         [SerializeField] private List<string> matchedComponentIds = new List<string>();
+
+        [Tooltip("Normalized scale (x*y*z) applied per matched component; same order as Matched Component Ids.")]
+        [SerializeField] private List<float> matchedScaleFactors = new List<float>();
 
         public ShipComponentAbilityStats TotalStats => totalStats;
         public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
+        public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
+        /// <summary>Ship family definition used for stats (so runtime can apply the same stats from prefab).</summary>
+        public ShipFamilyDefinition ShipFamily => shipFamily;
 
         private void OnEnable()
         {
@@ -58,11 +65,14 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Scan all child transforms, parse names of the form Family_ComponentId, and sum their stats.
+        /// Each component's contribution is scaled by transform: non-weapons use normalized scale (x*y*z).
+        /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
         /// </summary>
         public void RecalculateFromChildren()
         {
             totalStats = default;
             matchedComponentIds.Clear();
+            matchedScaleFactors.Clear();
 
             if (shipFamily == null)
                 return;
@@ -93,9 +103,10 @@ namespace TitanOrbit.Entities
 
                 if (shipFamily.TryGetStatsForComponent(componentId, out var stats))
                 {
-                    totalStats.AddInPlace(stats);
-                    if (!matchedComponentIds.Contains(componentId))
-                        matchedComponentIds.Add(componentId);
+                    ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
+                    totalStats.AddInPlace(scaled);
+                    matchedComponentIds.Add(componentId);
+                    matchedScaleFactors.Add(ShipComponentAbilityStats.GetNormalizedScaleFromTransform(t));
                 }
             }
         }

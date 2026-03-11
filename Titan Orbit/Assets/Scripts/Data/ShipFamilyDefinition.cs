@@ -97,6 +97,97 @@ namespace TitanOrbit.Data
             maxPeople += other.maxPeople;
             maxPeoplePerLevel += other.maxPeoplePerLevel;
         }
+
+        /// <summary>Multiply all ability values by a factor (e.g. normalized scale: scale.x * scale.y * scale.z). Used so stretched components contribute proportionally.</summary>
+        public static ShipComponentAbilityStats operator *(ShipComponentAbilityStats s, float factor)
+        {
+            return new ShipComponentAbilityStats
+            {
+                firePower = s.firePower * factor,
+                firePowerPerLevel = s.firePowerPerLevel * factor,
+                bulletSpeed = s.bulletSpeed * factor,
+                bulletSpeedPerLevel = s.bulletSpeedPerLevel * factor,
+                fireRate = s.fireRate * factor,
+                fireRatePerLevel = s.fireRatePerLevel * factor,
+                healthCap = s.healthCap * factor,
+                healthCapPerLevel = s.healthCapPerLevel * factor,
+                healthRegen = s.healthRegen * factor,
+                healthRegenPerLevel = s.healthRegenPerLevel * factor,
+                energyCap = s.energyCap * factor,
+                energyCapPerLevel = s.energyCapPerLevel * factor,
+                energyRegen = s.energyRegen * factor,
+                energyRegenPerLevel = s.energyRegenPerLevel * factor,
+                moveSpeed = s.moveSpeed * factor,
+                moveSpeedPerLevel = s.moveSpeedPerLevel * factor,
+                turnSpeed = s.turnSpeed * factor,
+                turnSpeedPerLevel = s.turnSpeedPerLevel * factor,
+                maxGems = s.maxGems * factor,
+                maxGemsPerLevel = s.maxGemsPerLevel * factor,
+                maxPeople = s.maxPeople * factor,
+                maxPeoplePerLevel = s.maxPeoplePerLevel * factor
+            };
+        }
+
+        /// <summary>Normalized scale factor from transform: product of x*y*z. (1,1,1)=1; (4,0.5,1)=2. Use to scale component abilities by physical size.</summary>
+        public static float GetNormalizedScaleFromTransform(Transform t)
+        {
+            if (t == null) return 1f;
+            Vector3 s = t.localScale;
+            return s.x * s.y * s.z;
+        }
+
+        /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Weapons use x*y for fire power and 1/z for fire rate.</summary>
+        public static bool IsWeaponComponent(string componentId)
+        {
+            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Weapon", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Scale stats by transform. Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
+        /// Non-weapons: all stats scale by x*y*z.
+        /// </summary>
+        public static ShipComponentAbilityStats ScaleStatsByTransform(ShipComponentAbilityStats stats, Transform t, string componentId)
+        {
+            if (t == null) return stats;
+            float x = t.localScale.x;
+            float y = t.localScale.y;
+            float z = Mathf.Max(t.localScale.z, 0.01f);
+
+            if (IsWeaponComponent(componentId))
+            {
+                float firePowerScale = x * y;       // size of bullet, damage
+                float fireRateScale = 1f / z;       // smaller z = faster rate of fire
+                float otherScale = x * y * z;       // health/energy/etc on weapon use full scale
+                return new ShipComponentAbilityStats
+                {
+                    firePower = stats.firePower * firePowerScale,
+                    firePowerPerLevel = stats.firePowerPerLevel * firePowerScale,
+                    bulletSpeed = stats.bulletSpeed * firePowerScale,
+                    bulletSpeedPerLevel = stats.bulletSpeedPerLevel * firePowerScale,
+                    fireRate = stats.fireRate * fireRateScale,
+                    fireRatePerLevel = stats.fireRatePerLevel * fireRateScale,
+                    healthCap = stats.healthCap * otherScale,
+                    healthCapPerLevel = stats.healthCapPerLevel * otherScale,
+                    healthRegen = stats.healthRegen * otherScale,
+                    healthRegenPerLevel = stats.healthRegenPerLevel * otherScale,
+                    energyCap = stats.energyCap * otherScale,
+                    energyCapPerLevel = stats.energyCapPerLevel * otherScale,
+                    energyRegen = stats.energyRegen * otherScale,
+                    energyRegenPerLevel = stats.energyRegenPerLevel * otherScale,
+                    moveSpeed = stats.moveSpeed * otherScale,
+                    moveSpeedPerLevel = stats.moveSpeedPerLevel * otherScale,
+                    turnSpeed = stats.turnSpeed * otherScale,
+                    turnSpeedPerLevel = stats.turnSpeedPerLevel * otherScale,
+                    maxGems = stats.maxGems * otherScale,
+                    maxGemsPerLevel = stats.maxGemsPerLevel * otherScale,
+                    maxPeople = stats.maxPeople * otherScale,
+                    maxPeoplePerLevel = stats.maxPeoplePerLevel * otherScale
+                };
+            }
+
+            float scale = x * y * z;
+            return stats * scale;
+        }
     }
 
     /// <summary>
