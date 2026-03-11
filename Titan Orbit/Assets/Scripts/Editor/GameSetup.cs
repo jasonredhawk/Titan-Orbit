@@ -67,38 +67,6 @@ namespace TitanOrbit.Editor
             Debug.Log("Level-up effect set to Red Impact (same as bullet impact). Save the scene. No rebuild needed – same GrabPass fix is applied at runtime.");
         }
 
-        [MenuItem("Titan Orbit/Assign AstroEagle Prefabs to CardShopSystem")]
-        public static void AssignAstroEaglePrefabsToCardShopSystem()
-        {
-            CardShopSystem cardShop = Object.FindFirstObjectByType<CardShopSystem>();
-            if (cardShop == null)
-            {
-                Debug.LogWarning("CardShopSystem not found in scene. Add it to the scene (e.g. under Systems) and run this again.");
-                return;
-            }
-            const string folder = "Assets/UltimateSpaceshipsCreator/Prefabs/ModularExamples/AstroEagle";
-            GameObject[] prefabs = new GameObject[20];
-            int assigned = 0;
-            for (int i = 1; i <= 20; i++)
-            {
-                string path = $"{folder}/AstroEagle{i}.prefab";
-                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (prefab != null)
-                {
-                    prefabs[i - 1] = prefab;
-                    assigned++;
-                }
-            }
-            SerializedObject so = new SerializedObject(cardShop);
-            SerializedProperty prop = so.FindProperty("astroEagleShipPrefabs");
-            if (prop == null) { Debug.LogWarning("CardShopSystem.astroEagleShipPrefabs not found."); return; }
-            prop.arraySize = 20;
-            for (int i = 0; i < 20; i++)
-                prop.GetArrayElementAtIndex(i).objectReferenceValue = prefabs[i];
-            so.ApplyModifiedPropertiesWithoutUndo();
-            Debug.Log($"Assigned {assigned}/20 AstroEagle prefabs to CardShopSystem. Save the scene. Buying a ship in the Ships tab will now swap to the matching model.");
-        }
-
         [MenuItem("Titan Orbit/Fix AstroEagle Materials for URP")]
         public static void FixAstroEagleMaterialsForURP()
         {

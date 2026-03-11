@@ -27,6 +27,9 @@ namespace TitanOrbit.Data
     {
         [Tooltip("Planet-to-ship-family mapping. When set, each planet gets its own ship collection from ModularExamples.")]
         public PlanetShipFamilyConfig planetShipFamilyConfig;
+
+        [Tooltip("Optional ShipFamilyDefinition used for the home planet (planetId 0). Uses its upgradeTree to determine which ships unlock when.")]
+        public ShipFamilyDefinition homeShipFamilyDefinition;
         [Tooltip("All chassis that can be purchased (legacy AstroEagle when planetShipFamilyConfig is null).")]
         public List<ShipUnlockEntry> entries = new List<ShipUnlockEntry>();
 
@@ -98,47 +101,83 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Returns entries for the given planet's ship family (when planetShipFamilyConfig is set). Same tier progression (1-20 ships, levels 1-6).
+        /// Returns entries for the given planet's ship family. Uses ShipFamilyDefinition when the family entry has one, else legacy prefab list.
         /// </summary>
         public List<ShipUnlockEntry> GetUnlockedEntriesForPlanet(int homePlanetLevel, int planetId)
         {
+            // Home planet: prefer ShipFamilyDefinition on table when available
+            if (planetId == 0 && homeShipFamilyDefinition != null)
+            {
+                return GetUnlockedEntriesFromShipFamily(homePlanetLevel, homeShipFamilyDefinition, planetId);
+            }
+
             var result = new List<ShipUnlockEntry>();
             if (planetShipFamilyConfig == null || planetShipFamilyConfig.families == null || planetShipFamilyConfig.families.Count == 0)
             {
                 return GetUnlockedEntries(homePlanetLevel);
             }
-            var family = planetShipFamilyConfig.GetFamilyForPlanet(planetId);
-            if (family == null || string.IsNullOrEmpty(family.familyName)) return result;
 
-            int[] minLevelByShipIndex = { 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6 };
-            int count = family.prefabs != null ? Mathf.Min(20, family.prefabs.Length) : 20;
-            for (int v = 0; v < count; v++)
+            var family = planetShipFamilyConfig.GetFamilyForPlanet(planetId);
+            if (family == null) return result;
+
+            if (family.shipFamilyDefinition == null) return result;
+
+            return GetUnlockedEntriesFromShipFamily(homePlanetLevel, family.shipFamilyDefinition, planetId);
+        }
+
+        private List<ShipUnlockEntry> GetUnlockedEntriesFromShipFamily(int homePlanetLevel, ShipFamilyDefinition familyDef, int planetId)
+        {
+            var result = new List<ShipUnlockEntry>();
+            if (familyDef == null || familyDef.upgradeTree == null || familyDef.upgradeTree.Count == 0)
+                return result;
+
+            foreach (var tier in familyDef.upgradeTree)
             {
-                int minLevel = minLevelByShipIndex[Mathf.Min(v, minLevelByShipIndex.Length - 1)];
-                if (homePlanetLevel < minLevel) continue;
+                if (tier == null) continue;
+                if (homePlanetLevel < tier.minHomePlanetLevel) continue;
+
                 var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
-                int num = v + 1;
-                chassis.chassisId = $"{family.familyName}_{num:D2}";
-                chassis.shipFamily = family.familyName;
-                chassis.displayName = $"{family.familyName} {num}";
+                chassis.chassisId = tier.chassisId;
+                chassis.shipFamily = familyDef.familyId;
+                chassis.displayName = tier.chassisId;
+                chassis.basePrefab = tier.prefab;
                 chassis.originPlanetId = planetId;
-                chassis.minHomePlanetLevel = minLevel;
-                result.Add(new ShipUnlockEntry { chassis = chassis, minHomePlanetLevel = minLevel, gemCost = 0f });
+                chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
+
+                var entry = new ShipUnlockEntry
+                {
+                    chassis = chassis,
+                    minHomePlanetLevel = tier.minHomePlanetLevel,
+                    gemCost = GetTierCost(tier.minHomePlanetLevel)
+                };
+                result.Add(entry);
             }
+
             return result;
         }
 
         /// <summary>
         /// Returns all chassis that are unlocked at the given home planet level.
+        /// When homeShipFamilyDefinition is set, returns chassis from its upgrade tree (for home planet).
         /// </summary>
         public List<ShipChassisDefinition> GetUnlockedChassis(int homePlanetLevel)
         {
-            var result = new List<ShipChassisDefinition>();
+            if (homeShipFamilyDefinition != null)
+            {
+                var entries = GetUnlockedEntriesFromShipFamily(homePlanetLevel, homeShipFamilyDefinition, 0);
+                var result = new List<ShipChassisDefinition>();
+                foreach (var e in entries)
+                {
+                    if (e?.chassis != null) result.Add(e.chassis);
+                }
+                return result;
+            }
+            var fallback = new List<ShipChassisDefinition>();
             foreach (var entry in GetUnlockedEntries(homePlanetLevel))
             {
-                if (entry?.chassis != null) result.Add(entry.chassis);
+                if (entry?.chassis != null) fallback.Add(entry.chassis);
             }
-            return result;
+            return fallback;
         }
 
         /// <summary>
@@ -157,20 +196,185 @@ namespace TitanOrbit.Data
             return (tier * (tier - 1)) / 2;
         }
 
-        /// <summary>Returns the chassis at the given index in the entries list, or null if out of range.</summary>
+        /// <summary>Returns the chassis at the given index in the entries list, or null if out of range.
+        /// When homeShipFamilyDefinition is set, resolves from its upgrade tree (so prefabs match the family asset).
+        /// When only PlanetShipFamilyConfig is set, resolves home planet (index 0) from the config's ShipFamilyDefinition.</summary>
         public ShipChassisDefinition GetChassisByIndex(int index)
         {
-            if (entries == null || index < 0 || index >= entries.Count) return null;
+            if (index < 0) return null;
+
+            if (homeShipFamilyDefinition != null && homeShipFamilyDefinition.upgradeTree != null
+                && index < homeShipFamilyDefinition.upgradeTree.Count)
+            {
+                var tier = homeShipFamilyDefinition.upgradeTree[index];
+                if (tier != null)
+                {
+                    var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
+                    chassis.chassisId = tier.chassisId;
+                    chassis.shipFamily = homeShipFamilyDefinition.familyId;
+                    chassis.displayName = tier.chassisId;
+                    chassis.basePrefab = tier.prefab;
+                    chassis.originPlanetId = 0;
+                    chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
+                    return chassis;
+                }
+            }
+
+            // Home planet from config when homeShipFamilyDefinition is not set
+            if (planetShipFamilyConfig != null)
+            {
+                var family = planetShipFamilyConfig.GetFamilyForPlanet(0);
+                if (family?.shipFamilyDefinition?.upgradeTree != null && index < family.shipFamilyDefinition.upgradeTree.Count)
+                {
+                    var tier = family.shipFamilyDefinition.upgradeTree[index];
+                    if (tier != null)
+                    {
+                        var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
+                        chassis.chassisId = tier.chassisId;
+                        chassis.shipFamily = family.shipFamilyDefinition.familyId;
+                        chassis.displayName = tier.chassisId;
+                        chassis.basePrefab = tier.prefab;
+                        chassis.originPlanetId = 0;
+                        chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
+                        return chassis;
+                    }
+                }
+            }
+
+            if (entries == null || index >= entries.Count) return null;
             return entries[index]?.chassis;
         }
 
-        /// <summary>Returns the index of the entry whose chassis has the given chassisId, or -1 if not found.</summary>
+        /// <summary>Returns the chassis for the given chassis ID. When homeShipFamilyDefinition is set, resolves from its upgrade tree first. Else checks each planet family's ShipFamilyDefinition.</summary>
+        public ShipChassisDefinition GetChassisByChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId)) return null;
+            if (homeShipFamilyDefinition != null && homeShipFamilyDefinition.upgradeTree != null)
+            {
+                for (int i = 0; i < homeShipFamilyDefinition.upgradeTree.Count; i++)
+                {
+                    var tier = homeShipFamilyDefinition.upgradeTree[i];
+                    if (tier != null && tier.chassisId == chassisId)
+                    {
+                        var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
+                        chassis.chassisId = tier.chassisId;
+                        chassis.shipFamily = homeShipFamilyDefinition.familyId;
+                        chassis.displayName = tier.chassisId;
+                        chassis.basePrefab = tier.prefab;
+                        chassis.originPlanetId = 0;
+                        chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
+                        return chassis;
+                    }
+                }
+            }
+            if (planetShipFamilyConfig != null && planetShipFamilyConfig.families != null)
+            {
+                foreach (var f in planetShipFamilyConfig.families)
+                {
+                    if (f?.shipFamilyDefinition == null || f.shipFamilyDefinition.upgradeTree == null) continue;
+                    var def = f.shipFamilyDefinition;
+                    for (int i = 0; i < def.upgradeTree.Count; i++)
+                    {
+                        var tier = def.upgradeTree[i];
+                        if (tier != null && tier.chassisId == chassisId)
+                        {
+                            var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
+                            chassis.chassisId = tier.chassisId;
+                            chassis.shipFamily = def.familyId;
+                            chassis.displayName = tier.chassisId;
+                            chassis.basePrefab = tier.prefab;
+                            chassis.originPlanetId = f.planetId;
+                            chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
+                            return chassis;
+                        }
+                    }
+                }
+            }
+            if (entries == null) return null;
+            foreach (var entry in entries)
+            {
+                if (entry?.chassis != null && entry.chassis.chassisId == chassisId)
+                    return entry.chassis;
+            }
+            return null;
+        }
+
+        /// <summary>Returns the ship prefab for the given chassis ID. Uses homeShipFamilyDefinition upgrade tree for home, else PlanetShipFamilyConfig.</summary>
+        public GameObject GetPrefabForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId)) return null;
+            if (homeShipFamilyDefinition != null && homeShipFamilyDefinition.upgradeTree != null)
+            {
+                foreach (var tier in homeShipFamilyDefinition.upgradeTree)
+                {
+                    if (tier != null && tier.chassisId == chassisId && tier.prefab != null)
+                        return tier.prefab;
+                }
+            }
+            if (planetShipFamilyConfig != null)
+            {
+                GameObject prefab = planetShipFamilyConfig.GetPrefabByChassisId(chassisId);
+                if (prefab != null) return prefab;
+            }
+            return null;
+        }
+
+        /// <summary>Returns the index of the entry whose chassis has the given chassisId, or -1 if not found.
+        /// When homeShipFamilyDefinition is set, resolves from its upgrade tree first. Else tries PlanetShipFamilyConfig home planet.</summary>
         public int GetIndexForChassisId(string chassisId)
         {
-            if (entries == null || string.IsNullOrEmpty(chassisId)) return -1;
+            if (string.IsNullOrEmpty(chassisId)) return -1;
+            if (homeShipFamilyDefinition != null && homeShipFamilyDefinition.upgradeTree != null)
+            {
+                for (int i = 0; i < homeShipFamilyDefinition.upgradeTree.Count; i++)
+                {
+                    var tier = homeShipFamilyDefinition.upgradeTree[i];
+                    if (tier != null && tier.chassisId == chassisId)
+                        return i;
+                }
+            }
+            if (planetShipFamilyConfig != null)
+            {
+                var family = planetShipFamilyConfig.GetFamilyForPlanet(0);
+                if (family?.shipFamilyDefinition?.upgradeTree != null)
+                {
+                    for (int i = 0; i < family.shipFamilyDefinition.upgradeTree.Count; i++)
+                    {
+                        var tier = family.shipFamilyDefinition.upgradeTree[i];
+                        if (tier != null && tier.chassisId == chassisId)
+                            return i;
+                    }
+                }
+            }
+            if (entries == null) return -1;
             for (int i = 0; i < entries.Count; i++)
             {
                 if (entries[i]?.chassis != null && entries[i].chassis.chassisId == chassisId)
+                    return i;
+            }
+            return -1;
+        }
+
+        /// <summary>Returns the chassis index for the given chassisId within the given planet's unlock list (from that planet's ShipFamilyDefinition upgrade tree when set).</summary>
+        public int GetIndexForChassisIdForPlanet(string chassisId, int planetId)
+        {
+            if (string.IsNullOrEmpty(chassisId)) return -1;
+            if (planetId == 0 && homeShipFamilyDefinition != null && homeShipFamilyDefinition.upgradeTree != null)
+            {
+                for (int i = 0; i < homeShipFamilyDefinition.upgradeTree.Count; i++)
+                {
+                    if (homeShipFamilyDefinition.upgradeTree[i] != null && homeShipFamilyDefinition.upgradeTree[i].chassisId == chassisId)
+                        return i;
+                }
+                return -1;
+            }
+            if (planetShipFamilyConfig == null || planetShipFamilyConfig.families == null) return -1;
+            var family = planetShipFamilyConfig.GetFamilyForPlanet(planetId);
+            if (family?.shipFamilyDefinition?.upgradeTree == null) return -1;
+            var tree = family.shipFamilyDefinition.upgradeTree;
+            for (int i = 0; i < tree.Count; i++)
+            {
+                if (tree[i] != null && tree[i].chassisId == chassisId)
                     return i;
             }
             return -1;

@@ -367,6 +367,20 @@ namespace TitanOrbit.Entities
             }
         }
 
+#if UNITY_EDITOR
+        // Editor-only helpers exposing effective ship ability stats for inspector visualizations
+        public float EditorFirePowerMultiplier => DamageMultiplier;
+        public float EditorBulletSpeedMultiplier => SpeedMultiplier;
+        public float EditorHealthCap => MaxHealth;
+        public float EditorHealthRegen => EffectiveHealthRegen;
+        public float EditorEnergyCap => EffectiveEnergyCapacity;
+        public float EditorEnergyRegen => EffectiveEnergyRegen;
+        public float EditorMoveSpeed => EffectiveMaxSpeed;
+        public float EditorTurnSpeed => EffectiveRotationSpeed;
+        public float EditorMaxGems => GemCapacity;
+        public float EditorMaxPeople => PeopleCapacity;
+#endif
+
         /// <summary>Mass from components + gems. Not scaled by ship level or cards.</summary>
         private float EffectiveMass
         {
@@ -718,7 +732,9 @@ namespace TitanOrbit.Entities
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
-                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
+                if (starterPrefab == null)
+                    starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
                 if (starterPrefab != null)
                 {
                     ApplyShipVisualFromPrefab(starterPrefab);
@@ -726,6 +742,8 @@ namespace TitanOrbit.Entities
                     if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
                 }
+                else
+                    Debug.LogWarning("Starship: No starter ship prefab. Assign ShipUnlockTable.homeShipFamilyDefinition (e.g. AstroEagleShipFamily) with upgrade tree prefabs, and ensure CardShopSystem references the same ShipUnlockTable.");
             }
 
             // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
@@ -829,7 +847,9 @@ namespace TitanOrbit.Entities
             if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
-                GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
+                if (prefab == null)
+                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
                 if (prefab != null)
                 {
                     ApplyShipVisualFromPrefab(prefab);
@@ -842,10 +862,17 @@ namespace TitanOrbit.Entities
             if (IsOwner && currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
             {
                 string cid = currentChassisId.Value.ToString();
-                GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+                GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : null;
+                if (prefab == null)
+                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
                 if (prefab != null)
                 {
                     ApplyShipVisualFromPrefab(prefab);
+                    _lastAppliedChassisIndex = currentChassisIndex.Value;
+                }
+                else if (currentChassisIndex.Value != _lastAppliedChassisIndex)
+                {
+                    Debug.LogWarning($"Starship: No prefab for chassis '{cid}' (index {currentChassisIndex.Value}). Assign ShipUnlockTable.homeShipFamilyDefinition with an upgrade tree that has prefabs set, or assign CardShopSystem's Ship Unlock Table.");
                     _lastAppliedChassisIndex = currentChassisIndex.Value;
                 }
             }
@@ -2531,6 +2558,11 @@ namespace TitanOrbit.Entities
         {
             if (shipPrefab == null) return;
             Transform root = GetPrefabTransform();
+            if (root == null)
+            {
+                Debug.LogWarning("Starship: GetPrefabTransform() returned null. Ensure EnsureVisualRootForBanking runs in Awake.");
+                return;
+            }
 
             if (lastVisualApplyFrame == Time.frameCount && lastVisualApplyPrefab == shipPrefab)
             {

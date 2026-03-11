@@ -1,0 +1,572 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbdb7142b5756eb4ea63ff0b0a32041c, type: 3}
+  m_Name: AstroEagleShipFamily
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
+  familyId: AstroEagle
+  components:
+  - componentId: Cockpit
+    displayName: Cockpit 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 15
+      healthCapPerLevel: 3
+      healthRegen: 5
+      healthRegenPerLevel: 1
+      energyCap: 5
+      energyCapPerLevel: 1.5
+      energyRegen: 3
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 5
+      maxGemsPerLevel: 1
+      maxPeople: 5
+      maxPeoplePerLevel: 1
+  - componentId: Cockpit_Base_1
+    displayName: Cockpit 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 15
+      healthCapPerLevel: 3
+      healthRegen: 5
+      healthRegenPerLevel: 1
+      energyCap: 5
+      energyCapPerLevel: 1.5
+      energyRegen: 3
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 5
+      maxGemsPerLevel: 1
+      maxPeople: 5
+      maxPeoplePerLevel: 1
+  - componentId: Cockpit_Base_2
+    displayName: Cockpit 2
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 30
+      healthCapPerLevel: 6
+      healthRegen: 10
+      healthRegenPerLevel: 2
+      energyCap: 10
+      energyCapPerLevel: 3
+      energyRegen: 6
+      energyRegenPerLevel: 1
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 10
+      maxGemsPerLevel: 2
+      maxPeople: 10
+      maxPeoplePerLevel: 2
+  - componentId: Engine_1
+    displayName: Engine 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 2
+      healthCapPerLevel: 0.5
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 8
+      moveSpeedPerLevel: 2
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Engine_2
+    displayName: Engine 2
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 4
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 16
+      moveSpeedPerLevel: 4
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Fin
+    displayName: Fin 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 1.5
+      healthCapPerLevel: 0.4
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 5
+      turnSpeedPerLevel: 1.5
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Part_1
+    displayName: Part 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 10
+      healthCapPerLevel: 2
+      healthRegen: 2
+      healthRegenPerLevel: 0.75
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 5
+      maxGemsPerLevel: 1.5
+      maxPeople: 2
+      maxPeoplePerLevel: 0.5
+  - componentId: Part_2
+    displayName: Part 2
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 20
+      healthCapPerLevel: 4
+      healthRegen: 4
+      healthRegenPerLevel: 1.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 10
+      maxGemsPerLevel: 3
+      maxPeople: 4
+      maxPeoplePerLevel: 1
+  - componentId: Part_3
+    displayName: Part 3
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 30
+      healthCapPerLevel: 6
+      healthRegen: 6
+      healthRegenPerLevel: 2.25
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 15
+      maxGemsPerLevel: 4.5
+      maxPeople: 6
+      maxPeoplePerLevel: 1.5
+  - componentId: Part_4
+    displayName: Part 4
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 40
+      healthCapPerLevel: 8
+      healthRegen: 8
+      healthRegenPerLevel: 3
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 20
+      maxGemsPerLevel: 6
+      maxPeople: 8
+      maxPeoplePerLevel: 2
+  - componentId: Tail
+    displayName: Tail 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 8
+      turnSpeedPerLevel: 2
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Thruster
+    displayName: Thruster 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 2
+      healthCapPerLevel: 0.5
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 8
+      turnSpeedPerLevel: 2
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Weapon
+    displayName: Weapon 1
+    stats:
+      firePower: 5
+      firePowerPerLevel: 1.5
+      bulletSpeed: 5
+      bulletSpeedPerLevel: 1
+      fireRate: 1.5
+      fireRatePerLevel: 0.25
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 15
+      energyCapPerLevel: 5
+      energyRegen: 3
+      energyRegenPerLevel: 1
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_1
+    displayName: Wing 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 4
+      turnSpeedPerLevel: 1
+      maxGems: 10
+      maxGemsPerLevel: 2
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_1_Mirrored
+    displayName: Wing 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 4
+      turnSpeedPerLevel: 1
+      maxGems: 10
+      maxGemsPerLevel: 2
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_2
+    displayName: Wing 2
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 10
+      healthCapPerLevel: 3
+      healthRegen: 3
+      healthRegenPerLevel: 1
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 3
+      energyRegenPerLevel: 1
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 8
+      turnSpeedPerLevel: 2
+      maxGems: 20
+      maxGemsPerLevel: 4
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_3
+    displayName: Wing 3
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 15
+      healthCapPerLevel: 4.5
+      healthRegen: 4.5
+      healthRegenPerLevel: 1.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 4.5
+      energyRegenPerLevel: 1.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 12
+      turnSpeedPerLevel: 3
+      maxGems: 30
+      maxGemsPerLevel: 6
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_4
+    displayName: Wing 4
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 20
+      healthCapPerLevel: 6
+      healthRegen: 6
+      healthRegenPerLevel: 2
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 6
+      energyRegenPerLevel: 2
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 16
+      turnSpeedPerLevel: 4
+      maxGems: 40
+      maxGemsPerLevel: 8
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  - componentId: Wing_5
+    displayName: Wing 5
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 25
+      healthCapPerLevel: 7.5
+      healthRegen: 7.5
+      healthRegenPerLevel: 2.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 7.5
+      energyRegenPerLevel: 2.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 20
+      turnSpeedPerLevel: 5
+      maxGems: 50
+      maxGemsPerLevel: 10
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+  upgradeTree:
+  - chassisId: AstroEagle_01a
+    prefab: {fileID: 1952278464844654, guid: 7a3610850390303418074a50e4b65956, type: 3}
+    minHomePlanetLevel: 1
+    powerScore: 133.735
+  - chassisId: AstroEagle_02
+    prefab: {fileID: 1560147866539248, guid: 8be3f1654a841a349b6718d270d4841e, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 146.84
+  - chassisId: AstroEagle_03
+    prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 154.67
+  - chassisId: AstroEagle_04
+    prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 176.23001
+  - chassisId: AstroEagle_05
+    prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 199.89
+  - chassisId: AstroEagle_06
+    prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 200.12
+  - chassisId: AstroEagle_07
+    prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 210.875
+  - chassisId: AstroEagle_08
+    prefab: {fileID: 5623887138846423697, guid: a727c87f8d9d96a4594c3a0c4ea59819, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 213.725
+  - chassisId: AstroEagle_09
+    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 216.89
+  - chassisId: AstroEagle_10
+    prefab: {fileID: 1349471453543982, guid: 503149c1c10fa1943ae9257a4de06608, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 230.63
+  - chassisId: AstroEagle_11
+    prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 238.85
+  - chassisId: AstroEagle_12
+    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 245.76001
+  - chassisId: AstroEagle_13
+    prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 245.845
+  - chassisId: AstroEagle_14
+    prefab: {fileID: 8702785273099874958, guid: 5b14bf2ca37c365429274ce322e8859c, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 276.805
+  - chassisId: AstroEagle_15
+    prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 305.155
+  - chassisId: AstroEagle_16
+    prefab: {fileID: 2828997707732417688, guid: e7939c8492d27bc46b0e7b2e60d8ea8b, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 357.95502
+  - chassisId: AstroEagle_17
+    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 373.955
+  - chassisId: AstroEagle_18
+    prefab: {fileID: 3509332871556794328, guid: c983ac63827991543b127ba08780d08e, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 383.53
+  - chassisId: AstroEagle_19
+    prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 387.155
+  - chassisId: AstroEagle_20
+    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 389.83002

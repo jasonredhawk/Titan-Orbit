@@ -6,7 +6,8 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Editor
 {
     /// <summary>
-    /// Scans ModularExamples subfolders and populates PlanetShipFamilyConfig. Each subfolder becomes a ship family for a planet.
+    /// Populates PlanetShipFamilyConfig with one entry per ModularExamples subfolder. Each entry needs a ShipFamilyDefinition
+    /// (assign in inspector or create via Titan Orbit > Ship Family Definition and "Build Upgrade Tree From Folder").
     /// Run: Titan Orbit > Assign ModularExamples to Planet Ship Family Config
     /// </summary>
     public static class AssignModularExamplesToPlanetShipFamilyConfig
@@ -40,34 +41,36 @@ namespace TitanOrbit.Editor
                 string familyName = Path.GetFileName(dir);
                 if (string.IsNullOrEmpty(familyName)) continue;
 
+                ShipFamilyDefinition definition = FindShipFamilyDefinitionByFamilyId(familyName);
+
                 var entry = new PlanetShipFamilyConfig.ShipFamilyEntry
                 {
-                    familyName = familyName,
                     planetId = planetId,
-                    prefabs = new GameObject[20]
+                    shipFamilyDefinition = definition,
+                    familyName = definition != null ? null : familyName
                 };
 
-                int assigned = 0;
-                for (int i = 1; i <= 20; i++)
-                {
-                    string path1 = $"{dir}/{familyName}{i}.prefab";
-                    string path2 = $"{dir}/{familyName}{i:D2}.prefab";
-                    GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path1);
-                    if (prefab == null) prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path2);
-                    if (prefab != null)
-                    {
-                        entry.prefabs[i - 1] = prefab;
-                        assigned++;
-                    }
-                }
                 config.families.Add(entry);
                 planetId++;
-                Debug.Log($"  {familyName}: {assigned} prefabs (planet {planetId - 1})");
+                Debug.Log($"  {familyName}: planet {entry.planetId}, ShipFamilyDefinition {(definition != null ? "assigned" : "not found - assign in inspector")}");
             }
 
             EditorUtility.SetDirty(config);
             AssetDatabase.SaveAssets();
-            Debug.Log($"PlanetShipFamilyConfig updated: {config.families.Count} families from ModularExamples. Assign this config to ShipUnlockTable.planetShipFamilyConfig.");
+            Debug.Log($"PlanetShipFamilyConfig updated: {config.families.Count} families. Assign config to ShipUnlockTable and set ShipFamilyDefinition per entry if needed.");
+        }
+
+        private static ShipFamilyDefinition FindShipFamilyDefinitionByFamilyId(string familyId)
+        {
+            string[] guids = AssetDatabase.FindAssets("t:ShipFamilyDefinition");
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var def = AssetDatabase.LoadAssetAtPath<ShipFamilyDefinition>(path);
+                if (def != null && !string.IsNullOrEmpty(def.familyId) && def.familyId.Equals(familyId, System.StringComparison.OrdinalIgnoreCase))
+                    return def;
+            }
+            return null;
         }
     }
 }

@@ -17,12 +17,9 @@ namespace TitanOrbit.Systems
         public static CardShopSystem Instance { get; private set; }
 
         [Header("Data")]
-        [SerializeField] private ShipUnlockTable shipUnlockTable;
-        [Tooltip("Assign PlanetShipFamilyConfig (from Assets/Data) so each planet shows its own ship collection. Create via Titan Orbit > Assign ModularExamples to Planet Ship Family Config.")]
+        [Tooltip("Planet-to-ship-family mapping. Prefabs and unlock tiers come from each entry's ShipFamilyDefinition upgradeTree.")]
         [SerializeField] private PlanetShipFamilyConfig planetShipFamilyConfig;
         [SerializeField] private List<CardData> allCards = new List<CardData>();
-        [Tooltip("AstroEagle ship prefabs (1–20) from UltimateSpaceshipsCreator/Prefabs/ModularExamples/AstroEagle. Assign in inspector or use menu Titan Orbit > Assign AstroEagle Prefabs to CardShopSystem.")]
-        [SerializeField] private GameObject[] astroEagleShipPrefabs = new GameObject[20];
 
         private void Awake()
         {
@@ -30,17 +27,10 @@ namespace TitanOrbit.Systems
             {
                 Instance = this;
             }
-            else if (Instance != this)
+            else             if (Instance != this)
             {
                 Destroy(gameObject);
             }
-            if (shipUnlockTable == null)
-                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
-            // Wire planet ship family config so each planet shows its own ship collection
-            if (shipUnlockTable != null && planetShipFamilyConfig != null)
-                shipUnlockTable.planetShipFamilyConfig = planetShipFamilyConfig;
-            if (shipUnlockTable != null)
-                shipUnlockTable.GetUnlockedEntries(1);
             if (allCards == null || allCards.Count == 0)
                 allCards = GetDefaultCards();
         }
@@ -109,9 +99,8 @@ namespace TitanOrbit.Systems
         /// </summary>
         public List<ShipChassisDefinition> GetUnlockedChassisForHomeLevel(int homePlanetLevel)
         {
-            if (shipUnlockTable == null)
-                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
-            return shipUnlockTable.GetUnlockedChassis(homePlanetLevel);
+            if (planetShipFamilyConfig == null) return new List<ShipChassisDefinition>();
+            return planetShipFamilyConfig.GetUnlockedChassis(homePlanetLevel);
         }
 
         /// <summary>Returns chassis definitions for the store (home or captured planet). Use when planetShipFamilyConfig is set.</summary>
@@ -128,52 +117,47 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Returns unlock entries (chassis + tier + cost) for the given home planet level and store planet.
-        /// Uses planetShipFamilyConfig: home (planetId 0) = AstroEagle, planet 1 = CombinedSpaceships, etc.
+        /// Uses PlanetShipFamilyConfig for each planet's ShipFamilyDefinition upgrade tree.
         /// </summary>
         public List<ShipUnlockEntry> GetUnlockedChassisEntriesForHomeLevel(int homePlanetLevel, bool isHomeStore, int storePlanetId)
         {
-            if (shipUnlockTable == null)
-                shipUnlockTable = ScriptableObject.CreateInstance<ShipUnlockTable>();
-            return shipUnlockTable.GetUnlockedEntriesForPlanet(homePlanetLevel, storePlanetId);
+            if (planetShipFamilyConfig == null) return new List<ShipUnlockEntry>();
+            return planetShipFamilyConfig.GetUnlockedEntriesForPlanet(homePlanetLevel, storePlanetId);
         }
 
-        /// <summary>Returns the chassis at the given index in the unlock table (for grid dimensions). Returns null if index is invalid.</summary>
+        /// <summary>Returns the chassis at the given index for the home planet (planet 0). Returns null if config missing or index invalid.</summary>
         public ShipChassisDefinition GetChassisByIndex(int index)
         {
-            return shipUnlockTable != null ? shipUnlockTable.GetChassisByIndex(index) : null;
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetChassisByIndex(0, index) : null;
         }
 
-        /// <summary>Returns the ship prefab for the given chassis index (AstroEagle_01 = index 0, etc.). Used so the first ship can apply AstroEagle1 visual on spawn.</summary>
+        /// <summary>Returns the ship prefab for the given chassis index. Resolved from PlanetShipFamilyConfig upgrade tree (chassis.basePrefab or GetPrefabForChassisId).</summary>
         public GameObject GetShipPrefabForChassisIndex(int index)
         {
-            if (index < 0) return null;
+            if (index < 0 || planetShipFamilyConfig == null) return null;
             ShipChassisDefinition chassis = GetChassisByIndex(index);
             if (chassis == null) return null;
-            GameObject prefab = GetAstroEaglePrefabForChassisId(chassis.chassisId);
-            if (prefab == null && astroEagleShipPrefabs != null && index < astroEagleShipPrefabs.Length)
-                prefab = astroEagleShipPrefabs[index];
-            return prefab;
+            if (chassis.basePrefab != null) return chassis.basePrefab;
+            return planetShipFamilyConfig.GetPrefabForChassisId(chassis.chassisId);
         }
 
-        /// <summary>Returns the ship prefab for the given chassis ID (e.g. AstroEagle_01, CraizanStar_05). Uses PlanetShipFamilyConfig when set.</summary>
+        /// <summary>Returns the ship prefab for the given chassis ID. Resolved from PlanetShipFamilyConfig upgrade trees.</summary>
         public GameObject GetShipPrefabForChassisId(string chassisId)
         {
-            if (string.IsNullOrEmpty(chassisId)) return null;
-            if (shipUnlockTable?.planetShipFamilyConfig != null)
-            {
-                GameObject prefab = shipUnlockTable.planetShipFamilyConfig.GetPrefabByChassisId(chassisId);
-                if (prefab != null) return prefab;
-            }
-            int index = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
+            if (string.IsNullOrEmpty(chassisId) || planetShipFamilyConfig == null) return null;
+            GameObject prefab = planetShipFamilyConfig.GetPrefabForChassisId(chassisId);
+            if (prefab != null) return prefab;
+            int index = planetShipFamilyConfig.GetIndexForChassisId(chassisId);
             return GetShipPrefabForChassisIndex(index);
         }
 
-        /// <summary>Returns the starter chassis ID (home planet's first ship). AstroEagle_01 when no config, else first family's ship 1.</summary>
+        /// <summary>Returns the starter chassis ID (home planet's first ship). From PlanetShipFamilyConfig, else AstroEagle_01.</summary>
         public string GetStarterChassisId()
         {
-            if (shipUnlockTable?.planetShipFamilyConfig != null && shipUnlockTable.planetShipFamilyConfig.families != null && shipUnlockTable.planetShipFamilyConfig.families.Count > 0)
+            if (planetShipFamilyConfig != null && planetShipFamilyConfig.families != null && planetShipFamilyConfig.families.Count > 0)
             {
-                return shipUnlockTable.planetShipFamilyConfig.GetChassisIdForPlanetAndIndex(0, 0);
+                string id = planetShipFamilyConfig.GetChassisIdForPlanetAndIndex(0, 0);
+                if (!string.IsNullOrEmpty(id)) return id;
             }
             return "AstroEagle_01";
         }
@@ -184,7 +168,7 @@ namespace TitanOrbit.Systems
             nextLevel = 0;
             cost = 0f;
             chassisId = null;
-            if (ship == null || storePlanet == null || shipUnlockTable == null) return false;
+            if (ship == null || storePlanet == null || planetShipFamilyConfig == null) return false;
             if (ship.ShipLevel >= 6) return false; // Level 7 is special (planet 6 + full gems) - not handled as simple purchase for now
 
             string currentCid = ship.CurrentChassisId;
@@ -385,13 +369,14 @@ namespace TitanOrbit.Systems
             int storePlanetId = planet.PlanetId;
 
             ShipChassisDefinition chassis = FindChassisById(chassisId);
-            int chassisIndex = shipUnlockTable != null ? shipUnlockTable.GetIndexForChassisId(chassisId) : -1;
-
-            if (shipUnlockTable?.planetShipFamilyConfig != null)
-            {
+            int chassisIndex = planetShipFamilyConfig != null ? planetShipFamilyConfig.GetIndexForChassisIdForPlanet(chassisId, storePlanetId) : -1;
+            if (chassisIndex < 0)
                 chassisIndex = ParseChassisIndexFromId(chassisId);
+
+            if (planetShipFamilyConfig != null)
+            {
                 if (chassisIndex < 0) return;
-                if (homeLevel < tierLevel) return;
+                if (homeLevel < (chassis?.minHomePlanetLevel ?? tierLevel)) return;
             }
             else
             {
@@ -418,12 +403,10 @@ namespace TitanOrbit.Systems
             {
                 ship.SetShipLevelFromTier(tierLevel);
                 GameObject prefab = GetShipPrefabForChassisId(chassisId);
-                if (prefab == null && chassisIndex >= 0 && chassisIndex < (astroEagleShipPrefabs?.Length ?? 0))
-                    prefab = astroEagleShipPrefabs[chassisIndex];
                 if (prefab != null)
                     ship.ApplyShipVisualFromPrefab(prefab);
                 else
-                    Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}'. Run Titan Orbit > Assign ModularExamples to Planet Ship Family Config.");
+                    Debug.LogWarning($"CardShopSystem: No prefab for chassis '{chassisId}'. Ensure PlanetShipFamilyConfig has an entry for this planet with a ShipFamilyDefinition whose Upgrade Tree has prefabs assigned.");
             }
             ship.SetCurrentChassisIndex(chassisIndex);
             ship.SetCurrentChassisId(chassisId);
@@ -485,8 +468,6 @@ namespace TitanOrbit.Systems
             Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
             if (ship == null) return;
             GameObject prefab = GetShipPrefabForChassisId(chassisId);
-            if (prefab == null && chassisIndex >= 0 && chassisIndex < (astroEagleShipPrefabs?.Length ?? 0))
-                prefab = astroEagleShipPrefabs[chassisIndex];
             if (prefab != null)
                 ship.ApplyShipVisualFromPrefab(prefab);
         }
@@ -520,27 +501,12 @@ namespace TitanOrbit.Systems
 
         private ShipChassisDefinition FindChassisById(string chassisId)
         {
-            if (shipUnlockTable == null || shipUnlockTable.entries == null) return null;
-            foreach (var entry in shipUnlockTable.entries)
+            if (planetShipFamilyConfig != null)
             {
-                if (entry?.chassis == null) continue;
-                if (entry.chassis.chassisId == chassisId)
-                    return entry.chassis;
+                ShipChassisDefinition chassis = planetShipFamilyConfig.GetChassisByChassisId(chassisId);
+                if (chassis != null) return chassis;
             }
             return null;
-        }
-
-        /// <summary>Resolves AstroEagle ship prefab from chassisId (e.g. AstroEagle_01 -> index 0 -> astroEagleShipPrefabs[0]). Falls back to Resources.Load if array not filled.</summary>
-        private GameObject GetAstroEaglePrefabForChassisId(string chassisId)
-        {
-            if (string.IsNullOrEmpty(chassisId) || !chassisId.StartsWith("AstroEagle_")) return null;
-            string numPart = chassisId.Substring("AstroEagle_".Length);
-            if (!int.TryParse(numPart, out int num) || num < 1 || num > 20) return null;
-            int index = num - 1;
-            if (astroEagleShipPrefabs != null && index < astroEagleShipPrefabs.Length && astroEagleShipPrefabs[index] != null)
-                return astroEagleShipPrefabs[index];
-            GameObject fallback = Resources.Load<GameObject>($"AstroEagle/AstroEagle{num}");
-            return fallback;
         }
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
