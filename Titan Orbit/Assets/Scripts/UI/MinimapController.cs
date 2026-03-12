@@ -79,7 +79,7 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
         private float lastEntityCacheRefreshTime = -999f;
-        private const float EntityCacheRefreshInterval = 0.75f;
+        private const float EntityCacheRefreshInterval = 1.5f;
         private Starship[] cachedShips = new Starship[0];
         private Planet[] cachedPlanets = new Planet[0];
         private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
@@ -987,7 +987,9 @@ namespace TitanOrbit.UI
             // Show minimap whenever we have a local player ship (even if team not yet set, so it's visible in single-player or before team sync).
             SetMinimapVisible(true);
 
-            UpdateBlips();
+            // Throttle blip updates to every 4th frame to cut Canvas rebuilds and per-frame work (150+ blips, 300+ asteroids).
+            if (Time.frameCount % 4 == 0)
+                UpdateBlips();
             
             // Handle minimap clicks for markers
             HandleMinimapClicks();
@@ -1248,6 +1250,10 @@ namespace TitanOrbit.UI
             if (playerTransform == null || playerShip == null || !playerShip)
                 return;
             RefreshEntityCache();
+            // #region agent log
+            if (Time.frameCount % 120 == 0)
+                TitanOrbit.Core.DebugSessionLog.Write("MinimapController.UpdateBlips", "blip and cache counts", "{\"blips\":" + blips.Count + ",\"edgeMarkers\":" + edgeMarkers.Count + ",\"markerEdgeMarkers\":" + markerEdgeMarkers.Count + ",\"cachedShips\":" + (cachedShips?.Length ?? 0) + ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) + ",\"cachedAsteroids\":" + (cachedAsteroids?.Length ?? 0) + ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) + "}", "B");
+            // #endregion
             Vector3 playerPos = playerTransform.position;
             blipsToRemove.Clear();
 

@@ -21,12 +21,15 @@ namespace TitanOrbit.Entities
         private Transform visualChild; // For Rigidbody entities: we position this, not the root
         private static UnityEngine.Camera s_cachedMainCamera;
         private static int s_cachedCameraFrame = -1;
+        /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
+        private bool _isShip;
 
         private void Start()
         {
             rb = GetComponent<Rigidbody>();
+            _isShip = GetComponent<Starship>() != null;
             // Ships never wrap (player stays in world space); skip Visual child so banking and hierarchy stay intact.
-            if (GetComponent<Starship>() != null)
+            if (_isShip)
                 return;
             // Only use Visual child for non-kinematic Rigidbodies (gems, bullets). Kinematic (e.g. asteroids)
             // use procedural/SGT mesh on root and must have root moved like planets.
@@ -45,7 +48,9 @@ namespace TitanOrbit.Entities
         {
             if (rb == null)
                 rb = GetComponent<Rigidbody>();
-            if (GetComponent<Starship>() != null)
+            if (!_isShip && GetComponent<Starship>() != null)
+                _isShip = true;
+            if (_isShip)
                 return;
             if (rb != null && !rb.isKinematic && visualChild == null)
             {
@@ -118,7 +123,7 @@ namespace TitanOrbit.Entities
             if (cam == null) return;
 
             // Ships never wrap; don't move or reparent them so banking (visualRoot) works.
-            if (GetComponent<Starship>() != null)
+            if (_isShip)
                 return;
 
             if (rb != null)

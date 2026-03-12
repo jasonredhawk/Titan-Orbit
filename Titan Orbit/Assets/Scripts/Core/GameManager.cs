@@ -29,6 +29,10 @@ namespace TitanOrbit.Core
 
         private NetworkVariable<GameState> currentGameState = new NetworkVariable<GameState>(GameState.Lobby);
         private NetworkVariable<float> matchTimer = new NetworkVariable<float>(0f);
+        // #region agent log
+        private static float s_lastPerfLogTime = -999f;
+        private static int s_lastFrameLog = -999;
+        // #endregion
 
         public enum GameState
         {
@@ -94,6 +98,24 @@ namespace TitanOrbit.Core
 
         private void Update()
         {
+            // #region agent log
+            int frame = Time.frameCount;
+            if (frame % 60 == 0)
+            {
+                float t = Time.realtimeSinceStartup;
+                DebugSessionLog.Write("GameManager.Update", "frame timing", "{\"frame\":" + frame + ",\"realtime\":" + t + "}", "C");
+                s_lastFrameLog = frame;
+            }
+            if (Time.realtimeSinceStartup - s_lastPerfLogTime >= 2f)
+            {
+                s_lastPerfLogTime = Time.realtimeSinceStartup;
+                int bullets = UnityEngine.Object.FindObjectsByType<Bullet>(UnityEngine.FindObjectsSortMode.None).Length;
+                int gems = UnityEngine.Object.FindObjectsByType<Gem>(UnityEngine.FindObjectsSortMode.None).Length;
+                int asteroids = UnityEngine.Object.FindObjectsByType<Asteroid>(UnityEngine.FindObjectsSortMode.None).Length;
+                int ships = UnityEngine.Object.FindObjectsByType<Starship>(UnityEngine.FindObjectsSortMode.None).Length;
+                DebugSessionLog.Write("GameManager.Update", "object counts", "{\"bullets\":" + bullets + ",\"gems\":" + gems + ",\"asteroids\":" + asteroids + ",\"starships\":" + ships + "}", "E");
+            }
+            // #endregion
             if (IsServer && currentGameState.Value == GameState.InProgress)
             {
                 matchTimer.Value += Time.deltaTime;

@@ -39,9 +39,12 @@ namespace TitanOrbit.Entities
         private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
         private Rigidbody rb;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
+        /// <summary>When true, gem is in pool (disabled); skip logic and do not run attraction.</summary>
+        private NetworkVariable<bool> isInPool = new NetworkVariable<bool>(true);
 
         public float Value => value.Value;
         public float GemSize => gemSize.Value;
+        public bool IsInPool => isInPool.Value;
 
         private void Awake()
         {
@@ -59,17 +62,25 @@ namespace TitanOrbit.Entities
                 value.Value = gemValue;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
                 if (rb != null) rb.linearDamping = slowdownDrag;
+                // Default to active (not in pool) for normal spawned gems; pooled gems are immediately returned to pool on server, which sets isInPool true.
+                isInPool.Value = false;
             }
             
-            // Update visual scale based on gem size (client-side)
             gemSize.OnValueChanged += OnGemSizeChanged;
+            isInPool.OnValueChanged += OnIsInPoolChanged;
             UpdateVisualScale();
         }
 
         public override void OnNetworkDespawn()
         {
             gemSize.OnValueChanged -= OnGemSizeChanged;
+            isInPool.OnValueChanged -= OnIsInPoolChanged;
             base.OnNetworkDespawn();
+        }
+
+        private void OnIsInPoolChanged(bool previous, bool current)
+        {
+            gameObject.SetActive(!current);
         }
 
         private void OnGemSizeChanged(float previousSize, float newSize)
@@ -110,7 +121,9 @@ namespace TitanOrbit.Entities
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = 0;
                 magnetPriorityShipId.Value = priorityShipNetworkId;
+                spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
+            UpdateVisualScale();
         }
 
         /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect for 3 sec; enemies can collect immediately.</summary>
@@ -125,6 +138,7 @@ namespace TitanOrbit.Entities
                 depositTargetPlanetId.Value = 0;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
+            UpdateVisualScale();
         }
 
         /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. sizeMultiplier scales with ship level.</summary>
@@ -142,6 +156,31 @@ namespace TitanOrbit.Entities
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
                 if (rb != null) rb.linearDamping = 0f; // No slowdown - fly straight to planet
             }
+            UpdateVisualScale();
+        }
+
+        /// <summary>Server only. Puts gem back in pool (recycled); no Despawn. Call from pool or when gem is collected/expired.</summary>
+        public void ServerReturnToPool()
+        {
+            if (!IsServer) return;
+            value.Value = 0f;
+            depositTargetPlanetId.Value = 0;
+            magnetPriorityShipId.Value = 0;
+            expelledByShipId.Value = 0;
+            transform.position = Vector3.zero;
+            if (rb != null)
+            {
+                rb.position = Vector3.zero;
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+            isInPool.Value = true;
+        }
+
+        /// <summary>Server only. Marks gem as active (taken from pool). Call after setting position and Initialize.</summary>
+        public void ServerActivateFromPool()
+        {
+            if (IsServer) isInPool.Value = false;
         }
 
         private void OnTriggerEnter(Collider other)
@@ -183,6 +222,8 @@ namespace TitanOrbit.Entities
             }
 
             value.Value = 0;
+            if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                return;
             var no = GetComponent<NetworkObject>();
             if (no != null) no.Despawn();
         }
@@ -208,8 +249,12 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
-            // Update visual scale on all clients (for shrinking effect)
-            UpdateVisualScale();
+            // Throttle visual scale updates: every 5th FixedUpdate (staggered by instance) to cut cost when many gems exist
+            int frameMod = (Time.frameCount + GetInstanceID()) % 5;
+            if (frameMod == 0)
+                UpdateVisualScale();
+
+            if (isInPool.Value) return;
 
             // Never wrap gem position: world position can grow (e.g. 100, 310). ToroidalRenderer
             // displays at the copy closest to the local player's camera for a seamless view.
@@ -224,6 +269,8 @@ namespace TitanOrbit.Entities
             {
                 if (elapsedTime >= lifetimeSeconds)
                 {
+                    if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                        return;
                     var no = GetComponent<NetworkObject>();
                     if (no != null) no.Despawn();
                 }
@@ -233,7 +280,8 @@ namespace TitanOrbit.Entities
             // Check if gem has expired
             if (elapsedTime >= lifetimeSeconds)
             {
-                // Gem expired - despawn it
+                if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                    return;
                 var no = GetComponent<NetworkObject>();
                 if (no != null) no.Despawn();
                 return;
@@ -255,6 +303,18 @@ namespace TitanOrbit.Entities
                 }
                 return;
             }
+
+            // #region agent log
+            DebugSessionLog.Write(
+                "Gem.cs:FixedUpdate",
+                "Gem attraction tick",
+                "{\"value\":" + value.Value.ToString("F2") +
+                ",\"effectivePickupRadius\":" + effectivePickupRadius.ToString("F2") +
+                ",\"priorityShipId\":" + magnetPriorityShipId.Value +
+                ",\"isInPool\":" + (isInPool.Value ? "true" : "false") +
+                "}",
+                "G1");
+            // #endregion
 
             // Pickup radius and lifetime shrink (same as visual: full until last shrinkDuration sec)
             float lifetimeRemaining = 1f;
@@ -300,6 +360,20 @@ namespace TitanOrbit.Entities
                     nearestDist = dist;
                     nearestShip = ship;
                     nearestIsPriority = isPriority;
+
+                    // #region agent log
+                    var shipNoForLog = ship.GetComponent<NetworkObject>();
+                    ulong shipIdForLog = shipNoForLog != null ? shipNoForLog.NetworkObjectId : 0UL;
+                    DebugSessionLog.Write(
+                        "Gem.cs:FixedUpdate",
+                        "Gem found candidate ship",
+                        "{\"shipId\":" + shipIdForLog +
+                        ",\"dist\":" + dist.ToString("F2") +
+                        ",\"range\":" + range.ToString("F2") +
+                        ",\"isPriority\":" + (isPriority ? "true" : "false") +
+                        "}",
+                        "G2");
+                    // #endregion
                 }
             }
 
@@ -315,6 +389,20 @@ namespace TitanOrbit.Entities
                 // Collect when very close (toroidal distance)
                 if (dist <= collectRadius)
                 {
+                    // #region agent log
+                    var shipNoForCollect = nearestShip.GetComponent<NetworkObject>();
+                    ulong shipIdForCollect = shipNoForCollect != null ? shipNoForCollect.NetworkObjectId : 0UL;
+                    DebugSessionLog.Write(
+                        "Gem.cs:FixedUpdate",
+                        "Gem collecting to ship",
+                        "{\"shipId\":" + shipIdForCollect +
+                        ",\"dist\":" + dist.ToString("F2") +
+                        ",\"collectRadius\":" + collectRadius.ToString("F2") +
+                        ",\"value\":" + value.Value.ToString("F2") +
+                        "}",
+                        "G3");
+                    // #endregion
+
                     float capacityLeft = Mathf.Max(0f, nearestShip.GemCapacity - nearestShip.CurrentGems);
                     if (capacityLeft <= 0f)
                         return;
@@ -334,6 +422,8 @@ namespace TitanOrbit.Entities
 
                     // Consume the whole gem regardless of how much was added to the ship.
                     value.Value = 0f;
+                    if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                        return;
                     var no = GetComponent<NetworkObject>();
                     if (no != null) no.Despawn();
                     return;

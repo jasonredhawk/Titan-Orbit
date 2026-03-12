@@ -42,7 +42,7 @@ namespace TitanOrbit.Systems
         }
 
         [Header("Computation")]
-        [SerializeField] private float recomputeInterval = 0.5f;
+        [SerializeField] private float recomputeInterval = 1f;
         [Tooltip("Delay between each planet when animating the rebuild. 0 = one frame per planet (smooth, no lagged blits).")]
         [SerializeField] private float rebuildStepDelay = 0f;
 
@@ -167,6 +167,9 @@ namespace TitanOrbit.Systems
             }
 
             ApplyBonusesFromTriangles(allPlanets);
+            // #region agent log
+            DebugSessionLog.Write("PlanetConnectionSystem.RecomputeGraph", "edges and triangles", "{\"edges\":" + edges.Count + ",\"triangles\":" + triangles.Count + "}", "D");
+            // #endregion
         }
 
         private void ApplyBonusesFromTriangles(Planet[] allPlanets)
