@@ -42,7 +42,7 @@ namespace TitanOrbit.Systems
         }
 
         [Header("Computation")]
-        [SerializeField] private float recomputeInterval = 1f;
+        [SerializeField] private float recomputeInterval = 3f;
         [Tooltip("Delay between each planet when animating the rebuild. 0 = one frame per planet (smooth, no lagged blits).")]
         [SerializeField] private float rebuildStepDelay = 0f;
 
@@ -56,6 +56,9 @@ namespace TitanOrbit.Systems
         private readonly List<PlanetTriangle> triangles = new List<PlanetTriangle>();
         private readonly Dictionary<Planet, TeamManager.Team> _previousTeamPerPlanet = new Dictionary<Planet, TeamManager.Team>();
         private readonly Dictionary<Planet, float> planetBonusByPlanet = new Dictionary<Planet, float>();
+        // Reusable collections to avoid per-recompute allocations (helps idle performance).
+        private readonly HashSet<TeamManager.Team> _dirtyTeamsReusable = new HashSet<TeamManager.Team>();
+        private readonly List<Planet> _stalePlanetsReusable = new List<Planet>();
         private float lastRecomputeTime = -999f;
         private Coroutine _rebuildCoroutine;
 
@@ -93,6 +96,9 @@ namespace TitanOrbit.Systems
             }
             Instance = this;
             BootTrace.Mark("PlanetConnectionSystem.Awake - instance set");
+            // Ensure recompute interval is not too aggressive in existing scenes (helps idle FPS).
+            if (recomputeInterval < 3f)
+                recomputeInterval = 3f;
         }
 
         private void OnDestroy()
@@ -113,12 +119,14 @@ namespace TitanOrbit.Systems
 
         private void RecomputeGraph()
         {
+            float startTime = Time.realtimeSinceStartup;
+
             Planet[] allPlanets = FindObjectsOfType<Planet>();
             if (allPlanets == null || allPlanets.Length == 0)
                 return;
 
             // Detect ownership changes and track which teams need a full graph rebuild.
-            var dirtyTeams = new HashSet<TeamManager.Team>();
+            _dirtyTeamsReusable.Clear();
 
             foreach (Planet p in allPlanets)
             {
@@ -131,25 +139,32 @@ namespace TitanOrbit.Systems
                     if (previous != TeamManager.Team.None)
                     {
                         RemoveEdgesAndTrianglesContaining(p, previous);
-                        dirtyTeams.Add(previous);
+                        _dirtyTeamsReusable.Add(previous);
                     }
                     if (current != TeamManager.Team.None)
                     {
-                        dirtyTeams.Add(current);
+                        _dirtyTeamsReusable.Add(current);
                     }
                     _previousTeamPerPlanet[p] = current;
                 }
             }
 
-            // Clean stale entries (destroyed planets).
-            var toRemove = _previousTeamPerPlanet.Keys.Where(k => k == null).ToList();
-            foreach (var k in toRemove)
-                _previousTeamPerPlanet.Remove(k);
+            // Clean stale entries (destroyed planets) without allocating a new list each time.
+            _stalePlanetsReusable.Clear();
+            foreach (var kvp in _previousTeamPerPlanet)
+            {
+                if (kvp.Key == null)
+                    _stalePlanetsReusable.Add(kvp.Key);
+            }
+            for (int i = 0; i < _stalePlanetsReusable.Count; i++)
+            {
+                _previousTeamPerPlanet.Remove(_stalePlanetsReusable[i]);
+            }
             edges.RemoveAll(e => e.A == null || e.B == null);
             triangles.RemoveAll(t => t.A == null || t.B == null || t.C == null);
 
             // When any capture/loss happened: clear ALL links (screen goes blank), then animate rebuild one planet at a time.
-            if (dirtyTeams.Count > 0)
+            if (_dirtyTeamsReusable.Count > 0)
             {
                 if (_rebuildCoroutine != null)
                     StopCoroutine(_rebuildCoroutine);
@@ -168,7 +183,12 @@ namespace TitanOrbit.Systems
 
             ApplyBonusesFromTriangles(allPlanets);
             // #region agent log
-            DebugSessionLog.Write("PlanetConnectionSystem.RecomputeGraph", "edges and triangles", "{\"edges\":" + edges.Count + ",\"triangles\":" + triangles.Count + "}", "D");
+            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+            DebugSessionLog.Write(
+                "PlanetConnectionSystem.RecomputeGraph",
+                "edges and triangles",
+                "{\"edges\":" + edges.Count + ",\"triangles\":" + triangles.Count + ",\"durationMs\":" + durMs + "}",
+                "D");
             // #endregion
         }
 

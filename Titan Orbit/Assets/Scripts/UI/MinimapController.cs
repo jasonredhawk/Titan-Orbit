@@ -1249,10 +1249,26 @@ namespace TitanOrbit.UI
         {
             if (playerTransform == null || playerShip == null || !playerShip)
                 return;
+            float startTime = Time.realtimeSinceStartup;
             RefreshEntityCache();
             // #region agent log
             if (Time.frameCount % 120 == 0)
-                TitanOrbit.Core.DebugSessionLog.Write("MinimapController.UpdateBlips", "blip and cache counts", "{\"blips\":" + blips.Count + ",\"edgeMarkers\":" + edgeMarkers.Count + ",\"markerEdgeMarkers\":" + markerEdgeMarkers.Count + ",\"cachedShips\":" + (cachedShips?.Length ?? 0) + ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) + ",\"cachedAsteroids\":" + (cachedAsteroids?.Length ?? 0) + ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) + "}", "B");
+            {
+                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                TitanOrbit.Core.DebugSessionLog.Write(
+                    "MinimapController.UpdateBlips",
+                    "blip and cache counts",
+                    "{\"blips\":" + blips.Count +
+                    ",\"edgeMarkers\":" + edgeMarkers.Count +
+                    ",\"markerEdgeMarkers\":" + markerEdgeMarkers.Count +
+                    ",\"cachedShips\":" + (cachedShips?.Length ?? 0) +
+                    ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) +
+                    ",\"cachedAsteroids\":" + (cachedAsteroids?.Length ?? 0) +
+                    ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) +
+                    ",\"durationMs\":" + durMs +
+                    "}",
+                    "B");
+            }
             // #endregion
             Vector3 playerPos = playerTransform.position;
             blipsToRemove.Clear();

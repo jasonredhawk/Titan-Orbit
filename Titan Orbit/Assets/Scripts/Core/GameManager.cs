@@ -103,7 +103,13 @@ namespace TitanOrbit.Core
             if (frame % 60 == 0)
             {
                 float t = Time.realtimeSinceStartup;
-                DebugSessionLog.Write("GameManager.Update", "frame timing", "{\"frame\":" + frame + ",\"realtime\":" + t + "}", "C");
+                float dt = Time.deltaTime;
+                float fps = dt > 0f ? (1f / dt) : 0f;
+                DebugSessionLog.Write(
+                    "GameManager.Update",
+                    "frame timing",
+                    "{\"frame\":" + frame + ",\"realtime\":" + t + ",\"deltaTime\":" + dt + ",\"fps\":" + fps + "}",
+                    "C");
                 s_lastFrameLog = frame;
             }
             if (Time.realtimeSinceStartup - s_lastPerfLogTime >= 2f)
