@@ -146,10 +146,9 @@ namespace TitanOrbit.Systems
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
-            HomePlanet[] allHomePlanets = FindObjectsOfType<HomePlanet>();
-            foreach (var homePlanet in allHomePlanets)
+            foreach (var homePlanet in HomePlanet.AllHomePlanets)
             {
-                if (homePlanet.AssignedTeam == team)
+                if (homePlanet != null && homePlanet.AssignedTeam == team)
                 {
                     return homePlanet;
                 }

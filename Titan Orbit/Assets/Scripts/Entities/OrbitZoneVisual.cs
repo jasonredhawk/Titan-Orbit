@@ -2,9 +2,9 @@ using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
-    /// <summary>
-    /// Optional visual ring for the orbit zone; disabled by default (orbit zone is invisible).
-    /// </summary>
+        /// <summary>
+        /// Optional visual ring for the orbit zone; disabled by default (orbit zone is invisible).
+        /// </summary>
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
     public class OrbitZoneVisual : MonoBehaviour

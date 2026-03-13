@@ -16,6 +16,8 @@ namespace TitanOrbit.Entities
     /// </summary>
     public class HomePlanet : Planet
     {
+        /// <summary>All active HomePlanet instances. Updated on network spawn/despawn.</summary>
+        public static readonly List<HomePlanet> AllHomePlanets = new List<HomePlanet>();
         [Header("Home Planet Settings")]
         [Tooltip("Max gems capacity per level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, 4=8×, 5=16×, 6=32×. Scale base to tune difficulty.")]
         [SerializeField] private float baseMaxGemsLevel1 = 100f;
@@ -53,6 +55,8 @@ namespace TitanOrbit.Entities
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            if (!AllHomePlanets.Contains(this))
+                AllHomePlanets.Add(this);
             EnsureSolidColliderAndOrbitZone();
             if (IsServer)
             {
@@ -64,6 +68,12 @@ namespace TitanOrbit.Entities
             EnsureWaterComponents();
             EnsureAtmosphere();
             SetHomePlanetWaterLevel();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            base.OnNetworkDespawn();
+            AllHomePlanets.Remove(this);
         }
 
         /// <summary>Set SGT planet water level so tropical water is visible (tropical materials use _HasWater).</summary>
@@ -117,8 +127,8 @@ namespace TitanOrbit.Entities
                 var col = homeOz.GetComponent<SphereCollider>();
                 if (col != null)
                     col.radius = GetOrbitZoneOuterRadiusLocal();
-                return;
             }
+
             base.RefreshOrbitZoneRadius();
         }
 
@@ -225,37 +235,26 @@ namespace TitanOrbit.Entities
                 target.AddComponent<SgtPlanetWaterTexture>();
         }
 
-        /// <summary>Add SGT atmosphere as child for home planets (volumetric atmosphere).</summary>
+        /// <summary>Previously added SGT atmosphere for home planets; now disabled and cleans up any legacy instances.</summary>
         private void EnsureAtmosphere()
         {
-            if (atmosphereSourceMaterial == null || atmosphereOuterMesh == null) return;
+            // Atmosphere visuals have been removed from home planets.
+            // Clean up any legacy Atmosphere child and related components that might still exist on old prefabs/scenes.
             Transform existing = transform.Find("Atmosphere");
-            SgtAtmosphere sgtAtmosphere = existing != null ? existing.GetComponent<SgtAtmosphere>() : null;
-
-            if (sgtAtmosphere == null)
+            if (existing != null)
             {
-                GameObject atmosphereObj = new GameObject("Atmosphere");
-                atmosphereObj.transform.SetParent(transform);
-                atmosphereObj.transform.localPosition = Vector3.zero;
-                atmosphereObj.transform.localRotation = Quaternion.identity;
-                atmosphereObj.transform.localScale = Vector3.one;
-
-                sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
-                sgtAtmosphere.SourceMaterial = atmosphereSourceMaterial;
-                sgtAtmosphere.OuterMesh = atmosphereOuterMesh;
-            sgtAtmosphere.InnerMeshRadius = 0.5f;
-            sgtAtmosphere.OuterMeshRadius = 1f;   // CW mesh is unit sphere (radius 1)
-            sgtAtmosphere.Height = 0.025f;
+                Destroy(existing.gameObject);
             }
 
-            // Required so SourceMaterial has Inner/Outer DepthTex, LightingTex, ScatteringTex (avoids black circle / inspector errors)
-            GameObject atmObj = sgtAtmosphere.gameObject;
-            if (atmObj.GetComponent<SgtAtmosphereDepthTex>() == null)
-                atmObj.AddComponent<SgtAtmosphereDepthTex>();
-            if (atmObj.GetComponent<SgtAtmosphereLightingTex>() == null)
-                atmObj.AddComponent<SgtAtmosphereLightingTex>();
-            if (atmObj.GetComponent<SgtAtmosphereScatteringTex>() == null)
-                atmObj.AddComponent<SgtAtmosphereScatteringTex>();
+            foreach (var sgtAtmosphere in GetComponentsInChildren<SgtAtmosphere>(true))
+            {
+                Destroy(sgtAtmosphere.gameObject);
+            }
+
+            foreach (var model in GetComponentsInChildren<SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereModel>(true))
+            {
+                Destroy(model.gameObject);
+            }
         }
 
         /// <summary>Remove legacy cylinder-based Ring children so Shapes-drawn rings are the only ones visible.</summary>

@@ -34,6 +34,13 @@ namespace TitanOrbit.Entities
     [DefaultExecutionOrder(60000)] // Run last so banking is not overwritten by transform sync or other LateUpdates
     public class Starship : NetworkBehaviour
     {
+        /// <summary>Global registry of all active starships to avoid repeated FindObjectsByType scans.</summary>
+        public static readonly System.Collections.Generic.List<Starship> AllStarships = new System.Collections.Generic.List<Starship>();
+
+        // Cached references to avoid repeated global searches from Update.
+        private static TitanOrbit.UI.HomePlanetOrbitUI s_cachedOrbitUI;
+        private static TitanOrbit.Camera.CameraController s_cachedCameraController;
+        private bool _orbitUiVisible;
         [Header("Ship Settings")]
         [SerializeField] private ShipData shipData;
         /// <summary>Current ship data (model, weapon config, stats). Used so AI can match player ship.</summary>
@@ -403,7 +410,10 @@ namespace TitanOrbit.Entities
         private const float MINE_COOLDOWN = 1f;
         private Vector3 moveDirection = Vector3.zero;
         private Vector3 currentVelocity = Vector3.zero;
-        private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone (any planet)
+        private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone
+        private float lastOrbitDetectServerTime = -999f;
+        private float lastOrbitDetectClientTime = -999f;
+        private const float OrbitDetectInterval = 1.5f;
         private bool wasMovePressedLastFrame;
         private float depositAccumulator; // Gems accumulated for deposit (1 gem per spawn, interval = 1/(shipLevel*2) sec)
         private float lastDepositSpawnTime = -999f;
@@ -690,6 +700,8 @@ namespace TitanOrbit.Entities
 
         private void OnDestroy()
         {
+            // Remove from global registry if present
+            AllStarships.Remove(this);
             equippedCardIds?.Dispose();
             // Cancel any pending respawn invokes
             CancelInvoke(nameof(RespawnServerRpc));
@@ -709,6 +721,8 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            if (!AllStarships.Contains(this))
+                AllStarships.Add(this);
             // Server: sync initial ship level so clients show correct slot count
             if (IsServer && networkShipLevel != null)
                 networkShipLevel.Value = Mathf.Max(1, shipLevel);
@@ -810,8 +824,9 @@ namespace TitanOrbit.Entities
             // AI ships are placed by AIStarshipManager; don't overwrite their position
             if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return;
             HomePlanet home = null;
-            foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
+                if (hp == null) continue;
                 if (hp.AssignedTeam == shipTeam.Value) { home = hp; break; }
             }
             if (home == null) return;
@@ -831,6 +846,10 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            float updateStartTime = Time.realtimeSinceStartup;
+            bool didTriggerZoomReturn = false;
+            bool didShowOrbitUI = false;
+            bool didHideOrbitUI = false;
             // Server: regen for ALL ships (including AI) - run before IsOwner check
             if (IsServer && !isDead.Value)
             {
@@ -880,31 +899,75 @@ namespace TitanOrbit.Entities
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
 
             // When the local player begins moving (e.g. right click), trigger camera zoom-in if a galactic zoom is active.
-            if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
+            // if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
+            // {
+            //     if (s_cachedCameraController == null)
+            //         s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            //     if (s_cachedCameraController != null)
+            //     {
+            //         s_cachedCameraController.TriggerGalacticZoomReturn();
+            //         didTriggerZoomReturn = true;
+            //     }
+            // }
+
+            bool isLocalWithTeam = IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None;
+            bool shouldShowOrbitUI = isLocalWithTeam && !movePressed && currentOrbitPlanet != null;
+            if (isLocalWithTeam)
             {
-                var camController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
-                if (camController != null)
+                if (s_cachedOrbitUI == null)
+                    s_cachedOrbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
+                if (s_cachedOrbitUI != null)
                 {
-                    camController.TriggerGalacticZoomReturn();
+                    // Only toggle orbit UI when visibility state actually changes to avoid redundant Show/Hide work.
+                    if (shouldShowOrbitUI && !_orbitUiVisible)
+                    {
+                        s_cachedOrbitUI.Show(this, currentOrbitPlanet);
+                        didShowOrbitUI = true;
+                        _orbitUiVisible = true;
+                    }
+                    else if (!shouldShowOrbitUI && _orbitUiVisible)
+                    {
+                        s_cachedOrbitUI.Hide();
+                        didHideOrbitUI = true;
+                        _orbitUiVisible = false;
+                    }
                 }
             }
-            if (IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None)
-            {
-                var orbitUI = TitanOrbit.UI.HomePlanetOrbitUI.GetOrCreate();
-                // Show orbit menu immediately when in orbit zone (no stable-orbit wait)
-                if (movePressed || currentOrbitPlanet == null)
-                    orbitUI.Hide();
-                else
-                    orbitUI.Show(this, currentOrbitPlanet);
-            }
+
             wasMovePressedLastFrame = movePressed;
-            // If we're in orbit zone but trigger didn't fire (e.g. spawned there), detect it
-            if (currentOrbitPlanet == null)
+            // If we're in orbit zone but trigger didn't fire (e.g. spawned there), detect it occasionally (avoid per-frame FindObjectsOfType cost).
+            if (currentOrbitPlanet == null && Time.time - lastOrbitDetectClientTime >= OrbitDetectInterval)
+            {
+                lastOrbitDetectClientTime = Time.time;
                 TryDetectOrbitZone();
+            }
+
+            // #region agent log
+            if (IsOwner && !_isAIControlled)
+            {
+                int frame = Time.frameCount;
+                if ((frame % 180) == 0)
+                {
+                    float durMs = (Time.realtimeSinceStartup - updateStartTime) * 1000f;
+                    TitanOrbit.Core.DebugSessionLog.Write(
+                        "Starship.Update",
+                        "starship update",
+                        "{\"durationMs\":" + durMs +
+                        ",\"didTriggerZoomReturn\":" + (didTriggerZoomReturn ? "true" : "false") +
+                        ",\"didShowOrbitUI\":" + (didShowOrbitUI ? "true" : "false") +
+                        ",\"didHideOrbitUI\":" + (didHideOrbitUI ? "true" : "false") +
+                        ",\"hasOrbitPlanet\":" + (currentOrbitPlanet != null ? "true" : "false") +
+                        "}",
+                        "SU");
+                }
+            }
+            // #endregion
         }
 
         private void LateUpdate()
         {
+            float startTime = Time.realtimeSinceStartup;
+
             RefreshCardStatsCache();
             if (visualBaseScale > 0.001f && lastPrefabScale.sqrMagnitude > 0.001f)
             {
@@ -916,6 +979,27 @@ namespace TitanOrbit.Entities
             UpdateEngineAndThrusterVFX();
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             ApplyVisualBanking(Time.deltaTime);
+
+            // #region agent log
+            if (IsOwner && !_isAIControlled)
+            {
+                int frame = Time.frameCount;
+                if ((frame % 180) == 0)
+                {
+                    float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                    TitanOrbit.Core.DebugSessionLog.Write(
+                        "Starship.LateUpdate",
+                        "starship lateupdate",
+                        "{\"durationMs\":" + durMs +
+                        ",\"cockpitCount\":" + cockpitScaleTransforms.Count +
+                        ",\"wingCount\":" + wingScaleTransforms.Count +
+                        ",\"engineCount\":" + engineScaleTransforms.Count +
+                        ",\"thrusterCount\":" + thrusterScaleTransforms.Count +
+                        ",\"partCount\":" + partScaleTransforms.Count + "}",
+                        "S");
+                }
+            }
+            // #endregion
         }
 
         /// <summary>Effective exaggeration. Uses GameManager when set; else per-ship value (legacy 0.5 treated as 0.15).</summary>
@@ -1165,6 +1249,7 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
+            float startTime = Time.realtimeSinceStartup;
             if (rb == null) return;
 
             // Gem load increases mass: ship feels heavier and has more momentum (slower to accelerate/brake)
@@ -1190,12 +1275,17 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
-                // Server must detect orbit zone when ship spawns inside (OnTriggerEnter doesn't fire for objects that start inside)
-                if (currentOrbitPlanet == null)
+                // Server must detect orbit zone when ship spawns inside (OnTriggerEnter doesn't fire for objects that start inside).
+                // Avoid calling FindObjectsOfType<Planet>() every FixedUpdate by throttling checks.
+                if (currentOrbitPlanet == null && Time.time - lastOrbitDetectServerTime >= OrbitDetectInterval)
+                {
+                    lastOrbitDetectServerTime = Time.time;
                     TryDetectOrbitZoneServer();
+                }
                 HandleDeath();
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
+                TickNearbyGemAttraction();
             }
             
             // Dead ships cannot move or rotate
@@ -1225,6 +1315,70 @@ namespace TitanOrbit.Entities
             {
                 HandleMovement();
                 HandleRotation();
+            }
+
+            // #region agent log
+            if (IsOwner && !_isAIControlled)
+            {
+                int frame = Time.frameCount;
+                if ((frame % 180) == 0)
+                {
+                    float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                    TitanOrbit.Core.DebugSessionLog.Write(
+                        "Starship.FixedUpdate",
+                        "starship fixedupdate",
+                        "{\"durationMs\":" + durMs +
+                        ",\"isDead\":" + isDead.Value +
+                        ",\"hasOrbitPlanet\":" + (currentOrbitPlanet != null) +
+                        "}",
+                        "SF");
+                }
+            }
+            // #endregion
+        }
+
+        /// <summary>Server: pull nearby free gems toward this ship so ships, not gems, drive attraction.</summary>
+        private void TickNearbyGemAttraction()
+        {
+            if (!IsServer) return;
+            if (isDead.Value) return;
+            if (currentGems.Value >= GemCapacity) return;
+
+            // Throttle attraction work across frames to reduce CPU cost.
+            if (((Time.frameCount + GetInstanceID()) & 1) != 0)
+                return;
+
+            if (TitanOrbit.Entities.Gem.AllGems == null || TitanOrbit.Entities.Gem.AllGems.Count == 0)
+                return;
+
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            float searchRadius = 10f;
+
+            foreach (var gem in TitanOrbit.Entities.Gem.AllGems)
+            {
+                if (gem == null || !gem.IsSpawned || gem.IsInPool || gem.IsDepositGem) continue;
+                if (gem.Value <= 0f) continue;
+
+                Rigidbody gemRb = gem.GetComponent<Rigidbody>();
+                if (gemRb == null) continue;
+
+                Vector3 gemPos = gemRb.position;
+                float dist = TitanOrbit.Generation.ToroidalMap.ToroidalDistance(gemPos, shipPos);
+                if (dist > searchRadius) continue;
+
+                // Respect expelled cooldown: victim ship cannot collect their own expelled gems immediately.
+                // This is enforced on collision as well; here we just avoid pulling them in.
+                // (Gem handles the exact cooldown window during collection.)
+
+                Vector3 toShip = TitanOrbit.Generation.ToroidalMap.ToroidalDirection(gemPos, shipPos);
+                toShip.y = 0f;
+                if (toShip.sqrMagnitude < 0.0001f) continue;
+                toShip.Normalize();
+
+                float speed = 8f;
+                Vector3 targetVel = toShip * speed;
+                gemRb.linearVelocity = Vector3.MoveTowards(gemRb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
+                gemRb.linearDamping = 0f;
             }
         }
 
@@ -2010,8 +2164,9 @@ namespace TitanOrbit.Entities
                 var chassis = CardShopSystem.Instance.GetChassisByIndex(chassisIndex);
                 if (chassis != null && chassis.originPlanetId > 0)
                 {
-                    foreach (var p in Object.FindObjectsByType<Planet>(FindObjectsSortMode.None))
+                    foreach (var p in Planet.AllPlanets)
                     {
+                        if (p == null) continue;
                         if (p.PlanetId == chassis.originPlanetId && p.TeamOwnership == shipTeam.Value)
                         {
                             respawnPlanet = p;
@@ -2023,8 +2178,9 @@ namespace TitanOrbit.Entities
 
             if (respawnPlanet == null)
             {
-                foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+                foreach (var hp in HomePlanet.AllHomePlanets)
                 {
+                    if (hp == null) continue;
                     if (hp.AssignedTeam == shipTeam.Value) { respawnPlanet = hp; break; }
                 }
             }
@@ -2055,7 +2211,7 @@ namespace TitanOrbit.Entities
         private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
             if (team == TeamManager.Team.None) return null;
-            foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
                 if (hp != null && hp.AssignedTeam == team) return hp;
             }
@@ -2430,7 +2586,7 @@ namespace TitanOrbit.Entities
         private void TryDetectOrbitZoneServer()
         {
             if (!IsServer || rb == null || currentOrbitPlanet != null) return;
-            foreach (var planet in Object.FindObjectsOfType<Planet>())
+            foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
                 Vector3 toShip = rb.position - planet.transform.position;
@@ -2451,7 +2607,7 @@ namespace TitanOrbit.Entities
         {
             if (rb == null || currentOrbitPlanet != null) return;
             if (!IsLocalPlayerShip()) return;
-            foreach (var planet in Object.FindObjectsOfType<Planet>())
+            foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
                 Vector3 toShip = rb.position - planet.transform.position;
@@ -2462,7 +2618,6 @@ namespace TitanOrbit.Entities
                 if (dist >= inner && dist <= outer)
                 {
                     currentOrbitPlanet = planet;
-                    // Menu shows in Update when IsInStableOrbit() is true
                     break;
                 }
             }

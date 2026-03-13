@@ -16,6 +16,8 @@ namespace TitanOrbit.Entities
     /// </summary>
     public class Planet : NetworkBehaviour
     {
+        /// <summary>All active Planet instances. Updated on network spawn/despawn.</summary>
+        public static readonly System.Collections.Generic.List<Planet> AllPlanets = new System.Collections.Generic.List<Planet>();
         [Header("Planet Settings")]
         [Tooltip("Logical id for this planet used to link unique ship families and cards. 0 or negative = not bound to a specific family.")]
         [SerializeField] private int planetId = 0;
@@ -23,6 +25,14 @@ namespace TitanOrbit.Entities
         [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
         [SerializeField] private float planetSize = 1f;
         [SerializeField] private float captureRadius = 5f;
+
+        [Header("Regular Planet Level Settings")]
+        [Tooltip("Minimum starting level for neutral regular planets (inclusive).")]
+        [SerializeField] private int minStartingLevel = 1;
+        [Tooltip("Maximum starting level for neutral regular planets (inclusive). Regular planets can still level up to the global max level.")]
+        [SerializeField] private int maxStartingLevel = 3;
+        [Tooltip("When enabled, neutral regular planets roll a random starting level in [minStartingLevel, maxStartingLevel]. When disabled they start at level 1.")]
+        [SerializeField] private bool randomizeNeutralStartingLevel = true;
 
         [Header("Visual")]
         [SerializeField] private Renderer planetRenderer;
@@ -137,6 +147,8 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            if (!AllPlanets.Contains(this))
+                AllPlanets.Add(this);
             tintPropertyBlock = new MaterialPropertyBlock();
             
             // Lock Y position to 0
@@ -225,6 +237,8 @@ namespace TitanOrbit.Entities
             neutralMaterialIndex.OnValueChanged -= OnNeutralMaterialIndexChanged;
             teamOwnership.OnValueChanged -= OnOwnershipChanged;
             planetLevel.OnValueChanged -= OnPlanetLevelChanged;
+
+            AllPlanets.Remove(this);
         }
 
         private void OnNeutralMaterialIndexChanged(int previous, int current)
@@ -233,7 +247,7 @@ namespace TitanOrbit.Entities
             UpdateVisual(teamOwnership.Value);
         }
 
-        /// <summary>Regular planets only: set varying water level and optional atmosphere from deterministic seed (neutralMaterialIndex).</summary>
+        /// <summary>Regular planets only: set varying water level from deterministic seed (neutralMaterialIndex). Atmosphere is disabled.</summary>
         private void ApplyRegularPlanetWaterAndAtmosphere()
         {
             if (this is HomePlanet) return;
@@ -255,27 +269,12 @@ namespace TitanOrbit.Entities
                     visualTarget.AddComponent<SgtPlanetWaterTexture>();
             }
 
-            if (atmosphereSourceMaterial != null && atmosphereOuterMesh != null && atmosphereHeight > 0.001f)
+            // Atmosphere visuals have been removed from regular planets.
+            // Clean up any legacy Atmosphere child that might still exist on old prefabs/scenes.
+            Transform existingAtmosphere = transform.Find("Atmosphere");
+            if (existingAtmosphere != null)
             {
-                Transform existing = transform.Find("Atmosphere");
-                SgtAtmosphere sgtAtmosphere = existing != null ? existing.GetComponent<SgtAtmosphere>() : null;
-                if (sgtAtmosphere == null)
-                {
-                    GameObject atmosphereObj = new GameObject("Atmosphere");
-                    atmosphereObj.transform.SetParent(transform);
-                    atmosphereObj.transform.localPosition = Vector3.zero;
-                    atmosphereObj.transform.localRotation = Quaternion.identity;
-                    atmosphereObj.transform.localScale = Vector3.one;
-                    sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
-                    sgtAtmosphere.SourceMaterial = atmosphereSourceMaterial;
-                    sgtAtmosphere.OuterMesh = atmosphereOuterMesh;
-                    sgtAtmosphere.InnerMeshRadius = 0.5f;
-                    sgtAtmosphere.OuterMeshRadius = 1f;
-                    atmosphereObj.AddComponent<SgtAtmosphereDepthTex>();
-                    atmosphereObj.AddComponent<SgtAtmosphereLightingTex>();
-                    atmosphereObj.AddComponent<SgtAtmosphereScatteringTex>();
-                }
-                sgtAtmosphere.Height = atmosphereHeight;
+                Destroy(existingAtmosphere.gameObject);
             }
         }
 
@@ -595,8 +594,24 @@ namespace TitanOrbit.Entities
             connectionGrowthBonusFraction = Mathf.Max(0f, growthBonusFraction);
         }
 
-        /// <summary>Initial planet level. Override in HomePlanet to start at 3.</summary>
-        protected virtual int GetInitialPlanetLevel() => 1;
+        /// <summary>
+        /// Initial planet level.
+        /// Home planets override this; regular neutral planets can start at a randomized level range.
+        /// </summary>
+        protected virtual int GetInitialPlanetLevel()
+        {
+            // Only regular planets use this implementation; HomePlanet overrides.
+            if (!randomizeNeutralStartingLevel)
+                return 1;
+
+            int maxLevel = GetMaxLevel();
+            int clampedMin = Mathf.Clamp(minStartingLevel, 1, maxLevel);
+            int clampedMax = Mathf.Clamp(maxStartingLevel, clampedMin, maxLevel);
+
+            // Unity's int Random.Range is max‑exclusive, so add 1 to include clampedMax.
+            int rolledLevel = Random.Range(clampedMin, clampedMax + 1);
+            return Mathf.Max(1, Mathf.Min(rolledLevel, maxLevel));
+        }
 
         /// <summary>Max gems capacity for a given level. Override in HomePlanet for different thresholds. Regular planets: 200 * 2^(level-1).</summary>
         protected virtual float GetMaxGemsForLevel(int level)
@@ -606,8 +621,11 @@ namespace TitanOrbit.Entities
             return 200f * Mathf.Pow(2f, level - 1);
         }
 
-        /// <summary>Max level for this planet type. Override in HomePlanet for 6.</summary>
-        protected virtual int GetMaxLevel() => 3; // Regular planets max level 3
+        /// <summary>
+        /// Max level for this planet type.
+        /// Regular planets now share the same maximum (6) as home planets so neutral planets can be leveled up fully.
+        /// </summary>
+        protected virtual int GetMaxLevel() => 6;
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code (e.g. TickOrbitGemDeposit) instead of RPC to avoid RPC invocation issues when server calls itself.</summary>
         public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
@@ -855,7 +873,7 @@ namespace TitanOrbit.Entities
         {
             if (s_sharedTeamA != null) return;
             // Prefer HomePlanet (always has team materials assigned in prefab)
-            foreach (var hp in Object.FindObjectsOfType<HomePlanet>())
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
                 if (hp != null && hp.teamAMaterial != null)
                 {
@@ -866,7 +884,7 @@ namespace TitanOrbit.Entities
                     return;
                 }
             }
-            foreach (var p in Object.FindObjectsOfType<Planet>())
+            foreach (var p in AllPlanets)
             {
                 if (p != null && p.teamAMaterial != null)
                 {

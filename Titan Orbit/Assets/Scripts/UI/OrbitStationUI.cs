@@ -300,9 +300,9 @@ namespace TitanOrbit.UI
             if (ship != null && (currentHomePlanet == null || Time.time - _lastHomePlanetLookupTime >= HomePlanetLookupInterval))
             {
                 _lastHomePlanetLookupTime = Time.time;
-                foreach (var h in UnityEngine.Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+                foreach (var h in HomePlanet.AllHomePlanets)
                 {
-                    if (h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
+                    if (h != null && h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
                 }
             }
             contributedGems = 0f;

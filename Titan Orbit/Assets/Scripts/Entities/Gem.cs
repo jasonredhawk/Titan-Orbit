@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using System.Collections.Generic;
 
 namespace TitanOrbit.Entities
 {
@@ -15,6 +16,7 @@ namespace TitanOrbit.Entities
         private static Starship[] cachedShips = new Starship[0];
         private static float nextShipCacheRefreshTime = 0f;
         private const float SHIP_CACHE_REFRESH_INTERVAL = 0.5f; // Was 0.25f - reduce FindObjectsByType cost
+        public static readonly List<Gem> AllGems = new List<Gem>();
 
         [SerializeField] private float gemValue = 10f;
         [SerializeField] private float pickupRadius = 2f;
@@ -45,6 +47,7 @@ namespace TitanOrbit.Entities
         public float Value => value.Value;
         public float GemSize => gemSize.Value;
         public bool IsInPool => isInPool.Value;
+        public bool IsDepositGem => depositTargetPlanetId.Value != 0;
 
         private void Awake()
         {
@@ -65,6 +68,9 @@ namespace TitanOrbit.Entities
                 // Default to active (not in pool) for normal spawned gems; pooled gems are immediately returned to pool on server, which sets isInPool true.
                 isInPool.Value = false;
             }
+
+            if (!AllGems.Contains(this))
+                AllGems.Add(this);
             
             gemSize.OnValueChanged += OnGemSizeChanged;
             isInPool.OnValueChanged += OnIsInPoolChanged;
@@ -73,6 +79,7 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkDespawn()
         {
+            AllGems.Remove(this);
             gemSize.OnValueChanged -= OnGemSizeChanged;
             isInPool.OnValueChanged -= OnIsInPoolChanged;
             base.OnNetworkDespawn();
@@ -187,41 +194,95 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             if (value.Value <= 0) return;
-            if (depositTargetPlanetId.Value == 0) return;
+            
+            // Deposit gems: handle planet collision
+            if (depositTargetPlanetId.Value != 0)
+            {
+                // Only absorb when hitting the planet body, not the orbit zone (so gem can travel through orbit zone first)
+                if (other.GetComponent<PlanetOrbitZone>() != null || other.GetComponent<HomePlanetOrbitZone>() != null)
+                    return;
 
-            // Only absorb when hitting the planet body, not the orbit zone (so gem can travel through orbit zone first)
-            if (other.GetComponent<PlanetOrbitZone>() != null || other.GetComponent<HomePlanetOrbitZone>() != null)
+                Planet planet = other.GetComponent<Planet>();
+                if (planet == null) return;
+                var planetNo = planet.GetComponent<NetworkObject>();
+                if (planetNo == null || planetNo.NetworkObjectId != depositTargetPlanetId.Value) return;
+
+                float amount = value.Value;
+                var team = (TeamManager.Team)depositTeam.Value;
+                ulong clientId = depositClientId.Value;
+
+                if (planet is HomePlanet homePlanet)
+                {
+                    homePlanet.DepositGemsFromServer(amount, team, clientId);
+                }
+                else
+                {
+                    planet.DepositGemsFromServer(amount, team, clientId);
+                    HomePlanet shipHome = GetHomePlanetForTeam(team);
+                    if (shipHome != null)
+                        shipHome.AddContributedGemsFromServer(clientId, amount);
+                }
+
+                if (ScoreSystem.Instance != null)
+                {
+                    Starship depositor = FindDepositorShip(clientId);
+                    if (depositor != null)
+                        ScoreSystem.Instance.AwardDeposit(depositor, amount);
+                }
+
+                value.Value = 0;
+                if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                    return;
+                var no = GetComponent<NetworkObject>();
+                if (no != null) no.Despawn();
+                return;
+            }
+
+            // Non-deposit gems: collect when colliding with a ship
+            Starship ship = other.GetComponent<Starship>();
+            if (ship == null) return;
+
+            // Respect expelled cooldown: victim ship cannot collect for a short duration
+            ulong expelledId = expelledByShipId.Value;
+            if (expelledId != 0)
+            {
+                var shipNo = ship.NetworkObject;
+                if (shipNo != null && shipNo.NetworkObjectId == expelledId)
+                {
+                    float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+                    if (elapsed < EXPELLED_UNCOLLECTABLE_DURATION)
+                        return;
+                }
+            }
+
+            CollectToShip(ship);
+        }
+
+        private void CollectToShip(Starship ship)
+        {
+            if (!IsServer || ship == null) return;
+            if (value.Value <= 0f) return;
+            if (ship.IsDead || ship.CurrentGems >= ship.GemCapacity) return;
+
+            Vector3 gemPos = rb != null ? rb.position : transform.position;
+
+            float capacityLeft = Mathf.Max(0f, ship.GemCapacity - ship.CurrentGems);
+            if (capacityLeft <= 0f)
                 return;
 
-            Planet planet = other.GetComponent<Planet>();
-            if (planet == null) return;
-            var planetNo = planet.GetComponent<NetworkObject>();
-            if (planetNo == null || planetNo.NetworkObjectId != depositTargetPlanetId.Value) return;
+            float toAdd = Mathf.Min(value.Value, capacityLeft);
+            if (toAdd <= 0f)
+                return;
 
-            float amount = value.Value;
-            var team = (TeamManager.Team)depositTeam.Value;
-            ulong clientId = depositClientId.Value;
-
-            if (planet is HomePlanet homePlanet)
-            {
-                homePlanet.DepositGemsFromServer(amount, team, clientId);
-            }
-            else
-            {
-                planet.DepositGemsFromServer(amount, team, clientId);
-                HomePlanet shipHome = GetHomePlanetForTeam(team);
-                if (shipHome != null)
-                    shipHome.AddContributedGemsFromServer(clientId, amount);
-            }
+            ship.AddGemsServerRpc(toAdd, true);
 
             if (ScoreSystem.Instance != null)
-            {
-                Starship depositor = FindDepositorShip(clientId);
-                if (depositor != null)
-                    ScoreSystem.Instance.AwardDeposit(depositor, amount);
-            }
+                ScoreSystem.Instance.AwardMining(ship, toAdd);
 
-            value.Value = 0;
+            if (VisualEffectsManager.Instance != null)
+                VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, ship.ShipTeam);
+
+            value.Value = 0f;
             if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
                 return;
             var no = GetComponent<NetworkObject>();
@@ -231,18 +292,18 @@ namespace TitanOrbit.Entities
         private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
             if (team == TeamManager.Team.None) return null;
-            foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
-                if (hp.AssignedTeam == team) return hp;
+                if (hp != null && hp.AssignedTeam == team) return hp;
             }
             return null;
         }
 
         private static Starship FindDepositorShip(ulong clientId)
         {
-            foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+            foreach (var ship in Starship.AllStarships)
             {
-                if (ship.OwnerClientId == clientId) return ship;
+                if (ship != null && ship.OwnerClientId == clientId) return ship;
             }
             return null;
         }
@@ -286,162 +347,8 @@ namespace TitanOrbit.Entities
                 if (no != null) no.Despawn();
                 return;
             }
-
-            // Run attraction (find nearest ship + magnetic pull) every 2nd FixedUpdate to halve CPU cost; stagger by instance so not all on same frame
-            bool runAttractionThisFrame = ((Time.frameCount + GetInstanceID()) & 1) == 0;
-            if (!runAttractionThisFrame)
-            {
-                // Still apply drag so gems slow down when no ship nearby (no ship search this frame)
-                if (rb != null)
-                {
-                    rb.linearDamping = slowdownDrag;
-                    if (rb.linearVelocity.magnitude < stopSpeedThreshold)
-                    {
-                        rb.linearVelocity = Vector3.zero;
-                        rb.linearDamping = 0f;
-                    }
-                }
-                return;
-            }
-
-            // #region agent log
-            DebugSessionLog.Write(
-                "Gem.cs:FixedUpdate",
-                "Gem attraction tick",
-                "{\"value\":" + value.Value.ToString("F2") +
-                ",\"effectivePickupRadius\":" + effectivePickupRadius.ToString("F2") +
-                ",\"priorityShipId\":" + magnetPriorityShipId.Value +
-                ",\"isInPool\":" + (isInPool.Value ? "true" : "false") +
-                "}",
-                "G1");
-            // #endregion
-
-            // Pickup radius and lifetime shrink (same as visual: full until last shrinkDuration sec)
-            float lifetimeRemaining = 1f;
-            if (elapsedTime >= lifetimeSeconds - shrinkDuration)
-                lifetimeRemaining = Mathf.Clamp01((lifetimeSeconds - elapsedTime) / shrinkDuration);
-            float currentPickupRadius = effectivePickupRadius;
-
-            // Find nearest valid ship in range using toroidal distance (so pickup works across map edges)
-            float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
-            ulong expelledId = expelledByShipId.Value;
-            Vector3 gemPos = rb != null ? rb.position : transform.position;
-            Starship nearestShip = null;
-            float nearestDist = float.MaxValue;
-            bool nearestIsPriority = false;
-            ulong priorityShipId = magnetPriorityShipId.Value;
-            Starship[] ships = GetCachedShipsForServer();
-            foreach (Starship ship in ships)
-            {
-                if (ship.IsDead || ship.CurrentGems >= ship.GemCapacity) continue;
-                if (expelledId != 0)
-                {
-                    var shipNo = ship.GetComponent<NetworkObject>();
-                    if (shipNo != null && shipNo.NetworkObjectId == expelledId && elapsed < EXPELLED_UNCOLLECTABLE_DURATION)
-                        continue; // Victim cannot collect yet
-                }
-                float dist = ToroidalMap.ToroidalDistance(gemPos, ship.transform.position);
-
-                // Base magnet pickup range; doubled if this ship dealt the most damage to the source asteroid.
-                float range = currentPickupRadius;
-                bool isPriority = false;
-                if (priorityShipId != 0)
-                {
-                    var shipNo = ship.GetComponent<NetworkObject>();
-                    if (shipNo != null && shipNo.NetworkObjectId == priorityShipId)
-                    {
-                        range *= 2f;
-                        isPriority = true;
-                    }
-                }
-
-                if (dist < range && dist < nearestDist)
-                {
-                    nearestDist = dist;
-                    nearestShip = ship;
-                    nearestIsPriority = isPriority;
-
-                    // #region agent log
-                    var shipNoForLog = ship.GetComponent<NetworkObject>();
-                    ulong shipIdForLog = shipNoForLog != null ? shipNoForLog.NetworkObjectId : 0UL;
-                    DebugSessionLog.Write(
-                        "Gem.cs:FixedUpdate",
-                        "Gem found candidate ship",
-                        "{\"shipId\":" + shipIdForLog +
-                        ",\"dist\":" + dist.ToString("F2") +
-                        ",\"range\":" + range.ToString("F2") +
-                        ",\"isPriority\":" + (isPriority ? "true" : "false") +
-                        "}",
-                        "G2");
-                    // #endregion
-                }
-            }
-
-            if (nearestShip != null)
-            {
-                // Toroidal direction for magnetic pull (correct across wrap)
-                Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, nearestShip.transform.position);
-                toShip.y = 0f;
-                if (toShip.sqrMagnitude < 0.0001f) toShip = Vector3.forward;
-                else toShip.Normalize();
-                float dist = nearestDist;
-
-                // Collect when very close (toroidal distance)
-                if (dist <= collectRadius)
-                {
-                    // #region agent log
-                    var shipNoForCollect = nearestShip.GetComponent<NetworkObject>();
-                    ulong shipIdForCollect = shipNoForCollect != null ? shipNoForCollect.NetworkObjectId : 0UL;
-                    DebugSessionLog.Write(
-                        "Gem.cs:FixedUpdate",
-                        "Gem collecting to ship",
-                        "{\"shipId\":" + shipIdForCollect +
-                        ",\"dist\":" + dist.ToString("F2") +
-                        ",\"collectRadius\":" + collectRadius.ToString("F2") +
-                        ",\"value\":" + value.Value.ToString("F2") +
-                        "}",
-                        "G3");
-                    // #endregion
-
-                    float capacityLeft = Mathf.Max(0f, nearestShip.GemCapacity - nearestShip.CurrentGems);
-                    if (capacityLeft <= 0f)
-                        return;
-
-                    // Ship only gains up to its remaining capacity, but the entire gem is consumed.
-                    float toAdd = Mathf.Min(value.Value, capacityLeft);
-                    if (toAdd <= 0f)
-                        return;
-
-                    nearestShip.AddGemsServerRpc(toAdd, true);
-
-                    if (ScoreSystem.Instance != null)
-                        ScoreSystem.Instance.AwardMining(nearestShip, toAdd);
-
-                    if (VisualEffectsManager.Instance != null)
-                        VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, nearestShip.ShipTeam);
-
-                    // Consume the whole gem regardless of how much was added to the ship.
-                    value.Value = 0f;
-                    if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
-                        return;
-                    var no = GetComponent<NetworkObject>();
-                    if (no != null) no.Despawn();
-                    return;
-                }
-
-                // Magnetic pull toward ship (XZ only, toroidal direction)
-                if (rb != null)
-                {
-                    float magnetMultiplier = nearestIsPriority ? 2f : 1f;
-                    float speed = magnetSpeed * magnetMultiplier;
-                    Vector3 targetVel = toShip * speed;
-                    rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
-                    rb.linearDamping = 0f;
-                }
-                return;
-            }
-
-            // No ship in range: apply drag so gem slows and stops
+            
+            // No automatic ship attraction: just apply drag so gems slow down and stop.
             if (rb != null)
             {
                 rb.linearDamping = slowdownDrag;
@@ -451,14 +358,24 @@ namespace TitanOrbit.Entities
                     rb.linearDamping = 0f;
                 }
             }
-
         }
 
         private static Starship[] GetCachedShipsForServer()
         {
             if (Time.unscaledTime >= nextShipCacheRefreshTime || cachedShips == null)
             {
-                cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
+                var allShips = Starship.AllStarships;
+                if (allShips == null || allShips.Count == 0)
+                {
+                    cachedShips = System.Array.Empty<Starship>();
+                }
+                else
+                {
+                    int count = allShips.Count;
+                    if (cachedShips == null || cachedShips.Length != count)
+                        cachedShips = new Starship[count];
+                    allShips.CopyTo(cachedShips);
+                }
                 nextShipCacheRefreshTime = Time.unscaledTime + SHIP_CACHE_REFRESH_INTERVAL;
             }
             return cachedShips ?? System.Array.Empty<Starship>();

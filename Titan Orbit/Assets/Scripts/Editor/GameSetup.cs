@@ -1864,8 +1864,6 @@ namespace TitanOrbit.Editor
             EnsurePrefabDirectory();
 
             Mesh planetMesh = GetOrLoadGeosphere50Mesh();
-            Mesh atmosphereMesh = GetOrLoadGeosphere40Mesh();
-            Material atmosphereMat = GetOrLoadAtmosphereMaterial();
             PlanetMaterialPool materialPool = GetOrLoadPlanetMaterialPool();
             Material neutralMat = LoadCWPlanetMaterial("Tropical1") ?? (materialPool != null && materialPool.WaterMaterials.Count > 0 ? materialPool.WaterMaterials[0] : (materialPool != null && materialPool.Materials.Count > 0 ? materialPool.Materials[0] : null));
             Material teamAMat = LoadCWPlanetMaterial("Desert1");
@@ -1922,25 +1920,6 @@ namespace TitanOrbit.Editor
                 sgtSO.ApplyModifiedPropertiesWithoutUndo();
             }
 
-            // Atmosphere child (SGT Atmosphere + DepthTex/LightingTex/ScatteringTex)
-            if (atmosphereMat != null && atmosphereMesh != null)
-            {
-                GameObject atmosphereObj = new GameObject("Atmosphere");
-                atmosphereObj.transform.SetParent(homePlanet.transform);
-                atmosphereObj.transform.localPosition = Vector3.zero;
-                atmosphereObj.transform.localRotation = Quaternion.identity;
-                atmosphereObj.transform.localScale = Vector3.one;
-                SgtAtmosphere sgtAtmosphere = atmosphereObj.AddComponent<SgtAtmosphere>();
-                sgtAtmosphere.SourceMaterial = atmosphereMat;
-                sgtAtmosphere.OuterMesh = atmosphereMesh;
-                sgtAtmosphere.InnerMeshRadius = 0.5f;
-                sgtAtmosphere.OuterMeshRadius = 1f;   // CW mesh is unit sphere (radius 1)
-                sgtAtmosphere.Height = 0.025f;
-                atmosphereObj.AddComponent<SgtAtmosphereDepthTex>();
-                atmosphereObj.AddComponent<SgtAtmosphereLightingTex>();
-                atmosphereObj.AddComponent<SgtAtmosphereScatteringTex>();
-            }
-
             // Shapes ring drawer
             GameObject ringsObj = new GameObject("HomePlanetRings");
             ringsObj.transform.SetParent(homePlanet.transform);
@@ -1971,13 +1950,13 @@ namespace TitanOrbit.Editor
             planetSO.FindProperty("teamBMaterial").objectReferenceValue = teamBMat;
             planetSO.FindProperty("teamCMaterial").objectReferenceValue = teamCMat;
             planetSO.FindProperty("populationText").objectReferenceValue = textMesh;
-            planetSO.FindProperty("atmosphereSourceMaterial").objectReferenceValue = atmosphereMat;
-            planetSO.FindProperty("atmosphereOuterMesh").objectReferenceValue = atmosphereMesh;
+            planetSO.FindProperty("atmosphereSourceMaterial").objectReferenceValue = null;
+            planetSO.FindProperty("atmosphereOuterMesh").objectReferenceValue = null;
             planetSO.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(homePlanet, path);
             Object.DestroyImmediate(homePlanet);
-            Debug.Log($"Created prefab (SGT + Shapes + Atmosphere): {path}");
+            Debug.Log($"Created prefab (SGT + Shapes, no atmosphere): {path}");
         }
 
         /// <summary>

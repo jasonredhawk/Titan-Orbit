@@ -92,8 +92,8 @@ namespace TitanOrbit.Core
         {
             // Check if any team has captured all planets
             // This is handled by CaptureSystem, but we check here too
-            Planet[] allPlanets = FindObjectsOfType<Planet>();
-            HomePlanet[] allHomePlanets = FindObjectsOfType<HomePlanet>();
+            var allPlanets = Planet.AllPlanets;
+            var allHomePlanets = HomePlanet.AllHomePlanets;
 
             foreach (TeamManager.Team team in System.Enum.GetValues(typeof(TeamManager.Team)))
             {

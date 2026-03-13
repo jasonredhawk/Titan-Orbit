@@ -128,7 +128,7 @@ MonoBehaviour:
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
-  m_TextStyleHashCode: 0
+  m_TextStyleHashCode: -1183493901
   m_overrideHtmlColors: 0
   m_faceColor:
     serializedVersion: 2
@@ -253,7 +253,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2151594738
+  GlobalObjectIdHash: 1906498290
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -279,6 +279,9 @@ MonoBehaviour:
   baseGrowthRate: 0.033333335
   planetSize: 1
   captureRadius: 5
+  minStartingLevel: 1
+  maxStartingLevel: 6
+  randomizeNeutralStartingLevel: 1
   planetRenderer: {fileID: 0}
   sgtPlanet: {fileID: 1589875963611201967}
   materialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
@@ -412,7 +415,8 @@ MonoBehaviour:
   outerRadius: 0.85
   heightBelowPlanet: 1
   borderThickness: 0.22
-  tint: {r: 1, g: 1, b: 1, a: 1}
+  outerTint: {r: 1, g: 1, b: 1, a: 1}
+  innerTint: {r: 0.95, g: 0.85, b: 0.25, a: 1}
   alphaWhenNotOrbiting: 1
   alphaWhenOrbiting: 1
 --- !u!1 &5754775015515473423

@@ -96,19 +96,20 @@ namespace TitanOrbit.UI
                 {
                     lastPlayerShipLookupTime = Time.time;
                     playerShip = null;
-                    // Use cached ship list if recently refreshed to avoid extra FindObjectsOfType
+                    // Prefer global starship registry to avoid expensive scene scans every lookup.
                     if (Time.time - _lastStarshipFindTime < StarshipFindInterval + 0.1f && _cachedAllShips.Count > 0)
                     {
                         for (int i = 0; i < _cachedAllShips.Count; i++)
                         {
-                            if (_cachedAllShips[i].IsOwner) { playerShip = _cachedAllShips[i]; break; }
+                            var ship = _cachedAllShips[i];
+                            if (ship != null && ship.IsOwner) { playerShip = ship; break; }
                         }
                     }
                     if (playerShip == null)
                     {
-                        foreach (var ship in FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                        foreach (var ship in Starship.AllStarships)
                         {
-                            if (ship.IsOwner) { playerShip = ship; break; }
+                            if (ship != null && ship.IsOwner) { playerShip = ship; break; }
                         }
                     }
                     if (playerShip != null && viewedTeamIndex < 0)
@@ -145,6 +146,8 @@ namespace TitanOrbit.UI
 
         private void UpdateHUD()
         {
+            float startTime = Time.realtimeSinceStartup;
+
             if (healthBar != null)
                 healthBar.value = playerShip.CurrentHealth / playerShip.MaxHealth;
 
@@ -173,6 +176,22 @@ namespace TitanOrbit.UI
                 teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
 
             UpdateLeaderboardPanel();
+
+            // #region agent log
+            if (Time.frameCount % 180 == 0)
+            {
+                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                int rows = leaderboardRows != null ? leaderboardRows.Count : 0;
+                TitanOrbit.Core.DebugSessionLog.Write(
+                    "HUDController.UpdateHUD",
+                    "hud and leaderboard",
+                    "{\"rows\":" + rows +
+                    ",\"showInGamePanels\":" + (playerShip != null && playerShip.ShipTeam != TeamManager.Team.None ? "true" : "false") +
+                    ",\"durationMs\":" + durMs +
+                    "}",
+                    "H");
+            }
+            // #endregion
         }
 
         private void UpdateLeaderboardPanel()
@@ -187,12 +206,12 @@ namespace TitanOrbit.UI
 
             TeamManager.Team viewedTeam = teamOrder[Mathf.Clamp(viewedTeamIndex, 0, teamOrder.Length - 1)];
 
-            // Refresh cached ships list periodically to avoid FindObjectsOfType every refresh
+            // Refresh cached ships list periodically using the global registry (no scene scans).
             if (Time.time - _lastStarshipFindTime >= StarshipFindInterval)
             {
                 _lastStarshipFindTime = Time.time;
                 _cachedAllShips.Clear();
-                foreach (var ship in FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                foreach (var ship in Starship.AllStarships)
                 {
                     if (ship != null && ship.IsSpawned)
                         _cachedAllShips.Add(ship);

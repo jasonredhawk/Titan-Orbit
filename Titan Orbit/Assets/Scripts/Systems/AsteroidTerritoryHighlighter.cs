@@ -20,14 +20,18 @@ namespace TitanOrbit.Systems
             if (Time.time - lastRefresh < refreshInterval)
                 return;
 
+            float startTime = Time.realtimeSinceStartup;
+
             lastRefresh = Time.time;
             var conn = PlanetConnectionSystem.Instance;
-            if (conn == null)
+            if (conn == null || conn.CurrentTriangles == null || conn.CurrentTriangles.Count == 0)
                 return;
 
-            Asteroid[] asteroids = FindObjectsOfType<Asteroid>();
-            if (asteroids == null || asteroids.Length == 0)
+            var asteroids = Asteroid.AllAsteroids;
+            if (asteroids == null || asteroids.Count == 0)
                 return;
+
+            int processed = 0;
 
             foreach (var asteroid in asteroids)
             {
@@ -37,7 +41,20 @@ namespace TitanOrbit.Systems
                 Vector3 canonicalPos = ToroidalMap.WrapPosition(asteroid.transform.position);
                 TeamManager.Team team = conn.GetTeamAtPosition(canonicalPos);
                 asteroid.SetTerritoryHighlight(team);
+                processed++;
             }
+
+            // #region agent log
+            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+            DebugSessionLog.Write(
+                "AsteroidTerritoryHighlighter.Update",
+                "asteroid territory refresh",
+                "{\"asteroids\":" + (asteroids != null ? asteroids.Count : 0) +
+                ",\"processed\":" + processed +
+                ",\"durationMs\":" + durMs +
+                "}",
+                "AT");
+            // #endregion
         }
     }
 }

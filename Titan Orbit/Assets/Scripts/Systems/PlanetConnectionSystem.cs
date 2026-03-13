@@ -61,6 +61,10 @@ namespace TitanOrbit.Systems
         private readonly List<Planet> _stalePlanetsReusable = new List<Planet>();
         private float lastRecomputeTime = -999f;
         private Coroutine _rebuildCoroutine;
+        // Cache planets to avoid FindObjectsOfType every 3s (cost grows over time and drives idle FPS drop).
+        private Planet[] _cachedPlanets = Array.Empty<Planet>();
+        private float _lastPlanetCacheTime = -999f;
+        private const float PlanetCacheRefreshInterval = 30f;
 
         public IReadOnlyList<PlanetEdge> CurrentEdges => edges;
         public IReadOnlyList<PlanetTriangle> CurrentTriangles => triangles;
@@ -121,8 +125,14 @@ namespace TitanOrbit.Systems
         {
             float startTime = Time.realtimeSinceStartup;
 
-            Planet[] allPlanets = FindObjectsOfType<Planet>();
-            if (allPlanets == null || allPlanets.Length == 0)
+            // Refresh planet cache only when stale to avoid FindObjectsOfType cost growing over time (idle FPS leak).
+            if (_cachedPlanets.Length == 0 || (Time.time - _lastPlanetCacheTime) >= PlanetCacheRefreshInterval)
+            {
+                _cachedPlanets = Planet.AllPlanets.ToArray();
+                _lastPlanetCacheTime = Time.time;
+            }
+            Planet[] allPlanets = _cachedPlanets ?? Array.Empty<Planet>();
+            if (allPlanets.Length == 0)
                 return;
 
             // Detect ownership changes and track which teams need a full graph rebuild.
@@ -160,6 +170,8 @@ namespace TitanOrbit.Systems
             {
                 _previousTeamPerPlanet.Remove(_stalePlanetsReusable[i]);
             }
+            if (_stalePlanetsReusable.Count > 0)
+                _lastPlanetCacheTime = -999f; // Force cache refresh next RecomputeGraph so we don't keep nulls.
             edges.RemoveAll(e => e.A == null || e.B == null);
             triangles.RemoveAll(t => t.A == null || t.B == null || t.C == null);
 
@@ -168,6 +180,10 @@ namespace TitanOrbit.Systems
             {
                 if (_rebuildCoroutine != null)
                     StopCoroutine(_rebuildCoroutine);
+                // Use fresh planet list for rebuild (cache may contain nulls or be stale).
+                _cachedPlanets = Planet.AllPlanets.ToArray();
+                _lastPlanetCacheTime = Time.time;
+                allPlanets = _cachedPlanets ?? Array.Empty<Planet>();
                 edges.Clear();
                 triangles.Clear();
                 var teamsWithPlanets = new HashSet<TeamManager.Team>();
@@ -288,7 +304,7 @@ namespace TitanOrbit.Systems
         /// </summary>
         private void RebuildTeamGraph(TeamManager.Team team)
         {
-            Planet[] allPlanets = FindObjectsOfType<Planet>();
+            Planet[] allPlanets = Planet.AllPlanets.ToArray();
             var teamPlanets = new List<Planet>();
             foreach (var p in allPlanets)
             {
@@ -468,7 +484,7 @@ namespace TitanOrbit.Systems
         private static HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
         {
             if (team == TeamManager.Team.None) return null;
-            foreach (var hp in UnityEngine.Object.FindObjectsByType<HomePlanet>(UnityEngine.FindObjectsSortMode.None))
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
                 if (hp != null && hp.AssignedTeam == team)
                     return hp;

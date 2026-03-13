@@ -246,8 +246,7 @@ namespace TitanOrbit.AI
 
         private HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
         {
-            HomePlanet[] homePlanets = Object.FindObjectsOfType<HomePlanet>();
-            foreach (var hp in homePlanets)
+            foreach (var hp in HomePlanet.AllHomePlanets)
             {
                 if (hp != null && hp.AssignedTeam == team)
                 {

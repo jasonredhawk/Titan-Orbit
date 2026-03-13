@@ -131,11 +131,13 @@ namespace TitanOrbit.UI
 
         private void UpdateMarkers()
         {
+            float startTime = Time.realtimeSinceStartup;
+
             if (Time.time - lastEntityCacheTime >= EntityCacheRefreshInterval)
             {
                 lastEntityCacheTime = Time.time;
-                cachedPlanets = FindObjectsOfType<Planet>();
-                cachedHomePlanets = FindObjectsOfType<HomePlanet>();
+                cachedPlanets = Planet.AllPlanets.ToArray();
+                cachedHomePlanets = HomePlanet.AllHomePlanets.ToArray();
                 cachedMarkers = FindObjectsOfType<MinimapMarker>();
             }
 
@@ -191,6 +193,24 @@ namespace TitanOrbit.UI
                 attackDefendMarkers.Remove(t);
                 attackDefendMarkerImages.Remove(t);
             }
+
+            // #region agent log
+            if (Time.frameCount % 180 == 0)
+            {
+                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                TitanOrbit.Core.DebugSessionLog.Write(
+                    "ProximityRadarHUD.UpdateMarkers",
+                    "radar marker counts",
+                    "{\"markers\":" + markers.Count +
+                    ",\"attackDefendMarkers\":" + attackDefendMarkers.Count +
+                    ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) +
+                    ",\"cachedHomePlanets\":" + (cachedHomePlanets?.Length ?? 0) +
+                    ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) +
+                    ",\"durationMs\":" + durMs +
+                    "}",
+                    "R");
+            }
+            // #endregion
         }
 
         private void UpdateEntityMarker(Transform entityTransform, Vector3 playerPos, float radius, bool isHomePlanet, TeamManager.Team team)

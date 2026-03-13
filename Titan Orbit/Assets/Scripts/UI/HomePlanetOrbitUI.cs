@@ -77,9 +77,9 @@ namespace TitanOrbit.UI
             {
                 _lastLocalShipLookupTime = Time.time;
                 _cachedLocalShip = null;
-                foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
+                foreach (var ship in Starship.AllStarships)
                 {
-                    if (ship.IsOwner) { _cachedLocalShip = ship; break; }
+                    if (ship != null && ship.IsOwner) { _cachedLocalShip = ship; break; }
                 }
             }
             Starship localShip = _cachedLocalShip;
@@ -99,6 +99,10 @@ namespace TitanOrbit.UI
 
         public void Show(Starship ship, Planet planet)
         {
+            // Avoid redundant work if already showing for this ship+planet.
+            if (currentShip == ship && currentPlanet == planet && gameObject.activeSelf)
+                return;
+
             currentShip = ship;
             currentPlanet = planet;
             gameObject.SetActive(true); // Ensure orbit UI GameObject is active so panel can show (e.g. if it was disabled by Update when team was None)

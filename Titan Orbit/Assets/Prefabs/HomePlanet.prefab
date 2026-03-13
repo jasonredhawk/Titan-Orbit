@@ -37,7 +37,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 3714545540904411813}
-  - {fileID: 496420201941113037}
   - {fileID: 8991418018994148016}
   - {fileID: 1385518423730214332}
   m_Father: {fileID: 0}
@@ -75,7 +74,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2151594738
+  GlobalObjectIdHash: 455562950
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -111,8 +110,8 @@ MonoBehaviour:
   populationText: {fileID: 3314496731455080961}
   planetStatsDisplay: {fileID: 0}
   regularPlanetTintIntensity: 0.2
-  atmosphereSourceMaterial: {fileID: 2100000, guid: 1d9004e26641888448d5f4f15b9d0c55, type: 2}
-  atmosphereOuterMesh: {fileID: 4300000, guid: 662157716ef2b6840841e610138115a4, type: 3}
+  atmosphereSourceMaterial: {fileID: 0}
+  atmosphereOuterMesh: {fileID: 0}
   enableSpin: 1
   spinDegreesPerSecond: 2
   baseMaxGemsLevel1: 100
@@ -332,112 +331,6 @@ MonoBehaviour:
   tint: {r: 1, g: 1, b: 1, a: 1}
   alphaWhenNotOrbiting: 1
   alphaWhenOrbiting: 1
---- !u!1 &7137663261375580071
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1488304911931606407}
-  - component: {fileID: 733458928604521247}
-  - component: {fileID: 6371419872810887466}
-  - component: {fileID: 2134748853347989813}
-  m_Layer: 0
-  m_Name: SgtAtmosphereModel
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1488304911931606407
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7137663261375580071}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 496420201941113037}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &733458928604521247
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7137663261375580071}
-  m_Mesh: {fileID: 0}
---- !u!23 &6371419872810887466
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7137663261375580071}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 0}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &2134748853347989813
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7137663261375580071}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 58448e6ecdae0cc44bc6c3749a866ef7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereModel
-  parent: {fileID: 1319851106084105825}
-  cachedMeshFilter: {fileID: 733458928604521247}
-  cachedMeshRenderer: {fileID: 6371419872810887466}
 --- !u!1 &7292045767050586822
 GameObject:
   m_ObjectHideFlags: 0
@@ -619,144 +512,3 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_renderer: {fileID: 1519657715025679901}
   m_maskType: 0
---- !u!1 &8076307331495082868
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 496420201941113037}
-  - component: {fileID: 8228186371738896576}
-  - component: {fileID: 1319851106084105825}
-  - component: {fileID: 9174601492940771152}
-  - component: {fileID: 4947015809906185720}
-  - component: {fileID: 5030716871007150066}
-  m_Layer: 0
-  m_Name: Atmosphere
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &496420201941113037
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1488304911931606407}
-  m_Father: {fileID: 3037897551751055085}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &8228186371738896576
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b770d959612e3a64195501b962088da4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtSharedMaterial
-  material: {fileID: 0}
-  renderers: []
---- !u!114 &1319851106084105825
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b85c1f42538e90049b23d0bec8830d4d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphere
-  sourceMaterial: {fileID: 2100000, guid: 1d9004e26641888448d5f4f15b9d0c55, type: 2}
-  color: {r: 1, g: 1, b: 1, a: 1}
-  brightness: 1
-  innerMeshRadius: 0.5
-  outerMesh: {fileID: 4300000, guid: 662157716ef2b6840841e610138115a4, type: 3}
-  outerMeshRadius: 1
-  outerSoftness: 0
-  height: 0.025
-  innerFog: 0
-  outerFog: 0
-  sky: 1
-  middle: 0.5
-  cameraOffset: 0
-  occlusionPower: 1
-  night: 0
-  nightSky: 0.25
-  nightEase: 0
-  nightStart: 0.4
-  nightEnd: 0.6
-  nightPower: 2
-  model: {fileID: 2134748853347989813}
---- !u!114 &9174601492940771152
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0751a07bdf5a4641bf618cd878965cd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereDepthTex
-  horizonColor: {r: 1, g: 1, b: 1, a: 1}
-  innerColor: {r: 0.15, g: 0.54, b: 1, a: 1}
-  innerEase: 8
-  innerColorSharpness: 2
-  innerAlphaSharpness: 3
-  outerColor: {r: 0.29, g: 0.73, b: 1, a: 1}
-  outerEase: 3
-  outerColorSharpness: 2
-  outerAlphaSharpness: 3
---- !u!114 &4947015809906185720
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b5555fd5111f2b74b83ea74d97ffe4ba, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereLightingTex
-  sunsetEase: 1
-  sunsetStart: 0.45
-  sunsetEnd: 1
-  sunsetSharpnessR: 3
-  sunsetSharpnessG: 2
-  sunsetSharpnessB: 2
---- !u!114 &5030716871007150066
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8076307331495082868}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3773d907a8aeff248b74e03817a05441, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.Atmosphere.SgtAtmosphereScatteringTex
-  sunsetEase: 1
-  sunsetStart: 0.35
-  sunsetEnd: 0.6
-  sunsetSharpnessR: 2
-  sunsetSharpnessG: 2
-  sunsetSharpnessB: 2

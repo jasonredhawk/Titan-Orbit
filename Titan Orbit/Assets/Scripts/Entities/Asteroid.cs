@@ -15,6 +15,8 @@ namespace TitanOrbit.Entities
     [RequireComponent(typeof(Collider))]
     public class Asteroid : NetworkBehaviour
     {
+        /// <summary>Global registry of all active asteroids to avoid repeated FindObjectsOfType scans.</summary>
+        public static readonly System.Collections.Generic.List<Asteroid> AllAsteroids = new System.Collections.Generic.List<Asteroid>();
         [Header("Asteroid Settings")]
         [SerializeField] private float baseGemCount = 100f;
         [SerializeField] private float baseHealth = 50f;
@@ -127,6 +129,8 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            if (!AllAsteroids.Contains(this))
+                AllAsteroids.Add(this);
             // Lock Y position to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
@@ -194,6 +198,11 @@ namespace TitanOrbit.Entities
             {
                 col.enabled = true;
             }
+        }
+
+        private void OnDestroy()
+        {
+            AllAsteroids.Remove(this);
         }
 
         /// <summary>

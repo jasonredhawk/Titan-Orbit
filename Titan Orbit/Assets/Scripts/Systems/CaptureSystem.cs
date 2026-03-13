@@ -70,9 +70,9 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         private void CheckWinConditionsServerRpc()
         {
-            // Find all planets
-            Planet[] allPlanets = FindObjectsOfType<Planet>();
-            HomePlanet[] allHomePlanets = FindObjectsOfType<HomePlanet>();
+            // Use cached planet registries instead of FindObjectsOfType.
+            var allPlanets = Planet.AllPlanets;
+            var allHomePlanets = HomePlanet.AllHomePlanets;
 
             // Check if any team has captured all planets
             foreach (TeamManager.Team team in System.Enum.GetValues(typeof(TeamManager.Team)))

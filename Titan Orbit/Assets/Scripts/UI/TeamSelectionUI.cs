@@ -110,7 +110,7 @@ namespace TitanOrbit.UI
             float homeMaxGems = 0f;
             int planetsOwned = 0;
 
-            var homePlanets = Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None);
+            var homePlanets = HomePlanet.AllHomePlanets;
             foreach (var hp in homePlanets)
             {
                 if (hp.AssignedTeam != team) continue;
@@ -120,7 +120,7 @@ namespace TitanOrbit.UI
                 break;
             }
 
-            var planets = Object.FindObjectsByType<Planet>(FindObjectsSortMode.None);
+            var planets = Planet.AllPlanets;
             foreach (var p in planets)
             {
                 if (p.TeamOwnership == team) planetsOwned++;

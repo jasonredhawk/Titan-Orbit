@@ -79,7 +79,8 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
         private float lastEntityCacheRefreshTime = -999f;
-        private const float EntityCacheRefreshInterval = 1.5f;
+        // Refresh minimap entity cache less frequently to avoid repeated FindObjectsByType spikes (seen growing to 8–15 ms in logs).
+        private const float EntityCacheRefreshInterval = 6f;
         private Starship[] cachedShips = new Starship[0];
         private Planet[] cachedPlanets = new Planet[0];
         private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
@@ -131,8 +132,8 @@ namespace TitanOrbit.UI
             if (!force && Time.time - lastEntityCacheRefreshTime < EntityCacheRefreshInterval) return;
 
             cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
-            cachedPlanets = FindObjectsByType<Planet>(FindObjectsSortMode.None);
-            cachedHomePlanets = FindObjectsByType<HomePlanet>(FindObjectsSortMode.None);
+            cachedPlanets = Planet.AllPlanets.ToArray();
+            cachedHomePlanets = HomePlanet.AllHomePlanets.ToArray();
             cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
             cachedMarkers = FindObjectsByType<MinimapMarker>(FindObjectsSortMode.None);
             lastEntityCacheRefreshTime = Time.time;

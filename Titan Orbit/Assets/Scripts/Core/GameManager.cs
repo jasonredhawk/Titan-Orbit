@@ -112,15 +112,8 @@ namespace TitanOrbit.Core
                     "C");
                 s_lastFrameLog = frame;
             }
-            if (Time.realtimeSinceStartup - s_lastPerfLogTime >= 2f)
-            {
-                s_lastPerfLogTime = Time.realtimeSinceStartup;
-                int bullets = UnityEngine.Object.FindObjectsByType<Bullet>(UnityEngine.FindObjectsSortMode.None).Length;
-                int gems = UnityEngine.Object.FindObjectsByType<Gem>(UnityEngine.FindObjectsSortMode.None).Length;
-                int asteroids = UnityEngine.Object.FindObjectsByType<Asteroid>(UnityEngine.FindObjectsSortMode.None).Length;
-                int ships = UnityEngine.Object.FindObjectsByType<Starship>(UnityEngine.FindObjectsSortMode.None).Length;
-                DebugSessionLog.Write("GameManager.Update", "object counts", "{\"bullets\":" + bullets + ",\"gems\":" + gems + ",\"asteroids\":" + asteroids + ",\"starships\":" + ships + "}", "E");
-            }
+            // Disable periodic FindObjectsByType-based object count logging to avoid long-frame spikes
+            // that worsen over time during idle gameplay. Frame timing logging above remains enabled.
             // #endregion
             if (IsServer && currentGameState.Value == GameState.InProgress)
             {

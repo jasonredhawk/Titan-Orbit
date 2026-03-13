@@ -247,8 +247,9 @@ namespace TitanOrbit.Systems
                 _cachedOwnedPlanetTeam = team;
                 _lastOwnedPlanetsRefresh = Time.time;
                 _cachedOwnedPlanetIds.Clear();
-                foreach (var planet in FindObjectsOfType<Planet>())
+                foreach (var planet in Planet.AllPlanets)
                 {
+                    if (planet == null) continue;
                     if (planet.TeamOwnership == team && planet.PlanetId > 0)
                         _cachedOwnedPlanetIds.Add(planet.PlanetId);
                 }
@@ -512,9 +513,9 @@ namespace TitanOrbit.Systems
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
             if (team == TeamManager.Team.None) return null;
-            foreach (var home in FindObjectsOfType<HomePlanet>())
+            foreach (var home in HomePlanet.AllHomePlanets)
             {
-                if (home.AssignedTeam == team) return home;
+                if (home != null && home.AssignedTeam == team) return home;
             }
             return null;
         }
@@ -533,9 +534,9 @@ namespace TitanOrbit.Systems
         private bool TeamOwnsPlanetId(TeamManager.Team team, int planetId)
         {
             if (team == TeamManager.Team.None || planetId <= 0) return false;
-            foreach (var planet in FindObjectsOfType<Planet>())
+            foreach (var planet in Planet.AllPlanets)
             {
-                if (planet.PlanetId == planetId && planet.TeamOwnership == team)
+                if (planet != null && planet.PlanetId == planetId && planet.TeamOwnership == team)
                     return true;
             }
             return false;

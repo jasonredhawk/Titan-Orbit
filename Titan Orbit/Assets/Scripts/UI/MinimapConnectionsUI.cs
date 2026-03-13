@@ -92,6 +92,7 @@ namespace TitanOrbit.UI
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {
+            float startTime = Time.realtimeSinceStartup;
             vh.Clear();
             var conn = PlanetConnectionSystem.Instance;
             int ec = conn != null && conn.CurrentEdges != null ? conn.CurrentEdges.Count : 0;
@@ -104,7 +105,12 @@ namespace TitanOrbit.UI
             if (frame % 60 == 0)
             {
                 int verts = vh.currentVertCount;
-                TitanOrbit.Core.DebugSessionLog.Write("MinimapConnectionsUI.OnPopulateMesh", "mesh rebuild", "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertsBeforeClear\":" + verts + "}", "A");
+                float durMsSoFar = (Time.realtimeSinceStartup - startTime) * 1000f;
+                TitanOrbit.Core.DebugSessionLog.Write(
+                    "MinimapConnectionsUI.OnPopulateMesh",
+                    "mesh rebuild",
+                    "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertsBeforeClear\":" + verts + ",\"durationMs\":" + durMsSoFar + "}",
+                    "A");
             }
             // #endregion
             if (_minimap == null)
@@ -218,7 +224,15 @@ namespace TitanOrbit.UI
             }
 
             // #region agent log
-            if (frame % 60 == 0) TitanOrbit.Core.DebugSessionLog.Write("MinimapConnectionsUI.OnPopulateMesh", "after populate", "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertCount\":" + vh.currentVertCount + "}", "A");
+            if (frame % 60 == 0)
+            {
+                float totalDurMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+                TitanOrbit.Core.DebugSessionLog.Write(
+                    "MinimapConnectionsUI.OnPopulateMesh",
+                    "after populate",
+                    "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertCount\":" + vh.currentVertCount + ",\"durationMs\":" + totalDurMs + "}",
+                    "A");
+            }
             if (_populateCallCount <= 5) DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "after populate", "{\"vertCount\":" + vh.currentVertCount + "}", "H3");
             if (vh.currentVertCount > 0 && _populateCallCount == 1)
                 UnityEngine.Debug.Log("[MinimapConnections] Minimap is drawing " + (triangles?.Count ?? 0) + " triangles and " + (edges?.Count ?? 0) + " lines (same data as main map).");

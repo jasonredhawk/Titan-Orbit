@@ -117,8 +117,8 @@ namespace TitanOrbit.Systems
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
-            foreach (var hp in Object.FindObjectsByType<HomePlanet>(FindObjectsSortMode.None))
-                if (hp.AssignedTeam == team) return hp;
+            foreach (var hp in HomePlanet.AllHomePlanets)
+                if (hp != null && hp.AssignedTeam == team) return hp;
             return null;
         }
     }

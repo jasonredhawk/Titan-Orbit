@@ -5,10 +5,10 @@ using Shapes;
 
 namespace TitanOrbit.Entities
 {
-    /// <summary>
-    /// Renders a circular border at the outer edge of the orbit zone using Shapes (faint but visible).
-    /// Slightly brighter when the local player is in orbit.
-    /// </summary>
+        /// <summary>
+        /// Renders a circular border at the outer edge of the orbit zone using Shapes (faint but visible).
+        /// Slightly brighter when the local player is in orbit.
+        /// </summary>
     [ExecuteAlways]
     public class OrbitZoneShapesVisual : ImmediateModeShapeDrawer
     {
