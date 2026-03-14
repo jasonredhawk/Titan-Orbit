@@ -40,6 +40,12 @@ namespace TitanOrbit.Entities
         private float rotationSpeed;
 
         private Color? originalColor;
+        private bool hasAppliedTextureTiling;
+
+        /// <summary>Base tiling for asteroid texture (material default). Smaller asteroids get this; larger scale up.</summary>
+        private const float BASE_TEXTURE_TILING = 8f;
+
+        private static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
 
         public float RemainingGems => remainingGems.Value;
         public float MaxGems => maxGems.Value;
@@ -170,6 +176,25 @@ namespace TitanOrbit.Entities
                 // Ensure physics state is correct
                 EnsurePhysicsState();
             }
+        }
+
+        private void Update()
+        {
+            ApplyTextureTilingByScale();
+        }
+
+        private void ApplyTextureTilingByScale()
+        {
+            if (hasAppliedTextureTiling || isDestroyed.Value) return;
+            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            if (sgt == null || sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling)) return;
+            Vector3 scale = transform.localScale;
+            float rawSize = (scale.x + scale.y + scale.z) / 3f;
+            if (rawSize < 0.01f) return;
+            // Scale tiling by asteroid size: small asteroids stay soft (low tiling), large get more detail (higher tiling)
+            float tiling = BASE_TEXTURE_TILING * (rawSize / MIN_ASTEROID_RADIUS);
+            sgt.Properties.SetFloat(ShaderIdTiling, tiling);
+            hasAppliedTextureTiling = true;
         }
 
         private void FixedUpdate()

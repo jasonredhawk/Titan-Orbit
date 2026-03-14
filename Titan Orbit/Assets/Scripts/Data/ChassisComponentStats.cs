@@ -110,8 +110,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Recursively find all transforms whose name contains "Weapon" (case-insensitive) and add to lists.
-        /// Supports any hierarchy depth and naming (e.g. Weapon, Weapon_L, AstroEagle_Weapon_2).
+        /// Recursively find transforms whose name contains "Weapon" (case-insensitive) and add to lists.
+        /// When we add a weapon-named node we do not recurse into it, so only the actual weapon component
+        /// (e.g. AstroEagle_Weapon_1) is counted—not nested children like Weapon_Muzzle or Weapon_FX.
         /// </summary>
         private static void CollectWeaponTransformsRecursive(Transform parent, List<Transform> weaponTransforms, List<float> weaponScales)
         {
@@ -124,6 +125,7 @@ namespace TitanOrbit.Data
                 {
                     weaponTransforms.Add(child);
                     weaponScales.Add(GetScaleFactor(child));
+                    continue; // Do not recurse into this weapon; its children are not separate guns.
                 }
                 CollectWeaponTransformsRecursive(child, weaponTransforms, weaponScales);
             }
