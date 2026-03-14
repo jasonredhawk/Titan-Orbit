@@ -3010,57 +3010,80 @@ namespace TitanOrbit.Entities
                 float perLvlBulletSpeed = bulletSpeedUpgrades > 0 ? bulletSpeedUpgrades - 1 : 0f;
                 float perLvlFireRate = fireRateUpgrades > 0 ? fireRateUpgrades - 1 : 0f;
 
-                // Fallback summed stats when we don't have per-weapon lookup (e.g. no preview or weapon not in list).
+                // Fallback summed stats only when no per-component data exists (no preview match and no definition entry). Guns use individual stats from matched components or family definition.
                 float fallbackDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvlFirePower) : 0f;
                 float fallbackBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvlBulletSpeed) : 0f;
                 float fallbackFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvlFireRate) : 0f;
                 if (fallbackFireRate < 0.01f) fallbackFireRate = 0.01f;
 
+                // Use same familyId as ShipFamilyStatsPreview so componentId matches matchedComponentIds (e.g. "Weapon_1" not full name).
+                string weaponLookupFamilyId = (previewFamilyDef != null && !string.IsNullOrEmpty(previewFamilyDef.familyId))
+                    ? previewFamilyDef.familyId.Trim()
+                    : prefix;
+
                 for (int i = 0; i < weaponCount; i++)
                 {
                     var c = baseBullet.Clone();
-                    if (usePreviewStats && matchedComponentIds != null && perComponentStats != null && stats.weaponTransforms != null && i < stats.weaponTransforms.Count)
+                    Transform wt = stats.weaponTransforms != null && i < stats.weaponTransforms.Count ? stats.weaponTransforms[i] : null;
+                    string componentId = "";
+                    if (wt != null && !string.IsNullOrEmpty(wt.name))
                     {
-                        Transform wt = stats.weaponTransforms[i];
-                        string componentId = (wt != null && !string.IsNullOrEmpty(prefix) && wt.name.StartsWith(prefix + "_", System.StringComparison.OrdinalIgnoreCase))
-                            ? wt.name.Substring(prefix.Length + 1)
-                            : (wt != null ? wt.name : "");
-                        int compIdx = -1;
+                        if (!string.IsNullOrEmpty(weaponLookupFamilyId) && wt.name.StartsWith(weaponLookupFamilyId + "_", System.StringComparison.OrdinalIgnoreCase))
+                            componentId = wt.name.Substring(weaponLookupFamilyId.Length + 1);
+                        else
+                            componentId = wt.name;
+                    }
+
+                    bool usedPerComponent = false;
+                    // 1) Prefer per-component stats from ShipFamilyStatsPreview (matched component list) - case-insensitive match.
+                    if (matchedComponentIds != null && perComponentStats != null && !string.IsNullOrEmpty(componentId))
+                    {
                         for (int k = 0; k < matchedComponentIds.Count; k++)
                         {
-                            if (matchedComponentIds[k] == componentId) { compIdx = k; break; }
+                            if (string.Equals(matchedComponentIds[k], componentId, System.StringComparison.OrdinalIgnoreCase) && k < perComponentStats.Count)
+                            {
+                                ShipComponentAbilityStats comp = perComponentStats[k];
+                                float wp = comp.firePower + comp.firePowerPerLevel * perLvlFirePower;
+                                float bs = comp.bulletSpeed + comp.bulletSpeedPerLevel * perLvlBulletSpeed;
+                                float fr = Mathf.Max(0.01f, comp.fireRate + comp.fireRatePerLevel * perLvlFireRate);
+                                c.damagePerBullet = wp / fr;
+                                c.bulletSpeed = bs;
+                                c.fireRate = fr;
+                                c.energyCostPerShot = c.damagePerBullet;
+                                usedPerComponent = true;
+                                break;
+                            }
                         }
-                        if (compIdx >= 0 && compIdx < perComponentStats.Count)
-                        {
-                            ShipComponentAbilityStats comp = perComponentStats[compIdx];
-                            float wp = comp.firePower + comp.firePowerPerLevel * perLvlFirePower;
-                            float bs = comp.bulletSpeed + comp.bulletSpeedPerLevel * perLvlBulletSpeed;
-                            float fr = Mathf.Max(0.01f, comp.fireRate + comp.fireRatePerLevel * perLvlFireRate);
-                            c.damagePerBullet = wp / fr;
-                            c.bulletSpeed = bs;
-                            c.fireRate = fr;
-                            c.energyCostPerShot = c.damagePerBullet;
-                        }
-                        else
+                    }
+                    // 2) If no match in preview list, get this weapon's stats from ShipFamilyDefinition and scale by transform (still per-component, not summed).
+                    if (!usedPerComponent && previewFamilyDef != null && wt != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetStatsForComponent(componentId, out var defStats))
+                    {
+                        ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(defStats, wt, componentId);
+                        float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlFirePower;
+                        float bs = scaled.bulletSpeed + scaled.bulletSpeedPerLevel * perLvlBulletSpeed;
+                        float fr = Mathf.Max(0.01f, scaled.fireRate + scaled.fireRatePerLevel * perLvlFireRate);
+                        c.damagePerBullet = wp / fr;
+                        c.bulletSpeed = bs;
+                        c.fireRate = fr;
+                        c.energyCostPerShot = c.damagePerBullet;
+                        usedPerComponent = true;
+                    }
+                    // 3) Only use summed TotalStats when we have no per-component data (no preview match and no definition entry).
+                    if (!usedPerComponent)
+                    {
+                        if (usePreviewStats)
                         {
                             c.damagePerBullet = fallbackDamage / fallbackFireRate;
                             c.bulletSpeed = fallbackBulletSpeed;
                             c.fireRate = fallbackFireRate;
                             c.energyCostPerShot = c.damagePerBullet;
                         }
-                    }
-                    else if (usePreviewStats)
-                    {
-                        c.damagePerBullet = fallbackDamage / fallbackFireRate;
-                        c.bulletSpeed = fallbackBulletSpeed;
-                        c.fireRate = fallbackFireRate;
-                        c.energyCostPerShot = c.damagePerBullet;
-                    }
-                    else
-                    {
-                        c.energyCostPerShot *= bulletEnergyScale;
-                        c.damagePerBullet *= bulletDamageScale;
-                        c.bulletSpeed *= bulletSpeedScale;
+                        else
+                        {
+                            c.energyCostPerShot *= bulletEnergyScale;
+                            c.damagePerBullet *= bulletDamageScale;
+                            c.bulletSpeed *= bulletSpeedScale;
+                        }
                     }
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];
@@ -3075,15 +3098,11 @@ namespace TitanOrbit.Entities
                         muzzleBaseSizes.Add(muzzleScale);
                         muzzleBaseSpeeds.Add(2.5f);
                     }
-                    if (stats.weaponTransforms != null && i < stats.weaponTransforms.Count)
+                    if (wt != null)
                     {
-                        Transform wt = stats.weaponTransforms[i];
-                        if (wt != null)
-                        {
-                            weaponScaleTransforms.Add(wt);
-                            weaponBaseScales.Add(wt.localScale);
-                            weaponBasePositions.Add(wt.localPosition);
-                        }
+                        weaponScaleTransforms.Add(wt);
+                        weaponBaseScales.Add(wt.localScale);
+                        weaponBasePositions.Add(wt.localPosition);
                     }
                 }
                 bulletConfig = bc;

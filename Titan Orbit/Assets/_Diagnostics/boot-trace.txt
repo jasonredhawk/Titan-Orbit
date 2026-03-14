@@ -1,179 +1,106 @@
-12:52:54.264 | GameManager.Awake - enter
-12:52:54.265 | GameManager.Awake - creating PlanetConnectionSystems
-12:52:54.267 | PlanetConnectionSystem.Awake - enter
-12:52:54.268 | PlanetConnectionSystem.Awake - instance set
-12:52:54.269 | GameManager.Awake - PlanetConnectionSystems created
-12:52:54.269 | NetworkGameManager.Awake - enter
-12:52:54.270 | NetworkGameManager.Awake - instance set
-12:52:55.485 | PlanetConnectionSystem.Update - recomputing graph
-12:52:59.564 | PlanetConnectionSystem.Update - recomputing graph
-12:53:02.569 | PlanetConnectionSystem.Update - recomputing graph
-12:53:05.585 | PlanetConnectionSystem.Update - recomputing graph
-12:53:08.601 | PlanetConnectionSystem.Update - recomputing graph
-12:53:11.606 | PlanetConnectionSystem.Update - recomputing graph
-12:53:14.622 | PlanetConnectionSystem.Update - recomputing graph
-12:53:17.629 | PlanetConnectionSystem.Update - recomputing graph
-12:53:20.644 | PlanetConnectionSystem.Update - recomputing graph
-12:53:23.653 | PlanetConnectionSystem.Update - recomputing graph
-12:53:26.668 | PlanetConnectionSystem.Update - recomputing graph
-12:53:29.675 | PlanetConnectionSystem.Update - recomputing graph
-12:53:32.691 | PlanetConnectionSystem.Update - recomputing graph
-12:53:35.697 | PlanetConnectionSystem.Update - recomputing graph
-12:53:38.714 | PlanetConnectionSystem.Update - recomputing graph
-12:53:41.721 | PlanetConnectionSystem.Update - recomputing graph
-12:53:44.738 | PlanetConnectionSystem.Update - recomputing graph
-12:53:47.745 | PlanetConnectionSystem.Update - recomputing graph
-12:53:50.745 | PlanetConnectionSystem.Update - recomputing graph
-12:53:53.751 | PlanetConnectionSystem.Update - recomputing graph
-12:53:56.751 | PlanetConnectionSystem.Update - recomputing graph
-12:53:59.758 | PlanetConnectionSystem.Update - recomputing graph
-12:54:02.773 | PlanetConnectionSystem.Update - recomputing graph
-12:54:05.581 | MapGenerator.EnsureMapGenerated - enter
-12:54:05.582 | MapGenerator.EnsureMapGenerated - calling GenerateMapImmediate
-12:54:05.584 | MapGenerator.GenerateMapImmediate - begin
-12:54:05.608 | MapGenerator.GenerateMapImmediate - after home planets
-12:54:05.622 | MapGenerator.GenerateMapImmediate - after neutral planets
-12:54:05.666 | MapGenerator.GenerateMapImmediate - after asteroids
-12:54:05.667 | MapGenerator.EnsureMapGenerated - immediate generation finished
-12:54:05.671 | ScoreSystem.OnNetworkSpawn - enter (IsServer=True)
-12:54:05.672 | ScoreSystem.OnNetworkSpawn - initial SyncTrackedShips
-12:54:05.677 | AIStarshipManager.OnNetworkSpawn - enter (IsServer=True)
-12:54:05.679 | AIStarshipManager.OnNetworkSpawn - team lists initialized
-12:54:05.682 | NetworkGameManager.OnNetworkSpawn - enter (IsServer=True)
-12:54:05.684 | NetworkGameManager.OnNetworkSpawn - EnsureScoreSystemExists
-12:54:05.685 | NetworkGameManager.OnNetworkSpawn - EnsureMapGenerated
-12:54:05.686 | NetworkGameManager.EnsureMapGenerated - locating MapGenerator
-12:54:05.688 | NetworkGameManager.EnsureMapGenerated - calling MapGenerator.EnsureMapGenerated
-12:54:05.689 | MapGenerator.EnsureMapGenerated - enter
-12:54:05.690 | MapGenerator.EnsureMapGenerated - already generated, skipping
-12:54:05.691 | NetworkGameManager.OnNetworkSpawn - subscribing client callbacks
-12:54:05.701 | MapGenerator.EnsureMapGenerated - enter
-12:54:05.702 | MapGenerator.EnsureMapGenerated - already generated, skipping
-12:54:05.723 | AIStarshipManager.Update - AIShipsDisabled, skipping spawn
-12:54:05.724 | ScoreSystem.Update - SyncTrackedShips
-12:54:13.880 | PlanetConnectionSystem.Update - recomputing graph
-12:54:14.543 | ScoreSystem.Update - SyncTrackedShips
-12:54:15.544 | ScoreSystem.Update - SyncTrackedShips
-12:54:16.557 | ScoreSystem.Update - SyncTrackedShips
-12:54:16.906 | PlanetConnectionSystem.Update - recomputing graph
-12:54:17.574 | ScoreSystem.Update - SyncTrackedShips
-12:54:18.587 | ScoreSystem.Update - SyncTrackedShips
-12:54:19.587 | ScoreSystem.Update - SyncTrackedShips
-12:54:19.922 | PlanetConnectionSystem.Update - recomputing graph
-12:54:20.589 | ScoreSystem.Update - SyncTrackedShips
-12:54:21.602 | ScoreSystem.Update - SyncTrackedShips
-12:54:22.620 | ScoreSystem.Update - SyncTrackedShips
-12:54:22.922 | PlanetConnectionSystem.Update - recomputing graph
-12:54:23.628 | ScoreSystem.Update - SyncTrackedShips
-12:54:24.640 | ScoreSystem.Update - SyncTrackedShips
-12:54:25.640 | ScoreSystem.Update - SyncTrackedShips
-12:54:25.923 | PlanetConnectionSystem.Update - recomputing graph
-12:54:26.660 | ScoreSystem.Update - SyncTrackedShips
-12:54:27.673 | ScoreSystem.Update - SyncTrackedShips
-12:54:28.680 | ScoreSystem.Update - SyncTrackedShips
-12:54:28.930 | PlanetConnectionSystem.Update - recomputing graph
-12:54:29.700 | ScoreSystem.Update - SyncTrackedShips
-12:54:30.716 | ScoreSystem.Update - SyncTrackedShips
-12:54:31.718 | ScoreSystem.Update - SyncTrackedShips
-12:54:31.937 | PlanetConnectionSystem.Update - recomputing graph
-12:54:32.721 | ScoreSystem.Update - SyncTrackedShips
-12:54:33.729 | ScoreSystem.Update - SyncTrackedShips
-12:54:34.733 | ScoreSystem.Update - SyncTrackedShips
-12:54:34.956 | PlanetConnectionSystem.Update - recomputing graph
-12:54:35.740 | ScoreSystem.Update - SyncTrackedShips
-12:54:36.744 | ScoreSystem.Update - SyncTrackedShips
-12:54:37.750 | ScoreSystem.Update - SyncTrackedShips
-12:54:37.963 | PlanetConnectionSystem.Update - recomputing graph
-12:54:38.763 | ScoreSystem.Update - SyncTrackedShips
-12:54:39.765 | ScoreSystem.Update - SyncTrackedShips
-12:54:40.779 | ScoreSystem.Update - SyncTrackedShips
-12:54:40.975 | PlanetConnectionSystem.Update - recomputing graph
-12:54:41.782 | ScoreSystem.Update - SyncTrackedShips
-12:54:42.798 | ScoreSystem.Update - SyncTrackedShips
-12:54:43.814 | ScoreSystem.Update - SyncTrackedShips
-12:54:43.980 | PlanetConnectionSystem.Update - recomputing graph
-12:54:44.814 | ScoreSystem.Update - SyncTrackedShips
-12:54:45.831 | ScoreSystem.Update - SyncTrackedShips
-12:54:46.845 | ScoreSystem.Update - SyncTrackedShips
-12:54:46.994 | PlanetConnectionSystem.Update - recomputing graph
-12:54:47.860 | ScoreSystem.Update - SyncTrackedShips
-12:54:48.870 | ScoreSystem.Update - SyncTrackedShips
-12:54:49.887 | ScoreSystem.Update - SyncTrackedShips
-12:54:50.004 | PlanetConnectionSystem.Update - recomputing graph
-12:54:50.887 | ScoreSystem.Update - SyncTrackedShips
-12:54:51.905 | ScoreSystem.Update - SyncTrackedShips
-12:54:52.920 | ScoreSystem.Update - SyncTrackedShips
-12:54:53.020 | PlanetConnectionSystem.Update - recomputing graph
-12:54:53.938 | ScoreSystem.Update - SyncTrackedShips
-12:54:54.953 | ScoreSystem.Update - SyncTrackedShips
-12:54:55.953 | ScoreSystem.Update - SyncTrackedShips
-12:54:56.037 | PlanetConnectionSystem.Update - recomputing graph
-12:54:56.971 | ScoreSystem.Update - SyncTrackedShips
-12:54:57.987 | ScoreSystem.Update - SyncTrackedShips
-12:54:58.987 | ScoreSystem.Update - SyncTrackedShips
-12:54:59.055 | PlanetConnectionSystem.Update - recomputing graph
-12:54:59.991 | ScoreSystem.Update - SyncTrackedShips
-12:55:00.994 | ScoreSystem.Update - SyncTrackedShips
-12:55:02.010 | ScoreSystem.Update - SyncTrackedShips
-12:55:02.060 | PlanetConnectionSystem.Update - recomputing graph
-12:55:03.025 | ScoreSystem.Update - SyncTrackedShips
-12:55:04.026 | ScoreSystem.Update - SyncTrackedShips
-12:55:05.043 | ScoreSystem.Update - SyncTrackedShips
-12:55:05.078 | PlanetConnectionSystem.Update - recomputing graph
-12:55:06.049 | ScoreSystem.Update - SyncTrackedShips
-12:55:07.064 | ScoreSystem.Update - SyncTrackedShips
-12:55:08.078 | ScoreSystem.Update - SyncTrackedShips
-12:55:08.080 | PlanetConnectionSystem.Update - recomputing graph
-12:55:09.084 | ScoreSystem.Update - SyncTrackedShips
-12:55:10.102 | ScoreSystem.Update - SyncTrackedShips
-12:55:11.086 | PlanetConnectionSystem.Update - recomputing graph
-12:55:11.118 | ScoreSystem.Update - SyncTrackedShips
-12:55:12.128 | ScoreSystem.Update - SyncTrackedShips
-12:55:13.144 | ScoreSystem.Update - SyncTrackedShips
-12:55:14.094 | PlanetConnectionSystem.Update - recomputing graph
-12:55:14.144 | ScoreSystem.Update - SyncTrackedShips
-12:55:15.159 | ScoreSystem.Update - SyncTrackedShips
-12:55:16.160 | ScoreSystem.Update - SyncTrackedShips
-12:55:17.094 | PlanetConnectionSystem.Update - recomputing graph
-12:55:17.160 | ScoreSystem.Update - SyncTrackedShips
-12:55:18.162 | ScoreSystem.Update - SyncTrackedShips
-12:55:19.161 | ScoreSystem.Update - SyncTrackedShips
-12:55:20.101 | PlanetConnectionSystem.Update - recomputing graph
-12:55:20.167 | ScoreSystem.Update - SyncTrackedShips
-12:55:21.186 | ScoreSystem.Update - SyncTrackedShips
-12:55:22.201 | ScoreSystem.Update - SyncTrackedShips
-12:55:23.112 | PlanetConnectionSystem.Update - recomputing graph
-12:55:23.214 | ScoreSystem.Update - SyncTrackedShips
-12:55:24.229 | ScoreSystem.Update - SyncTrackedShips
-12:55:25.229 | ScoreSystem.Update - SyncTrackedShips
-12:55:26.128 | PlanetConnectionSystem.Update - recomputing graph
-12:55:26.245 | ScoreSystem.Update - SyncTrackedShips
-12:55:27.245 | ScoreSystem.Update - SyncTrackedShips
-12:55:28.262 | ScoreSystem.Update - SyncTrackedShips
-12:55:29.129 | PlanetConnectionSystem.Update - recomputing graph
-12:55:29.279 | ScoreSystem.Update - SyncTrackedShips
-12:55:30.278 | ScoreSystem.Update - SyncTrackedShips
-12:55:31.294 | ScoreSystem.Update - SyncTrackedShips
-12:55:32.129 | PlanetConnectionSystem.Update - recomputing graph
-12:55:32.296 | ScoreSystem.Update - SyncTrackedShips
-12:55:33.312 | ScoreSystem.Update - SyncTrackedShips
-12:55:34.320 | ScoreSystem.Update - SyncTrackedShips
-12:55:35.136 | PlanetConnectionSystem.Update - recomputing graph
-12:55:35.320 | ScoreSystem.Update - SyncTrackedShips
-12:55:36.325 | ScoreSystem.Update - SyncTrackedShips
-12:55:37.341 | ScoreSystem.Update - SyncTrackedShips
-12:55:38.141 | PlanetConnectionSystem.Update - recomputing graph
-12:55:38.341 | ScoreSystem.Update - SyncTrackedShips
-12:55:39.357 | ScoreSystem.Update - SyncTrackedShips
-12:55:40.374 | ScoreSystem.Update - SyncTrackedShips
-12:55:41.142 | PlanetConnectionSystem.Update - recomputing graph
-12:55:41.376 | ScoreSystem.Update - SyncTrackedShips
-12:55:42.391 | ScoreSystem.Update - SyncTrackedShips
-12:55:43.393 | ScoreSystem.Update - SyncTrackedShips
-12:55:44.157 | PlanetConnectionSystem.Update - recomputing graph
-12:55:44.406 | ScoreSystem.Update - SyncTrackedShips
-12:55:45.424 | ScoreSystem.Update - SyncTrackedShips
-12:55:46.432 | ScoreSystem.Update - SyncTrackedShips
-12:55:47.165 | PlanetConnectionSystem.Update - recomputing graph
-12:55:47.450 | ScoreSystem.Update - SyncTrackedShips
-12:55:48.466 | ScoreSystem.Update - SyncTrackedShips
+13:34:03.255 | GameManager.Awake - enter
+13:34:03.256 | GameManager.Awake - creating PlanetConnectionSystems
+13:34:03.257 | PlanetConnectionSystem.Awake - enter
+13:34:03.258 | PlanetConnectionSystem.Awake - instance set
+13:34:03.259 | GameManager.Awake - PlanetConnectionSystems created
+13:34:03.260 | NetworkGameManager.Awake - enter
+13:34:03.260 | NetworkGameManager.Awake - instance set
+13:34:03.810 | PlanetConnectionSystem.Update - recomputing graph
+13:34:07.623 | MapGenerator.EnsureMapGenerated - enter
+13:34:07.625 | MapGenerator.EnsureMapGenerated - calling GenerateMapImmediate
+13:34:07.629 | MapGenerator.GenerateMapImmediate - begin
+13:34:07.657 | MapGenerator.GenerateMapImmediate - after home planets
+13:34:07.673 | MapGenerator.GenerateMapImmediate - after neutral planets
+13:34:07.718 | MapGenerator.GenerateMapImmediate - after asteroids
+13:34:07.719 | MapGenerator.EnsureMapGenerated - immediate generation finished
+13:34:07.724 | ScoreSystem.OnNetworkSpawn - enter (IsServer=True)
+13:34:07.725 | ScoreSystem.OnNetworkSpawn - initial SyncTrackedShips
+13:34:07.730 | AIStarshipManager.OnNetworkSpawn - enter (IsServer=True)
+13:34:07.732 | AIStarshipManager.OnNetworkSpawn - team lists initialized
+13:34:07.735 | NetworkGameManager.OnNetworkSpawn - enter (IsServer=True)
+13:34:07.737 | NetworkGameManager.OnNetworkSpawn - EnsureScoreSystemExists
+13:34:07.738 | NetworkGameManager.OnNetworkSpawn - EnsureMapGenerated
+13:34:07.739 | NetworkGameManager.EnsureMapGenerated - locating MapGenerator
+13:34:07.741 | NetworkGameManager.EnsureMapGenerated - calling MapGenerator.EnsureMapGenerated
+13:34:07.743 | MapGenerator.EnsureMapGenerated - enter
+13:34:07.744 | MapGenerator.EnsureMapGenerated - already generated, skipping
+13:34:07.745 | NetworkGameManager.OnNetworkSpawn - subscribing client callbacks
+13:34:07.755 | MapGenerator.EnsureMapGenerated - enter
+13:34:07.756 | MapGenerator.EnsureMapGenerated - already generated, skipping
+13:34:07.788 | AIStarshipManager.Update - AIShipsDisabled, skipping spawn
+13:34:07.789 | ScoreSystem.Update - SyncTrackedShips
+13:34:15.529 | PlanetConnectionSystem.Update - recomputing graph
+13:34:16.150 | ScoreSystem.Update - SyncTrackedShips
+13:34:17.267 | ScoreSystem.Update - SyncTrackedShips
+13:34:18.295 | ScoreSystem.Update - SyncTrackedShips
+13:34:18.612 | PlanetConnectionSystem.Update - recomputing graph
+13:34:19.313 | ScoreSystem.Update - SyncTrackedShips
+13:34:20.319 | ScoreSystem.Update - SyncTrackedShips
+13:34:21.330 | ScoreSystem.Update - SyncTrackedShips
+13:34:21.623 | PlanetConnectionSystem.Update - recomputing graph
+13:34:22.336 | ScoreSystem.Update - SyncTrackedShips
+13:34:23.340 | ScoreSystem.Update - SyncTrackedShips
+13:34:24.347 | ScoreSystem.Update - SyncTrackedShips
+13:34:24.629 | PlanetConnectionSystem.Update - recomputing graph
+13:34:25.364 | ScoreSystem.Update - SyncTrackedShips
+13:34:26.380 | ScoreSystem.Update - SyncTrackedShips
+13:34:27.396 | ScoreSystem.Update - SyncTrackedShips
+13:34:27.630 | PlanetConnectionSystem.Update - recomputing graph
+13:34:28.413 | ScoreSystem.Update - SyncTrackedShips
+13:34:29.417 | ScoreSystem.Update - SyncTrackedShips
+13:34:30.430 | ScoreSystem.Update - SyncTrackedShips
+13:34:30.629 | PlanetConnectionSystem.Update - recomputing graph
+13:34:31.430 | ScoreSystem.Update - SyncTrackedShips
+13:34:32.441 | ScoreSystem.Update - SyncTrackedShips
+13:34:33.448 | ScoreSystem.Update - SyncTrackedShips
+13:34:33.635 | PlanetConnectionSystem.Update - recomputing graph
+13:34:34.450 | ScoreSystem.Update - SyncTrackedShips
+13:34:35.450 | ScoreSystem.Update - SyncTrackedShips
+13:34:36.468 | ScoreSystem.Update - SyncTrackedShips
+13:34:36.650 | PlanetConnectionSystem.Update - recomputing graph
+13:34:37.473 | ScoreSystem.Update - SyncTrackedShips
+13:34:38.480 | ScoreSystem.Update - SyncTrackedShips
+13:34:39.482 | ScoreSystem.Update - SyncTrackedShips
+13:34:39.666 | PlanetConnectionSystem.Update - recomputing graph
+13:34:40.489 | ScoreSystem.Update - SyncTrackedShips
+13:34:41.491 | ScoreSystem.Update - SyncTrackedShips
+13:34:42.507 | ScoreSystem.Update - SyncTrackedShips
+13:34:42.676 | PlanetConnectionSystem.Update - recomputing graph
+13:34:43.506 | ScoreSystem.Update - SyncTrackedShips
+13:34:44.509 | ScoreSystem.Update - SyncTrackedShips
+13:34:45.509 | ScoreSystem.Update - SyncTrackedShips
+13:34:45.677 | PlanetConnectionSystem.Update - recomputing graph
+13:34:46.509 | ScoreSystem.Update - SyncTrackedShips
+13:34:47.517 | ScoreSystem.Update - SyncTrackedShips
+13:34:48.531 | ScoreSystem.Update - SyncTrackedShips
+13:34:48.683 | PlanetConnectionSystem.Update - recomputing graph
+13:34:49.542 | ScoreSystem.Update - SyncTrackedShips
+13:34:50.542 | ScoreSystem.Update - SyncTrackedShips
+13:34:51.550 | ScoreSystem.Update - SyncTrackedShips
+13:34:51.696 | PlanetConnectionSystem.Update - recomputing graph
+13:34:52.546 | ScoreSystem.Update - SyncTrackedShips
+13:34:53.547 | ScoreSystem.Update - SyncTrackedShips
+13:34:54.562 | ScoreSystem.Update - SyncTrackedShips
+13:34:54.696 | PlanetConnectionSystem.Update - recomputing graph
+13:34:55.563 | ScoreSystem.Update - SyncTrackedShips
+13:34:56.580 | ScoreSystem.Update - SyncTrackedShips
+13:34:57.583 | ScoreSystem.Update - SyncTrackedShips
+13:34:57.698 | PlanetConnectionSystem.Update - recomputing graph
+13:34:58.599 | ScoreSystem.Update - SyncTrackedShips
+13:34:59.616 | ScoreSystem.Update - SyncTrackedShips
+13:35:00.618 | ScoreSystem.Update - SyncTrackedShips
+13:35:00.706 | PlanetConnectionSystem.Update - recomputing graph
+13:35:01.630 | ScoreSystem.Update - SyncTrackedShips
+13:35:02.638 | ScoreSystem.Update - SyncTrackedShips
+13:35:03.645 | ScoreSystem.Update - SyncTrackedShips
+13:35:03.713 | PlanetConnectionSystem.Update - recomputing graph
+13:35:04.659 | ScoreSystem.Update - SyncTrackedShips
+13:35:05.672 | ScoreSystem.Update - SyncTrackedShips
+13:35:06.689 | ScoreSystem.Update - SyncTrackedShips
+13:35:06.721 | PlanetConnectionSystem.Update - recomputing graph
+13:35:07.706 | ScoreSystem.Update - SyncTrackedShips
+13:35:08.722 | ScoreSystem.Update - SyncTrackedShips
+13:35:09.724 | ScoreSystem.Update - SyncTrackedShips
+13:35:09.725 | PlanetConnectionSystem.Update - recomputing graph
+13:35:10.738 | ScoreSystem.Update - SyncTrackedShips
+13:35:11.755 | ScoreSystem.Update - SyncTrackedShips
