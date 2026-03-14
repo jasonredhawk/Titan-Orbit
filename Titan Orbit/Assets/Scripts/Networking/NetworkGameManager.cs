@@ -119,14 +119,24 @@ namespace TitanOrbit.Networking
         /// <summary>
         /// Ensures Unity Services are initialized and the player is signed in (anonymous). Call before any Relay calls.
         /// </summary>
-        private static async Task EnsureUnityServicesInitializedAsync()
+        /// <returns>True if initialized and signed in; false if Services failed (e.g. offline or build not linked).</returns>
+        private static async Task<bool> EnsureUnityServicesInitializedAsync()
         {
-            if (UnityServices.State == ServicesInitializationState.Initialized && AuthenticationService.Instance.IsSignedIn)
-                return;
-            if (UnityServices.State != ServicesInitializationState.Initialized)
-                await UnityServices.InitializeAsync();
-            if (!AuthenticationService.Instance.IsSignedIn)
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+            try
+            {
+                if (UnityServices.State == ServicesInitializationState.Initialized && AuthenticationService.Instance.IsSignedIn)
+                    return true;
+                if (UnityServices.State != ServicesInitializationState.Initialized)
+                    await UnityServices.InitializeAsync();
+                if (!AuthenticationService.Instance.IsSignedIn)
+                    await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] Unity Services failed (offline or build not linked). You can still play as local host. " + e.Message);
+                return false;
+            }
         }
 
         /// <summary>
@@ -143,7 +153,8 @@ namespace TitanOrbit.Networking
             }
             try
             {
-                await EnsureUnityServicesInitializedAsync();
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return null;
                 int maxConnections = Mathf.Max(1, maxPlayers - 1);
                 Allocation allocation = await RelayService.Instance.CreateAllocationAsync(maxConnections);
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
@@ -182,7 +193,8 @@ namespace TitanOrbit.Networking
             }
             try
             {
-                await EnsureUnityServicesInitializedAsync();
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return false;
                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode.Trim());
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
                 if (transport == null)
@@ -205,6 +217,7 @@ namespace TitanOrbit.Networking
 
         /// <summary>
         /// Play online: quick-join an existing game or create one if none exists. Uses Lobby + Relay. No manual join code.
+        /// If Unity Services fail (e.g. desktop build offline or not linked), falls back to local host so the game still starts.
         /// </summary>
         /// <returns>True if we joined or created a game and started successfully.</returns>
         public async Task<bool> PlayQuickJoinOrCreateAsync()
@@ -217,12 +230,14 @@ namespace TitanOrbit.Networking
             }
             try
             {
-                await EnsureUnityServicesInitializedAsync();
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return TryStartLocalHost();
+
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
                 if (transport == null)
                 {
                     Debug.LogError("UnityTransport not found on NetworkManager.");
-                    return false;
+                    return TryStartLocalHost();
                 }
 
                 Lobby joinedLobby = null;
@@ -268,7 +283,7 @@ namespace TitanOrbit.Networking
                 if (!NetworkManager.Singleton.StartHost())
                 {
                     Debug.LogError("StartHost failed after creating Lobby.");
-                    return false;
+                    return TryStartLocalHost();
                 }
                 nextLobbyHeartbeatTime = Time.realtimeSinceStartup + 15f;
                 Debug.Log("Created new game. Others can join via Play.");
@@ -276,9 +291,24 @@ namespace TitanOrbit.Networking
             }
             catch (System.Exception e)
             {
-                Debug.LogException(e);
-                return false;
+                Debug.LogWarning("[NetworkGameManager] Play (Lobby/Relay) failed. Starting as local host so you can still play. " + e.Message);
+                return TryStartLocalHost();
             }
+        }
+
+        /// <summary>Start as local host (no Relay/Lobby). Used when Unity Services fail so the desktop build still runs.</summary>
+        private bool TryStartLocalHost()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                return false;
+            EnsurePlayerPrefabSet();
+            ApplyServerPort();
+            if (NetworkManager.Singleton.StartHost())
+            {
+                Debug.Log("Started as local host (no online services). Game is playable.");
+                return true;
+            }
+            return false;
         }
 
         private void Update()

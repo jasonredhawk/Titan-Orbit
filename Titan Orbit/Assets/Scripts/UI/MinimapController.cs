@@ -960,6 +960,10 @@ namespace TitanOrbit.UI
                 if (Mathf.Abs(newSize - displaySize) > 1f)
                 {
                     displaySize = newSize;
+                    // Regenerate circular sprites at the new resolution so the minimap stays crisp when resized/expanded.
+                    SetupCircularBackground();
+                    SetupCircularBorder();
+                    SetupMask();
                 }
             }
 
@@ -1397,6 +1401,8 @@ namespace TitanOrbit.UI
             // The minimap shows minimapRadius * 2 world units across displaySize pixels
             // So 1 world unit = displaySize / (minimapRadius * 2) pixels
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);
+            // Asteroid blips are static: create them once (per cache refresh) and then only move them using the generic blip positioning above.
+            EnsureAsteroidBlips(worldToMinimapScale);
             
             foreach (var p in cachedPlanets)
             {
@@ -1499,41 +1505,7 @@ namespace TitanOrbit.UI
                     }
                 }
             }
-
-            int asteroidIdx = 0;
-            int maxAsteroids = isExpanded ? int.MaxValue : MaxAsteroidBlips;
-            var asteroidDistances = new List<(Asteroid a, float dist)>(cachedAsteroids.Length);
-            foreach (var a in cachedAsteroids)
-            {
-                if (a == null || a.IsDestroyed) continue;
-                GetToroidalDelta(playerPos, a.transform.position, out float dx, out float dz);
-                float d = Mathf.Sqrt(dx * dx + dz * dz);
-                asteroidDistances.Add((a, d));
-            }
-            asteroidDistances.Sort((x, y) => x.dist.CompareTo(y.dist));
-            foreach (var pair in asteroidDistances)
-            {
-                var a = pair.a;
-                if (asteroidIdx >= maxAsteroids)
-                {
-                    if (blips.TryGetValue(a.transform, out var hideRt) && hideRt != null)
-                        hideRt.gameObject.SetActive(false);
-                    continue;
-                }
-                asteroidIdx++;
-                // Match blip size to world size: same mapping as planets/home (world units → pixels)
-                float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
-                float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
-                if (blips.ContainsKey(a.transform))
-                {
-                    UpdateBlip(a.transform, asteroidColor, asteroidBlipSize);
-                }
-                else
-                {
-                    EnsureBlip(a.transform, () => CreateBlip(asteroidColor, asteroidBlipSize, BlipType.Irregular));
-                }
-            }
-            
+ 
             // Update minimap markers
             var allMarkers = cachedMarkers;
             
@@ -1808,6 +1780,41 @@ namespace TitanOrbit.UI
                         }
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Ensure asteroid blips exist and have their static visual state.
+        /// Once created, they are only repositioned by the generic blip loop using toroidal math.
+        /// </summary>
+        private void EnsureAsteroidBlips(float worldToMinimapScale)
+        {
+            if (cachedAsteroids == null || cachedAsteroids.Length == 0)
+                return;
+
+            int maxAsteroids = isExpanded ? int.MaxValue : MaxAsteroidBlips;
+            int created = 0;
+
+            foreach (var a in cachedAsteroids)
+            {
+                if (a == null || a.IsDestroyed)
+                    continue;
+
+                // Respect the same cap as before, but only when initially creating blips.
+                if (created >= maxAsteroids)
+                    break;
+
+                if (blips.ContainsKey(a.transform))
+                    continue;
+
+                created++;
+
+                // Match blip size to world size: same mapping as planets/home (world units → pixels),
+                // but computed once per asteroid instead of every blip update.
+                float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
+                float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
+
+                EnsureBlip(a.transform, () => CreateBlip(asteroidColor, asteroidBlipSize, BlipType.Irregular));
             }
         }
 

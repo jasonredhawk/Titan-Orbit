@@ -59,9 +59,7 @@ namespace TitanOrbit.UI
         {
             try
             {
-                string dir = Path.Combine(Application.dataPath, "StreamingAssets");
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                string path = Path.Combine(dir, "debug-441e0e.log");
+                string path = Path.Combine(Application.persistentDataPath, "debug-441e0e.log");
                 string escaped = message.Replace("\\", "\\\\").Replace("\"", "\\\"");
                 string line = "{\"sessionId\":\"441e0e\",\"timestamp\":" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + ",\"location\":\"" + location + "\",\"message\":\"" + escaped + "\",\"data\":" + (string.IsNullOrEmpty(dataJson) ? "{}" : dataJson) + ",\"hypothesisId\":\"" + hypothesisId + "\"}\n";
                 File.AppendAllText(path, line);

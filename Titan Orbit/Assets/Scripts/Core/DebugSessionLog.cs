@@ -7,7 +7,7 @@ namespace TitanOrbit.Core
     /// <summary>Debug session instrumentation: appends NDJSON to debug-bac766.log. Remove after debugging.</summary>
     public static class DebugSessionLog
     {
-        private static readonly string LogPath = Path.Combine(Application.dataPath, "..", "debug-bac766.log");
+        private static string LogPath => Path.Combine(Application.persistentDataPath, "debug-bac766.log");
 
         public static void Write(string location, string message, string dataJson, string hypothesisId)
         {

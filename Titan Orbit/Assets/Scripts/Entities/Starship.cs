@@ -453,35 +453,19 @@ namespace TitanOrbit.Entities
         }
         public float CurrentGems => currentGems.Value;
         public bool IsDead => isDead.Value;
-        /// <summary>Max gem capacity. Base = 20 * Level^2; level is max(shipLevel, chassis tier) so purchasing a higher-tier ship increases capacity. Plus card bonuses and attribute upgrades.</summary>
+        /// <summary>Max gem capacity. Base comes from ShipFamilyDefinition (via chassis components), plus card bonuses and attribute upgrades.</summary>
         public float GemCapacity
         {
             get
             {
-                float baseWithCards = 20f * EffectiveLevelForCapacity * EffectiveLevelForCapacity + GetCardGemCapacityAdd();
+                float baseWithCards = gemCapacity + GetCardGemCapacityAdd();
                 float attrScale = 1f + attrGemCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return baseWithCards * attrScale;
+                return Mathf.Max(0f, baseWithCards * attrScale);
             }
         }
 
-        /// <summary>Base gem capacity without card bonuses (20 * Level^2). Used for auto-level check when planet levels up.</summary>
-        public float BaseGemCapacity => 20f * ShipLevel * ShipLevel;
-
-        /// <summary>Level used for capacity and scale: max(ship level from upgrades, chassis tier from purchased ship). So buying a Level 2 chassis gives 20*2^2 = 80 capacity.</summary>
-        public int EffectiveLevelForCapacity
-        {
-            get
-            {
-                int chassisTier = 1;
-                if (CardShopSystem.Instance != null && currentChassisIndex.Value >= 0)
-                {
-                    var chassis = CardShopSystem.Instance.GetChassisByIndex(currentChassisIndex.Value);
-                    if (chassis != null && chassis.minHomePlanetLevel > 0)
-                        chassisTier = chassis.minHomePlanetLevel;
-                }
-                return Mathf.Max(shipLevel, chassisTier);
-            }
-        }
+        /// <summary>Base gem capacity without card bonuses. Comes from ShipFamilyDefinition (via chassis components).</summary>
+        public float BaseGemCapacity => Mathf.Max(0f, gemCapacity);
         public float CurrentPeople => currentPeople.Value;
         /// <summary>Server-only: release people-in-transit when a load projectile delivers. Call from PeopleTransportProjectile.</summary>
         public void ReleasePeopleInTransit(float amount)
@@ -544,22 +528,21 @@ namespace TitanOrbit.Entities
         public string CurrentChassisId => currentChassisId.Value.ToString();
 
         /// <summary>Attribute upgrade levels for Ship Attribute Upgrade HUD.
-        /// Index: 0=FirePower, 1=FireRate, 2=BulletSpeed, 3=MaxHealth, 4=HealthRegen, 5=EnergyCapacity, 6=EnergyRegen, 7=MovementSpeed, 8=RotationSpeed, 9=GemCapacity, 10=PeopleCapacity.</summary>
+        /// Index: 0=FirePower, 1=BulletSpeed, 2=MaxHealth, 3=HealthRegen, 4=EnergyCapacity, 5=EnergyRegen, 6=MovementSpeed, 7=RotationSpeed, 8=GemCapacity, 9=PeopleCapacity.</summary>
         public int GetAttributeLevel(int index)
         {
             return index switch
             {
                 0 => attrFirePower.Value,
-                1 => attrFireRate.Value,
-                2 => attrBulletSpeed.Value,
-                3 => attrMaxHealth.Value,
-                4 => attrHealthRegen.Value,
-                5 => attrEnergyCapacity.Value,
-                6 => attrEnergyRegen.Value,
-                7 => attrMovementSpeed.Value,
-                8 => attrRotationSpeed.Value,
-                9 => attrGemCapacity.Value,
-                10 => attrPeopleCapacity.Value,
+                1 => attrBulletSpeed.Value,
+                2 => attrMaxHealth.Value,
+                3 => attrHealthRegen.Value,
+                4 => attrEnergyCapacity.Value,
+                5 => attrEnergyRegen.Value,
+                6 => attrMovementSpeed.Value,
+                7 => attrRotationSpeed.Value,
+                8 => attrGemCapacity.Value,
+                9 => attrPeopleCapacity.Value,
                 _ => 0
             };
         }
@@ -1739,12 +1722,16 @@ namespace TitanOrbit.Entities
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
+            float recoilMagnitudeForSalvo = 0f;
 
-            // Fire bullets (Weapon only): small projectiles, low energy per shot
+            // Fire bullets (Weapon only): small projectiles, low energy per shot. Only fire from actual weapon components (bulletFirePoints); never fire more shots than we have GameObjects.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            if (bulletWc.cannons != null)
+            int maxCannons = bulletFirePoints != null && bulletFirePoints.Count > 0
+                ? bulletFirePoints.Count
+                : (bulletWc?.cannons != null ? bulletWc.cannons.Count : 0);
+            if (bulletWc.cannons != null && maxCannons > 0)
             {
-                for (int i = 0; i < bulletWc.cannons.Count; i++)
+                for (int i = 0; i < bulletWc.cannons.Count && i < maxCannons; i++)
                 {
                     var c = bulletWc.cannons[i];
                     if (currentEnergy.Value < c.energyCostPerShot) continue;
@@ -1770,6 +1757,11 @@ namespace TitanOrbit.Entities
                     float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
                     if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
                         numShots = Mathf.Max(1, c.spreadProjectileCount);
+                    float damage = c.damagePerBullet * DamageMultiplier;
+                    float speed = c.bulletSpeed * SpeedMultiplier;
+                    float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
+                    float recoilPerShot = recoilStrength * scale * (0.08f + damage / 400f);
+                    if (recoilMagnitudeForSalvo <= 0f) recoilMagnitudeForSalvo = recoilPerShot;
                     for (int s = 0; s < numShots; s++)
                     {
                         Vector3 dir = baseDir;
@@ -1784,18 +1776,14 @@ namespace TitanOrbit.Entities
                             float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
                             dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
                         }
-                        float damage = c.damagePerBullet * DamageMultiplier;
-                        float speed = c.bulletSpeed * SpeedMultiplier;
-                        float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
-                        if (rb != null)
-                        {
-                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
-                        }
                     }
                 }
             }
+
+            // Single recoil impulse per trigger pull (ship backward) so more guns don't multiply ship speed.
+            if (rb != null && recoilMagnitudeForSalvo > 0f)
+                rb.AddForce(-forward * recoilMagnitudeForSalvo, ForceMode.Impulse);
 
             FireClientRpc(bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>());
         }
@@ -2546,16 +2534,15 @@ namespace TitanOrbit.Entities
             switch (attributeIndex)
             {
                 case 0: attrFirePower.Value++; break;
-                case 1: attrFireRate.Value++; break;
-                case 2: attrBulletSpeed.Value++; break;
-                case 3: attrMaxHealth.Value++; break;
-                case 4: attrHealthRegen.Value++; break;
-                case 5: attrEnergyCapacity.Value++; break;
-                case 6: attrEnergyRegen.Value++; break;
-                case 7: attrMovementSpeed.Value++; break;
-                case 8: attrRotationSpeed.Value++; break;
-                case 9: attrGemCapacity.Value++; break;
-                case 10: attrPeopleCapacity.Value++; break;
+                case 1: attrBulletSpeed.Value++; break;
+                case 2: attrMaxHealth.Value++; break;
+                case 3: attrHealthRegen.Value++; break;
+                case 4: attrEnergyCapacity.Value++; break;
+                case 5: attrEnergyRegen.Value++; break;
+                case 6: attrMovementSpeed.Value++; break;
+                case 7: attrRotationSpeed.Value++; break;
+                case 8: attrGemCapacity.Value++; break;
+                case 9: attrPeopleCapacity.Value++; break;
             }
         }
 
@@ -2868,43 +2855,6 @@ namespace TitanOrbit.Entities
         }
 
         private const string CHASSIS_FAMILY_PREFIX = "AstroEagle";
-        /// <summary>Engines: top speed and acceleration. Thrusters: acceleration and turning speed.</summary>
-        private static readonly float PER_ENGINE_MAX_SPEED = 3f;
-        private static readonly float PER_ENGINE_THRUST = 55f;
-        private static readonly float PER_THRUSTER_THRUST = 55f;
-        private static readonly float PER_ENGINE_MASS = 1.6f;
-        private static readonly float PER_THRUSTER_MASS = 0.6f;
-        private static readonly float PER_WING_MASS = 0.8f;
-        private static readonly float PER_COCKPIT_MASS = 1.2f;
-        private static readonly float PER_PART_MASS = 1f;
-        private static readonly float PER_TAIL_MASS = 0.4f;
-        private static readonly float PER_FIN_MASS = 0.4f;
-        private static readonly float PER_WEAPON_MASS = 0.6f;
-        private static readonly float PER_THRUSTER_ROTATION = 45f;
-        private static readonly float PER_TAIL_ROTATION = 40f;
-        private static readonly float PER_WING_ROTATION = 35f;
-        private static readonly float PER_FIN_ROTATION = 25f;
-        private static readonly float PER_WING_GEM_CAPACITY = 25f;
-        private static readonly float PER_WING_HEALTH_REGEN = 1.5f;
-        private static readonly float PER_COCKPIT_PEOPLE = 5f;
-        private static readonly float PER_COCKPIT_MAX_HEALTH = 15f;
-        private static readonly float PER_COCKPIT_ENERGY_CAPACITY = 50f;
-        private static readonly float PER_COCKPIT_ENERGY_REGEN = 5f;
-        private static readonly float PER_PART_PEOPLE = 2f;
-        private static readonly float PER_PART_MAX_HEALTH = 35f;
-        private static readonly float PER_PART_HEALTH_REGEN = 1.5f;
-        private static readonly float PER_PART_GEM_CAPACITY = 25f;
-        private static readonly float MIN_ROTATION_SPEED = 60f;
-        private static readonly float MIN_MAX_HEALTH = 20f;
-        private static readonly float MIN_HEALTH_REGEN = 1f;
-        private static readonly float MIN_GEM_CAPACITY = 20f;
-        private static readonly float MIN_PEOPLE_CAPACITY = 1f;
-        private static readonly float MIN_ENERGY_CAPACITY = 10f;
-        private static readonly float MIN_ENERGY_REGEN = 0.5f;
-        /// <summary>Bullet energy: damage and energy cost scale per Weapon (proportionate).</summary>
-        private static readonly float PER_WEAPON_DAMAGE_SCALE = 0.15f;
-        private static readonly float PER_WEAPON_ENERGY_COST_SCALE = 0.25f;
-        private static readonly float PER_WEAPON_BULLET_SPEED_SCALE = 0.08f;
         private static readonly float MUZZLE_BASE_SIZE = 0.18f;
         private static readonly float MUZZLE_SIZE_PER_ENERGY = 0.04f;
 
@@ -2926,55 +2876,63 @@ namespace TitanOrbit.Entities
                 ShipComponentAbilityStats s = previewStats.Value;
                 float perLvl = Mathf.Max(0, level - 1);
 
-                maxHealth = Mathf.Max(MIN_MAX_HEALTH, s.healthCap + s.healthCapPerLevel * perLvl);
-                healthRegenRate = Mathf.Max(MIN_HEALTH_REGEN, s.healthRegen + s.healthRegenPerLevel * perLvl);
-                energyCapacity = Mathf.Max(MIN_ENERGY_CAPACITY, s.energyCap + s.energyCapPerLevel * perLvl);
-                energyRegenRate = Mathf.Max(MIN_ENERGY_REGEN, s.energyRegen + s.energyRegenPerLevel * perLvl);
-                rotationSpeed = Mathf.Max(MIN_ROTATION_SPEED, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
-                gemCapacity = Mathf.Max(MIN_GEM_CAPACITY, s.maxGems + s.maxGemsPerLevel * perLvl);
-                peopleCapacity = Mathf.Max(MIN_PEOPLE_CAPACITY, s.maxPeople + s.maxPeoplePerLevel * perLvl);
+                maxHealth = Mathf.Max(1f, s.healthCap + s.healthCapPerLevel * perLvl);
+                healthRegenRate = Mathf.Max(0f, s.healthRegen + s.healthRegenPerLevel * perLvl);
+                energyCapacity = Mathf.Max(1f, s.energyCap + s.energyCapPerLevel * perLvl);
+                energyRegenRate = Mathf.Max(0f, s.energyRegen + s.energyRegenPerLevel * perLvl);
+                rotationSpeed = Mathf.Max(1f, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
+                gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
+                peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
 
                 float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
-                // Match legacy scale: PER_ENGINE_THRUST=55, PER_ENGINE_MAX_SPEED=3 per "engine scale". Definition moveSpeed ~8 per engine.
-                componentEngineThrust = moveVal > 0f ? Mathf.Max(2f, moveVal * (PER_ENGINE_THRUST / 8f)) : 0f;
-                componentEngineMaxSpeed = moveVal > 0f ? Mathf.Max(2f, moveVal * (PER_ENGINE_MAX_SPEED / 8f)) : 0f;
+                componentEngineThrust = Mathf.Max(0f, moveVal);
+                componentEngineMaxSpeed = Mathf.Max(0.1f, moveVal);
 
-                componentMass = stats.engineScaleTotal * PER_ENGINE_MASS + stats.thrusterScaleTotal * PER_THRUSTER_MASS
-                    + stats.wingScaleTotal * PER_WING_MASS + stats.cockpitScaleTotal * PER_COCKPIT_MASS
-                    + stats.partScaleTotal * PER_PART_MASS + stats.tailScaleTotal * PER_TAIL_MASS
-                    + stats.finScaleTotal * PER_FIN_MASS + weaponScaleTotal * PER_WEAPON_MASS;
+                componentMass =
+                    stats.engineScaleTotal +
+                    stats.thrusterScaleTotal +
+                    stats.wingScaleTotal +
+                    stats.cockpitScaleTotal +
+                    stats.partScaleTotal +
+                    stats.tailScaleTotal +
+                    stats.finScaleTotal +
+                    weaponScaleTotal;
                 componentMass = Mathf.Max(0.5f, componentMass);
             }
             else
             {
-            // Stats derived solely from components (no ship level scaling)
-            float thrustFromEngines = stats.engineScaleTotal * PER_ENGINE_THRUST;
-            float thrustFromThrusters = stats.thrusterScaleTotal * PER_THRUSTER_THRUST;
-            componentEngineThrust = (thrustFromEngines + thrustFromThrusters) > 0f ? Mathf.Max(2f, thrustFromEngines + thrustFromThrusters) : 0f;
-            componentEngineMaxSpeed = stats.engineScaleTotal > 0f ? Mathf.Max(2f, stats.engineScaleTotal * PER_ENGINE_MAX_SPEED) : 0f;
+                // Fallback when ShipFamilyDefinition stats are not available: derive rough values from component scales only.
+                float thrustFromEngines = stats.engineScaleTotal;
+                float thrustFromThrusters = stats.thrusterScaleTotal;
+                componentEngineThrust = Mathf.Max(0f, thrustFromEngines + thrustFromThrusters);
+                componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleTotal);
 
-            componentMass = stats.engineScaleTotal * PER_ENGINE_MASS + stats.thrusterScaleTotal * PER_THRUSTER_MASS
-                + stats.wingScaleTotal * PER_WING_MASS + stats.cockpitScaleTotal * PER_COCKPIT_MASS
-                + stats.partScaleTotal * PER_PART_MASS + stats.tailScaleTotal * PER_TAIL_MASS
-                + stats.finScaleTotal * PER_FIN_MASS + weaponScaleTotal * PER_WEAPON_MASS;
-            componentMass = Mathf.Max(0.5f, componentMass);
+                componentMass =
+                    stats.engineScaleTotal +
+                    stats.thrusterScaleTotal +
+                    stats.wingScaleTotal +
+                    stats.cockpitScaleTotal +
+                    stats.partScaleTotal +
+                    stats.tailScaleTotal +
+                    stats.finScaleTotal +
+                    weaponScaleTotal;
+                componentMass = Mathf.Max(0.5f, componentMass);
 
-            float turnVal = stats.thrusterScaleTotal * PER_THRUSTER_ROTATION + stats.tailScaleTotal * PER_TAIL_ROTATION
-                + stats.wingScaleTotal * PER_WING_ROTATION + stats.finScaleTotal * PER_FIN_ROTATION;
-            float healthVal = stats.cockpitScaleTotal * PER_COCKPIT_MAX_HEALTH + stats.partScaleTotal * PER_PART_MAX_HEALTH;
-            float healthRegenVal = stats.wingScaleTotal * PER_WING_HEALTH_REGEN + stats.partScaleTotal * PER_PART_HEALTH_REGEN;
-            float gemVal = stats.wingScaleTotal * PER_WING_GEM_CAPACITY + stats.partScaleTotal * PER_PART_GEM_CAPACITY;
-            float peopleVal = stats.cockpitScaleTotal * PER_COCKPIT_PEOPLE + stats.partScaleTotal * PER_PART_PEOPLE;
-            float energyCapVal = stats.cockpitCannonScaleTotal * PER_COCKPIT_ENERGY_CAPACITY;
-            float energyRegenVal = stats.cockpitCannonScaleTotal * PER_COCKPIT_ENERGY_REGEN;
+                float turnVal = stats.thrusterScaleTotal + stats.tailScaleTotal + stats.wingScaleTotal + stats.finScaleTotal;
+                float healthVal = stats.cockpitScaleTotal + stats.partScaleTotal;
+                float healthRegenVal = stats.wingScaleTotal + stats.partScaleTotal;
+                float gemVal = stats.wingScaleTotal + stats.partScaleTotal;
+                float peopleVal = stats.cockpitScaleTotal + stats.partScaleTotal;
+                float energyCapVal = stats.cockpitCannonScaleTotal;
+                float energyRegenVal = stats.cockpitCannonScaleTotal;
 
-            rotationSpeed = Mathf.Max(MIN_ROTATION_SPEED, turnVal);
-            maxHealth = Mathf.Max(MIN_MAX_HEALTH, healthVal);
-            healthRegenRate = Mathf.Max(MIN_HEALTH_REGEN, healthRegenVal);
-            gemCapacity = Mathf.Max(MIN_GEM_CAPACITY, gemVal);
-            peopleCapacity = Mathf.Max(MIN_PEOPLE_CAPACITY, peopleVal);
-            energyCapacity = Mathf.Max(MIN_ENERGY_CAPACITY, energyCapVal);
-            energyRegenRate = Mathf.Max(MIN_ENERGY_REGEN, energyRegenVal);
+                rotationSpeed = Mathf.Max(1f, turnVal);
+                maxHealth = Mathf.Max(1f, healthVal);
+                healthRegenRate = Mathf.Max(0f, healthRegenVal);
+                gemCapacity = Mathf.Max(0f, gemVal);
+                peopleCapacity = Mathf.Max(0f, peopleVal);
+                energyCapacity = Mathf.Max(1f, energyCapVal);
+                energyRegenRate = Mathf.Max(0f, energyRegenVal);
             }
 
             // Clear component scale caches for attribute-based scaling
@@ -3032,9 +2990,9 @@ namespace TitanOrbit.Entities
             // Bullets (Weapon only): one cannon per component with "Weapon" in the name; fire from each weapon position.
             int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
             if (weaponScaleTotal <= 0f && weaponCount > 0) weaponScaleTotal = weaponCount;
-            float bulletEnergyScale = 1f + weaponScaleTotal * PER_WEAPON_ENERGY_COST_SCALE;
-            float bulletDamageScale = 1f + weaponScaleTotal * PER_WEAPON_DAMAGE_SCALE;
-            float bulletSpeedScale = 1f + weaponScaleTotal * PER_WEAPON_BULLET_SPEED_SCALE;
+            float bulletEnergyScale = 1f;
+            float bulletDamageScale = 1f;
+            float bulletSpeedScale = 1f;
 
             if (weaponCount > 0)
             {
