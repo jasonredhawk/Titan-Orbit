@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Entities;
@@ -14,6 +15,8 @@ namespace TitanOrbit.Systems
 
         [Header("Combat Settings")]
         [SerializeField] private GameObject bulletPrefab;
+        [Tooltip("All bullet prefabs that can be used by ships (e.g. from ShipFamilyDefinition). Add your default bullet and any Archanor/other options here. Same list and order on all builds for networking. Prefabs must have Bullet, Rigidbody, and NetworkObject.")]
+        [SerializeField] private List<GameObject> bulletPrefabBank = new List<GameObject>();
         [SerializeField] private Transform bulletParent;
         [SerializeField] private GameObject rocketPrefab;
         [SerializeField] private GameObject minePrefab;
@@ -37,10 +40,30 @@ namespace TitanOrbit.Systems
                 bulletPrefab = Resources.Load<GameObject>("Bullet");
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default)
+        /// <summary>Number of entries in the bullet prefab bank. ShipFamilyDefinition indices are validated against this.</summary>
+        public int BulletPrefabBankCount => bulletPrefabBank != null ? bulletPrefabBank.Count : 0;
+
+        /// <summary>Returns the index of the given prefab in the bullet prefab bank, or -1 if not found. Used so ships can pass an index over the network.</summary>
+        public int GetBulletPrefabIndex(GameObject prefab)
         {
-            if (bulletPrefab == null)
+            if (prefab == null || bulletPrefabBank == null) return -1;
+            for (int i = 0; i < bulletPrefabBank.Count; i++)
+            {
+                if (bulletPrefabBank[i] == prefab) return i;
+            }
+            return -1;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
+        {
+            GameObject prefabToUse = null;
+            if (bulletPrefabIndex >= 0 && bulletPrefabBank != null && bulletPrefabIndex < bulletPrefabBank.Count && bulletPrefabBank[bulletPrefabIndex] != null)
+                prefabToUse = bulletPrefabBank[bulletPrefabIndex];
+            if (prefabToUse == null)
+                prefabToUse = bulletPrefab;
+
+            if (prefabToUse == null)
             {
                 if (!loggedBulletPrefabNull)
                 {
@@ -72,12 +95,30 @@ namespace TitanOrbit.Systems
             float finalSpeed = speed * bulletSpeedMultiplier;
 
             Quaternion lookRot = Quaternion.LookRotation(dir, Vector3.up);
-            GameObject bulletObj = Instantiate(bulletPrefab, position, lookRot);
+            GameObject bulletObj = Instantiate(prefabToUse, position, lookRot);
             Bullet bullet = bulletObj.GetComponent<Bullet>();
             Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
 
-            if (bullet != null)
-                bullet.Initialize(finalSpeed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false);
+            // If bank prefab has no Bullet component, fall back to default so bullets still fire
+            if (bullet == null)
+            {
+                Object.Destroy(bulletObj);
+                if (prefabToUse != bulletPrefab && bulletPrefab != null)
+                {
+                    Debug.LogWarning($"CombatSystem: Prefab '{prefabToUse.name}' has no Bullet component. Using default bullet. Add Bullet, Rigidbody, NetworkObject, and Collider to bank prefabs for damage.");
+                    prefabToUse = bulletPrefab;
+                    bulletObj = Instantiate(prefabToUse, position, lookRot);
+                    bullet = bulletObj.GetComponent<Bullet>();
+                    bulletRb = bulletObj.GetComponent<Rigidbody>();
+                }
+                if (bullet == null) return;
+            }
+            if (bullet != null && bulletObj.GetComponent<Collider>() == null && bulletObj.GetComponentInChildren<Collider>() == null)
+            {
+                Debug.LogWarning($"CombatSystem: Prefab '{prefabToUse.name}' has no Collider. Bullets will not detect hits. Add a Collider to the Bullet prefab.");
+            }
+
+            bullet.Initialize(finalSpeed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false);
 
             if (bulletRb != null)
             {

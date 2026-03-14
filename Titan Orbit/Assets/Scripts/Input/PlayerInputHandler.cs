@@ -17,6 +17,7 @@ namespace TitanOrbit.Input
         private InputAction lookAction;
         private InputAction rocketAction;
         private InputAction mineAction;
+        private InputAction cycleBulletAction;
 
         // Input values
         private bool shootPressed;
@@ -29,6 +30,23 @@ namespace TitanOrbit.Input
         public bool ShootPressed => shootPressed;
         public bool RocketPressed => rocketPressed;
         public bool MinePressed => minePressed;
+        /// <summary>True the frame the player presses B (or CycleBullet action) to cycle bullet prefab.</summary>
+        public bool CycleBulletPressed
+        {
+            get
+            {
+                if (cycleBulletAction != null && cycleBulletAction.WasPressedThisFrame()) return true;
+                var k = Keyboard.current;
+                if (k == null)
+                {
+                    foreach (var d in InputSystem.devices)
+                    {
+                        if (d is Keyboard kb) { k = kb; break; }
+                    }
+                }
+                return k != null && k.bKey.wasPressedThisFrame;
+            }
+        }
         /// <summary>True when right mouse is held - move in facing direction</summary>
         public bool MoveForwardPressed => moveForwardPressed;
         /// <summary>True when space brakes are on (ship slows when not holding move). False = float endlessly. Toggle with CTRL.</summary>
@@ -48,6 +66,7 @@ namespace TitanOrbit.Input
                     lookAction = gameplayMap.FindAction("Look");
                     rocketAction = gameplayMap.FindAction("FireRocket");
                     mineAction = gameplayMap.FindAction("PlaceMine");
+                    cycleBulletAction = gameplayMap.FindAction("CycleBullet");
                 }
             }
         }
@@ -59,6 +78,7 @@ namespace TitanOrbit.Input
             if (lookAction != null) lookAction.Enable();
             if (rocketAction != null) rocketAction.Enable();
             if (mineAction != null) mineAction.Enable();
+            if (cycleBulletAction != null) cycleBulletAction.Enable();
         }
 
         private void OnDisable()
@@ -68,6 +88,7 @@ namespace TitanOrbit.Input
             if (lookAction != null) lookAction.Disable();
             if (rocketAction != null) rocketAction.Disable();
             if (mineAction != null) mineAction.Disable();
+            if (cycleBulletAction != null) cycleBulletAction.Disable();
         }
 
         private void Update()

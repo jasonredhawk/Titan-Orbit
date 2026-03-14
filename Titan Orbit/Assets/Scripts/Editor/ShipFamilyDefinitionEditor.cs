@@ -25,6 +25,10 @@ namespace TitanOrbit.Editor
                 return;
 
             EditorGUILayout.Space();
+            EditorGUILayout.HelpBox(
+                "Bullet Prefab Index: index into CombatSystem's Bullet Prefab Bank (0 = first). The list of bullets lives only on CombatSystem; change the index here to pick which bullet this family uses.",
+                MessageType.None);
+            EditorGUILayout.Space();
             EditorGUILayout.LabelField("Auto Populate From Prefab Folder", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Scans all prefabs in a folder for child names like 'AstroEagle_Engine_2'. " +

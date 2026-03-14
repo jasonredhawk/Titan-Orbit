@@ -70,6 +70,10 @@ namespace TitanOrbit.Entities
 
         /// <summary>Bullet fire points (Weapon components only; Cockpit cannons removed).</summary>
         private List<Transform> bulletFirePoints = new List<Transform>();
+        /// <summary>CombatSystem bullet prefab bank index for this ship (from ShipFamilyDefinition). -1 = use CombatSystem default.</summary>
+        private int bulletPrefabBankIndex = -1;
+        /// <summary>Runtime bullet index (synced). B key cycles this. When >= 0 use instead of bulletPrefabBankIndex when firing.</summary>
+        private NetworkVariable<int> runtimeBulletPrefabIndex = new NetworkVariable<int>(-1);
         /// <summary>Muzzle particle systems at each bullet (Weapon) position.</summary>
         private List<ParticleSystem> bulletMuzzleParticleSystems = new List<ParticleSystem>();
 
@@ -1431,6 +1435,16 @@ namespace TitanOrbit.Entities
                     lastMineTime = Time.time;
                 }
             }
+
+            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler or Keyboard)
+            bool cycleBulletPressed = (inputHandler is TitanOrbit.Input.PlayerInputHandler pih && pih.CycleBulletPressed)
+                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame);
+            if (IsOwner && !IsPointerOverUI() && !isDead.Value &&
+                Systems.CombatSystem.Instance != null && Systems.CombatSystem.Instance.BulletPrefabBankCount >= 1 &&
+                cycleBulletPressed)
+            {
+                CycleBulletPrefabServerRpc();
+            }
         }
 
         /// <summary>True only when the pointer is over a UI element (Canvas/Graphic). Ignores 3D colliders so clicking the ship or world doesn't block shooting.</summary>
@@ -1707,6 +1721,17 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc]
+        private void CycleBulletPrefabServerRpc()
+        {
+            if (CombatSystem.Instance == null) return;
+            int count = CombatSystem.Instance.BulletPrefabBankCount;
+            if (count < 1) return;
+            int current = runtimeBulletPrefabIndex.Value;
+            int next = current < 0 ? 0 : (current + 1) % count;
+            runtimeBulletPrefabIndex.Value = next;
+        }
+
+        [ServerRpc]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
         {
             if (CombatSystem.Instance == null) return;
@@ -1773,7 +1798,8 @@ namespace TitanOrbit.Entities
                         float damage = c.damagePerBullet * DamageMultiplier;
                         float speed = c.bulletSpeed * SpeedMultiplier;
                         float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
-                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
+                        int bulletIdx = runtimeBulletPrefabIndex.Value >= 0 ? runtimeBulletPrefabIndex.Value : bulletPrefabBankIndex;
+                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                         if (rb != null)
                         {
                             float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
@@ -2957,6 +2983,7 @@ namespace TitanOrbit.Entities
 
             // Clear previous bullet state (from previous prefab). Cannons removed; only Weapon bullets.
             bulletFirePoints.Clear();
+            bulletPrefabBankIndex = -1;
             foreach (var ps in bulletMuzzleParticleSystems)
             {
                 if (ps != null && ps.gameObject != null)
@@ -3089,6 +3116,7 @@ namespace TitanOrbit.Entities
                     Transform pt = stats.weaponTransforms[i];
                     if (pt == null) pt = transform;
                     bulletFirePoints.Add(pt);
+
                     float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
                     float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
                     ParticleSystem muzzle = CreateMuzzleParticleSystem(pt, muzzleScale);
@@ -3104,6 +3132,21 @@ namespace TitanOrbit.Entities
                         weaponBaseScales.Add(wt.localScale);
                         weaponBasePositions.Add(wt.localPosition);
                     }
+                }
+                // Bullet prefab index from family definition (index into CombatSystem's Bullet Prefab Bank)
+                if (previewFamilyDef != null && Systems.CombatSystem.Instance != null)
+                {
+                    int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
+                    int idx = previewFamilyDef.bulletPrefabIndex;
+                    bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : -1;
+                    if (IsServer)
+                        runtimeBulletPrefabIndex.Value = bulletPrefabBankIndex;
+                }
+                else
+                {
+                    bulletPrefabBankIndex = -1;
+                    if (IsServer)
+                        runtimeBulletPrefabIndex.Value = -1;
                 }
                 bulletConfig = bc;
             }

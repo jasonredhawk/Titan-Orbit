@@ -237,6 +237,10 @@ namespace TitanOrbit.Data
         [Tooltip("Ship family identifier prefix used in child names. Example: 'AstroEagle' for objects named 'AstroEagle_Cockpit'.")]
         public string familyId;
 
+        [Header("Bullets")]
+        [Tooltip("Index into CombatSystem's Bullet Prefab Bank. 0 = first bullet in that list. Negative or out of range = use CombatSystem default bullet.")]
+        public int bulletPrefabIndex = 0;
+
         [Header("Components")]
 
         [Tooltip("All components (cockpit, wings, engines, weapons, etc.) available for this family.")]
@@ -286,6 +290,27 @@ namespace TitanOrbit.Data
             }
 
             return _lookup.TryGetValue(componentId.Trim(), out stats);
+        }
+
+        /// <summary>
+        /// Try to get the full component entry for a given component id (e.g. \"Weapon_1\").
+        /// </summary>
+        public bool TryGetComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
+        {
+            entry = null;
+            if (components == null || string.IsNullOrWhiteSpace(componentId))
+                return false;
+            string id = componentId.Trim();
+            for (int i = 0; i < components.Count; i++)
+            {
+                if (components[i] == null) continue;
+                if (string.Equals(components[i].componentId?.Trim(), id, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry = components[i];
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

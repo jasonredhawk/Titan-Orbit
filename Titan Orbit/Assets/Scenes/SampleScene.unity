@@ -6220,11 +6220,29 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.CombatSystem
   bulletPrefab: {fileID: 5046561962449129338, guid: 72fb936170ac63448903559927fc972e, type: 3}
+  bulletPrefabBank:
+  - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
+  - {fileID: 192132, guid: ca29e8756502ca747a0a65afc990e046, type: 3}
+  - {fileID: 135228, guid: dee5c87301ac7b942b67803932d4780d, type: 3}
+  - {fileID: 122692, guid: ba441e53a9f67e14eabbca1a92d5e05c, type: 3}
+  - {fileID: 153304, guid: 3346fe00bcf1da64b9e0e514f9966acd, type: 3}
+  - {fileID: 199764, guid: a722c1f6fea53614a920ed802bff377d, type: 3}
+  - {fileID: 175706, guid: e2f42f2b1df935941be16423125fdf34, type: 3}
+  - {fileID: 153672, guid: fdbf99d9c38b81041894b86429d929c7, type: 3}
+  - {fileID: 176544, guid: 723ed2ed515a50d4fbb803298c478cc0, type: 3}
+  - {fileID: 199410, guid: b30a102c2b99c10468a416d742ee2cb2, type: 3}
+  - {fileID: 122782, guid: 56eb854aae2c78a4d835d96ca4b84e0e, type: 3}
+  - {fileID: 141064, guid: e47f6515202c70e44b65a5f7a46510ab, type: 3}
+  - {fileID: 133874, guid: 45cde0730473c994887b8a7223513eb4, type: 3}
+  - {fileID: 107984, guid: 1a2aa1e6f6d149249b940a5686f7af4f, type: 3}
+  - {fileID: 184960, guid: ffb63bbad712f5d4da6f0c560b405e34, type: 3}
+  - {fileID: 182656, guid: 0347cb65956b62e47aefcf8493cbe81c, type: 3}
+  - {fileID: 184702, guid: 66d476e7cf14ca846ac69c4a358783d0, type: 3}
   bulletParent: {fileID: 0}
   rocketPrefab: {fileID: 6004000000000003, guid: d4e5f60718293a4b5c6d7e8f01234567, type: 3}
   minePrefab: {fileID: 6005000000000003, guid: e5f60718293a4b5c6d7e8f0123456789, type: 3}
   maxBullets: 200
-  bulletSpeedMultiplier: 0.4
+  bulletSpeedMultiplier: 1
 --- !u!1 &1229198908
 GameObject:
   m_ObjectHideFlags: 0
