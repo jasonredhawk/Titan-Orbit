@@ -98,7 +98,7 @@ namespace TitanOrbit.Data
                         break;
                     case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; stats.partTransforms.Add(child); break;
                     case "Weapon":
-                        // Handled below by name-contains-"Weapon" so any naming convention works
+                        // Handled below so we pick up weapons at any hierarchy level (not just direct children of root).
                         break;
                 }
             }
@@ -110,9 +110,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Recursively find transforms whose name contains "Weapon" (case-insensitive) and add to lists.
-        /// Only adds the top-level weapon component (first "Weapon" in each branch); does not recurse into it,
-        /// so nested nodes like "Weapon_Muzzle" or "Weapon_FX" are not counted as extra guns.
+        /// Recursively find all transforms whose name contains "Weapon" (case-insensitive) and add to lists.
+        /// Supports any hierarchy depth and naming (e.g. Weapon, Weapon_L, AstroEagle_Weapon_2).
         /// </summary>
         private static void CollectWeaponTransformsRecursive(Transform parent, List<Transform> weaponTransforms, List<float> weaponScales)
         {
@@ -125,8 +124,6 @@ namespace TitanOrbit.Data
                 {
                     weaponTransforms.Add(child);
                     weaponScales.Add(GetScaleFactor(child));
-                    // Do not recurse into this weapon: we only want one fire point per weapon component, not per nested "Weapon" name.
-                    continue;
                 }
                 CollectWeaponTransformsRecursive(child, weaponTransforms, weaponScales);
             }

@@ -1722,7 +1722,6 @@ namespace TitanOrbit.Entities
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
-            float recoilMagnitudeForSalvo = 0f;
 
             // Fire bullets (Weapon only): small projectiles, low energy per shot. Only fire from actual weapon components (bulletFirePoints); never fire more shots than we have GameObjects.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
@@ -1757,11 +1756,6 @@ namespace TitanOrbit.Entities
                     float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
                     if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
                         numShots = Mathf.Max(1, c.spreadProjectileCount);
-                    float damage = c.damagePerBullet * DamageMultiplier;
-                    float speed = c.bulletSpeed * SpeedMultiplier;
-                    float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
-                    float recoilPerShot = recoilStrength * scale * (0.08f + damage / 400f);
-                    if (recoilMagnitudeForSalvo <= 0f) recoilMagnitudeForSalvo = recoilPerShot;
                     for (int s = 0; s < numShots; s++)
                     {
                         Vector3 dir = baseDir;
@@ -1776,14 +1770,18 @@ namespace TitanOrbit.Entities
                             float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
                             dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
                         }
+                        float damage = c.damagePerBullet * DamageMultiplier;
+                        float speed = c.bulletSpeed * SpeedMultiplier;
+                        float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
+                        if (rb != null)
+                        {
+                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
+                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                        }
                     }
                 }
             }
-
-            // Single recoil impulse per trigger pull (ship backward) so more guns don't multiply ship speed.
-            if (rb != null && recoilMagnitudeForSalvo > 0f)
-                rb.AddForce(-forward * recoilMagnitudeForSalvo, ForceMode.Impulse);
 
             FireClientRpc(bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>());
         }
