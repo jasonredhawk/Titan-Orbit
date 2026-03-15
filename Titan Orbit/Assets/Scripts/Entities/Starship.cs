@@ -1743,23 +1743,23 @@ namespace TitanOrbit.Entities
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
             else forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward);
-            Vector3 defaultFireOrigin = shipPosition + forward * 2f;
             Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
             var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
-            // Fire bullets (Weapon only): small projectiles, low energy per shot. Only fire from actual weapon components (bulletFirePoints); never fire more shots than we have GameObjects.
+            // Fire bullets (Weapon only): only from actual weapon components (bulletFirePoints). No fallback to ship center — avoids phantom bullet with no muzzle.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int maxCannons = bulletFirePoints != null && bulletFirePoints.Count > 0
-                ? bulletFirePoints.Count
-                : (bulletWc?.cannons != null ? bulletWc.cannons.Count : 0);
+            int maxCannons = (bulletFirePoints != null && bulletFirePoints.Count > 0) ? bulletFirePoints.Count : 0;
             if (bulletWc.cannons != null && maxCannons > 0)
             {
                 for (int i = 0; i < bulletWc.cannons.Count && i < maxCannons; i++)
                 {
                     var c = bulletWc.cannons[i];
+                    // Only fire from actual weapon positions; skip if no fire point (no phantom from ship center).
+                    if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null)
+                        continue;
                     if (currentEnergy.Value < c.energyCostPerShot) continue;
                     float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
                     if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
@@ -1777,14 +1777,7 @@ namespace TitanOrbit.Entities
                             : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
                     bulletPrefabIndicesFired.Add(bulletIdx);
 
-                    Vector3 fireOrigin = defaultFireOrigin;
-                    if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
-                        fireOrigin = bulletFirePoints[i].position;
-                    else
-                    {
-                        Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
-                        fireOrigin = defaultFireOrigin + offset;
-                    }
+                    Vector3 fireOrigin = bulletFirePoints[i].position;
 
                     float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
                     Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
