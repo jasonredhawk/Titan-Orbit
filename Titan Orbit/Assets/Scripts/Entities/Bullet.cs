@@ -353,18 +353,33 @@ namespace TitanOrbit.Entities
         private void DespawnBullet()
         {
             Vector3 impactPos = transform.position;
-            if (impactEffectPrefab != null)
+            int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
+            GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
+            if (impactPrefab != null)
             {
-                SpawnImpactEffectClientRpc(impactPos);
-                SpawnImpactAt(impactPos); // Server spawns too (ClientRpc doesn't run on server)
+                SpawnImpactEffectClientRpc(impactPos, bankIdx);
+                SpawnImpactAt(impactPos, impactPrefab); // Server spawns too (ClientRpc doesn't run on server)
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
         }
 
-        private void SpawnImpactAt(Vector3 position)
+        /// <summary>Impact prefab from SciFiProjectileScript.impactParticle when using bank, else the default impactEffectPrefab.</summary>
+        private GameObject GetResolvedImpactPrefab(int bankIndex)
         {
-            GameObject go = Instantiate(impactEffectPrefab, position, Quaternion.identity);
+            if (bankIndex >= 0 && CombatSystem.Instance != null)
+            {
+                GameObject fromBank = CombatSystem.Instance.GetImpactPrefabFromBank(bankIndex);
+                if (fromBank != null) return fromBank;
+            }
+            return impactEffectPrefab;
+        }
+
+        private void SpawnImpactAt(Vector3 position, GameObject prefab = null)
+        {
+            GameObject usePrefab = prefab != null ? prefab : impactEffectPrefab;
+            if (usePrefab == null) return;
+            GameObject go = Instantiate(usePrefab, position, Quaternion.identity);
             go.transform.localScale = Vector3.one * impactEffectScale;
             DisableGrabPassMaterials(go); // Avoid "GrabPass can't be called from job thread" in URP/SRP
             Destroy(go, impactEffectDuration);
@@ -389,10 +404,14 @@ namespace TitanOrbit.Entities
         }
 
         [ClientRpc]
-        private void SpawnImpactEffectClientRpc(Vector3 position)
+        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex = -1)
         {
-            if (impactEffectPrefab != null)
-                SpawnImpactAt(position);
+            GameObject prefab = impactPrefabBankIndex >= 0 && CombatSystem.Instance != null
+                ? CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex)
+                : null;
+            if (prefab == null) prefab = impactEffectPrefab;
+            if (prefab != null)
+                SpawnImpactAt(position, prefab);
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound();
         }

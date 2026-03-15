@@ -76,6 +76,15 @@ namespace TitanOrbit.Systems
             return bankPrefab;
         }
 
+        /// <summary>Returns the impact effect prefab for a bank index: SciFiProjectileScript.impactParticle if present, otherwise null. Used by Bullet on hit.</summary>
+        public GameObject GetImpactPrefabFromBank(int index)
+        {
+            GameObject bankPrefab = GetBulletPrefabFromBank(index);
+            if (bankPrefab == null) return null;
+            var sciFi = bankPrefab.GetComponent<SciFiProjectileScript>();
+            return (sciFi != null && sciFi.impactParticle != null) ? sciFi.impactParticle : null;
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
         {

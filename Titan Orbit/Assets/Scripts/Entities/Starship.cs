@@ -1437,10 +1437,9 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler, new Input System, or legacy Input)
+            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler or new Input System)
             bool cycleBulletPressed = (inputHandler is TitanOrbit.Input.PlayerInputHandler pih && pih.CycleBulletPressed)
-                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame)
-                || UnityEngine.Input.GetKeyDown(KeyCode.B);
+                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame);
             if (IsOwner && !IsPointerOverUI() && !isDead.Value &&
                 Systems.CombatSystem.Instance != null && Systems.CombatSystem.Instance.BulletPrefabBankCount >= 1 &&
                 cycleBulletPressed)
