@@ -17,6 +17,14 @@ namespace TitanOrbit.Editor
     {
         private const string DefaultFolderKey = "TitanOrbit.BulletBankFolder";
         private const string DefaultFolder = "Assets/Archanor/Sci-Fi Arsenal/InteractiveDemo/Demo Prefabs/Bullets";
+        /// <summary>Full Demo Prefabs root: all subfolders (Bullets, Sparkler, Shockwave, Sharp, Rockets, Ring, Ring2, Rift, Plasma, Liquid, Lightning, etc.) are searched.</summary>
+        private const string DemoPrefabsFolder = "Assets/Archanor/Sci-Fi Arsenal/InteractiveDemo/Demo Prefabs";
+
+        [MenuItem("Titan Orbit/Populate Bullet Bank From Demo Prefabs")]
+        public static void PopulateFromDemoPrefabs()
+        {
+            PopulateFromFolderInternal(DemoPrefabsFolder);
+        }
 
         [MenuItem("Titan Orbit/Populate Bullet Bank From Folder")]
         public static void PopulateFromFolder()
@@ -37,6 +45,11 @@ namespace TitanOrbit.Editor
             string relativeFolder = "Assets" + chosen.Substring(projectPath.Length).Replace("\\", "/");
             EditorPrefs.SetString(DefaultFolderKey, relativeFolder);
 
+            PopulateFromFolderInternal(relativeFolder);
+        }
+
+        private static void PopulateFromFolderInternal(string relativeFolder)
+        {
             List<GameObject> prefabs = FindPrefabsWithSciFiProjectile(relativeFolder);
             if (prefabs == null || prefabs.Count == 0)
             {
