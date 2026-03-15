@@ -435,10 +435,20 @@ namespace TitanOrbit.Entities
             cachedVisualShapeIndex = shapeIndex;
             cachedVisualNoTrail = noTrailVisual;
             cachedVisualPrefabBankIndex = visualPrefabBankIndexArg;
-            // Synced to clients for bullet color
-            if (IsServer && bulletOwnerTeamByte != null)
-                bulletOwnerTeamByte.Value = (byte)team;
-            // NetworkVariables for scale/shape set in OnNetworkSpawn
+            if (IsServer)
+            {
+                if (bulletOwnerTeamByte != null)
+                    bulletOwnerTeamByte.Value = (byte)team;
+                // Set scale/visual NetworkVariables before Spawn() so clients receive correct scale in spawn payload
+                if (bulletVisualScaleMultiplier != null)
+                    bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
+                if (bulletVisualShapeIndex != null)
+                    bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
+                if (bulletVisualNoTrail != null)
+                    bulletVisualNoTrail.Value = cachedVisualNoTrail;
+                if (visualPrefabBankIndex != null)
+                    visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
+            }
         }
 
         private void UpdateVisual()

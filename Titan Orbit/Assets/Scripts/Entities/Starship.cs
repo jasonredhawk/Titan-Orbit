@@ -89,8 +89,10 @@ namespace TitanOrbit.Entities
         private List<ParticleSystem> thrusterParticleSystems = new List<ParticleSystem>();
 
         [Header("Component Attribute Scaling")]
-        [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.15 = 15%. GameManager overrides when set.")]
-        [SerializeField] private float attributeScaleExaggeration = 0.15f;
+        [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.2 = 20% per attribute unit. GameManager overrides when set.")]
+        [SerializeField] private float attributeScaleExaggeration = 0.2f;
+        [Tooltip("Extra multiplier for bullet size so projectiles scale more visibly with Fire Power / Bullet Speed / cards. 1 = same as weapon component scale; 1.5 = bullets grow 50% more per upgrade.")]
+        [SerializeField] [Range(0.5f, 3f)] private float bulletScaleExaggeration = 1.5f;
 
         private List<Transform> cockpitScaleTransforms = new List<Transform>();
         private List<Vector3> cockpitBaseScales = new List<Vector3>();
@@ -369,7 +371,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for bullet size and muzzle particles.</summary>
+        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for weapon visuals and muzzle particles.</summary>
         private float WeaponComponentScaleMultiplier
         {
             get
@@ -379,6 +381,12 @@ namespace TitanOrbit.Entities
                 return 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
             }
         }
+
+        /// <summary>Same factor that makes fire rate faster (1 + attrFirePower * 0.1). Used so bullet size always scales when fire power upgrades.</summary>
+        private float FirePowerScaleFactor => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+
+        /// <summary>Bullet projectile scale: base size × damage term × fire-power factor (same as fire rate) × weapon/card scale × exaggeration. Ensures upgrading fire power visibly increases bullet size.</summary>
+        private float BulletScaleMultiplier => FirePowerScaleFactor * WeaponComponentScaleMultiplier * Mathf.Max(0.5f, bulletScaleExaggeration);
 
 #if UNITY_EDITOR
         // Editor-only helpers exposing effective ship ability stats for inspector visualizations
@@ -998,8 +1006,8 @@ namespace TitanOrbit.Entities
                 if (GameManager.Instance != null && GameManager.Instance.AttributeScaleExaggeration > 0f)
                     return GameManager.Instance.AttributeScaleExaggeration;
                 if (attributeScaleExaggeration > 0f)
-                    return Mathf.Approximately(attributeScaleExaggeration, 0.5f) ? 0.15f : attributeScaleExaggeration;
-                return 0.15f;
+                    return Mathf.Approximately(attributeScaleExaggeration, 0.5f) ? 0.2f : attributeScaleExaggeration;
+                return 0.2f;
             }
         }
 
@@ -1801,7 +1809,7 @@ namespace TitanOrbit.Entities
                         }
                         float damage = c.damagePerBullet * DamageMultiplier;
                         float speed = c.bulletSpeed * SpeedMultiplier;
-                        float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
+                        float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                         if (rb != null)
                         {
@@ -1867,7 +1875,7 @@ namespace TitanOrbit.Entities
             var c = bulletWc.cannons[cannonIndex];
             float damage = c.damagePerBullet * DamageMultiplier;
             float speed = c.bulletSpeed * SpeedMultiplier;
-            float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
+            float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
             float scaleClamped = Mathf.Max(0.25f, scale);
             const float refSpeed = 20f;
             return (speed / refSpeed) / scaleClamped;
@@ -2934,7 +2942,21 @@ namespace TitanOrbit.Entities
 
                 float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
                 componentEngineThrust = Mathf.Max(0f, moveVal);
-                componentEngineMaxSpeed = Mathf.Max(0.1f, moveVal);
+                // Max speed from largest engine only (more engines = more acceleration, not higher top speed)
+                float maxEngineMoveSpeed = 0f;
+                if (matchedComponentIds != null && perComponentStats != null)
+                {
+                    for (int k = 0; k < matchedComponentIds.Count && k < perComponentStats.Count; k++)
+                    {
+                        if (ShipComponentAbilityStats.IsEngineComponent(matchedComponentIds[k]))
+                        {
+                            ShipComponentAbilityStats comp = perComponentStats[k];
+                            float engineSpeed = comp.moveSpeed + comp.moveSpeedPerLevel * perLvl;
+                            if (engineSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = engineSpeed;
+                        }
+                    }
+                }
+                componentEngineMaxSpeed = Mathf.Max(0.1f, maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : moveVal);
 
                 componentMass =
                     stats.engineScaleTotal +
@@ -2953,7 +2975,7 @@ namespace TitanOrbit.Entities
                 float thrustFromEngines = stats.engineScaleTotal;
                 float thrustFromThrusters = stats.thrusterScaleTotal;
                 componentEngineThrust = Mathf.Max(0f, thrustFromEngines + thrustFromThrusters);
-                componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleTotal);
+                componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleMax);
 
                 componentMass =
                     stats.engineScaleTotal +

@@ -989,6 +989,10 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // Toggle minimap expanded/minimized with M key
+            if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
+                ToggleExpand();
+
             // Show minimap whenever we have a local player ship (even if team not yet set, so it's visible in single-player or before team sync).
             SetMinimapVisible(true);
 

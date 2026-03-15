@@ -426,7 +426,7 @@ namespace TitanOrbit.UI
             panelRect.anchorMin = new Vector2(1f, 1f);
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
-            panelRect.anchoredPosition = new Vector2(-16f, -128f);
+            panelRect.anchoredPosition = new Vector2(-16f, -16f);
             panelRect.sizeDelta = new Vector2(330f, 500f);
             var panelBg = leaderboardPanel.AddComponent<Image>();
             panelBg.color = new Color(0.06f, 0.08f, 0.12f, 0.86f);

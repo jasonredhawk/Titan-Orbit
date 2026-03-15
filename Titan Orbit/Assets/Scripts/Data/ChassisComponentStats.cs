@@ -32,6 +32,8 @@ namespace TitanOrbit.Data
 
         /// <summary>Sum of scale factors (avg of x,y,z) per component; used as bonus multiplier.</summary>
         public float engineScaleTotal;
+        /// <summary>Max engine scale (largest single engine). Used for max speed cap so more engines don't increase top speed.</summary>
+        public float engineScaleMax;
         public float thrusterScaleTotal;
         public float wingScaleTotal;
         public float tailScaleTotal;
@@ -82,7 +84,7 @@ namespace TitanOrbit.Data
 
                 switch (componentType)
                 {
-                    case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineTransforms.Add(child); break;
+                    case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor); stats.engineTransforms.Add(child); break;
                     case "Thruster": stats.thrusterCount++; stats.thrusterScaleTotal += scaleFactor; stats.thrusterTransforms.Add(child); break;
                     case "Wing": stats.wingCount++; stats.wingScaleTotal += scaleFactor; stats.wingTransforms.Add(child); break;
                     case "Tail": stats.tailCount++; stats.tailScaleTotal += scaleFactor; break;
