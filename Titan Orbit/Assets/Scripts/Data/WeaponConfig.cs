@@ -39,6 +39,8 @@ namespace TitanOrbit.Data
         public float localOffsetZ = 0f;
         [Tooltip("Bullet speed for this cannon.")]
         public float bulletSpeed = 20f;
+        [Tooltip("Index into CombatSystem's Bullet Prefab Bank for this cannon. -1 = use ship/family default.")]
+        public int bulletPrefabIndex = -1;
 
         public CannonConfig Clone()
         {
@@ -55,7 +57,8 @@ namespace TitanOrbit.Data
                 bulletScale = bulletScale,
                 localOffsetX = localOffsetX,
                 localOffsetZ = localOffsetZ,
-                bulletSpeed = bulletSpeed
+                bulletSpeed = bulletSpeed,
+                bulletPrefabIndex = bulletPrefabIndex
             };
         }
     }

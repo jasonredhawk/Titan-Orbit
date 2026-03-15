@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: AstroEagleShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: AstroEagle
+  bulletPrefabIndex: 0
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
@@ -39,8 +40,7 @@ MonoBehaviour:
       maxGemsPerLevel: 1
       maxPeople: 5
       maxPeoplePerLevel: 1
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Cockpit_Base_1
     displayName: Cockpit 1
     stats:
@@ -66,8 +66,7 @@ MonoBehaviour:
       maxGemsPerLevel: 1
       maxPeople: 5
       maxPeoplePerLevel: 1
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Cockpit_Base_2
     displayName: Cockpit 2
     stats:
@@ -93,8 +92,7 @@ MonoBehaviour:
       maxGemsPerLevel: 2
       maxPeople: 10
       maxPeoplePerLevel: 2
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Engine_1
     displayName: Engine 1
     stats:
@@ -120,8 +118,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Engine_2
     displayName: Engine 2
     stats:
@@ -147,8 +144,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Fin
     displayName: Fin 1
     stats:
@@ -174,8 +170,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Part_1
     displayName: Part 1
     stats:
@@ -201,8 +196,7 @@ MonoBehaviour:
       maxGemsPerLevel: 1.5
       maxPeople: 2
       maxPeoplePerLevel: 0.5
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Part_2
     displayName: Part 2
     stats:
@@ -228,8 +222,7 @@ MonoBehaviour:
       maxGemsPerLevel: 3
       maxPeople: 4
       maxPeoplePerLevel: 1
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Part_3
     displayName: Part 3
     stats:
@@ -255,8 +248,7 @@ MonoBehaviour:
       maxGemsPerLevel: 4.5
       maxPeople: 6
       maxPeoplePerLevel: 1.5
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Part_4
     displayName: Part 4
     stats:
@@ -282,8 +274,7 @@ MonoBehaviour:
       maxGemsPerLevel: 6
       maxPeople: 8
       maxPeoplePerLevel: 2
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Tail
     displayName: Tail 1
     stats:
@@ -309,8 +300,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Thruster
     displayName: Thruster 1
     stats:
@@ -336,8 +326,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Weapon
     displayName: Weapon 1
     stats:
@@ -363,8 +352,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: 2
   - componentId: Wing_1
     displayName: Wing 1
     stats:
@@ -390,8 +378,7 @@ MonoBehaviour:
       maxGemsPerLevel: 2
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Wing_1_Mirrored
     displayName: Wing 1
     stats:
@@ -417,22 +404,7 @@ MonoBehaviour:
       maxGemsPerLevel: 2
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions:
-    - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
-    - {fileID: 176796, guid: b7f60022f07df5d4184199e9ebdba10b, type: 3}
-    - {fileID: 132082, guid: db105c32c58ceae44846f8489519b86f, type: 3}
-    - {fileID: 114088, guid: 839cf5777496e2642be45ea065d34f83, type: 3}
-    - {fileID: 161724, guid: fec710d6f8ab81c4c9edff6545732936, type: 3}
-    - {fileID: 119578, guid: 3c7763e17d188664693086a53b04dcc3, type: 3}
-    - {fileID: 128200, guid: 7f2f36bd6a647724f9be19a963f0e60a, type: 3}
-    - {fileID: 136368, guid: 00e5a53b60a56384e8c1a6d4d0b1dc22, type: 3}
-    - {fileID: 176544, guid: 96e121f760b401f45a4e1f48a282e055, type: 3}
-    - {fileID: 199410, guid: b30a102c2b99c10468a416d742ee2cb2, type: 3}
-    - {fileID: 122782, guid: 56eb854aae2c78a4d835d96ca4b84e0e, type: 3}
-    - {fileID: 183962, guid: 9994fd1235cf9a84a9bd2198cb9ba05f, type: 3}
-    - {fileID: 122782, guid: 81687eb9111a8fb45b0cb52a0762b73e, type: 3}
-    - {fileID: 107984, guid: 1a2aa1e6f6d149249b940a5686f7af4f, type: 3}
-    selectedBulletPrefabIndex: 1
+    bulletPrefabIndex: -1
   - componentId: Wing_2
     displayName: Wing 2
     stats:
@@ -458,8 +430,7 @@ MonoBehaviour:
       maxGemsPerLevel: 4
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Wing_3
     displayName: Wing 3
     stats:
@@ -485,8 +456,7 @@ MonoBehaviour:
       maxGemsPerLevel: 6
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Wing_4
     displayName: Wing 4
     stats:
@@ -512,8 +482,7 @@ MonoBehaviour:
       maxGemsPerLevel: 8
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   - componentId: Wing_5
     displayName: Wing 5
     stats:
@@ -539,8 +508,7 @@ MonoBehaviour:
       maxGemsPerLevel: 10
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabOptions: []
-    selectedBulletPrefabIndex: 0
+    bulletPrefabIndex: -1
   upgradeTree:
   - chassisId: AstroEagle_01
     prefab: {fileID: 1952278464844654, guid: 7a3610850390303418074a50e4b65956, type: 3}

@@ -206,6 +206,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Ability stat modifiers contributed by this component.")]
         public ShipComponentAbilityStats stats;
+
+        [Tooltip("For weapons: index into CombatSystem's Bullet Prefab Bank. -1 = use family default (ShipFamilyDefinition.bulletPrefabIndex).")]
+        public int bulletPrefabIndex = -1;
     }
 
     /// <summary>
@@ -238,7 +241,7 @@ namespace TitanOrbit.Data
         public string familyId;
 
         [Header("Bullets")]
-        [Tooltip("Index into CombatSystem's Bullet Prefab Bank. 0 = first bullet in that list. Negative or out of range = use CombatSystem default bullet.")]
+        [Tooltip("Index into CombatSystem's Bullet Prefab Bank (CombatSystem.bulletPrefabBank). 0 = first prefab. Weapon components can override per-cannon via ShipFamilyComponentEntry.bulletPrefabIndex. Same list/order on all builds for networking.")]
         public int bulletPrefabIndex = 0;
 
         [Header("Components")]

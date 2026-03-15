@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
+using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
@@ -64,9 +65,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<byte> bulletVisualShapeIndex = new NetworkVariable<byte>(0);
         private NetworkVariable<bool> bulletVisualNoTrail = new NetworkVariable<bool>(false);
         private NetworkVariable<byte> bulletOwnerTeamByte = new NetworkVariable<byte>((byte)TeamManager.Team.None);
+        /// <summary>When >= 0, use CombatSystem.GetBulletPrefabFromBank(this) for visual instead of bulletVisualPrefab. Used when spawning via shell.</summary>
+        private NetworkVariable<int> visualPrefabBankIndex = new NetworkVariable<int>(-1);
         private float cachedVisualScaleMultiplier = 1f;
         private byte cachedVisualShapeIndex;
         private bool cachedVisualNoTrail;
+        private int cachedVisualPrefabBankIndex = -1;
 
         private const float FIXED_Y_POSITION = 0f;
         private Rigidbody rb;
@@ -111,7 +115,9 @@ namespace TitanOrbit.Entities
             bulletVisualShapeIndex.OnValueChanged += OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged += OnVisualNoTrailChanged;
             bulletOwnerTeamByte.OnValueChanged += OnOwnerTeamChanged;
+            visualPrefabBankIndex.OnValueChanged += OnVisualPrefabBankIndexChanged;
         }
+        private void OnVisualPrefabBankIndexChanged(int prev, int next) { UpdateVisual(); }
 
         private void OnOwnerTeamChanged(byte oldVal, byte newVal)
         {
@@ -129,6 +135,7 @@ namespace TitanOrbit.Entities
             bulletVisualShapeIndex.OnValueChanged -= OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged -= OnVisualNoTrailChanged;
             bulletOwnerTeamByte.OnValueChanged -= OnOwnerTeamChanged;
+            visualPrefabBankIndex.OnValueChanged -= OnVisualPrefabBankIndexChanged;
             if (proceduralMaterialInstance != null)
             {
                 Destroy(proceduralMaterialInstance);
@@ -168,6 +175,7 @@ namespace TitanOrbit.Entities
                 bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
                 bulletVisualNoTrail.Value = cachedVisualNoTrail;
                 bulletOwnerTeamByte.Value = (byte)ownerTeam;
+                visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
             }
 
             // Lock Y position to 0
@@ -394,7 +402,7 @@ namespace TitanOrbit.Entities
             Initialize(bulletSpeed, bulletDamage, team, 0, 1f, 0, false);
         }
 
-        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0, bool noTrailVisual = false)
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0, bool noTrailVisual = false, int visualPrefabBankIndexArg = -1)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
@@ -403,6 +411,7 @@ namespace TitanOrbit.Entities
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualShapeIndex = shapeIndex;
             cachedVisualNoTrail = noTrailVisual;
+            cachedVisualPrefabBankIndex = visualPrefabBankIndexArg;
             // Synced to clients for bullet color
             if (IsServer && bulletOwnerTeamByte != null)
                 bulletOwnerTeamByte.Value = (byte)team;
@@ -430,9 +439,12 @@ namespace TitanOrbit.Entities
                 r.enabled = false;
 
             GameObject visualPrefab = null;
-            if (bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
+            int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
+            if (bankIdx >= 0 && CombatSystem.Instance != null)
+                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx);
+            if (visualPrefab == null && bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
                 visualPrefab = bulletVisualPrefabOptions[shapeIdx];
-            else if (bulletVisualPrefab != null)
+            if (visualPrefab == null && bulletVisualPrefab != null)
                 visualPrefab = bulletVisualPrefab;
 
             if (visualPrefab != null)

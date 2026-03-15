@@ -11,6 +11,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Audio;
+using SciFiArsenal;
 
 namespace TitanOrbit.Entities
 {
@@ -1747,6 +1748,7 @@ namespace TitanOrbit.Entities
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
+            var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
             // Fire bullets (Weapon only): small projectiles, low energy per shot. Only fire from actual weapon components (bulletFirePoints); never fire more shots than we have GameObjects.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
@@ -1765,6 +1767,12 @@ namespace TitanOrbit.Entities
                     currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
                     bulletLastFireTime[i] = Time.time;
                     bulletIndicesFired.Add((byte)i);
+
+                    int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
+                    int bulletIdx = (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
+                        ? c.bulletPrefabIndex
+                        : (runtimeBulletPrefabIndex.Value >= 0 ? runtimeBulletPrefabIndex.Value : bulletPrefabBankIndex);
+                    bulletPrefabIndicesFired.Add(bulletIdx);
 
                     Vector3 fireOrigin = defaultFireOrigin;
                     if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
@@ -1798,7 +1806,6 @@ namespace TitanOrbit.Entities
                         float damage = c.damagePerBullet * DamageMultiplier;
                         float speed = c.bulletSpeed * SpeedMultiplier;
                         float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
-                        int bulletIdx = runtimeBulletPrefabIndex.Value >= 0 ? runtimeBulletPrefabIndex.Value : bulletPrefabBankIndex;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                         if (rb != null)
                         {
@@ -1809,18 +1816,39 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            FireClientRpc(bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>());
+            FireClientRpc(
+                bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>(),
+                bulletPrefabIndicesFired.Count > 0 ? bulletPrefabIndicesFired.ToArray() : System.Array.Empty<int>());
         }
 
         [ClientRpc]
-        private void FireClientRpc(byte[] bulletIndicesFired)
+        private void FireClientRpc(byte[] bulletIndicesFired, int[] bulletPrefabIndices)
         {
-            if (bulletIndicesFired != null && bulletMuzzleParticleSystems != null)
+            if (bulletIndicesFired != null)
             {
                 for (int j = 0; j < bulletIndicesFired.Length; j++)
                 {
                     int idx = bulletIndicesFired[j];
-                    if (idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
+                    bool usedSciFiMuzzle = false;
+                    if (bulletPrefabIndices != null && j < bulletPrefabIndices.Length && CombatSystem.Instance != null)
+                    {
+                        GameObject bulletPrefab = CombatSystem.Instance.GetBulletPrefabFromBank(bulletPrefabIndices[j]);
+                        var sciFi = bulletPrefab != null ? bulletPrefab.GetComponent<SciFiProjectileScript>() : null;
+                        if (sciFi != null && sciFi.muzzleParticle != null && bulletFirePoints != null && idx >= 0 && idx < bulletFirePoints.Count && bulletFirePoints[idx] != null)
+                        {
+                            Transform pt = bulletFirePoints[idx];
+                            Vector3 pos = pt.position;
+                            Vector3 fwd = pt.forward;
+                            if (fwd.sqrMagnitude < 0.01f) fwd = -transform.forward;
+                            GameObject muzzle = Instantiate(sciFi.muzzleParticle, pos, Quaternion.LookRotation(-fwd));
+                            if (muzzle != null)
+                            {
+                                Destroy(muzzle, 1.5f);
+                                usedSciFiMuzzle = true;
+                            }
+                        }
+                    }
+                    if (!usedSciFiMuzzle && bulletMuzzleParticleSystems != null && idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
                         bulletMuzzleParticleSystems[idx].Play();
                 }
             }
@@ -3112,6 +3140,9 @@ namespace TitanOrbit.Entities
                             c.bulletSpeed *= bulletSpeedScale;
                         }
                     }
+                    // Per-weapon bullet prefab index from ShipFamilyComponentEntry (index into CombatSystem's Bullet Prefab Bank).
+                    if (previewFamilyDef != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetComponentEntry(componentId, out var compEntry) && compEntry != null && compEntry.bulletPrefabIndex >= 0)
+                        c.bulletPrefabIndex = compEntry.bulletPrefabIndex;
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];
                     if (pt == null) pt = transform;
@@ -3134,11 +3165,11 @@ namespace TitanOrbit.Entities
                     }
                 }
                 // Bullet prefab index from family definition (index into CombatSystem's Bullet Prefab Bank)
-                if (previewFamilyDef != null && Systems.CombatSystem.Instance != null)
+                if (Systems.CombatSystem.Instance != null)
                 {
                     int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
-                    int idx = previewFamilyDef.bulletPrefabIndex;
-                    bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : -1;
+                    int idx = (previewFamilyDef != null && count > 0) ? previewFamilyDef.bulletPrefabIndex : 0;
+                    bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : (count > 0 ? 0 : -1);
                     if (IsServer)
                         runtimeBulletPrefabIndex.Value = bulletPrefabBankIndex;
                 }
