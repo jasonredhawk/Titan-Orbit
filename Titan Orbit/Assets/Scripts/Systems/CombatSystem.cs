@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
@@ -7,9 +8,18 @@ using SciFiArsenal;
 
 namespace TitanOrbit.Systems
 {
+    /// <summary>One category (folder name) with prefabs sorted by color. Used when Populate Bullet Bank From Demo Prefabs is used.</summary>
+    [Serializable]
+    public class BulletBankCategory
+    {
+        public string categoryName;
+        public List<GameObject> prefabs = new List<GameObject>();
+    }
+
     /// <summary>
     /// Handles combat mechanics including bullet spawning and damage.
     /// Always spawns the default bullet prefab; bullet prefab bank is used only for visuals (SciFi projectile particle).
+    /// When bulletBankCategories is populated (Demo Prefabs), B key cycles one per category and team color picks the variant (e.g. Red Bullets, Red Sparkler).
     /// </summary>
     public class CombatSystem : NetworkBehaviour
     {
@@ -18,9 +28,12 @@ namespace TitanOrbit.Systems
         [Header("Default Bullet (always spawned)")]
         [Tooltip("Prefab spawned for every bullet. Must have Bullet, NetworkObject, Rigidbody, Collider. Visual is taken from Bullet Prefab Bank (projectile particle).")]
         [SerializeField] private GameObject defaultBulletPrefab;
-        [Header("Bullet Visual Bank")]
+        [Header("Bullet Visual Bank (flat, legacy)")]
         [Tooltip("Prefabs with SciFiProjectileScript; only projectileParticle is used as the bullet visual. Run Titan Orbit > Populate Bullet Bank From Folder.")]
         [SerializeField] private List<GameObject> bulletPrefabBank = new List<GameObject>();
+        [Header("Bullet Bank Categories (Demo Prefabs)")]
+        [Tooltip("When populated via Titan Orbit > Populate Bullet Bank From Demo Prefabs, categories are used. B key cycles one per category; team color selects Red/Blue/Green variant.")]
+        [SerializeField] private List<BulletBankCategory> bulletBankCategories = new List<BulletBankCategory>();
         [SerializeField] private Transform bulletParent;
         [SerializeField] private GameObject rocketPrefab;
         [SerializeField] private GameObject minePrefab;
@@ -44,13 +57,63 @@ namespace TitanOrbit.Systems
             }
         }
 
-        /// <summary>Number of entries in the bullet prefab bank. ShipFamilyDefinition indices are validated against this.</summary>
-        public int BulletPrefabBankCount => bulletPrefabBank != null ? bulletPrefabBank.Count : 0;
+        /// <summary>When using categories: number of categories (B key cycles these). Otherwise count of flat bullet prefab bank.</summary>
+        public int BulletPrefabBankCount => UseCategories ? (bulletBankCategories != null ? bulletBankCategories.Count : 0) : (bulletPrefabBank != null ? bulletPrefabBank.Count : 0);
 
-        /// <summary>Returns the index of the given prefab in the bullet prefab bank, or -1 if not found. Used so ships can pass an index over the network.</summary>
+        private bool UseCategories => bulletBankCategories != null && bulletBankCategories.Count > 0;
+
+        /// <summary>Team A=Red, B=Blue, C=Green. Used to pick the matching prefab in each category (e.g. Red Bullets for red team).</summary>
+        public static string GetColorNameForTeam(TeamManager.Team team)
+        {
+            switch (team)
+            {
+                case TeamManager.Team.TeamA: return "Red";
+                case TeamManager.Team.TeamB: return "Blue";
+                case TeamManager.Team.TeamC: return "Green";
+                default: return "Blue";
+            }
+        }
+
+        /// <summary>Returns the bullet prefab for the given category index and team. In category mode, picks the prefab whose name contains the team color (e.g. Red). In flat mode, index is direct and team is ignored.</summary>
+        public GameObject GetBulletPrefabFromBank(int index, TeamManager.Team team)
+        {
+            if (UseCategories)
+            {
+                if (bulletBankCategories == null || index < 0 || index >= bulletBankCategories.Count) return null;
+                var cat = bulletBankCategories[index];
+                if (cat.prefabs == null || cat.prefabs.Count == 0) return null;
+                string colorName = GetColorNameForTeam(team);
+                foreach (GameObject p in cat.prefabs)
+                {
+                    if (p != null && p.name.IndexOf(colorName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return p;
+                }
+                return cat.prefabs[0];
+            }
+            return GetBulletPrefabFromBankFlat(index);
+        }
+
+        /// <summary>Returns the bullet prefab at the given flat bank index. Used when not using categories.</summary>
+        public GameObject GetBulletPrefabFromBankFlat(int index)
+        {
+            if (bulletPrefabBank == null || index < 0 || index >= bulletPrefabBank.Count) return null;
+            return bulletPrefabBank[index];
+        }
+
+        /// <summary>Returns the index of the given prefab in the bullet prefab bank, or -1 if not found. In category mode returns category index if prefab belongs to that category.</summary>
         public int GetBulletPrefabIndex(GameObject prefab)
         {
-            if (prefab == null || bulletPrefabBank == null) return -1;
+            if (prefab == null) return -1;
+            if (UseCategories && bulletBankCategories != null)
+            {
+                for (int i = 0; i < bulletBankCategories.Count; i++)
+                {
+                    if (bulletBankCategories[i].prefabs != null && bulletBankCategories[i].prefabs.Contains(prefab))
+                        return i;
+                }
+                return -1;
+            }
+            if (bulletPrefabBank == null) return -1;
             for (int i = 0; i < bulletPrefabBank.Count; i++)
             {
                 if (bulletPrefabBank[i] == prefab) return i;
@@ -58,17 +121,18 @@ namespace TitanOrbit.Systems
             return -1;
         }
 
-        /// <summary>Returns the bullet prefab at the given bank index, or null if invalid. Used by ShipFamilyDefinition (and editors) to resolve bulletPrefabIndex.</summary>
+        /// <summary>Returns the bullet prefab at the given bank index (and team when using categories). Kept for backward compatibility; prefer GetBulletPrefabFromBank(index, team).</summary>
         public GameObject GetBulletPrefabFromBank(int index)
         {
-            if (bulletPrefabBank == null || index < 0 || index >= bulletPrefabBank.Count) return null;
-            return bulletPrefabBank[index];
+            if (UseCategories)
+                return GetBulletPrefabFromBank(index, TeamManager.Team.TeamA);
+            return GetBulletPrefabFromBankFlat(index);
         }
 
-        /// <summary>Returns the visual prefab for a bank index: SciFiProjectileScript.projectileParticle if present, otherwise the whole bank prefab. Used by Bullet for its visual.</summary>
-        public GameObject GetVisualPrefabFromBank(int index)
+        /// <summary>Returns the visual prefab for a bank index (and team when using categories). Used by Bullet for its visual.</summary>
+        public GameObject GetVisualPrefabFromBank(int index, TeamManager.Team team)
         {
-            GameObject bankPrefab = GetBulletPrefabFromBank(index);
+            GameObject bankPrefab = GetBulletPrefabFromBank(index, team);
             if (bankPrefab == null) return null;
             var sciFi = bankPrefab.GetComponent<SciFiProjectileScript>();
             if (sciFi != null && sciFi.projectileParticle != null)
@@ -76,10 +140,16 @@ namespace TitanOrbit.Systems
             return bankPrefab;
         }
 
-        /// <summary>Returns the impact effect prefab for a bank index: SciFiProjectileScript.impactParticle if present, otherwise null. Used by Bullet on hit.</summary>
-        public GameObject GetImpactPrefabFromBank(int index)
+        /// <summary>Legacy single-arg form; uses TeamA when in category mode.</summary>
+        public GameObject GetVisualPrefabFromBank(int index)
         {
-            GameObject bankPrefab = GetBulletPrefabFromBank(index);
+            return GetVisualPrefabFromBank(index, TeamManager.Team.TeamA);
+        }
+
+        /// <summary>Returns the impact effect prefab for a bank index (and team when using categories). Used by Bullet on hit.</summary>
+        public GameObject GetImpactPrefabFromBank(int index, TeamManager.Team team)
+        {
+            GameObject bankPrefab = GetBulletPrefabFromBank(index, team);
             if (bankPrefab == null) return null;
             var sciFi = bankPrefab.GetComponent<SciFiProjectileScript>();
             return (sciFi != null && sciFi.impactParticle != null) ? sciFi.impactParticle : null;
@@ -103,8 +173,9 @@ namespace TitanOrbit.Systems
                 return;
             }
 
-            int requestedBankIndex = (bulletPrefabBank != null && bulletPrefabBank.Count > 0)
-                ? (bulletPrefabIndex >= 0 && bulletPrefabIndex < bulletPrefabBank.Count ? bulletPrefabIndex : 0)
+            int bankCount = BulletPrefabBankCount;
+            int requestedBankIndex = (bankCount > 0)
+                ? (bulletPrefabIndex >= 0 && bulletPrefabIndex < bankCount ? bulletPrefabIndex : 0)
                 : -1;
 
             bool isAIBullet = false;
@@ -140,7 +211,7 @@ namespace TitanOrbit.Systems
 
             if (bullet == null || bulletRb == null)
             {
-                Object.Destroy(bulletObj);
+                UnityEngine.Object.Destroy(bulletObj);
                 return;
             }
             if (bulletObj.GetComponent<Collider>() == null && bulletObj.GetComponentInChildren<Collider>() == null)
@@ -165,7 +236,7 @@ namespace TitanOrbit.Systems
             if (bulletNetObj == null)
             {
                 Debug.LogWarning($"CombatSystem: Default bullet prefab has no NetworkObject. Assign Default Bullet Prefab on CombatSystem or run Titan Orbit > Populate Bullet Bank From Folder.");
-                Object.Destroy(bulletObj);
+                UnityEngine.Object.Destroy(bulletObj);
                 return;
             }
             bulletNetObj.Spawn();

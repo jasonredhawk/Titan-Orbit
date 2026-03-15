@@ -369,7 +369,9 @@ namespace TitanOrbit.Entities
         {
             if (bankIndex >= 0 && CombatSystem.Instance != null)
             {
-                GameObject fromBank = CombatSystem.Instance.GetImpactPrefabFromBank(bankIndex);
+                TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
+                if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
+                GameObject fromBank = CombatSystem.Instance.GetImpactPrefabFromBank(bankIndex, teamForResolve);
                 if (fromBank != null) return fromBank;
             }
             return impactEffectPrefab;
@@ -406,8 +408,10 @@ namespace TitanOrbit.Entities
         [ClientRpc]
         private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex = -1)
         {
+            TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
+            if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
             GameObject prefab = impactPrefabBankIndex >= 0 && CombatSystem.Instance != null
-                ? CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex)
+                ? CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex, teamForResolve)
                 : null;
             if (prefab == null) prefab = impactEffectPrefab;
             if (prefab != null)
@@ -460,7 +464,7 @@ namespace TitanOrbit.Entities
             GameObject visualPrefab = null;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
             if (bankIdx >= 0 && CombatSystem.Instance != null)
-                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx);
+                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx, teamForColor);
             if (visualPrefab == null && bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
                 visualPrefab = bulletVisualPrefabOptions[shapeIdx];
             if (visualPrefab == null && bulletVisualPrefab != null)

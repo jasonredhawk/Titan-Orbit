@@ -1828,7 +1828,7 @@ namespace TitanOrbit.Entities
                     bool usedSciFiMuzzle = false;
                     if (bulletPrefabIndices != null && j < bulletPrefabIndices.Length && CombatSystem.Instance != null)
                     {
-                        GameObject bulletPrefab = CombatSystem.Instance.GetBulletPrefabFromBank(bulletPrefabIndices[j]);
+                        GameObject bulletPrefab = CombatSystem.Instance.GetBulletPrefabFromBank(bulletPrefabIndices[j], shipTeam.Value);
                         var sciFi = bulletPrefab != null ? bulletPrefab.GetComponent<SciFiProjectileScript>() : null;
                         if (sciFi != null && sciFi.muzzleParticle != null && bulletFirePoints != null && idx >= 0 && idx < bulletFirePoints.Count && bulletFirePoints[idx] != null)
                         {
