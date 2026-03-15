@@ -1437,9 +1437,10 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler or Keyboard)
+            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler, new Input System, or legacy Input)
             bool cycleBulletPressed = (inputHandler is TitanOrbit.Input.PlayerInputHandler pih && pih.CycleBulletPressed)
-                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame);
+                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame)
+                || UnityEngine.Input.GetKeyDown(KeyCode.B);
             if (IsOwner && !IsPointerOverUI() && !isDead.Value &&
                 Systems.CombatSystem.Instance != null && Systems.CombatSystem.Instance.BulletPrefabBankCount >= 1 &&
                 cycleBulletPressed)
@@ -1769,9 +1770,12 @@ namespace TitanOrbit.Entities
                     bulletIndicesFired.Add((byte)i);
 
                     int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
-                    int bulletIdx = (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
-                        ? c.bulletPrefabIndex
-                        : (runtimeBulletPrefabIndex.Value >= 0 ? runtimeBulletPrefabIndex.Value : bulletPrefabBankIndex);
+                    // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
+                    int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
+                        ? (runtimeBulletPrefabIndex.Value % bankCount)
+                        : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
+                            ? c.bulletPrefabIndex
+                            : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
                     bulletPrefabIndicesFired.Add(bulletIdx);
 
                     Vector3 fireOrigin = defaultFireOrigin;
