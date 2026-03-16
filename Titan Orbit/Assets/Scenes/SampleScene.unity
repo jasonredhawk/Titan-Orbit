@@ -6507,6 +6507,13 @@ MonoBehaviour:
   defaultBulletPrefab: {fileID: 5046561962449129338, guid: 72fb936170ac63448903559927fc972e, type: 3}
   bulletPrefabBank: []
   bulletBankCategories:
+  - categoryName: Laserbolt
+    prefabs:
+    - {fileID: 199764, guid: a722c1f6fea53614a920ed802bff377d, type: 3}
+    - {fileID: 119578, guid: 3c7763e17d188664693086a53b04dcc3, type: 3}
+    - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
+    - {fileID: 126790, guid: 8b41f5320e19912428ff12551caca1e8, type: 3}
+    - {fileID: 126566, guid: fd3266d43eff6f441a248797390b26aa, type: 3}
   - categoryName: Bullets
     prefabs:
     - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
@@ -6528,13 +6535,6 @@ MonoBehaviour:
     - {fileID: 179554, guid: 0d83e615f1a143845924d338711efd68, type: 3}
     - {fileID: 135654, guid: eeb8171b60d8da849b1f6580e734d0aa, type: 3}
     - {fileID: 153304, guid: 3346fe00bcf1da64b9e0e514f9966acd, type: 3}
-  - categoryName: Laserbolt
-    prefabs:
-    - {fileID: 199764, guid: a722c1f6fea53614a920ed802bff377d, type: 3}
-    - {fileID: 119578, guid: 3c7763e17d188664693086a53b04dcc3, type: 3}
-    - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
-    - {fileID: 126790, guid: 8b41f5320e19912428ff12551caca1e8, type: 3}
-    - {fileID: 126566, guid: fd3266d43eff6f441a248797390b26aa, type: 3}
   - categoryName: LaserSmall
     prefabs:
     - {fileID: 167542, guid: 54d2783d690a71048b93ff1b1d9683be, type: 3}

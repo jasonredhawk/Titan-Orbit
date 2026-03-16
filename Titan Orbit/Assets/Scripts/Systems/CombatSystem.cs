@@ -129,6 +129,33 @@ namespace TitanOrbit.Systems
             return GetBulletPrefabFromBankFlat(index);
         }
 
+        /// <summary>
+        /// Returns the display name for a bullet at the given bank index.
+        /// In category mode this is the categoryName (e.g. \"Sparkler\", \"Railgun\").
+        /// In flat mode this falls back to the prefab name without \"(Clone)\".
+        /// </summary>
+        public string GetBulletDisplayName(int index)
+        {
+            if (UseCategories && bulletBankCategories != null && index >= 0 && index < bulletBankCategories.Count)
+            {
+                var cat = bulletBankCategories[index];
+                if (cat != null && !string.IsNullOrEmpty(cat.categoryName))
+                    return cat.categoryName;
+            }
+
+            // Flat bank or missing category: use prefab name as a fallback
+            GameObject prefab = GetBulletPrefabFromBankFlat(index);
+            if (prefab != null && !string.IsNullOrEmpty(prefab.name))
+            {
+                string name = prefab.name;
+                int cloneIdx = name.IndexOf("(Clone)", StringComparison.Ordinal);
+                if (cloneIdx > 0) name = name.Substring(0, cloneIdx).TrimEnd();
+                return name;
+            }
+
+            return $"Bullet {index + 1}";
+        }
+
         /// <summary>Returns the visual prefab for a bank index (and team when using categories). Used by Bullet for its visual.</summary>
         public GameObject GetVisualPrefabFromBank(int index, TeamManager.Team team)
         {

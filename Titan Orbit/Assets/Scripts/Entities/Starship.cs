@@ -91,6 +91,8 @@ namespace TitanOrbit.Entities
         [Header("Component Attribute Scaling")]
         [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.2 = 20% per attribute unit. GameManager overrides when set.")]
         [SerializeField] private float attributeScaleExaggeration = 0.2f;
+        [Tooltip("How much component mesh scale reflects stat upgrades. 0.5 = 10% stat increase → 5% bigger component; 1 = 1:1. Set higher so upgrades are clearly visible.")]
+        [SerializeField] [Range(0.2f, 1.5f)] private float componentScaleVisibility = 0.6f;
         [Tooltip("Extra multiplier for bullet size so projectiles scale more visibly with Fire Power / Bullet Speed / cards. 1 = same as weapon component scale; 1.5 = bullets grow 50% more per upgrade.")]
         [SerializeField] [Range(0.5f, 3f)] private float bulletScaleExaggeration = 1.5f;
 
@@ -114,6 +116,10 @@ namespace TitanOrbit.Entities
         private List<Vector3> partBasePositions = new List<Vector3>();
         private List<float> muzzleBaseSizes = new List<float>();
         private List<float> muzzleBaseSpeeds = new List<float>();
+
+        [Header("Feedback")]
+        [Tooltip("World-space floating text prefab (with SimpleFloatingText) used to show bullet/weapon changes above the ship.")]
+        [SerializeField] private GameObject bulletNameTextPrefab;
 
         /// <summary>Cached card stat sums, refreshed once per frame to avoid iterating equippedCards 16+ times in LateUpdate.</summary>
         private int _cardStatsCacheFrame = -1;
@@ -281,7 +287,9 @@ namespace TitanOrbit.Entities
                 float baseThrust = componentEngineThrust > 0f ? componentEngineThrust : engineThrust;
                 float baseWithCards = baseThrust + GetCardMovementSpeedAdd();
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier;
+                // Boost acceleration so ships feel snappier. 5x matches previous feel better after mass changes.
+                const float ENGINE_THRUST_VISIBILITY = 10f;
+                return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier * ENGINE_THRUST_VISIBILITY;
             }
         }
         /// <summary>Max speed from engines. More engines = higher cap. Scaled by attr/cards.</summary>
@@ -479,6 +487,25 @@ namespace TitanOrbit.Entities
 
         /// <summary>Base gem capacity without card bonuses. Comes from ShipFamilyDefinition (via chassis components).</summary>
         public float BaseGemCapacity => Mathf.Max(0f, gemCapacity);
+
+        /// <summary>Stat value as if no attribute upgrades (attr=0). Used to scale components by percentage increase (current/base).</summary>
+        private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth + GetCardMaxHealthAdd());
+        private float BaseGemCapacityNoAttr => Mathf.Max(0.1f, gemCapacity + GetCardGemCapacityAdd());
+        private float BasePeopleCapacityNoAttr => Mathf.Max(0.1f, peopleCapacity);
+        private float BaseEnergyCapacityNoAttr => Mathf.Max(0.1f, energyCapacity + GetCardEnergyCapacityAdd());
+        private float BaseEnergyRegenNoAttr => Mathf.Max(0.01f, energyRegenRate + GetCardEnergyRegenAdd());
+        private float BaseRotationSpeedNoAttr => Mathf.Max(1f, rotationSpeed + GetCardRotationSpeedAdd());
+        private float BaseHealthRegenNoAttr => Mathf.Max(0.01f, healthRegenRate + GetCardHealthRegenAdd());
+        private float BaseMaxSpeedNoAttr
+        {
+            get
+            {
+                float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
+                return Mathf.Max(0.1f, baseSpeed + GetCardMovementSpeedAdd() * 0.5f);
+            }
+        }
+        private float BaseDamageMultiplierNoAttr => Mathf.Max(0.1f, GetCardDamageMultiplier());
+        private float BaseSpeedMultiplierNoAttr => Mathf.Max(0.1f, GetCardBulletSpeedMultiplier());
         public float CurrentPeople => currentPeople.Value;
         /// <summary>Server-only: release people-in-transit when a load projectile delivers. Call from PeopleTransportProjectile.</summary>
         public void ReleasePeopleInTransit(float amount)
@@ -1055,23 +1082,35 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Scale ship components by attribute upgrade levels and equipped cards; position moves outward from center in proportion. Cockpit: Health+People+Energy. Wing: Gems+Health+HealthRegen+TurnSpeed. Weapon: FirePower+BulletSpeed. Engine: MoveSpeed. Thruster: TurnSpeed. Hull/Parts: Health+HealthRegen+Gems+People.</summary>
+        /// <summary>Scale ship components by the percentage increase in their associated stats (current value / base value at 0 upgrades). E.g. wings scale with max gems and turn speed.</summary>
         private void ApplyComponentAttributeScaling()
         {
-            float ex = EffectiveAttributeScaleExaggeration;
-            float cardCockpit = GetCardMaxHealthAdd() / 50f + GetCardPeopleCapacityAdd() / 5f + GetCardEnergyCapacityAdd() / 50f + GetCardEnergyRegenAdd() / 5f;
-            float cardWing = GetCardGemCapacityAdd() / 50f + GetCardMaxHealthAdd() / 50f + GetCardHealthRegenAdd() / 5f + GetCardRotationSpeedAdd() / 15f;
-            float cardWeapon = (GetCardDamageMultiplier() - 1f) * 10f + (GetCardBulletSpeedMultiplier() - 1f) * 10f;
-            float cardEngine = GetCardMovementSpeedAdd() / 2f;
-            float cardThruster = GetCardRotationSpeedAdd() / 15f;
-            float cardPart = GetCardMaxHealthAdd() / 50f + GetCardHealthRegenAdd() / 5f + GetCardGemCapacityAdd() / 50f + GetCardPeopleCapacityAdd() / 5f;
+            float vis = Mathf.Max(0.2f, componentScaleVisibility);
 
-            float cockpitScale = 1f + ((attrMaxHealth.Value + attrPeopleCapacity.Value + attrEnergyCapacity.Value + attrEnergyRegen.Value) * 0.5f + cardCockpit * 0.5f) * ex;
-            float wingScale = 1f + ((attrGemCapacity.Value + attrMaxHealth.Value + attrHealthRegen.Value + attrRotationSpeed.Value) * 0.5f + cardWing * 0.5f) * ex;
-            float weaponScale = 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
-            float engineScale = 1f + (attrMovementSpeed.Value + cardEngine) * ex;
-            float thrusterScale = 1f + (attrRotationSpeed.Value + cardThruster) * ex;
-            float partScale = 1f + ((attrMaxHealth.Value + attrHealthRegen.Value + attrGemCapacity.Value + attrPeopleCapacity.Value) * 0.5f + cardPart * 0.5f) * ex;
+            // Stat ratios: current / base (base = value at 0 attribute upgrades). Ratio = 1 at no upgrades, >1 when upgraded.
+            float ratioHealth = MaxHealth / BaseMaxHealthNoAttr;
+            float ratioGem = GemCapacity / BaseGemCapacityNoAttr;
+            float ratioPeople = PeopleCapacity / BasePeopleCapacityNoAttr;
+            float ratioEnergyCap = EffectiveEnergyCapacity / BaseEnergyCapacityNoAttr;
+            float ratioEnergyRegen = EffectiveEnergyRegen / BaseEnergyRegenNoAttr;
+            float ratioTurn = EffectiveRotationSpeed / BaseRotationSpeedNoAttr;
+            float ratioRegen = EffectiveHealthRegen / BaseHealthRegenNoAttr;
+            float ratioMove = EffectiveMaxSpeed / BaseMaxSpeedNoAttr;
+            float ratioDamage = DamageMultiplier / BaseDamageMultiplierNoAttr;
+            float ratioBulletSpeed = SpeedMultiplier / BaseSpeedMultiplierNoAttr;
+
+            // Scale = 1 + (average ratio - 1) * visibility so e.g. 10% stat → 6% scale at vis=0.6. Ensures upgrades are visible.
+            float avgCockpit = (ratioHealth + ratioPeople + ratioEnergyCap + ratioEnergyRegen) * 0.25f;
+            float avgWing = (ratioGem + ratioTurn) * 0.5f;
+            float avgWeapon = (ratioDamage + ratioBulletSpeed) * 0.5f;
+            float avgPart = (ratioHealth + ratioRegen + ratioGem + ratioPeople) * 0.25f;
+
+            float cockpitScale = Mathf.Max(1f, 1f + (avgCockpit - 1f) * vis);
+            float wingScale = Mathf.Max(1f, 1f + (avgWing - 1f) * vis);
+            float weaponScale = Mathf.Max(1f, 1f + (avgWeapon - 1f) * vis);
+            float engineScale = Mathf.Max(1f, 1f + (ratioMove - 1f) * vis);
+            float thrusterScale = Mathf.Max(1f, 1f + (ratioTurn - 1f) * vis);
+            float partScale = Mathf.Max(1f, 1f + (avgPart - 1f) * vis);
 
             for (int i = 0; i < cockpitScaleTransforms.Count; i++)
             {
@@ -1128,8 +1167,8 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // Muzzle particles: scale size and speed by weapon attributes and cards
-            float muzzleSpeedScale = 1f + (attrBulletSpeed.Value + (GetCardBulletSpeedMultiplier() - 1f) * 10f) * 0.5f * ex;
+            // Muzzle particles: size follows weapon scale, speed follows bullet speed ratio
+            float muzzleSpeedScale = Mathf.Max(0.5f, ratioBulletSpeed);
             for (int i = 0; i < bulletMuzzleParticleSystems.Count; i++)
             {
                 var ps = bulletMuzzleParticleSystems[i];
@@ -1452,6 +1491,13 @@ namespace TitanOrbit.Entities
                 Systems.CombatSystem.Instance != null && Systems.CombatSystem.Instance.BulletPrefabBankCount >= 1 &&
                 cycleBulletPressed)
             {
+                // Local preview of which bullet we are switching to so we can show floating text immediately.
+                int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
+                int current = runtimeBulletPrefabIndex.Value;
+                int next = current < 0 ? 0 : (current + 1) % count;
+                ShowBulletNameLocal(next);
+
+                // Tell server to actually apply the change and sync runtimeBulletPrefabIndex.
                 CycleBulletPrefabServerRpc();
             }
         }
@@ -1738,6 +1784,27 @@ namespace TitanOrbit.Entities
             int current = runtimeBulletPrefabIndex.Value;
             int next = current < 0 ? 0 : (current + 1) % count;
             runtimeBulletPrefabIndex.Value = next;
+        }
+
+        /// <summary>Owner-only: spawns floating text above this ship showing the current bullet name/category.</summary>
+        private void ShowBulletNameLocal(int bankIndex)
+        {
+            if (!IsOwner) return;
+            if (bulletNameTextPrefab == null) return;
+            if (Systems.CombatSystem.Instance == null) return;
+
+            string name = Systems.CombatSystem.Instance.GetBulletDisplayName(bankIndex);
+            if (string.IsNullOrEmpty(name)) return;
+
+            // Spawn a bit above the ship so it's not occluded by the hull in top-down view.
+            Vector3 pos = transform.position + Vector3.up * 5f;
+            GameObject go = Instantiate(bulletNameTextPrefab, pos, Quaternion.identity);
+            var ft = go.GetComponent<TitanOrbit.Systems.SimpleFloatingText>();
+            if (ft != null)
+            {
+                // White text, ~2 seconds duration
+                ft.Initialize(name, Color.white, 2f);
+            }
         }
 
         [ServerRpc]
@@ -2976,6 +3043,14 @@ namespace TitanOrbit.Entities
                 float thrustFromThrusters = stats.thrusterScaleTotal;
                 componentEngineThrust = Mathf.Max(0f, thrustFromEngines + thrustFromThrusters);
                 componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleMax);
+
+                // Safety: never let fallback component-based values make the ship slower than the legacy base values.
+                // If parsing or naming changes reduce engineScale totals, we still keep at least the original thrust and max speed.
+                if (componentEngineThrust < engineThrust)
+                    componentEngineThrust = engineThrust;
+                float legacyBaseMaxSpeed = Mathf.Max(2f, engineThrust * 0.5f);
+                if (componentEngineMaxSpeed < legacyBaseMaxSpeed)
+                    componentEngineMaxSpeed = legacyBaseMaxSpeed;
 
                 componentMass =
                     stats.engineScaleTotal +
