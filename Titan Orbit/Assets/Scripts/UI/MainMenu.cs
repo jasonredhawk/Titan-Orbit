@@ -34,6 +34,10 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI roomNameText;
         [SerializeField] private TMP_InputField playerNameInputField;
 
+        [Header("WebGL Match Selection (Placeholder)")]
+        [Tooltip("When true, WebGL Play shows open lobbies and joins based on the joinCode input (index or lobby id).")]
+        [SerializeField] private bool paidPlaceholder = false;
+
         private void Start()
         {
             if (hostOnlineButton != null)
@@ -134,7 +138,84 @@ namespace TitanOrbit.UI
                     ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                     : playerName;
 
-                bool ok = await NetworkGameManager.Instance.PlayQuickJoinOrCreateAsync();
+                bool ok;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                bool isPaid = PlayerPrefs.GetInt("TitanOrbit_WebPaid", paidPlaceholder ? 1 : 0) != 0;
+
+                if (!isPaid)
+                {
+                    // Free players are forced into the latest lobby that is open.
+                    var latest = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: true, count: 10);
+                    if (latest == null || latest.Count == 0)
+                    {
+                        Debug.LogWarning("No open latest lobbies found for free users.");
+                        ok = false;
+                    }
+                    else
+                    {
+                        ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(latest[0].Id);
+                    }
+                }
+                else
+                {
+                    // Paid users can pick any open lobby (placeholder selection via joinCodeInputField).
+                    var openLobbies = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: false, count: 20);
+                    if (openLobbies == null || openLobbies.Count == 0)
+                    {
+                        Debug.LogWarning("No open lobbies found for paid users.");
+                        ok = false;
+                    }
+                    else
+                    {
+                        // Show a small list in the existing display text so you can choose an index/lobby id.
+                        if (joinCodeDisplayText != null)
+                        {
+                            joinCodeDisplayText.gameObject.SetActive(true);
+                            int maxDisplay = Mathf.Min(8, openLobbies.Count);
+                            string listText = "Open lobbies (paid):\n";
+                            for (int i = 0; i < maxDisplay; i++)
+                            {
+                                var lob = openLobbies[i];
+                                int playerCount = lob.Players != null ? lob.Players.Count : 0;
+                                listText += $"{i}: {lob.Name} ({playerCount}/{lob.MaxPlayers}) id={lob.Id}\n";
+                            }
+                            listText += "Enter joinCodeInput as index (0..N) or lobby id.\n";
+                            joinCodeDisplayText.text = listText;
+                        }
+
+                        string selection = joinCodeInputField != null ? joinCodeInputField.text : null;
+                        string trimmed = string.IsNullOrWhiteSpace(selection) ? null : selection.Trim();
+
+                        string lobbyIdToJoin = null;
+                        if (string.IsNullOrWhiteSpace(trimmed))
+                        {
+                            lobbyIdToJoin = openLobbies[0].Id;
+                        }
+                        else if (int.TryParse(trimmed, out int index))
+                        {
+                            if (index >= 0 && index < openLobbies.Count)
+                                lobbyIdToJoin = openLobbies[index].Id;
+                        }
+                        else
+                        {
+                            // Treat as a lobby id.
+                            lobbyIdToJoin = trimmed;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(lobbyIdToJoin))
+                        {
+                            Debug.LogWarning("Paid selection was invalid. Join failed.");
+                            ok = false;
+                        }
+                        else
+                        {
+                            ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(lobbyIdToJoin);
+                        }
+                    }
+                }
+#else
+                ok = await NetworkGameManager.Instance.PlayQuickJoinOrCreateAsync();
+#endif
                 if (ok)
                 {
                     if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
