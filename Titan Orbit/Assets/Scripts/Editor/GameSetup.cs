@@ -2526,22 +2526,26 @@ namespace TitanOrbit.Editor
             {
                 var prefabProp = listProp.GetArrayElementAtIndex(i).FindPropertyRelative("Prefab");
                 var obj = prefabProp?.objectReferenceValue;
-                if (obj != null)
+                if (obj == null)
                 {
-                    if (seen.Contains(obj))
-                    {
-                        listProp.DeleteArrayElementAtIndex(i);
-                        Debug.Log($"Removed duplicate prefab: {obj.name}");
-                    }
-                    else
-                    {
-                        seen.Add(obj);
-                    }
+                    listProp.DeleteArrayElementAtIndex(i);
+                    Debug.Log("Removed null network prefab entry.");
+                    continue;
+                }
+
+                if (seen.Contains(obj))
+                {
+                    listProp.DeleteArrayElementAtIndex(i);
+                    Debug.Log($"Removed duplicate prefab: {obj.name}");
+                }
+                else
+                {
+                    seen.Add(obj);
                 }
             }
             so.ApplyModifiedPropertiesWithoutUndo();
             AssetDatabase.SaveAssets();
-            Debug.Log("Duplicate network prefabs removed.");
+            Debug.Log("Network prefabs cleanup complete (null + duplicate entries removed).");
         }
 
         [MenuItem("Titan Orbit/Fix Player Prefab & Materials")]

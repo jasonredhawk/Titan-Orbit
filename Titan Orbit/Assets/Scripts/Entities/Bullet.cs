@@ -3,6 +3,7 @@ using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
+using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
@@ -64,9 +65,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<byte> bulletVisualShapeIndex = new NetworkVariable<byte>(0);
         private NetworkVariable<bool> bulletVisualNoTrail = new NetworkVariable<bool>(false);
         private NetworkVariable<byte> bulletOwnerTeamByte = new NetworkVariable<byte>((byte)TeamManager.Team.None);
+        /// <summary>When >= 0, use CombatSystem.GetBulletPrefabFromBank(this) for visual instead of bulletVisualPrefab. Used when spawning via shell.</summary>
+        private NetworkVariable<int> visualPrefabBankIndex = new NetworkVariable<int>(-1);
         private float cachedVisualScaleMultiplier = 1f;
         private byte cachedVisualShapeIndex;
         private bool cachedVisualNoTrail;
+        private int cachedVisualPrefabBankIndex = -1;
 
         private const float FIXED_Y_POSITION = 0f;
         private Rigidbody rb;
@@ -111,7 +115,9 @@ namespace TitanOrbit.Entities
             bulletVisualShapeIndex.OnValueChanged += OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged += OnVisualNoTrailChanged;
             bulletOwnerTeamByte.OnValueChanged += OnOwnerTeamChanged;
+            visualPrefabBankIndex.OnValueChanged += OnVisualPrefabBankIndexChanged;
         }
+        private void OnVisualPrefabBankIndexChanged(int prev, int next) { UpdateVisual(); }
 
         private void OnOwnerTeamChanged(byte oldVal, byte newVal)
         {
@@ -129,6 +135,7 @@ namespace TitanOrbit.Entities
             bulletVisualShapeIndex.OnValueChanged -= OnVisualShapeChanged;
             bulletVisualNoTrail.OnValueChanged -= OnVisualNoTrailChanged;
             bulletOwnerTeamByte.OnValueChanged -= OnOwnerTeamChanged;
+            visualPrefabBankIndex.OnValueChanged -= OnVisualPrefabBankIndexChanged;
             if (proceduralMaterialInstance != null)
             {
                 Destroy(proceduralMaterialInstance);
@@ -168,6 +175,7 @@ namespace TitanOrbit.Entities
                 bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
                 bulletVisualNoTrail.Value = cachedVisualNoTrail;
                 bulletOwnerTeamByte.Value = (byte)ownerTeam;
+                visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
             }
 
             // Lock Y position to 0
@@ -345,18 +353,35 @@ namespace TitanOrbit.Entities
         private void DespawnBullet()
         {
             Vector3 impactPos = transform.position;
-            if (impactEffectPrefab != null)
+            int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
+            GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
+            if (impactPrefab != null)
             {
-                SpawnImpactEffectClientRpc(impactPos);
-                SpawnImpactAt(impactPos); // Server spawns too (ClientRpc doesn't run on server)
+                SpawnImpactEffectClientRpc(impactPos, bankIdx);
+                SpawnImpactAt(impactPos, impactPrefab); // Server spawns too (ClientRpc doesn't run on server)
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
         }
 
-        private void SpawnImpactAt(Vector3 position)
+        /// <summary>Impact prefab from SciFiProjectileScript.impactParticle when using bank, else the default impactEffectPrefab.</summary>
+        private GameObject GetResolvedImpactPrefab(int bankIndex)
         {
-            GameObject go = Instantiate(impactEffectPrefab, position, Quaternion.identity);
+            if (bankIndex >= 0 && CombatSystem.Instance != null)
+            {
+                TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
+                if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
+                GameObject fromBank = CombatSystem.Instance.GetImpactPrefabFromBank(bankIndex, teamForResolve);
+                if (fromBank != null) return fromBank;
+            }
+            return impactEffectPrefab;
+        }
+
+        private void SpawnImpactAt(Vector3 position, GameObject prefab = null)
+        {
+            GameObject usePrefab = prefab != null ? prefab : impactEffectPrefab;
+            if (usePrefab == null) return;
+            GameObject go = Instantiate(usePrefab, position, Quaternion.identity);
             go.transform.localScale = Vector3.one * impactEffectScale;
             DisableGrabPassMaterials(go); // Avoid "GrabPass can't be called from job thread" in URP/SRP
             Destroy(go, impactEffectDuration);
@@ -381,10 +406,16 @@ namespace TitanOrbit.Entities
         }
 
         [ClientRpc]
-        private void SpawnImpactEffectClientRpc(Vector3 position)
+        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex = -1)
         {
-            if (impactEffectPrefab != null)
-                SpawnImpactAt(position);
+            TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
+            if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
+            GameObject prefab = impactPrefabBankIndex >= 0 && CombatSystem.Instance != null
+                ? CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex, teamForResolve)
+                : null;
+            if (prefab == null) prefab = impactEffectPrefab;
+            if (prefab != null)
+                SpawnImpactAt(position, prefab);
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound();
         }
@@ -394,7 +425,7 @@ namespace TitanOrbit.Entities
             Initialize(bulletSpeed, bulletDamage, team, 0, 1f, 0, false);
         }
 
-        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0, bool noTrailVisual = false)
+        public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team, ulong ownerShipId, float visualScaleMultiplier, byte shapeIndex = 0, bool noTrailVisual = false, int visualPrefabBankIndexArg = -1)
         {
             speed = bulletSpeed;
             damage = bulletDamage;
@@ -403,10 +434,21 @@ namespace TitanOrbit.Entities
             cachedVisualScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             cachedVisualShapeIndex = shapeIndex;
             cachedVisualNoTrail = noTrailVisual;
-            // Synced to clients for bullet color
-            if (IsServer && bulletOwnerTeamByte != null)
-                bulletOwnerTeamByte.Value = (byte)team;
-            // NetworkVariables for scale/shape set in OnNetworkSpawn
+            cachedVisualPrefabBankIndex = visualPrefabBankIndexArg;
+            if (IsServer)
+            {
+                if (bulletOwnerTeamByte != null)
+                    bulletOwnerTeamByte.Value = (byte)team;
+                // Set scale/visual NetworkVariables before Spawn() so clients receive correct scale in spawn payload
+                if (bulletVisualScaleMultiplier != null)
+                    bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
+                if (bulletVisualShapeIndex != null)
+                    bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
+                if (bulletVisualNoTrail != null)
+                    bulletVisualNoTrail.Value = cachedVisualNoTrail;
+                if (visualPrefabBankIndex != null)
+                    visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
+            }
         }
 
         private void UpdateVisual()
@@ -430,9 +472,12 @@ namespace TitanOrbit.Entities
                 r.enabled = false;
 
             GameObject visualPrefab = null;
-            if (bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
+            int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
+            if (bankIdx >= 0 && CombatSystem.Instance != null)
+                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx, teamForColor);
+            if (visualPrefab == null && bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
                 visualPrefab = bulletVisualPrefabOptions[shapeIdx];
-            else if (bulletVisualPrefab != null)
+            if (visualPrefab == null && bulletVisualPrefab != null)
                 visualPrefab = bulletVisualPrefab;
 
             if (visualPrefab != null)

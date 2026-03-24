@@ -11,6 +11,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Audio;
+using SciFiArsenal;
 
 namespace TitanOrbit.Entities
 {
@@ -70,6 +71,10 @@ namespace TitanOrbit.Entities
 
         /// <summary>Bullet fire points (Weapon components only; Cockpit cannons removed).</summary>
         private List<Transform> bulletFirePoints = new List<Transform>();
+        /// <summary>CombatSystem bullet prefab bank index for this ship (from ShipFamilyDefinition). -1 = use CombatSystem default.</summary>
+        private int bulletPrefabBankIndex = -1;
+        /// <summary>Runtime bullet index (synced). B key cycles this. When >= 0 use instead of bulletPrefabBankIndex when firing.</summary>
+        private NetworkVariable<int> runtimeBulletPrefabIndex = new NetworkVariable<int>(-1);
         /// <summary>Muzzle particle systems at each bullet (Weapon) position.</summary>
         private List<ParticleSystem> bulletMuzzleParticleSystems = new List<ParticleSystem>();
 
@@ -84,8 +89,12 @@ namespace TitanOrbit.Entities
         private List<ParticleSystem> thrusterParticleSystems = new List<ParticleSystem>();
 
         [Header("Component Attribute Scaling")]
-        [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.15 = 15%. GameManager overrides when set.")]
-        [SerializeField] private float attributeScaleExaggeration = 0.15f;
+        [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.2 = 20% per attribute unit. GameManager overrides when set.")]
+        [SerializeField] private float attributeScaleExaggeration = 0.2f;
+        [Tooltip("How much component mesh scale reflects stat upgrades. 0.5 = 10% stat increase → 5% bigger component; 1 = 1:1. Set higher so upgrades are clearly visible.")]
+        [SerializeField] [Range(0.2f, 1.5f)] private float componentScaleVisibility = 0.6f;
+        [Tooltip("Extra multiplier for bullet size so projectiles scale more visibly with Fire Power / Bullet Speed / cards. 1 = same as weapon component scale; 1.5 = bullets grow 50% more per upgrade.")]
+        [SerializeField] [Range(0.5f, 3f)] private float bulletScaleExaggeration = 1.5f;
 
         private List<Transform> cockpitScaleTransforms = new List<Transform>();
         private List<Vector3> cockpitBaseScales = new List<Vector3>();
@@ -107,6 +116,10 @@ namespace TitanOrbit.Entities
         private List<Vector3> partBasePositions = new List<Vector3>();
         private List<float> muzzleBaseSizes = new List<float>();
         private List<float> muzzleBaseSpeeds = new List<float>();
+
+        [Header("Feedback")]
+        [Tooltip("World-space floating text prefab (with SimpleFloatingText) used to show bullet/weapon changes above the ship.")]
+        [SerializeField] private GameObject bulletNameTextPrefab;
 
         /// <summary>Cached card stat sums, refreshed once per frame to avoid iterating equippedCards 16+ times in LateUpdate.</summary>
         private int _cardStatsCacheFrame = -1;
@@ -274,7 +287,9 @@ namespace TitanOrbit.Entities
                 float baseThrust = componentEngineThrust > 0f ? componentEngineThrust : engineThrust;
                 float baseWithCards = baseThrust + GetCardMovementSpeedAdd();
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier;
+                // Boost acceleration so ships feel snappier. 5x matches previous feel better after mass changes.
+                const float ENGINE_THRUST_VISIBILITY = 10f;
+                return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier * ENGINE_THRUST_VISIBILITY;
             }
         }
         /// <summary>Max speed from engines. More engines = higher cap. Scaled by attr/cards.</summary>
@@ -364,7 +379,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for bullet size and muzzle particles.</summary>
+        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for weapon visuals and muzzle particles.</summary>
         private float WeaponComponentScaleMultiplier
         {
             get
@@ -374,6 +389,12 @@ namespace TitanOrbit.Entities
                 return 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
             }
         }
+
+        /// <summary>Same factor that makes fire rate faster (1 + attrFirePower * 0.1). Used so bullet size always scales when fire power upgrades.</summary>
+        private float FirePowerScaleFactor => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+
+        /// <summary>Bullet projectile scale: base size × damage term × fire-power factor (same as fire rate) × weapon/card scale × exaggeration. Ensures upgrading fire power visibly increases bullet size.</summary>
+        private float BulletScaleMultiplier => FirePowerScaleFactor * WeaponComponentScaleMultiplier * Mathf.Max(0.5f, bulletScaleExaggeration);
 
 #if UNITY_EDITOR
         // Editor-only helpers exposing effective ship ability stats for inspector visualizations
@@ -466,6 +487,25 @@ namespace TitanOrbit.Entities
 
         /// <summary>Base gem capacity without card bonuses. Comes from ShipFamilyDefinition (via chassis components).</summary>
         public float BaseGemCapacity => Mathf.Max(0f, gemCapacity);
+
+        /// <summary>Stat value as if no attribute upgrades (attr=0). Used to scale components by percentage increase (current/base).</summary>
+        private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth + GetCardMaxHealthAdd());
+        private float BaseGemCapacityNoAttr => Mathf.Max(0.1f, gemCapacity + GetCardGemCapacityAdd());
+        private float BasePeopleCapacityNoAttr => Mathf.Max(0.1f, peopleCapacity);
+        private float BaseEnergyCapacityNoAttr => Mathf.Max(0.1f, energyCapacity + GetCardEnergyCapacityAdd());
+        private float BaseEnergyRegenNoAttr => Mathf.Max(0.01f, energyRegenRate + GetCardEnergyRegenAdd());
+        private float BaseRotationSpeedNoAttr => Mathf.Max(1f, rotationSpeed + GetCardRotationSpeedAdd());
+        private float BaseHealthRegenNoAttr => Mathf.Max(0.01f, healthRegenRate + GetCardHealthRegenAdd());
+        private float BaseMaxSpeedNoAttr
+        {
+            get
+            {
+                float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
+                return Mathf.Max(0.1f, baseSpeed + GetCardMovementSpeedAdd() * 0.5f);
+            }
+        }
+        private float BaseDamageMultiplierNoAttr => Mathf.Max(0.1f, GetCardDamageMultiplier());
+        private float BaseSpeedMultiplierNoAttr => Mathf.Max(0.1f, GetCardBulletSpeedMultiplier());
         public float CurrentPeople => currentPeople.Value;
         /// <summary>Server-only: release people-in-transit when a load projectile delivers. Call from PeopleTransportProjectile.</summary>
         public void ReleasePeopleInTransit(float amount)
@@ -993,8 +1033,8 @@ namespace TitanOrbit.Entities
                 if (GameManager.Instance != null && GameManager.Instance.AttributeScaleExaggeration > 0f)
                     return GameManager.Instance.AttributeScaleExaggeration;
                 if (attributeScaleExaggeration > 0f)
-                    return Mathf.Approximately(attributeScaleExaggeration, 0.5f) ? 0.15f : attributeScaleExaggeration;
-                return 0.15f;
+                    return Mathf.Approximately(attributeScaleExaggeration, 0.5f) ? 0.2f : attributeScaleExaggeration;
+                return 0.2f;
             }
         }
 
@@ -1042,23 +1082,35 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Scale ship components by attribute upgrade levels and equipped cards; position moves outward from center in proportion. Cockpit: Health+People+Energy. Wing: Gems+Health+HealthRegen+TurnSpeed. Weapon: FirePower+BulletSpeed. Engine: MoveSpeed. Thruster: TurnSpeed. Hull/Parts: Health+HealthRegen+Gems+People.</summary>
+        /// <summary>Scale ship components by the percentage increase in their associated stats (current value / base value at 0 upgrades). E.g. wings scale with max gems and turn speed.</summary>
         private void ApplyComponentAttributeScaling()
         {
-            float ex = EffectiveAttributeScaleExaggeration;
-            float cardCockpit = GetCardMaxHealthAdd() / 50f + GetCardPeopleCapacityAdd() / 5f + GetCardEnergyCapacityAdd() / 50f + GetCardEnergyRegenAdd() / 5f;
-            float cardWing = GetCardGemCapacityAdd() / 50f + GetCardMaxHealthAdd() / 50f + GetCardHealthRegenAdd() / 5f + GetCardRotationSpeedAdd() / 15f;
-            float cardWeapon = (GetCardDamageMultiplier() - 1f) * 10f + (GetCardBulletSpeedMultiplier() - 1f) * 10f;
-            float cardEngine = GetCardMovementSpeedAdd() / 2f;
-            float cardThruster = GetCardRotationSpeedAdd() / 15f;
-            float cardPart = GetCardMaxHealthAdd() / 50f + GetCardHealthRegenAdd() / 5f + GetCardGemCapacityAdd() / 50f + GetCardPeopleCapacityAdd() / 5f;
+            float vis = Mathf.Max(0.2f, componentScaleVisibility);
 
-            float cockpitScale = 1f + ((attrMaxHealth.Value + attrPeopleCapacity.Value + attrEnergyCapacity.Value + attrEnergyRegen.Value) * 0.5f + cardCockpit * 0.5f) * ex;
-            float wingScale = 1f + ((attrGemCapacity.Value + attrMaxHealth.Value + attrHealthRegen.Value + attrRotationSpeed.Value) * 0.5f + cardWing * 0.5f) * ex;
-            float weaponScale = 1f + ((attrFirePower.Value + attrBulletSpeed.Value) * 0.5f + cardWeapon * 0.5f) * ex;
-            float engineScale = 1f + (attrMovementSpeed.Value + cardEngine) * ex;
-            float thrusterScale = 1f + (attrRotationSpeed.Value + cardThruster) * ex;
-            float partScale = 1f + ((attrMaxHealth.Value + attrHealthRegen.Value + attrGemCapacity.Value + attrPeopleCapacity.Value) * 0.5f + cardPart * 0.5f) * ex;
+            // Stat ratios: current / base (base = value at 0 attribute upgrades). Ratio = 1 at no upgrades, >1 when upgraded.
+            float ratioHealth = MaxHealth / BaseMaxHealthNoAttr;
+            float ratioGem = GemCapacity / BaseGemCapacityNoAttr;
+            float ratioPeople = PeopleCapacity / BasePeopleCapacityNoAttr;
+            float ratioEnergyCap = EffectiveEnergyCapacity / BaseEnergyCapacityNoAttr;
+            float ratioEnergyRegen = EffectiveEnergyRegen / BaseEnergyRegenNoAttr;
+            float ratioTurn = EffectiveRotationSpeed / BaseRotationSpeedNoAttr;
+            float ratioRegen = EffectiveHealthRegen / BaseHealthRegenNoAttr;
+            float ratioMove = EffectiveMaxSpeed / BaseMaxSpeedNoAttr;
+            float ratioDamage = DamageMultiplier / BaseDamageMultiplierNoAttr;
+            float ratioBulletSpeed = SpeedMultiplier / BaseSpeedMultiplierNoAttr;
+
+            // Scale = 1 + (average ratio - 1) * visibility so e.g. 10% stat → 6% scale at vis=0.6. Ensures upgrades are visible.
+            float avgCockpit = (ratioHealth + ratioPeople + ratioEnergyCap + ratioEnergyRegen) * 0.25f;
+            float avgWing = (ratioGem + ratioTurn) * 0.5f;
+            float avgWeapon = (ratioDamage + ratioBulletSpeed) * 0.5f;
+            float avgPart = (ratioHealth + ratioRegen + ratioGem + ratioPeople) * 0.25f;
+
+            float cockpitScale = Mathf.Max(1f, 1f + (avgCockpit - 1f) * vis);
+            float wingScale = Mathf.Max(1f, 1f + (avgWing - 1f) * vis);
+            float weaponScale = Mathf.Max(1f, 1f + (avgWeapon - 1f) * vis);
+            float engineScale = Mathf.Max(1f, 1f + (ratioMove - 1f) * vis);
+            float thrusterScale = Mathf.Max(1f, 1f + (ratioTurn - 1f) * vis);
+            float partScale = Mathf.Max(1f, 1f + (avgPart - 1f) * vis);
 
             for (int i = 0; i < cockpitScaleTransforms.Count; i++)
             {
@@ -1115,8 +1167,8 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // Muzzle particles: scale size and speed by weapon attributes and cards
-            float muzzleSpeedScale = 1f + (attrBulletSpeed.Value + (GetCardBulletSpeedMultiplier() - 1f) * 10f) * 0.5f * ex;
+            // Muzzle particles: size follows weapon scale, speed follows bullet speed ratio
+            float muzzleSpeedScale = Mathf.Max(0.5f, ratioBulletSpeed);
             for (int i = 0; i < bulletMuzzleParticleSystems.Count; i++)
             {
                 var ps = bulletMuzzleParticleSystems[i];
@@ -1431,6 +1483,23 @@ namespace TitanOrbit.Entities
                     lastMineTime = Time.time;
                 }
             }
+
+            // B key: cycle bullet prefab through CombatSystem's Bullet Prefab Bank (via PlayerInputHandler or new Input System)
+            bool cycleBulletPressed = (inputHandler is TitanOrbit.Input.PlayerInputHandler pih && pih.CycleBulletPressed)
+                || (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.bKey.wasPressedThisFrame);
+            if (IsOwner && !IsPointerOverUI() && !isDead.Value &&
+                Systems.CombatSystem.Instance != null && Systems.CombatSystem.Instance.BulletPrefabBankCount >= 1 &&
+                cycleBulletPressed)
+            {
+                // Local preview of which bullet we are switching to so we can show floating text immediately.
+                int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
+                int current = runtimeBulletPrefabIndex.Value;
+                int next = current < 0 ? 0 : (current + 1) % count;
+                ShowBulletNameLocal(next);
+
+                // Tell server to actually apply the change and sync runtimeBulletPrefabIndex.
+                CycleBulletPrefabServerRpc();
+            }
         }
 
         /// <summary>True only when the pointer is over a UI element (Canvas/Graphic). Ignores 3D colliders so clicking the ship or world doesn't block shooting.</summary>
@@ -1707,6 +1776,38 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc]
+        private void CycleBulletPrefabServerRpc()
+        {
+            if (CombatSystem.Instance == null) return;
+            int count = CombatSystem.Instance.BulletPrefabBankCount;
+            if (count < 1) return;
+            int current = runtimeBulletPrefabIndex.Value;
+            int next = current < 0 ? 0 : (current + 1) % count;
+            runtimeBulletPrefabIndex.Value = next;
+        }
+
+        /// <summary>Owner-only: spawns floating text above this ship showing the current bullet name/category.</summary>
+        private void ShowBulletNameLocal(int bankIndex)
+        {
+            if (!IsOwner) return;
+            if (bulletNameTextPrefab == null) return;
+            if (Systems.CombatSystem.Instance == null) return;
+
+            string name = Systems.CombatSystem.Instance.GetBulletDisplayName(bankIndex);
+            if (string.IsNullOrEmpty(name)) return;
+
+            // Spawn a bit above the ship so it's not occluded by the hull in top-down view.
+            Vector3 pos = transform.position + Vector3.up * 5f;
+            GameObject go = Instantiate(bulletNameTextPrefab, pos, Quaternion.identity);
+            var ft = go.GetComponent<TitanOrbit.Systems.SimpleFloatingText>();
+            if (ft != null)
+            {
+                // White text, ~2 seconds duration
+                ft.Initialize(name, Color.white, 2f);
+            }
+        }
+
+        [ServerRpc]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
         {
             if (CombatSystem.Instance == null) return;
@@ -1717,22 +1818,23 @@ namespace TitanOrbit.Entities
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
             else forward.Normalize();
             Vector3 right = Vector3.Cross(Vector3.up, forward);
-            Vector3 defaultFireOrigin = shipPosition + forward * 2f;
             Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
+            var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
-            // Fire bullets (Weapon only): small projectiles, low energy per shot. Only fire from actual weapon components (bulletFirePoints); never fire more shots than we have GameObjects.
+            // Fire bullets (Weapon only): only from actual weapon components (bulletFirePoints). No fallback to ship center — avoids phantom bullet with no muzzle.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int maxCannons = bulletFirePoints != null && bulletFirePoints.Count > 0
-                ? bulletFirePoints.Count
-                : (bulletWc?.cannons != null ? bulletWc.cannons.Count : 0);
+            int maxCannons = (bulletFirePoints != null && bulletFirePoints.Count > 0) ? bulletFirePoints.Count : 0;
             if (bulletWc.cannons != null && maxCannons > 0)
             {
                 for (int i = 0; i < bulletWc.cannons.Count && i < maxCannons; i++)
                 {
                     var c = bulletWc.cannons[i];
+                    // Only fire from actual weapon positions; skip if no fire point (no phantom from ship center).
+                    if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null)
+                        continue;
                     if (currentEnergy.Value < c.energyCostPerShot) continue;
                     float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
                     if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
@@ -1741,14 +1843,16 @@ namespace TitanOrbit.Entities
                     bulletLastFireTime[i] = Time.time;
                     bulletIndicesFired.Add((byte)i);
 
-                    Vector3 fireOrigin = defaultFireOrigin;
-                    if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
-                        fireOrigin = bulletFirePoints[i].position;
-                    else
-                    {
-                        Vector3 offset = forward * c.localOffsetZ + right * c.localOffsetX;
-                        fireOrigin = defaultFireOrigin + offset;
-                    }
+                    int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
+                    // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
+                    int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
+                        ? (runtimeBulletPrefabIndex.Value % bankCount)
+                        : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
+                            ? c.bulletPrefabIndex
+                            : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
+                    bulletPrefabIndicesFired.Add(bulletIdx);
+
+                    Vector3 fireOrigin = bulletFirePoints[i].position;
 
                     float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
                     Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
@@ -1772,8 +1876,8 @@ namespace TitanOrbit.Entities
                         }
                         float damage = c.damagePerBullet * DamageMultiplier;
                         float speed = c.bulletSpeed * SpeedMultiplier;
-                        float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
-                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel);
+                        float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
+                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                         if (rb != null)
                         {
                             float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
@@ -1783,18 +1887,39 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            FireClientRpc(bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>());
+            FireClientRpc(
+                bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>(),
+                bulletPrefabIndicesFired.Count > 0 ? bulletPrefabIndicesFired.ToArray() : System.Array.Empty<int>());
         }
 
         [ClientRpc]
-        private void FireClientRpc(byte[] bulletIndicesFired)
+        private void FireClientRpc(byte[] bulletIndicesFired, int[] bulletPrefabIndices)
         {
-            if (bulletIndicesFired != null && bulletMuzzleParticleSystems != null)
+            if (bulletIndicesFired != null)
             {
                 for (int j = 0; j < bulletIndicesFired.Length; j++)
                 {
                     int idx = bulletIndicesFired[j];
-                    if (idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
+                    bool usedSciFiMuzzle = false;
+                    if (bulletPrefabIndices != null && j < bulletPrefabIndices.Length && CombatSystem.Instance != null)
+                    {
+                        GameObject bulletPrefab = CombatSystem.Instance.GetBulletPrefabFromBank(bulletPrefabIndices[j], shipTeam.Value);
+                        var sciFi = bulletPrefab != null ? bulletPrefab.GetComponent<SciFiProjectileScript>() : null;
+                        if (sciFi != null && sciFi.muzzleParticle != null && bulletFirePoints != null && idx >= 0 && idx < bulletFirePoints.Count && bulletFirePoints[idx] != null)
+                        {
+                            Transform pt = bulletFirePoints[idx];
+                            Vector3 pos = pt.position;
+                            Vector3 fwd = pt.forward;
+                            if (fwd.sqrMagnitude < 0.01f) fwd = -transform.forward;
+                            GameObject muzzle = Instantiate(sciFi.muzzleParticle, pos, Quaternion.LookRotation(-fwd));
+                            if (muzzle != null)
+                            {
+                                Destroy(muzzle, 1.5f);
+                                usedSciFiMuzzle = true;
+                            }
+                        }
+                    }
+                    if (!usedSciFiMuzzle && bulletMuzzleParticleSystems != null && idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
                         bulletMuzzleParticleSystems[idx].Play();
                 }
             }
@@ -1817,7 +1942,7 @@ namespace TitanOrbit.Entities
             var c = bulletWc.cannons[cannonIndex];
             float damage = c.damagePerBullet * DamageMultiplier;
             float speed = c.bulletSpeed * SpeedMultiplier;
-            float scale = c.bulletScale * (0.65f + damage / 50f) * WeaponComponentScaleMultiplier;
+            float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
             float scaleClamped = Mathf.Max(0.25f, scale);
             const float refSpeed = 20f;
             return (speed / refSpeed) / scaleClamped;
@@ -2884,7 +3009,21 @@ namespace TitanOrbit.Entities
 
                 float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
                 componentEngineThrust = Mathf.Max(0f, moveVal);
-                componentEngineMaxSpeed = Mathf.Max(0.1f, moveVal);
+                // Max speed from largest engine only (more engines = more acceleration, not higher top speed)
+                float maxEngineMoveSpeed = 0f;
+                if (matchedComponentIds != null && perComponentStats != null)
+                {
+                    for (int k = 0; k < matchedComponentIds.Count && k < perComponentStats.Count; k++)
+                    {
+                        if (ShipComponentAbilityStats.IsEngineComponent(matchedComponentIds[k]))
+                        {
+                            ShipComponentAbilityStats comp = perComponentStats[k];
+                            float engineSpeed = comp.moveSpeed + comp.moveSpeedPerLevel * perLvl;
+                            if (engineSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = engineSpeed;
+                        }
+                    }
+                }
+                componentEngineMaxSpeed = Mathf.Max(0.1f, maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : moveVal);
 
                 componentMass =
                     stats.engineScaleTotal +
@@ -2903,7 +3042,15 @@ namespace TitanOrbit.Entities
                 float thrustFromEngines = stats.engineScaleTotal;
                 float thrustFromThrusters = stats.thrusterScaleTotal;
                 componentEngineThrust = Mathf.Max(0f, thrustFromEngines + thrustFromThrusters);
-                componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleTotal);
+                componentEngineMaxSpeed = Mathf.Max(0.1f, stats.engineScaleMax);
+
+                // Safety: never let fallback component-based values make the ship slower than the legacy base values.
+                // If parsing or naming changes reduce engineScale totals, we still keep at least the original thrust and max speed.
+                if (componentEngineThrust < engineThrust)
+                    componentEngineThrust = engineThrust;
+                float legacyBaseMaxSpeed = Mathf.Max(2f, engineThrust * 0.5f);
+                if (componentEngineMaxSpeed < legacyBaseMaxSpeed)
+                    componentEngineMaxSpeed = legacyBaseMaxSpeed;
 
                 componentMass =
                     stats.engineScaleTotal +
@@ -2957,6 +3104,7 @@ namespace TitanOrbit.Entities
 
             // Clear previous bullet state (from previous prefab). Cannons removed; only Weapon bullets.
             bulletFirePoints.Clear();
+            bulletPrefabBankIndex = -1;
             foreach (var ps in bulletMuzzleParticleSystems)
             {
                 if (ps != null && ps.gameObject != null)
@@ -3085,10 +3233,14 @@ namespace TitanOrbit.Entities
                             c.bulletSpeed *= bulletSpeedScale;
                         }
                     }
+                    // Per-weapon bullet prefab index from ShipFamilyComponentEntry (index into CombatSystem's Bullet Prefab Bank).
+                    if (previewFamilyDef != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetComponentEntry(componentId, out var compEntry) && compEntry != null && compEntry.bulletPrefabIndex >= 0)
+                        c.bulletPrefabIndex = compEntry.bulletPrefabIndex;
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];
                     if (pt == null) pt = transform;
                     bulletFirePoints.Add(pt);
+
                     float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
                     float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
                     ParticleSystem muzzle = CreateMuzzleParticleSystem(pt, muzzleScale);
@@ -3104,6 +3256,21 @@ namespace TitanOrbit.Entities
                         weaponBaseScales.Add(wt.localScale);
                         weaponBasePositions.Add(wt.localPosition);
                     }
+                }
+                // Bullet prefab index from family definition (index into CombatSystem's Bullet Prefab Bank)
+                if (Systems.CombatSystem.Instance != null)
+                {
+                    int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
+                    int idx = (previewFamilyDef != null && count > 0) ? previewFamilyDef.bulletPrefabIndex : 0;
+                    bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : (count > 0 ? 0 : -1);
+                    if (IsServer)
+                        runtimeBulletPrefabIndex.Value = bulletPrefabBankIndex;
+                }
+                else
+                {
+                    bulletPrefabBankIndex = -1;
+                    if (IsServer)
+                        runtimeBulletPrefabIndex.Value = -1;
                 }
                 bulletConfig = bc;
             }

@@ -32,6 +32,8 @@ namespace TitanOrbit.Data
 
         /// <summary>Sum of scale factors (avg of x,y,z) per component; used as bonus multiplier.</summary>
         public float engineScaleTotal;
+        /// <summary>Max engine scale (largest single engine). Used for max speed cap so more engines don't increase top speed.</summary>
+        public float engineScaleMax;
         public float thrusterScaleTotal;
         public float wingScaleTotal;
         public float tailScaleTotal;
@@ -59,14 +61,30 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Scan direct children of root for names like "AstroEagle_Weapon", "AstroEagle_Engine_2".
-        /// Second segment (after first '_') is the component type; family prefix is ignored.
+        /// Scan root and all descendants for component transforms. Physics totals (engineScaleTotal, thrusterScaleTotal, etc.)
+        /// are computed from DIRECT CHILDREN ONLY so thrust/turn speed stay correct. Transform lists are filled recursively
+        /// so nested components (e.g. under a "Model" container) still get visual scaling.
         /// </summary>
         public static ChassisComponentStats FromTransform(Transform root, string familyPrefix = "AstroEagle")
         {
             var stats = new ChassisComponentStats();
             if (root == null) return stats;
 
+            // Pass 1: direct children only — used for physics (thrust, turn, mass). Keeps ship speed/turn unchanged.
+            CollectComponentTransformsDirectOnly(root, stats, familyPrefix);
+
+            // Pass 2: recursive from root — add only nested matches (skip direct children, already in lists from pass 1).
+            CollectComponentTransformsRecursive(root, stats, familyPrefix, addToTotals: false, rootForSkip: root);
+
+            CollectWeaponTransformsRecursive(root, stats.weaponTransforms, stats.weaponScales);
+
+            return stats;
+        }
+
+        /// <summary>Direct children only. Updates scale totals and counts (used for physics). Also adds to transform lists.</summary>
+        private static void CollectComponentTransformsDirectOnly(Transform root, ChassisComponentStats stats, string familyPrefix)
+        {
+            if (root == null || stats == null) return;
             for (int i = 0; i < root.childCount; i++)
             {
                 Transform child = root.GetChild(i);
@@ -75,14 +93,14 @@ namespace TitanOrbit.Data
                 if (string.IsNullOrEmpty(name)) continue;
 
                 string componentType = ParseComponentType(name, familyPrefix);
+                if (string.IsNullOrEmpty(componentType))
+                    componentType = ParseComponentTypeBySubstring(name);
                 if (string.IsNullOrEmpty(componentType)) continue;
 
-                string rest = name.Substring(familyPrefix.Length + 1);
                 float scaleFactor = GetScaleFactor(child);
-
                 switch (componentType)
                 {
-                    case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineTransforms.Add(child); break;
+                    case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor); stats.engineTransforms.Add(child); break;
                     case "Thruster": stats.thrusterCount++; stats.thrusterScaleTotal += scaleFactor; stats.thrusterTransforms.Add(child); break;
                     case "Wing": stats.wingCount++; stats.wingScaleTotal += scaleFactor; stats.wingTransforms.Add(child); break;
                     case "Tail": stats.tailCount++; stats.tailScaleTotal += scaleFactor; break;
@@ -91,22 +109,82 @@ namespace TitanOrbit.Data
                         stats.cockpitCount++;
                         stats.cockpitScaleTotal += scaleFactor;
                         stats.cockpitTransforms.Add(child);
-                        // All Cockpit components are cannon fire positions (AstroEagle_Cockpit, AstroEagle_Cockpit_Base_1, etc.)
                         stats.cockpitCannonCount++;
                         stats.cockpitCannonScaleTotal += scaleFactor;
                         stats.cockpitCannonTransforms.Add(child);
                         break;
                     case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; stats.partTransforms.Add(child); break;
-                    case "Weapon":
-                        // Handled below so we pick up weapons at any hierarchy level (not just direct children of root).
-                        break;
+                    case "Weapon": break;
                 }
             }
+        }
 
-            // Bullets only from components with "Weapon" in the name (any hierarchy level, any naming).
-            CollectWeaponTransformsRecursive(root, stats.weaponTransforms, stats.weaponScales);
+        /// <summary>Recursively find transforms for visual scaling. When addToTotals is false, only add to lists. When rootForSkip is set, don't add direct children of root (already added in direct-only pass).</summary>
+        private static void CollectComponentTransformsRecursive(Transform parent, ChassisComponentStats stats, string familyPrefix, bool addToTotals, Transform rootForSkip = null)
+        {
+            if (parent == null || stats == null) return;
+            bool isDirectChildOfRoot = rootForSkip != null && parent == rootForSkip;
 
-            return stats;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                if (child == null) continue;
+                string name = child.name;
+                if (string.IsNullOrEmpty(name)) continue;
+
+                string componentType = ParseComponentType(name, familyPrefix);
+                if (string.IsNullOrEmpty(componentType))
+                    componentType = ParseComponentTypeBySubstring(name);
+                if (!string.IsNullOrEmpty(componentType))
+                {
+                    bool skipAdd = isDirectChildOfRoot; // direct child of root already added in pass 1
+                    if (!skipAdd)
+                    {
+                        float scaleFactor = GetScaleFactor(child);
+                        if (addToTotals)
+                        {
+                            switch (componentType)
+                            {
+                                case "Engine": stats.engineCount++; stats.engineScaleTotal += scaleFactor; stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor); stats.engineTransforms.Add(child); break;
+                                case "Thruster": stats.thrusterCount++; stats.thrusterScaleTotal += scaleFactor; stats.thrusterTransforms.Add(child); break;
+                                case "Wing": stats.wingCount++; stats.wingScaleTotal += scaleFactor; stats.wingTransforms.Add(child); break;
+                                case "Tail": stats.tailCount++; stats.tailScaleTotal += scaleFactor; break;
+                                case "Fin": stats.finCount++; stats.finScaleTotal += scaleFactor; break;
+                                case "Cockpit":
+                                    stats.cockpitCount++;
+                                    stats.cockpitScaleTotal += scaleFactor;
+                                    stats.cockpitTransforms.Add(child);
+                                    stats.cockpitCannonCount++;
+                                    stats.cockpitCannonScaleTotal += scaleFactor;
+                                    stats.cockpitCannonTransforms.Add(child);
+                                    break;
+                                case "Part": stats.partCount++; stats.partScaleTotal += scaleFactor; stats.partTransforms.Add(child); break;
+                                case "Weapon": break;
+                            }
+                        }
+                        else
+                        {
+                            switch (componentType)
+                            {
+                                case "Engine": stats.engineTransforms.Add(child); break;
+                                case "Thruster": stats.thrusterTransforms.Add(child); break;
+                                case "Wing": stats.wingTransforms.Add(child); break;
+                                case "Cockpit":
+                                    stats.cockpitTransforms.Add(child);
+                                    stats.cockpitCannonTransforms.Add(child);
+                                    break;
+                                case "Part": stats.partTransforms.Add(child); break;
+                                default: break;
+                            }
+                        }
+                    }
+                    // Recurse into child so we still find nested components (e.g. root -> Model -> Engine_Nozzle)
+                    CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip);
+                    continue;
+                }
+
+                CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip);
+            }
         }
 
         /// <summary>
@@ -142,6 +220,21 @@ namespace TitanOrbit.Data
             string rest = name.Substring(familyPrefix.Length + 1);
             int idx = rest.IndexOf('_');
             return idx < 0 ? rest : rest.Substring(0, idx);
+        }
+
+        /// <summary>Fallback: detect component type by name segment so "Feather_Cockpit", "Wing_1", "Engine_L" still get scaling when family prefix doesn't match.</summary>
+        private static string ParseComponentTypeBySubstring(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            string n = name.ToLowerInvariant();
+            if (n.IndexOf("_cockpit", System.StringComparison.Ordinal) >= 0 || n.StartsWith("cockpit_")) return "Cockpit";
+            if (n.IndexOf("_wing", System.StringComparison.Ordinal) >= 0 || n.StartsWith("wing_")) return "Wing";
+            if (n.IndexOf("_engine", System.StringComparison.Ordinal) >= 0 || n.StartsWith("engine_")) return "Engine";
+            if (n.IndexOf("_thruster", System.StringComparison.Ordinal) >= 0 || n.StartsWith("thruster_")) return "Thruster";
+            if (n.IndexOf("_part", System.StringComparison.Ordinal) >= 0 || n.StartsWith("part_")) return "Part";
+            if (n.IndexOf("_tail", System.StringComparison.Ordinal) >= 0 || n.StartsWith("tail_")) return "Tail";
+            if (n.IndexOf("_fin", System.StringComparison.Ordinal) >= 0 || n.StartsWith("fin_")) return "Fin";
+            return null;
         }
     }
 }

@@ -142,6 +142,12 @@ namespace TitanOrbit.Data
             return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Weapon", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>True if the component is an engine (componentId starts with "Engine"). Max speed uses largest engine only; thrust sums all engines.</summary>
+        public static bool IsEngineComponent(string componentId)
+        {
+            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Engine", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Scale stats by transform.
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
@@ -206,6 +212,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Ability stat modifiers contributed by this component.")]
         public ShipComponentAbilityStats stats;
+
+        [Tooltip("For weapons: index into CombatSystem's Bullet Prefab Bank. -1 = use family default (ShipFamilyDefinition.bulletPrefabIndex).")]
+        public int bulletPrefabIndex = -1;
     }
 
     /// <summary>
@@ -236,6 +245,10 @@ namespace TitanOrbit.Data
     {
         [Tooltip("Ship family identifier prefix used in child names. Example: 'AstroEagle' for objects named 'AstroEagle_Cockpit'.")]
         public string familyId;
+
+        [Header("Bullets")]
+        [Tooltip("Index into CombatSystem's Bullet Prefab Bank (CombatSystem.bulletPrefabBank). 0 = first prefab. Weapon components can override per-cannon via ShipFamilyComponentEntry.bulletPrefabIndex. Same list/order on all builds for networking.")]
+        public int bulletPrefabIndex = 0;
 
         [Header("Components")]
 
@@ -286,6 +299,27 @@ namespace TitanOrbit.Data
             }
 
             return _lookup.TryGetValue(componentId.Trim(), out stats);
+        }
+
+        /// <summary>
+        /// Try to get the full component entry for a given component id (e.g. \"Weapon_1\").
+        /// </summary>
+        public bool TryGetComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
+        {
+            entry = null;
+            if (components == null || string.IsNullOrWhiteSpace(componentId))
+                return false;
+            string id = componentId.Trim();
+            for (int i = 0; i < components.Count; i++)
+            {
+                if (components[i] == null) continue;
+                if (string.Equals(components[i].componentId?.Trim(), id, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry = components[i];
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

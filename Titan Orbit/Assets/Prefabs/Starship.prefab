@@ -40,7 +40,6 @@ Transform:
   - {fileID: 7485762534884821757}
   - {fileID: 882458093366608539}
   - {fileID: 5128415958878097067}
-  - {fileID: 3386720834924451872}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!33 &6644432696205262651
@@ -160,7 +159,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 316912541
+  GlobalObjectIdHash: 35928897
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -192,11 +191,14 @@ MonoBehaviour:
   orbitSpeed: 0.8
   orbitRadiusPullStrength: 2.5
   orbitCaptureResponsiveness: 3.5
-  firePoint: {fileID: 3386720834924451872}
+  firePoint: {fileID: 0}
   recoilStrength: 1.2
   engineVfxPrefab: {fileID: 0}
   thrusterVfxPrefab: {fileID: 0}
   attributeScaleExaggeration: 0.15
+  componentScaleVisibility: 0.6
+  bulletScaleExaggeration: 1.5
+  bulletNameTextPrefab: {fileID: 4983387932602081380, guid: f0e3e4f0e4bdb9a43a7adc4ba0a6d71b, type: 3}
   baseRammingDamage: 5
   rammingDamagePerSpeedUnit: 3
   rammingMomentumDamageScale: 0.4
@@ -526,34 +528,3 @@ MeshRenderer:
   m_SortingOrder: 11
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1 &7685196339109324776
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 3386720834924451872}
-  m_Layer: 0
-  m_Name: FirePoint
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &3386720834924451872
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7685196339109324776}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0.55}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 938435240336322451}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
