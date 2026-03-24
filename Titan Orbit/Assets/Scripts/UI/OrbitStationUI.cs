@@ -217,9 +217,9 @@ namespace TitanOrbit.UI
                     if (_storeScrollDragging)
                     {
                         float deltaY = _storeScrollLastMousePos.y - mousePos.y;
-                        float nextY = Mathf.Clamp(currentY + (deltaY * dragScale), -scrollable, 0f);
+                        float nextY = Mathf.Clamp(currentY + (deltaY * dragScale), 0f, scrollable);
                         content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
-                        storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
+                        storeScrollRect.verticalNormalizedPosition = 1f - (nextY / scrollable);
                     }
                     _storeScrollLastMousePos = mousePos;
                     _storeScrollDragging = true;
@@ -241,9 +241,9 @@ namespace TitanOrbit.UI
             float scrollable = contentHeight - viewportHeight;
             if (scrollable <= 0f) return;
             float currentY = content.anchoredPosition.y;
-            float nextY = Mathf.Clamp(currentY + deltaY, -scrollable, 0f);
+            float nextY = Mathf.Clamp(currentY + deltaY, 0f, scrollable);
             content.anchoredPosition = new Vector2(content.anchoredPosition.x, nextY);
-            storeScrollRect.verticalNormalizedPosition = 1f + nextY / scrollable;
+            storeScrollRect.verticalNormalizedPosition = 1f - (nextY / scrollable);
         }
 
         private void OnStoreScrollUp()

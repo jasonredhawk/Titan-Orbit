@@ -48,8 +48,9 @@ namespace TitanOrbit.UI
             if (scrollable <= 0f) return;
 
             // eventData.delta.y: positive when dragging pointer up. We want drag-up to scroll content up (see lower part).
+            float before = _scrollRect.verticalNormalizedPosition;
             float step = eventData.delta.y / scrollable;
-            float next = _scrollRect.verticalNormalizedPosition - step;
+            float next = before - step;
             _scrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
         }
 
@@ -64,8 +65,9 @@ namespace TitanOrbit.UI
             if (!IsValid() || !_scrollRect.vertical) return;
 
             // eventData.scrollDelta.y: positive when scrolling wheel up. Scroll up = see content above = decrease normalized.
+            float before = _scrollRect.verticalNormalizedPosition;
             float step = eventData.scrollDelta.y * scrollSensitivity;
-            float next = _scrollRect.verticalNormalizedPosition - step;
+            float next = before - step;
             _scrollRect.verticalNormalizedPosition = Mathf.Clamp01(next);
         }
     }

@@ -8,7 +8,7 @@ These tests verify:
 ## 0) Build
 
 1. WebGL production build: `TitanOrbit/Build/WebGL Production`
-2. Headless server build: `TitanOrbit/Build/Headless Server (Windows)`
+2. Headless server build (Linux): build `StandaloneLinux64` with headless enabled (your repo’s server bootstrap is platform-agnostic and only requires a server/Batch-mode run).
 
 ## 1) Start server with a short rotation threshold
 
@@ -24,6 +24,19 @@ TitanOrbitServer.exe -batchmode -nographics ^
 ```
 
 `--ageThresholdSeconds` is an optional debug/testing override. It defaults to 20 minutes in production.
+
+### Linux command variant
+
+If your Linux build outputs something like `TitanOrbitServer.x86_64`, run:
+
+```bash
+./TitanOrbitServer.x86_64 -batchmode -nographics \
+  --maxPlayers=4 \
+  --serverPort=7777 \
+  --relayProtocol=wss \
+  --isLatest=1 \
+  --ageThresholdSeconds=30
+```
 
 Wait for the logs to show:
 - `[DedicatedMatchServerBootstrap] Starting server for lobby ... (isLatest=...)`

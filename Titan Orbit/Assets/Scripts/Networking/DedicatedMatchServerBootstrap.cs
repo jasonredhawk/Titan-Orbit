@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
@@ -125,6 +127,114 @@ namespace TitanOrbit.Networking
             }
         }
 
+        private static bool HasMissingScripts(GameObject prefab)
+        {
+            if (prefab == null)
+                return true;
+
+            var behaviours = prefab.GetComponentsInChildren<MonoBehaviour>(true);
+            foreach (var behaviour in behaviours)
+            {
+                if (behaviour == null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static object GetMemberValue(object target, string name)
+        {
+            if (target == null)
+                return null;
+
+            var type = target.GetType();
+            var prop = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (prop != null)
+                return prop.GetValue(target);
+
+            var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            return field != null ? field.GetValue(target) : null;
+        }
+
+        private static bool TryExtractPrefab(object entry, out GameObject prefab)
+        {
+            prefab = null;
+            if (entry == null)
+                return false;
+
+            if (entry is GameObject go)
+            {
+                prefab = go;
+                return true;
+            }
+
+            var value = GetMemberValue(entry, "Prefab");
+            if (value is GameObject prefabGo)
+            {
+                prefab = prefabGo;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int SanitizePrefabList(IList list, string listName)
+        {
+            if (list == null)
+                return 0;
+
+            int removed = 0;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var entry = list[i];
+                if (!TryExtractPrefab(entry, out var prefab))
+                    continue;
+
+                if (prefab == null || HasMissingScripts(prefab))
+                {
+                    string prefabName = prefab != null ? prefab.name : "<null>";
+                    Debug.LogWarning($"[DedicatedMatchServerBootstrap] Removing invalid network prefab from {listName}: {prefabName}");
+                    list.RemoveAt(i);
+                    removed++;
+                }
+            }
+
+            return removed;
+        }
+
+        private static void SanitizeNetworkPrefabs()
+        {
+            if (NetworkManager.Singleton == null)
+                return;
+
+            int removed = 0;
+            var config = NetworkManager.Singleton.NetworkConfig;
+
+            // NGO versions differ in where prefab lists are stored; sanitize both common shapes.
+            if (GetMemberValue(config, "Prefabs") is IList prefabsList)
+                removed += SanitizePrefabList(prefabsList, "NetworkConfig.Prefabs");
+
+            if (GetMemberValue(config, "NetworkPrefabs") is IList networkPrefabsList)
+                removed += SanitizePrefabList(networkPrefabsList, "NetworkConfig.NetworkPrefabs");
+
+            var nestedLists = GetMemberValue(config, "NetworkPrefabsLists") as IList;
+            if (nestedLists != null)
+            {
+                for (int i = 0; i < nestedLists.Count; i++)
+                {
+                    var nested = nestedLists[i];
+                    if (nested == null)
+                        continue;
+
+                    if (GetMemberValue(nested, "List") is IList innerList)
+                        removed += SanitizePrefabList(innerList, $"NetworkPrefabsLists[{i}].List");
+                }
+            }
+
+            if (removed > 0)
+                Debug.Log($"[DedicatedMatchServerBootstrap] Sanitized network prefabs. Removed invalid entries: {removed}");
+        }
+
         private static async Task BootAsync()
         {
             int maxPlayers = GetArgInt("maxPlayers", 60);
@@ -134,6 +244,7 @@ namespace TitanOrbit.Networking
             long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 20 * 60);
 
             EnsurePlayerPrefabSet();
+            SanitizeNetworkPrefabs();
             if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
             {
                 Debug.LogError("[DedicatedMatchServerBootstrap] Player Prefab not set on NetworkManager.");
