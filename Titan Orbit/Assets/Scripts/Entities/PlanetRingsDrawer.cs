@@ -6,7 +6,7 @@ namespace TitanOrbit.Entities
 {
     /// <summary>
     /// Draws Saturn-style tilted rings around a regular (non-home) planet using Shapes.
-    /// Ring count = planet level (1–3). More rings when the planet levels up.
+    /// Ring count = planet level (1–6), matching max regular planet level. One ring band per level.
     /// </summary>
     [ExecuteAlways]
     public class PlanetRingsDrawer : ImmediateModeShapeDrawer
@@ -64,7 +64,7 @@ namespace TitanOrbit.Entities
             if (planet == null) return;
 
             int level = planet.PlanetLevel;
-            int ringCount = Mathf.Clamp(level, 1, 3); // Regular planets max level 3
+            int ringCount = Mathf.Clamp(level, 1, 6);
 
             using (Draw.Command(cam))
             {

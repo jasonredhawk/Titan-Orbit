@@ -31,6 +31,17 @@ namespace TitanOrbit.Networking
         private const string LobbyIsLatestKey = "IsLatest";
         private const string LobbyCreatedAtEpochKey = "CreatedAtEpoch";
 
+        /// <summary>
+        /// Logs before the first scene loads so headless SSH sessions don't look "stuck" after engine init lines.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void BootMarkerBeforeSceneLoad()
+        {
+            if (!Application.isBatchMode || Application.platform == RuntimePlatform.WebGLPlayer)
+                return;
+            Debug.Log("[DedicatedMatchServerBootstrap] BeforeSceneLoad: dedicated server bootstrap will run AfterSceneLoad.");
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Init()
         {
@@ -42,6 +53,7 @@ namespace TitanOrbit.Networking
             if (Application.platform == RuntimePlatform.WebGLPlayer)
                 return;
 
+            Debug.Log("[DedicatedMatchServerBootstrap] AfterSceneLoad: scheduling BootAsync...");
             _ = BootAsync();
         }
 
@@ -89,22 +101,55 @@ namespace TitanOrbit.Networking
             return defaultValue;
         }
 
-        private static async Task<bool> EnsureUnityServicesInitializedAsync()
+        /// <summary>Wraps an async UGS/network call so SSH foreground runs don't hang forever with no log line.</summary>
+        private static async Task<T> WithTimeoutAsync<T>(Task<T> task, TimeSpan timeout, string operationName)
+        {
+            Task delay = Task.Delay(timeout);
+            Task finished = await Task.WhenAny(task, delay);
+            if (finished == delay)
+            {
+                Debug.LogError($"[DedicatedMatchServerBootstrap] TIMEOUT after {timeout.TotalSeconds:0}s: {operationName}");
+                throw new TimeoutException(operationName);
+            }
+            return await task;
+        }
+
+        private static async Task WithTimeoutAsync(Task task, TimeSpan timeout, string operationName)
+        {
+            Task delay = Task.Delay(timeout);
+            Task finished = await Task.WhenAny(task, delay);
+            if (finished == delay)
+            {
+                Debug.LogError($"[DedicatedMatchServerBootstrap] TIMEOUT after {timeout.TotalSeconds:0}s: {operationName}");
+                throw new TimeoutException(operationName);
+            }
+            await task;
+        }
+
+        private static async Task<bool> EnsureUnityServicesInitializedAsync(TimeSpan initTimeout, TimeSpan signInTimeout)
         {
             try
             {
                 if (UnityServices.State == ServicesInitializationState.Initialized &&
                     AuthenticationService.Instance.IsSignedIn)
                 {
+                    Debug.Log("[DedicatedMatchServerBootstrap] Unity Services already initialized and signed in.");
                     return true;
                 }
 
                 if (UnityServices.State != ServicesInitializationState.Initialized)
-                    await UnityServices.InitializeAsync();
+                {
+                    Debug.Log("[DedicatedMatchServerBootstrap] Initializing Unity Services...");
+                    await WithTimeoutAsync(UnityServices.InitializeAsync(), initTimeout, "UnityServices.InitializeAsync");
+                }
 
                 if (!AuthenticationService.Instance.IsSignedIn)
-                    await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                {
+                    Debug.Log("[DedicatedMatchServerBootstrap] Signing in anonymously...");
+                    await WithTimeoutAsync(AuthenticationService.Instance.SignInAnonymouslyAsync(), signInTimeout, "AuthenticationService.SignInAnonymouslyAsync");
+                }
 
+                Debug.Log("[DedicatedMatchServerBootstrap] Unity Services ready.");
                 return true;
             }
             catch (Exception e)
@@ -242,6 +287,12 @@ namespace TitanOrbit.Networking
             string relayProtocol = GetArgString("relayProtocol", "wss"); // Browsers need wss.
             bool isLatest = GetArgBool("isLatest", true);
             long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 20 * 60);
+            int ugsInitTimeoutMs = GetArgInt("ugsInitTimeoutMs", 120000);
+            int ugsSignInTimeoutMs = GetArgInt("ugsSignInTimeoutMs", 60000);
+            int relayAllocTimeoutMs = GetArgInt("relayAllocTimeoutMs", 60000);
+            int lobbyCreateTimeoutMs = GetArgInt("lobbyCreateTimeoutMs", 60000);
+
+            Debug.Log($"[DedicatedMatchServerBootstrap] BootAsync start. maxPlayers={maxPlayers} serverPort={serverPort} relayProtocol={relayProtocol} isLatest={isLatest}");
 
             EnsurePlayerPrefabSet();
             SanitizeNetworkPrefabs();
@@ -254,7 +305,9 @@ namespace TitanOrbit.Networking
 
             try
             {
-                if (!await EnsureUnityServicesInitializedAsync())
+                if (!await EnsureUnityServicesInitializedAsync(
+                        TimeSpan.FromMilliseconds(ugsInitTimeoutMs),
+                        TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
                 {
                     Debug.LogError("[DedicatedMatchServerBootstrap] Cannot initialize Unity Services on server.");
                     Application.Quit();
@@ -273,14 +326,24 @@ namespace TitanOrbit.Networking
                 transport.SetConnectionData(transport.ConnectionData.Address, serverPort, transport.ConnectionData.ServerListenAddress);
 
                 int maxConnections = Mathf.Max(1, maxPlayers - 1);
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(maxConnections);
-                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+                Debug.Log($"[DedicatedMatchServerBootstrap] Creating Relay allocation (maxConnections={maxConnections})...");
+                Allocation allocation = await WithTimeoutAsync(
+                    RelayService.Instance.CreateAllocationAsync(maxConnections),
+                    TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                    "RelayService.CreateAllocationAsync");
+                Debug.Log("[DedicatedMatchServerBootstrap] Requesting Relay join code...");
+                string joinCode = await WithTimeoutAsync(
+                    RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId),
+                    TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                    "RelayService.GetJoinCodeAsync");
 
                 transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProtocol));
 
                 // Create the UGS Lobby before starting server so clients can discover it immediately.
                 long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var createdLobby = await LobbyService.Instance.CreateLobbyAsync(
+                Debug.Log("[DedicatedMatchServerBootstrap] Creating UGS Lobby...");
+                var createdLobby = await WithTimeoutAsync(
+                    LobbyService.Instance.CreateLobbyAsync(
                     GameNames.GetRandomRoomName(),
                     maxPlayers,
                     new CreateLobbyOptions
@@ -301,8 +364,9 @@ namespace TitanOrbit.Networking
                                 )
                             }
                         }
-                    }
-                );
+                    }),
+                    TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
+                    "LobbyService.CreateLobbyAsync");
 
                 Debug.Log($"[DedicatedMatchServerBootstrap] Starting server for lobby {createdLobby.Id} (isLatest={isLatest}).");
 

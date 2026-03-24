@@ -10,6 +10,8 @@ using Unity.Services.Relay.Models;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
 using TitanOrbit.Data;
 
@@ -20,6 +22,18 @@ namespace TitanOrbit.Networking
     /// </summary>
     public class NetworkGameManager : NetworkBehaviour
     {
+        [Serializable]
+        public class LobbySummary
+        {
+            public string LobbyId;
+            public string Name;
+            public int CurrentPlayers;
+            public int MaxPlayers;
+            public bool IsOpen;
+            public bool IsLatest;
+            public long CreatedAtEpochSeconds;
+        }
+
         public static NetworkGameManager Instance { get; private set; }
 
         [Header("Network Settings")]
@@ -445,6 +459,88 @@ namespace TitanOrbit.Networking
             }
         }
 
+        public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20)
+        {
+            var results = new List<LobbySummary>();
+            try
+            {
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return results;
+
+                var filters = new List<QueryFilter>
+                {
+                    new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
+                    new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
+                };
+
+                if (latestOnly)
+                    filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
+
+                var options = new QueryLobbiesOptions
+                {
+                    Count = count,
+                    Filters = filters,
+                    Order = new List<QueryOrder>
+                    {
+                        new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created)
+                    }
+                };
+
+                QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                if (response?.Results == null)
+                    return results;
+
+                foreach (var lobby in response.Results)
+                {
+                    if (lobby == null)
+                        continue;
+                    results.Add(ToLobbySummary(lobby));
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] QueryOpenLobbiesAsync failed: " + e.Message);
+            }
+
+            return results;
+        }
+
+        public async Task<bool> JoinLobbyByIdAsync(string lobbyId)
+        {
+            return await PlayWebGLJoinByLobbyIdAsync(lobbyId);
+        }
+
+        private LobbySummary ToLobbySummary(Lobby lobby)
+        {
+            var summary = new LobbySummary
+            {
+                LobbyId = lobby.Id,
+                Name = string.IsNullOrWhiteSpace(lobby.Name) ? "Unnamed Room" : lobby.Name,
+                CurrentPlayers = lobby.Players != null ? lobby.Players.Count : 0,
+                MaxPlayers = Mathf.Max(1, lobby.MaxPlayers),
+                IsOpen = true,
+                IsLatest = false,
+                CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            };
+
+            if (lobby.Data == null)
+                return summary;
+
+            if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject isOpenObj))
+                summary.IsOpen = string.Equals(isOpenObj?.Value, "1", StringComparison.Ordinal);
+
+            if (lobby.Data.TryGetValue(LobbyIsLatestKey, out DataObject isLatestObj))
+                summary.IsLatest = string.Equals(isLatestObj?.Value, "1", StringComparison.Ordinal);
+
+            if (lobby.Data.TryGetValue(LobbyCreatedAtEpochKey, out DataObject createdAtObj) &&
+                long.TryParse(createdAtObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long created))
+            {
+                summary.CreatedAtEpochSeconds = created;
+            }
+
+            return summary;
+        }
+
         /// <summary>
         /// WebGL-safe: query open lobbies for this game and (optionally) only those marked as latest.
         /// </summary>
@@ -457,27 +553,21 @@ namespace TitanOrbit.Networking
 
                 var filters = new System.Collections.Generic.List<QueryFilter>
                 {
-                    // GameName == TitanOrbit
                     new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
-                    // IsOpen == 1
                     new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
                 };
-
                 if (latestOnly)
                     filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
 
-                var options = new QueryLobbiesOptions
+                QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
                 {
                     Count = count,
                     Filters = filters,
                     Order = new System.Collections.Generic.List<QueryOrder>
                     {
-                        // Newest first.
                         new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created)
                     }
-                };
-
-                QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                });
                 return response?.Results ?? new System.Collections.Generic.List<Lobby>();
             }
             catch (System.Exception e)

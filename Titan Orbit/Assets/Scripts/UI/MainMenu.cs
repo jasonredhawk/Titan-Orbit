@@ -4,6 +4,9 @@ using TMPro;
 using Unity.Netcode;
 using TitanOrbit.Networking;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 
 namespace TitanOrbit.UI
 {
@@ -33,13 +36,31 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI teamStatusText;
         [SerializeField] private TextMeshProUGUI roomNameText;
         [SerializeField] private TMP_InputField playerNameInputField;
+        [SerializeField] private Button browseLobbiesButton;
+        [SerializeField] private Button refreshLobbiesButton;
+        [SerializeField] private Button joinSelectedLobbyButton;
+        [SerializeField] private Button backToMainMenuButton;
+        [SerializeField] private Transform lobbyListContainer;
+        [SerializeField] private GameObject lobbyListRowPrefab;
+        [SerializeField] private TextMeshProUGUI lobbyBrowserStatusText;
+        [SerializeField] private bool latestOnlyFilter = false;
 
         [Header("WebGL Match Selection (Placeholder)")]
         [Tooltip("When true, WebGL Play shows open lobbies and joins based on the joinCode input (index or lobby id).")]
         [SerializeField] private bool paidPlaceholder = false;
 
+        private readonly List<NetworkGameManager.LobbySummary> cachedLobbySummaries = new List<NetworkGameManager.LobbySummary>();
+        private readonly List<Button> lobbyRowButtons = new List<Button>();
+        private readonly List<Image> lobbyRowBackgrounds = new List<Image>();
+        private string selectedLobbyId;
+        private int selectedLobbyRowIndex = -1;
+        private GameObject lobbyBrowserRoot;
+
         private void Start()
         {
+            EnsureRuntimeLobbyBrowserUI();
+            DeemphasizeLocalPlayButton();
+
             if (hostOnlineButton != null)
                 hostOnlineButton.onClick.AddListener(OnHostOnlineClicked);
 
@@ -52,6 +73,8 @@ namespace TitanOrbit.UI
             {
                 playButton.onClick.AddListener(OnPlayClicked);
             }
+
+            WireLobbyBrowserListeners();
 
             NetworkGameManager.OnTeamChosen += OnTeamChosen;
 
@@ -72,6 +95,10 @@ namespace TitanOrbit.UI
                     (playerNameInputField.placeholder as TextMeshProUGUI).alignment = TMPro.TextAlignmentOptions.Center;
                 }
             }
+
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+            SetLobbyBrowserStatus("Select a lobby to join.");
         }
 
         private void OnDestroy()
@@ -226,6 +253,7 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
+                    SetLobbyBrowserStatus("Local Test failed. Check console and Unity Services.");
                     Debug.LogError("Play failed. Check console and Unity Services.");
                 }
             }
@@ -288,6 +316,544 @@ namespace TitanOrbit.UI
             {
                 if (joinOnlineButton != null) joinOnlineButton.interactable = true;
             }
+        }
+
+        private async void OnBrowseLobbiesClicked()
+        {
+            WireLobbyBrowserListeners();
+            SetLobbyBrowserVisible(true);
+            await RefreshLobbyListAsync();
+        }
+
+        private async void OnRefreshLobbiesClicked()
+        {
+            await RefreshLobbyListAsync();
+        }
+
+        private async void OnJoinSelectedLobbyClicked()
+        {
+            if (NetworkGameManager.Instance == null)
+                return;
+            if (string.IsNullOrWhiteSpace(selectedLobbyId))
+            {
+                SetLobbyBrowserStatus("Select a lobby first.");
+                return;
+            }
+
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+
+            try
+            {
+                SetLobbyBrowserStatus("Joining selected lobby...");
+                bool ok = await NetworkGameManager.Instance.JoinLobbyByIdAsync(selectedLobbyId);
+                if (ok)
+                {
+                    SetLobbyBrowserStatus("Connected.");
+                    ShowLobby();
+                }
+                else
+                {
+                    SetLobbyBrowserStatus("Join failed. Try refreshing the list.");
+                }
+            }
+            finally
+            {
+                if (joinSelectedLobbyButton != null)
+                    joinSelectedLobbyButton.interactable = !string.IsNullOrWhiteSpace(selectedLobbyId);
+            }
+        }
+
+        private void OnBackToMainMenuClicked()
+        {
+            ClearLobbyListRows();
+            selectedLobbyId = null;
+            selectedLobbyRowIndex = -1;
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+            SetLobbyBrowserStatus("Select a lobby to join.");
+            SetLobbyBrowserVisible(false);
+        }
+
+        private async Task RefreshLobbyListAsync()
+        {
+            if (NetworkGameManager.Instance == null)
+                return;
+
+            SetLobbyBrowserStatus("Loading lobbies...");
+            if (refreshLobbiesButton != null)
+                refreshLobbiesButton.interactable = false;
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+
+            try
+            {
+                selectedLobbyId = null;
+                selectedLobbyRowIndex = -1;
+                cachedLobbySummaries.Clear();
+                cachedLobbySummaries.AddRange(await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40));
+                RenderLobbyList();
+            }
+            finally
+            {
+                if (refreshLobbiesButton != null)
+                    refreshLobbiesButton.interactable = true;
+            }
+        }
+
+        private void RenderLobbyList()
+        {
+            ClearLobbyListRows();
+
+            if (cachedLobbySummaries.Count == 0)
+            {
+                SetLobbyBrowserStatus("No open lobbies found.");
+                return;
+            }
+
+            for (int i = 0; i < cachedLobbySummaries.Count; i++)
+            {
+                var summary = cachedLobbySummaries[i];
+                if (lobbyListRowPrefab == null || lobbyListContainer == null)
+                    continue;
+
+                GameObject row = Instantiate(lobbyListRowPrefab, lobbyListContainer);
+                row.SetActive(true);
+                var button = row.GetComponent<Button>();
+                var label = row.GetComponentInChildren<TextMeshProUGUI>();
+                if (label != null)
+                {
+                    string latestTag = summary.IsLatest ? "  ·  Latest" : "";
+                    label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                }
+                if (button != null)
+                {
+                    int capturedIndex = i;
+                    button.onClick.AddListener(() => OnLobbyRowSelected(capturedIndex));
+                    lobbyRowButtons.Add(button);
+                    lobbyRowBackgrounds.Add(button.GetComponent<Image>());
+                }
+            }
+
+            SetLobbyBrowserStatus("Select a lobby to join.");
+        }
+
+        private void OnLobbyRowSelected(int index)
+        {
+            if (index < 0 || index >= cachedLobbySummaries.Count)
+                return;
+            selectedLobbyId = cachedLobbySummaries[index].LobbyId;
+            selectedLobbyRowIndex = index;
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = true;
+            SetLobbyBrowserStatus($"Selected: {cachedLobbySummaries[index].Name}");
+            ApplyLobbyRowSelectionVisuals();
+        }
+
+        private void ApplyLobbyRowSelectionVisuals()
+        {
+            Color normal = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+            Color selected = new Color(0.18f, 0.38f, 0.62f, 0.98f);
+            for (int i = 0; i < lobbyRowBackgrounds.Count; i++)
+            {
+                if (lobbyRowBackgrounds[i] == null)
+                    continue;
+                lobbyRowBackgrounds[i].color = i == selectedLobbyRowIndex ? selected : normal;
+            }
+        }
+
+        private void ClearLobbyListRows()
+        {
+            lobbyRowButtons.Clear();
+            lobbyRowBackgrounds.Clear();
+            if (lobbyListContainer == null)
+                return;
+            for (int i = lobbyListContainer.childCount - 1; i >= 0; i--)
+            {
+                var child = lobbyListContainer.GetChild(i);
+                if (child == null)
+                    continue;
+                Destroy(child.gameObject);
+            }
+        }
+
+        private void SetLobbyBrowserStatus(string text)
+        {
+            if (lobbyBrowserStatusText != null)
+            {
+                lobbyBrowserStatusText.text = text;
+                lobbyBrowserStatusText.transform.SetAsLastSibling();
+            }
+        }
+
+        private void DeemphasizeLocalPlayButton()
+        {
+            if (playButton == null)
+                return;
+
+            var playRect = playButton.GetComponent<RectTransform>();
+            if (playRect != null)
+            {
+                playRect.sizeDelta = new Vector2(190f, 46f);
+                // Below "Browse Open Matches" (browse is centered ~-92 with ~52px height).
+                playRect.anchoredPosition = new Vector2(0f, -158f);
+            }
+
+            var playImage = playButton.GetComponent<Image>();
+            if (playImage != null)
+                playImage.color = new Color(0.22f, 0.33f, 0.42f, 0.75f);
+
+            var playLabel = playButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (playLabel != null)
+                playLabel.text = "Local Test";
+        }
+
+        private void EnsureRuntimeLobbyBrowserUI()
+        {
+            if (mainMenuPanel == null)
+                return;
+
+            var mainRect = mainMenuPanel.GetComponent<RectTransform>();
+            if (mainRect == null)
+                return;
+
+            EnsureEventSystemExists();
+
+            if (browseLobbiesButton == null)
+            {
+                // Below player name field (input is ~72px tall, centered) — avoid overlap with label/input.
+                browseLobbiesButton = CreateMenuButton("BrowseLobbiesButton", "Browse Open Matches", new Vector2(0f, -92f), new Vector2(320f, 52f), mainRect);
+                if (playerNameInputField != null)
+                {
+                    browseLobbiesButton.transform.SetSiblingIndex(playerNameInputField.transform.GetSiblingIndex() + 1);
+                }
+            }
+
+            if (lobbyBrowserRoot == null)
+                BuildLobbyBrowserPanel(mainRect);
+
+            SetLobbyBrowserVisible(false);
+        }
+
+        /// <summary>
+        /// Ensures listeners are bound after runtime UI is built (and avoids missing clicks if scene refs were reassigned).
+        /// </summary>
+        private void WireLobbyBrowserListeners()
+        {
+            if (browseLobbiesButton != null)
+            {
+                browseLobbiesButton.onClick.RemoveListener(OnBrowseLobbiesClicked);
+                browseLobbiesButton.onClick.AddListener(OnBrowseLobbiesClicked);
+            }
+            if (refreshLobbiesButton != null)
+            {
+                refreshLobbiesButton.onClick.RemoveListener(OnRefreshLobbiesClicked);
+                refreshLobbiesButton.onClick.AddListener(OnRefreshLobbiesClicked);
+            }
+            if (joinSelectedLobbyButton != null)
+            {
+                joinSelectedLobbyButton.onClick.RemoveListener(OnJoinSelectedLobbyClicked);
+                joinSelectedLobbyButton.onClick.AddListener(OnJoinSelectedLobbyClicked);
+            }
+            if (backToMainMenuButton != null)
+            {
+                backToMainMenuButton.onClick.RemoveListener(OnBackToMainMenuClicked);
+                backToMainMenuButton.onClick.AddListener(OnBackToMainMenuClicked);
+            }
+        }
+
+        private void BuildLobbyBrowserPanel(RectTransform parent)
+        {
+            lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image));
+            lobbyBrowserRoot.transform.SetParent(parent, false);
+            var rootRect = lobbyBrowserRoot.GetComponent<RectTransform>();
+            rootRect.anchorMin = new Vector2(0.5f, 0.5f);
+            rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rootRect.pivot = new Vector2(0.5f, 0.5f);
+            rootRect.sizeDelta = new Vector2(1040f, 640f);
+            rootRect.anchoredPosition = new Vector2(0f, -12f);
+            var rootImage = lobbyBrowserRoot.GetComponent<Image>();
+            rootImage.color = new Color(0.035f, 0.065f, 0.11f, 0.98f);
+            // Root must not steal hits from child controls (footer/scroll). Blocker handles modal background.
+            rootImage.raycastTarget = false;
+
+            var blocker = new GameObject("LobbyBrowserBlocker", typeof(RectTransform), typeof(Image));
+            blocker.transform.SetParent(lobbyBrowserRoot.transform, false);
+            var blockerRt = blocker.GetComponent<RectTransform>();
+            blockerRt.anchorMin = Vector2.zero;
+            blockerRt.anchorMax = Vector2.one;
+            blockerRt.offsetMin = Vector2.zero;
+            blockerRt.offsetMax = Vector2.zero;
+            blockerRt.SetAsFirstSibling();
+            var blockerImg = blocker.GetComponent<Image>();
+            blockerImg.color = new Color(0.02f, 0.04f, 0.08f, 0.55f);
+            blockerImg.raycastTarget = true;
+
+            var titleObj = CreateLabel("LobbyBrowserTitle", "Orbital Matches", Vector2.zero, 40f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var titleRect = titleObj.GetComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -28f);
+            titleRect.sizeDelta = new Vector2(900f, 56f);
+            var titleTmp = titleObj.GetComponent<TextMeshProUGUI>();
+            titleTmp.enableWordWrapping = false;
+            titleTmp.fontStyle = FontStyles.Bold;
+            titleTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
+            titleTmp.outlineWidth = 0.15f;
+            titleTmp.outlineColor = new Color32(20, 40, 70, 200);
+
+            var statusObj = CreateLabel("LobbyBrowserStatusText", "Select a lobby to join.", Vector2.zero, 22f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var statusRect = statusObj.GetComponent<RectTransform>();
+            statusRect.anchorMin = new Vector2(0.5f, 1f);
+            statusRect.anchorMax = new Vector2(0.5f, 1f);
+            statusRect.pivot = new Vector2(0.5f, 1f);
+            statusRect.anchoredPosition = new Vector2(0f, -88f);
+            statusRect.sizeDelta = new Vector2(900f, 56f);
+            lobbyBrowserStatusText = statusObj.GetComponent<TextMeshProUGUI>();
+            lobbyBrowserStatusText.enableWordWrapping = true;
+            lobbyBrowserStatusText.color = new Color(0.75f, 0.86f, 0.98f, 0.95f);
+            lobbyBrowserStatusText.overflowMode = TextOverflowModes.Ellipsis;
+
+            // ScrollRect must own the viewport as a child so scrolling and raycasts work reliably.
+            var scrollRootObj = new GameObject("LobbyListScrollRect", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
+            scrollRootObj.transform.SetParent(lobbyBrowserRoot.transform, false);
+            var scrollRootRect = scrollRootObj.GetComponent<RectTransform>();
+            scrollRootRect.anchorMin = new Vector2(0.5f, 0.5f);
+            scrollRootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            scrollRootRect.pivot = new Vector2(0.5f, 0.5f);
+            scrollRootRect.anchoredPosition = new Vector2(0f, -28f);
+            scrollRootRect.sizeDelta = new Vector2(900f, 300f);
+            var scrollBg = scrollRootObj.GetComponent<Image>();
+            scrollBg.color = new Color(0.055f, 0.09f, 0.145f, 0.98f);
+            scrollBg.raycastTarget = true;
+
+            var viewportObj = new GameObject("LobbyListViewport", typeof(RectTransform), typeof(Image), typeof(Mask));
+            viewportObj.transform.SetParent(scrollRootObj.transform, false);
+            var viewportRect = viewportObj.GetComponent<RectTransform>();
+            viewportRect.anchorMin = Vector2.zero;
+            viewportRect.anchorMax = Vector2.one;
+            viewportRect.offsetMin = Vector2.zero;
+            viewportRect.offsetMax = Vector2.zero;
+            viewportRect.pivot = new Vector2(0.5f, 0.5f);
+            var viewportImage = viewportObj.GetComponent<Image>();
+            viewportImage.color = new Color(0.07f, 0.11f, 0.17f, 1f);
+            viewportImage.raycastTarget = true;
+            var mask = viewportObj.GetComponent<Mask>();
+            mask.showMaskGraphic = true;
+
+            var contentObj = new GameObject("LobbyListContainer", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            contentObj.transform.SetParent(viewportObj.transform, false);
+            var contentRect = contentObj.GetComponent<RectTransform>();
+            contentRect.anchorMin = new Vector2(0f, 1f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.anchoredPosition = Vector2.zero;
+            contentRect.sizeDelta = new Vector2(0f, 0f);
+            lobbyListContainer = contentObj.transform;
+
+            var vlg = contentObj.GetComponent<VerticalLayoutGroup>();
+            vlg.spacing = 12f;
+            vlg.padding = new RectOffset(14, 14, 14, 14);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlHeight = true;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandHeight = false;
+            vlg.childForceExpandWidth = true;
+
+            var fitter = contentObj.GetComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scrollRect = scrollRootObj.GetComponent<ScrollRect>();
+            scrollRect.viewport = viewportRect;
+            scrollRect.content = contentRect;
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 28f;
+            scrollRect.inertia = true;
+            scrollRect.decelerationRate = 0.12f;
+
+            var footerObj = new GameObject("LobbyBrowserFooter", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(Canvas), typeof(GraphicRaycaster));
+            footerObj.transform.SetParent(lobbyBrowserRoot.transform, false);
+            var footerRect = footerObj.GetComponent<RectTransform>();
+            footerRect.anchorMin = new Vector2(0.5f, 0f);
+            footerRect.anchorMax = new Vector2(0.5f, 0f);
+            footerRect.pivot = new Vector2(0.5f, 0f);
+            footerRect.anchoredPosition = new Vector2(0f, 28f);
+            footerRect.sizeDelta = new Vector2(900f, 76f);
+
+            var footerCanvas = footerObj.GetComponent<Canvas>();
+            footerCanvas.overrideSorting = true;
+            footerCanvas.sortingOrder = 50;
+            footerObj.GetComponent<GraphicRaycaster>().blockingObjects = GraphicRaycaster.BlockingObjects.None;
+
+            var hlg = footerObj.GetComponent<HorizontalLayoutGroup>();
+            hlg.spacing = 14f;
+            hlg.padding = new RectOffset(8, 8, 0, 0);
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.childControlHeight = true;
+            hlg.childControlWidth = true;
+            hlg.childForceExpandHeight = false;
+            hlg.childForceExpandWidth = true;
+
+            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh List", Vector2.zero, new Vector2(268f, 56f), footerRect, isPrimary: false);
+            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join Selected", Vector2.zero, new Vector2(268f, 56f), footerRect, isPrimary: true);
+            backToMainMenuButton = CreateMenuButton("BackToMainMenuButton", "Back", Vector2.zero, new Vector2(200f, 56f), footerRect, isPrimary: false);
+
+            lobbyListRowPrefab = CreateLobbyRowPrefab();
+            if (lobbyListRowPrefab != null)
+                lobbyListRowPrefab.SetActive(false);
+
+            // Footer must draw and raycast above list/scroll; title/status on top for readability.
+            titleObj.transform.SetAsLastSibling();
+            statusObj.transform.SetAsLastSibling();
+            footerObj.transform.SetAsLastSibling();
+        }
+
+        private Button CreateMenuButton(string name, string label, Vector2 anchoredPosition, Vector2 size, RectTransform parent, bool isPrimary = true)
+        {
+            if (parent == null)
+                return null;
+
+            var buttonObj = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            buttonObj.transform.SetParent(parent, false);
+            var rect = buttonObj.GetComponent<RectTransform>();
+            var inLayoutGroup = parent.GetComponent<HorizontalLayoutGroup>() != null || parent.GetComponent<VerticalLayoutGroup>() != null;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = size;
+            if (inLayoutGroup)
+            {
+                var le = buttonObj.AddComponent<LayoutElement>();
+                le.preferredWidth = size.x;
+                le.preferredHeight = size.y;
+                le.minWidth = Mathf.Max(80f, size.x * 0.5f);
+                le.minHeight = size.y;
+            }
+
+            var image = buttonObj.GetComponent<Image>();
+            image.color = isPrimary
+                ? new Color(0.22f, 0.52f, 0.88f, 0.95f)
+                : new Color(0.16f, 0.22f, 0.32f, 0.92f);
+            image.raycastTarget = true;
+
+            var btn = buttonObj.GetComponent<Button>();
+            btn.targetGraphic = image;
+            var colors = btn.colors;
+            colors.normalColor = image.color;
+            colors.highlightedColor = isPrimary ? new Color(0.32f, 0.62f, 0.98f, 1f) : new Color(0.24f, 0.32f, 0.44f, 1f);
+            colors.pressedColor = isPrimary ? new Color(0.14f, 0.38f, 0.72f, 1f) : new Color(0.12f, 0.2f, 0.32f, 1f);
+            colors.selectedColor = colors.normalColor;
+            colors.disabledColor = new Color(0.2f, 0.22f, 0.28f, 0.55f);
+            colors.colorMultiplier = 1f;
+            colors.fadeDuration = 0.1f;
+            btn.colors = colors;
+
+            var textObj = CreateLabel(name + "_Label", label, Vector2.zero, 26f, buttonObj.transform, raycastTarget: false);
+            if (textObj != null)
+            {
+                var textRect = textObj.GetComponent<RectTransform>();
+                textRect.anchorMin = Vector2.zero;
+                textRect.anchorMax = Vector2.one;
+                textRect.offsetMin = Vector2.zero;
+                textRect.offsetMax = Vector2.zero;
+                var tmp = textObj.GetComponent<TextMeshProUGUI>();
+                tmp.fontStyle = FontStyles.Bold;
+                tmp.color = new Color(0.96f, 0.98f, 1f, 1f);
+            }
+
+            return btn;
+        }
+
+        private GameObject CreateLabel(string name, string text, Vector2 anchoredPosition, float fontSize, Transform parent = null, bool raycastTarget = true)
+        {
+            Transform targetParent = parent != null ? parent : mainMenuPanel.transform;
+            var labelObj = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
+            labelObj.transform.SetParent(targetParent, false);
+            var rect = labelObj.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = new Vector2(760f, 42f);
+
+            var tmp = labelObj.GetComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = fontSize;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = new Color(0.92f, 0.95f, 1f, 1f);
+            tmp.raycastTarget = raycastTarget;
+            return labelObj;
+        }
+
+        private GameObject CreateLobbyRowPrefab()
+        {
+            if (lobbyBrowserRoot == null)
+                return null;
+
+            var rowObj = new GameObject("LobbyListRowPrefab", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            rowObj.transform.SetParent(lobbyBrowserRoot.transform, false);
+
+            var rect = rowObj.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(860f, 72f);
+
+            var image = rowObj.GetComponent<Image>();
+            image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+            image.raycastTarget = true;
+
+            var btn = rowObj.GetComponent<Button>();
+            var colors = btn.colors;
+            colors.normalColor = image.color;
+            colors.highlightedColor = new Color(0.16f, 0.26f, 0.42f, 1f);
+            colors.pressedColor = new Color(0.09f, 0.14f, 0.24f, 1f);
+            colors.selectedColor = new Color(0.18f, 0.38f, 0.62f, 0.98f);
+            colors.disabledColor = new Color(0.12f, 0.2f, 0.32f, 0.95f);
+            btn.colors = colors;
+            btn.transition = Selectable.Transition.ColorTint;
+
+            var layoutElement = rowObj.GetComponent<LayoutElement>();
+            layoutElement.minHeight = 72f;
+            layoutElement.preferredHeight = 72f;
+
+            var textObj = CreateLabel("LobbyRowLabel", "Lobby", Vector2.zero, 30f, rowObj.transform, raycastTarget: false);
+            if (textObj != null)
+            {
+                var textRect = textObj.GetComponent<RectTransform>();
+                textRect.anchorMin = Vector2.zero;
+                textRect.anchorMax = Vector2.one;
+                textRect.offsetMin = new Vector2(20f, 10f);
+                textRect.offsetMax = new Vector2(-20f, -10f);
+                var tmp = textObj.GetComponent<TextMeshProUGUI>();
+                if (tmp != null)
+                {
+                    tmp.alignment = TextAlignmentOptions.MidlineLeft;
+                    tmp.enableWordWrapping = true;
+                    tmp.richText = true;
+                }
+            }
+
+            return rowObj;
+        }
+
+        private void SetLobbyBrowserVisible(bool visible)
+        {
+            if (lobbyBrowserRoot != null)
+                lobbyBrowserRoot.SetActive(visible);
+            if (browseLobbiesButton != null)
+                browseLobbiesButton.gameObject.SetActive(!visible);
+        }
+
+        private static void EnsureEventSystemExists()
+        {
+            if (FindFirstObjectByType<EventSystem>() != null)
+                return;
+            var eventSystemObj = new GameObject("EventSystem", typeof(EventSystem));
+            eventSystemObj.AddComponent<InputSystemUIInputModule>();
+            DontDestroyOnLoad(eventSystemObj);
         }
 
         private void ShowLobby()

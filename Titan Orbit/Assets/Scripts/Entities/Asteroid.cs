@@ -379,13 +379,9 @@ namespace TitanOrbit.Entities
                 GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize, topDamagerShipId);
             }
 
-            // Schedule respawn and despawn - fresh instance avoids state corruption (100x faster in debug)
+            // Schedule respawn and despawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).
             if (AsteroidRespawnManager.Instance != null)
-            {
-                float delay = respawnTime;
-                if (GameManager.Instance != null && GameManager.Instance.DebugMode) delay /= 100f;
-                AsteroidRespawnManager.Instance.ScheduleRespawn(pos, scale, delay);
-            }
+                AsteroidRespawnManager.Instance.ScheduleRespawn(pos, scale, respawnTime);
 
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();

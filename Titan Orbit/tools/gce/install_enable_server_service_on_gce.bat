@@ -15,7 +15,7 @@ set "INSTANCE_TARGET=%REMOTE_USER%@%INSTANCE%"
 set "SERVICE_NAME=titanorbit-server.service"
 set "REMOTE_DIR=/home/jason/titanorbit-server/TitanOrbitLinux1"
 set "EXE_NAME=TitanOrbitServer.x86_64"
-set "RUN_ARGS=-batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1 -logFile /home/jason/titanorbit-server/server.log"
+set "RUN_ARGS=-batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log"
 
 if not "%~1"=="" (
   set "PROJECT_ID=%~1"
@@ -60,7 +60,7 @@ TimeoutStopSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
-sudo systemctl daemon-reload; sudo systemctl enable --now %SERVICE_NAME%; sudo systemctl status %SERVICE_NAME% --no-pager -l | sed -n \"1,80p\"; echo; echo \"Recent log tail:\"; tail -n 80 /home/jason/titanorbit-server/server.log || true'"
+sudo systemctl daemon-reload; sudo systemctl enable --now %SERVICE_NAME%; sudo systemctl status %SERVICE_NAME% --no-pager -l | sed -n \"1,80p\"; echo; echo \"Recent log tail:\"; tail -n 80 /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log || true'"
 
 if errorlevel 1 (
   echo.
@@ -72,7 +72,7 @@ echo.
 echo Service installed and enabled.
 echo Useful commands:
 echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo systemctl status %SERVICE_NAME% --no-pager -l'"
-echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'tail -n 120 /home/jason/titanorbit-server/server.log'"
+echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'tail -n 120 /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log'"
 echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo journalctl -u %SERVICE_NAME% -n 120 --no-pager'"
 
 exit /b 0

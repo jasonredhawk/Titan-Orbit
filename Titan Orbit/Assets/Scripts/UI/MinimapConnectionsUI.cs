@@ -30,6 +30,8 @@ namespace TitanOrbit.UI
         private int _lastTrianglesCount = -1;
         private Vector3 _lastPlayerPosition;
         private float _lastMinimapRadius = -1f;
+        private bool _havePlayerSampleForConnections;
+        private float _lastDisplaySize = -1f;
 
         private static Texture2D _whiteTex;
         private static Texture2D WhiteTex => _whiteTex != null ? _whiteTex : (_whiteTex = CreateWhiteTex());
@@ -74,16 +76,41 @@ namespace TitanOrbit.UI
             var conn = PlanetConnectionSystem.Instance;
             int ec = conn != null && conn.CurrentEdges != null ? conn.CurrentEdges.Count : 0;
             int tc = conn != null && conn.CurrentTriangles != null ? conn.CurrentTriangles.Count : 0;
+
+            if (ec == 0 && tc == 0)
+            {
+                if (_lastEdgesCount > 0 || _lastTrianglesCount > 0)
+                {
+                    _lastEdgesCount = 0;
+                    _lastTrianglesCount = 0;
+                    _havePlayerSampleForConnections = false;
+                    SetVerticesDirty();
+                }
+                return;
+            }
+
             Vector3 playerPos = _minimap != null ? _minimap.PlayerPosition : Vector3.zero;
             float radius = _minimap != null ? Mathf.Max(1f, _minimap.MinimapRadius) : 1f;
             bool dataChanged = ec != _lastEdgesCount || tc != _lastTrianglesCount;
-            bool playerMoved = (ec > 0 || tc > 0) && (playerPos != _lastPlayerPosition || Mathf.Abs(radius - _lastMinimapRadius) > 0.01f);
-            if (dataChanged || playerMoved)
+            // Float position never equals last frame exactly — that was marking dirty every frame and
+            // forcing Canvas/mesh rebuilds that make planet lines + TMP shimmer. Only redraw when the
+            // ship moves enough to shift the minimap projection by ~half a pixel (XZ only).
+            float disp = _minimap != null ? Mathf.Max(1f, _minimap.DisplaySize) : 150f;
+            bool displayChanged = Mathf.Abs(disp - _lastDisplaySize) > 0.5f;
+            float worldPerHalfPx = radius / disp;
+            float threshSq = worldPerHalfPx * worldPerHalfPx;
+            Vector3 delta = playerPos - _lastPlayerPosition;
+            float dxzSq = delta.x * delta.x + delta.z * delta.z;
+            bool significantMove = dxzSq > threshSq || Mathf.Abs(radius - _lastMinimapRadius) > 0.01f;
+            bool playerMoved = (ec > 0 || tc > 0) && (!_havePlayerSampleForConnections || significantMove);
+            if (dataChanged || playerMoved || displayChanged)
             {
                 _lastEdgesCount = ec;
                 _lastTrianglesCount = tc;
                 _lastPlayerPosition = playerPos;
                 _lastMinimapRadius = radius;
+                _lastDisplaySize = disp;
+                _havePlayerSampleForConnections = true;
                 SetVerticesDirty();
             }
         }

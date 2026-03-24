@@ -81,6 +81,9 @@ namespace TitanOrbit.UI
         private float lastEntityCacheRefreshTime = -999f;
         // Refresh minimap entity cache less frequently to avoid repeated FindObjectsByType spikes (seen growing to 8–15 ms in logs).
         private const float EntityCacheRefreshInterval = 6f;
+        /// <summary>While dead asteroid ghosts exist, only rescan asteroids on this interval (full RefreshEntityCache(true) every blip tick was very expensive).</summary>
+        private float nextGhostAsteroidRescanTime = -999f;
+        private const float GhostAsteroidRescanInterval = 0.25f;
         private Starship[] cachedShips = new Starship[0];
         private Planet[] cachedPlanets = new Planet[0];
         private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
@@ -96,6 +99,34 @@ namespace TitanOrbit.UI
         private readonly List<Transform> blipsToRemove = new List<Transform>();
         private readonly List<Transform> edgeMarkersToRemoveList = new List<Transform>();
         private readonly List<Transform> markerEdgeMarkersToRemoveList = new List<Transform>();
+
+        /// <summary>Destroyed asteroids despawn (transform gone); we keep a faded blip at last known position until a new asteroid spawns there (then full-color blip again).</summary>
+        private const float DeadAsteroidBlipAlpha = 0.2f;
+        /// <summary>Toroidal distance under which a dim ghost is cleared because a live asteroid respawned at that site.</summary>
+        private const float DeadAsteroidGhostClearMatchRadius = 2f;
+        private readonly HashSet<int> lastFrameAsteroidInstanceIds = new HashSet<int>();
+        private readonly HashSet<int> currentAsteroidInstanceIds = new HashSet<int>();
+        private readonly Dictionary<int, Vector3> asteroidLastWorldPosByInstanceId = new Dictionary<int, Vector3>();
+        private readonly Dictionary<int, float> asteroidBlipPixelSizeByInstanceId = new Dictionary<int, float>();
+
+        /// <summary>Avoids per-frame planet blip relayout from floating-point jitter in computed pixel size.</summary>
+        private struct PlanetBlipLayoutState
+        {
+            public float QuantizedSize;
+            public int Population;
+            public int Level;
+            public Color32 Color;
+        }
+
+        private readonly Dictionary<Transform, PlanetBlipLayoutState> planetBlipLayoutState = new Dictionary<Transform, PlanetBlipLayoutState>();
+
+        private struct DeadAsteroidGhost
+        {
+            public Vector3 worldPos;
+            public RectTransform rt;
+        }
+
+        private readonly List<DeadAsteroidGhost> deadAsteroidGhosts = new List<DeadAsteroidGhost>();
 
         private enum BlipType
         {
@@ -996,9 +1027,8 @@ namespace TitanOrbit.UI
             // Show minimap whenever we have a local player ship (even if team not yet set, so it's visible in single-player or before team sync).
             SetMinimapVisible(true);
 
-            // Throttle blip updates to every 4th frame to cut Canvas rebuilds and per-frame work (150+ blips, 300+ asteroids).
-            if (Time.frameCount % 4 == 0)
-                UpdateBlips();
+            // Run every frame so blip motion stays smooth; heavy work inside UpdateBlips is throttled separately.
+            UpdateBlips();
             
             // Handle minimap clicks for markers
             HandleMinimapClicks();
@@ -1259,7 +1289,13 @@ namespace TitanOrbit.UI
             if (playerTransform == null || playerShip == null || !playerShip)
                 return;
             float startTime = Time.realtimeSinceStartup;
-            RefreshEntityCache();
+            // Normal 6s full refresh. Do NOT force full FindObjects every tick while ghosts exist — that was a major hitch.
+            RefreshEntityCache(false);
+            if (deadAsteroidGhosts.Count > 0 && Time.time >= nextGhostAsteroidRescanTime)
+            {
+                nextGhostAsteroidRescanTime = Time.time + GhostAsteroidRescanInterval;
+                cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+            }
             // #region agent log
             if (Time.frameCount % 120 == 0)
             {
@@ -1282,6 +1318,20 @@ namespace TitanOrbit.UI
             Vector3 playerPos = playerTransform.position;
             blipsToRemove.Clear();
 
+            BuildCurrentAsteroidInstanceIdsFromBlips();
+            foreach (var id in lastFrameAsteroidInstanceIds)
+            {
+                if (currentAsteroidInstanceIds.Contains(id))
+                    continue;
+                if (!asteroidLastWorldPosByInstanceId.TryGetValue(id, out var lastPos))
+                    continue;
+                if (!asteroidBlipPixelSizeByInstanceId.TryGetValue(id, out float pixSize))
+                    pixSize = 8f;
+                AddDeadAsteroidGhost(lastPos, pixSize);
+                asteroidLastWorldPosByInstanceId.Remove(id);
+                asteroidBlipPixelSizeByInstanceId.Remove(id);
+            }
+
             foreach (var kv in blips)
             {
                 if (kv.Key == null) { blipsToRemove.Add(kv.Key); continue; }
@@ -1296,7 +1346,14 @@ namespace TitanOrbit.UI
 
                 float normX = dx / minimapRadius;
                 float normZ = dz / minimapRadius;
-                kv.Value.anchoredPosition = new Vector2(normX * displaySize / 2f, normZ * displaySize / 2f);
+                kv.Value.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
+
+                if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
+                {
+                    int instanceId = kv.Key.GetInstanceID();
+                    asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
+                    asteroidBlipPixelSizeByInstanceId[instanceId] = kv.Value.sizeDelta.x;
+                }
             }
 
             foreach (var t in blipsToRemove)
@@ -1306,6 +1363,7 @@ namespace TitanOrbit.UI
                 blipImages.Remove(t);
                 blipTypes.Remove(t);
                 bullseyePulseTime.Remove(t); // Clean up pulse time tracking
+                planetBlipLayoutState.Remove(t);
                 
                 // Also remove edge markers
                 if (edgeMarkers.TryGetValue(t, out var edgeRt) && edgeRt != null) Destroy(edgeRt.gameObject);
@@ -1405,8 +1463,11 @@ namespace TitanOrbit.UI
             // The minimap shows minimapRadius * 2 world units across displaySize pixels
             // So 1 world unit = displaySize / (minimapRadius * 2) pixels
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);
-            // Asteroid blips are static: create them once (per cache refresh) and then only move them using the generic blip positioning above.
-            EnsureAsteroidBlips(worldToMinimapScale);
+            // Asteroid blip creation scans cached asteroids; throttle so huge asteroid counts don't cost every frame.
+            if ((Time.frameCount & 7) == 0)
+                EnsureAsteroidBlips(worldToMinimapScale);
+            if (deadAsteroidGhosts.Count == 0 || (Time.frameCount & 3) == 0)
+                RemoveDeadAsteroidGhostsOverlappingLiveAsteroids();
             
             foreach (var p in cachedPlanets)
             {
@@ -1591,6 +1652,101 @@ namespace TitanOrbit.UI
                     }
                 }
             }
+
+            RebuildLastFrameAsteroidInstanceIds();
+            UpdateDeadAsteroidGhosts(playerPos);
+        }
+
+        private void BuildCurrentAsteroidInstanceIdsFromBlips()
+        {
+            currentAsteroidInstanceIds.Clear();
+            foreach (var kv in blips)
+            {
+                if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy)
+                    continue;
+                if (!blipTypes.TryGetValue(kv.Key, out var bt) || bt != BlipType.Irregular)
+                    continue;
+                currentAsteroidInstanceIds.Add(kv.Key.GetInstanceID());
+            }
+        }
+
+        private void RebuildLastFrameAsteroidInstanceIds()
+        {
+            lastFrameAsteroidInstanceIds.Clear();
+            foreach (var kv in blips)
+            {
+                if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy)
+                    continue;
+                if (!blipTypes.TryGetValue(kv.Key, out var bt) || bt != BlipType.Irregular)
+                    continue;
+                lastFrameAsteroidInstanceIds.Add(kv.Key.GetInstanceID());
+            }
+        }
+
+        private void AddDeadAsteroidGhost(Vector3 worldPos, float blipPixelSize)
+        {
+            Color c = asteroidColor;
+            c.a = DeadAsteroidBlipAlpha;
+            var rt = CreateBlip(c, blipPixelSize, BlipType.Irregular);
+            if (rt == null)
+                return;
+            deadAsteroidGhosts.Add(new DeadAsteroidGhost
+            {
+                worldPos = worldPos,
+                rt = rt
+            });
+        }
+
+        private void RemoveDeadAsteroidGhostsOverlappingLiveAsteroids()
+        {
+            if (cachedAsteroids == null || cachedAsteroids.Length == 0 || deadAsteroidGhosts.Count == 0)
+                return;
+            for (int i = deadAsteroidGhosts.Count - 1; i >= 0; i--)
+            {
+                var g = deadAsteroidGhosts[i];
+                foreach (var a in cachedAsteroids)
+                {
+                    if (a == null || a.IsDestroyed)
+                        continue;
+                    if (!blips.ContainsKey(a.transform))
+                        continue;
+                    GetToroidalDelta(g.worldPos, a.transform.position, out float dx, out float dz);
+                    float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (dist < DeadAsteroidGhostClearMatchRadius)
+                    {
+                        if (g.rt != null)
+                            Destroy(g.rt.gameObject);
+                        deadAsteroidGhosts.RemoveAt(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        private void UpdateDeadAsteroidGhosts(Vector3 playerPos)
+        {
+            for (int i = deadAsteroidGhosts.Count - 1; i >= 0; i--)
+            {
+                var g = deadAsteroidGhosts[i];
+                if (g.rt == null)
+                {
+                    deadAsteroidGhosts.RemoveAt(i);
+                    continue;
+                }
+                GetToroidalDelta(playerPos, g.worldPos, out float dx, out float dz);
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                if (dist > minimapRadius)
+                {
+                    g.rt.gameObject.SetActive(false);
+                    deadAsteroidGhosts[i] = g;
+                    continue;
+                }
+                g.rt.gameObject.SetActive(true);
+                float normX = dx / minimapRadius;
+                float normZ = dz / minimapRadius;
+                g.rt.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
+                deadAsteroidGhosts[i] = g;
+            }
         }
 
         private void EnsureBlip(Transform t, System.Func<RectTransform> create, bool isPlayer = false)
@@ -1604,6 +1760,12 @@ namespace TitanOrbit.UI
             {
                 blips[t] = newBlipRect;
                 var img = newBlipRect.GetComponent<Image>();
+                if (img == null)
+                {
+                    var planetFill = newBlipRect.Find("PlanetFill");
+                    if (planetFill != null)
+                        img = planetFill.GetComponent<Image>();
+                }
                 if (img != null)
                 {
                     blipImages[t] = img;
@@ -1655,136 +1817,193 @@ namespace TitanOrbit.UI
         private RectTransform CreatePlanetBlip(Planet p, Color color, float size)
         {
             if (minimapContent == null || p == null) return null;
-            RectTransform rt = CreateBlip(color, size, BlipType.Circle);
-            if (rt == null) return null;
 
-            // Population text (child)
-            var textGo = new GameObject("PopulationText");
+            var go = new GameObject("Blip", typeof(RectTransform));
+            go.transform.SetParent(minimapContent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+
+            // Level dots (small circles around the planet, behind fill)
+            var dotsGo = new GameObject("LevelDots", typeof(RectTransform));
+            dotsGo.transform.SetParent(rt, false);
+            var dotsRect = dotsGo.GetComponent<RectTransform>();
+            dotsRect.anchorMin = Vector2.zero;
+            dotsRect.anchorMax = Vector2.one;
+            dotsRect.offsetMin = Vector2.zero;
+            dotsRect.offsetMax = Vector2.zero;
+            AddLevelDotsToContainer(dotsRect, p.PlanetLevel, size, color);
+
+            // Planet circle on top of lines
+            var fillGo = new GameObject("PlanetFill", typeof(RectTransform));
+            fillGo.transform.SetParent(rt, false);
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            var fillImg = fillGo.AddComponent<Image>();
+            fillImg.sprite = CreateBlipSprite((int)size, BlipType.Circle);
+            fillImg.color = color;
+            fillImg.raycastTarget = false;
+
+            // Population text on top; auto-sized to stay inside the circle (no wrap)
+            var textGo = new GameObject("PopulationText", typeof(RectTransform));
             textGo.transform.SetParent(rt, false);
-            var textRect = textGo.AddComponent<RectTransform>();
+            var textRect = textGo.GetComponent<RectTransform>();
             textRect.anchorMin = new Vector2(0.5f, 0.5f);
             textRect.anchorMax = new Vector2(0.5f, 0.5f);
             textRect.pivot = new Vector2(0.5f, 0.5f);
             textRect.anchoredPosition = Vector2.zero;
-            textRect.sizeDelta = new Vector2(size * 1.2f, size * 0.6f);
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
             tmp.text = Mathf.RoundToInt(p.CurrentPopulation).ToString();
-            tmp.fontSize = Mathf.Max(8, size * 0.45f);
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = Color.white;
             tmp.raycastTarget = false;
-
-            // Level rings container
-            var ringsGo = new GameObject("LevelRings");
-            ringsGo.transform.SetParent(rt, false);
-            var ringsRect = ringsGo.AddComponent<RectTransform>();
-            ringsRect.anchorMin = Vector2.zero;
-            ringsRect.anchorMax = Vector2.one;
-            ringsRect.offsetMin = Vector2.zero;
-            ringsRect.offsetMax = Vector2.zero;
-            AddLevelRingsToContainer(ringsRect, p.PlanetLevel, size);
+            ApplyPlanetPopulationTextLayout(tmp, size);
 
             return rt;
         }
 
-        private void AddLevelRingsToContainer(RectTransform container, int level, float blipSize)
+        /// <summary>Single-line population label: shrinks font to fit inside the planet, no wrapping.</summary>
+        private static void ApplyPlanetPopulationTextLayout(TextMeshProUGUI tmp, float size)
         {
-            if (container == null || level < 1) return;
-            Sprite ringSprite = CreateRingSprite(32);
-            if (ringSprite == null) return;
-            // Consistent scale: each ring is a fixed fraction of blip size so they stay just outside the blip in both minimized and expanded
-            const float ringStartFraction = 0.52f;  // just outside blip radius (0.5)
-            const float ringStepFraction = 0.08f;
-            for (int i = 0; i < level; i++)
-            {
-                var ringGo = new GameObject("Ring" + i);
-                ringGo.transform.SetParent(container, false);
-                var ringRect = ringGo.AddComponent<RectTransform>();
-                ringRect.anchorMin = new Vector2(0.5f, 0.5f);
-                ringRect.anchorMax = new Vector2(0.5f, 0.5f);
-                ringRect.pivot = new Vector2(0.5f, 0.5f);
-                ringRect.anchoredPosition = Vector2.zero;
-                float radiusFraction = ringStartFraction + i * ringStepFraction;
-                float r = blipSize * radiusFraction;
-                ringRect.sizeDelta = new Vector2(r * 2f, r * 2f);
-                var img = ringGo.AddComponent<Image>();
-                img.sprite = ringSprite;
-                img.color = new Color(1f, 1f, 1f, 0.35f);
-                img.raycastTarget = false;
-            }
+            if (tmp == null) return;
+            float box = Mathf.Max(8f, size * 0.82f);
+            tmp.rectTransform.sizeDelta = new Vector2(box, box);
+            tmp.enableWordWrapping = false;
+            tmp.enableAutoSizing = true;
+            tmp.fontSizeMin = 6f;
+            tmp.fontSizeMax = Mathf.Max(8f, size * 0.52f);
+            tmp.overflowMode = TextOverflowModes.Overflow;
         }
 
-        private static Sprite _ringSpriteCache;
-        private static Sprite CreateRingSprite(int textureSize)
+        private Sprite _minimapLevelDotSpriteCache;
+
+        private Sprite GetMinimapLevelDotSprite()
         {
-            if (_ringSpriteCache != null) return _ringSpriteCache;
-            Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
-            texture.filterMode = FilterMode.Bilinear;
-            float center = textureSize / 2f;
-            // Thicker ring for better visibility on minimap
-            float innerRadius = center - 2.8f;
-            float outerRadius = center - 0.2f;
-            for (int y = 0; y < textureSize; y++)
+            if (_minimapLevelDotSpriteCache != null) return _minimapLevelDotSpriteCache;
+            _minimapLevelDotSpriteCache = CreateBlipSprite(24, BlipType.Circle);
+            if (_minimapLevelDotSpriteCache != null)
+                _minimapLevelDotSpriteCache.name = "MinimapLevelDot";
+            return _minimapLevelDotSpriteCache;
+        }
+
+        private void AddLevelDotsToContainer(RectTransform container, int level, float blipSize, Color teamColor)
+        {
+            if (container == null || level < 1) return;
+            Sprite dotSprite = GetMinimapLevelDotSprite();
+            if (dotSprite == null) return;
+
+            for (int i = 0; i < level; i++)
             {
-                for (int x = 0; x < textureSize; x++)
-                {
-                    float dx = x - center;
-                    float dy = y - center;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    if (dist >= innerRadius && dist <= outerRadius)
-                        texture.SetPixel(x, y, Color.white);
-                    else
-                        texture.SetPixel(x, y, Color.clear);
-                }
+                var dotGo = new GameObject("LevelDot" + i, typeof(RectTransform));
+                dotGo.transform.SetParent(container, false);
+                var dotRect = dotGo.GetComponent<RectTransform>();
+                dotRect.anchorMin = new Vector2(0.5f, 0.5f);
+                dotRect.anchorMax = new Vector2(0.5f, 0.5f);
+                dotRect.pivot = new Vector2(0.5f, 0.5f);
+                var img = dotGo.AddComponent<Image>();
+                img.sprite = dotSprite;
+                img.type = Image.Type.Simple;
+                img.color = teamColor;
+                img.raycastTarget = false;
             }
-            texture.Apply();
-            _ringSpriteCache = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f));
-            _ringSpriteCache.name = "MinimapRing";
-            return _ringSpriteCache;
+
+            LayoutLevelDots(container, level, blipSize, teamColor);
+        }
+
+        private void LayoutLevelDots(RectTransform container, int level, float blipSize, Color teamColor)
+        {
+            if (container == null || level < 1) return;
+            float half = blipSize * 0.5f;
+            float dotSize = Mathf.Max(3f, Mathf.Round(blipSize * 0.12f));
+            float orbitR = half + dotSize * 0.5f + 1f;
+
+            for (int i = 0; i < level; i++)
+            {
+                var dotRect = container.GetChild(i) as RectTransform;
+                if (dotRect == null) continue;
+                dotRect.sizeDelta = new Vector2(dotSize, dotSize);
+                // Evenly around the planet; first dot at top (+y), then CCW
+                float angle = Mathf.PI * 0.5f + (Mathf.PI * 2f * i) / level;
+                float x = orbitR * Mathf.Cos(angle);
+                float y = orbitR * Mathf.Sin(angle);
+                dotRect.anchoredPosition = new Vector2(Mathf.Round(x), Mathf.Round(y));
+                if (dotRect.GetComponent<Image>() is Image img)
+                    img.color = teamColor;
+            }
         }
 
         private void UpdatePlanetBlip(RectTransform blipRt, Planet p, Color color, float size)
         {
             if (blipRt == null || p == null) return;
-            blipRt.sizeDelta = new Vector2(size, size);
-            if (blipRt.GetComponent<Image>() is Image img)
-                img.color = color;
+
+            const float sizeQuantStep = 0.5f;
+            float qSize = Mathf.Round(size / sizeQuantStep) * sizeQuantStep;
+            int pop = Mathf.RoundToInt(p.CurrentPopulation);
+            int level = p.PlanetLevel;
+            Color32 c32 = color;
+
+            if (planetBlipLayoutState.TryGetValue(p.transform, out var prev) &&
+                Mathf.Approximately(prev.QuantizedSize, qSize) &&
+                prev.Population == pop &&
+                prev.Level == level &&
+                prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
+                return;
+
+            planetBlipLayoutState[p.transform] = new PlanetBlipLayoutState
+            {
+                QuantizedSize = qSize,
+                Population = pop,
+                Level = level,
+                Color = c32
+            };
+
+            blipRt.sizeDelta = new Vector2(qSize, qSize);
+            Image planetImg = null;
+            var fillTf = blipRt.Find("PlanetFill");
+            if (fillTf != null)
+                planetImg = fillTf.GetComponent<Image>();
+            if (planetImg == null)
+                planetImg = blipRt.GetComponent<Image>();
+            if (planetImg != null)
+                planetImg.color = color;
 
             var textGo = blipRt.Find("PopulationText");
             if (textGo != null && textGo.GetComponent<TextMeshProUGUI>() is TextMeshProUGUI tmp)
             {
-                tmp.text = Mathf.RoundToInt(p.CurrentPopulation).ToString();
-                tmp.fontSize = Mathf.Max(8, size * 0.45f);
+                tmp.text = pop.ToString();
+                ApplyPlanetPopulationTextLayout(tmp, qSize);
             }
 
-            var ringsGo = blipRt.Find("LevelRings");
-            if (ringsGo != null)
+            var dotsGo = blipRt.Find("LevelDots");
+            if (dotsGo != null)
             {
-                int currentRings = ringsGo.childCount;
-                int needed = p.PlanetLevel;
-                if (currentRings != needed)
+                int needed = level;
+                var dotsRect = dotsGo.GetComponent<RectTransform>();
+                if (needed < 1)
                 {
-                    for (int i = ringsGo.childCount - 1; i >= 0; i--)
-                        Destroy(ringsGo.GetChild(i).gameObject);
-                    AddLevelRingsToContainer(ringsGo.GetComponent<RectTransform>(), needed, size);
+                    ClearLevelDotsChildrenImmediate(dotsGo.transform);
+                }
+                else if (dotsGo.childCount != needed)
+                {
+                    ClearLevelDotsChildrenImmediate(dotsGo.transform);
+                    AddLevelDotsToContainer(dotsRect, needed, qSize, color);
                 }
                 else
-                {
-                    // Resize existing rings to match current blip size (same fraction of blip so consistent when expand/collapse)
-                    const float ringStartFraction = 0.52f;
-                    const float ringStepFraction = 0.08f;
-                    for (int i = 0; i < ringsGo.childCount; i++)
-                    {
-                        var ringRect = ringsGo.GetChild(i).GetComponent<RectTransform>();
-                        if (ringRect != null)
-                        {
-                            float radiusFraction = ringStartFraction + i * ringStepFraction;
-                            float r = size * radiusFraction;
-                            ringRect.sizeDelta = new Vector2(r * 2f, r * 2f);
-                        }
-                    }
-                }
+                    LayoutLevelDots(dotsRect, needed, qSize, color);
             }
+        }
+
+        /// <summary>Deferred Destroy would leave stale children until end of frame and duplicate dots on rebuild.</summary>
+        private static void ClearLevelDotsChildrenImmediate(Transform dotsGo)
+        {
+            if (dotsGo == null) return;
+            while (dotsGo.childCount > 0)
+                Object.DestroyImmediate(dotsGo.GetChild(0).gameObject);
         }
 
         /// <summary>
@@ -1825,6 +2044,8 @@ namespace TitanOrbit.UI
         private Sprite CreateBlipSprite(int size, BlipType blipType)
         {
             int textureSize = Mathf.Max(size, 32); // Minimum size for quality
+            if (blipType == BlipType.Circle)
+                textureSize = Mathf.Max(textureSize, 64); // Planet discs: extra resolution for smooth edges when scaled
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Bilinear;
             
@@ -1836,8 +2057,9 @@ namespace TitanOrbit.UI
             {
                 case BlipType.Circle:
                 {
-                    // Create a circle sprite
+                    // Anti-aliased disc (soft edge)
                     float radius = textureSize / 2f - 1f;
+                    float aa = Mathf.Max(1f, textureSize * 0.02f);
                     for (int y = 0; y < textureSize; y++)
                     {
                         for (int x = 0; x < textureSize; x++)
@@ -1845,14 +2067,14 @@ namespace TitanOrbit.UI
                             float dx = x - centerX;
                             float dy = y - centerY;
                             float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                            if (dist <= radius)
-                            {
-                                pixels[y * textureSize + x] = Color.white;
-                            }
+                            float alpha;
+                            if (dist <= radius - aa)
+                                alpha = 1f;
+                            else if (dist < radius + aa)
+                                alpha = 1f - Mathf.SmoothStep(radius - aa, radius + aa, dist);
                             else
-                            {
-                                pixels[y * textureSize + x] = Color.clear;
-                            }
+                                alpha = 0f;
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
                         }
                     }
                     break;

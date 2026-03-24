@@ -51,8 +51,9 @@ if errorlevel 1 (
 
 echo.
 echo Starting server in foreground (press Ctrl+C to stop)...
+echo Logs also written to %REMOTE_DIR%/Player.log (tail in another SSH session if this looks quiet).
 echo Executable: %EXE_NAME%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'cd %REMOTE_DIR% && if [ ! -f ./%EXE_NAME% ]; then EXE=$(ls *.x86_64 2>/dev/null | head -n1); if [ -z \"$EXE\" ]; then echo No .x86_64 executable found in %REMOTE_DIR%; exit 1; fi; echo Using detected executable: $EXE; else EXE=%EXE_NAME%; fi; ./$EXE -batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1'"
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'cd %REMOTE_DIR% && if [ ! -f ./%EXE_NAME% ]; then EXE=$(ls *.x86_64 2>/dev/null | head -n1); if [ -z \"$EXE\" ]; then echo No .x86_64 executable found in %REMOTE_DIR%; exit 1; fi; echo Using detected executable: $EXE; else EXE=%EXE_NAME%; fi; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1'"
 
 exit /b %errorlevel%
 
