@@ -28,6 +28,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
+        [Header("Visuals")]
+        [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
 
         private NetworkVariable<float> value = new NetworkVariable<float>(10f);
         private NetworkVariable<float> gemSize = new NetworkVariable<float>(1f); // Size multiplier (affects visual scale and value)
@@ -55,7 +57,47 @@ namespace TitanOrbit.Entities
             effectivePickupRadius = pickupRadius;
             var renderer = GetComponent<Renderer>();
             if (renderer != null)
+            {
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // Avoid overlapping shadow artifacts when gems cluster
+                ApplyGemVisualTint(renderer);
+            }
+        }
+
+        private void ApplyGemVisualTint(Renderer renderer)
+        {
+            if (renderer == null) return;
+
+            Material material = renderer.material;
+            if (material == null) return;
+
+            // Standard shader style transparency controls.
+            if (material.HasProperty("_Mode"))
+            {
+                material.SetFloat("_Mode", 3f);
+                material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                material.SetInt("_ZWrite", 0);
+                material.DisableKeyword("_ALPHATEST_ON");
+                material.EnableKeyword("_ALPHABLEND_ON");
+                material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            }
+
+            // URP Lit style transparency controls.
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1f); // Transparent
+                if (material.HasProperty("_Blend"))
+                    material.SetFloat("_Blend", 0f); // Alpha blend
+                material.SetOverrideTag("RenderType", "Transparent");
+                material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", gemTintColor);
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", gemTintColor);
         }
 
         public override void OnNetworkSpawn()

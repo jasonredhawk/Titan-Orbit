@@ -6,38 +6,35 @@ using TitanOrbit.Entities;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// World-space planet stats: single population number (no progress bars or gem row).
+    /// World-space gem moon: single number for moon gem reservoir (synced from server).
     /// </summary>
-    public class PlanetStatsDisplay : MonoBehaviour
+    public class GemMoonStatsDisplay : MonoBehaviour
     {
-        private const float SurfacePaddingWorld = 1.2f;
-        private Planet planet;
+        private const float MoonSurfacePaddingLocal = 0.12f;
+        private PlanetGemMoon moon;
         private Canvas canvas;
         private RectTransform rootRect;
-        private TextMeshProUGUI popValueText;
-        private TextMeshProUGUI popMaxText;
+        private TextMeshProUGUI gemsText;
+        private TextMeshProUGUI gemsMaxText;
         private const float RefreshInterval = 0.2f;
         private float lastRefresh;
 
-        public void Init(Planet p)
+        public void Init(PlanetGemMoon m)
         {
-            planet = p;
+            moon = m;
         }
 
         private void BuildCanvas()
         {
-            if (planet == null || rootRect != null) return;
-            if (!planet.IsClient || UnityEngine.Camera.main == null) return;
+            if (moon == null || rootRect != null) return;
+            Planet p = moon.Planet;
+            if (p == null || !p.IsClient || UnityEngine.Camera.main == null) return;
 
-            bool home = planet is HomePlanet;
-            var go = new GameObject("PlanetStatsCanvas");
-            go.transform.SetParent(planet.transform, false);
-            // Local Y is updated dynamically per-planet size after RectTransform setup.
+            var go = new GameObject("GemMoonStatsCanvas");
+            go.transform.SetParent(moon.transform, false);
+            // Local Y is updated dynamically per-moon size after RectTransform setup.
             go.transform.localPosition = Vector3.zero;
-            if (home)
-                go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-            else
-                go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             go.transform.localScale = Vector3.one;
 
             canvas = go.AddComponent<Canvas>();
@@ -50,7 +47,7 @@ namespace TitanOrbit.UI
                 rt = go.AddComponent<RectTransform>();
             if (rt == null) return;
 
-            rt.sizeDelta = new Vector2(380f, 130f);
+            rt.sizeDelta = new Vector2(250f, 95f);
             // Make the rect anchor/pivot the true center so our number stays centered.
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -60,34 +57,34 @@ namespace TitanOrbit.UI
             if (scaler != null)
                 scaler.dynamicPixelsPerUnit = 10f;
 
-            popValueText = AddText(rt, "0", 90);
-            popValueText.color = new Color(1f, 0.92f, 0.25f); // yellow
-            popValueText.alignment = TextAlignmentOptions.Center;
-            var popRect = popValueText.GetComponent<RectTransform>();
-            if (popRect != null)
+            gemsText = AddText(rt, "0", 36);
+            gemsText.color = new Color(1f, 0.2f, 0.2f); // red
+            gemsText.alignment = TextAlignmentOptions.Center;
+            var gemsRect = gemsText.GetComponent<RectTransform>();
+            if (gemsRect != null)
             {
-                popRect.anchorMin = new Vector2(0.5f, 0.5f);
-                popRect.anchorMax = new Vector2(0.5f, 0.5f);
-                popRect.pivot = new Vector2(0.5f, 0.5f);
-                popRect.anchoredPosition = new Vector2(0f, 20f);
-                popRect.sizeDelta = new Vector2(220f, 110f);
+                gemsRect.anchorMin = new Vector2(0.5f, 0.5f);
+                gemsRect.anchorMax = new Vector2(0.5f, 0.5f);
+                gemsRect.pivot = new Vector2(0.5f, 0.5f);
+                gemsRect.anchoredPosition = new Vector2(0f, 14f);
+                gemsRect.sizeDelta = new Vector2(130f, 70f);
             }
-            ApplyOutline(popValueText, Color.black, 0.25f);
+            ApplyOutline(gemsText, Color.white, 0.25f);
 
-            popMaxText = AddText(rt, "0", 45);
-            popMaxText.color = new Color(1f, 0.92f, 0.25f); // yellow
-            popMaxText.alignment = TextAlignmentOptions.Center;
-            var maxRect = popMaxText.GetComponent<RectTransform>();
-            if (maxRect != null)
+            gemsMaxText = AddText(rt, "0", 18);
+            gemsMaxText.color = new Color(1f, 0.2f, 0.2f); // red
+            gemsMaxText.alignment = TextAlignmentOptions.Center;
+            var gemsMaxRect = gemsMaxText.GetComponent<RectTransform>();
+            if (gemsMaxRect != null)
             {
-                maxRect.anchorMin = new Vector2(0.5f, 0.5f);
-                maxRect.anchorMax = new Vector2(0.5f, 0.5f);
-                maxRect.pivot = new Vector2(0.5f, 0.5f);
+                gemsMaxRect.anchorMin = new Vector2(0.5f, 0.5f);
+                gemsMaxRect.anchorMax = new Vector2(0.5f, 0.5f);
+                gemsMaxRect.pivot = new Vector2(0.5f, 0.5f);
                 // Under the primary number, close but non-overlapping.
-                maxRect.anchoredPosition = new Vector2(0f, -35f);
-                maxRect.sizeDelta = new Vector2(130f, 55f);
+                gemsMaxRect.anchoredPosition = new Vector2(0f, -18f);
+                gemsMaxRect.sizeDelta = new Vector2(90f, 28f);
             }
-            ApplyOutline(popMaxText, Color.black, 0.25f);
+            ApplyOutline(gemsMaxText, Color.white, 0.25f);
 
             rootRect = rt;
             UpdatePanelPlacement();
@@ -95,11 +92,9 @@ namespace TitanOrbit.UI
 
         private void UpdatePanelPlacement()
         {
-            if (rootRect == null || planet == null) return;
-            float size = Mathf.Max(0.01f, planet.PlanetSize);
-            // Sphere radius in world ~= PlanetSize * 0.5. Convert desired world padding into local space.
-            float localY = 0.5f + (SurfacePaddingWorld / size);
-            rootRect.localPosition = new Vector3(0f, localY, 0f);
+            if (rootRect == null || moon == null) return;
+            float bodyRadius = Mathf.Max(0.01f, moon.GetMoonBodyRadiusLocal());
+            rootRect.localPosition = new Vector3(0f, bodyRadius + MoonSurfacePaddingLocal, 0f);
         }
 
         private static TextMeshProUGUI AddText(Transform parent, string content, int fontSize)
@@ -137,7 +132,7 @@ namespace TitanOrbit.UI
 
         private void LateUpdate()
         {
-            if (planet == null) return;
+            if (moon == null) return;
             if (rootRect == null)
             {
                 BuildCanvas();
@@ -145,16 +140,21 @@ namespace TitanOrbit.UI
             }
             UpdatePanelPlacement();
             if (rootRect != null)
-                rootRect.rotation = Quaternion.Euler(90f, 0f, 0f);
-
+                rootRect.localRotation = Quaternion.Euler(90f, 0f, 0f);
             if (Time.time - lastRefresh < RefreshInterval) return;
             lastRefresh = Time.time;
 
-            float curPop = planet.CurrentPopulation;
-            if (popValueText != null)
-                popValueText.text = Mathf.RoundToInt(curPop).ToString();
-            if (popMaxText != null)
-                popMaxText.text = Mathf.RoundToInt(planet.MaxPopulation).ToString();
+            if (gemsText != null)
+            {
+                Planet p = moon.Planet;
+                float gems = p != null ? p.CurrentGems : 0f;
+                gemsText.text = Mathf.RoundToInt(gems).ToString();
+                if (gemsMaxText != null)
+                {
+                    float maxGems = p != null ? p.MaxGems : 0f;
+                    gemsMaxText.text = Mathf.RoundToInt(maxGems).ToString();
+                }
+            }
 
             if (canvas != null && canvas.worldCamera == null)
                 canvas.worldCamera = UnityEngine.Camera.main;

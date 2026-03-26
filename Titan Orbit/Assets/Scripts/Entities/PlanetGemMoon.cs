@@ -1,8 +1,10 @@
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Core;
+using TitanOrbit.UI;
 
 namespace TitanOrbit.Entities
 {
@@ -15,6 +17,7 @@ namespace TitanOrbit.Entities
     public class PlanetGemMoon : MonoBehaviour
     {
         [SerializeField] private Planet planet;
+        [SerializeField] private GemMoonStatsDisplay statsDisplay;
 
         [Header("Orbit Placement")]
         [Tooltip("How far the moon orbit radius sits outside the planet's orbit zone outer edge (nominal). Actual radius is max of this and clearance past rings + dock zone.")]
@@ -24,6 +27,23 @@ namespace TitanOrbit.Entities
 
         [Header("Combat")]
         [SerializeField] private float maxShieldPoints = 250f;
+        [Header("Shield Regeneration")]
+        [Tooltip("How long after the last shield hit the moon waits before starting to regenerate.")]
+        [SerializeField] private float shieldRegenDelaySeconds = 1.5f;
+        [Tooltip("Time (seconds) for the shield to fully regenerate back to max after regen starts.")]
+        [SerializeField] private float shieldRegenSecondsToFull = 4f;
+        
+        [Header("Matrix Shield Visuals")]
+        [SerializeField] private GameObject matrixShieldRedPrefab;
+        [SerializeField] private GameObject matrixShieldBluePrefab;
+        [SerializeField] private GameObject matrixShieldGreenPrefab;
+        [Tooltip("Approximate outer shell radius of the MatrixShield prefab at local scale 1 (moon-local space). " +
+                 "MatrixShield particles are much larger than 1 unit; ~5–6 matches dock/orbit zone when outer = GetMoonDockSnapRadiusLocal().")]
+        [SerializeField] private float matrixShieldRadiusReference = 5.5f;
+        [Tooltip("If the shield reads slightly inside the orbit zone edge, increase this to push the shield outer edge out. (Default is a small nudge.)")]
+        [SerializeField] private float matrixShieldOrbitZoneEdgeExpandMultiplier = 1.25f;
+        [Tooltip("Fine-tune after setting radius reference (1 = match orbit zone outer edge).")]
+        [SerializeField] private float matrixShieldScaleMultiplier = 1f;
         [SerializeField] private float maxGemPoints = 500f;
         [SerializeField] private float gemDrainPerSecondWhenShieldDown = 20f;
         [SerializeField] private float gemSpawnInterval = 0.25f;
@@ -46,7 +66,22 @@ namespace TitanOrbit.Entities
         private Vector3 cachedWorldVelocity;
 
         private float shieldPoints;
+        private double lastShieldHitServerTime;
+
+        private GameObject _matrixShieldInstance;
+        private TeamManager.Team _matrixShieldTeam = TeamManager.Team.None;
+        private Quaternion _matrixShieldBaseLocalRotation = Quaternion.identity;
+        private float _matrixShieldBaseXScale = 1f;
+        private float _matrixShieldBaseYScale = 1f;
+        private float _lastShieldDockLocalRadius = -1f;
+        private float _lastShieldEdgeExpandMultiplier = -1f;
+        private ParticleSystem[] _matrixShieldParticles;
+
         private float gemPoints;
+        /// <summary>Authoritative on server; updated on clients via <see cref="Planet.GemMoonShieldClientRpc"/>.</summary>
+        private float gemPointsClientDisplay;
+        private const float MoonGemSyncInterval = 0.25f;
+        private float lastMoonGemSyncTime = -999f;
         private float gemDrainAccumulator;
         private float gemSpawnTimer;
 
@@ -71,6 +106,14 @@ namespace TitanOrbit.Entities
                 if (axis.sqrMagnitude < 0.0001f) return transform.up;
                 return axis.normalized;
             }
+        }
+
+        /// <summary>Moon gem reservoir for UI (server: live <see cref="gemPoints"/>; clients: last synced value).</summary>
+        public float GetMoonGemsForDisplay()
+        {
+            if (planet != null && planet.IsServer)
+                return gemPoints;
+            return gemPointsClientDisplay;
         }
 
         private void Awake()
@@ -168,6 +211,7 @@ namespace TitanOrbit.Entities
         private void OnEnable()
         {
             EnsureMoonOrbitZoneVisual();
+            EnsureMatrixShieldVisual();
 
             ulong id = 0;
             if (planet != null)
@@ -178,13 +222,54 @@ namespace TitanOrbit.Entities
             orbitAngle = (id % 6283UL) * 0.001f;
             spinAngleDegrees = (id % 360UL);
 
+            shieldPoints = maxShieldPoints;
+            lastShieldHitServerTime = GetServerTimeNowSeconds();
+
+            // Only the server tracks/updates gem drain & spawning logic.
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
-                shieldPoints = maxShieldPoints;
                 gemPoints = maxGemPoints;
                 gemDrainAccumulator = 0f;
                 gemSpawnTimer = 0f;
             }
+
+            UpdateMatrixShieldVisual();
+            EnsureGemMoonStatsDisplay();
+        }
+
+        private void Start()
+        {
+            if (planet != null && planet.IsServer)
+                StartCoroutine(PushInitialMoonStateAfterSpawn());
+        }
+
+        private IEnumerator PushInitialMoonStateAfterSpawn()
+        {
+            yield return null;
+            PushFullStateToClients();
+        }
+
+        private void EnsureGemMoonStatsDisplay()
+        {
+            if (statsDisplay == null)
+                statsDisplay = GetComponent<GemMoonStatsDisplay>();
+            if (statsDisplay == null)
+                statsDisplay = gameObject.AddComponent<GemMoonStatsDisplay>();
+            statsDisplay.Init(this);
+        }
+
+        /// <summary>Server-only: push shield + moon gems to all clients (e.g. after spawn or combat).</summary>
+        public void PushFullStateToClients()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer || planet == null) return;
+            planet.GemMoonShieldClientRpc(shieldPoints, maxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
+        }
+
+        private void MaybeSyncMoonGemsToClientsThrottled()
+        {
+            if (Time.time - lastMoonGemSyncTime < MoonGemSyncInterval) return;
+            lastMoonGemSyncTime = Time.time;
+            PushFullStateToClients();
         }
 
         private void FixedUpdate()
@@ -226,6 +311,9 @@ namespace TitanOrbit.Entities
             if (_visualTransform != null)
                 _visualTransform.RotateAround(transform.position, SpinAxisWorld, Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime);
 
+            TickMoonShieldRegen();
+            UpdateMatrixShieldVisual();
+
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             TickMoonCombatDrain();
         }
@@ -246,6 +334,7 @@ namespace TitanOrbit.Entities
 
             gemPoints -= drain;
             planet.DrainGemsFromServer(drain);
+            MaybeSyncMoonGemsToClientsThrottled();
 
             gemDrainAccumulator += drain;
             gemSpawnTimer += Time.fixedDeltaTime;
@@ -261,11 +350,166 @@ namespace TitanOrbit.Entities
             GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, spawnValue, 0ul);
         }
 
+        private void TickMoonShieldRegen()
+        {
+            if (shieldPoints >= maxShieldPoints - 0.001f) return;
+
+            double now = GetServerTimeNowSeconds();
+            double timeSinceHit = now - lastShieldHitServerTime;
+            if (timeSinceHit < shieldRegenDelaySeconds) return;
+
+            float regenRatePerSecond = maxShieldPoints / Mathf.Max(0.01f, shieldRegenSecondsToFull);
+            shieldPoints = Mathf.Min(maxShieldPoints, shieldPoints + regenRatePerSecond * Time.fixedDeltaTime);
+        }
+
+        public void ApplyShieldClientSync(float currentShieldPoints, float syncMaxShieldPoints, float lastHitServerTimeSeconds, float currentMoonGemPoints)
+        {
+            shieldPoints = Mathf.Max(0f, currentShieldPoints);
+            maxShieldPoints = Mathf.Max(0.001f, syncMaxShieldPoints);
+            lastShieldHitServerTime = lastHitServerTimeSeconds;
+            gemPointsClientDisplay = Mathf.Max(0f, currentMoonGemPoints);
+            UpdateMatrixShieldVisual();
+            if (statsDisplay == null)
+                statsDisplay = GetComponent<GemMoonStatsDisplay>();
+            if (statsDisplay != null)
+                statsDisplay.Refresh();
+        }
+
+        private void EnsureMatrixShieldVisual()
+        {
+            // Only show shield effects on captured planets (Team != None).
+            TeamManager.Team team = planet != null ? planet.TeamOwnership : TeamManager.Team.None;
+            if (team == TeamManager.Team.None)
+            {
+                if (_matrixShieldInstance != null)
+                    _matrixShieldInstance.SetActive(false);
+                _matrixShieldTeam = TeamManager.Team.None;
+                return;
+            }
+
+            if (_matrixShieldInstance != null && _matrixShieldTeam == team) return;
+
+            if (_matrixShieldInstance != null)
+                Destroy(_matrixShieldInstance);
+
+            GameObject prefab = GetMatrixShieldPrefab(team);
+            if (prefab == null) return;
+
+            _matrixShieldInstance = Instantiate(prefab, transform);
+            _matrixShieldInstance.transform.localPosition = Vector3.zero;
+            // Preserve prefab-authored local rotation as a base orientation offset.
+            _matrixShieldBaseLocalRotation = _matrixShieldInstance.transform.localRotation;
+
+            _matrixShieldTeam = team;
+            Vector3 baseScale = _matrixShieldInstance.transform.localScale;
+            _matrixShieldBaseXScale = Mathf.Max(0.0001f, Mathf.Abs(baseScale.x));
+            _matrixShieldBaseYScale = Mathf.Max(0.0001f, Mathf.Abs(baseScale.y));
+            _lastShieldDockLocalRadius = -1f;
+            _lastShieldEdgeExpandMultiplier = -1f;
+
+            _matrixShieldParticles = _matrixShieldInstance.GetComponentsInChildren<ParticleSystem>(true);
+        }
+
+        private void UpdateMatrixShieldVisual()
+        {
+            EnsureMatrixShieldVisual();
+            if (_matrixShieldInstance == null) return;
+
+            // Match moon tilt: align shield "up" to the same tilted spin axis used by the moon.
+            Vector3 axisLocal = transform.InverseTransformDirection(SpinAxisWorld);
+            if (axisLocal.sqrMagnitude < 0.0001f) axisLocal = Vector3.up;
+            axisLocal.Normalize();
+            Quaternion alignToMoonAxis = Quaternion.FromToRotation(Vector3.up, axisLocal);
+            _matrixShieldInstance.transform.localRotation = alignToMoonAxis * _matrixShieldBaseLocalRotation;
+
+            // Match Shapes orbit zone: outer edge = moon-local dock trigger radius (same as GemMoonOrbitZoneVisual outer).
+            float orbitOuterLocal = GetMoonDockSnapRadiusLocal();
+            float edgeExpand = Mathf.Max(0.0001f, matrixShieldOrbitZoneEdgeExpandMultiplier);
+            if (_lastShieldDockLocalRadius < 0f
+                || Mathf.Abs(orbitOuterLocal - _lastShieldDockLocalRadius) > 0.001f
+                || Mathf.Abs(edgeExpand - _lastShieldEdgeExpandMultiplier) > 0.0001f)
+            {
+                _lastShieldDockLocalRadius = orbitOuterLocal;
+                _lastShieldEdgeExpandMultiplier = edgeExpand;
+                float denom = Mathf.Max(0.001f, matrixShieldRadiusReference);
+                // matrixShieldRadiusReference is "radius at localScale = 1" (prefab-authored scale).
+                // The prefab may have a non-1 base scale, so we apply the multiplier on top of the prefab base scale.
+                float targetOuterLocal = orbitOuterLocal * edgeExpand;
+                float scaleMultiplier = (targetOuterLocal / denom) * Mathf.Max(0.0001f, matrixShieldScaleMultiplier);
+                float scaleX = _matrixShieldBaseXScale * scaleMultiplier;
+                // Keep the shield's aspect ratio from the prefab, but scale it consistently as the moon radius changes.
+                float y = _matrixShieldBaseYScale * scaleMultiplier;
+                _matrixShieldInstance.transform.localScale = new Vector3(scaleX, y, scaleX);
+            }
+
+            bool captured = planet != null && planet.TeamOwnership != TeamManager.Team.None;
+            bool shouldBeActive = captured && shieldPoints > 0.001f;
+            _matrixShieldInstance.SetActive(shouldBeActive);
+
+            // Show depletion as reduced particle emission (instead of only toggling on/off).
+            if (_matrixShieldParticles != null && shouldBeActive)
+            {
+                float ratio = Mathf.Clamp01(shieldPoints / Mathf.Max(0.001f, maxShieldPoints));
+                foreach (var ps in _matrixShieldParticles)
+                {
+                    if (ps == null) continue;
+                    var emission = ps.emission;
+                    emission.rateOverTimeMultiplier = ratio;
+                }
+            }
+        }
+
+        private double GetServerTimeNowSeconds()
+        {
+            if (NetworkManager.Singleton != null)
+                return NetworkManager.Singleton.ServerTime.Time;
+            return Time.timeAsDouble;
+        }
+
+        private GameObject GetMatrixShieldPrefab(TeamManager.Team team)
+        {
+            GameObject prefab = null;
+            switch (team)
+            {
+                case TeamManager.Team.TeamA:
+                    prefab = matrixShieldRedPrefab;
+                    break;
+                case TeamManager.Team.TeamB:
+                    prefab = matrixShieldBluePrefab;
+                    break;
+                case TeamManager.Team.TeamC:
+                    prefab = matrixShieldGreenPrefab;
+                    break;
+            }
+
+#if UNITY_EDITOR
+            if (prefab == null)
+            {
+                // Editor fallback: load the prefabs by their asset-path so you don't need to manually assign them.
+                // (Runtime builds still require the serialized fields to be assigned unless you add an Addressables/Resources solution.)
+                string path = team switch
+                {
+                    TeamManager.Team.TeamA => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldRed.prefab",
+                    TeamManager.Team.TeamB => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldBlue.prefab",
+                    TeamManager.Team.TeamC => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldGreen.prefab",
+                    _ => null
+                };
+
+                if (!string.IsNullOrEmpty(path))
+                    prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            }
+#endif
+
+            return prefab;
+        }
+
         /// <summary>Server-only: called by bullets/rockets/mines when they hit the moon.</summary>
         public void TakeDamageServer(float damage)
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (damage <= 0f) return;
+
+            lastShieldHitServerTime = GetServerTimeNowSeconds();
 
             float remaining = damage;
 
@@ -279,6 +523,10 @@ namespace TitanOrbit.Entities
 
             if (remaining > 0f)
                 gemPoints = Mathf.Max(0f, gemPoints - remaining);
+
+            // Sync shield state + moon gems to clients so visuals and UI stay correct.
+            if (planet != null)
+                planet.GemMoonShieldClientRpc(shieldPoints, maxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
         }
 
         /// <summary>Dock trigger radius in moon local space (same space as <see cref="SphereCollider.radius"/> on this object).</summary>

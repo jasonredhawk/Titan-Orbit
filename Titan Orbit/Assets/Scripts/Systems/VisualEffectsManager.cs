@@ -42,7 +42,7 @@ namespace TitanOrbit.Systems
 
         [SerializeField] private float floatingCountDuration = 1.7f;
         [SerializeField] private float floatingCountRiseSpeed = 2.5f;
-        [SerializeField] private float floatingCountFontSize = 14f;
+        [SerializeField] private float floatingCountFontSize = 10f;
         [SerializeField] private float floatingCountIconScale = 0.1f;
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
         [SerializeField] private float floatingCountVerticalOffset = 0.55f;

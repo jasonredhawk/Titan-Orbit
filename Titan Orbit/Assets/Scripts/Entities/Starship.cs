@@ -108,7 +108,7 @@ namespace TitanOrbit.Entities
         private Quaternion gemMoonDockVisualStartRotation = Quaternion.identity;
         private float gemMoonDockApproachElapsed;
         private float gemMoonDockApproachStartScaleMultiplier = 1f;
-        private float gemMoonDockApproachStartDistToMoon = 0f;
+        private Vector3 gemMoonDockApproachStartWorldPos = Vector3.zero;
         private float gemMoonUndockBlendElapsed;
         private float gemMoonUndockStartScale = 1f;
         private bool gemMoonUndockBlendActive;
@@ -1578,15 +1578,13 @@ namespace TitanOrbit.Entities
                 // otherwise the ship stays at a fixed world azimuth and does not co-rotate with the moon.
                 Vector3 orbitDir = radial.sqrMagnitude > 0.0001f ? radial.normalized : Vector3.forward;
 
-                // Same moonDockEaseInOut as scale: radial distance from where we currently are → surface.
-                // This prevents an instant "jump back" to a previous trigger point.
-                float currentDistToMoon = ToroidalMap.ToroidalDistance(rb.position, moonPos);
-                if (!wasGemMoonDocked || moonDockLinearT <= 0.03f || gemMoonDockApproachStartDistToMoon <= 0.0001f)
-                    gemMoonDockApproachStartDistToMoon = currentDistToMoon;
+                // Start the dock transition from the ship's live world pose so entering the moon zone
+                // never teleports to a precomputed radial pose.
+                if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
+                    gemMoonDockApproachStartWorldPos = rb.position;
 
-                float easedRadialDist = Mathf.Lerp(gemMoonDockApproachStartDistToMoon, contactRadius, moonDockEaseInOut);
-                easedRadialDist = Mathf.Clamp(easedRadialDist, contactRadius, Mathf.Max(contactRadius, moonDockOuterRadius));
-                Vector3 targetPos = moonPos + orbitDir * easedRadialDist;
+                Vector3 targetSurfacePos = moonPos + orbitDir * contactRadius;
+                Vector3 targetPos = Vector3.Lerp(gemMoonDockApproachStartWorldPos, targetSurfacePos, moonDockEaseInOut);
                 rb.MovePosition(targetPos);
                 SetRootColliderDocked(true);
 
@@ -1854,6 +1852,7 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (isDead.Value) return;
             if (currentGems.Value >= GemCapacity) return;
+            if (gemMoonDocked.Value) return;
 
             // Throttle attraction work across frames to reduce CPU cost.
             if (((Time.frameCount + GetInstanceID()) & 1) != 0)
@@ -1863,7 +1862,9 @@ namespace TitanOrbit.Entities
                 return;
 
             Vector3 shipPos = rb != null ? rb.position : transform.position;
-            float searchRadius = 10f;
+            bool inOrbitZone = currentOrbitPlanet != null;
+            float searchRadius = inOrbitZone ? 18f : 10f;
+            float attractionSpeed = inOrbitZone ? 14f : 8f;
 
             foreach (var gem in TitanOrbit.Entities.Gem.AllGems)
             {
@@ -1886,9 +1887,12 @@ namespace TitanOrbit.Entities
                 if (toShip.sqrMagnitude < 0.0001f) continue;
                 toShip.Normalize();
 
-                float speed = 8f;
-                Vector3 targetVel = toShip * speed;
-                gemRb.linearVelocity = Vector3.MoveTowards(gemRb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
+                Vector3 targetVel = toShip * attractionSpeed;
+                gemRb.linearVelocity = Vector3.MoveTowards(
+                    gemRb.linearVelocity,
+                    targetVel,
+                    attractionSpeed * Time.fixedDeltaTime * 4f
+                );
                 gemRb.linearDamping = 0f;
             }
         }

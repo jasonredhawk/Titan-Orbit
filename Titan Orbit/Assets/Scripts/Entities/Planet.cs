@@ -45,7 +45,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
         [SerializeField] private TextMeshPro populationText;
-        [Tooltip("When set, shows world-space progress bars (Pop/Gems/Level) instead of population text. Created at runtime if missing.")]
+        [Tooltip("When set, shows world-space population number instead of population text. Created at runtime if missing.")]
         [SerializeField] private PlanetStatsDisplay planetStatsDisplay;
         [Tooltip("Tint intensity for regular planets (0 = no tint, 1 = full team color). Only applies to regular planets, not HomePlanets.")]
         [SerializeField] private float regularPlanetTintIntensity = 0.2f;
@@ -786,7 +786,7 @@ namespace TitanOrbit.Entities
             populationText.ForceMeshUpdate(true, false);
         }
 
-        /// <summary>Add PlanetStatsDisplay at runtime so we show progress bars instead of single population text.</summary>
+        /// <summary>Add PlanetStatsDisplay at runtime for world-space population number (hides population text when active).</summary>
         private void EnsurePlanetStatsDisplay()
         {
             if (planetStatsDisplay == null)
@@ -948,6 +948,16 @@ namespace TitanOrbit.Entities
         {
             Debug.Log($"Planet leveled up to level {newLevel}!");
             VisualEffectsManager.PlayLevelUpEffectStatic(planetPosition, effectPlanetSize);
+        }
+
+        /// <summary>
+        /// Client-sync for the gem moon's matrix shield (deplete on hit + client-side regen over time).
+        /// </summary>
+        [ClientRpc]
+        public void GemMoonShieldClientRpc(float currentShieldPoints, float maxShieldPoints, float lastHitServerTime, float currentMoonGemPoints)
+        {
+            if (gemMoon == null) return;
+            gemMoon.ApplyShieldClientSync(currentShieldPoints, maxShieldPoints, lastHitServerTime, currentMoonGemPoints);
         }
 
         protected virtual void OnPlanetLevelChanged(int previousLevel, int newLevel)
