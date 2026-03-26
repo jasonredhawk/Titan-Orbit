@@ -90,7 +90,7 @@ namespace TitanOrbit.Entities
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,
-                            (int)FloatingCountType.Damage,
+                            (int)FloatingCountChannel.DamageShipOrDrone,
                             dmg,
                             (int)ownerTeam
                         );
@@ -103,7 +103,7 @@ namespace TitanOrbit.Entities
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,
-                            (int)FloatingCountType.Damage,
+                            (int)FloatingCountChannel.DamageShipOrDrone,
                             dmg,
                             (int)ownerTeam
                         );
@@ -116,7 +116,7 @@ namespace TitanOrbit.Entities
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,
-                            (int)FloatingCountType.Damage,
+                            (int)FloatingCountChannel.DamageAsteroid,
                             dmg,
                             (int)ownerTeam
                         );
@@ -129,7 +129,7 @@ namespace TitanOrbit.Entities
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,
-                            (int)FloatingCountType.Damage,
+                            (int)FloatingCountChannel.DamageMoon,
                             dmg,
                             (int)ownerTeam
                         );

@@ -2525,7 +2525,7 @@ namespace TitanOrbit.Entities
                 if (Mathf.Abs(deltaHealth) >= minAbsHealthForPopup && VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                         transform.position,
-                        (int)FloatingCountType.Health,
+                        (int)FloatingCountChannel.HealthChange,
                         deltaHealth,
                         (int)attackerTeam
                     );
@@ -2620,6 +2620,13 @@ namespace TitanOrbit.Entities
                     var shipNo = GetComponent<NetworkObject>();
                     if (shipNo != null)
                         GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, 1f, shipNo.NetworkObjectId, shipTeam.Value);
+
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            shipPos,
+                            (int)FloatingCountChannel.PeopleLoad,
+                            1f,
+                            (int)shipTeam.Value);
                 }
             }
             else
@@ -2639,6 +2646,13 @@ namespace TitanOrbit.Entities
                     var shipNo = GetComponent<NetworkObject>();
                     if (planetNo != null && shipNo != null)
                         GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, 1f, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            planetPos,
+                            (int)FloatingCountChannel.PeopleUnload,
+                            1f,
+                            (int)shipTeam.Value);
                 }
             }
         }

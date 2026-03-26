@@ -29,15 +29,20 @@ namespace TitanOrbit.Systems
         [SerializeField] private float gemPickupTextDuration = 1f;
 
         [Header("Floating Count Popups")]
+        [Tooltip("Per-action toggles, people color/icon, etc. Create: Assets → Create → Titan Orbit → Floating Count Feedback Settings. If null, all channels show.")]
+        [SerializeField] private FloatingCountFeedbackSettings floatingCountFeedbackSettings;
         [Tooltip("World-space font used to render the floating (+N) popup text.")]
         [SerializeField] private TMP_FontAsset floatingCountFont;
         [SerializeField] private Sprite floatingCountGemIcon;
         [SerializeField] private Sprite floatingCountDamageIcon;
         [SerializeField] private Sprite floatingCountHealthIcon;
+        [Tooltip("Used for people load/unload when the feedback settings asset has no people icon assigned.")]
+        [SerializeField] private Sprite floatingCountPeopleIcon;
+        [SerializeField] private Color floatingCountPeopleColor = new Color(1f, 0.9f, 0.25f, 1f);
 
         [SerializeField] private float floatingCountDuration = 1.7f;
-        [SerializeField] private float floatingCountRiseSpeed = 1.25f;
-        [SerializeField] private float floatingCountFontSize = 28f;
+        [SerializeField] private float floatingCountRiseSpeed = 2.5f;
+        [SerializeField] private float floatingCountFontSize = 14f;
         [SerializeField] private float floatingCountIconScale = 0.1f;
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
         [SerializeField] private float floatingCountVerticalOffset = 0.55f;
@@ -121,7 +126,7 @@ namespace TitanOrbit.Systems
             // there is no usable TMP font (assigned or default).
             if (floatingCountFont != null || TMP_Settings.defaultFontAsset != null)
             {
-                SpawnFloatingCountPopupLocal(position, FloatingCountType.Gems, amount, team);
+                SpawnFloatingCountPopupLocal(position, FloatingCountChannel.GemPickup, amount, team);
                 return;
             }
 
@@ -132,21 +137,24 @@ namespace TitanOrbit.Systems
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnFloatingCountServerRpc(Vector3 position, int typeId, float signedAmount, int teamInt)
+        public void SpawnFloatingCountServerRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
-            SpawnFloatingCountClientRpc(position, typeId, signedAmount, teamInt);
+            SpawnFloatingCountClientRpc(position, channelId, signedAmount, teamInt);
         }
 
         [ClientRpc]
-        private void SpawnFloatingCountClientRpc(Vector3 position, int typeId, float signedAmount, int teamInt)
+        private void SpawnFloatingCountClientRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
-            FloatingCountType type = (FloatingCountType)Mathf.Clamp(typeId, 0, 2);
+            var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
             TeamManager.Team team = (TeamManager.Team)teamInt;
-            SpawnFloatingCountPopupLocal(position, type, signedAmount, team);
+            SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
         }
 
-        private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountType type, float signedAmount, TeamManager.Team team)
+        private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
+            if (floatingCountFeedbackSettings != null && !floatingCountFeedbackSettings.IsEnabled(channel))
+                return;
+
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
             if (fontToUse == null)
             {
@@ -159,11 +167,20 @@ namespace TitanOrbit.Systems
             if (amountInt <= 0) return;
 
             char sign = signedAmount >= 0f ? '+' : '-';
-            string label = type switch
+            string label = channel switch
             {
-                FloatingCountType.Gems => "Gems",
-                FloatingCountType.Damage => "Damage",
-                FloatingCountType.Health => "Health",
+                FloatingCountChannel.GemPickup => "Gems",
+                FloatingCountChannel.GemDeposit => "Gems",
+                FloatingCountChannel.DamageAsteroid => "Damage",
+                FloatingCountChannel.DamageShipOrDrone => "Damage",
+                FloatingCountChannel.DamageMoon => "Damage",
+                FloatingCountChannel.HealthChange => "Health",
+                FloatingCountChannel.PeopleLoad => "People",
+                FloatingCountChannel.PeopleUnload => "People",
+                FloatingCountChannel.Healing => "Health",
+                FloatingCountChannel.HealthRegen => "Health",
+                FloatingCountChannel.Energy => "Energy",
+                FloatingCountChannel.Upgrades => "Upgrade",
                 _ => "Value"
             };
 
@@ -172,26 +189,53 @@ namespace TitanOrbit.Systems
             Sprite icon = null;
             Color color = Color.white;
 
-            switch (type)
+            switch (channel)
             {
-                case FloatingCountType.Gems:
+                case FloatingCountChannel.GemPickup:
+                case FloatingCountChannel.GemDeposit:
                     icon = floatingCountGemIcon;
                     color = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
                     break;
 
-                case FloatingCountType.Damage:
+                case FloatingCountChannel.DamageAsteroid:
+                case FloatingCountChannel.DamageShipOrDrone:
+                case FloatingCountChannel.DamageMoon:
                     icon = floatingCountDamageIcon;
                     color = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : floatingCountDamageFallbackColor;
                     break;
 
-                case FloatingCountType.Health:
+                case FloatingCountChannel.HealthChange:
+                case FloatingCountChannel.Healing:
+                case FloatingCountChannel.HealthRegen:
                     icon = floatingCountHealthIcon;
-                    color = signedAmount >= 0f ? floatingCountHealthPositiveColor : floatingCountHealthNegativeColor;
+                    color = channel == FloatingCountChannel.HealthChange
+                        ? (signedAmount >= 0f ? floatingCountHealthPositiveColor : floatingCountHealthNegativeColor)
+                        : floatingCountHealthPositiveColor;
+                    break;
+
+                case FloatingCountChannel.PeopleLoad:
+                case FloatingCountChannel.PeopleUnload:
+                    icon = floatingCountFeedbackSettings != null && floatingCountFeedbackSettings.peopleIcon != null
+                        ? floatingCountFeedbackSettings.peopleIcon
+                        : floatingCountPeopleIcon;
+                    color = floatingCountFeedbackSettings != null
+                        ? floatingCountFeedbackSettings.peopleColor
+                        : floatingCountPeopleColor;
+                    break;
+
+                case FloatingCountChannel.Energy:
+                    icon = null;
+                    color = new Color(0.35f, 0.75f, 1f, 1f);
+                    break;
+
+                case FloatingCountChannel.Upgrades:
+                    icon = null;
+                    color = new Color(0.95f, 0.85f, 0.35f, 1f);
                     break;
             }
 
             Vector3 spawnPos = position + Vector3.up * floatingCountVerticalOffset;
-            GameObject go = new GameObject($"FloatingCountPopup_{type}");
+            GameObject go = new GameObject($"FloatingCountPopup_{channel}");
             go.transform.position = spawnPos;
 
             var popup = go.AddComponent<FloatingCountPopup>();

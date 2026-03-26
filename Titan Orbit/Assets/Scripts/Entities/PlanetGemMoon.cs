@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Entities
 {
@@ -33,7 +34,7 @@ namespace TitanOrbit.Entities
 
         [Header("Spin")]
         [Tooltip("Visual spin around moon local Y axis (degrees/second).")]
-        [SerializeField] private float spinDegreesPerSecond = 16f;
+        [SerializeField] private float spinDegreesPerSecond = 8.96f; // ~44% slower than previous 16 deg/s (16 * 0.56)
 
         private SphereCollider _dockTrigger;
         private SphereCollider _bodyCollider;
@@ -280,31 +281,36 @@ namespace TitanOrbit.Entities
                 gemPoints = Mathf.Max(0f, gemPoints - remaining);
         }
 
+        /// <summary>Dock trigger radius in moon local space (same space as <see cref="SphereCollider.radius"/> on this object).</summary>
+        public float GetMoonDockSnapRadiusLocal()
+        {
+            if (_dockTrigger != null)
+                return Mathf.Max(0.0001f, _dockTrigger.radius);
+            if (_bodyCollider != null)
+                return Mathf.Max(0.0001f, _bodyCollider.radius);
+            return 0.25f;
+        }
+
+        /// <summary>Physics body radius in moon local space.</summary>
+        public float GetMoonBodyRadiusLocal()
+        {
+            if (_bodyCollider != null)
+                return Mathf.Max(0.0001f, _bodyCollider.radius);
+            return GetMoonDockSnapRadiusLocal();
+        }
+
         /// <summary>World-space radius of the docking trigger; snap only applies while within this distance of the moon.</summary>
         public float GetMoonDockSnapRadiusWorld()
         {
-            if (_dockTrigger != null)
-            {
-                float r = _dockTrigger.radius;
-                Vector3 lossy = transform.lossyScale;
-                return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
-            }
-
-            if (_bodyCollider != null)
-            {
-                float r = _bodyCollider.radius;
-                Vector3 lossy = transform.lossyScale;
-                return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
-            }
-
-            return 4f;
+            float r = GetMoonDockSnapRadiusLocal();
+            Vector3 lossy = transform.lossyScale;
+            return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
         }
 
         /// <summary>World-space radius of the moon collision body.</summary>
         public float GetMoonBodyRadiusWorld()
         {
-            if (_bodyCollider == null) return GetMoonDockSnapRadiusWorld();
-            float r = _bodyCollider.radius;
+            float r = GetMoonBodyRadiusLocal();
             Vector3 lossy = transform.lossyScale;
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
         }
@@ -440,6 +446,7 @@ namespace TitanOrbit.Entities
         private bool IsShipReadyToLandInMoonZone(Starship ship)
         {
             if (ship == null) return false;
+            if (planet == null || planet.TeamOwnership == TeamManager.Team.None) return false;
 
             Vector3 moonPos = transform.position;
             moonPos.y = 0f;

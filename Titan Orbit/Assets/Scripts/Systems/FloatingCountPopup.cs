@@ -4,16 +4,6 @@ using UnityEngine;
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Types of floating (+N) popups.
-    /// </summary>
-    public enum FloatingCountType
-    {
-        Gems = 0,
-        Damage = 1,
-        Health = 2
-    }
-
-    /// <summary>
     /// Runtime-created world-space popup: rises upward, fades in, then fades out.
     /// </summary>
     public class FloatingCountPopup : MonoBehaviour
@@ -66,7 +56,8 @@ namespace TitanOrbit.Systems
             }
 
             lifetime = Mathf.Max(0.1f, duration);
-            this.riseSpeed = Mathf.Max(0f, riseSpeed);
+            // Minimum drift so a zero/missing inspector value never looks "stuck".
+            this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
             elapsed = 0f;
 
             baseColor = color;
@@ -105,6 +96,24 @@ namespace TitanOrbit.Systems
             }
         }
 
+        /// <summary>
+        /// Direction that reads as "up" on screen but stays on the XZ play plane (Y locked to 0).
+        /// World +Y is nearly invisible from a top-down camera, so we use camera screen-up flattened to XZ.
+        /// </summary>
+        private static Vector3 GetRiseDirectionOnPlayPlane(UnityEngine.Camera cam)
+        {
+            if (cam == null)
+                return Vector3.forward;
+
+            Vector3 dir = cam.transform.up;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 1e-8f)
+                dir = Vector3.ProjectOnPlane(-cam.transform.forward, Vector3.up);
+            if (dir.sqrMagnitude < 1e-8f)
+                dir = Vector3.forward;
+            return dir.normalized;
+        }
+
         private void Update()
         {
             if (lifetime <= 0f)
@@ -116,11 +125,14 @@ namespace TitanOrbit.Systems
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / lifetime);
 
-            // Move up over time.
-            transform.position += Vector3.up * riseSpeed * Time.deltaTime;
+            var cam = UnityEngine.Camera.main;
+            // Drift along screen-up on the ground plane (not world Y).
+            transform.position += GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
+            Vector3 pos = transform.position;
+            pos.y = 0f;
+            transform.position = pos;
 
             // Always face the main camera (billboard) so it's readable.
-            var cam = UnityEngine.Camera.main;
             if (cam != null)
             {
                 transform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);

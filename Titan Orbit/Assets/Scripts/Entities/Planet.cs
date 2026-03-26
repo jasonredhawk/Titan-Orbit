@@ -171,8 +171,8 @@ namespace TitanOrbit.Entities
             // (Refresh order can matter during spawn/setup.)
             float visualLocalScale = Mathf.Abs(GetGemMoonVisualUniformScale());
             float bodyLocalRadius = Mathf.Max(0.01f, 0.5f * visualLocalScale);
-            // Moon dock / orbit zone radius (half of prior 5.2× body for tighter band).
-            float dockLocalRadius = bodyLocalRadius * 2.6f;
+            // Moon dock / orbit zone visual radius (1.5× prior 1.3× body).
+            float dockLocalRadius = bodyLocalRadius * 1.95f;
 
             // There can be multiple SphereColliders (older versions, prefab duplicates, etc.).
             // Set *all* triggers to dock radius and *all* non-triggers to body radius.
@@ -890,7 +890,7 @@ namespace TitanOrbit.Entities
                 popupPos.y = 0f;
                 VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                     popupPos,
-                    (int)FloatingCountType.Gems,
+                    (int)FloatingCountChannel.GemDeposit,
                     delta,
                     (int)depositingTeam
                 );
