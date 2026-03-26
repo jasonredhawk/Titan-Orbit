@@ -2456,18 +2456,25 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Pitch for weapon sound: bigger bullet = lower (deeper), faster bullet = higher (shorter). Used by FireClientRpc.</summary>
+        /// <summary>Pitch for weapon sound based on fire power (attrFirePower): stronger fire power = lower pitch.</summary>
         private float GetWeaponSoundPitchForCannon(int cannonIndex)
         {
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            if (bulletWc?.cannons == null || cannonIndex < 0 || cannonIndex >= bulletWc.cannons.Count) return 1f;
-            var c = bulletWc.cannons[cannonIndex];
-            float damage = c.damagePerBullet;
-            float speed = c.bulletSpeed;
-            float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
-            float scaleClamped = Mathf.Max(0.25f, scale);
-            const float refSpeed = 20f;
-            return (speed / refSpeed) / scaleClamped;
+            // Note: we avoid reading c.damagePerBullet here because bullet config may not be rebuilt/synced on clients.
+            // FirePowerScaleFactor is driven by the replicated attrFirePower, so it reliably affects client-side pitch.
+            float firePowerFactor = Mathf.Max(0.01f, FirePowerScaleFactor);
+
+            // Map factor with log curve so the difference is audible at low upgrades.
+            const float minFactor = 1f;   // attrFirePower = 0
+            const float maxFactor = 3.5f; // reasonable upper bound even with additional scaling/card effects
+            const float highPitch = 1.9f;
+            const float lowPitch = 0.55f;
+
+            float clampedFactor = Mathf.Clamp(firePowerFactor, minFactor, maxFactor);
+            float minLog = Mathf.Log10(minFactor);
+            float maxLog = Mathf.Log10(maxFactor);
+            float factorLog = Mathf.Log10(clampedFactor);
+            float normalized = Mathf.InverseLerp(minLog, maxLog, factorLog);
+            return Mathf.Lerp(highPitch, lowPitch, normalized);
         }
 
         /// <summary>Server-only: AI ships call this to fire at a target.</summary>

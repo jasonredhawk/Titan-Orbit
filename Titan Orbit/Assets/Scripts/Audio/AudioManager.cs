@@ -24,6 +24,9 @@ namespace TitanOrbit.Audio
         [Tooltip("Optional pool for value-based gem sounds (pickup/deposit) with varying pitch.")]
         [SerializeField] private AudioSource[] gemSoundSources;
         private int nextGemSoundIndex;
+        [Tooltip("Optional pool for value-based impact sounds with varying pitch.")]
+        [SerializeField] private AudioSource[] impactSoundSources;
+        private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
         private const float WEAPON_PITCH_MIN = 0.5f;
@@ -33,6 +36,9 @@ namespace TitanOrbit.Audio
         private const float GEM_PITCH_MAX = 1.9f;
         private const float GEM_AMOUNT_MIN = 1f;
         private const float GEM_AMOUNT_MAX = 300f;
+        private const int IMPACT_SOUND_POOL_SIZE = 6;
+        private const float IMPACT_PITCH_MIN = 0.55f;
+        private const float IMPACT_PITCH_MAX = 1.9f;
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
@@ -84,6 +90,7 @@ namespace TitanOrbit.Audio
 
             EnsureWeaponSoundPool();
             EnsureGemSoundPool();
+            EnsureImpactSoundPool();
 
             if (playMusicOnStart && backgroundMusic != null)
             {
@@ -142,7 +149,27 @@ namespace TitanOrbit.Audio
 
         public void PlayImpactSound()
         {
-            PlaySFX(impactSound);
+            PlayImpactSound(1f);
+        }
+
+        public void PlayImpactSound(float pitch)
+        {
+            if (impactSound == null) return;
+            EnsureImpactSoundPool();
+            if (impactSoundSources == null || impactSoundSources.Length == 0)
+            {
+                PlaySFX(impactSound);
+                return;
+            }
+
+            float p = Mathf.Clamp(pitch, IMPACT_PITCH_MIN, IMPACT_PITCH_MAX);
+            AudioSource src = impactSoundSources[nextImpactSoundIndex % impactSoundSources.Length];
+            nextImpactSoundIndex = (nextImpactSoundIndex + 1) % impactSoundSources.Length;
+            if (src != null)
+            {
+                src.pitch = p;
+                src.PlayOneShot(impactSound, sfxVolume);
+            }
         }
 
         public void PlayGemCollectSound()
@@ -258,6 +285,19 @@ namespace TitanOrbit.Audio
                 src.playOnAwake = false;
                 src.outputAudioMixerGroup = sfxGroup;
                 gemSoundSources[i] = src;
+            }
+        }
+
+        private void EnsureImpactSoundPool()
+        {
+            if (impactSoundSources != null && impactSoundSources.Length > 0) return;
+            impactSoundSources = new AudioSource[IMPACT_SOUND_POOL_SIZE];
+            for (int i = 0; i < IMPACT_SOUND_POOL_SIZE; i++)
+            {
+                var src = gameObject.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.outputAudioMixerGroup = sfxGroup;
+                impactSoundSources[i] = src;
             }
         }
 

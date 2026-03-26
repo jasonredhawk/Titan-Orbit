@@ -401,14 +401,35 @@ namespace TitanOrbit.Entities
         {
             Vector3 impactPos = transform.position;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
+            float impactPitch = GetImpactSoundPitch();
             GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
             if (impactPrefab != null)
             {
-                SpawnImpactEffectClientRpc(impactPos, bankIdx);
+                SpawnImpactEffectClientRpc(impactPos, bankIdx, impactPitch);
                 SpawnImpactAt(impactPos, impactPrefab); // Server spawns too (ClientRpc doesn't run on server)
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
+        }
+
+        /// <summary>
+        /// Stronger projectile impact (higher bullet damage / fire power) = lower pitch.
+        /// </summary>
+        private float GetImpactSoundPitch()
+        {
+            // Bullet damage per hit scales with fire power upgrades/cards. Use a log curve for audible separation.
+            float firePower = Mathf.Max(0.1f, damage);
+            const float minFirePower = 2f;
+            const float maxFirePower = 160f;
+            const float highPitch = 1.9f;
+            const float lowPitch = 0.55f;
+
+            float clampedPower = Mathf.Clamp(firePower, minFirePower, maxFirePower);
+            float minLog = Mathf.Log10(minFirePower);
+            float maxLog = Mathf.Log10(maxFirePower);
+            float powerLog = Mathf.Log10(clampedPower);
+            float normalized = Mathf.InverseLerp(minLog, maxLog, powerLog);
+            return Mathf.Lerp(highPitch, lowPitch, normalized);
         }
 
         /// <summary>Impact prefab from SciFiProjectileScript.impactParticle when using bank, else the default impactEffectPrefab.</summary>
@@ -453,7 +474,7 @@ namespace TitanOrbit.Entities
         }
 
         [ClientRpc]
-        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex = -1)
+        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex, float pitch)
         {
             TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
             if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
@@ -464,7 +485,7 @@ namespace TitanOrbit.Entities
             if (prefab != null)
                 SpawnImpactAt(position, prefab);
             if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayImpactSound();
+                AudioManager.Instance.PlayImpactSound(pitch);
         }
 
         public void Initialize(float bulletSpeed, float bulletDamage, TeamManager.Team team)

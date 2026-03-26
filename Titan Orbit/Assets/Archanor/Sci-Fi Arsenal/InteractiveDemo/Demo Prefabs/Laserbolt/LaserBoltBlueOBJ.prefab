@@ -13,8 +13,8 @@ GameObject:
   - component: {fileID: 13507470}
   - component: {fileID: 5497134}
   - component: {fileID: 11454104}
-  - component: {fileID: 4601204262706764012}
   - component: {fileID: 9140286575860183131}
+  - component: {fileID: 4601204262706764012}
   m_Layer: 0
   m_Name: LaserBoltBlueOBJ
   m_TagString: Untagged
@@ -111,6 +111,27 @@ MonoBehaviour:
   trailParticles: []
   colliderRadius: 0.15
   collideOffset: 0.25
+--- !u!114 &9140286575860183131
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 199764}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2788551675
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!114 &4601204262706764012
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -142,24 +163,3 @@ MonoBehaviour:
   impactEffectPrefab: {fileID: 0}
   impactEffectDuration: 3
   impactEffectScale: 0.5
---- !u!114 &9140286575860183131
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 199764}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 0
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 1
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
