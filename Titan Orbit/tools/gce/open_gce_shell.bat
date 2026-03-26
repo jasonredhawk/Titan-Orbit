@@ -11,9 +11,13 @@ set "ZONE=us-central1-a"
 set "PROJECT_ID="
 set "REMOTE_USER=jason"
 set "INSTANCE_TARGET="
+set "USE_IAP="
 
 if not "%~1"=="" (
   set "PROJECT_ID=%~1"
+)
+if /i "%~2"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
 )
 set "INSTANCE_TARGET=%REMOTE_USER%@%INSTANCE%"
 
@@ -35,6 +39,6 @@ if "%PROJECT_ID%"=="" (
 )
 
 echo Using project: %PROJECT_ID%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no
 exit /b %errorlevel%
 

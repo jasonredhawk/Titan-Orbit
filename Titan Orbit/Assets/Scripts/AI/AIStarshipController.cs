@@ -349,8 +349,7 @@ namespace TitanOrbit.AI
                             
                             if (targetDepositPlanet != null)
                             {
-                                targetPosition = targetDepositPlanet.transform.position;
-                                SetTargetInOrbitZone(targetDepositPlanet, ref targetPosition);
+                                SetTargetAtGemMoon(targetDepositPlanet, ref targetPosition);
                                 currentState = AIState.ReturningToHome;
                                 ExitOrbitIfInOrbit();
                             }
@@ -456,7 +455,7 @@ namespace TitanOrbit.AI
                         }
                     }
                     
-                    SetTargetInOrbitZone(depositTarget, ref targetPosition);
+                    SetTargetAtGemMoon(depositTarget, ref targetPosition);
                     float distToDepositTarget = ToroidalMap.ToroidalDistance(rb.position, depositTarget.transform.position);
                     float depositOrbitRadius = depositTarget.PlanetSize * depositTarget.GetOrbitZoneOuterRadiusLocal(); // Use outer orbit band
                     
@@ -616,6 +615,9 @@ namespace TitanOrbit.AI
         private void HandleAIMovement()
         {
             if (rb == null || starship == null) return;
+
+            if (starship.WantToDepositGems && starship.CurrentOrbitPlanet != null)
+                targetPosition = starship.CurrentOrbitPlanet.GetGemMoonWorldPosition();
             
             // Dead ships cannot move - stop all movement
             if (starship.IsDead)
@@ -628,12 +630,22 @@ namespace TitanOrbit.AI
                 return;
             }
 
+            if (starship.GemMoonDocked)
+                return;
+
             // When in orbit zone and idle/loading/unloading/depositing, orbit slowly
             // Don't orbit when attacking enemies
             if (currentState != AIState.AttackingEnemy && ShouldOrbit())
             {
-                HandleAIOrbit();
-                return;
+                if (starship.WantToDepositGems && starship.CurrentOrbitPlanet != null)
+                {
+                    // Seek gem moon (targetPosition); Starship snap applies while docked
+                }
+                else
+                {
+                    HandleAIOrbit();
+                    return;
+                }
             }
 
             // Skip normal movement logic when attacking - HandleAttackingEnemy sets moveDirection
@@ -1349,8 +1361,7 @@ namespace TitanOrbit.AI
                     // If gems = max gems, go to home planet to upgrade
                     if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
                     {
-                        targetPosition = homePlanet.transform.position;
-                        SetTargetInOrbitZone(homePlanet, ref targetPosition);
+                        SetTargetAtGemMoon(homePlanet, ref targetPosition);
                         currentState = AIState.ReturningToHome;
                         targetAsteroid = null; // Clear asteroid target when returning home
                         ExitOrbitIfInOrbit();
@@ -1431,8 +1442,7 @@ namespace TitanOrbit.AI
                     break;
 
                 case AIState.ReturningToHome:
-                    // Target orbit zone at home
-                    SetTargetInOrbitZone(homePlanet, ref targetPosition);
+                    SetTargetAtGemMoon(homePlanet, ref targetPosition);
                     float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
                     float homeOrbitRadiusReturn = homePlanet.PlanetSize * homePlanet.GetOrbitZoneOuterRadiusLocal();
                     
@@ -1487,6 +1497,13 @@ namespace TitanOrbit.AI
             Vector3 dirToShip = ToroidalMap.ToroidalDirection(planet.transform.position, rb.position);
             float orbitDist = planet.PlanetSize * (0.5f + planet.GetOrbitZoneOuterRadiusLocal()) * 0.5f; // Middle of orbit band
             target = planet.transform.position + dirToShip * orbitDist;
+        }
+
+        /// <summary>Target the moving gem moon (outer orbit) for gem deposit.</summary>
+        private void SetTargetAtGemMoon(Planet planet, ref Vector3 target)
+        {
+            if (planet == null) return;
+            target = planet.GetGemMoonWorldPosition();
         }
 
         /// <summary>Force exit orbit when we have a new movement target (like player right-click does).</summary>

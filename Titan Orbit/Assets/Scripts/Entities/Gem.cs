@@ -210,14 +210,16 @@ namespace TitanOrbit.Entities
                 float amount = value.Value;
                 var team = (TeamManager.Team)depositTeam.Value;
                 ulong clientId = depositClientId.Value;
+                Vector3 depositPopupPos = rb != null ? rb.position : transform.position;
+                depositPopupPos.y = 0f;
 
                 if (planet is HomePlanet homePlanet)
                 {
-                    homePlanet.DepositGemsFromServer(amount, team, clientId);
+                    homePlanet.DepositGemsFromServer(amount, team, clientId, depositPopupPos);
                 }
                 else
                 {
-                    planet.DepositGemsFromServer(amount, team, clientId);
+                    planet.DepositGemsFromServer(amount, team, clientId, depositPopupPos);
                     HomePlanet shipHome = GetHomePlanetForTeam(team);
                     if (shipHome != null)
                         shipHome.AddContributedGemsFromServer(clientId, amount);

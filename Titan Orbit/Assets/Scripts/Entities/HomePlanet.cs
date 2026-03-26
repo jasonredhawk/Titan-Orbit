@@ -96,6 +96,9 @@ namespace TitanOrbit.Entities
             return GetNeutralMaterial();
         }
 
+        /// <summary>Gem moon on home worlds is 1.5× the inverse-scaled size used for regular planets at the same PlanetSize.</summary>
+        protected override float GetGemMoonHomeVisualScaleMultiplier() => 1.5f;
+
         /// <summary>Initial planet level. Home planets start at 1.</summary>
         protected override int GetInitialPlanetLevel() => 1;
 
@@ -161,7 +164,8 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code instead of RPC when already on server.</summary>
-        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        /// <param name="popupWorldPosition">Optional: where to show the floating gem count (e.g. gem moon). Defaults to planet center.</param>
+        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId, Vector3? popupWorldPosition = null)
         {
             if (!IsServer) return;
             // Only allow team members to deposit gems
@@ -180,7 +184,7 @@ namespace TitanOrbit.Entities
                 contributedGemsByClientId[depositingClientId] = 0f;
             contributedGemsByClientId[depositingClientId] += amount;
 
-            base.DepositGemsFromServer(amount, depositingTeam, depositingClientId);
+            base.DepositGemsFromServer(amount, depositingTeam, depositingClientId, popupWorldPosition);
         }
 
         [ServerRpc(RequireOwnership = false)]

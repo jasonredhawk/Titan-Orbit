@@ -6388,6 +6388,19 @@ MonoBehaviour:
   asteroidCollisionEffectDuration: 2
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
+  floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
+  floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}
+  floatingCountHealthIcon: {fileID: 21300000, guid: 0b72bc04d1858924798ebd2e1f80575b, type: 3}
+  floatingCountDuration: 1.7
+  floatingCountRiseSpeed: 3
+  floatingCountFontSize: 10
+  floatingCountIconScale: 0.14
+  floatingCountIconLocalOffset: {x: -0.45, y: 0, z: 0}
+  floatingCountVerticalOffset: 0.65
+  floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
+  floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
 --- !u!114 &1207700306
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7830,6 +7843,14 @@ MonoBehaviour:
   teamStatusText: {fileID: 1772480339}
   roomNameText: {fileID: 1904284693}
   playerNameInputField: {fileID: 255062049}
+  browseLobbiesButton: {fileID: 0}
+  refreshLobbiesButton: {fileID: 0}
+  joinSelectedLobbyButton: {fileID: 0}
+  backToMainMenuButton: {fileID: 0}
+  lobbyListContainer: {fileID: 0}
+  lobbyListRowPrefab: {fileID: 0}
+  lobbyBrowserStatusText: {fileID: 0}
+  latestOnlyFilter: 0
   paidPlaceholder: 0
 --- !u!114 &1536533386
 MonoBehaviour:

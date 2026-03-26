@@ -327,6 +327,35 @@ namespace TitanOrbit.Entities
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
                     asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        appliedDamage,
+                        (int)ownerTeam
+                    );
+
+                DespawnBullet();
+                return true;
+            }
+
+            PlanetGemMoon moon = other.GetComponentInParent<PlanetGemMoon>();
+            if (moon != null)
+            {
+                float appliedDamage = damage;
+                if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                    appliedDamage = 999999f;
+                moon.TakeDamageServer(appliedDamage);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        appliedDamage,
+                        (int)ownerTeam
+                    );
+
                 DespawnBullet();
                 return true;
             }
@@ -335,6 +364,15 @@ namespace TitanOrbit.Entities
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
                 ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
                 DespawnBullet();
                 return true;
             }
@@ -343,6 +381,15 @@ namespace TitanOrbit.Entities
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
                 DespawnBullet();
                 return true;
             }

@@ -17,12 +17,16 @@ set "SOURCE_BASENAME="
 set "SOURCE_PARENT="
 set "INSTANCE_TARGET="
 set "ARCHIVE_PATH="
+set "USE_IAP="
 
 if not "%~1"=="" (
   set "SOURCE_DIR=%~1"
 )
 if not "%~2"=="" (
   set "PROJECT_ID=%~2"
+)
+if /i "%~3"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
 )
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_BASENAME=%%~nxI"
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_PARENT=%%~dpI"
@@ -87,29 +91,29 @@ if not exist "%ARCHIVE_PATH%" (
   exit /b 1
 )
 echo Preparing remote target directory...
-call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'mkdir -p %TARGET_DIR%'"
+call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'mkdir -p %TARGET_DIR%'"
 if errorlevel 1 (
   echo ERROR: Failed to create target directory on VM.
   exit /b 1
 )
 
 echo Command:
-echo   gcloud --project "%PROJECT_ID%" compute scp "%ARCHIVE_PATH%" "%INSTANCE_TARGET%:/tmp/%SOURCE_BASENAME%.tar.gz" --zone "%ZONE%" --strict-host-key-checking=no
-call gcloud --project "%PROJECT_ID%" compute scp "%ARCHIVE_PATH%" "%INSTANCE_TARGET%:/tmp/%SOURCE_BASENAME%.tar.gz" --zone "%ZONE%" --strict-host-key-checking=no
+echo   gcloud --project "%PROJECT_ID%" compute scp %USE_IAP% "%ARCHIVE_PATH%" "%INSTANCE_TARGET%:/tmp/%SOURCE_BASENAME%.tar.gz" --zone "%ZONE%" --strict-host-key-checking=no
+call gcloud --project "%PROJECT_ID%" compute scp %USE_IAP% "%ARCHIVE_PATH%" "%INSTANCE_TARGET%:/tmp/%SOURCE_BASENAME%.tar.gz" --zone "%ZONE%" --strict-host-key-checking=no
 if errorlevel 1 (
   echo.
   echo Upload failed while copying archive.
   exit /b 1
 )
 echo Extracting archive on VM...
-call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'mkdir -p %TARGET_DIR%; rm -rf %TARGET_DIR%/%SOURCE_BASENAME%; tar -xzf /tmp/%SOURCE_BASENAME%.tar.gz -C %TARGET_DIR%; rm -f /tmp/%SOURCE_BASENAME%.tar.gz'"
+call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'mkdir -p %TARGET_DIR%; rm -rf %TARGET_DIR%/%SOURCE_BASENAME%; tar -xzf /tmp/%SOURCE_BASENAME%.tar.gz -C %TARGET_DIR%; rm -f /tmp/%SOURCE_BASENAME%.tar.gz'"
 if errorlevel 1 (
   echo.
   echo Upload failed while extracting archive on VM.
   exit /b 1
 )
 echo Verifying remote upload...
-call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'ls -la %TARGET_DIR%; ls -la %TARGET_DIR%/%SOURCE_BASENAME% || true'"
+call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'ls -la %TARGET_DIR%; ls -la %TARGET_DIR%/%SOURCE_BASENAME% || true'"
 if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
 
 echo.

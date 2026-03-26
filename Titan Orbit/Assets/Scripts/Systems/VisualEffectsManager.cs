@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
+using TMPro;
 
 namespace TitanOrbit.Systems
 {
@@ -26,6 +27,24 @@ namespace TitanOrbit.Systems
         [Header("Gem Pickup Text")]
         [SerializeField] private GameObject gemPickupTextPrefab;
         [SerializeField] private float gemPickupTextDuration = 1f;
+
+        [Header("Floating Count Popups")]
+        [Tooltip("World-space font used to render the floating (+N) popup text.")]
+        [SerializeField] private TMP_FontAsset floatingCountFont;
+        [SerializeField] private Sprite floatingCountGemIcon;
+        [SerializeField] private Sprite floatingCountDamageIcon;
+        [SerializeField] private Sprite floatingCountHealthIcon;
+
+        [SerializeField] private float floatingCountDuration = 1.7f;
+        [SerializeField] private float floatingCountRiseSpeed = 1.25f;
+        [SerializeField] private float floatingCountFontSize = 28f;
+        [SerializeField] private float floatingCountIconScale = 0.1f;
+        [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
+        [SerializeField] private float floatingCountVerticalOffset = 0.55f;
+
+        [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
+        [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
+        [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
 
         private void Awake()
         {
@@ -96,14 +115,97 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
         {
-            if (gemPickupTextPrefab == null) return;
+            TeamManager.Team team = (TeamManager.Team)teamInt;
 
+            // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
+            // there is no usable TMP font (assigned or default).
+            if (floatingCountFont != null || TMP_Settings.defaultFontAsset != null)
+            {
+                SpawnFloatingCountPopupLocal(position, FloatingCountType.Gems, amount, team);
+                return;
+            }
+
+            if (gemPickupTextPrefab == null) return;
             GameObject go = Instantiate(gemPickupTextPrefab, position, Quaternion.identity);
             var text = go.GetComponent<GemPickupText>() ?? go.AddComponent<GemPickupText>();
-            if (text != null)
+            text?.Initialize(Mathf.RoundToInt(amount), team, gemPickupTextDuration);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnFloatingCountServerRpc(Vector3 position, int typeId, float signedAmount, int teamInt)
+        {
+            SpawnFloatingCountClientRpc(position, typeId, signedAmount, teamInt);
+        }
+
+        [ClientRpc]
+        private void SpawnFloatingCountClientRpc(Vector3 position, int typeId, float signedAmount, int teamInt)
+        {
+            FloatingCountType type = (FloatingCountType)Mathf.Clamp(typeId, 0, 2);
+            TeamManager.Team team = (TeamManager.Team)teamInt;
+            SpawnFloatingCountPopupLocal(position, type, signedAmount, team);
+        }
+
+        private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountType type, float signedAmount, TeamManager.Team team)
+        {
+            TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
+            if (fontToUse == null)
             {
-                text.Initialize(Mathf.RoundToInt(amount), (TeamManager.Team)teamInt, gemPickupTextDuration);
+                Debug.LogWarning("VisualEffectsManager: FloatingCountPopup font missing (assign VisualEffectsManager.floatingCountFont).");
+                return;
             }
+
+            float abs = Mathf.Abs(signedAmount);
+            int amountInt = Mathf.RoundToInt(abs);
+            if (amountInt <= 0) return;
+
+            char sign = signedAmount >= 0f ? '+' : '-';
+            string label = type switch
+            {
+                FloatingCountType.Gems => "Gems",
+                FloatingCountType.Damage => "Damage",
+                FloatingCountType.Health => "Health",
+                _ => "Value"
+            };
+
+            string message = $"{sign}{amountInt} {label}";
+
+            Sprite icon = null;
+            Color color = Color.white;
+
+            switch (type)
+            {
+                case FloatingCountType.Gems:
+                    icon = floatingCountGemIcon;
+                    color = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
+                    break;
+
+                case FloatingCountType.Damage:
+                    icon = floatingCountDamageIcon;
+                    color = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : floatingCountDamageFallbackColor;
+                    break;
+
+                case FloatingCountType.Health:
+                    icon = floatingCountHealthIcon;
+                    color = signedAmount >= 0f ? floatingCountHealthPositiveColor : floatingCountHealthNegativeColor;
+                    break;
+            }
+
+            Vector3 spawnPos = position + Vector3.up * floatingCountVerticalOffset;
+            GameObject go = new GameObject($"FloatingCountPopup_{type}");
+            go.transform.position = spawnPos;
+
+            var popup = go.AddComponent<FloatingCountPopup>();
+            popup.Initialize(
+                message,
+                icon,
+                color,
+                fontToUse,
+                floatingCountFontSize,
+                floatingCountDuration,
+                floatingCountRiseSpeed,
+                floatingCountIconScale,
+                floatingCountIconLocalOffset
+            );
         }
 
         [ServerRpc(RequireOwnership = false)]

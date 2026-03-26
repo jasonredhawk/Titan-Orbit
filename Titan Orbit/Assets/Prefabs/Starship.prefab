@@ -191,6 +191,18 @@ MonoBehaviour:
   orbitSpeed: 0.8
   orbitRadiusPullStrength: 2.5
   orbitCaptureResponsiveness: 3.5
+  orbitExitYRecoverySpeed: 10
+  gemMoonSnapPositionSpeedOuter: 2.5
+  gemMoonSnapPositionSpeedInner: 8
+  gemMoonSnapVelocityAlign: 18
+  gemMoonDockScaleAtOrbitEdge: 1
+  gemMoonDockScaleAtSurface: 0.24
+  gemMoonLandingRangeMultiplier: 1
+  gemMoonTransitionDurationSeconds: 1
+  gemMoonLandingScaleLerpSpeed: 0.35
+  gemMoonCenterSnapSpeed: 6
+  gemMoonVisualDockBlendSeconds: 1
+  gemMoonDockIgnoreSeconds: 0.75
   firePoint: {fileID: 0}
   recoilStrength: 1.2
   engineVfxPrefab: {fileID: 0}

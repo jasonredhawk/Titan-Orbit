@@ -15,12 +15,16 @@ set "EXE_NAME=TitanOrbitServer.x86_64"
 set "PROJECT_ID="
 set "REMOTE_USER=jason"
 set "INSTANCE_TARGET="
+set "USE_IAP="
 
 if not "%~1"=="" (
   set "EXE_NAME=%~1"
 )
 if not "%~2"=="" (
   set "PROJECT_ID=%~2"
+)
+if /i "%~3"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
 )
 set "INSTANCE_TARGET=%REMOTE_USER%@%INSTANCE%"
 
@@ -43,7 +47,7 @@ if "%PROJECT_ID%"=="" (
 
 echo Preparing remote files...
 echo Using project: %PROJECT_ID%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'set -e; mkdir -p %REMOTE_BASE%; if [ ! -d %REMOTE_DIR% ]; then CANDIDATE=$(ls -d %REMOTE_BASE%/* 2>/dev/null | head -n1); if [ -n \"$CANDIDATE\" ]; then echo Auto-detected upload folder: $CANDIDATE; ln -sfn \"$CANDIDATE\" %REMOTE_DIR%; fi; fi; cd %REMOTE_DIR%; chmod +x ./*.x86_64 || true; ls -la'"
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'set -e; mkdir -p %REMOTE_BASE%; if [ ! -d %REMOTE_DIR% ]; then CANDIDATE=$(ls -d %REMOTE_BASE%/* 2>/dev/null | head -n1); if [ -n \"$CANDIDATE\" ]; then echo Auto-detected upload folder: $CANDIDATE; ln -sfn \"$CANDIDATE\" %REMOTE_DIR%; fi; fi; cd %REMOTE_DIR%; chmod +x ./*.x86_64 || true; ls -la'"
 if errorlevel 1 (
   echo ERROR: Failed while preparing files on VM.
   exit /b 1
@@ -53,7 +57,7 @@ echo.
 echo Starting server in foreground (press Ctrl+C to stop)...
 echo Logs also written to %REMOTE_DIR%/Player.log (tail in another SSH session if this looks quiet).
 echo Executable: %EXE_NAME%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'cd %REMOTE_DIR% && if [ ! -f ./%EXE_NAME% ]; then EXE=$(ls *.x86_64 2>/dev/null | head -n1); if [ -z \"$EXE\" ]; then echo No .x86_64 executable found in %REMOTE_DIR%; exit 1; fi; echo Using detected executable: $EXE; else EXE=%EXE_NAME%; fi; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1'"
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'cd %REMOTE_DIR% && if [ ! -f ./%EXE_NAME% ]; then EXE=$(ls *.x86_64 2>/dev/null | head -n1); if [ -z \"$EXE\" ]; then echo No .x86_64 executable found in %REMOTE_DIR%; exit 1; fi; echo Using detected executable: $EXE; else EXE=%EXE_NAME%; fi; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1'"
 
 exit /b %errorlevel%
 

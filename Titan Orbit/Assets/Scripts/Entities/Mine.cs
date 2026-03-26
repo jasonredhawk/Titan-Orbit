@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
 {
@@ -76,21 +77,63 @@ namespace TitanOrbit.Entities
             Collider[] hits = Physics.OverlapSphere(pos, explosionRadius, ~0, QueryTriggerInteraction.Ignore);
             foreach (var c in hits)
             {
-                float dist = Vector3.Distance(c.ClosestPoint(pos), pos);
+                Vector3 hitPoint = c.ClosestPoint(pos);
+                hitPoint.y = 0f;
+                float dist = Vector3.Distance(hitPoint, pos);
                 float falloff = 1f - (dist / explosionRadius) * 0.5f;
                 float dmg = damage * Mathf.Clamp01(falloff);
 
                 Starship ship = c.GetComponent<Starship>();
                 if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
+                {
                     ship.TakeDamageServerRpc(dmg, ownerTeam, ownerShipNetworkId);
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            hitPoint,
+                            (int)FloatingCountType.Damage,
+                            dmg,
+                            (int)ownerTeam
+                        );
+                }
 
                 DroneBase drone = c.GetComponent<DroneBase>();
                 if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+                {
                     drone.TakeDamageServerRpc(dmg, ownerTeam, ownerShipNetworkId);
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            hitPoint,
+                            (int)FloatingCountType.Damage,
+                            dmg,
+                            (int)ownerTeam
+                        );
+                }
 
                 Asteroid ast = c.GetComponent<Asteroid>();
                 if (ast != null && !ast.IsDestroyed)
+                {
                     ast.TakeDamageServerRpc(dmg);
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            hitPoint,
+                            (int)FloatingCountType.Damage,
+                            dmg,
+                            (int)ownerTeam
+                        );
+                }
+
+                PlanetGemMoon moon = c.GetComponentInParent<PlanetGemMoon>();
+                if (moon != null)
+                {
+                    moon.TakeDamageServer(dmg);
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            hitPoint,
+                            (int)FloatingCountType.Damage,
+                            dmg,
+                            (int)ownerTeam
+                        );
+                }
             }
 
             var no = GetComponent<NetworkObject>();

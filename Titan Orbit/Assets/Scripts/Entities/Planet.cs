@@ -66,6 +66,15 @@ namespace TitanOrbit.Entities
         private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
         private const float OrbitZoneGrowthPerLevel = 0.05f;
 
+        /// <summary>Reference planet scale for gem-moon sizing: home planets use this size; smaller worlds get larger moons inversely (20/PlanetSize).</summary>
+        private const float GemMoonReferencePlanetSize = 20f;
+        /// <summary>Caps inverse ratio so tiny planets do not get absurd moons.</summary>
+        private const float GemMoonInversePlanetSizeCap = 10f;
+        /// <summary>Must stay in sync with <see cref="PlanetRingsDrawer"/> / <see cref="HomePlanetRingsDrawer"/> ring layout.</summary>
+        private const float GemMoonRingsInnerRadiusLocal = 0.68f;
+        private const float GemMoonRingThicknessLocal = 0.06f;
+        private const float GemMoonRingGapLocal = 0.015f;
+
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
 
@@ -74,6 +83,65 @@ namespace TitanOrbit.Entities
         {
             int level = Mathf.Max(1, planetLevel.Value);
             return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitZoneGrowthPerLevel, level - 1);
+        }
+
+        /// <summary>
+        /// Outer edge of decorative Saturn rings in planet-local XZ units (matches ring drawer: one band per level, max 6).
+        /// </summary>
+        public float GetRingsOuterEdgeRadiusLocal(int level)
+        {
+            int n = Mathf.Clamp(level, 1, 6);
+            float step = GemMoonRingThicknessLocal + GemMoonRingGapLocal;
+            float lastCenter = GemMoonRingsInnerRadiusLocal + (n - 1) * step;
+            return lastCenter + GemMoonRingThicknessLocal * 0.5f;
+        }
+
+        /// <summary>
+        /// World-space radius from planet center to the farthest of orbit-zone outer edge or outermost ring (for moon clearance).
+        /// </summary>
+        public float GetGemMoonStructuralOuterRadiusWorld()
+        {
+            int level = Mathf.Max(1, PlanetLevel);
+            float ringsOuterLocal = GetRingsOuterEdgeRadiusLocal(level);
+            float zoneOuterLocal = GetOrbitZoneOuterRadiusLocal();
+            return PlanetSize * Mathf.Max(ringsOuterLocal, zoneOuterLocal);
+        }
+
+        /// <summary>
+        /// Standard clockwise orbit linear speed at a world-space radius (matches Starship outer-band tuning; no per-ship territory bonus).
+        /// </summary>
+        public float GetStandardOrbitSpeedAtRadiusWorld(float radiusWorld)
+        {
+            float innerWorld = PlanetSize * 0.5f;
+            float outerWorld = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            if (outerWorld <= innerWorld + 0.001f) return 0.8f;
+            float clampedRadius = Mathf.Clamp(radiusWorld, innerWorld, outerWorld);
+            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
+            const float minSize = 4f;
+            const float maxSize = 12f;
+            float sizeNorm = Mathf.Clamp01((PlanetSize - minSize) / (maxSize - minSize));
+            float sizeMultiplier = Mathf.Lerp(0.8f, 1.4f, sizeNorm);
+            float radiusMultiplier = Mathf.Lerp(0.7f, 1.6f, radiusFactor);
+            const float baseOrbitSpeed = 0.8f;
+            return baseOrbitSpeed * sizeMultiplier * radiusMultiplier;
+        }
+
+        /// <summary>Orbit speed at the outer edge of the orbit band (where the gem moon runs).</summary>
+        public float GetStandardOrbitSpeedAtOuterOrbit()
+        {
+            float r = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            return GetStandardOrbitSpeedAtRadiusWorld(r);
+        }
+
+        private PlanetGemMoon gemMoon;
+
+        /// <summary>Gem deposit moon for this planet (outer orbit, clockwise). Null before spawn setup.</summary>
+        public PlanetGemMoon GemMoon => gemMoon;
+
+        /// <summary>World position of the gem moon for AI navigation (falls back to planet center if missing).</summary>
+        public Vector3 GetGemMoonWorldPosition()
+        {
+            return gemMoon != null ? gemMoon.transform.position : transform.position;
         }
 
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes.</summary>
@@ -85,6 +153,34 @@ namespace TitanOrbit.Entities
                 var col = oz.GetComponent<SphereCollider>();
                 if (col != null)
                     col.radius = GetOrbitZoneOuterRadiusLocal();
+            }
+            RefreshGemMoonDockTriggerRadius();
+            ApplyGemMoonVisualScale();
+        }
+
+        private void RefreshGemMoonDockTriggerRadius()
+        {
+            if (gemMoon == null) return;
+            SphereCollider[] cols = gemMoon.GetComponents<SphereCollider>();
+            if (cols == null || cols.Length == 0) return;
+
+            // IMPORTANT:
+            // GemMoonVisual is a primitive sphere scaled on the moon's child transform.
+            // SphereCollider.radius is in the moon object's local space and scales like: (primitive sphere radius 0.5) * visualLocalScale.
+            // Use the intended visual scale, not whatever might currently be set on the child.
+            // (Refresh order can matter during spawn/setup.)
+            float visualLocalScale = Mathf.Abs(GetGemMoonVisualUniformScale());
+            float bodyLocalRadius = Mathf.Max(0.01f, 0.5f * visualLocalScale);
+            // Moon dock / orbit zone radius (half of prior 5.2× body for tighter band).
+            float dockLocalRadius = bodyLocalRadius * 2.6f;
+
+            // There can be multiple SphereColliders (older versions, prefab duplicates, etc.).
+            // Set *all* triggers to dock radius and *all* non-triggers to body radius.
+            for (int i = 0; i < cols.Length; i++)
+            {
+                var c = cols[i];
+                if (c == null) continue;
+                c.radius = c.isTrigger ? dockLocalRadius : bodyLocalRadius;
             }
         }
         
@@ -212,6 +308,7 @@ namespace TitanOrbit.Entities
 
             EnsureBodyColliderSize();
             EnsureOrbitZoneExists();
+            EnsureGemMoon();
             EnsureSpinTargetSetup();
 
             if (!(this is HomePlanet))
@@ -434,6 +531,12 @@ namespace TitanOrbit.Entities
 
             return transform.up;
         }
+
+        /// <summary>Public spin axis accessor so satellites/moons can match planet tilt spin.</summary>
+        public Vector3 GetSpinAxisWorld()
+        {
+            return GetRingAxisWorld();
+        }
         
         /// <summary>Override in HomePlanet to place text above the ring (e.g. 0.8).</summary>
         protected virtual Vector3 GetPopulationTextLocalPosition() => new Vector3(0f, 0.55f, 0f);
@@ -491,6 +594,137 @@ namespace TitanOrbit.Entities
             var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
             if (shapesVisual == null)
                 orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+        }
+
+        /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>
+        private void EnsureGemMoon()
+        {
+            if (gemMoon != null) return;
+            var existing = GetComponentInChildren<PlanetGemMoon>(true);
+            if (existing != null)
+            {
+                gemMoon = existing;
+                RefreshGemMoonDockTriggerRadius();
+                ApplyGemMoonVisualScale();
+                RefreshGemMoonVisualMaterial();
+                return;
+            }
+
+            GameObject go = new GameObject("GemMoon");
+            go.transform.SetParent(transform, false);
+            go.transform.localScale = Vector3.one;
+            go.layer = gameObject.layer;
+
+            // Moon needs collisions so ships can land on top of it.
+            Rigidbody moonRb = go.AddComponent<Rigidbody>();
+            moonRb.isKinematic = true;
+            moonRb.useGravity = false;
+            moonRb.constraints = RigidbodyConstraints.FreezeRotation;
+
+            // Docking trigger (ignored by projectile SphereCasts; used for gem-moon docking state).
+            var dockCol = go.AddComponent<SphereCollider>();
+            dockCol.isTrigger = true;
+
+            // Physics body collider (used for bullet hits and ship collision).
+            var bodyCol = go.AddComponent<SphereCollider>();
+            bodyCol.isTrigger = false;
+
+            gemMoon = go.AddComponent<PlanetGemMoon>();
+
+            RefreshGemMoonDockTriggerRadius();
+
+            GameObject vis = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Object.Destroy(vis.GetComponent<Collider>());
+            vis.name = "GemMoonVisual";
+            vis.transform.SetParent(go.transform, false);
+            ApplyGemMoonVisualScale();
+            var renderer = vis.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                ApplyGemMoonSurfaceToRenderer(renderer);
+            }
+        }
+
+        /// <summary>SGT planet shader: disable water so the moon shows dry terrain only.</summary>
+        private static void StripWaterFromGemMoonMaterial(Material m)
+        {
+            if (m == null) return;
+            if (m.HasProperty("_HasWater")) m.SetFloat("_HasWater", 0f);
+            if (m.HasProperty("_WaterLevel")) m.SetFloat("_WaterLevel", -2f);
+        }
+
+        /// <summary>Moon uses the same surface material family as this planet (home / neutral / team), never water.</summary>
+        protected virtual void ApplyGemMoonSurfaceToRenderer(Renderer renderer)
+        {
+            if (renderer == null) return;
+            EnsureSharedMaterialsRegistered();
+            TeamManager.Team team = teamOwnership.Value;
+            Material src;
+
+            bool isRegular = !(this is HomePlanet);
+            if (isRegular && team != TeamManager.Team.None)
+            {
+                Material neutralMat = GetNeutralMaterial();
+                Material teamMat = GetTeamMaterial(team);
+                if (neutralMat != null && teamMat != null)
+                {
+                    src = new Material(neutralMat);
+                    Color neutralBase = GetMaterialColor(neutralMat);
+                    Color teamColor = GetTeamColorFromMaterial(teamMat);
+                    Color tinted = Color.Lerp(neutralBase, teamColor, regularPlanetTintIntensity);
+                    if (src.HasProperty("_Color")) src.SetColor("_Color", tinted);
+                    else if (src.HasProperty("_BaseColor")) src.SetColor("_BaseColor", tinted);
+                }
+                else
+                {
+                    Material nm = GetNeutralMaterial();
+                    src = nm != null ? new Material(nm) : null;
+                }
+            }
+            else
+            {
+                Material baseMat = GetEffectiveMaterialForPlanetSurface(team);
+                src = baseMat != null ? new Material(baseMat) : null;
+            }
+
+            if (src == null) return;
+            StripWaterFromGemMoonMaterial(src);
+            renderer.material = src;
+        }
+
+        private void RefreshGemMoonVisualMaterial()
+        {
+            if (gemMoon == null) return;
+            Transform vis = gemMoon.transform.Find("GemMoonVisual");
+            if (vis == null) return;
+            var r = vis.GetComponent<Renderer>();
+            ApplyGemMoonSurfaceToRenderer(r);
+        }
+
+        /// <summary>
+        /// Extra scale for home-planet gem moons only (regular planets use 1). Home moons are 1.5× the inverse-scaled baseline.
+        /// </summary>
+        protected virtual float GetGemMoonHomeVisualScaleMultiplier() => 1f;
+
+        /// <summary>
+        /// Uniform local scale for GemMoonVisual: baseline as if planet were <see cref="GemMoonReferencePlanetSize"/>, then × (20/PlanetSize), capped.
+        /// </summary>
+        private float GetGemMoonVisualUniformScale()
+        {
+            float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
+            float inv = GemMoonReferencePlanetSize / Mathf.Max(0.01f, PlanetSize);
+            inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
+            float s = baseAtRef * inv * GetGemMoonHomeVisualScaleMultiplier();
+            return Mathf.Clamp(s, 0.02f, 1.25f);
+        }
+
+        private void ApplyGemMoonVisualScale()
+        {
+            if (gemMoon == null) return;
+            Transform vis = gemMoon.transform.Find("GemMoonVisual");
+            if (vis == null) return;
+            vis.localScale = Vector3.one * GetGemMoonVisualUniformScale();
         }
 
         /// <summary>Regular planets only: remove legacy cylinder ring and use Shapes to draw one tilted ring.</summary>
@@ -628,7 +862,8 @@ namespace TitanOrbit.Entities
         protected virtual int GetMaxLevel() => 6;
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code (e.g. TickOrbitGemDeposit) instead of RPC to avoid RPC invocation issues when server calls itself.</summary>
-        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId)
+        /// <param name="popupWorldPosition">Optional: where to show the floating gem count (e.g. gem moon when docking). Defaults to planet center.</param>
+        public void DepositGemsFromServer(float amount, TeamManager.Team depositingTeam, ulong depositingClientId, Vector3? popupWorldPosition = null)
         {
             if (!IsServer) return;
             // Only allow same team to deposit gems
@@ -642,11 +877,34 @@ namespace TitanOrbit.Entities
             }
 
             float maxGems = GetMaxGemsForLevel(planetLevel.Value);
+            float before = currentGems.Value;
             currentGems.Value = Mathf.Min(currentGems.Value + amount, maxGems);
             if (currentGems.Value >= maxGems - 0.001f)
                 currentGems.Value = maxGems;
 
+            // Feedback popup: show only the actual amount that increased gems (clamped by max).
+            float delta = currentGems.Value - before;
+            if (delta > 0.0001f && VisualEffectsManager.Instance != null)
+            {
+                Vector3 popupPos = popupWorldPosition ?? transform.position;
+                popupPos.y = 0f;
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    popupPos,
+                    (int)FloatingCountType.Gems,
+                    delta,
+                    (int)depositingTeam
+                );
+            }
+
             CheckLevelUp();
+        }
+
+        /// <summary>Server-only: drain gems without leveling down (can't decrease planet level).</summary>
+        public void DrainGemsFromServer(float amount)
+        {
+            if (!IsServer) return;
+            if (amount <= 0f) return;
+            currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -825,6 +1083,8 @@ namespace TitanOrbit.Entities
                     renderer.SetPropertyBlock(null);
                 }
             }
+
+            RefreshGemMoonVisualMaterial();
         }
         
         private Material GetTeamMaterial(TeamManager.Team team)

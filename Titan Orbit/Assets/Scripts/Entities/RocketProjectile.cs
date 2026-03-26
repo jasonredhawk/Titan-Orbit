@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
 {
@@ -92,6 +93,15 @@ namespace TitanOrbit.Entities
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
                 ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
                 Despawn();
                 return;
             }
@@ -99,6 +109,15 @@ namespace TitanOrbit.Entities
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
                 Despawn();
                 return;
             }
@@ -106,6 +125,31 @@ namespace TitanOrbit.Entities
             if (asteroid != null && !asteroid.IsDestroyed)
             {
                 asteroid.TakeDamageServerRpc(damage, ownerShipNetworkId);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
+                Despawn();
+            }
+
+            PlanetGemMoon moon = other.GetComponentInParent<PlanetGemMoon>();
+            if (moon != null)
+            {
+                moon.TakeDamageServer(damage);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountType.Damage,
+                        damage,
+                        (int)ownerTeam
+                    );
+
                 Despawn();
             }
         }
