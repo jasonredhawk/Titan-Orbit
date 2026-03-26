@@ -18,10 +18,16 @@ namespace TitanOrbit.UI
         [SerializeField] private bool upgradeBarEnabled = true;
 
         [Header("Layout")]
-        [SerializeField] private float barHeight = 96f;
+        [SerializeField] private float barHeight = 64f;
         [SerializeField] private float buttonWidth = 112f;
         [SerializeField] private float buttonSpacing = 10f;
-        [SerializeField] private float bottomPadding = 12f;
+        [SerializeField] private float bottomPadding = 8f;
+
+        [Header("Visual Styling")]
+        [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
+        [SerializeField] private Color buttonInnerShadeColor = new Color(0f, 0f, 0f, 0.22f);
+        [SerializeField] private Color buttonAccentColor = new Color(0.75f, 0.88f, 1f, 0.28f);
+        [SerializeField] private Color buttonShadowColor = new Color(0f, 0f, 0f, 0.45f);
 
         [Header("Category Colors")]
         [SerializeField] private Color weaponColor = new Color(0.9f, 0.35f, 0.2f, 0.9f);
@@ -76,7 +82,8 @@ namespace TitanOrbit.UI
             rootRect.sizeDelta = new Vector2(totalWidth, barHeight);
 
             Image bgImage = rootPanel.AddComponent<Image>();
-            bgImage.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
+            bgImage.color = new Color(0f, 0f, 0f, 0f);
+            bgImage.raycastTarget = false;
 
             Color[] categoryColors = { weaponColor, healthColor, energyColor, shipColor, cargoColor };
             string[] keyStrings = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
@@ -104,11 +111,40 @@ namespace TitanOrbit.UI
             btnRect.anchorMax = new Vector2(0.5f, 0.5f);
             btnRect.pivot = new Vector2(0.5f, 0.5f);
             btnRect.anchoredPosition = new Vector2(x, 0f);
-            btnRect.sizeDelta = new Vector2(buttonWidth, barHeight - 8f);
+            btnRect.sizeDelta = new Vector2(buttonWidth, barHeight - 6f);
 
             Image bgImage = btnObj.AddComponent<Image>();
             bgImage.color = categoryColor;
             bgImage.raycastTarget = true;
+            var buttonOutline = btnObj.AddComponent<Outline>();
+            buttonOutline.effectColor = buttonFrameColor;
+            buttonOutline.effectDistance = new Vector2(1f, 1f);
+            var buttonShadow = btnObj.AddComponent<Shadow>();
+            buttonShadow.effectColor = buttonShadowColor;
+            buttonShadow.effectDistance = new Vector2(0f, -2f);
+
+            GameObject innerShade = new GameObject("InnerShade");
+            innerShade.transform.SetParent(btnObj.transform, false);
+            RectTransform shadeRect = innerShade.AddComponent<RectTransform>();
+            shadeRect.anchorMin = Vector2.zero;
+            shadeRect.anchorMax = Vector2.one;
+            shadeRect.offsetMin = new Vector2(4f, 4f);
+            shadeRect.offsetMax = new Vector2(-4f, -4f);
+            Image shadeImage = innerShade.AddComponent<Image>();
+            shadeImage.color = buttonInnerShadeColor;
+            shadeImage.raycastTarget = false;
+
+            GameObject accentLine = new GameObject("AccentLine");
+            accentLine.transform.SetParent(btnObj.transform, false);
+            RectTransform accentRect = accentLine.AddComponent<RectTransform>();
+            accentRect.anchorMin = new Vector2(0f, 1f);
+            accentRect.anchorMax = new Vector2(1f, 1f);
+            accentRect.pivot = new Vector2(0.5f, 1f);
+            accentRect.offsetMin = new Vector2(5f, -3f);
+            accentRect.offsetMax = new Vector2(-5f, -1f);
+            Image accentImage = accentLine.AddComponent<Image>();
+            accentImage.color = buttonAccentColor;
+            accentImage.raycastTarget = false;
 
             Button button = btnObj.AddComponent<Button>();
             button.targetGraphic = bgImage;
@@ -122,11 +158,11 @@ namespace TitanOrbit.UI
             keyRect.anchorMin = new Vector2(0f, 1f);
             keyRect.anchorMax = new Vector2(0f, 1f);
             keyRect.pivot = new Vector2(0f, 1f);
-            keyRect.anchoredPosition = new Vector2(4f, -4f);
-            keyRect.sizeDelta = new Vector2(18f, 16f);
+            keyRect.anchoredPosition = new Vector2(5f, -5f);
+            keyRect.sizeDelta = new Vector2(16f, 14f);
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
-            keyLabel.fontSize = 11f;
+            keyLabel.fontSize = 10f;
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
             keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
@@ -138,11 +174,11 @@ namespace TitanOrbit.UI
             titleRect.anchorMin = new Vector2(0.5f, 1f);
             titleRect.anchorMax = new Vector2(0.5f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -18f);
-            titleRect.sizeDelta = new Vector2(buttonWidth - 8f, 20f);
+            titleRect.anchoredPosition = new Vector2(0f, -14f);
+            titleRect.sizeDelta = new Vector2(buttonWidth - 10f, 16f);
             TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
             titleText.text = Titles[index];
-            titleText.fontSize = 10f;
+            titleText.fontSize = 9f;
             if (TMP_Settings.defaultFontAsset != null) titleText.font = TMP_Settings.defaultFontAsset;
             titleText.color = Color.white;
             titleText.alignment = TextAlignmentOptions.Center;
@@ -155,8 +191,8 @@ namespace TitanOrbit.UI
             tickRect.anchorMin = new Vector2(0.5f, 0.5f);
             tickRect.anchorMax = new Vector2(0.5f, 0.5f);
             tickRect.pivot = new Vector2(0.5f, 0.5f);
-            tickRect.anchoredPosition = new Vector2(0f, -4f);
-            tickRect.sizeDelta = new Vector2(56f, 14f);
+            tickRect.anchoredPosition = new Vector2(0f, -2f);
+            tickRect.sizeDelta = new Vector2(54f, 10f);
 
             HorizontalLayoutGroup tickLayout = tickContainer.AddComponent<HorizontalLayoutGroup>();
             tickLayout.spacing = 2f;
@@ -173,11 +209,11 @@ namespace TitanOrbit.UI
             costRect.anchorMin = new Vector2(0.5f, 0f);
             costRect.anchorMax = new Vector2(0.5f, 0f);
             costRect.pivot = new Vector2(0.5f, 0f);
-            costRect.anchoredPosition = new Vector2(0f, 4f);
-            costRect.sizeDelta = new Vector2(buttonWidth - 4f, 14f);
+            costRect.anchoredPosition = new Vector2(0f, 2f);
+            costRect.sizeDelta = new Vector2(buttonWidth - 6f, 12f);
             TextMeshProUGUI costLabel = costObj.AddComponent<TextMeshProUGUI>();
             costLabel.text = "";
-            costLabel.fontSize = 9f;
+            costLabel.fontSize = 8f;
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
             costLabel.alignment = TextAlignmentOptions.Center;

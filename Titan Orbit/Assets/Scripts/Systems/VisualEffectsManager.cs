@@ -45,7 +45,7 @@ namespace TitanOrbit.Systems
         [SerializeField] private float floatingCountFontSize = 10f;
         [SerializeField] private float floatingCountIconScale = 0.1f;
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
-        [SerializeField] private float floatingCountVerticalOffset = 0.55f;
+        [SerializeField] private float floatingCountVerticalOffset = 3.5f;
 
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
@@ -235,6 +235,9 @@ namespace TitanOrbit.Systems
             }
 
             Vector3 spawnPos = position + Vector3.up * floatingCountVerticalOffset;
+            // Hard floor so stale serialized inspector values cannot pin popups to ground.
+            if (spawnPos.y < 4f)
+                spawnPos.y = 4f;
             GameObject go = new GameObject($"FloatingCountPopup_{channel}");
             go.transform.position = spawnPos;
 

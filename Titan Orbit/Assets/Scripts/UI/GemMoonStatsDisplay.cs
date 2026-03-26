@@ -16,6 +16,8 @@ namespace TitanOrbit.UI
         private RectTransform rootRect;
         private TextMeshProUGUI gemsText;
         private TextMeshProUGUI gemsMaxText;
+        private TextMeshProUGUI shieldText;
+        private TextMeshProUGUI shieldMaxText;
         private const float RefreshInterval = 0.2f;
         private float lastRefresh;
 
@@ -47,7 +49,7 @@ namespace TitanOrbit.UI
                 rt = go.AddComponent<RectTransform>();
             if (rt == null) return;
 
-            rt.sizeDelta = new Vector2(250f, 95f);
+            rt.sizeDelta = new Vector2(280f, 165f);
             // Make the rect anchor/pivot the true center so our number stays centered.
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -66,8 +68,8 @@ namespace TitanOrbit.UI
                 gemsRect.anchorMin = new Vector2(0.5f, 0.5f);
                 gemsRect.anchorMax = new Vector2(0.5f, 0.5f);
                 gemsRect.pivot = new Vector2(0.5f, 0.5f);
-                gemsRect.anchoredPosition = new Vector2(0f, 14f);
-                gemsRect.sizeDelta = new Vector2(130f, 70f);
+                gemsRect.anchoredPosition = new Vector2(0f, 52f);
+                gemsRect.sizeDelta = new Vector2(180f, 58f);
             }
             ApplyOutline(gemsText, Color.white, 0.25f);
 
@@ -80,11 +82,38 @@ namespace TitanOrbit.UI
                 gemsMaxRect.anchorMin = new Vector2(0.5f, 0.5f);
                 gemsMaxRect.anchorMax = new Vector2(0.5f, 0.5f);
                 gemsMaxRect.pivot = new Vector2(0.5f, 0.5f);
-                // Under the primary number, close but non-overlapping.
-                gemsMaxRect.anchoredPosition = new Vector2(0f, -18f);
-                gemsMaxRect.sizeDelta = new Vector2(90f, 28f);
+                gemsMaxRect.anchoredPosition = new Vector2(0f, 22f);
+                gemsMaxRect.sizeDelta = new Vector2(160f, 26f);
             }
             ApplyOutline(gemsMaxText, Color.white, 0.25f);
+
+            shieldText = AddText(rt, "0", 32);
+            shieldText.color = new Color(0.25f, 0.95f, 1f); // cyan
+            shieldText.alignment = TextAlignmentOptions.Center;
+            var shieldRect = shieldText.GetComponent<RectTransform>();
+            if (shieldRect != null)
+            {
+                shieldRect.anchorMin = new Vector2(0.5f, 0.5f);
+                shieldRect.anchorMax = new Vector2(0.5f, 0.5f);
+                shieldRect.pivot = new Vector2(0.5f, 0.5f);
+                shieldRect.anchoredPosition = new Vector2(0f, -24f);
+                shieldRect.sizeDelta = new Vector2(180f, 52f);
+            }
+            ApplyOutline(shieldText, Color.white, 0.25f);
+
+            shieldMaxText = AddText(rt, "0", 16);
+            shieldMaxText.color = new Color(0.25f, 0.95f, 1f); // cyan
+            shieldMaxText.alignment = TextAlignmentOptions.Center;
+            var shieldMaxRect = shieldMaxText.GetComponent<RectTransform>();
+            if (shieldMaxRect != null)
+            {
+                shieldMaxRect.anchorMin = new Vector2(0.5f, 0.5f);
+                shieldMaxRect.anchorMax = new Vector2(0.5f, 0.5f);
+                shieldMaxRect.pivot = new Vector2(0.5f, 0.5f);
+                shieldMaxRect.anchoredPosition = new Vector2(0f, -50f);
+                shieldMaxRect.sizeDelta = new Vector2(160f, 24f);
+            }
+            ApplyOutline(shieldMaxText, Color.white, 0.25f);
 
             rootRect = rt;
             UpdatePanelPlacement();
@@ -155,6 +184,10 @@ namespace TitanOrbit.UI
                     gemsMaxText.text = Mathf.RoundToInt(maxGems).ToString();
                 }
             }
+            if (shieldText != null)
+                shieldText.text = Mathf.RoundToInt(moon.GetShieldPointsForDisplay()).ToString();
+            if (shieldMaxText != null)
+                shieldMaxText.text = Mathf.RoundToInt(moon.GetMaxShieldPointsForDisplay()).ToString();
 
             if (canvas != null && canvas.worldCamera == null)
                 canvas.worldCamera = UnityEngine.Camera.main;

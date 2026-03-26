@@ -1479,11 +1479,7 @@ namespace TitanOrbit.Editor
 
 #if UNITY_EDITOR
             var so = new SerializedObject(audioManager);
-            AudioClip laser = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/ShootingSound/laser_01.wav");
-            AudioClip cannon = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/ShootingSound/cannon_01.wav");
             AudioClip magic = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/ShootingSound/magic_03.wav");
-            if (laser != null) so.FindProperty("shootSound").objectReferenceValue = laser;
-            if (cannon != null) so.FindProperty("impactSound").objectReferenceValue = cannon;
             if (magic != null) so.FindProperty("gemCollectSound").objectReferenceValue = magic;
             so.ApplyModifiedPropertiesWithoutUndo();
 #endif

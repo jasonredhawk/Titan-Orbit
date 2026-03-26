@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Generation;
@@ -26,12 +27,13 @@ namespace TitanOrbit.Entities
         [SerializeField] private float moonOrbitRingClearanceMarginWorld = 0.4f;
 
         [Header("Combat")]
+        [Tooltip("Base shield at planet level 1. Effective max shield scales with planet level.")]
         [SerializeField] private float maxShieldPoints = 250f;
         [Header("Shield Regeneration")]
         [Tooltip("How long after the last shield hit the moon waits before starting to regenerate.")]
         [SerializeField] private float shieldRegenDelaySeconds = 1.5f;
         [Tooltip("Time (seconds) for the shield to fully regenerate back to max after regen starts.")]
-        [SerializeField] private float shieldRegenSecondsToFull = 4f;
+        [SerializeField] private float shieldRegenSecondsToFull = 30f;
         
         [Header("Matrix Shield Visuals")]
         [SerializeField] private GameObject matrixShieldRedPrefab;
@@ -48,6 +50,18 @@ namespace TitanOrbit.Entities
         [SerializeField] private float gemDrainPerSecondWhenShieldDown = 20f;
         [SerializeField] private float gemSpawnInterval = 0.25f;
         [SerializeField] private float gemSpawnMinValue = 2f;
+        [Header("Collision Damage")]
+        [Tooltip("Minimum interval between repeated collision-damage ticks against the same object.")]
+        [SerializeField] private float collisionDamageTickInterval = 0.25f;
+        [SerializeField] private float moonVsAsteroidBaseDamage = 8f;
+        [SerializeField] private float moonVsAsteroidDamagePerSpeed = 1.75f;
+        [SerializeField] private float moonVsAsteroidMaxDamage = 35f;
+        [SerializeField] private float moonVsMoonBaseDamage = 12f;
+        [SerializeField] private float moonVsMoonDamagePerSpeed = 2.25f;
+        [SerializeField] private float moonVsMoonMaxDamage = 45f;
+        [SerializeField] private float moonVsPlanetBaseDamage = 10f;
+        [SerializeField] private float moonVsPlanetDamagePerSpeed = 1.5f;
+        [SerializeField] private float moonVsPlanetMaxDamage = 30f;
 
         [Header("Landing Scatter")]
         [SerializeField] private float landingHemisphereHemisphereBias = 0.6f; // Higher = more likely to pick the “top/front” hemisphere.
@@ -66,6 +80,7 @@ namespace TitanOrbit.Entities
         private Vector3 cachedWorldVelocity;
 
         private float shieldPoints;
+        private float runtimeMaxShieldPoints;
         private double lastShieldHitServerTime;
 
         private GameObject _matrixShieldInstance;
@@ -84,6 +99,11 @@ namespace TitanOrbit.Entities
         private float lastMoonGemSyncTime = -999f;
         private float gemDrainAccumulator;
         private float gemSpawnTimer;
+        private readonly Dictionary<int, float> _lastAsteroidImpactTimeByInstanceId = new Dictionary<int, float>();
+        private readonly Dictionary<int, float> _lastMoonImpactTimeByInstanceId = new Dictionary<int, float>();
+        private readonly Dictionary<int, float> _lastPlanetImpactTimeByInstanceId = new Dictionary<int, float>();
+        private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
+        private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
 
         public Planet Planet => planet;
         public Vector3 WorldOrbitVelocity => cachedWorldVelocity;
@@ -114,6 +134,34 @@ namespace TitanOrbit.Entities
             if (planet != null && planet.IsServer)
                 return gemPoints;
             return gemPointsClientDisplay;
+        }
+
+        /// <summary>Current shield points for UI.</summary>
+        public float GetShieldPointsForDisplay() => Mathf.Max(0f, shieldPoints);
+
+        /// <summary>Max shield points for UI.</summary>
+        public float GetMaxShieldPointsForDisplay() => Mathf.Max(0f, runtimeMaxShieldPoints);
+
+        private float GetScaledMaxShieldPoints()
+        {
+            int level = planet != null ? Mathf.Max(1, planet.PlanetLevel) : 1;
+            return Mathf.Max(0.001f, maxShieldPoints * level);
+        }
+
+        private bool RefreshScaledShieldCapacityServer()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+                return false;
+
+            float scaledMax = GetScaledMaxShieldPoints();
+            if (Mathf.Abs(scaledMax - runtimeMaxShieldPoints) <= 0.001f)
+                return false;
+
+            float prevMax = Mathf.Max(0.001f, runtimeMaxShieldPoints);
+            float ratio = Mathf.Clamp01(shieldPoints / prevMax);
+            runtimeMaxShieldPoints = scaledMax;
+            shieldPoints = Mathf.Clamp(ratio * runtimeMaxShieldPoints, 0f, runtimeMaxShieldPoints);
+            return true;
         }
 
         private void Awake()
@@ -210,6 +258,9 @@ namespace TitanOrbit.Entities
 
         private void OnEnable()
         {
+            if (!ActiveMoons.Contains(this))
+                ActiveMoons.Add(this);
+
             EnsureMoonOrbitZoneVisual();
             EnsureMatrixShieldVisual();
 
@@ -222,7 +273,8 @@ namespace TitanOrbit.Entities
             orbitAngle = (id % 6283UL) * 0.001f;
             spinAngleDegrees = (id % 360UL);
 
-            shieldPoints = maxShieldPoints;
+            runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
+            shieldPoints = runtimeMaxShieldPoints;
             lastShieldHitServerTime = GetServerTimeNowSeconds();
 
             // Only the server tracks/updates gem drain & spawning logic.
@@ -232,9 +284,19 @@ namespace TitanOrbit.Entities
                 gemDrainAccumulator = 0f;
                 gemSpawnTimer = 0f;
             }
+            else
+            {
+                // Client receives real shield state through RPC shortly after spawn.
+                runtimeMaxShieldPoints = Mathf.Max(0.001f, maxShieldPoints);
+            }
 
             UpdateMatrixShieldVisual();
             EnsureGemMoonStatsDisplay();
+        }
+
+        private void OnDisable()
+        {
+            ActiveMoons.Remove(this);
         }
 
         private void Start()
@@ -262,7 +324,7 @@ namespace TitanOrbit.Entities
         public void PushFullStateToClients()
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer || planet == null) return;
-            planet.GemMoonShieldClientRpc(shieldPoints, maxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
+            planet.GemMoonShieldClientRpc(shieldPoints, runtimeMaxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
         }
 
         private void MaybeSyncMoonGemsToClientsThrottled()
@@ -311,11 +373,141 @@ namespace TitanOrbit.Entities
             if (_visualTransform != null)
                 _visualTransform.RotateAround(transform.position, SpinAxisWorld, Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime);
 
+            // Keep moon shield capacity scaled with current planet level.
+            if (RefreshScaledShieldCapacityServer())
+                PushFullStateToClients();
+
             TickMoonShieldRegen();
             UpdateMatrixShieldVisual();
 
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             TickMoonCombatDrain();
+            TickMoonCollisionDamageServer();
+        }
+
+        private void TickMoonCollisionDamageServer()
+        {
+            float now = Time.time;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            float moonRadius = GetMoonBodyRadiusWorld();
+            if (moonRadius <= 0.0001f) return;
+
+            TickMoonVsAsteroidCollisionDamage(now, moonPos, moonRadius);
+            TickMoonVsMoonCollisionDamage(now, moonPos, moonRadius);
+            TickMoonVsPlanetCollisionDamage(now, moonPos, moonRadius);
+        }
+
+        private void TickMoonVsAsteroidCollisionDamage(float now, Vector3 moonPos, float moonRadius)
+        {
+            for (int i = 0; i < Asteroid.AllAsteroids.Count; i++)
+            {
+                Asteroid asteroid = Asteroid.AllAsteroids[i];
+                if (asteroid == null || asteroid.IsDestroyed) continue;
+
+                int id = asteroid.GetInstanceID();
+                if (_lastAsteroidImpactTimeByInstanceId.TryGetValue(id, out float lastHitAt)
+                    && now - lastHitAt < collisionDamageTickInterval)
+                    continue;
+
+                Vector3 asteroidPos = asteroid.transform.position;
+                asteroidPos.y = 0f;
+                float asteroidRadius = asteroid.GetCollisionRadiusWorld();
+                float overlapDistance = moonRadius + asteroidRadius;
+                if (overlapDistance <= 0.0001f) continue;
+
+                float dist = ToroidalMap.ToroidalDistance(moonPos, asteroidPos);
+                if (dist > overlapDistance) continue;
+
+                Vector3 relativeVelocity = cachedWorldVelocity - asteroid.WorldVelocity;
+                relativeVelocity.y = 0f;
+                float impactSpeed = relativeVelocity.magnitude;
+                float damage = moonVsAsteroidBaseDamage + moonVsAsteroidDamagePerSpeed * impactSpeed;
+                damage = Mathf.Clamp(damage, 0f, moonVsAsteroidMaxDamage);
+                if (damage <= 0.0001f) continue;
+
+                _lastAsteroidImpactTimeByInstanceId[id] = now;
+                TakeDamageServer(damage);
+                asteroid.TakeDamageServerRpc(damage, 0ul);
+            }
+        }
+
+        private void TickMoonVsMoonCollisionDamage(float now, Vector3 moonPos, float moonRadius)
+        {
+            for (int i = 0; i < ActiveMoons.Count; i++)
+            {
+                PlanetGemMoon other = ActiveMoons[i];
+                if (other == null || other == this) continue;
+                if (!other.isActiveAndEnabled) continue;
+                if (GetInstanceID() >= other.GetInstanceID()) continue; // Pair is handled once.
+
+                int id = other.GetInstanceID();
+                if (_lastMoonImpactTimeByInstanceId.TryGetValue(id, out float lastHitAt)
+                    && now - lastHitAt < collisionDamageTickInterval)
+                    continue;
+
+                Vector3 otherPos = other.transform.position;
+                otherPos.y = 0f;
+                float otherRadius = other.GetMoonBodyRadiusWorld();
+                float overlapDistance = moonRadius + otherRadius;
+                if (overlapDistance <= 0.0001f) continue;
+
+                float dist = ToroidalMap.ToroidalDistance(moonPos, otherPos);
+                if (dist > overlapDistance) continue;
+
+                Vector3 relativeVelocity = cachedWorldVelocity - other.cachedWorldVelocity;
+                relativeVelocity.y = 0f;
+                float impactSpeed = relativeVelocity.magnitude;
+                float damage = moonVsMoonBaseDamage + moonVsMoonDamagePerSpeed * impactSpeed;
+                damage = Mathf.Clamp(damage, 0f, moonVsMoonMaxDamage);
+                if (damage <= 0.0001f) continue;
+
+                _lastMoonImpactTimeByInstanceId[id] = now;
+                other._lastMoonImpactTimeByInstanceId[GetInstanceID()] = now;
+                TakeDamageServer(damage);
+                other.TakeDamageServer(damage);
+            }
+        }
+
+        private void TickMoonVsPlanetCollisionDamage(float now, Vector3 moonPos, float moonRadius)
+        {
+            int hitCount = Physics.OverlapSphereNonAlloc(
+                transform.position,
+                Mathf.Max(0.01f, moonRadius),
+                PlanetOverlapBuffer,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider c = PlanetOverlapBuffer[i];
+                if (c == null) continue;
+
+                Planet hitPlanet = c.GetComponentInParent<Planet>();
+                if (hitPlanet == null) continue;
+                if (planet != null && hitPlanet == planet) continue;
+
+                int id = hitPlanet.GetInstanceID();
+                if (_lastPlanetImpactTimeByInstanceId.TryGetValue(id, out float lastHitAt)
+                    && now - lastHitAt < collisionDamageTickInterval)
+                    continue;
+
+                Vector3 planetPos = hitPlanet.transform.position;
+                planetPos.y = 0f;
+                float planetRadius = Mathf.Max(0.01f, hitPlanet.PlanetSize * 0.5f);
+                float overlapDistance = moonRadius + planetRadius;
+                float dist = ToroidalMap.ToroidalDistance(moonPos, planetPos);
+                if (dist > overlapDistance) continue;
+
+                float impactSpeed = cachedWorldVelocity.magnitude;
+                float damage = moonVsPlanetBaseDamage + moonVsPlanetDamagePerSpeed * impactSpeed;
+                damage = Mathf.Clamp(damage, 0f, moonVsPlanetMaxDamage);
+                if (damage <= 0.0001f) continue;
+
+                _lastPlanetImpactTimeByInstanceId[id] = now;
+                TakeDamageServer(damage);
+            }
         }
 
         private void TickMoonCombatDrain()
@@ -352,20 +544,20 @@ namespace TitanOrbit.Entities
 
         private void TickMoonShieldRegen()
         {
-            if (shieldPoints >= maxShieldPoints - 0.001f) return;
+            if (shieldPoints >= runtimeMaxShieldPoints - 0.001f) return;
 
             double now = GetServerTimeNowSeconds();
             double timeSinceHit = now - lastShieldHitServerTime;
             if (timeSinceHit < shieldRegenDelaySeconds) return;
 
-            float regenRatePerSecond = maxShieldPoints / Mathf.Max(0.01f, shieldRegenSecondsToFull);
-            shieldPoints = Mathf.Min(maxShieldPoints, shieldPoints + regenRatePerSecond * Time.fixedDeltaTime);
+            float regenRatePerSecond = runtimeMaxShieldPoints / Mathf.Max(0.01f, shieldRegenSecondsToFull);
+            shieldPoints = Mathf.Min(runtimeMaxShieldPoints, shieldPoints + regenRatePerSecond * Time.fixedDeltaTime);
         }
 
         public void ApplyShieldClientSync(float currentShieldPoints, float syncMaxShieldPoints, float lastHitServerTimeSeconds, float currentMoonGemPoints)
         {
             shieldPoints = Mathf.Max(0f, currentShieldPoints);
-            maxShieldPoints = Mathf.Max(0.001f, syncMaxShieldPoints);
+            runtimeMaxShieldPoints = Mathf.Max(0.001f, syncMaxShieldPoints);
             lastShieldHitServerTime = lastHitServerTimeSeconds;
             gemPointsClientDisplay = Mathf.Max(0f, currentMoonGemPoints);
             UpdateMatrixShieldVisual();
@@ -449,7 +641,7 @@ namespace TitanOrbit.Entities
             // Show depletion as reduced particle emission (instead of only toggling on/off).
             if (_matrixShieldParticles != null && shouldBeActive)
             {
-                float ratio = Mathf.Clamp01(shieldPoints / Mathf.Max(0.001f, maxShieldPoints));
+                float ratio = Mathf.Clamp01(shieldPoints / Mathf.Max(0.001f, runtimeMaxShieldPoints));
                 foreach (var ps in _matrixShieldParticles)
                 {
                     if (ps == null) continue;
@@ -526,7 +718,7 @@ namespace TitanOrbit.Entities
 
             // Sync shield state + moon gems to clients so visuals and UI stay correct.
             if (planet != null)
-                planet.GemMoonShieldClientRpc(shieldPoints, maxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
+                planet.GemMoonShieldClientRpc(shieldPoints, runtimeMaxShieldPoints, (float)lastShieldHitServerTime, gemPoints);
         }
 
         /// <summary>Dock trigger radius in moon local space (same space as <see cref="SphereCollider.radius"/> on this object).</summary>

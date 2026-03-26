@@ -13,7 +13,7 @@ namespace TitanOrbit.Core
         public static GameManager Instance { get; private set; }
 
         [Header("Debug")]
-        [Tooltip("When enabled: one-shot asteroids, 100x gems/mining/deposit/people/growth/respawn/regen. Toggle off for normal play.")]
+        [Tooltip("When enabled: one-shot asteroids, fast economy/combat tuning, instant gem deposit and people load/unload, and unload counts as 100x people impact. Toggle off for normal play.")]
         [SerializeField] private bool debugMode = true;
 
         [Header("Game Settings")]

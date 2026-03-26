@@ -20,7 +20,7 @@ namespace TitanOrbit.Entities
         public static readonly List<HomePlanet> AllHomePlanets = new List<HomePlanet>();
         [Header("Home Planet Settings")]
         [Tooltip("Max gems capacity per level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, 4=8×, 5=16×, 6=32×. Scale base to tune difficulty.")]
-        [SerializeField] private float baseMaxGemsLevel1 = 100f;
+        [SerializeField] private float baseMaxGemsLevel1 = 200f;
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
@@ -99,13 +99,13 @@ namespace TitanOrbit.Entities
         /// <summary>Gem moon on home worlds is 1.5× the inverse-scaled size used for regular planets at the same PlanetSize.</summary>
         protected override float GetGemMoonHomeVisualScaleMultiplier() => 1.5f;
 
-        /// <summary>Initial planet level. Home planets start at 1.</summary>
-        protected override int GetInitialPlanetLevel() => 1;
+        /// <summary>Initial planet level. Home planets start at 3.</summary>
+        protected override int GetInitialPlanetLevel() => 3;
 
         /// <summary>Max level for home planets is 6.</summary>
         protected override int GetMaxLevel() => 6;
 
-        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=100, 2=200, 3=400, 4=800, 5=1600, 6=3200 (when base=100).</summary>
+        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=200, 2=400, 3=800, 4=1600, 5=3200, 6=6400 (when base=200).</summary>
         protected override float GetMaxGemsForLevel(int level)
         {
             if (level < 1) return 0f;

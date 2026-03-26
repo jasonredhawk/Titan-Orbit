@@ -162,6 +162,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float attributeScaleExaggeration = 0.2f;
         [Tooltip("How much component mesh scale reflects stat upgrades. 0.5 = 10% stat increase → 5% bigger component; 1 = 1:1. Set higher so upgrades are clearly visible.")]
         [SerializeField] [Range(0.2f, 1.5f)] private float componentScaleVisibility = 0.6f;
+        [Tooltip("Extra influence of gem capacity upgrades on wing size. 1.67 with visibility 0.6 means +100% gem capacity can produce about 2x wing scale.")]
+        [SerializeField] [Range(1f, 3f)] private float wingGemScaleBoost = 1.67f;
         [Tooltip("Extra multiplier for bullet size so projectiles scale more visibly with Fire Power / Bullet Speed / cards. 1 = same as weapon component scale; 1.5 = bullets grow 50% more per upgrade.")]
         [SerializeField] [Range(0.5f, 3f)] private float bulletScaleExaggeration = 1.5f;
 
@@ -1203,18 +1205,33 @@ namespace TitanOrbit.Entities
             float ratioDamage = DamageMultiplier / BaseDamageMultiplierNoAttr;
             float ratioBulletSpeed = SpeedMultiplier / BaseSpeedMultiplierNoAttr;
 
-            // Scale = 1 + (average ratio - 1) * visibility so e.g. 10% stat → 6% scale at vis=0.6. Ensures upgrades are visible.
+            float StatScale(float ratio, float visibility, float boost = 1f)
+            {
+                float clampedRatio = Mathf.Max(1f, ratio);
+                return Mathf.Max(1f, 1f + (clampedRatio - 1f) * visibility * Mathf.Max(0.01f, boost));
+            }
+
+            // Blend average with strongest contributor so a large single upgrade still shows clearly.
             float avgCockpit = (ratioHealth + ratioPeople + ratioEnergyCap + ratioEnergyRegen) * 0.25f;
-            float avgWing = (ratioGem + ratioTurn) * 0.5f;
             float avgWeapon = (ratioDamage + ratioBulletSpeed) * 0.5f;
             float avgPart = (ratioHealth + ratioRegen + ratioGem + ratioPeople) * 0.25f;
 
-            float cockpitScale = Mathf.Max(1f, 1f + (avgCockpit - 1f) * vis);
-            float wingScale = Mathf.Max(1f, 1f + (avgWing - 1f) * vis);
-            float weaponScale = Mathf.Max(1f, 1f + (avgWeapon - 1f) * vis);
-            float engineScale = Mathf.Max(1f, 1f + (ratioMove - 1f) * vis);
-            float thrusterScale = Mathf.Max(1f, 1f + (ratioTurn - 1f) * vis);
-            float partScale = Mathf.Max(1f, 1f + (avgPart - 1f) * vis);
+            float cockpitScale = Mathf.Max(StatScale(avgCockpit, vis), StatScale(Mathf.Max(Mathf.Max(ratioHealth, ratioPeople), Mathf.Max(ratioEnergyCap, ratioEnergyRegen)), vis, 0.9f));
+            float wingScaleFromGem = StatScale(ratioGem, vis, wingGemScaleBoost);
+            float wingScaleFromTurn = StatScale(ratioTurn, vis, 0.9f);
+            float wingScale = Mathf.Max(wingScaleFromGem, StatScale((ratioGem + ratioTurn) * 0.5f, vis));
+            wingScale = Mathf.Max(wingScale, wingScaleFromTurn);
+            float weaponScale = Mathf.Max(StatScale(avgWeapon, vis), StatScale(Mathf.Max(ratioDamage, ratioBulletSpeed), vis, 0.9f));
+            float engineScale = StatScale(ratioMove, vis);
+            float thrusterScale = StatScale(ratioTurn, vis);
+            float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(ratioGem, ratioHealth), vis, 0.85f));
+
+            wingScale = Mathf.Min(wingScale, 3.5f);
+            cockpitScale = Mathf.Min(cockpitScale, 3f);
+            weaponScale = Mathf.Min(weaponScale, 3f);
+            engineScale = Mathf.Min(engineScale, 3f);
+            thrusterScale = Mathf.Min(thrusterScale, 3f);
+            partScale = Mathf.Min(partScale, 3f);
 
             for (int i = 0; i < cockpitScaleTransforms.Count; i++)
             {
@@ -1863,7 +1880,7 @@ namespace TitanOrbit.Entities
 
             Vector3 shipPos = rb != null ? rb.position : transform.position;
             bool inOrbitZone = currentOrbitPlanet != null;
-            float searchRadius = inOrbitZone ? 18f : 10f;
+            float searchRadius = inOrbitZone ? 9f : 5f;
             float attractionSpeed = inOrbitZone ? 14f : 8f;
 
             foreach (var gem in TitanOrbit.Entities.Gem.AllGems)
@@ -2270,7 +2287,7 @@ namespace TitanOrbit.Entities
                 for (int i = 0; i < bulletWc.cannons.Count; i++)
                 {
                     var c = bulletWc.cannons[i];
-                    float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                    float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
                     if (currentEnergy.Value >= c.energyCostPerShot &&
                         (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / effectiveFireRate))
                         return true;
@@ -2341,7 +2358,7 @@ namespace TitanOrbit.Entities
                     if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null)
                         continue;
                     if (currentEnergy.Value < c.energyCostPerShot) continue;
-                    float effectiveFireRate = c.fireRate * (1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                    float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
                     if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
 
                     currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
@@ -2379,8 +2396,8 @@ namespace TitanOrbit.Entities
                             float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
                             dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
                         }
-                        float damage = c.damagePerBullet * DamageMultiplier;
-                        float speed = c.bulletSpeed * SpeedMultiplier;
+                        float damage = c.damagePerBullet;
+                        float speed = c.bulletSpeed;
                         float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
                         CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                         if (rb != null)
@@ -2445,8 +2462,8 @@ namespace TitanOrbit.Entities
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
             if (bulletWc?.cannons == null || cannonIndex < 0 || cannonIndex >= bulletWc.cannons.Count) return 1f;
             var c = bulletWc.cannons[cannonIndex];
-            float damage = c.damagePerBullet * DamageMultiplier;
-            float speed = c.bulletSpeed * SpeedMultiplier;
+            float damage = c.damagePerBullet;
+            float speed = c.bulletSpeed;
             float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
             float scaleClamped = Mathf.Max(0.25f, scale);
             const float refSpeed = 20f;
@@ -2594,9 +2611,10 @@ namespace TitanOrbit.Entities
                 return;
             }
             float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
+            bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
 
             float rate = shipLevel * Time.fixedDeltaTime; // e.g. level 1 = 1 per second
-            if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
+            if (debugModeEnabled) rate *= 100f;
             if (rate <= 0f) return;
 
             bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
@@ -2609,6 +2627,18 @@ namespace TitanOrbit.Entities
             if (friendly)
             {
                 float available = currentOrbitPlanet.CurrentPopulation;
+                if (debugModeEnabled)
+                {
+                    float instantLoadAmount = Mathf.Min(peopleSpaceAvailable, available);
+                    if (instantLoadAmount > 0f)
+                    {
+                        currentOrbitPlanet.RemovePopulationServerRpc(instantLoadAmount);
+                        AddPeopleServerRpc(instantLoadAmount);
+                        PlayPeopleLoadSoundClientRpc(instantLoadAmount);
+                    }
+                    return;
+                }
+
                 float amount = Mathf.Min(rate, peopleSpaceAvailable, available);
                 if (amount > 0f) peopleLoadAccumulator += amount;
 
@@ -2631,10 +2661,24 @@ namespace TitanOrbit.Entities
                             (int)FloatingCountChannel.PeopleLoad,
                             1f,
                             (int)shipTeam.Value);
+                    PlayPeopleLoadSoundClientRpc(1f);
                 }
             }
             else
             {
+                if (debugModeEnabled)
+                {
+                    float instantUnloadPeople = currentPeople.Value;
+                    if (instantUnloadPeople > 0f)
+                    {
+                        RemovePeopleServerRpc(instantUnloadPeople);
+                        // Debug-only shortcut: each 1 unloaded person applies 100 population impact.
+                        currentOrbitPlanet.AddPopulationServerRpc(instantUnloadPeople * 100f, shipTeam.Value);
+                        PlayPeopleUnloadSoundClientRpc(instantUnloadPeople);
+                    }
+                    return;
+                }
+
                 float amount = Mathf.Min(rate, currentPeople.Value);
                 if (amount > 0f) peopleUnloadAccumulator += amount;
 
@@ -2657,6 +2701,7 @@ namespace TitanOrbit.Entities
                             (int)FloatingCountChannel.PeopleUnload,
                             1f,
                             (int)shipTeam.Value);
+                    PlayPeopleUnloadSoundClientRpc(1f);
                 }
             }
         }
@@ -2716,9 +2761,20 @@ namespace TitanOrbit.Entities
             // Track that we had gems to deposit during this orbit session (server only).
             hadGemsWhileInOrbitThisOrbit = true;
 
+            bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
+            if (debugModeEnabled)
+            {
+                float instantDepositAmount = currentGems.Value;
+                RemoveGemsServerRpc(instantDepositAmount);
+                depositAccumulator = 0f;
+                ApplyMoonGemDepositToPlanet(depositPlanet, instantDepositAmount);
+                depositedAnyGemsThisOrbit = true;
+            }
+            else
+            {
             float gemValue = ShipLevel * 5f; // e.g. level 3 = 15 value per gem
             float rate = gemValue * Time.fixedDeltaTime; // 1 gem per second
-            if (GameManager.Instance != null && GameManager.Instance.DebugMode) rate *= 100f;
+            if (debugModeEnabled) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
             if (amount <= 0f) return;
@@ -2745,6 +2801,7 @@ namespace TitanOrbit.Entities
                 depositAccumulator = 0f;
                 ApplyMoonGemDepositToPlanet(depositPlanet, remainder);
                 depositedAnyGemsThisOrbit = true;
+            }
             }
 
             // When all carried gems have been fully deposited during this orbit session, trigger galactic zoom on the owning client.
@@ -3102,14 +3159,28 @@ namespace TitanOrbit.Entities
         {
             currentGems.Value = Mathf.Min(currentGems.Value + amount, GemCapacity);
             if (playCollectSound)
-                PlayGemCollectSoundClientRpc();
+                PlayGemCollectSoundClientRpc(amount);
         }
 
         [ClientRpc]
-        private void PlayGemCollectSoundClientRpc()
+        private void PlayGemCollectSoundClientRpc(float amount)
         {
             if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayGemCollectSound();
+                AudioManager.Instance.PlayGemCollectSound(amount);
+        }
+
+        [ClientRpc]
+        private void PlayPeopleLoadSoundClientRpc(float amount)
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayPeopleLoadSound(amount);
+        }
+
+        [ClientRpc]
+        private void PlayPeopleUnloadSoundClientRpc(float amount)
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayPeopleUnloadSound(amount);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -3267,6 +3338,28 @@ namespace TitanOrbit.Entities
                 case 8: attrGemCapacity.Value++; break;
                 case 9: attrPeopleCapacity.Value++; break;
             }
+
+            // Weapon stat upgrades are baked into chassis-derived per-cannon values.
+            // Rebuild immediately so fire power / bullet speed upgrades take effect on the next shot.
+            if (attributeIndex == 0 || attributeIndex == 1)
+                RefreshChassisStatsAfterWeaponUpgrade();
+        }
+
+        /// <summary>Server-only: refresh current chassis stats after weapon upgrades.</summary>
+        private void RefreshChassisStatsAfterWeaponUpgrade()
+        {
+            if (!IsServer) return;
+            if (CardShopSystem.Instance == null) return;
+
+            string cid = currentChassisId.Value.ToString();
+            GameObject prefab = !string.IsNullOrEmpty(cid)
+                ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid)
+                : null;
+            if (prefab == null && currentChassisIndex.Value >= 0)
+                prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+            if (prefab == null) return;
+
+            ApplyShipVisualFromPrefab(prefab);
         }
 
         /// <summary>Server-only: set wantToLoadPeople (for AI ships; bypasses RPC ownership).</summary>
@@ -3744,10 +3837,6 @@ namespace TitanOrbit.Entities
             // Bullets (Weapon only): one cannon per component with "Weapon" in the name; fire from each weapon position.
             int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
             if (weaponScaleTotal <= 0f && weaponCount > 0) weaponScaleTotal = weaponCount;
-            float bulletEnergyScale = 1f;
-            float bulletDamageScale = 1f;
-            float bulletSpeedScale = 1f;
-
             if (weaponCount > 0)
             {
                 var baseBullet = (data != null && data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)
@@ -3762,15 +3851,9 @@ namespace TitanOrbit.Entities
                 int bulletSpeedUpgrades = attrBulletSpeed.Value;
                 int fireRateUpgrades = attrFireRate.Value;
 
-                float perLvlFirePower = firePowerUpgrades > 0 ? firePowerUpgrades - 1 : 0f;
-                float perLvlBulletSpeed = bulletSpeedUpgrades > 0 ? bulletSpeedUpgrades - 1 : 0f;
-                float perLvlFireRate = fireRateUpgrades > 0 ? fireRateUpgrades - 1 : 0f;
-
-                // Fallback summed stats only when no per-component data exists (no preview match and no definition entry). Guns use individual stats from matched components or family definition.
-                float fallbackDamage = usePreviewStats ? (previewStats.Value.firePower + previewStats.Value.firePowerPerLevel * perLvlFirePower) : 0f;
-                float fallbackBulletSpeed = usePreviewStats ? (previewStats.Value.bulletSpeed + previewStats.Value.bulletSpeedPerLevel * perLvlBulletSpeed) : 0f;
-                float fallbackFireRate = usePreviewStats ? (previewStats.Value.fireRate + previewStats.Value.fireRatePerLevel * perLvlFireRate) : 0f;
-                if (fallbackFireRate < 0.01f) fallbackFireRate = 0.01f;
+                float perLvlFirePower = Mathf.Max(0f, firePowerUpgrades);
+                float perLvlBulletSpeed = Mathf.Max(0f, bulletSpeedUpgrades);
+                float perLvlFireRate = Mathf.Max(0f, fireRateUpgrades);
 
                 // Use same familyId as ShipFamilyStatsPreview so componentId matches matchedComponentIds (e.g. "Weapon_1" not full name).
                 string weaponLookupFamilyId = (previewFamilyDef != null && !string.IsNullOrEmpty(previewFamilyDef.familyId))
@@ -3782,6 +3865,7 @@ namespace TitanOrbit.Entities
                     var c = baseBullet.Clone();
                     Transform wt = stats.weaponTransforms != null && i < stats.weaponTransforms.Count ? stats.weaponTransforms[i] : null;
                     string componentId = "";
+                    string resolvedComponentId = componentId;
                     if (wt != null && !string.IsNullOrEmpty(wt.name))
                     {
                         if (!string.IsNullOrEmpty(weaponLookupFamilyId) && wt.name.StartsWith(weaponLookupFamilyId + "_", System.StringComparison.OrdinalIgnoreCase))
@@ -3789,6 +3873,7 @@ namespace TitanOrbit.Entities
                         else
                             componentId = wt.name;
                     }
+                    resolvedComponentId = componentId;
 
                     bool usedPerComponent = false;
                     // 1) Prefer per-component stats from ShipFamilyStatsPreview (matched component list) - case-insensitive match.
@@ -3802,7 +3887,7 @@ namespace TitanOrbit.Entities
                                 float wp = comp.firePower + comp.firePowerPerLevel * perLvlFirePower;
                                 float bs = comp.bulletSpeed + comp.bulletSpeedPerLevel * perLvlBulletSpeed;
                                 float fr = Mathf.Max(0.01f, comp.fireRate + comp.fireRatePerLevel * perLvlFireRate);
-                                c.damagePerBullet = wp / fr;
+                                c.damagePerBullet = wp;
                                 c.bulletSpeed = bs;
                                 c.fireRate = fr;
                                 c.energyCostPerShot = c.damagePerBullet;
@@ -3818,31 +3903,40 @@ namespace TitanOrbit.Entities
                         float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlFirePower;
                         float bs = scaled.bulletSpeed + scaled.bulletSpeedPerLevel * perLvlBulletSpeed;
                         float fr = Mathf.Max(0.01f, scaled.fireRate + scaled.fireRatePerLevel * perLvlFireRate);
-                        c.damagePerBullet = wp / fr;
+                        c.damagePerBullet = wp;
                         c.bulletSpeed = bs;
                         c.fireRate = fr;
                         c.energyCostPerShot = c.damagePerBullet;
                         usedPerComponent = true;
                     }
-                    // 3) Only use summed TotalStats when we have no per-component data (no preview match and no definition entry).
-                    if (!usedPerComponent)
+                    // 3) If direct lookup fails (name mismatch), map cannon index to the Nth weapon entry in ShipFamilyDefinition.
+                    // This avoids using unrelated summed totals and keeps ShipFamilyDefinition as source of truth.
+                    if (!usedPerComponent && previewFamilyDef != null && wt != null && previewFamilyDef.components != null)
                     {
-                        if (usePreviewStats)
+                        int weaponEntryCounter = -1;
+                        for (int e = 0; e < previewFamilyDef.components.Count; e++)
                         {
-                            c.damagePerBullet = fallbackDamage / fallbackFireRate;
-                            c.bulletSpeed = fallbackBulletSpeed;
-                            c.fireRate = fallbackFireRate;
+                            var entry = previewFamilyDef.components[e];
+                            if (entry == null || string.IsNullOrEmpty(entry.componentId)) continue;
+                            if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId)) continue;
+                            weaponEntryCounter++;
+                            if (weaponEntryCounter != i) continue;
+
+                            ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(entry.stats, wt, entry.componentId);
+                            float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlFirePower;
+                            float bs = scaled.bulletSpeed + scaled.bulletSpeedPerLevel * perLvlBulletSpeed;
+                            float fr = Mathf.Max(0.01f, scaled.fireRate + scaled.fireRatePerLevel * perLvlFireRate);
+                            c.damagePerBullet = wp;
+                            c.bulletSpeed = bs;
+                            c.fireRate = fr;
                             c.energyCostPerShot = c.damagePerBullet;
-                        }
-                        else
-                        {
-                            c.energyCostPerShot *= bulletEnergyScale;
-                            c.damagePerBullet *= bulletDamageScale;
-                            c.bulletSpeed *= bulletSpeedScale;
+                            resolvedComponentId = entry.componentId;
+                            usedPerComponent = true;
+                            break;
                         }
                     }
                     // Per-weapon bullet prefab index from ShipFamilyComponentEntry (index into CombatSystem's Bullet Prefab Bank).
-                    if (previewFamilyDef != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetComponentEntry(componentId, out var compEntry) && compEntry != null && compEntry.bulletPrefabIndex >= 0)
+                    if (previewFamilyDef != null && !string.IsNullOrEmpty(resolvedComponentId) && previewFamilyDef.TryGetComponentEntry(resolvedComponentId, out var compEntry) && compEntry != null && compEntry.bulletPrefabIndex >= 0)
                         c.bulletPrefabIndex = compEntry.bulletPrefabIndex;
                     bc.cannons.Add(c);
                     Transform pt = stats.weaponTransforms[i];

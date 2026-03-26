@@ -51,8 +51,22 @@ namespace TitanOrbit.Entities
         public float MaxGems => maxGems.Value;
         public float AsteroidSize => asteroidSize;
         public bool IsDestroyed => isDestroyed.Value;
+        public Vector3 WorldVelocity => rb != null ? rb.linearVelocity : Vector3.zero;
 
         public bool CanBeMined() => !isDestroyed.Value && remainingGems.Value > 0;
+
+        public float GetCollisionRadiusWorld()
+        {
+            if (col != null)
+            {
+                Vector3 e = col.bounds.extents;
+                return Mathf.Max(0.01f, Mathf.Max(e.x, Mathf.Max(e.y, e.z)));
+            }
+
+            Vector3 s = transform.lossyScale;
+            float avg = (Mathf.Abs(s.x) + Mathf.Abs(s.y) + Mathf.Abs(s.z)) / 3f;
+            return Mathf.Max(0.01f, avg * 0.5f);
+        }
 
         // Tracks how much damage each ship dealt to this asteroid (server only).
         private readonly Dictionary<ulong, float> damageByShip = new Dictionary<ulong, float>();

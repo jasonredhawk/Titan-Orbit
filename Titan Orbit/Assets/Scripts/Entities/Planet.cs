@@ -5,6 +5,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Data;
 using TitanOrbit.Systems;
 using TitanOrbit.UI;
+using TitanOrbit.Audio;
 using TMPro;
 using SpaceGraphicsToolkit;
 using SpaceGraphicsToolkit.Atmosphere;
@@ -392,19 +393,16 @@ namespace TitanOrbit.Entities
 
             if (IsServer)
             {
-                // Grow population over time if not at max (including territory bonuses).
-                if (teamOwnership.Value != TeamManager.Team.None)
+                // Grow population over time for all planets (owned and neutral) up to cap.
+                float effectiveMax = MaxPopulation;
+                if (currentPopulation.Value < effectiveMax)
                 {
-                    float effectiveMax = MaxPopulation;
-                    if (currentPopulation.Value < effectiveMax)
-                    {
-                        float growth = GetGrowthRatePerSecond() * Time.deltaTime;
-                        if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
-                        currentPopulation.Value = Mathf.Min(
-                            currentPopulation.Value + growth,
-                            effectiveMax
-                        );
-                    }
+                    float growth = GetGrowthRatePerSecond() * Time.deltaTime;
+                    if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
+                    currentPopulation.Value = Mathf.Min(
+                        currentPopulation.Value + growth,
+                        effectiveMax
+                    );
                 }
             }
             
@@ -895,6 +893,10 @@ namespace TitanOrbit.Entities
                     (int)depositingTeam
                 );
             }
+            if (delta > 0.0001f)
+            {
+                PlayGemDepositSoundClientRpc(delta);
+            }
 
             CheckLevelUp();
         }
@@ -1010,6 +1012,13 @@ namespace TitanOrbit.Entities
         {
             UpdateVisual(newTeam);
             Debug.Log($"Planet captured by {newTeam}");
+        }
+
+        [ClientRpc]
+        private void PlayGemDepositSoundClientRpc(float amount)
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayGemDepositSound(amount);
         }
 
         private void OnOwnershipChanged(TeamManager.Team previousTeam, TeamManager.Team newTeam)

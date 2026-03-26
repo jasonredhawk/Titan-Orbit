@@ -21,10 +21,18 @@ namespace TitanOrbit.Audio
         [Tooltip("Optional pool for weapon fire (one sound per cannon with different pitch). If empty, created at runtime.")]
         [SerializeField] private AudioSource[] weaponSoundSources;
         private int nextWeaponSoundIndex;
+        [Tooltip("Optional pool for value-based gem sounds (pickup/deposit) with varying pitch.")]
+        [SerializeField] private AudioSource[] gemSoundSources;
+        private int nextGemSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
         private const float WEAPON_PITCH_MIN = 0.5f;
         private const float WEAPON_PITCH_MAX = 2.5f;
+        private const int GEM_SOUND_POOL_SIZE = 6;
+        private const float GEM_PITCH_MIN = 0.55f;
+        private const float GEM_PITCH_MAX = 1.9f;
+        private const float GEM_AMOUNT_MIN = 1f;
+        private const float GEM_AMOUNT_MAX = 300f;
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
@@ -34,6 +42,8 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioClip impactSound;
         [Tooltip("Gem pickup. Assign magic_03 from ShootingSound folder.")]
         [SerializeField] private AudioClip gemCollectSound;
+        [Tooltip("People transfer SFX used for both loading and unloading.")]
+        [SerializeField] private AudioClip peopleTransferSound;
         [SerializeField] private AudioClip miningSound;
         [SerializeField] private AudioClip captureSound;
         [SerializeField] private AudioClip explosionSound;
@@ -73,6 +83,7 @@ namespace TitanOrbit.Audio
             }
 
             EnsureWeaponSoundPool();
+            EnsureGemSoundPool();
 
             if (playMusicOnStart && backgroundMusic != null)
             {
@@ -139,14 +150,34 @@ namespace TitanOrbit.Audio
             PlaySFX(gemCollectSound);
         }
 
+        public void PlayGemCollectSound(float amount)
+        {
+            PlayGemValueScaledSFX(gemCollectSound, amount);
+        }
+
         public void PlayMiningSound()
         {
             PlaySFX(miningSound);
         }
 
+        public void PlayPeopleLoadSound(float amount)
+        {
+            PlayPeopleTransferSound(amount, true);
+        }
+
+        public void PlayPeopleUnloadSound(float amount)
+        {
+            PlayPeopleTransferSound(amount, false);
+        }
+
         public void PlayCaptureSound()
         {
             PlaySFX(captureSound);
+        }
+
+        public void PlayGemDepositSound(float amount)
+        {
+            PlayGemValueScaledSFX(gemCollectSound, amount);
         }
 
         public void PlayExplosionSound()
@@ -164,6 +195,69 @@ namespace TitanOrbit.Audio
             if (sfxSource != null && clip != null)
             {
                 sfxSource.PlayOneShot(clip, sfxVolume);
+            }
+        }
+
+        private void PlayGemValueScaledSFX(AudioClip clip, float amount)
+        {
+            if (clip == null) return;
+            EnsureGemSoundPool();
+            if (gemSoundSources == null || gemSoundSources.Length == 0)
+            {
+                PlaySFX(clip);
+                return;
+            }
+
+            float clampedAmount = Mathf.Clamp(Mathf.Max(0.001f, amount), GEM_AMOUNT_MIN, GEM_AMOUNT_MAX);
+            // Log mapping gives stronger audible contrast across small-to-large gem values.
+            float minLog = Mathf.Log10(GEM_AMOUNT_MIN);
+            float maxLog = Mathf.Log10(GEM_AMOUNT_MAX);
+            float amountLog = Mathf.Log10(clampedAmount);
+            float normalized = Mathf.InverseLerp(minLog, maxLog, amountLog);
+            float pitch = Mathf.Lerp(GEM_PITCH_MAX, GEM_PITCH_MIN, normalized);
+            AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
+            nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
+            if (src != null)
+            {
+                src.pitch = pitch;
+                src.PlayOneShot(clip, sfxVolume);
+            }
+        }
+
+        private void PlayPeopleTransferSound(float amount, bool isLoad)
+        {
+            if (peopleTransferSound == null) return;
+            EnsureGemSoundPool();
+            if (gemSoundSources == null || gemSoundSources.Length == 0)
+            {
+                PlaySFX(peopleTransferSound);
+                return;
+            }
+
+            float normalized = Mathf.InverseLerp(1f, 10f, Mathf.Max(0f, amount));
+            float basePitch = isLoad ? 1.12f : 0.92f;
+            float amountPitchOffset = Mathf.Lerp(0.16f, -0.12f, normalized);
+            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, 0.65f, 1.5f);
+
+            AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
+            nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
+            if (src != null)
+            {
+                src.pitch = pitch;
+                src.PlayOneShot(peopleTransferSound, sfxVolume);
+            }
+        }
+
+        private void EnsureGemSoundPool()
+        {
+            if (gemSoundSources != null && gemSoundSources.Length > 0) return;
+            gemSoundSources = new AudioSource[GEM_SOUND_POOL_SIZE];
+            for (int i = 0; i < GEM_SOUND_POOL_SIZE; i++)
+            {
+                var src = gameObject.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.outputAudioMixerGroup = sfxGroup;
+                gemSoundSources[i] = src;
             }
         }
 

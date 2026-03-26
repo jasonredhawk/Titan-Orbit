@@ -2248,6 +2248,10 @@ MonoBehaviour:
   buttonWidth: 112
   buttonSpacing: 10
   bottomPadding: 12
+  buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
+  buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
+  buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
+  buttonShadowColor: {r: 0, g: 0, b: 0, a: 0.45}
   weaponColor: {r: 0.9, g: 0.35, b: 0.2, a: 0.9}
   healthColor: {r: 0.2, g: 0.85, b: 0.4, a: 0.9}
   energyColor: {r: 0.95, g: 0.8, b: 0.2, a: 0.9}
@@ -6388,10 +6392,13 @@ MonoBehaviour:
   asteroidCollisionEffectDuration: 2
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
+  floatingCountFeedbackSettings: {fileID: 0}
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}
   floatingCountHealthIcon: {fileID: 21300000, guid: 0b72bc04d1858924798ebd2e1f80575b, type: 3}
+  floatingCountPeopleIcon: {fileID: 0}
+  floatingCountPeopleColor: {r: 1, g: 0.9, b: 0.25, a: 1}
   floatingCountDuration: 1.7
   floatingCountRiseSpeed: 3
   floatingCountFontSize: 10
@@ -7136,7 +7143,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bd77682efa6bcb4a9816b21b3ab81db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  debugMode: 1
+  debugMode: 0
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3
@@ -10356,6 +10363,69 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1907676128}
   m_CullTransparentMesh: 1
+--- !u!1 &1959116597
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1959116599}
+  - component: {fileID: 1959116598}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1959116598
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1959116597}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d8abb61aeb9ab049bfa2220a286c8ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Audio.AudioManager
+  audioMixer: {fileID: 0}
+  musicGroup: {fileID: 0}
+  sfxGroup: {fileID: 0}
+  musicSource: {fileID: 0}
+  sfxSource: {fileID: 0}
+  weaponSoundSources: []
+  gemSoundSources: []
+  backgroundMusic: {fileID: 8300000, guid: 7ac1670904bb1624b87dc52bc71f00bc, type: 3}
+  shootSound: {fileID: 0}
+  impactSound: {fileID: 0}
+  gemCollectSound: {fileID: 8300000, guid: b1b9c1f0ea1fcae439ed1a4d44ff05fd, type: 3}
+  peopleTransferSound: {fileID: 8300000, guid: a58e438b7cfa445498120af0e6169082, type: 3}
+  miningSound: {fileID: 8300000, guid: 15ec042c5330b894397fe2b560e22a98, type: 3}
+  captureSound: {fileID: 8300000, guid: 468f662ba85278c419ef967f7c33907b, type: 3}
+  explosionSound: {fileID: 0}
+  upgradeSound: {fileID: 8300000, guid: 78419f98379502c4dbfb2774bc94e7c1, type: 3}
+  musicVolume: 0.7
+  sfxVolume: 1
+  playMusicOnStart: 1
+--- !u!4 &1959116599
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1959116597}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1963990125
 GameObject:
   m_ObjectHideFlags: 0
@@ -11199,3 +11269,4 @@ SceneRoots:
   - {fileID: 252336436}
   - {fileID: 1536533390}
   - {fileID: 259437814}
+  - {fileID: 1959116599}

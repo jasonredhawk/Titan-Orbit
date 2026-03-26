@@ -8,6 +8,7 @@ namespace TitanOrbit.Systems
     /// </summary>
     public class FloatingCountPopup : MonoBehaviour
     {
+        private const float MIN_POPUP_WORLD_Y = 4f;
         private TMP_Text tmpText;
         private SpriteRenderer iconRenderer;
 
@@ -15,6 +16,7 @@ namespace TitanOrbit.Systems
         private float elapsed;
         private float lifetime;
         private float riseSpeed;
+        private float lockedY;
 
         private void EnsureTextAndIcon()
         {
@@ -59,6 +61,10 @@ namespace TitanOrbit.Systems
             // Minimum drift so a zero/missing inspector value never looks "stuck".
             this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
             elapsed = 0f;
+            lockedY = Mathf.Max(transform.position.y, MIN_POPUP_WORLD_Y);
+            Vector3 initPos = transform.position;
+            initPos.y = lockedY;
+            transform.position = initPos;
 
             baseColor = color;
             baseColor.a = 0f;
@@ -67,7 +73,8 @@ namespace TitanOrbit.Systems
             tmpText.text = message;
             if (font != null)
                 tmpText.font = font;
-            tmpText.fontSize = fontSize;
+            // Extra runtime downscale so popups stay compact even if inspector font size is still large.
+            tmpText.fontSize = fontSize * 0.6f;
             tmpText.transform.localScale = Vector3.one;
             tmpText.alignment = TextAlignmentOptions.Center;
             tmpText.enableWordWrapping = false;
@@ -97,7 +104,7 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// Direction that reads as "up" on screen but stays on the XZ play plane (Y locked to 0).
+        /// Direction that reads as "up" on screen but stays on the XZ play plane.
         /// World +Y is nearly invisible from a top-down camera, so we use camera screen-up flattened to XZ.
         /// </summary>
         private static Vector3 GetRiseDirectionOnPlayPlane(UnityEngine.Camera cam)
@@ -129,7 +136,7 @@ namespace TitanOrbit.Systems
             // Drift along screen-up on the ground plane (not world Y).
             transform.position += GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
             Vector3 pos = transform.position;
-            pos.y = 0f;
+            pos.y = lockedY; // Keep elevated height so popup renders above planets/ships.
             transform.position = pos;
 
             // Always face the main camera (billboard) so it's readable.
@@ -152,6 +159,17 @@ namespace TitanOrbit.Systems
 
             if (elapsed >= lifetime)
                 Destroy(gameObject);
+        }
+
+        private void LateUpdate()
+        {
+            // Enforce overlay height in case another system mutates transform after Update.
+            Vector3 pos = transform.position;
+            if (pos.y != lockedY)
+            {
+                pos.y = lockedY;
+                transform.position = pos;
+            }
         }
     }
 }
