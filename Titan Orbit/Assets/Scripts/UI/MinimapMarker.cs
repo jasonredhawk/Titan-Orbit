@@ -167,6 +167,8 @@ namespace TitanOrbit.UI
                 case TeamManager.Team.TeamA: return new Color(1f, 0.3f, 0.3f);
                 case TeamManager.Team.TeamB: return new Color(0.3f, 0.5f, 1f);
                 case TeamManager.Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
+                case TeamManager.Team.TeamD: return new Color(0.95f, 0.55f, 0.12f);
+                case TeamManager.Team.TeamE: return new Color(0.65f, 0.25f, 0.85f);
                 default: return Color.white;
             }
         }

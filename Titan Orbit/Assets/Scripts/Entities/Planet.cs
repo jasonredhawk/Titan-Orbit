@@ -45,6 +45,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private Material teamAMaterial;
         [SerializeField] private Material teamBMaterial;
         [SerializeField] private Material teamCMaterial;
+        [SerializeField] private Material teamDMaterial;
+        [SerializeField] private Material teamEMaterial;
         [SerializeField] private TextMeshPro populationText;
         [Tooltip("When set, shows world-space population number instead of population text. Created at runtime if missing.")]
         [SerializeField] private PlanetStatsDisplay planetStatsDisplay;
@@ -77,7 +79,7 @@ namespace TitanOrbit.Entities
         private const float GemMoonRingGapLocal = 0.015f;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
-        private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC;
+        private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC, s_sharedTeamD, s_sharedTeamE;
 
         /// <summary>Orbit zone outer radius in planet-local space. Base is 1.5x original (0.85); +5% per planet level.</summary>
         public float GetOrbitZoneOuterRadiusLocal()
@@ -118,8 +120,8 @@ namespace TitanOrbit.Entities
             if (outerWorld <= innerWorld + 0.001f) return 0.8f;
             float clampedRadius = Mathf.Clamp(radiusWorld, innerWorld, outerWorld);
             float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
-            const float minSize = 4f;
-            const float maxSize = 12f;
+            const float minSize = 9f;
+            const float maxSize = 18f;
             float sizeNorm = Mathf.Clamp01((PlanetSize - minSize) / (maxSize - minSize));
             float sizeMultiplier = Mathf.Lerp(0.8f, 1.4f, sizeNorm);
             float radiusMultiplier = Mathf.Lerp(0.7f, 1.6f, radiusFactor);
@@ -174,14 +176,54 @@ namespace TitanOrbit.Entities
             float bodyLocalRadius = Mathf.Max(0.01f, 0.5f * visualLocalScale);
             // Moon dock / orbit zone visual radius (1.5× prior 1.3× body).
             float dockLocalRadius = bodyLocalRadius * 1.95f;
+            float shieldLocalRadius = dockLocalRadius * gemMoon.GetMoonShieldBarrierRadiusMultiplierFromDockRadius();
 
             // There can be multiple SphereColliders (older versions, prefab duplicates, etc.).
-            // Set *all* triggers to dock radius and *all* non-triggers to body radius.
+            // If we have multiple triggers, treat:
+            // - smallest trigger = dock/landing trigger
+            // - largest trigger = shield barrier trigger
+            SphereCollider minTrigger = null;
+            SphereCollider maxTrigger = null;
+            float minTriggerRadius = float.MaxValue;
+            float maxTriggerRadius = 0f;
+            for (int i = 0; i < cols.Length; i++)
+            {
+                var c = cols[i];
+                if (c == null || !c.isTrigger) continue;
+                if (c.radius < minTriggerRadius)
+                {
+                    minTriggerRadius = c.radius;
+                    minTrigger = c;
+                }
+                if (c.radius > maxTriggerRadius)
+                {
+                    maxTriggerRadius = c.radius;
+                    maxTrigger = c;
+                }
+            }
+
             for (int i = 0; i < cols.Length; i++)
             {
                 var c = cols[i];
                 if (c == null) continue;
-                c.radius = c.isTrigger ? dockLocalRadius : bodyLocalRadius;
+
+                if (!c.isTrigger)
+                {
+                    c.radius = bodyLocalRadius;
+                    continue;
+                }
+
+                // Single-trigger moons (older scenes) keep that trigger as dock radius.
+                if (minTrigger != null && maxTrigger != null && minTrigger != maxTrigger)
+                {
+                    if (c == minTrigger) c.radius = dockLocalRadius;
+                    else if (c == maxTrigger) c.radius = shieldLocalRadius;
+                    else c.radius = dockLocalRadius;
+                }
+                else
+                {
+                    c.radius = dockLocalRadius;
+                }
             }
         }
         
@@ -272,7 +314,7 @@ namespace TitanOrbit.Entities
                     if (this is HomePlanet homePlanet)
                     {
                         var team = homePlanet.AssignedTeam;
-                        int tropicalIndex = team == TeamManager.Team.TeamA ? 0 : team == TeamManager.Team.TeamB ? 1 : team == TeamManager.Team.TeamC ? 2 : 0;
+                        int tropicalIndex = (Mathf.Max(0, (int)team - 1)) % 3;
                         neutralMaterialIndex.Value = tropicalIndex;
                     }
                     else
@@ -622,6 +664,12 @@ namespace TitanOrbit.Entities
             // Docking trigger (ignored by projectile SphereCasts; used for gem-moon docking state).
             var dockCol = go.AddComponent<SphereCollider>();
             dockCol.isTrigger = true;
+
+            // Shield barrier trigger (keeps enemy ships out while shieldPoints > 0).
+            var shieldCol = go.AddComponent<SphereCollider>();
+            shieldCol.isTrigger = true;
+            // Ensure this collider starts larger than the dock trigger so "dock = smallest trigger" remains stable.
+            shieldCol.radius = Mathf.Max(0.01f, dockCol.radius * 1.5f);
 
             // Physics body collider (used for bullet hits and ship collision).
             var bodyCol = go.AddComponent<SphereCollider>();
@@ -1113,6 +1161,8 @@ namespace TitanOrbit.Entities
                 case TeamManager.Team.TeamA: return teamAMaterial ?? s_sharedTeamA;
                 case TeamManager.Team.TeamB: return teamBMaterial ?? s_sharedTeamB;
                 case TeamManager.Team.TeamC: return teamCMaterial ?? s_sharedTeamC;
+                case TeamManager.Team.TeamD: return teamDMaterial ?? s_sharedTeamD;
+                case TeamManager.Team.TeamE: return teamEMaterial ?? s_sharedTeamE;
                 default: return null;
             }
         }
@@ -1160,6 +1210,8 @@ namespace TitanOrbit.Entities
                     s_sharedTeamA = hp.teamAMaterial;
                     s_sharedTeamB = hp.teamBMaterial;
                     s_sharedTeamC = hp.teamCMaterial;
+                    s_sharedTeamD = hp.teamDMaterial;
+                    s_sharedTeamE = hp.teamEMaterial;
                     return;
                 }
             }
@@ -1171,6 +1223,8 @@ namespace TitanOrbit.Entities
                     s_sharedTeamA = p.teamAMaterial;
                     s_sharedTeamB = p.teamBMaterial;
                     s_sharedTeamC = p.teamCMaterial;
+                    s_sharedTeamD = p.teamDMaterial;
+                    s_sharedTeamE = p.teamEMaterial;
                     return;
                 }
             }
@@ -1184,6 +1238,8 @@ namespace TitanOrbit.Entities
                 case TeamManager.Team.TeamA: return teamAMaterial ?? s_sharedTeamA ?? neutral;
                 case TeamManager.Team.TeamB: return teamBMaterial ?? s_sharedTeamB ?? neutral;
                 case TeamManager.Team.TeamC: return teamCMaterial ?? s_sharedTeamC ?? neutral;
+                case TeamManager.Team.TeamD: return teamDMaterial ?? s_sharedTeamD ?? teamCMaterial ?? s_sharedTeamC ?? neutral;
+                case TeamManager.Team.TeamE: return teamEMaterial ?? s_sharedTeamE ?? teamAMaterial ?? s_sharedTeamA ?? neutral;
                 default: return neutral;
             }
         }

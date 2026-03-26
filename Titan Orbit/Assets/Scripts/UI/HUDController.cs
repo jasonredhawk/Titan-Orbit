@@ -31,6 +31,8 @@ namespace TitanOrbit.UI
         [SerializeField] private Color teamAColor = Color.red;
         [SerializeField] private Color teamBColor = Color.blue;
         [SerializeField] private Color teamCColor = new Color(0.2f, 0.7f, 0.28f);
+        [SerializeField] private Color teamDColor = new Color(0.95f, 0.55f, 0.12f);
+        [SerializeField] private Color teamEColor = new Color(0.65f, 0.25f, 0.85f);
 
         [Header("Leaderboard (Right Side)")]
         [SerializeField] private GameObject leaderboardPanel;
@@ -48,12 +50,18 @@ namespace TitanOrbit.UI
         private RectTransform leaderboardContentRect;
         private TextMeshProUGUI leaderboardEmptyText;
         private readonly List<LeaderboardRowWidgets> leaderboardRows = new List<LeaderboardRowWidgets>();
-        private readonly TeamManager.Team[] teamOrder = new[]
+        private static readonly TeamManager.Team[] AllTeamsOrder =
         {
             TeamManager.Team.TeamA,
             TeamManager.Team.TeamB,
-            TeamManager.Team.TeamC
+            TeamManager.Team.TeamC,
+            TeamManager.Team.TeamD,
+            TeamManager.Team.TeamE
         };
+
+        private int ActiveTeamOrderLength => TeamManager.Instance != null
+            ? Mathf.Clamp(TeamManager.Instance.ActiveTeamCount, 2, 5)
+            : 3;
         private const float LeaderboardRowHeight = 56f;
         private const float LeaderboardRowSpacing = 8f;
         private const float LeaderboardContentPadding = 4f;
@@ -204,7 +212,8 @@ namespace TitanOrbit.UI
             if (viewedTeamIndex < 0)
                 viewedTeamIndex = Mathf.Max(0, TeamToIndex(playerShip != null ? playerShip.ShipTeam : TeamManager.Team.TeamA));
 
-            TeamManager.Team viewedTeam = teamOrder[Mathf.Clamp(viewedTeamIndex, 0, teamOrder.Length - 1)];
+            int orderLen = ActiveTeamOrderLength;
+            TeamManager.Team viewedTeam = AllTeamsOrder[Mathf.Clamp(viewedTeamIndex, 0, orderLen - 1)];
 
             // Refresh cached ships list periodically using the global registry (no scene scans).
             if (Time.time - _lastStarshipFindTime >= StarshipFindInterval)
@@ -256,7 +265,8 @@ namespace TitanOrbit.UI
             if (_cachedTeamShips.Count == 0 && myTeam != TeamManager.Team.None && myTeam != viewedTeam)
             {
                 viewedTeamIndex = TeamToIndex(myTeam);
-                viewedTeam = teamOrder[Mathf.Clamp(viewedTeamIndex, 0, teamOrder.Length - 1)];
+                int ol = ActiveTeamOrderLength;
+                viewedTeam = AllTeamsOrder[Mathf.Clamp(viewedTeamIndex, 0, ol - 1)];
                 _cachedTeamShips.Clear();
                 for (int i = 0; i < _cachedAllShips.Count; i++)
                 {
@@ -402,15 +412,18 @@ namespace TitanOrbit.UI
 
         private void CycleViewedTeam()
         {
-            viewedTeamIndex = (viewedTeamIndex + 1 + teamOrder.Length) % teamOrder.Length;
+            int len = ActiveTeamOrderLength;
+            if (len <= 0) return;
+            viewedTeamIndex = (viewedTeamIndex + 1) % len;
             nextLeaderboardRefreshTime = 0f;
         }
 
         private int TeamToIndex(TeamManager.Team team)
         {
-            for (int i = 0; i < teamOrder.Length; i++)
+            int len = ActiveTeamOrderLength;
+            for (int i = 0; i < len; i++)
             {
-                if (teamOrder[i] == team) return i;
+                if (AllTeamsOrder[i] == team) return i;
             }
             return 0;
         }
@@ -669,6 +682,10 @@ namespace TitanOrbit.UI
                     return teamBColor;
                 case Core.TeamManager.Team.TeamC:
                     return teamCColor;
+                case Core.TeamManager.Team.TeamD:
+                    return teamDColor;
+                case Core.TeamManager.Team.TeamE:
+                    return teamEColor;
                 default:
                     return Color.white;
             }

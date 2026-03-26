@@ -30,6 +30,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
         [Header("Visuals")]
         [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
+        [SerializeField] private Color bonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
 
         private NetworkVariable<float> value = new NetworkVariable<float>(10f);
         private NetworkVariable<float> gemSize = new NetworkVariable<float>(1f); // Size multiplier (affects visual scale and value)
@@ -42,9 +43,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<ulong> magnetPriorityShipId = new NetworkVariable<ulong>(0); // Ship that dealt most damage to source asteroid
         private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
         private Rigidbody rb;
+        private Renderer gemRenderer;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
         /// <summary>When true, gem is in pool (disabled); skip logic and do not run attraction.</summary>
         private NetworkVariable<bool> isInPool = new NetworkVariable<bool>(true);
+        /// <summary>When true, gem is a "team bonus" gem (spawned from asteroids in triangle territory).</summary>
+        private NetworkVariable<bool> isBonusGem = new NetworkVariable<bool>(false);
 
         public float Value => value.Value;
         public float GemSize => gemSize.Value;
@@ -58,6 +62,7 @@ namespace TitanOrbit.Entities
             var renderer = GetComponent<Renderer>();
             if (renderer != null)
             {
+                gemRenderer = renderer;
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // Avoid overlapping shadow artifacts when gems cluster
                 ApplyGemVisualTint(renderer);
             }
@@ -94,10 +99,11 @@ namespace TitanOrbit.Entities
                 material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             }
 
+            Color tint = isBonusGem.Value ? bonusGemTintColor : gemTintColor;
             if (material.HasProperty("_BaseColor"))
-                material.SetColor("_BaseColor", gemTintColor);
+                material.SetColor("_BaseColor", tint);
             if (material.HasProperty("_Color"))
-                material.SetColor("_Color", gemTintColor);
+                material.SetColor("_Color", tint);
         }
 
         public override void OnNetworkSpawn()
@@ -116,7 +122,10 @@ namespace TitanOrbit.Entities
             
             gemSize.OnValueChanged += OnGemSizeChanged;
             isInPool.OnValueChanged += OnIsInPoolChanged;
+            isBonusGem.OnValueChanged += OnIsBonusGemChanged;
             UpdateVisualScale();
+            // Ensure correct tint even if value replicated after OnNetworkSpawn.
+            if (gemRenderer != null) ApplyGemVisualTint(gemRenderer);
         }
 
         public override void OnNetworkDespawn()
@@ -124,6 +133,7 @@ namespace TitanOrbit.Entities
             AllGems.Remove(this);
             gemSize.OnValueChanged -= OnGemSizeChanged;
             isInPool.OnValueChanged -= OnIsInPoolChanged;
+            isBonusGem.OnValueChanged -= OnIsBonusGemChanged;
             base.OnNetworkDespawn();
         }
 
@@ -135,6 +145,11 @@ namespace TitanOrbit.Entities
         private void OnGemSizeChanged(float previousSize, float newSize)
         {
             UpdateVisualScale();
+        }
+
+        private void OnIsBonusGemChanged(bool previous, bool current)
+        {
+            if (gemRenderer != null) ApplyGemVisualTint(gemRenderer);
         }
 
         private void UpdateVisualScale()
@@ -160,7 +175,7 @@ namespace TitanOrbit.Entities
             effectivePickupRadius = pickupRadius * valueScale * lifetimeRemaining;
         }
 
-        public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0)
+        public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0, bool bonusGem = false)
         {
             if (IsServer)
             {
@@ -170,6 +185,7 @@ namespace TitanOrbit.Entities
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = 0;
                 magnetPriorityShipId.Value = priorityShipNetworkId;
+                isBonusGem.Value = bonusGem;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
             UpdateVisualScale();
@@ -185,6 +201,7 @@ namespace TitanOrbit.Entities
                 value.Value = gemValue;
                 expelledByShipId.Value = expelledByShipNetworkId;
                 depositTargetPlanetId.Value = 0;
+                isBonusGem.Value = false;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
             }
             UpdateVisualScale();
@@ -202,6 +219,7 @@ namespace TitanOrbit.Entities
                 depositTargetPlanetId.Value = targetPlanetNetworkObjectId;
                 depositTeam.Value = (int)team;
                 depositClientId.Value = clientId;
+                isBonusGem.Value = false;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
                 if (rb != null) rb.linearDamping = 0f; // No slowdown - fly straight to planet
             }
@@ -216,6 +234,7 @@ namespace TitanOrbit.Entities
             depositTargetPlanetId.Value = 0;
             magnetPriorityShipId.Value = 0;
             expelledByShipId.Value = 0;
+            isBonusGem.Value = false;
             transform.position = Vector3.zero;
             if (rb != null)
             {

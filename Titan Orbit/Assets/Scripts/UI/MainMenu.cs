@@ -26,9 +26,13 @@ namespace TitanOrbit.UI
         [SerializeField] private Button teamAButton;
         [SerializeField] private Button teamBButton;
         [SerializeField] private Button teamCButton;
+        [SerializeField] private Button teamDButton;
+        [SerializeField] private Button teamEButton;
         [SerializeField] private TextMeshProUGUI teamALabel;
         [SerializeField] private TextMeshProUGUI teamBLabel;
         [SerializeField] private TextMeshProUGUI teamCLabel;
+        [SerializeField] private TextMeshProUGUI teamDLabel;
+        [SerializeField] private TextMeshProUGUI teamELabel;
         [SerializeField] private TMP_InputField joinCodeInputField;
         [SerializeField] private TextMeshProUGUI joinCodeDisplayText;
         [SerializeField] private TMP_InputField serverAddressInput;
@@ -81,6 +85,8 @@ namespace TitanOrbit.UI
             if (teamAButton != null) teamAButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamA));
             if (teamBButton != null) teamBButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamB));
             if (teamCButton != null) teamCButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamC));
+            if (teamDButton != null) teamDButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamD));
+            if (teamEButton != null) teamEButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamE));
 
             const string playerNameKey = "TitanOrbit_PlayerName";
             if (playerNameInputField != null)
@@ -128,18 +134,40 @@ namespace TitanOrbit.UI
         {
             if (Core.TeamManager.Instance == null) return;
             int max = Core.TeamManager.Instance.MaxPlayersPerTeam;
+            int active = Mathf.Clamp(Core.TeamManager.Instance.ActiveTeamCount, 2, 5);
             int a = Core.TeamManager.Instance.TeamACount;
             int b = Core.TeamManager.Instance.TeamBCount;
             int c = Core.TeamManager.Instance.TeamCCount;
-            if (teamALabel != null) teamALabel.text = $"Team A ({a}/{max})";
-            if (teamBLabel != null) teamBLabel.text = $"Team B ({b}/{max})";
-            if (teamCLabel != null) teamCLabel.text = $"Team C ({c}/{max})";
-            bool aOpen = a < max;
-            bool bOpen = b < max;
-            bool cOpen = c < max;
-            if (teamAButton != null) teamAButton.interactable = aOpen;
-            if (teamBButton != null) teamBButton.interactable = bOpen;
-            if (teamCButton != null) teamCButton.interactable = cOpen;
+            int d = Core.TeamManager.Instance.TeamDCount;
+            int e = Core.TeamManager.Instance.TeamECount;
+
+            int minCount = int.MaxValue;
+            for (int i = 0; i < active; i++)
+            {
+                Core.TeamManager.Team t = (Core.TeamManager.Team)(i + 1);
+                minCount = Mathf.Min(minCount, Core.TeamManager.Instance.GetTeamPlayerCount(t));
+            }
+
+            void Row(int ord, TextMeshProUGUI label, Button btn, int count)
+            {
+                bool inMatch = ord <= active;
+                if (label != null)
+                {
+                    label.gameObject.SetActive(inMatch);
+                    if (inMatch) label.text = $"Team {(char)('A' + ord - 1)} ({count}/{max})";
+                }
+                if (btn != null)
+                {
+                    btn.gameObject.SetActive(inMatch);
+                    if (inMatch) btn.interactable = count < max && count <= minCount + 1;
+                }
+            }
+
+            Row(1, teamALabel, teamAButton, a);
+            Row(2, teamBLabel, teamBButton, b);
+            Row(3, teamCLabel, teamCButton, c);
+            Row(4, teamDLabel, teamDButton, d);
+            Row(5, teamELabel, teamEButton, e);
         }
 
         private void OnTeamClicked(Core.TeamManager.Team team)
@@ -912,10 +940,15 @@ namespace TitanOrbit.UI
 
             if (teamStatusText != null && Core.TeamManager.Instance != null)
             {
-                int teamACount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamA);
-                int teamBCount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamB);
-                int teamCCount = Core.TeamManager.Instance.GetTeamPlayerCount(Core.TeamManager.Team.TeamC);
-                teamStatusText.text = $"Team A: {teamACount}/20 | Team B: {teamBCount}/20 | Team C: {teamCCount}/20";
+                int active = Mathf.Clamp(Core.TeamManager.Instance.ActiveTeamCount, 2, 5);
+                var parts = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < active; i++)
+                {
+                    var t = (Core.TeamManager.Team)(i + 1);
+                    int n = Core.TeamManager.Instance.GetTeamPlayerCount(t);
+                    parts.Add($"Team {(char)('A' + i)}: {n}/20");
+                }
+                teamStatusText.text = string.Join(" | ", parts);
             }
         }
     }

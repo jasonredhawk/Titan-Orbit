@@ -65,6 +65,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<byte> bulletVisualShapeIndex = new NetworkVariable<byte>(0);
         private NetworkVariable<bool> bulletVisualNoTrail = new NetworkVariable<bool>(false);
         private NetworkVariable<byte> bulletOwnerTeamByte = new NetworkVariable<byte>((byte)TeamManager.Team.None);
+        // Audio tuning inputs for clients (muzzle/projectile/impact particle sound pitch).
+        private NetworkVariable<float> syncedBulletSpeed = new NetworkVariable<float>(0f);
+        private NetworkVariable<float> syncedBulletDamage = new NetworkVariable<float>(0f);
         /// <summary>When >= 0, use CombatSystem.GetBulletPrefabFromBank(this) for visual instead of bulletVisualPrefab. Used when spawning via shell.</summary>
         private NetworkVariable<int> visualPrefabBankIndex = new NetworkVariable<int>(-1);
         private float cachedVisualScaleMultiplier = 1f;
@@ -97,6 +100,8 @@ namespace TitanOrbit.Entities
                 case TeamManager.Team.TeamA: return new Color(1f, 0.3f, 0.3f);
                 case TeamManager.Team.TeamB: return new Color(0.3f, 0.5f, 1f);
                 case TeamManager.Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
+                case TeamManager.Team.TeamD: return new Color(0.95f, 0.55f, 0.12f);
+                case TeamManager.Team.TeamE: return new Color(0.65f, 0.25f, 0.85f);
                 default: return new Color(0.75f, 0.88f, 1f);
             }
         }
@@ -176,6 +181,8 @@ namespace TitanOrbit.Entities
                 bulletVisualNoTrail.Value = cachedVisualNoTrail;
                 bulletOwnerTeamByte.Value = (byte)ownerTeam;
                 visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
+                syncedBulletSpeed.Value = Mathf.Max(0f, speed);
+                syncedBulletDamage.Value = Mathf.Max(0f, damage);
             }
 
             // Lock Y position to 0
@@ -406,7 +413,7 @@ namespace TitanOrbit.Entities
             if (impactPrefab != null)
             {
                 SpawnImpactEffectClientRpc(impactPos, bankIdx, impactPitch);
-                SpawnImpactAt(impactPos, impactPrefab); // Server spawns too (ClientRpc doesn't run on server)
+                SpawnImpactAt(impactPos, impactPrefab, impactPitch); // Server spawns too (ClientRpc doesn't run on server)
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
@@ -419,10 +426,10 @@ namespace TitanOrbit.Entities
         {
             // Bullet damage per hit scales with fire power upgrades/cards. Use a log curve for audible separation.
             float firePower = Mathf.Max(0.1f, damage);
-            const float minFirePower = 2f;
-            const float maxFirePower = 160f;
-            const float highPitch = 1.9f;
-            const float lowPitch = 0.55f;
+            const float minFirePower = 1f;
+            const float maxFirePower = 80f;
+            const float highPitch = 2.4f;
+            const float lowPitch = 0.35f;
 
             float clampedPower = Mathf.Clamp(firePower, minFirePower, maxFirePower);
             float minLog = Mathf.Log10(minFirePower);
@@ -445,14 +452,28 @@ namespace TitanOrbit.Entities
             return impactEffectPrefab;
         }
 
-        private void SpawnImpactAt(Vector3 position, GameObject prefab = null)
+        private void SpawnImpactAt(Vector3 position, GameObject prefab = null, float pitch = 1f)
         {
             GameObject usePrefab = prefab != null ? prefab : impactEffectPrefab;
             if (usePrefab == null) return;
             GameObject go = Instantiate(usePrefab, position, Quaternion.identity);
             go.transform.localScale = Vector3.one * impactEffectScale;
+            SetAudioPitchInHierarchy(go, pitch);
             DisableGrabPassMaterials(go); // Avoid "GrabPass can't be called from job thread" in URP/SRP
             Destroy(go, impactEffectDuration);
+        }
+
+        private static void SetAudioPitchInHierarchy(GameObject root, float pitch)
+        {
+            if (root == null) return;
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            if (sources == null || sources.Length == 0) return;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                AudioSource src = sources[i];
+                if (src == null) continue;
+                src.pitch = pitch;
+            }
         }
 
         /// <summary>Prevents GrabPass use in URP/SRP: swap AllIn1VfxGrabPass shader to SRP batch and disable screen-distortion keyword.</summary>
@@ -483,7 +504,7 @@ namespace TitanOrbit.Entities
                 : null;
             if (prefab == null) prefab = impactEffectPrefab;
             if (prefab != null)
-                SpawnImpactAt(position, prefab);
+                SpawnImpactAt(position, prefab, pitch);
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
         }
@@ -507,6 +528,8 @@ namespace TitanOrbit.Entities
             {
                 if (bulletOwnerTeamByte != null)
                     bulletOwnerTeamByte.Value = (byte)team;
+                syncedBulletSpeed.Value = Mathf.Max(0f, bulletSpeed);
+                syncedBulletDamage.Value = Mathf.Max(0f, bulletDamage);
                 // Set scale/visual NetworkVariables before Spawn() so clients receive correct scale in spawn payload
                 if (bulletVisualScaleMultiplier != null)
                     bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
@@ -553,6 +576,8 @@ namespace TitanOrbit.Entities
                 spawnedVisual = Instantiate(visualPrefab, transform);
                 FixVfxForUrp(spawnedVisual);
                 ApplyColorToVisual(spawnedVisual, bulletColor);
+                float spdForAudio = syncedBulletSpeed.Value > 0.001f ? syncedBulletSpeed.Value : speed;
+                SetAudioPitchInHierarchy(spawnedVisual, GetProjectileSoundPitchBySpeed(spdForAudio));
                 if (noTrailVisual)
                 {
                     var trails = spawnedVisual.GetComponentsInChildren<TrailRenderer>(true);
@@ -566,7 +591,11 @@ namespace TitanOrbit.Entities
             {
                 spawnedVisual = CreateCustomizableVfxStyle(shape, scale, speed, noTrailVisual, bulletColor);
                 if (spawnedVisual != null)
+                {
                     spawnedVisual.transform.SetParent(transform, false);
+                    float spdForAudio = syncedBulletSpeed.Value > 0.001f ? syncedBulletSpeed.Value : speed;
+                    SetAudioPitchInHierarchy(spawnedVisual, GetProjectileSoundPitchBySpeed(spdForAudio));
+                }
             }
 
             if (spawnedVisual != null)
@@ -576,6 +605,30 @@ namespace TitanOrbit.Entities
                 spawnedVisual.transform.localScale = Vector3.one * scale;
                 cachedTrail = spawnedVisual.GetComponentInChildren<TrailRenderer>(true);
             }
+        }
+
+        /// <summary>
+        /// Projectile travel sound (if the projectileParticle prefab contains AudioSources):
+        /// higher bullet speed = higher pitch.
+        /// </summary>
+        private float GetProjectileSoundPitchBySpeed(float projectileSpeed)
+        {
+            float s = Mathf.Max(0.01f, projectileSpeed);
+            // Typical runtime speeds are often scaled by CombatSystem.bulletSpeedMultiplier (default 0.4),
+            // so use conservative bounds to avoid clamping most shots to the same pitch.
+            const float minSpeed = 1f;
+            const float maxSpeed = 30f;
+            const float lowPitch = 0.35f;
+            const float highPitch = 2.2f;
+
+            float clamped = Mathf.Clamp(s, minSpeed, maxSpeed);
+            float minLog = Mathf.Log10(minSpeed);
+            float maxLog = Mathf.Log10(maxSpeed);
+            float sLog = Mathf.Log10(clamped);
+            float normalized = Mathf.InverseLerp(minLog, maxLog, sLog);
+            // Emphasize contrast (small speeds high, large speeds low doesn't apply here; projectile is opposite).
+            float emphasized = Mathf.Pow(normalized, 0.85f);
+            return Mathf.Lerp(lowPitch, highPitch, emphasized);
         }
 
         /// <summary>Apply procedural bullet color to VFX prefab instance (Renderers and ParticleSystem colors).</summary>

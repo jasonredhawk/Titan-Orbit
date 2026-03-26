@@ -224,6 +224,10 @@ namespace TitanOrbit.Entities
         [SerializeField] private float rammingDamagePerSpeedUnit = 3f;
         [Tooltip("Damage scale from momentum (mass * speed). Higher = ramming speed and weight matter more.")]
         [SerializeField] private float rammingMomentumDamageScale = 0.4f;
+        [Tooltip("Additional multiplier for how much this ship's FirePower boosts ramming damage.")]
+        [SerializeField] private float rammingFirePowerDamageMultiplier = 1f;
+        [Tooltip("Maximum damage applied on the first collision contact (before asteroid/self split).")]
+        [SerializeField] private float maxRammingDamageOnFirstHit = 25f;
         [Tooltip("Mining ships (ice-breaker hull) deal this multiplier to asteroids; take less self-damage via HullRammingSelfDamageMultiplier.")]
         [SerializeField] private float minerRammingToAsteroidMultiplier = 1.4f;
         [Tooltip("Mining ships take this fraction of ramming self-damage (stronger hull). Fighter = 1, Miner = 0.35.")]
@@ -237,6 +241,24 @@ namespace TitanOrbit.Entities
         [SerializeField] private float overlapEscapeSpeed = 4f;
         [Tooltip("Base pushback speed applied on each collision tick while in contact with an asteroid. Higher = stronger bounce. Scaled by asteroid size.")]
         [SerializeField] private float asteroidCollisionPushbackSpeed = 1.0f;
+
+        [Tooltip("Pushback at low momentum. Higher = more bounce.")]
+        [SerializeField] private float rammingPushbackMaxMultiplier = 1.15f;
+        [Tooltip("Pushback at high momentum. Lower = more 'crash through' (less bounce).")]
+        [SerializeField] private float rammingPushbackMinMultiplier = 0.25f;
+        [Tooltip("How quickly momentum ramps pushback down. ~1 means full-speed ships feel meaningfully different.")]
+        [SerializeField] private float rammingMomentumInfluenceForPushback = 1f;
+
+        [Tooltip("Cap for sustained ramming DPS (pre asteroid/self split).")]
+        [SerializeField] private float maxRammingDamagePerSecond = 90f;
+
+        [Header("Asteroid Impact Feedback")]
+        [Tooltip("Camera shake amount on asteroid impacts for the owning player (0..1).")]
+        [SerializeField] private float collisionShakeAmountMin = 0.05f;
+        [Tooltip("Camera shake amount on asteroid impacts for the owning player (0..1).")]
+        [SerializeField] private float collisionShakeAmountMax = 0.35f;
+        [Tooltip("Momentum scaling for collision shake/SFX intensity.")]
+        [SerializeField] private float collisionShakeMomentumScale = 1f;
 
         private static WeaponConfig defaultWeaponConfig;
 
@@ -1022,16 +1044,16 @@ namespace TitanOrbit.Entities
                 RequestUndockGemMoonServerRpc();
 
             // When the local player begins moving (e.g. right click), trigger camera zoom-in if a galactic zoom is active.
-            // if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
-            // {
-            //     if (s_cachedCameraController == null)
-            //         s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
-            //     if (s_cachedCameraController != null)
-            //     {
-            //         s_cachedCameraController.TriggerGalacticZoomReturn();
-            //         didTriggerZoomReturn = true;
-            //     }
-            // }
+            if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
+            {
+                if (s_cachedCameraController == null)
+                    s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+                if (s_cachedCameraController != null)
+                {
+                    s_cachedCameraController.TriggerGalacticZoomReturn();
+                    didTriggerZoomReturn = true;
+                }
+            }
 
             bool isLocalWithTeam = IsLocalPlayerShip() && shipTeam.Value != TeamManager.Team.None;
             Planet orbitUiPlanet = currentOrbitPlanet;
@@ -2161,9 +2183,9 @@ namespace TitanOrbit.Entities
             // 0 at outer edge of orbit band, 1 near the planet surface.
             float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
 
-            // Normalize planet size using the same rough range regular planets use (4–12), but works for home planets too.
-            const float minSize = 4f;
-            const float maxSize = 12f;
+            // Normalize planet size using the same rough range regular planets use (9–18), but works for home planets too.
+            const float minSize = 9f;
+            const float maxSize = 18f;
             float sizeNorm = Mathf.Clamp01((planet.PlanetSize - minSize) / (maxSize - minSize));
 
             // Bigger planets and tighter orbits move noticeably faster.
@@ -2185,8 +2207,8 @@ namespace TitanOrbit.Entities
             float clampedRadius = Mathf.Clamp(radius, innerWorld, outerWorld);
             float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius); // 0 outer, 1 inner
 
-            const float minSize = 4f;
-            const float maxSize = 12f;
+            const float minSize = 9f;
+            const float maxSize = 18f;
             float sizeNorm = Mathf.Clamp01((planet.PlanetSize - minSize) / (maxSize - minSize));
 
             // Base 1x, up to roughly ~2.7x for large planets and inner orbits.
@@ -2436,13 +2458,19 @@ namespace TitanOrbit.Entities
                             GameObject muzzle = Instantiate(sciFi.muzzleParticle, pos, Quaternion.LookRotation(-fwd));
                             if (muzzle != null)
                             {
+                                // Pitch any muzzle audio contained in the particle prefab.
+                                SetAudioPitchInHierarchy(muzzle, GetWeaponSoundPitchForCannon(idx));
                                 Destroy(muzzle, 1.5f);
                                 usedSciFiMuzzle = true;
                             }
                         }
                     }
                     if (!usedSciFiMuzzle && bulletMuzzleParticleSystems != null && idx >= 0 && idx < bulletMuzzleParticleSystems.Count && bulletMuzzleParticleSystems[idx] != null)
+                    {
+                        // Also pitch any audio embedded in the muzzle particle system hierarchy (fallback path).
+                        SetAudioPitchInHierarchy(bulletMuzzleParticleSystems[idx].gameObject, GetWeaponSoundPitchForCannon(idx));
                         bulletMuzzleParticleSystems[idx].Play();
+                    }
                 }
             }
             if (bulletIndicesFired != null && bulletIndicesFired.Length > 0 && AudioManager.Instance != null)
@@ -2459,22 +2487,31 @@ namespace TitanOrbit.Entities
         /// <summary>Pitch for weapon sound based on fire power (attrFirePower): stronger fire power = lower pitch.</summary>
         private float GetWeaponSoundPitchForCannon(int cannonIndex)
         {
-            // Note: we avoid reading c.damagePerBullet here because bullet config may not be rebuilt/synced on clients.
-            // FirePowerScaleFactor is driven by the replicated attrFirePower, so it reliably affects client-side pitch.
-            float firePowerFactor = Mathf.Max(0.01f, FirePowerScaleFactor);
+            // Stronger fire power = lower pitch.
+            // attrFirePower ranges [0..ShipLevel], so normalize to that directly.
+            float maxUpgrades = Mathf.Max(1f, ShipLevel);
+            float upgrades = Mathf.Clamp(attrFirePower.Value, 0, (int)maxUpgrades);
+            float normalized = Mathf.Clamp01(upgrades / maxUpgrades);
 
-            // Map factor with log curve so the difference is audible at low upgrades.
-            const float minFactor = 1f;   // attrFirePower = 0
-            const float maxFactor = 3.5f; // reasonable upper bound even with additional scaling/card effects
-            const float highPitch = 1.9f;
-            const float lowPitch = 0.55f;
+            // Make differences more apparent across early upgrades too.
+            float emphasized = Mathf.Pow(normalized, 0.75f);
 
-            float clampedFactor = Mathf.Clamp(firePowerFactor, minFactor, maxFactor);
-            float minLog = Mathf.Log10(minFactor);
-            float maxLog = Mathf.Log10(maxFactor);
-            float factorLog = Mathf.Log10(clampedFactor);
-            float normalized = Mathf.InverseLerp(minLog, maxLog, factorLog);
-            return Mathf.Lerp(highPitch, lowPitch, normalized);
+            const float highPitch = 2.6f;
+            const float lowPitch = 0.3f;
+            return Mathf.Lerp(highPitch, lowPitch, emphasized);
+        }
+
+        private static void SetAudioPitchInHierarchy(GameObject root, float pitch)
+        {
+            if (root == null) return;
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            if (sources == null || sources.Length == 0) return;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                AudioSource src = sources[i];
+                if (src == null) continue;
+                src.pitch = pitch;
+            }
         }
 
         /// <summary>Server-only: AI ships call this to fire at a target.</summary>
@@ -3062,24 +3099,63 @@ namespace TitanOrbit.Entities
                 {
                     float impactSpeed = collision.relativeVelocity.magnitude;
                     impactSpeed = Mathf.Max(0f, impactSpeed - 0.5f);
-                    // One-shot impact damage on first contact, scaled by speed and clamped so it hurts but doesn't one-shot.
-                    float damageFromSpeed = baseRammingDamage + rammingDamagePerSpeedUnit * impactSpeed;
-                    float damage = Mathf.Clamp(damageFromSpeed, 1f, 12f);
+                    float mass = Mathf.Max(0.5f, rb.mass);
+
+                    float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
+                    float speed01 = Mathf.Clamp01(impactSpeed / effectiveMax);
+
+                    // Momentum/mass scaling: heavier and faster ships should feel meaningfully stronger.
+                    float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                    float momentum01 = (mass * impactSpeed) / baselineMomentum;
+                    float momentumInfluence = Mathf.Sqrt(Mathf.Clamp(momentum01, 0f, 4f)); // soften extremes
+                    float momentumMultiplier = 1f + rammingMomentumDamageScale * momentumInfluence;
+
+                    // FirePower amplifies ramming damage (attribute-driven, not card-driven).
+                    float firePowerMultiplier = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                    firePowerMultiplier *= Mathf.Max(0.01f, rammingFirePowerDamageMultiplier);
+
+                    // One-shot impact damage on first contact: speed normalized to EffectiveMaxSpeed for stable tuning.
+                    float damageFromSpeed = baseRammingDamage + rammingDamagePerSpeedUnit * effectiveMax * speed01;
+                    float damage = damageFromSpeed * momentumMultiplier * firePowerMultiplier;
+                    damage = Mathf.Clamp(damage, 1f, maxRammingDamageOnFirstHit);
+
+                    // Feedback intensity: stronger momentum also means deeper SFX + more shake.
+                    float ramIntensity01 = Mathf.Clamp01((0.6f * speed01 + 0.4f * Mathf.Clamp01(momentum01)) * firePowerMultiplier);
+                    float impactPitch = Mathf.Lerp(2.1f, 0.45f, ramIntensity01); // stronger = deeper
+
+                    float shake01 = Mathf.Clamp01(momentum01 * firePowerMultiplier * Mathf.Max(0.01f, collisionShakeMomentumScale));
+                    float shakeAmount = Mathf.Lerp(collisionShakeAmountMin, collisionShakeAmountMax, shake01);
 
                     float toAsteroid = damage * HullRammingToAsteroidMultiplier;
                     float toSelf = damage * HullRammingSelfDamageMultiplier;
+                    if (VisualEffectsManager.Instance != null && toAsteroid > 0.01f)
+                    {
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            transform.position,
+                            (int)FloatingCountChannel.DamageAsteroid,
+                            toAsteroid,
+                            (int)shipTeam.Value
+                        );
+                    }
                     asteroid.TakeDamageServerRpc(toAsteroid, NetworkObjectId);
                     TakeDamageServerRpc(toSelf, TeamManager.Team.None);
-                    PlayCollisionImpactSoundClientRpc();
+                    PlayCollisionImpactFeedbackClientRpc(impactPitch, shakeAmount);
                 }
             }
         }
 
         [ClientRpc]
-        private void PlayCollisionImpactSoundClientRpc()
+        private void PlayCollisionImpactFeedbackClientRpc(float pitch, float shakeAmount)
         {
             if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayImpactSound();
+                AudioManager.Instance.PlayImpactSound(pitch);
+
+            // Only the owning player's ship should shake the camera (prevents everyone shaking every ram).
+            if (!IsOwner) return;
+
+            var shaker = AllIn1VfxToolkit.Demo.Scripts.AllIn1Shaker.i;
+            if (shaker != null)
+                shaker.DoCameraShake(Mathf.Clamp01(shakeAmount));
         }
 
         /// <summary>
@@ -3143,18 +3219,43 @@ namespace TitanOrbit.Entities
                 // Pushback impulse: away from asteroid, scaled by size.
                 float sizeScale = Mathf.Clamp(asteroid.AsteroidSize / 35f, 0.5f, 1.5f);
                 Vector3 pushDir = normal; // away from asteroid
-                Vector3 extraVel = pushDir * (asteroidCollisionPushbackSpeed * sizeScale);
+                float mass = Mathf.Max(0.5f, rb.mass);
+                float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
+                float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                float momentum01 = (mass * pushAmount) / baselineMomentum;
+
+                // High momentum should reduce pushback so the ship can "crash through" instead of always bouncing away.
+                float momentumInfluence01 = Mathf.Clamp01(momentum01 / Mathf.Max(0.01f, rammingMomentumInfluenceForPushback));
+                float pushbackMultiplier = Mathf.Lerp(rammingPushbackMaxMultiplier, rammingPushbackMinMultiplier, momentumInfluence01);
+
+                Vector3 extraVel = pushDir * (asteroidCollisionPushbackSpeed * sizeScale * pushbackMultiplier);
                 Vector3 newVel = rb.linearVelocity + extraVel;
                 rb.linearVelocity = new Vector3(newVel.x, 0f, newVel.z);
                 currentVelocity = rb.linearVelocity;
 
                 // Damage per tick: small chip based on how hard we're pushing.
                 float intensity = Mathf.Clamp01(pushAmount / Mathf.Max(0.1f, EffectiveMaxSpeed)); // 0..1
-                float perSecondAtThisPush = ramDamagePerSecond * intensity;
+                float momentumInfluence = Mathf.Sqrt(Mathf.Clamp(momentum01, 0f, 4f));
+                float momentumMultiplier = 1f + rammingMomentumDamageScale * momentumInfluence;
+
+                float firePowerMultiplier = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                firePowerMultiplier *= Mathf.Max(0.01f, rammingFirePowerDamageMultiplier);
+
+                float perSecondAtThisPush = ramDamagePerSecond * intensity * momentumMultiplier * firePowerMultiplier;
+                perSecondAtThisPush = Mathf.Min(perSecondAtThisPush, maxRammingDamagePerSecond);
                 // Ensure each tick does a noticeable chunk of damage so regen cannot keep up under sustained collision.
                 float perTick = Mathf.Max(3f, perSecondAtThisPush * ramTickInterval);
                 float toAsteroid = perTick * HullRammingToAsteroidMultiplier;
                 float toSelf = perTick * HullRammingSelfDamageMultiplier;
+                if (VisualEffectsManager.Instance != null && toAsteroid > 0.01f)
+                {
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountChannel.DamageAsteroid,
+                        toAsteroid,
+                        (int)shipTeam.Value
+                    );
+                }
                 if (toAsteroid > 0.0001f) asteroid.TakeDamageServerRpc(toAsteroid, NetworkObjectId);
                 if (toSelf > 0.0001f) TakeDamageServerRpc(toSelf, TeamManager.Team.None);
             }

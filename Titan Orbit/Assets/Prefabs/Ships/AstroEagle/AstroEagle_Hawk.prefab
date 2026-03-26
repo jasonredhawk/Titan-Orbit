@@ -66,20 +66,20 @@ MonoBehaviour:
     bulletSpeedPerLevel: 5
     fireRate: 2
     fireRatePerLevel: 0
-    healthCap: 96.46661
-    healthCapPerLevel: 22.443323
-    healthRegen: 17.943323
-    healthRegenPerLevel: 5.5724964
+    healthCap: 88.96661
+    healthCapPerLevel: 20.193323
+    healthRegen: 15.693323
+    healthRegenPerLevel: 4.8224964
     energyCap: 131
     energyCapPerLevel: 32.5
-    energyRegen: 36.75
-    energyRegenPerLevel: 32.25
+    energyRegen: 34.5
+    energyRegenPerLevel: 31.5
     moveSpeed: 30
     moveSpeedPerLevel: 12
-    turnSpeed: 367.5
-    turnSpeedPerLevel: 92.5
-    maxGems: 71.48331
-    maxGemsPerLevel: 15.644993
+    turnSpeed: 345
+    turnSpeedPerLevel: 85
+    maxGems: 56.483307
+    maxGemsPerLevel: 12.644993
     maxPeople: 11.193323
     maxPeoplePerLevel: 2.5483308
   matchedComponentIds:
@@ -108,7 +108,7 @@ MonoBehaviour:
   - 1
   - 1
   - 1
-  - 1.5
+  - 1
   - 1
   perComponentStats:
   - firePower: 0
@@ -359,20 +359,20 @@ MonoBehaviour:
     bulletSpeedPerLevel: 0
     fireRate: 0
     fireRatePerLevel: 0
-    healthCap: 22.5
-    healthCapPerLevel: 6.75
-    healthRegen: 6.75
-    healthRegenPerLevel: 2.25
+    healthCap: 15
+    healthCapPerLevel: 4.5
+    healthRegen: 4.5
+    healthRegenPerLevel: 1.5
     energyCap: 0
     energyCapPerLevel: 0
-    energyRegen: 6.75
-    energyRegenPerLevel: 2.25
+    energyRegen: 4.5
+    energyRegenPerLevel: 1.5
     moveSpeed: 0
     moveSpeedPerLevel: 0
-    turnSpeed: 67.5
-    turnSpeedPerLevel: 22.5
-    maxGems: 45
-    maxGemsPerLevel: 9
+    turnSpeed: 45
+    turnSpeedPerLevel: 15
+    maxGems: 30
+    maxGemsPerLevel: 6
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 30
@@ -801,7 +801,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4171386496191284, guid: 1b74ce2e7036f5040800a123d505845c, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1.5
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4171386496191284, guid: 1b74ce2e7036f5040800a123d505845c, type: 3}
       propertyPath: m_LocalPosition.x

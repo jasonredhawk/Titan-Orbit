@@ -367,9 +367,9 @@ namespace TitanOrbit.Entities
             // Spawn gems (100x value in debug mode for faster testing)
             if (GemSpawner.Instance != null)
             {
-                float gemValue = remainingGems.Value;
+                float regularValue = remainingGems.Value;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
-                    gemValue *= 100f;
+                    regularValue *= 100f;
 
                 // Bonus only for same team as triangle: 5% per home planet level. Enemies get no bonus.
                 float bonusMultiplier = 1f;
@@ -389,8 +389,9 @@ namespace TitanOrbit.Entities
                     }
                 }
 
-                gemValue *= Mathf.Max(1f, bonusMultiplier);
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, gemValue, asteroidSize, physicalSize, topDamagerShipId);
+                bonusMultiplier = Mathf.Max(1f, bonusMultiplier);
+                float bonusValue = regularValue * Mathf.Max(0f, bonusMultiplier - 1f);
+                GemSpawner.Instance.SpawnGemsServerRpc(pos, regularValue, bonusValue, asteroidSize, physicalSize, topDamagerShipId);
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).

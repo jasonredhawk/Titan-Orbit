@@ -12,8 +12,8 @@ namespace TitanOrbit.Systems
         /// <summary>
         /// Maintains persistent, capture-driven connections between same‑team planets.
         /// Triangles and edges are only added when a planet is captured; they do not shift or recompute.
-        /// Rules: new capture adds one triangle to the two closest team planets; if captured inside an
-        /// existing triangle, that triangle is replaced by three new triangles (new planet to each corner).
+        /// Rules: on rebuild, each captured planet contributes one triangle with its two closest teammates;
+        /// if captured inside an existing triangle, that triangle is replaced by three new triangles (new planet to each corner).
         /// First law: no edges shall cross. New triangles are only added when all three angles are acute.
         /// </summary>
     public class PlanetConnectionSystem : MonoBehaviour
@@ -271,8 +271,8 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// Adds two triangles for planet P with its three closest teammates (Q, R, S): (P,Q,R) and (P,R,S).
-        /// Used for animated rebuild so we add one planet's triangles per step. Lines can cross.
+        /// Adds one triangle for planet P with its two closest teammates Q and R: (P,Q,R).
+        /// Used for animated rebuild so we add one planet's contribution per step. Lines can cross.
         /// </summary>
         private void AddEdgesAndTrianglesForPlanet(Planet p, TeamManager.Team team, List<Planet> teamPlanets)
         {
@@ -289,18 +289,11 @@ namespace TitanOrbit.Systems
             AddEdge(q, r, team);
             if (HasEdge(p, q, team) && HasEdge(p, r, team) && HasEdge(q, r, team) && !HasTriangle(p, q, r, team))
                 AddTriangle(p, q, r, team);
-
-            if (others.Count < 3) return;
-            Planet s = others[2];
-            AddEdge(p, s, team);
-            AddEdge(r, s, team);
-            if (HasEdge(p, r, team) && HasEdge(p, s, team) && HasEdge(r, s, team) && !HasTriangle(p, r, s, team))
-                AddTriangle(p, r, s, team);
         }
 
         /// <summary>
         /// Rebuilds edges and triangles for the given team. All links were already cleared globally.
-        /// Rule: for each captured planet P, form two triangles with its three closest other planets (P,Q,R) and (P,R,S). Lines may cross.
+        /// Rule: for each captured planet P, form one triangle with its two closest other planets (P,Q,R). Lines may cross.
         /// </summary>
         private void RebuildTeamGraph(TeamManager.Team team)
         {

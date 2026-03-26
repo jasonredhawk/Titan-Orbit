@@ -1,7 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
 using System.Collections.Generic;
-using System.Linq;
 using TitanOrbit.Networking;
 
 namespace TitanOrbit.Core
@@ -15,17 +14,18 @@ namespace TitanOrbit.Core
 
         [Header("Team Settings")]
         [SerializeField] private int maxPlayersPerTeam = 20;
-        [SerializeField] private int numberOfTeams = 3;
 
         public enum Team
         {
             None = 0,
             TeamA = 1,
             TeamB = 2,
-            TeamC = 3
+            TeamC = 3,
+            TeamD = 4,
+            TeamE = 5
         }
 
-        /// <summary>Display color for UI, rings, minimap. Neutral = white; Team A/B/C = red/blue/green.</summary>
+        /// <summary>Display color for UI, rings, minimap. Neutral = white.</summary>
         public static Color GetTeamColor(Team team)
         {
             switch (team)
@@ -33,6 +33,8 @@ namespace TitanOrbit.Core
                 case Team.TeamA: return new Color(0.9f, 0.25f, 0.25f);
                 case Team.TeamB: return new Color(0.25f, 0.4f, 0.9f);
                 case Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
+                case Team.TeamD: return new Color(0.95f, 0.55f, 0.12f);
+                case Team.TeamE: return new Color(0.65f, 0.25f, 0.85f);
                 default: return Color.white;
             }
         }
@@ -43,13 +45,32 @@ namespace TitanOrbit.Core
         private NetworkVariable<int> networkTeamACount = new NetworkVariable<int>(0);
         private NetworkVariable<int> networkTeamBCount = new NetworkVariable<int>(0);
         private NetworkVariable<int> networkTeamCCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> networkTeamDCount = new NetworkVariable<int>(0);
+        private NetworkVariable<int> networkTeamECount = new NetworkVariable<int>(0);
+
+        /// <summary>How many teams are in the current match (2–5). Set by MapGenerator when home worlds spawn.</summary>
+        private NetworkVariable<int> activeTeamCount = new NetworkVariable<int>(3);
+
+        /// <summary>Server: applied in OnNetworkSpawn if <see cref="SetActiveTeamCountFromServer"/> ran before spawn.</summary>
+        private int pendingActiveTeamCount = -1;
 
         public int MaxPlayersPerTeam => maxPlayersPerTeam;
-        public int NumberOfTeams => numberOfTeams;
+        /// <summary>Teams in the current match (2–5). Mirrors the number of home planets.</summary>
+        public int NumberOfTeams => activeTeamCount.Value;
+        public int ActiveTeamCount => activeTeamCount.Value;
 
         public int TeamACount => networkTeamACount.Value;
         public int TeamBCount => networkTeamBCount.Value;
         public int TeamCCount => networkTeamCCount.Value;
+        public int TeamDCount => networkTeamDCount.Value;
+        public int TeamECount => networkTeamECount.Value;
+
+        public bool IsTeamInCurrentMatch(Team team)
+        {
+            if (team == Team.None) return false;
+            int ord = (int)team;
+            return ord >= 1 && ord <= activeTeamCount.Value;
+        }
 
         private void Awake()
         {
@@ -62,25 +83,45 @@ namespace TitanOrbit.Core
                 Destroy(gameObject);
             }
 
-            // Initialize team lists
             teamPlayers[Team.TeamA] = new List<ulong>();
             teamPlayers[Team.TeamB] = new List<ulong>();
             teamPlayers[Team.TeamC] = new List<ulong>();
+            teamPlayers[Team.TeamD] = new List<ulong>();
+            teamPlayers[Team.TeamE] = new List<ulong>();
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+            if (IsServer && pendingActiveTeamCount >= 2)
+            {
+                activeTeamCount.Value = Mathf.Clamp(pendingActiveTeamCount, 2, 5);
+                pendingActiveTeamCount = -1;
+            }
+        }
+
+        /// <summary>Server only: called after home planets are generated (2–5 teams).</summary>
+        public void SetActiveTeamCountFromServer(int count)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            int c = Mathf.Clamp(count, 2, 5);
+            if (IsSpawned)
+                activeTeamCount.Value = c;
+            else
+                pendingActiveTeamCount = c;
         }
 
         public Team AssignPlayerToTeam(ulong clientId)
         {
             if (!IsServer) return Team.None;
 
-            // Check if player is already assigned
             if (playerTeams.ContainsKey(clientId))
             {
                 return playerTeams[clientId];
             }
 
-            // Find team with least players
             Team assignedTeam = GetTeamWithLeastPlayers();
-            
+
             if (assignedTeam != Team.None)
             {
                 playerTeams[clientId] = assignedTeam;
@@ -97,17 +138,19 @@ namespace TitanOrbit.Core
             networkTeamACount.Value = teamPlayers[Team.TeamA].Count;
             networkTeamBCount.Value = teamPlayers[Team.TeamB].Count;
             networkTeamCCount.Value = teamPlayers[Team.TeamC].Count;
+            networkTeamDCount.Value = teamPlayers[Team.TeamD].Count;
+            networkTeamECount.Value = teamPlayers[Team.TeamE].Count;
         }
 
         public bool IsTeamOpen(Team team)
         {
-            if (team == Team.None) return false;
+            if (team == Team.None || !IsTeamInCurrentMatch(team)) return false;
             return GetTeamPlayerCount(team) < maxPlayersPerTeam;
         }
 
         public bool TryReassignPlayer(ulong clientId, Team newTeam)
         {
-            if (!IsServer || newTeam == Team.None) return false;
+            if (!IsServer || newTeam == Team.None || !IsTeamInCurrentMatch(newTeam)) return false;
             if (!IsTeamOpen(newTeam)) return false;
             if (!playerTeams.ContainsKey(clientId)) return false;
             Team currentTeam = playerTeams[clientId];
@@ -122,9 +165,9 @@ namespace TitanOrbit.Core
         /// <summary>Server only: add a player to a team (first-time assignment, e.g. when they click Join from team selection).</summary>
         public bool AddPlayerToTeam(ulong clientId, Team team)
         {
-            if (!IsServer || team == Team.None) return false;
+            if (!IsServer || team == Team.None || !IsTeamInCurrentMatch(team)) return false;
             if (!IsTeamOpen(team)) return false;
-            if (playerTeams.ContainsKey(clientId)) return false; // already on a team, use TryReassignPlayer
+            if (playerTeams.ContainsKey(clientId)) return false;
             playerTeams[clientId] = team;
             teamPlayers[team].Add(clientId);
             SyncTeamCountsToNetwork();
@@ -139,7 +182,6 @@ namespace TitanOrbit.Core
             Team actualTeam;
             if (GetPlayerTeam(clientId) == Team.None)
             {
-                // First-time choice: add to preferred team and put ship in orbit
                 ok = AddPlayerToTeam(clientId, preferredTeam);
                 actualTeam = ok ? preferredTeam : Team.None;
             }
@@ -172,13 +214,15 @@ namespace TitanOrbit.Core
 
         private Team GetTeamWithLeastPlayers()
         {
+            int active = activeTeamCount.Value;
+            if (active < 2) active = 3;
+
             Team leastPopulatedTeam = Team.TeamA;
             int minPlayers = teamPlayers[Team.TeamA].Count;
 
-            foreach (Team team in System.Enum.GetValues(typeof(Team)))
+            for (int ord = 1; ord <= active; ord++)
             {
-                if (team == Team.None) continue;
-
+                Team team = (Team)ord;
                 int playerCount = teamPlayers[team].Count;
                 if (playerCount < minPlayers && playerCount < maxPlayersPerTeam)
                 {
@@ -187,10 +231,9 @@ namespace TitanOrbit.Core
                 }
             }
 
-            // Check if all teams are full
             if (minPlayers >= maxPlayersPerTeam)
             {
-                return Team.None; // All teams full
+                return Team.None;
             }
 
             return leastPopulatedTeam;
@@ -238,9 +281,15 @@ namespace TitanOrbit.Core
 
         public bool AreTeamsFull()
         {
-            return teamPlayers[Team.TeamA].Count >= maxPlayersPerTeam &&
-                   teamPlayers[Team.TeamB].Count >= maxPlayersPerTeam &&
-                   teamPlayers[Team.TeamC].Count >= maxPlayersPerTeam;
+            int active = activeTeamCount.Value;
+            if (active < 2) active = 3;
+            for (int ord = 1; ord <= active; ord++)
+            {
+                Team t = (Team)ord;
+                if (teamPlayers[t].Count < maxPlayersPerTeam)
+                    return false;
+            }
+            return true;
         }
     }
 }

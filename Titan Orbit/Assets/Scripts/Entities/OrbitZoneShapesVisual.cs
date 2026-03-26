@@ -66,6 +66,7 @@ namespace TitanOrbit.Entities
             if (planet == null) return;
 
             bool orbiting = IsLocalPlayerOrbitingThisPlanet();
+
             float alpha = orbiting ? alphaWhenOrbiting : alphaWhenNotOrbiting;
             Color color = new Color(tint.r, tint.g, tint.b, alpha);
 

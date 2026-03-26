@@ -16,8 +16,14 @@ namespace TitanOrbit.Generation
     {
         [Header("Map Settings")]
         [SerializeField] private int seed = 0;
-        [SerializeField] private float mapWidth = 300f;
-        [SerializeField] private float mapHeight = 300f;
+        [Tooltip("Each match uses a random square map; side length is rolled between these bounds (inclusive).")]
+        [SerializeField] private float minMapSize = 300f;
+        [Tooltip("Each match uses a random square map; side length is rolled between these bounds (inclusive).")]
+        [SerializeField] private float maxMapSize = 1000f;
+
+        /// <summary>Rolled once per generation; square map (width == height).</summary>
+        private float mapWidth;
+        private float mapHeight;
 
         [Header("Home Planet Settings")]
         [SerializeField] private GameObject homePlanetPrefab;
@@ -26,8 +32,8 @@ namespace TitanOrbit.Generation
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
         [SerializeField] private int numberOfPlanets = 17;
-        [SerializeField] private float minPlanetSize = 4f;
-        [SerializeField] private float maxPlanetSize = 12f;
+        [SerializeField] private float minPlanetSize = 9f;
+        [SerializeField] private float maxPlanetSize = 18f;
 
         [Header("Asteroid Settings")]
         [SerializeField] private GameObject asteroidPrefab;
@@ -66,6 +72,18 @@ namespace TitanOrbit.Generation
         private System.Collections.Generic.List<Vector3> planetPositions = new System.Collections.Generic.List<Vector3>();
         private int nextPlanetId = 1;
         private bool hasGenerated;
+
+        /// <summary>Rolled per map (2–5). Drives home planet count and <see cref="TeamManager"/> active teams.</summary>
+        private int homePlanetCountThisMap = 3;
+
+        private static readonly TeamManager.Team[] HomeTeamsOrdered =
+        {
+            TeamManager.Team.TeamA,
+            TeamManager.Team.TeamB,
+            TeamManager.Team.TeamC,
+            TeamManager.Team.TeamD,
+            TeamManager.Team.TeamE
+        };
 
         private void Start()
         {
@@ -125,10 +143,10 @@ namespace TitanOrbit.Generation
                 loadingProgress.Value = 1f;
                 loadingComplete.Value = true;
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
+                int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
+                int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
             }
-            int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
-            if (hasGenerated)
-                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
         }
 
         private void EnsureParents()
@@ -159,7 +177,8 @@ namespace TitanOrbit.Generation
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
 
-            ToroidalMap.SetMapSize(mapWidth, mapHeight);
+            RollAndApplyMapSize();
+            homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
             asteroidPositions.Clear();
             planetPositions.Clear();
             nextPlanetId = 1;
@@ -171,12 +190,13 @@ namespace TitanOrbit.Generation
             if (asteroidPrefab == null)
                 Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
 
-            int totalSteps = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            int homeSteps = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
+            int totalSteps = homeSteps + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
             if (totalSteps == 0) totalSteps = 1;
             int completed = 0;
 
             GenerateHomePlanets();
-            completed += homePlanetPrefab != null ? 3 : 0;
+            completed += homeSteps;
             loadingProgress.Value = (float)completed / totalSteps;
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - after home planets");
             yield return new WaitForSeconds(batchDelaySeconds);
@@ -237,11 +257,11 @@ namespace TitanOrbit.Generation
                 }
             }
 
-            hasGenerated = true;
             loadingProgress.Value = 1f;
             loadingComplete.Value = true;
-            int total = (homePlanetPrefab != null ? 3 : 0) + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {(homePlanetPrefab != null ? 3 : 0)}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+            int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
+            int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
@@ -251,7 +271,8 @@ namespace TitanOrbit.Generation
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
 
-            ToroidalMap.SetMapSize(mapWidth, mapHeight);
+            RollAndApplyMapSize();
+            homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
             asteroidPositions.Clear();
             planetPositions.Clear();
             nextPlanetId = 1;
@@ -275,10 +296,10 @@ namespace TitanOrbit.Generation
         {
             if (homePlanetPrefab == null) return;
 
-            TeamManager.Team[] teams = { TeamManager.Team.TeamA, TeamManager.Team.TeamB, TeamManager.Team.TeamC };
-            float angleStep = 120f * Mathf.Deg2Rad;
-            
-            for (int i = 0; i < 3; i++)
+            int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
+            float angleStep = (Mathf.PI * 2f) / n;
+
+            for (int i = 0; i < n; i++)
             {
                 float angle = i * angleStep;
                 Vector3 position = new Vector3(
@@ -291,11 +312,14 @@ namespace TitanOrbit.Generation
                 HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
                 NetworkObject netObj = homePlanetObj.GetComponent<NetworkObject>();
                 if (homePlanet != null)
-                    homePlanet.InitForTeam(teams[i]); // Set team before Spawn so home planet gets correct tropical skin (A=Tropical1, B=Tropical2, C=Tropical3)
+                    homePlanet.InitForTeam(HomeTeamsOrdered[i]);
                 if (netObj != null) netObj.Spawn();
 
                 planetPositions.Add(position);
             }
+
+            if (TeamManager.Instance != null)
+                TeamManager.Instance.SetActiveTeamCountFromServer(n);
         }
 
         private void GenerateSingleNeutralPlanet(int index)
@@ -406,11 +430,12 @@ namespace TitanOrbit.Generation
         private bool IsTooCloseToHomePlanets(Vector3 position)
         {
             float minDistance = homePlanetDistance * 0.5f;
-            
-            // Check distance to each home planet position
-            for (int i = 0; i < 3; i++)
+            int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
+            float angleStep = (Mathf.PI * 2f) / n;
+
+            for (int i = 0; i < n; i++)
             {
-                float angle = i * 120f * Mathf.Deg2Rad;
+                float angle = i * angleStep;
                 Vector3 homePos = new Vector3(
                     Mathf.Cos(angle) * homePlanetDistance,
                     0f,
@@ -418,9 +443,7 @@ namespace TitanOrbit.Generation
                 );
 
                 if (Vector3.Distance(position, homePos) < minDistance)
-                {
                     return true;
-                }
             }
 
             return false;
@@ -429,6 +452,18 @@ namespace TitanOrbit.Generation
         private float GetRandomFloat(float min, float max)
         {
             return min + (float)random.NextDouble() * (max - min);
+        }
+
+        /// <summary>Picks a random square map side length in [minMapSize, maxMapSize] and syncs <see cref="ToroidalMap"/>.</summary>
+        private void RollAndApplyMapSize()
+        {
+            float lo = Mathf.Min(minMapSize, maxMapSize);
+            float hi = Mathf.Max(minMapSize, maxMapSize);
+            float size = GetRandomFloat(lo, hi);
+            mapWidth = size;
+            mapHeight = size;
+            ToroidalMap.SetMapSize(mapWidth, mapHeight);
+            Debug.Log($"[MapGenerator] Map size (random square): {mapWidth:F0} x {mapHeight:F0}");
         }
     }
 }

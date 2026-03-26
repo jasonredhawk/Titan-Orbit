@@ -39,13 +39,16 @@ namespace TitanOrbit.Entities
         [SerializeField] private GameObject matrixShieldRedPrefab;
         [SerializeField] private GameObject matrixShieldBluePrefab;
         [SerializeField] private GameObject matrixShieldGreenPrefab;
+        [SerializeField] private GameObject matrixShieldModularPrefab;
         [Tooltip("Approximate outer shell radius of the MatrixShield prefab at local scale 1 (moon-local space). " +
                  "MatrixShield particles are much larger than 1 unit; ~5–6 matches dock/orbit zone when outer = GetMoonDockSnapRadiusLocal().")]
         [SerializeField] private float matrixShieldRadiusReference = 5.5f;
         [Tooltip("If the shield reads slightly inside the orbit zone edge, increase this to push the shield outer edge out. (Default is a small nudge.)")]
-        [SerializeField] private float matrixShieldOrbitZoneEdgeExpandMultiplier = 1.25f;
+        [SerializeField] private float matrixShieldOrbitZoneEdgeExpandMultiplier = 1.35f;
         [Tooltip("Fine-tune after setting radius reference (1 = match orbit zone outer edge).")]
         [SerializeField] private float matrixShieldScaleMultiplier = 1f;
+        [Tooltip("Enemy repulsion trigger radius = moon dock/orbit radius × this. Independent of MatrixShield VFX scale (VFX is often much larger than gameplay). Use ~1.0–1.12 so bounce matches the visible shell.")]
+        [SerializeField] private float shieldBarrierRadiusOverDock = 1.06f;
         [SerializeField] private float maxGemPoints = 500f;
         [SerializeField] private float gemDrainPerSecondWhenShieldDown = 20f;
         [SerializeField] private float gemSpawnInterval = 0.25f;
@@ -71,6 +74,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float spinDegreesPerSecond = 8.96f; // ~44% slower than previous 16 deg/s (16 * 0.56)
 
         private SphereCollider _dockTrigger;
+        private SphereCollider _shieldTrigger;
         private SphereCollider _bodyCollider;
         private Rigidbody _rb;
         private Transform _visualTransform;
@@ -104,6 +108,11 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _lastPlanetImpactTimeByInstanceId = new Dictionary<int, float>();
         private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
         private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
+
+        [Header("Enemy Shield Barrier")]
+        [Tooltip("When an enemy/non-friendly ship enters the shield area while the shield has points, push it outward to prevent passing through.")]
+        [SerializeField] private float enemyShieldRepelMinSpeed = 8f;
+        [SerializeField] private float enemyShieldRepelMaxSpeed = 22f;
 
         public Planet Planet => planet;
         public Vector3 WorldOrbitVelocity => cachedWorldVelocity;
@@ -176,15 +185,18 @@ namespace TitanOrbit.Entities
             _rb.useGravity = false;
             _rb.constraints = RigidbodyConstraints.FreezeRotation;
 
-            // Assign dock trigger vs physics body collider.
+            // Assign dock trigger + shield trigger vs physics body collider.
             // Some prefabs/scenes can end up with duplicate SphereColliders; keep exactly:
-            // - 1 trigger (for docking)
-            // - 1 non-trigger (for physical collisions)
+            // - 1 dock trigger (smallest trigger radius)
+            // - 1 shield trigger (largest trigger radius)
+            // - 1 non-trigger (smallest body radius)
             SphereCollider[] cols = GetComponents<SphereCollider>();
 
-            SphereCollider keepTrigger = null;
+            SphereCollider keepDockTrigger = null;
+            SphereCollider keepShieldTrigger = null;
             SphereCollider keepBody = null;
-            float keepTriggerRadius = float.MaxValue;
+            float keepDockRadius = float.MaxValue;
+            float keepShieldRadius = 0f;
             float keepBodyRadius = float.MaxValue;
             var toDestroy = new System.Collections.Generic.List<SphereCollider>();
 
@@ -193,29 +205,45 @@ namespace TitanOrbit.Entities
                 if (c == null) continue;
                 if (c.isTrigger)
                 {
-                    if (keepTrigger == null || c.radius < keepTriggerRadius)
+                    if (keepDockTrigger == null || c.radius < keepDockRadius)
                     {
-                        if (keepTrigger != null) toDestroy.Add(keepTrigger);
-                        keepTrigger = c;
-                        keepTriggerRadius = c.radius;
+                        keepDockTrigger = c;
+                        keepDockRadius = c.radius;
                     }
-                    else
+                    if (keepShieldTrigger == null || c.radius > keepShieldRadius)
                     {
-                        toDestroy.Add(c);
+                        keepShieldTrigger = c;
+                        keepShieldRadius = c.radius;
                     }
                 }
                 else
                 {
                     if (keepBody == null || c.radius < keepBodyRadius)
                     {
-                        if (keepBody != null) toDestroy.Add(keepBody);
                         keepBody = c;
                         keepBodyRadius = c.radius;
                     }
-                    else
-                    {
+                }
+            }
+
+            // Destroy duplicates: keep only dock trigger, shield trigger, and one body collider.
+            for (int i = 0; i < cols.Length; i++)
+            {
+                var c = cols[i];
+                if (c == null) continue;
+                bool isDock = c == keepDockTrigger;
+                bool isShield = c == keepShieldTrigger;
+                bool isBody = c == keepBody;
+
+                if (c.isTrigger)
+                {
+                    if (!isDock && !isShield)
                         toDestroy.Add(c);
-                    }
+                }
+                else
+                {
+                    if (!isBody)
+                        toDestroy.Add(c);
                 }
             }
 
@@ -225,12 +253,13 @@ namespace TitanOrbit.Entities
                     Destroy(toDestroy[i]);
             }
 
-            _dockTrigger = keepTrigger;
+            _dockTrigger = keepDockTrigger;
+            _shieldTrigger = (keepShieldTrigger != null && keepShieldTrigger != keepDockTrigger) ? keepShieldTrigger : null;
             _bodyCollider = keepBody;
 
             EnsureMoonOrbitZoneVisual();
 
-            // Back-compat: if only one collider exists (from earlier moon versions), create the missing counterpart.
+            // Back-compat: if only one collider exists (from earlier moon versions), create the missing counterparts.
             if (_dockTrigger == null && _bodyCollider != null)
             {
                 _dockTrigger = gameObject.AddComponent<SphereCollider>();
@@ -242,6 +271,14 @@ namespace TitanOrbit.Entities
                 _bodyCollider = gameObject.AddComponent<SphereCollider>();
                 _bodyCollider.isTrigger = false;
                 _bodyCollider.radius = _dockTrigger.radius;
+            }
+
+            if (_shieldTrigger == null && _dockTrigger != null)
+            {
+                // Shield trigger is what we'll use to block enemy ships with repulsion.
+                _shieldTrigger = gameObject.AddComponent<SphereCollider>();
+                _shieldTrigger.isTrigger = true;
+                _shieldTrigger.radius = GetMoonShieldBarrierRadiusLocalFromDockRadius(_dockTrigger.radius);
             }
         }
 
@@ -569,16 +606,8 @@ namespace TitanOrbit.Entities
 
         private void EnsureMatrixShieldVisual()
         {
-            // Only show shield effects on captured planets (Team != None).
+            // Neutral planets (Team.None) still get a shield visual; they just use the white modular prefab.
             TeamManager.Team team = planet != null ? planet.TeamOwnership : TeamManager.Team.None;
-            if (team == TeamManager.Team.None)
-            {
-                if (_matrixShieldInstance != null)
-                    _matrixShieldInstance.SetActive(false);
-                _matrixShieldTeam = TeamManager.Team.None;
-                return;
-            }
-
             if (_matrixShieldInstance != null && _matrixShieldTeam == team) return;
 
             if (_matrixShieldInstance != null)
@@ -634,8 +663,7 @@ namespace TitanOrbit.Entities
                 _matrixShieldInstance.transform.localScale = new Vector3(scaleX, y, scaleX);
             }
 
-            bool captured = planet != null && planet.TeamOwnership != TeamManager.Team.None;
-            bool shouldBeActive = captured && shieldPoints > 0.001f;
+            bool shouldBeActive = shieldPoints > 0.001f;
             _matrixShieldInstance.SetActive(shouldBeActive);
 
             // Show depletion as reduced particle emission (instead of only toggling on/off).
@@ -663,6 +691,9 @@ namespace TitanOrbit.Entities
             GameObject prefab = null;
             switch (team)
             {
+                case TeamManager.Team.None:
+                    prefab = matrixShieldModularPrefab;
+                    break;
                 case TeamManager.Team.TeamA:
                     prefab = matrixShieldRedPrefab;
                     break;
@@ -671,6 +702,10 @@ namespace TitanOrbit.Entities
                     break;
                 case TeamManager.Team.TeamC:
                     prefab = matrixShieldGreenPrefab;
+                    break;
+                case TeamManager.Team.TeamD:
+                case TeamManager.Team.TeamE:
+                    prefab = matrixShieldModularPrefab;
                     break;
             }
 
@@ -681,6 +716,7 @@ namespace TitanOrbit.Entities
                 // (Runtime builds still require the serialized fields to be assigned unless you add an Addressables/Resources solution.)
                 string path = team switch
                 {
+                    TeamManager.Team.None => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldModular.prefab",
                     TeamManager.Team.TeamA => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldRed.prefab",
                     TeamManager.Team.TeamB => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldBlue.prefab",
                     TeamManager.Team.TeamC => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldGreen.prefab",
@@ -747,12 +783,46 @@ namespace TitanOrbit.Entities
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
         }
 
+        /// <summary>World-space radius of the outer shield barrier (may be larger than the dock trigger).</summary>
+        public float GetMoonShieldOuterRadiusWorld()
+        {
+            float r = GetMoonShieldOuterRadiusLocal();
+            Vector3 lossy = transform.lossyScale;
+            return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
+        }
+
         /// <summary>World-space radius of the moon collision body.</summary>
         public float GetMoonBodyRadiusWorld()
         {
             float r = GetMoonBodyRadiusLocal();
             Vector3 lossy = transform.lossyScale;
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
+        }
+
+        public float GetMoonShieldOuterRadiusMultiplierFromDockRadius()
+        {
+            return Mathf.Max(0.0001f, matrixShieldOrbitZoneEdgeExpandMultiplier) * Mathf.Max(0.0001f, matrixShieldScaleMultiplier);
+        }
+
+        /// <summary>Radius multiplier for the *physics* shield barrier (enemy repulsion). Based on dock radius only, not VFX edge expand.</summary>
+        public float GetMoonShieldBarrierRadiusMultiplierFromDockRadius()
+        {
+            // Must be >= 1 so shield trigger stays outside the dock trigger (see Planet.RefreshGemMoonDockTriggerRadius).
+            return Mathf.Clamp(shieldBarrierRadiusOverDock, 1f, 1.45f);
+        }
+
+        private float GetMoonShieldOuterRadiusLocal()
+        {
+            if (_shieldTrigger != null)
+                return Mathf.Max(0.0001f, _shieldTrigger.radius);
+            if (_dockTrigger != null)
+                return GetMoonShieldBarrierRadiusLocalFromDockRadius(_dockTrigger.radius);
+            return 0.25f;
+        }
+
+        private float GetMoonShieldBarrierRadiusLocalFromDockRadius(float dockLocalRadius)
+        {
+            return Mathf.Max(0.0001f, dockLocalRadius * GetMoonShieldBarrierRadiusMultiplierFromDockRadius());
         }
 
         /// <summary>
@@ -814,6 +884,10 @@ namespace TitanOrbit.Entities
                 ship.ServerSetGemMoonDocked(false, null);
                 return;
             }
+
+            if (TryRepelEnemyShipWithShield(ship))
+                return;
+
             bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             if (isAi && (!ship.WantToDepositGems || ship.CurrentGems < 0.01f))
             {
@@ -829,6 +903,22 @@ namespace TitanOrbit.Entities
             }
 
             ship.ServerSetGemMoonDocked(true, planet);
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            if (planet == null) return;
+
+            var ship = other.GetComponent<Starship>();
+            if (ship == null || ship.IsDead) return;
+
+            float now = (float)NetworkManager.Singleton.ServerTime.Time;
+            if (ship.GemMoonDockIgnoreUntilServerTime > now)
+                return;
+
+            // Repel enemy ships as soon as they enter the shield area, before docking logic can run.
+            TryRepelEnemyShipWithShield(ship);
         }
 
         private void OnTriggerExit(Collider other)
@@ -867,6 +957,58 @@ namespace TitanOrbit.Entities
             ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
         }
 
+        private bool IsShipFriendlyToThisMoon(Starship ship)
+        {
+            if (ship == null) return false;
+            if (planet == null) return false;
+
+            TeamManager.Team planetTeam = planet.TeamOwnership;
+            if (planetTeam == TeamManager.Team.None) return false; // Neutral moons are treated as hostile for the shield barrier.
+
+            TeamManager.Team shipTeam = ship.ShipTeam;
+            if (shipTeam == TeamManager.Team.None) return false;
+
+            return shipTeam == planetTeam;
+        }
+
+        private bool TryRepelEnemyShipWithShield(Starship ship)
+        {
+            if (ship == null) return false;
+            if (shieldPoints <= 0.001f) return false;
+            if (IsShipFriendlyToThisMoon(ship)) return false;
+
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb == null) return false;
+
+            float shieldRadiusWorld = GetMoonShieldOuterRadiusWorld();
+            if (shieldRadiusWorld <= 0.0001f) return false;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            Vector3 shipPos = ship.transform.position;
+            shipPos.y = 0f;
+
+            float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+            Vector3 dir = ToroidalMap.ToroidalDirection(moonPos, shipPos);
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
+            dir.Normalize();
+
+            // 0 at the shield edge, 1 at the center.
+            float penetration = Mathf.Clamp01(1f - (dist / Mathf.Max(0.0001f, shieldRadiusWorld)));
+
+            float repelSpeed = Mathf.Lerp(enemyShieldRepelMinSpeed, enemyShieldRepelMaxSpeed, penetration);
+            Vector3 outwardVel = dir * repelSpeed;
+            outwardVel.y = 0f;
+
+            // Prevent accidental dock state while shield is active for non-friendly ships.
+            ship.ServerSetGemMoonDocked(false, null);
+
+            shipRb.linearVelocity = outwardVel;
+            shipRb.angularVelocity = Vector3.zero;
+            return true;
+        }
+
         /// <summary>
         /// AI may clear <see cref="Starship.CurrentOrbitPlanet"/> while flying to the moon; use geometry instead of trigger-only orbit state.
         /// </summary>
@@ -886,7 +1028,15 @@ namespace TitanOrbit.Entities
         private bool IsShipReadyToLandInMoonZone(Starship ship)
         {
             if (ship == null) return false;
-            if (planet == null || planet.TeamOwnership == TeamManager.Team.None) return false;
+            if (planet == null) return false;
+
+            // Players (and AI) can only dock/land on planets that are owned by their own team.
+            TeamManager.Team planetTeam = planet.TeamOwnership;
+            if (planetTeam == TeamManager.Team.None) return false;
+
+            TeamManager.Team shipTeam = ship.ShipTeam;
+            if (shipTeam == TeamManager.Team.None) return false;
+            if (shipTeam != planetTeam) return false;
 
             Vector3 moonPos = transform.position;
             moonPos.y = 0f;

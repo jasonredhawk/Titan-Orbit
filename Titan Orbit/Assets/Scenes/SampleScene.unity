@@ -247,6 +247,8 @@ MonoBehaviour:
   teamAColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   teamBColor: {r: 0.3, g: 0.5, b: 1, a: 1}
   teamCColor: {r: 0.2, g: 0.7, b: 0.28, a: 1}
+  teamDColor: {r: 0.95, g: 0.55, b: 0.12, a: 1}
+  teamEColor: {r: 0.65, g: 0.25, b: 0.85, a: 1}
 --- !u!1 &59805832
 GameObject:
   m_ObjectHideFlags: 0
@@ -1630,6 +1632,16 @@ MonoBehaviour:
     playersText: {fileID: 844546684}
     statsText: {fileID: 1042831278}
     joinButton: {fileID: 772411584}
+  teamDPanel:
+    title: {fileID: 0}
+    playersText: {fileID: 0}
+    statsText: {fileID: 0}
+    joinButton: {fileID: 0}
+  teamEPanel:
+    title: {fileID: 0}
+    playersText: {fileID: 0}
+    statsText: {fileID: 0}
+    joinButton: {fileID: 0}
   refreshInterval: 0.5
 --- !u!114 &376194408
 MonoBehaviour:
@@ -2282,6 +2294,8 @@ MonoBehaviour:
   teamAColor: {r: 1, g: 0, b: 0, a: 1}
   teamBColor: {r: 0, g: 0, b: 1, a: 1}
   teamCColor: {r: 0.2, g: 0.7, b: 0.28, a: 1}
+  teamDColor: {r: 0.95, g: 0.55, b: 0.12, a: 1}
+  teamEColor: {r: 0.65, g: 0.25, b: 0.85, a: 1}
   leaderboardPanel: {fileID: 0}
   leaderboardTitleText: {fileID: 0}
   leaderboardToggleTeamKey: 3
@@ -3365,9 +3379,9 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomEnabled: 0
+  galacticZoomEnabled: 1
   galacticZoomOrthoSize: 180
-  galacticZoomOutDuration: 8
+  galacticZoomOutDuration: 4
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 0}
 --- !u!20 &711795281
@@ -6206,14 +6220,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  mapWidth: 300
-  mapHeight: 300
+  minMapSize: 300
+  maxMapSize: 1000
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
   numberOfPlanets: 17
-  minPlanetSize: 4
-  maxPlanetSize: 12
+  minPlanetSize: 9
+  maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
   numberOfAsteroids: 400
   asteroidClusters: 25
@@ -7130,7 +7144,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.TeamManager
   maxPlayersPerTeam: 20
-  numberOfTeams: 3
 --- !u!114 &1331055387
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7143,7 +7156,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bd77682efa6bcb4a9816b21b3ab81db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  debugMode: 0
+  debugMode: 1
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3
@@ -7840,9 +7853,13 @@ MonoBehaviour:
   teamAButton: {fileID: 0}
   teamBButton: {fileID: 0}
   teamCButton: {fileID: 0}
+  teamDButton: {fileID: 0}
+  teamEButton: {fileID: 0}
   teamALabel: {fileID: 0}
   teamBLabel: {fileID: 0}
   teamCLabel: {fileID: 0}
+  teamDLabel: {fileID: 0}
+  teamELabel: {fileID: 0}
   joinCodeInputField: {fileID: 0}
   joinCodeDisplayText: {fileID: 0}
   serverAddressInput: {fileID: 0}
@@ -10399,6 +10416,7 @@ MonoBehaviour:
   sfxSource: {fileID: 0}
   weaponSoundSources: []
   gemSoundSources: []
+  impactSoundSources: []
   backgroundMusic: {fileID: 8300000, guid: 7ac1670904bb1624b87dc52bc71f00bc, type: 3}
   shootSound: {fileID: 0}
   impactSound: {fileID: 0}
@@ -10868,6 +10886,8 @@ MonoBehaviour:
   teamAColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   teamBColor: {r: 0.3, g: 0.5, b: 1, a: 1}
   teamCColor: {r: 0.2, g: 0.7, b: 0.28, a: 1}
+  teamDColor: {r: 0.95, g: 0.55, b: 0.12, a: 1}
+  teamEColor: {r: 0.65, g: 0.25, b: 0.85, a: 1}
   planetColor: {r: 0.6, g: 0.6, b: 0.6, a: 1}
   homePlanetColor: {r: 1, g: 0.9, b: 0.2, a: 1}
   asteroidColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}

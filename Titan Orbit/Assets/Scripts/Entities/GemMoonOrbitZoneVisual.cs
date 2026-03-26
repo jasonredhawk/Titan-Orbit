@@ -54,9 +54,7 @@ namespace TitanOrbit.Entities
                 moon = GetComponentInParent<PlanetGemMoon>();
             if (moon == null) return;
 
-            // Only show the dock/orbit zone for moons on captured planets (Team != None).
-            Planet p = moon.Planet;
-            if (p == null || p.TeamOwnership == TeamManager.Team.None) return;
+            // Always show the dock/orbit zone so players can navigate to it.
 
             // Radii must be in moon *local* space (collider space), like HomePlanetRingsDrawer uses planet-local radii.
             // World radii × localToWorldMatrix would apply planet/parent scale twice and blow up the disc.

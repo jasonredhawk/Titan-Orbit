@@ -31,8 +31,15 @@ namespace TitanOrbit.UI
         
         [Header("Expand Settings")]
         [SerializeField] private float expandedSizePercent = 0.85f; // Percentage of screen to fill (85%)
-        [SerializeField] private float fullMapRadius = 212f; // Radius to show when expanded (covers full 300x300 map including corners: sqrt(150^2 + 150^2) ≈ 212)
+        [Tooltip("World radius for expanded minimap when ToroidalMap size is not set yet. When the map has loaded, expanded zoom uses half the map diagonal from ToroidalMap instead.")]
+        [SerializeField] private float fullMapRadius = 212f;
         [SerializeField] private float markerHeight = 1f; // Height above ground for markers
+
+        [Header("Map size label")]
+        [Tooltip("Optional; if null, a label is created on Start. Shows ToroidalMap width x height.")]
+        [SerializeField] private TextMeshProUGUI mapSizeLabel;
+        private float _lastMapSizeLabelW = float.NaN;
+        private float _lastMapSizeLabelH = float.NaN;
         
         private RectTransform minimapRect;
         private RectTransform edgeMarkerContainer; // Container for edge markers (outside mask)
@@ -44,6 +51,18 @@ namespace TitanOrbit.UI
         private Vector2 originalSizeDelta;
         private Vector2 originalAnchorMin;
         private Vector2 originalAnchorMax;
+
+        /// <summary>When expanded, other UI roots are faded via CanvasGroup; we restore previous values on collapse.</summary>
+        private struct NonMinimapUiRestoreState
+        {
+            public CanvasGroup Group;
+            public bool AddedByMinimap;
+            public float Alpha;
+            public bool Interactable;
+            public bool BlocksRaycasts;
+        }
+
+        private readonly List<NonMinimapUiRestoreState> _nonMinimapUiRestore = new List<NonMinimapUiRestoreState>(24);
         
         // Marker system
         private MarkerPlacementMenu markerMenu;
@@ -59,6 +78,8 @@ namespace TitanOrbit.UI
         [SerializeField] private Color teamAColor = new Color(1f, 0.3f, 0.3f);
         [SerializeField] private Color teamBColor = new Color(0.3f, 0.5f, 1f);
         [SerializeField] private Color teamCColor = new Color(0.2f, 0.7f, 0.28f);
+        [SerializeField] private Color teamDColor = new Color(0.95f, 0.55f, 0.12f);
+        [SerializeField] private Color teamEColor = new Color(0.65f, 0.25f, 0.85f);
         [SerializeField] private Color planetColor = new Color(0.6f, 0.6f, 0.6f);
         [SerializeField] private Color homePlanetColor = new Color(1f, 0.9f, 0.2f);
         [SerializeField] private Color asteroidColor = new Color(0.8f, 0.8f, 0.8f); // Light grey for better visibility
@@ -147,6 +168,20 @@ namespace TitanOrbit.UI
             dz -= mapH * Mathf.Round(dz / mapH);
         }
 
+        /// <summary>World-space radius that fits the full toroidal map in the expanded minimap (center to corner).</summary>
+        private float GetExpandedWorldRadius()
+        {
+            float w = ToroidalMap.GetMapWidth();
+            float h = ToroidalMap.GetMapHeight();
+            if (w > 1f && h > 1f)
+            {
+                float hw = w * 0.5f;
+                float hh = h * 0.5f;
+                return Mathf.Sqrt(hw * hw + hh * hh);
+            }
+            return fullMapRadius;
+        }
+
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
         public float MinimapRadius => minimapRadius;
         public float DisplaySize => displaySize;
@@ -205,6 +240,8 @@ namespace TitanOrbit.UI
             
             // Setup expand button
             SetupExpandButton();
+
+            SetupMapSizeLabel();
             
             // Setup marker placement menu
             SetupMarkerMenu();
@@ -483,8 +520,64 @@ namespace TitanOrbit.UI
             canvasGroup.alpha = visible ? 1f : 0f;
             canvasGroup.interactable = visible;
             canvasGroup.blocksRaycasts = visible;
+
+            if (!visible)
+                RestoreNonMinimapUi();
+            else if (isExpanded)
+                ApplyHideNonMinimapUi();
         }
         
+        private void SetupMapSizeLabel()
+        {
+            if (mapSizeLabel == null)
+            {
+                Transform existing = minimapRect != null ? minimapRect.Find("MapSizeLabel") : null;
+                if (existing != null)
+                    mapSizeLabel = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (mapSizeLabel == null)
+            {
+                GameObject go = new GameObject("MapSizeLabel");
+                go.transform.SetParent(minimapRect, false);
+                RectTransform rt = go.AddComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0f, 0f);
+                rt.anchorMax = new Vector2(0f, 0f);
+                rt.pivot = new Vector2(0f, 0f);
+                rt.anchoredPosition = new Vector2(10f, 10f);
+                rt.sizeDelta = new Vector2(220f, 26f);
+
+                mapSizeLabel = go.AddComponent<TextMeshProUGUI>();
+                mapSizeLabel.alignment = TextAlignmentOptions.BottomLeft;
+                mapSizeLabel.color = new Color(0.88f, 0.9f, 0.95f, 0.92f);
+                mapSizeLabel.raycastTarget = false;
+                mapSizeLabel.enableWordWrapping = false;
+                mapSizeLabel.overflowMode = TextOverflowModes.Overflow;
+                mapSizeLabel.fontSize = 12;
+            }
+
+            _lastMapSizeLabelW = float.NaN;
+            _lastMapSizeLabelH = float.NaN;
+            RefreshMapSizeLabelText(force: true);
+        }
+
+        private void RefreshMapSizeLabelText(bool force = false)
+        {
+            if (mapSizeLabel == null) return;
+
+            float w = ToroidalMap.GetMapWidth();
+            float h = ToroidalMap.GetMapHeight();
+            if (!force && w == _lastMapSizeLabelW && h == _lastMapSizeLabelH) return;
+
+            _lastMapSizeLabelW = w;
+            _lastMapSizeLabelH = h;
+
+            if (w <= 1f || h <= 1f)
+                mapSizeLabel.text = "";
+            else
+                mapSizeLabel.text = $"{Mathf.RoundToInt(w)} \u00d7 {Mathf.RoundToInt(h)}";
+        }
+
         private void SetupExpandButton()
         {
             // Create expand button in bottom-right corner of minimap
@@ -660,9 +753,9 @@ namespace TitanOrbit.UI
                 minimapRect.anchoredPosition = Vector2.zero;
                 minimapRect.sizeDelta = new Vector2(calculatedExpandedSize, calculatedExpandedSize);
                 
-                // Same minimap: larger circle (displaySize) and more zoom (minimapRadius = fullMapRadius)
+                // Same minimap: larger circle (displaySize) and zoom to fit full map
                 displaySize = calculatedExpandedSize;
-                minimapRadius = fullMapRadius;
+                minimapRadius = GetExpandedWorldRadius();
                 
                 // Update mask and background
                 SetupCircularBackground();
@@ -716,12 +809,100 @@ namespace TitanOrbit.UI
                 {
                     if (marker != null) marker.gameObject.SetActive(false);
                 }
+
+                ApplyHideNonMinimapUi();
+                transform.SetAsLastSibling();
             }
+        }
+
+        /// <summary>Hide every UI branch that is a sibling of the minimap on the path up to the HUD canvas.</summary>
+        private void ApplyHideNonMinimapUi()
+        {
+            if (_nonMinimapUiRestore.Count > 0)
+                return;
+
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return;
+
+            Transform canvasT = canvas.transform;
+            Transform t = transform;
+            while (t != null && t != canvasT)
+            {
+                Transform parent = t.parent;
+                if (parent == null)
+                    break;
+
+                for (int i = 0; i < parent.childCount; i++)
+                {
+                    Transform sibling = parent.GetChild(i);
+                    if (sibling == t)
+                        continue;
+                    PushCanvasGroupHide(sibling.gameObject);
+                }
+
+                t = parent;
+            }
+        }
+
+        private void PushCanvasGroupHide(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            CanvasGroup cg = root.GetComponent<CanvasGroup>();
+            bool added = cg == null;
+            if (cg == null)
+                cg = root.AddComponent<CanvasGroup>();
+
+            _nonMinimapUiRestore.Add(new NonMinimapUiRestoreState
+            {
+                Group = cg,
+                AddedByMinimap = added,
+                Alpha = cg.alpha,
+                Interactable = cg.interactable,
+                BlocksRaycasts = cg.blocksRaycasts
+            });
+
+            cg.alpha = 0f;
+            cg.interactable = false;
+            cg.blocksRaycasts = false;
+        }
+
+        private void RestoreNonMinimapUi()
+        {
+            for (int i = 0; i < _nonMinimapUiRestore.Count; i++)
+            {
+                NonMinimapUiRestoreState s = _nonMinimapUiRestore[i];
+                if (s.Group == null)
+                    continue;
+
+                s.Group.alpha = s.Alpha;
+                s.Group.interactable = s.Interactable;
+                s.Group.blocksRaycasts = s.BlocksRaycasts;
+                if (s.AddedByMinimap)
+                    Destroy(s.Group);
+            }
+
+            _nonMinimapUiRestore.Clear();
+        }
+
+        private void OnDisable()
+        {
+            RestoreNonMinimapUi();
+        }
+
+        private void OnEnable()
+        {
+            if (isExpanded)
+                ApplyHideNonMinimapUi();
         }
         
         private void CollapseMinimap()
         {
             if (minimapRect == null) return;
+
+            RestoreNonMinimapUi();
             
             // Same minimap: restore smaller circle and zoomed-in radius
             minimapRect.anchorMin = originalAnchorMin;
@@ -998,6 +1179,8 @@ namespace TitanOrbit.UI
                 }
             }
 
+            RefreshMapSizeLabelText();
+
             // Clear stale reference if player ship was destroyed
             if (playerShip != null && !playerShip)
             {
@@ -1251,7 +1434,7 @@ namespace TitanOrbit.UI
             
             // Convert to world position - use current minimap radius (changes when expanded)
             Vector3 playerPos = playerTransform.position;
-            float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
+            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
             
             // The normalized position represents the direction from player, scaled by minimap radius
             // So multiply normalized direction by radius to get world offset
@@ -1423,7 +1606,7 @@ namespace TitanOrbit.UI
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
-            float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
+            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
             foreach (var ship in cachedShips)
             {
                 if (ship == null)
@@ -2221,6 +2404,8 @@ namespace TitanOrbit.UI
                 case TeamManager.Team.TeamA: return teamAColor;
                 case TeamManager.Team.TeamB: return teamBColor;
                 case TeamManager.Team.TeamC: return teamCColor;
+                case TeamManager.Team.TeamD: return teamDColor;
+                case TeamManager.Team.TeamE: return teamEColor;
                 default: return Color.gray;
             }
         }
@@ -2291,7 +2476,7 @@ namespace TitanOrbit.UI
         {
             if (edgeMarkerContainer == null) return;
             
-            float currentRadius = isExpanded ? fullMapRadius : minimapRadius;
+            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
             
             // Calculate angle and position on edge
             float angle = Mathf.Atan2(dz, dx);

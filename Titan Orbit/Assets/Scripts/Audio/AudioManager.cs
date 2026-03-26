@@ -29,16 +29,16 @@ namespace TitanOrbit.Audio
         private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
-        private const float WEAPON_PITCH_MIN = 0.5f;
-        private const float WEAPON_PITCH_MAX = 2.5f;
+        private const float WEAPON_PITCH_MIN = 0.3f;
+        private const float WEAPON_PITCH_MAX = 3.2f;
         private const int GEM_SOUND_POOL_SIZE = 6;
-        private const float GEM_PITCH_MIN = 0.55f;
-        private const float GEM_PITCH_MAX = 1.9f;
+        private const float GEM_PITCH_MIN = 0.35f;
+        private const float GEM_PITCH_MAX = 2.6f;
         private const float GEM_AMOUNT_MIN = 1f;
-        private const float GEM_AMOUNT_MAX = 300f;
+        private const float GEM_AMOUNT_MAX = 120f;
         private const int IMPACT_SOUND_POOL_SIZE = 6;
-        private const float IMPACT_PITCH_MIN = 0.55f;
-        private const float IMPACT_PITCH_MAX = 1.9f;
+        private const float IMPACT_PITCH_MIN = 0.3f;
+        private const float IMPACT_PITCH_MAX = 2.4f;
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
@@ -241,7 +241,9 @@ namespace TitanOrbit.Audio
             float maxLog = Mathf.Log10(GEM_AMOUNT_MAX);
             float amountLog = Mathf.Log10(clampedAmount);
             float normalized = Mathf.InverseLerp(minLog, maxLog, amountLog);
-            float pitch = Mathf.Lerp(GEM_PITCH_MAX, GEM_PITCH_MIN, normalized);
+            // Emphasize contrast: keep more time near the extremes (tiny gems very high, large gems very low).
+            float emphasized = Mathf.Pow(normalized, 1.35f);
+            float pitch = Mathf.Lerp(GEM_PITCH_MAX, GEM_PITCH_MIN, emphasized);
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src != null)

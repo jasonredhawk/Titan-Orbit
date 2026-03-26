@@ -70,6 +70,8 @@ namespace TitanOrbit.Systems
                 case TeamManager.Team.TeamA: return "Red";
                 case TeamManager.Team.TeamB: return "Blue";
                 case TeamManager.Team.TeamC: return "Green";
+                case TeamManager.Team.TeamD: return "Red";
+                case TeamManager.Team.TeamE: return "Blue";
                 default: return "Blue";
             }
         }

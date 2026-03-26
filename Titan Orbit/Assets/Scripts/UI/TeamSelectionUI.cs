@@ -27,6 +27,8 @@ namespace TitanOrbit.UI
         [SerializeField] private TeamPanelRefs teamAPanel;
         [SerializeField] private TeamPanelRefs teamBPanel;
         [SerializeField] private TeamPanelRefs teamCPanel;
+        [SerializeField] private TeamPanelRefs teamDPanel;
+        [SerializeField] private TeamPanelRefs teamEPanel;
 
         [Header("Refresh")]
         [SerializeField] private float refreshInterval = 0.5f;
@@ -43,18 +45,39 @@ namespace TitanOrbit.UI
         {
             if (TeamManager.Instance == null) return;
             int max = TeamManager.Instance.MaxPlayersPerTeam;
-            int a = TeamManager.Instance.TeamACount;
-            int b = TeamManager.Instance.TeamBCount;
-            int c = TeamManager.Instance.TeamCCount;
-            int minCount = Mathf.Min(a, b, c);
+            int active = Mathf.Clamp(TeamManager.Instance.ActiveTeamCount, 2, 5);
 
-            RefreshPanel(TeamManager.Team.TeamA, teamAPanel, a, max, minCount);
-            RefreshPanel(TeamManager.Team.TeamB, teamBPanel, b, max, minCount);
-            RefreshPanel(TeamManager.Team.TeamC, teamCPanel, c, max, minCount);
+            int minCount = int.MaxValue;
+            for (int i = 0; i < active; i++)
+            {
+                TeamManager.Team t = (TeamManager.Team)(i + 1);
+                minCount = Mathf.Min(minCount, TeamManager.Instance.GetTeamPlayerCount(t));
+            }
+
+            RefreshPanel(TeamManager.Team.TeamA, teamAPanel, 1, active, max, minCount);
+            RefreshPanel(TeamManager.Team.TeamB, teamBPanel, 2, active, max, minCount);
+            RefreshPanel(TeamManager.Team.TeamC, teamCPanel, 3, active, max, minCount);
+            RefreshPanel(TeamManager.Team.TeamD, teamDPanel, 4, active, max, minCount);
+            RefreshPanel(TeamManager.Team.TeamE, teamEPanel, 5, active, max, minCount);
         }
 
-        private void RefreshPanel(TeamManager.Team team, TeamPanelRefs refs, int count, int max, int minCount)
+        private static void SetPanelColumnActive(TeamPanelRefs refs, bool on)
         {
+            if (refs == null || refs.title == null) return;
+            Transform col = refs.title.transform.parent;
+            if (col != null)
+                col.gameObject.SetActive(on);
+        }
+
+        private void RefreshPanel(TeamManager.Team team, TeamPanelRefs refs, int teamOrdinal, int activeTeams, int max, int minCount)
+        {
+            bool inMatch = teamOrdinal <= activeTeams;
+            if (refs == null)
+                return;
+            SetPanelColumnActive(refs, inMatch);
+            if (!inMatch) return;
+
+            int count = TeamManager.Instance.GetTeamPlayerCount(team);
             if (refs.title != null)
             {
                 refs.title.text = "Team " + TeamLabel(team) + " (" + count + "/" + max + ")";
@@ -83,6 +106,8 @@ namespace TitanOrbit.UI
                 case TeamManager.Team.TeamA: return "A";
                 case TeamManager.Team.TeamB: return "B";
                 case TeamManager.Team.TeamC: return "C";
+                case TeamManager.Team.TeamD: return "D";
+                case TeamManager.Team.TeamE: return "E";
                 default: return "?";
             }
         }
