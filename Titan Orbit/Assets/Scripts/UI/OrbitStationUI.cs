@@ -435,7 +435,7 @@ namespace TitanOrbit.UI
             // —— Independent Ship Slot Panel (6 wide, roomy cards) ——
             int slotGridRows = Mathf.Min(2, (MaxSlotRows + SlotGridColumns - 1) / SlotGridColumns);
             float slotGridTotalH = slotGridRows * SlotCardHeight + (slotGridRows - 1) * SlotCellSpacing;
-            const float orbitActionsHeight = 36f;
+            const float orbitActionsHeight = 32f;
             float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
 
             slotPanel = new GameObject("ShipSlotPanel");
@@ -451,10 +451,10 @@ namespace TitanOrbit.UI
             slotPanelImg.color = new Color(0.08f, 0.1f, 0.16f, 0.94f);
             if (panelBackgroundSprite != null) { slotPanelImg.sprite = panelBackgroundSprite; slotPanelImg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
 
-            float slotY = -8f;
+            float slotY = -4f;
             btnOrbitDepositGems = CreateOrbitActionButton(slotPanel.transform, "Deposit Gems", ref slotY);
             if (btnOrbitDepositGems != null) btnOrbitDepositGems.onClick.AddListener(OnOrbitDepositGemsClick);
-            slotY -= 8f;
+            slotY -= 6f;
             loadoutSectionLabel = CreateSectionLabelWithRef(slotPanel.transform, "Loadout", "Ship Loadout (click card to remove)", ref slotY);
             slotY -= 8f;
             slotGridRoot = new GameObject("SlotGrid");
@@ -502,6 +502,8 @@ namespace TitanOrbit.UI
             CreateSectionLabel(storePanel.transform, "Store", "Store", ref storeY);
             gemsText = CreateTMP(storePanel.transform, "Gems", "Your contributed gems: 0", 14, ref storeY);
             storeY -= 4f;
+            const float StoreBlockShiftUpPx = 14f; // Tighter header: tabs + scroll start higher in the store panel
+            storeY += StoreBlockShiftUpPx;
 
             // Tab strip
             var tabStripGo = new GameObject("TabStrip");
@@ -697,8 +699,8 @@ namespace TitanOrbit.UI
             treeLe.flexibleWidth = 0f;
             treeLe.minWidth = ShipTreeViewportMaxWidth;
             var treeBg = treeGo.AddComponent<Image>();
-            treeBg.color = new Color(0.05f, 0.08f, 0.13f, 0.72f);
-            if (buttonSprite != null) { treeBg.sprite = buttonSprite; treeBg.type = Image.Type.Sliced; }
+            treeBg.color = new Color(0f, 0f, 0f, 0f);
+            treeBg.raycastTarget = true; // Keep hit target for scroll forwarding; no visible panel behind the tree
             treeGo.AddComponent<ScrollRectForwarder>();
             shipY -= 568f;
 
@@ -2202,7 +2204,7 @@ namespace TitanOrbit.UI
             rect.pivot = new Vector2(0.5f, 1f);
             rect.anchoredPosition = new Vector2(0f, y);
             rect.sizeDelta = new Vector2(-24f, 32f);
-            y -= 36f;
+            y -= 32f;
             var img = go.AddComponent<Image>();
             img.color = new Color(0.2f, 0.35f, 0.55f, 0.95f);
             if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
@@ -2255,7 +2257,7 @@ namespace TitanOrbit.UI
             // Resize slot panel and grid to match ship's slot count (level 2 = 2 slots, level 3 = 3 slots, etc.)
             if (slotPanelRect != null && slotGridRect != null && storePanelRect != null)
             {
-                const float orbitActionsHeight = 36f;
+                const float orbitActionsHeight = 32f;
                 int effectiveSlotRows = Mathf.Max(1, Mathf.Min(MaxSlotRows / SlotGridColumns, Mathf.CeilToInt((float)slotCount / SlotGridColumns)));
                 float slotGridTotalH = effectiveSlotRows * SlotCardHeight + (effectiveSlotRows - 1) * SlotCellSpacing;
                 float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
