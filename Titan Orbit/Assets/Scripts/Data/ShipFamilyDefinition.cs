@@ -218,6 +218,27 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
+    /// Heuristic breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity).
+    /// Populated when building the upgrade tree from folder in the editor.
+    /// </summary>
+    [Serializable]
+    public struct ShipFamilyPowerScoreBreakdown
+    {
+        [Tooltip("Weighted offense contribution (fire power, bullet speed, fire rate, per-level terms).")]
+        public float offense;
+        [Tooltip("Weighted defense contribution (health cap/regen, per-level terms).")]
+        public float defense;
+        [Tooltip("Weighted energy contribution (energy cap/regen, per-level terms).")]
+        public float energy;
+        [Tooltip("Weighted mobility contribution (move speed, turn speed, per-level terms).")]
+        public float mobility;
+        [Tooltip("Weighted capacity contribution (gems, people, per-level terms).")]
+        public float capacity;
+
+        public float Total => offense + defense + energy + mobility + capacity;
+    }
+
+    /// <summary>
     /// One chassis/variant in the family upgrade tree.
     /// </summary>
     [Serializable]
@@ -238,8 +259,11 @@ namespace TitanOrbit.Data
         [Tooltip("Minimum home planet level required to unlock this chassis in the upgrade tree.")]
         public int minHomePlanetLevel = 1;
 
-        [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger).")]
+        [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger). Sum of power score breakdown categories.")]
         public float powerScore;
+
+        [Tooltip("Editor: heuristic parts of powerScore (offense + defense + energy + mobility + capacity).")]
+        public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
     }
 
     /// <summary>

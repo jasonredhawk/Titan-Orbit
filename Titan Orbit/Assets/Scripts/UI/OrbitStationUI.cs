@@ -99,13 +99,22 @@ namespace TitanOrbit.UI
         private string _shipTreeStructureKey = "";
         private const int MaxShipTreeColumns = 7;
         private const float ShipTreeColGap = 6f;
-        private const float ShipTreeLevelSpacing = 132f;
+        private const float ShipTreeLevelSpacing = 150f;
         /// <summary>Cap tree width; widest row is level 6 (6 columns).</summary>
         private const float ShipTreeViewportMaxWidth = 572f;
         /// <summary>Desired node width; actual width is capped so six columns fit inside the viewport.</summary>
-        private const float ShipTreeNodeFixedWidth = 112f;
-        private const float ShipTreeNodeHeight = 124f;
-        private const string ShipTreeStructureKey = "full8_fixed_vlayout_names_v2_rowgap";
+        private const float ShipTreeNodeFixedWidth = 120f;
+        private const float ShipTreeNodeHeight = 176f;
+        private const string ShipTreeStructureKey = "full8_fixed_vlayout_powerbreakdown_v1";
+        private static readonly Color[] ShipTreePowerCategoryColors =
+        {
+            new Color(1f, 0.42f, 0.42f, 1f),
+            new Color(0.31f, 0.8f, 0.77f, 1f),
+            new Color(1f, 0.9f, 0.43f, 1f),
+            new Color(0.58f, 0.88f, 0.83f, 1f),
+            new Color(0.65f, 0.55f, 0.98f, 1f),
+        };
+        private static readonly string[] ShipTreePowerCategoryLetters = { "O", "D", "E", "M", "C" };
         private readonly List<int> _shipTreeNextTargets = new List<int>(4);
         private StoreItemType[] itemTypes;
         private Button[] itemButtons;
@@ -122,6 +131,10 @@ namespace TitanOrbit.UI
             public Image PreviewImage;
             public TextMeshProUGUI PriceText;
             public RectTransform Rect;
+            public RectTransform PowerBarRow;
+            public Image[] PowerBarSegments;
+            public TextMeshProUGUI[] PowerStatLabels;
+            public TextMeshProUGUI[] PowerStatValues;
         }
 
         private float _cardsContentHeight;
@@ -1248,6 +1261,8 @@ namespace TitanOrbit.UI
                     else
                         view.PriceText.text = $"{tree.GetGemCostForLevel(view.Level):F0}g";
                 }
+
+                ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex));
             }
         }
 
@@ -1422,10 +1437,104 @@ namespace TitanOrbit.UI
             previewImg.raycastTarget = false;
             previewImg.maskable = true;
             var previewLe = previewGo.AddComponent<LayoutElement>();
-            previewLe.minHeight = 48f;
-            previewLe.preferredHeight = 58f;
+            previewLe.minHeight = 44f;
+            previewLe.preferredHeight = 52f;
             previewLe.flexibleHeight = 1f;
             previewLe.flexibleWidth = 1f;
+
+            var barRowGo = new GameObject("PowerBar");
+            barRowGo.transform.SetParent(go.transform, false);
+            var barRowRect = barRowGo.GetComponent<RectTransform>();
+            var barRowLe = barRowGo.AddComponent<LayoutElement>();
+            barRowLe.preferredHeight = 10f;
+            barRowLe.flexibleHeight = 0f;
+            barRowLe.minHeight = 10f;
+            var barHlg = barRowGo.AddComponent<HorizontalLayoutGroup>();
+            barHlg.padding = new RectOffset(0, 0, 0, 0);
+            barHlg.spacing = 1;
+            barHlg.childAlignment = TextAnchor.MiddleCenter;
+            barHlg.childControlWidth = true;
+            barHlg.childControlHeight = true;
+            barHlg.childForceExpandWidth = false;
+            barHlg.childForceExpandHeight = true;
+            var powerBarSegments = new Image[5];
+            for (int pi = 0; pi < 5; pi++)
+            {
+                var segGo = new GameObject("Seg_" + pi);
+                segGo.transform.SetParent(barRowGo.transform, false);
+                var segImg = segGo.AddComponent<Image>();
+                segImg.color = ShipTreePowerCategoryColors[pi];
+                segImg.raycastTarget = false;
+                var segLe = segGo.AddComponent<LayoutElement>();
+                segLe.flexibleWidth = 1f;
+                segLe.minWidth = 3f;
+                segLe.preferredHeight = 10f;
+                powerBarSegments[pi] = segImg;
+            }
+
+            var statsRowGo = new GameObject("PowerStats");
+            statsRowGo.transform.SetParent(go.transform, false);
+            var statsRowLe = statsRowGo.AddComponent<LayoutElement>();
+            statsRowLe.preferredHeight = 34f;
+            statsRowLe.flexibleHeight = 0f;
+            statsRowLe.minHeight = 34f;
+            var statsHlg = statsRowGo.AddComponent<HorizontalLayoutGroup>();
+            statsHlg.padding = new RectOffset(0, 0, 0, 0);
+            statsHlg.spacing = 0;
+            statsHlg.childAlignment = TextAnchor.UpperCenter;
+            statsHlg.childControlWidth = true;
+            statsHlg.childControlHeight = true;
+            statsHlg.childForceExpandWidth = true;
+            statsHlg.childForceExpandHeight = true;
+            var powerLabels = new TextMeshProUGUI[5];
+            var powerValues = new TextMeshProUGUI[5];
+            for (int pi = 0; pi < 5; pi++)
+            {
+                var cellGo = new GameObject("Stat_" + pi);
+                cellGo.transform.SetParent(statsRowGo.transform, false);
+                var cellVlg = cellGo.AddComponent<VerticalLayoutGroup>();
+                cellVlg.spacing = 0;
+                cellVlg.childAlignment = TextAnchor.UpperCenter;
+                cellVlg.childControlWidth = true;
+                cellVlg.childControlHeight = true;
+                cellVlg.childForceExpandWidth = true;
+                cellVlg.childForceExpandHeight = false;
+                var cellLe = cellGo.AddComponent<LayoutElement>();
+                cellLe.flexibleWidth = 1f;
+                cellLe.minWidth = 18f;
+
+                var letterGo = new GameObject("L");
+                letterGo.transform.SetParent(cellGo.transform, false);
+                var letterTmp = letterGo.AddComponent<TextMeshProUGUI>();
+                letterTmp.text = ShipTreePowerCategoryLetters[pi];
+                letterTmp.fontSize = 6.5f;
+                letterTmp.alignment = TextAlignmentOptions.Center;
+                letterTmp.enableWordWrapping = false;
+                letterTmp.color = new Color(0.55f, 0.62f, 0.72f, 1f);
+                letterTmp.raycastTarget = false;
+                if (fontAsset != null) letterTmp.font = fontAsset;
+                var letterLe = letterGo.AddComponent<LayoutElement>();
+                letterLe.preferredHeight = 10f;
+                letterLe.flexibleHeight = 0f;
+
+                var valGo = new GameObject("V");
+                valGo.transform.SetParent(cellGo.transform, false);
+                var valTmp = valGo.AddComponent<TextMeshProUGUI>();
+                valTmp.text = "—";
+                valTmp.fontSize = 8f;
+                valTmp.fontStyle = FontStyles.Bold;
+                valTmp.alignment = TextAlignmentOptions.Center;
+                valTmp.enableWordWrapping = false;
+                valTmp.color = ShipTreePowerCategoryColors[pi];
+                valTmp.raycastTarget = false;
+                if (fontAsset != null) valTmp.font = fontAsset;
+                var valLe = valGo.AddComponent<LayoutElement>();
+                valLe.preferredHeight = 14f;
+                valLe.flexibleHeight = 0f;
+
+                powerLabels[pi] = letterTmp;
+                powerValues[pi] = valTmp;
+            }
 
             var priceGo = new GameObject("Price");
             priceGo.transform.SetParent(go.transform, false);
@@ -1455,10 +1564,52 @@ namespace TitanOrbit.UI
                 ShipNameText = nameTmp,
                 PreviewImage = previewImg,
                 PriceText = priceTmp,
-                Rect = rect
+                Rect = rect,
+                PowerBarRow = barRowRect,
+                PowerBarSegments = powerBarSegments,
+                PowerStatLabels = powerLabels,
+                PowerStatValues = powerValues
             };
             shipTreeNodes.Add(view);
+            ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(level, branchIndex));
             return view;
+        }
+
+        private ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
+        {
+            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+                return default;
+            if (level <= 1)
+                return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
+            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+        }
+
+        private static void ApplyPowerBreakdownToNodeView(ShipTreeNodeView view, ShipFamilyPowerScoreBreakdown b)
+        {
+            if (view == null) return;
+            float[] vals = { b.offense, b.defense, b.energy, b.mobility, b.capacity };
+            float total = b.offense + b.defense + b.energy + b.mobility + b.capacity;
+            bool hasData = total > 0.01f;
+            for (int i = 0; i < 5; i++)
+            {
+                if (view.PowerStatValues != null && i < view.PowerStatValues.Length && view.PowerStatValues[i] != null)
+                {
+                    view.PowerStatValues[i].text = hasData ? vals[i].ToString("F0") : "—";
+                    view.PowerStatValues[i].color = hasData ? ShipTreePowerCategoryColors[i] : new Color(0.45f, 0.48f, 0.55f, 0.85f);
+                }
+                if (view.PowerBarSegments != null && i < view.PowerBarSegments.Length && view.PowerBarSegments[i] != null)
+                {
+                    var seg = view.PowerBarSegments[i];
+                    var le = seg.GetComponent<LayoutElement>();
+                    if (le != null)
+                        le.flexibleWidth = hasData ? Mathf.Max(0.02f, vals[i]) : 1f;
+                    seg.color = hasData
+                        ? ShipTreePowerCategoryColors[i]
+                        : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+                }
+            }
+            if (view.PowerBarRow != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(view.PowerBarRow);
         }
 
         private void DrawTreeConnector(Vector2 from, Vector2 to)

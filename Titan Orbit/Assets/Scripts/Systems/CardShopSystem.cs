@@ -190,6 +190,20 @@ namespace TitanOrbit.Systems
             return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetUpgradeTreeShipNameForChassisId(chassisId) : null;
         }
 
+        /// <summary>Heuristic power breakdown for a chassis tier (editor-built upgrade tree).</summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
+        {
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+        }
+
+        /// <summary>Power breakdown for the ship that would be unlocked at the given tree slot.</summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            if (string.IsNullOrEmpty(cid)) return default;
+            return GetPowerScoreBreakdownForChassisId(cid);
+        }
+
         /// <summary>Upgrade tree display name for a ladder slot (resolves chassis, then tier name).</summary>
         public string GetUpgradeTreeShipNameForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {

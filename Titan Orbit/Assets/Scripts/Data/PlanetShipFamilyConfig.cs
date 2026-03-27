@@ -193,6 +193,31 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>Power score breakdown for this chassis from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>.</summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId) || families == null) return default;
+            int underscoreIdx = chassisId.IndexOf('_');
+            if (underscoreIdx <= 0) return default;
+            string familyNamePrefix = chassisId.Substring(0, underscoreIdx);
+
+            foreach (var f in families)
+            {
+                if (f?.shipFamilyDefinition?.upgradeTree == null) continue;
+                string entryFamilyName = f.shipFamilyDefinition.familyId;
+                if (string.IsNullOrEmpty(entryFamilyName) || !entryFamilyName.Equals(familyNamePrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var tier in f.shipFamilyDefinition.upgradeTree)
+                {
+                    if (tier != null && tier.chassisId == chassisId)
+                        return tier.powerScoreBreakdown;
+                }
+                return default;
+            }
+            return default;
+        }
+
         /// <summary>Gets chassis ID for the given planet and ship index (0-based). Uses the entry's ShipFamilyDefinition upgradeTree.</summary>
         public string GetChassisIdForPlanetAndIndex(int planetId, int index)
         {
