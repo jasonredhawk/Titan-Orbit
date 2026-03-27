@@ -15,6 +15,7 @@ using TitanOrbit.AI;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using TMPro;
+using UnityEditor.SceneManagement;
 using SpaceGraphicsToolkit;
 using SpaceGraphicsToolkit.Atmosphere;
 using SpaceGraphicsToolkit.LightAndShadow;
@@ -286,6 +287,12 @@ namespace TitanOrbit.Editor
                     out GameObject titleB, out GameObject playersB, out GameObject statsB, out GameObject joinB);
                 CreateTeamPanelColumn(teamPanel.transform, "TeamCPanel", "Team C (0/20)", "Join C", teamCColor, shiftPanelSprite, shiftButtonSprite,
                     out GameObject titleC, out GameObject playersC, out GameObject statsC, out GameObject joinC);
+                Color teamDColor = new Color(0.95f, 0.55f, 0.12f, 0.45f);
+                Color teamEColor = new Color(0.65f, 0.25f, 0.85f, 0.45f);
+                CreateTeamPanelColumn(teamPanel.transform, "TeamDPanel", "Team D (0/20)", "Join D", teamDColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleD, out GameObject playersD, out GameObject statsD, out GameObject joinD);
+                CreateTeamPanelColumn(teamPanel.transform, "TeamEPanel", "Team E (0/20)", "Join E", teamEColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleE, out GameObject playersE, out GameObject statsE, out GameObject joinE);
 
                 TeamSelectionUI teamSelectionUI = teamPanel.AddComponent<TeamSelectionUI>();
                 SerializedObject tso = new SerializedObject(teamSelectionUI);
@@ -301,6 +308,14 @@ namespace TitanOrbit.Editor
                 tso.FindProperty("teamCPanel.playersText").objectReferenceValue = playersC.GetComponent<TextMeshProUGUI>();
                 tso.FindProperty("teamCPanel.statsText").objectReferenceValue = statsC.GetComponent<TextMeshProUGUI>();
                 tso.FindProperty("teamCPanel.joinButton").objectReferenceValue = joinC.GetComponent<Button>();
+                tso.FindProperty("teamDPanel.title").objectReferenceValue = titleD.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamDPanel.playersText").objectReferenceValue = playersD.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamDPanel.statsText").objectReferenceValue = statsD.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamDPanel.joinButton").objectReferenceValue = joinD.GetComponent<Button>();
+                tso.FindProperty("teamEPanel.title").objectReferenceValue = titleE.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamEPanel.playersText").objectReferenceValue = playersE.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamEPanel.statsText").objectReferenceValue = statsE.GetComponent<TextMeshProUGUI>();
+                tso.FindProperty("teamEPanel.joinButton").objectReferenceValue = joinE.GetComponent<Button>();
                 tso.ApplyModifiedPropertiesWithoutUndo();
 
                 so.FindProperty("teamSelectionPanel").objectReferenceValue = teamPanel;
@@ -308,6 +323,76 @@ namespace TitanOrbit.Editor
 
             so.ApplyModifiedPropertiesWithoutUndo();
             Debug.Log("Play button and Team Selection panel added. Save the scene.");
+        }
+
+        [MenuItem("Titan Orbit/Ensure Team Selection Panels (D–E for 2–5 teams)")]
+        public static void EnsureTeamSelectionPanelsDE()
+        {
+            var ui = Object.FindFirstObjectByType<TeamSelectionUI>(FindObjectsInactive.Include);
+            if (ui == null)
+            {
+                Debug.LogError("TeamSelectionUI not found in the scene. Run Titan Orbit > Add Play & Team Selection UI first.");
+                return;
+            }
+
+            Sprite shiftPanelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Placeholder/Placeholder HUD BG.png");
+            Sprite shiftButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
+                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Cut/Cut Frame Filled.png");
+            Sprite uiSprite = CreateWhiteSprite();
+            if (shiftPanelSprite == null) shiftPanelSprite = uiSprite;
+            if (shiftButtonSprite == null) shiftButtonSprite = uiSprite;
+
+            Transform teamPanel = ui.transform;
+            Color teamDColor = new Color(0.95f, 0.55f, 0.12f, 0.45f);
+            Color teamEColor = new Color(0.65f, 0.25f, 0.85f, 0.45f);
+
+            if (teamPanel.Find("TeamDPanel") == null)
+            {
+                Undo.IncrementCurrentGroup();
+                int undoGroup = Undo.GetCurrentGroup();
+                CreateTeamPanelColumn(teamPanel, "TeamDPanel", "Team D (0/20)", "Join D", teamDColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleD, out _, out _, out _);
+                Undo.RegisterCreatedObjectUndo(titleD.transform.parent.parent.parent.gameObject, "Add Team D Panel");
+                CreateTeamPanelColumn(teamPanel, "TeamEPanel", "Team E (0/20)", "Join E", teamEColor, shiftPanelSprite, shiftButtonSprite,
+                    out GameObject titleE, out _, out _, out _);
+                Undo.RegisterCreatedObjectUndo(titleE.transform.parent.parent.parent.gameObject, "Add Team E Panel");
+                Undo.CollapseUndoOperations(undoGroup);
+            }
+
+            SerializedObject tso = new SerializedObject(ui);
+            WireTeamSelectionPanelSerializedRefs(tso, "teamDPanel", teamPanel.Find("TeamDPanel"));
+            WireTeamSelectionPanelSerializedRefs(tso, "teamEPanel", teamPanel.Find("TeamEPanel"));
+            tso.ApplyModifiedPropertiesWithoutUndo();
+
+            EditorSceneManager.MarkSceneDirty(teamPanel.gameObject.scene);
+            Debug.Log("Team D/E columns are present and TeamSelectionUI references are set. Save the scene.");
+        }
+
+        /// <summary>
+        /// Batchmode: opens SampleScene, adds D/E team columns if missing, saves. Example:
+        /// Unity.exe -quit -batchmode -projectPath ... -executeMethod TitanOrbit.Editor.GameSetup.BatchEnsureTeamSelectionPanelsDE
+        /// </summary>
+        public static void BatchEnsureTeamSelectionPanelsDE()
+        {
+            EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity");
+            EnsureTeamSelectionPanelsDE();
+            EditorSceneManager.SaveOpenScenes();
+        }
+
+        private static void WireTeamSelectionPanelSerializedRefs(SerializedObject tso, string panelPropertyName, Transform columnRoot)
+        {
+            if (columnRoot == null) return;
+            Transform content = columnRoot.Find("Content");
+            if (content == null) return;
+            var title = content.Find("TitleBar/Title")?.GetComponent<TextMeshProUGUI>();
+            var players = content.Find("PlayersPanel/Players")?.GetComponent<TextMeshProUGUI>();
+            var stats = content.Find("StatsBar/Stats")?.GetComponent<TextMeshProUGUI>();
+            var join = content.Find("JoinButton")?.GetComponent<Button>();
+            tso.FindProperty(panelPropertyName + ".title").objectReferenceValue = title;
+            tso.FindProperty(panelPropertyName + ".playersText").objectReferenceValue = players;
+            tso.FindProperty(panelPropertyName + ".statsText").objectReferenceValue = stats;
+            tso.FindProperty(panelPropertyName + ".joinButton").objectReferenceValue = join;
         }
 
         [MenuItem("Titan Orbit/Add Loading Screen")]
@@ -776,6 +861,12 @@ namespace TitanOrbit.Editor
                 out GameObject titleB, out GameObject playersB, out GameObject statsB, out GameObject joinB);
             CreateTeamPanelColumn(teamPanel.transform, "TeamCPanel", "Team C (0/20)", "Join C", teamCColor, shiftPanelSprite, shiftButtonSprite,
                 out GameObject titleC, out GameObject playersC, out GameObject statsC, out GameObject joinC);
+            Color teamDColorSetup = new Color(0.95f, 0.55f, 0.12f, 0.45f);
+            Color teamEColorSetup = new Color(0.65f, 0.25f, 0.85f, 0.45f);
+            CreateTeamPanelColumn(teamPanel.transform, "TeamDPanel", "Team D (0/20)", "Join D", teamDColorSetup, shiftPanelSprite, shiftButtonSprite,
+                out GameObject titleD, out GameObject playersD, out GameObject statsD, out GameObject joinD);
+            CreateTeamPanelColumn(teamPanel.transform, "TeamEPanel", "Team E (0/20)", "Join E", teamEColorSetup, shiftPanelSprite, shiftButtonSprite,
+                out GameObject titleE, out GameObject playersE, out GameObject statsE, out GameObject joinE);
             TeamSelectionUI teamSelectionUI = teamPanel.AddComponent<TeamSelectionUI>();
             SerializedObject tso = new SerializedObject(teamSelectionUI);
             tso.FindProperty("teamAPanel.title").objectReferenceValue = titleA.GetComponent<TextMeshProUGUI>();
@@ -790,6 +881,14 @@ namespace TitanOrbit.Editor
             tso.FindProperty("teamCPanel.playersText").objectReferenceValue = playersC.GetComponent<TextMeshProUGUI>();
             tso.FindProperty("teamCPanel.statsText").objectReferenceValue = statsC.GetComponent<TextMeshProUGUI>();
             tso.FindProperty("teamCPanel.joinButton").objectReferenceValue = joinC.GetComponent<Button>();
+            tso.FindProperty("teamDPanel.title").objectReferenceValue = titleD.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamDPanel.playersText").objectReferenceValue = playersD.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamDPanel.statsText").objectReferenceValue = statsD.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamDPanel.joinButton").objectReferenceValue = joinD.GetComponent<Button>();
+            tso.FindProperty("teamEPanel.title").objectReferenceValue = titleE.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamEPanel.playersText").objectReferenceValue = playersE.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamEPanel.statsText").objectReferenceValue = statsE.GetComponent<TextMeshProUGUI>();
+            tso.FindProperty("teamEPanel.joinButton").objectReferenceValue = joinE.GetComponent<Button>();
             tso.ApplyModifiedPropertiesWithoutUndo();
 
             // Main Menu component on Canvas (stays active when panel hidden)

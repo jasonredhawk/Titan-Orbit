@@ -10,7 +10,7 @@ using System.Collections.Generic;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Three team panels: players with scores, team stats (home level, gems, planets), and Join button with balance logic.
+    /// One column per team (2–5): players with scores, team stats (home level, gems, planets), and Join with balance logic.
     /// </summary>
     public class TeamSelectionUI : MonoBehaviour
     {
@@ -45,7 +45,7 @@ namespace TitanOrbit.UI
         {
             if (TeamManager.Instance == null) return;
             int max = TeamManager.Instance.MaxPlayersPerTeam;
-            int active = Mathf.Clamp(TeamManager.Instance.ActiveTeamCount, 2, 5);
+            int active = TeamManager.Instance.GetEffectiveTeamCountForUI();
 
             int minCount = int.MaxValue;
             for (int i = 0; i < active; i++)
@@ -61,12 +61,21 @@ namespace TitanOrbit.UI
             RefreshPanel(TeamManager.Team.TeamE, teamEPanel, 5, active, max, minCount);
         }
 
+        /// <summary>Title lives under Content/TitleBar; join is under Content. Toggle the whole column (TeamXPanel root), not just TitleBar.</summary>
         private static void SetPanelColumnActive(TeamPanelRefs refs, bool on)
         {
-            if (refs == null || refs.title == null) return;
-            Transform col = refs.title.transform.parent;
-            if (col != null)
-                col.gameObject.SetActive(on);
+            if (refs == null) return;
+            Transform root = null;
+            if (refs.joinButton != null)
+                root = refs.joinButton.transform.parent != null ? refs.joinButton.transform.parent.parent : null;
+            if (root == null && refs.title != null)
+                root = refs.title.transform.parent != null && refs.title.transform.parent.parent != null
+                    ? refs.title.transform.parent.parent.parent
+                    : null;
+            if (root != null)
+                root.gameObject.SetActive(on);
+            else if (refs.title != null && refs.title.transform.parent != null)
+                refs.title.transform.parent.gameObject.SetActive(on);
         }
 
         private void RefreshPanel(TeamManager.Team team, TeamPanelRefs refs, int teamOrdinal, int activeTeams, int max, int minCount)

@@ -323,8 +323,11 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                // Client receives real shield state through RPC shortly after spawn.
+                // Client receives authoritative shield state through RPC shortly after spawn.
+                // Until then, assume full shield so the matrix VFX isn't hidden at 0 (RPC will correct).
                 runtimeMaxShieldPoints = Mathf.Max(0.001f, maxShieldPoints);
+                shieldPoints = runtimeMaxShieldPoints;
+                lastShieldHitServerTime = GetServerTimeNowSeconds();
             }
 
             UpdateMatrixShieldVisual();
@@ -338,14 +341,31 @@ namespace TitanOrbit.Entities
 
         private void Start()
         {
+            StartCoroutine(DeferredMatrixShieldTeamRefresh());
             if (planet != null && planet.IsServer)
                 StartCoroutine(PushInitialMoonStateAfterSpawn());
+        }
+
+        /// <summary>
+        /// After spawn, planet team ownership may sync one frame later than the moon enables.
+        /// Recreate the matrix prefab if <see cref="EnsureMatrixShieldVisual"/> first ran with the wrong team.
+        /// </summary>
+        private IEnumerator DeferredMatrixShieldTeamRefresh()
+        {
+            yield return null;
+            UpdateMatrixShieldVisual();
         }
 
         private IEnumerator PushInitialMoonStateAfterSpawn()
         {
             yield return null;
             PushFullStateToClients();
+        }
+
+        /// <summary>Call when this moon's planet <see cref="Planet.TeamOwnership"/> changes so the matrix shield uses the correct team prefab.</summary>
+        public void RefreshMatrixShieldForPlanetTeam()
+        {
+            UpdateMatrixShieldVisual();
         }
 
         private void EnsureGemMoonStatsDisplay()
@@ -732,10 +752,13 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server-only: called by bullets/rockets/mines when they hit the moon.</summary>
-        public void TakeDamageServer(float damage)
+        /// <param name="attackerTeam">If set, damage is skipped when it matches this moon's owning team (no friendly fire on own moon).</param>
+        public void TakeDamageServer(float damage, TeamManager.Team attackerTeam = TeamManager.Team.None)
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (damage <= 0f) return;
+            if (attackerTeam != TeamManager.Team.None && IsTeamFriendlyToThisMoon(attackerTeam))
+                return;
 
             lastShieldHitServerTime = GetServerTimeNowSeconds();
 
@@ -957,18 +980,23 @@ namespace TitanOrbit.Entities
             ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
         }
 
-        private bool IsShipFriendlyToThisMoon(Starship ship)
+        /// <summary>True when <paramref name="team"/> owns this moon's planet (same rule as shield barrier friendlies).</summary>
+        public bool IsTeamFriendlyToThisMoon(TeamManager.Team team)
         {
-            if (ship == null) return false;
             if (planet == null) return false;
 
             TeamManager.Team planetTeam = planet.TeamOwnership;
             if (planetTeam == TeamManager.Team.None) return false; // Neutral moons are treated as hostile for the shield barrier.
 
-            TeamManager.Team shipTeam = ship.ShipTeam;
-            if (shipTeam == TeamManager.Team.None) return false;
+            if (team == TeamManager.Team.None) return false;
 
-            return shipTeam == planetTeam;
+            return team == planetTeam;
+        }
+
+        private bool IsShipFriendlyToThisMoon(Starship ship)
+        {
+            if (ship == null) return false;
+            return IsTeamFriendlyToThisMoon(ship.ShipTeam);
         }
 
         private bool TryRepelEnemyShipWithShield(Starship ship)

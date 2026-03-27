@@ -125,7 +125,10 @@ namespace TitanOrbit.Entities
                 PlanetGemMoon moon = c.GetComponentInParent<PlanetGemMoon>();
                 if (moon != null)
                 {
-                    moon.TakeDamageServer(dmg);
+                    if (moon.IsTeamFriendlyToThisMoon(ownerTeam))
+                        continue;
+
+                    moon.TakeDamageServer(dmg, ownerTeam);
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,

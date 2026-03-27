@@ -9,7 +9,7 @@ namespace TitanOrbit.Generation
 {
     /// <summary>
     /// Generates procedural maps with seed-based randomization
-    /// Uses parent containers for organization. Asteroids are clustered and never overlap.
+    /// Uses parent containers for organization. Asteroids are clustered and never overlap; count scales with map size and cluster count is rolled per map.
     /// Supports progressive generation for loading screen visualization.
     /// </summary>
     public class MapGenerator : NetworkBehaviour
@@ -25,9 +25,19 @@ namespace TitanOrbit.Generation
         private float mapWidth;
         private float mapHeight;
 
+        /// <summary>Computed after map size roll; scales with map dimensions.</summary>
+        private int numberOfAsteroidsThisMap;
+        /// <summary>Rolled once per map between <see cref="minAsteroidClusters"/> and <see cref="maxAsteroidClusters"/>.</summary>
+        private int asteroidClustersThisMap;
+
         [Header("Home Planet Settings")]
         [SerializeField] private GameObject homePlanetPrefab;
+        [Tooltip("Fallback ring radius if random packed placement fails (keeps homes spread out).")]
         [SerializeField] private float homePlanetDistance = 80f;
+        [Tooltip("Minimum distance between any two home planet centers (world units).")]
+        [SerializeField] private float minHomePlanetPairSeparation = 90f;
+        [Tooltip("Neutral planets, asteroids, and other spawns stay at least this far from each home planet.")]
+        [SerializeField] private float clearanceRadiusAroundHomePlanet = 40f;
 
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
@@ -37,8 +47,14 @@ namespace TitanOrbit.Generation
 
         [Header("Asteroid Settings")]
         [SerializeField] private GameObject asteroidPrefab;
-        [SerializeField] private int numberOfAsteroids = 400;
-        [SerializeField] private int asteroidClusters = 25;
+        [Tooltip("Asteroid count when map side length equals min map size (see Map Settings). Scales up toward max.")]
+        [SerializeField] private int asteroidsAtMinMapSize = 120;
+        [Tooltip("Asteroid count when map side length equals max map size (see Map Settings).")]
+        [SerializeField] private int asteroidsAtMaxMapSize = 400;
+        [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]
+        [SerializeField] private int minAsteroidClusters = 8;
+        [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]
+        [SerializeField] private int maxAsteroidClusters = 35;
         [SerializeField] private float minAsteroidSize = 1f;   // Gem value 1-70 (smallest = current small, largest = 15x current large)
         [SerializeField] private float maxAsteroidSize = 70f;
         [SerializeField] private float minAsteroidSpacing = 1.5f;
@@ -70,6 +86,8 @@ namespace TitanOrbit.Generation
         private System.Random random;
         private System.Collections.Generic.List<Vector3> asteroidPositions = new System.Collections.Generic.List<Vector3>();
         private System.Collections.Generic.List<Vector3> planetPositions = new System.Collections.Generic.List<Vector3>();
+        /// <summary>Home world positions for this map; drives avoidance checks for neutrals/asteroids.</summary>
+        private System.Collections.Generic.List<Vector3> homePlanetPositions = new System.Collections.Generic.List<Vector3>();
         private int nextPlanetId = 1;
         private bool hasGenerated;
 
@@ -144,8 +162,8 @@ namespace TitanOrbit.Generation
                 loadingComplete.Value = true;
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
                 int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-                int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
-                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+                int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
             }
         }
 
@@ -178,9 +196,11 @@ namespace TitanOrbit.Generation
             random = new System.Random(seed);
 
             RollAndApplyMapSize();
+            ComputeAsteroidParameters();
             homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
             asteroidPositions.Clear();
             planetPositions.Clear();
+            homePlanetPositions.Clear();
             nextPlanetId = 1;
 
             if (homePlanetPrefab == null)
@@ -191,7 +211,7 @@ namespace TitanOrbit.Generation
                 Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
 
             int homeSteps = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-            int totalSteps = homeSteps + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
+            int totalSteps = homeSteps + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
             if (totalSteps == 0) totalSteps = 1;
             int completed = 0;
 
@@ -219,40 +239,43 @@ namespace TitanOrbit.Generation
                 if (AsteroidRespawnManager.Instance != null)
                     AsteroidRespawnManager.Instance.SetPrefab(asteroidPrefab);
 
-                Vector3[] clusterCenters = new Vector3[asteroidClusters];
-                for (int c = 0; c < asteroidClusters; c++)
-                    clusterCenters[c] = GetRandomPositionAvoiding(15f, planetPositions, new System.Collections.Generic.List<Vector3>());
-
-                int perCluster = Mathf.CeilToInt((float)numberOfAsteroids / asteroidClusters);
-                int spawned = 0;
-                for (int c = 0; c < asteroidClusters && spawned < numberOfAsteroids; c++)
+                if (numberOfAsteroidsThisMap > 0)
                 {
-                    Vector3 center = clusterCenters[c];
-                    for (int i = 0; i < perCluster && spawned < numberOfAsteroids; i++)
+                    Vector3[] clusterCenters = new Vector3[asteroidClustersThisMap];
+                    for (int c = 0; c < asteroidClustersThisMap; c++)
+                        clusterCenters[c] = GetRandomPositionAvoiding(15f, planetPositions, new System.Collections.Generic.List<Vector3>());
+
+                    int perCluster = Mathf.CeilToInt((float)numberOfAsteroidsThisMap / Mathf.Max(1, asteroidClustersThisMap));
+                    int spawned = 0;
+                    for (int c = 0; c < asteroidClustersThisMap && spawned < numberOfAsteroidsThisMap; c++)
                     {
-                        Vector3 position = GetPositionInCluster(center);
-                        if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
-                        if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
+                        Vector3 center = clusterCenters[c];
+                        for (int i = 0; i < perCluster && spawned < numberOfAsteroidsThisMap; i++)
+                        {
+                            Vector3 position = GetPositionInCluster(center);
+                            if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
+                            if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
 
-                        asteroidPositions.Add(position);
-                        float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
-                        float linearScale = Mathf.Lerp(MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS, (size - 1f) / (maxAsteroidSize - 1f));
-                        Vector3 scale = new Vector3(
-                            linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
-                            linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
-                            linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
-                        );
+                            asteroidPositions.Add(position);
+                            float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
+                            float linearScale = Mathf.Lerp(MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS, (size - 1f) / (maxAsteroidSize - 1f));
+                            Vector3 scale = new Vector3(
+                                linearScale * (0.8f + (float)random.NextDouble() * 0.4f),
+                                linearScale * (0.9f + (float)random.NextDouble() * 0.2f),
+                                linearScale * (0.85f + (float)random.NextDouble() * 0.3f)
+                            );
 
-                        GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));
-                        asteroidObj.transform.localScale = scale;
-                        NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
-                        if (netObj != null) netObj.Spawn();
-                        spawned++;
-                        completed++;
-                        loadingProgress.Value = (float)completed / totalSteps;
+                            GameObject asteroidObj = Instantiate(asteroidPrefab, position, Quaternion.Euler(0, GetRandomFloat(0, 360f), 0));
+                            asteroidObj.transform.localScale = scale;
+                            NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
+                            if (netObj != null) netObj.Spawn();
+                            spawned++;
+                            completed++;
+                            loadingProgress.Value = (float)completed / totalSteps;
 
-                        if (spawned % asteroidsPerBatch == 0)
-                            yield return new WaitForSeconds(batchDelaySeconds);
+                            if (spawned % asteroidsPerBatch == 0)
+                                yield return new WaitForSeconds(batchDelaySeconds);
+                        }
                     }
                 }
             }
@@ -260,8 +283,8 @@ namespace TitanOrbit.Generation
             loadingProgress.Value = 1f;
             loadingComplete.Value = true;
             int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-            int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroids : 0);
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroids : 0)}. Total objects: {total}");
+            int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
@@ -272,9 +295,11 @@ namespace TitanOrbit.Generation
             random = new System.Random(seed);
 
             RollAndApplyMapSize();
+            ComputeAsteroidParameters();
             homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
             asteroidPositions.Clear();
             planetPositions.Clear();
+            homePlanetPositions.Clear();
             nextPlanetId = 1;
 
             if (homePlanetPrefab == null)
@@ -297,16 +322,11 @@ namespace TitanOrbit.Generation
             if (homePlanetPrefab == null) return;
 
             int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
-            float angleStep = (Mathf.PI * 2f) / n;
+            BuildRandomHomePositionsOrFallback(n);
 
             for (int i = 0; i < n; i++)
             {
-                float angle = i * angleStep;
-                Vector3 position = new Vector3(
-                    Mathf.Cos(angle) * homePlanetDistance,
-                    0f,
-                    Mathf.Sin(angle) * homePlanetDistance
-                );
+                Vector3 position = homePlanetPositions[i];
 
                 GameObject homePlanetObj = Instantiate(homePlanetPrefab, position, Quaternion.identity);
                 HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
@@ -320,6 +340,83 @@ namespace TitanOrbit.Generation
 
             if (TeamManager.Instance != null)
                 TeamManager.Instance.SetActiveTeamCountFromServer(n);
+        }
+
+        /// <summary>
+        /// Random packed placement with minimum pairwise spacing; relaxes separation slightly on failure,
+        /// then falls back to a rotated regular polygon so generation always succeeds.
+        /// </summary>
+        private void BuildRandomHomePositionsOrFallback(int n)
+        {
+            homePlanetPositions.Clear();
+            float minSep = Mathf.Max(25f, minHomePlanetPairSeparation);
+            const int attemptsPerPlanet = 500;
+
+            for (int relax = 0; relax < 16; relax++)
+            {
+                homePlanetPositions.Clear();
+                bool complete = true;
+                for (int i = 0; i < n; i++)
+                {
+                    Vector3 chosen = Vector3.zero;
+                    bool found = false;
+                    for (int attempt = 0; attempt < attemptsPerPlanet; attempt++)
+                    {
+                        Vector3 candidate = RandomHomeCandidateOnMap();
+                        if (!IsTooCloseToAny(candidate, minSep, homePlanetPositions))
+                        {
+                            chosen = candidate;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        complete = false;
+                        break;
+                    }
+                    homePlanetPositions.Add(chosen);
+                }
+                if (complete)
+                    return;
+                minSep *= 0.92f;
+            }
+
+            homePlanetPositions.Clear();
+            PlaceHomePlanetsFallbackRing(n);
+        }
+
+        private Vector3 RandomHomeCandidateOnMap()
+        {
+            float margin = Mathf.Clamp(minHomePlanetPairSeparation * 0.4f, 24f, mapWidth * 0.42f);
+            float halfW = Mathf.Max(8f, mapWidth * 0.5f - margin);
+            float halfH = Mathf.Max(8f, mapHeight * 0.5f - margin);
+            return new Vector3(
+                GetRandomFloat(-halfW, halfW),
+                0f,
+                GetRandomFloat(-halfH, halfH));
+        }
+
+        /// <summary>Evenly spaced ring with random rotation; pairwise distance scales with radius.</summary>
+        private void PlaceHomePlanetsFallbackRing(int n)
+        {
+            float margin = Mathf.Max(28f, clearanceRadiusAroundHomePlanet + 20f, minHomePlanetPairSeparation * 0.35f);
+            float halfSpace = Mathf.Min(mapWidth, mapHeight) * 0.5f - margin;
+            if (halfSpace < 20f)
+                halfSpace = Mathf.Max(15f, Mathf.Min(mapWidth, mapHeight) * 0.5f - 10f);
+
+            float minChord = Mathf.Max(28f, minHomePlanetPairSeparation * 0.55f);
+            float sinHalf = Mathf.Sin(Mathf.PI / Mathf.Max(2, n));
+            float rFromChord = minChord / (2f * Mathf.Max(0.01f, sinHalf));
+            float rPreferred = Mathf.Max(rFromChord, homePlanetDistance * 0.45f);
+            float r = Mathf.Clamp(rPreferred, 35f, halfSpace);
+
+            float rot = (float)random.NextDouble() * Mathf.PI * 2f;
+            for (int i = 0; i < n; i++)
+            {
+                float ang = rot + (Mathf.PI * 2f * i) / n;
+                homePlanetPositions.Add(new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r));
+            }
         }
 
         private void GenerateSingleNeutralPlanet(int index)
@@ -361,18 +458,20 @@ namespace TitanOrbit.Generation
             if (AsteroidRespawnManager.Instance != null)
                 AsteroidRespawnManager.Instance.SetPrefab(asteroidPrefab);
 
+            if (numberOfAsteroidsThisMap <= 0) return;
+
             // Create cluster centers
-            Vector3[] clusterCenters = new Vector3[asteroidClusters];
-            for (int c = 0; c < asteroidClusters; c++)
+            Vector3[] clusterCenters = new Vector3[asteroidClustersThisMap];
+            for (int c = 0; c < asteroidClustersThisMap; c++)
             {
                 clusterCenters[c] = GetRandomPositionAvoiding(15f, planetPositions, new System.Collections.Generic.List<Vector3>());
             }
 
-            int perCluster = Mathf.CeilToInt((float)numberOfAsteroids / asteroidClusters);
-            for (int c = 0; c < asteroidClusters; c++)
+            int perCluster = Mathf.CeilToInt((float)numberOfAsteroidsThisMap / Mathf.Max(1, asteroidClustersThisMap));
+            for (int c = 0; c < asteroidClustersThisMap; c++)
             {
                 Vector3 center = clusterCenters[c];
-                for (int i = 0; i < perCluster && asteroidPositions.Count < numberOfAsteroids; i++)
+                for (int i = 0; i < perCluster && asteroidPositions.Count < numberOfAsteroidsThisMap; i++)
                 {
                     Vector3 position = GetPositionInCluster(center);
                     if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
@@ -429,29 +528,36 @@ namespace TitanOrbit.Generation
 
         private bool IsTooCloseToHomePlanets(Vector3 position)
         {
-            float minDistance = homePlanetDistance * 0.5f;
-            int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
-            float angleStep = (Mathf.PI * 2f) / n;
-
-            for (int i = 0; i < n; i++)
+            float minDistance = Mathf.Max(1f, clearanceRadiusAroundHomePlanet);
+            foreach (var hp in homePlanetPositions)
             {
-                float angle = i * angleStep;
-                Vector3 homePos = new Vector3(
-                    Mathf.Cos(angle) * homePlanetDistance,
-                    0f,
-                    Mathf.Sin(angle) * homePlanetDistance
-                );
-
-                if (Vector3.Distance(position, homePos) < minDistance)
+                if (Vector3.Distance(position, hp) < minDistance)
                     return true;
             }
-
             return false;
         }
 
         private float GetRandomFloat(float min, float max)
         {
             return min + (float)random.NextDouble() * (max - min);
+        }
+
+        /// <summary>Derives asteroid count from rolled map side length (linear between min/max map size bounds) and rolls cluster count.</summary>
+        private void ComputeAsteroidParameters()
+        {
+            float lo = Mathf.Min(minMapSize, maxMapSize);
+            float hi = Mathf.Max(minMapSize, maxMapSize);
+            float t = hi > lo ? Mathf.InverseLerp(lo, hi, mapWidth) : 0f;
+            int aLo = Mathf.Min(asteroidsAtMinMapSize, asteroidsAtMaxMapSize);
+            int aHi = Mathf.Max(asteroidsAtMinMapSize, asteroidsAtMaxMapSize);
+            numberOfAsteroidsThisMap = Mathf.RoundToInt(Mathf.Lerp(aLo, aHi, t));
+            numberOfAsteroidsThisMap = Mathf.Max(0, numberOfAsteroidsThisMap);
+
+            int cLo = Mathf.Min(minAsteroidClusters, maxAsteroidClusters);
+            int cHi = Mathf.Max(minAsteroidClusters, maxAsteroidClusters);
+            asteroidClustersThisMap = random.Next(cLo, cHi + 1);
+            if (numberOfAsteroidsThisMap > 0)
+                asteroidClustersThisMap = Mathf.Max(1, asteroidClustersThisMap);
         }
 
         /// <summary>Picks a random square map side length in [minMapSize, maxMapSize] and syncs <see cref="ToroidalMap"/>.</summary>

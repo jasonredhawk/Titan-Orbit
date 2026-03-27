@@ -134,7 +134,7 @@ namespace TitanOrbit.UI
         {
             if (Core.TeamManager.Instance == null) return;
             int max = Core.TeamManager.Instance.MaxPlayersPerTeam;
-            int active = Mathf.Clamp(Core.TeamManager.Instance.ActiveTeamCount, 2, 5);
+            int active = Core.TeamManager.Instance.GetEffectiveTeamCountForUI();
             int a = Core.TeamManager.Instance.TeamACount;
             int b = Core.TeamManager.Instance.TeamBCount;
             int c = Core.TeamManager.Instance.TeamCCount;
@@ -940,7 +940,7 @@ namespace TitanOrbit.UI
 
             if (teamStatusText != null && Core.TeamManager.Instance != null)
             {
-                int active = Mathf.Clamp(Core.TeamManager.Instance.ActiveTeamCount, 2, 5);
+                int active = Core.TeamManager.Instance.GetEffectiveTeamCountForUI();
                 var parts = new System.Collections.Generic.List<string>();
                 for (int i = 0; i < active; i++)
                 {

@@ -60,7 +60,7 @@ namespace TitanOrbit.UI
         };
 
         private int ActiveTeamOrderLength => TeamManager.Instance != null
-            ? Mathf.Clamp(TeamManager.Instance.ActiveTeamCount, 2, 5)
+            ? TeamManager.Instance.GetEffectiveTeamCountForUI()
             : 3;
         private const float LeaderboardRowHeight = 56f;
         private const float LeaderboardRowSpacing = 8f;

@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using System.Collections.Generic;
 using TitanOrbit.Networking;
+using TitanOrbit.Entities;
 
 namespace TitanOrbit.Core
 {
@@ -58,6 +59,18 @@ namespace TitanOrbit.Core
         /// <summary>Teams in the current match (2–5). Mirrors the number of home planets.</summary>
         public int NumberOfTeams => activeTeamCount.Value;
         public int ActiveTeamCount => activeTeamCount.Value;
+
+        /// <summary>
+        /// For menus/HUD: how many teams exist in this match. Uses spawned home worlds when available (authoritative for map size);
+        /// otherwise falls back to <see cref="ActiveTeamCount"/> (e.g. lobby before map spawn).
+        /// </summary>
+        public int GetEffectiveTeamCountForUI()
+        {
+            int n = HomePlanet.AllHomePlanets != null ? HomePlanet.AllHomePlanets.Count : 0;
+            if (n >= 2 && n <= 5)
+                return n;
+            return Mathf.Clamp(activeTeamCount.Value, 2, 5);
+        }
 
         public int TeamACount => networkTeamACount.Value;
         public int TeamBCount => networkTeamBCount.Value;

@@ -1073,6 +1073,8 @@ namespace TitanOrbit.Entities
         {
             UpdateVisual(newTeam);
             UpdatePopulationDisplay();
+            if (gemMoon != null)
+                gemMoon.RefreshMatrixShieldForPlanetTeam();
         }
 
         private void UpdateVisual(TeamManager.Team? teamOverride = null)
