@@ -7,7 +7,7 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Editor
 {
     /// <summary>
-    /// Creates ShipData assets and UpgradeTree for: L1(1)→L2(2)→L3(4)→L4(6)→L5(8)→L6(9)→L7(4 MEGA).
+    /// Creates ShipData assets and UpgradeTree for: L1(1)→L2(2)→L3(4)→L4(6)→L5(8)→L6(9)→L7(3 MEGA).
     /// Branch index 0 = fighter focus, last = miner focus, middle = blend.
     /// Run: Titan Orbit > Create Upgrade Tree And Ships
     /// </summary>
@@ -29,7 +29,7 @@ namespace TitanOrbit.Editor
         private const string HIREZ_URP_MATERIALS_FOLDER = "Assets/HiRezSpaceshipsCreatorFree/Materials/GeneratedURP";
         private const string STARTER_SHIP_PREFAB_PATH = "Assets/Prefabs/Ships/Starship_Lv1_0.prefab";
 
-        private static readonly int[] CountPerLevel = { 2, 4, 6, 8, 9, 4 }; // levels 2-7
+        private static readonly int[] CountPerLevel = { 2, 4, 6, 8, 9, 3 }; // levels 2-7 (level 7 = 3 MEGA)
         private static readonly string[] StarSparrowColorVariants =
         {
             "Red", "Blue", "Green", "Purple", "Grey", "White", "Yellow", "Orange", "Cyan", "Black"
@@ -60,7 +60,7 @@ namespace TitanOrbit.Editor
             AssignUpgradeTreeInScene(tree);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("Upgrade tree created: L1(1)→L2(2)→L3(4)→L4(6)→L5(8)→L6(9)→L7(4 MEGA). Level 7 requires home planet 6 + full gems.");
+            Debug.Log("Upgrade tree created: L1(1)→L2(2)→L3(4)→L4(6)→L5(8)→L6(9)→L7(3 MEGA). Level 7 requires home planet 6 + full gems.");
         }
 
         [MenuItem("Titan Orbit/Rebuild Ship Prefabs (Unique Designs)")]
@@ -465,10 +465,10 @@ namespace TitanOrbit.Editor
             }
             if (li == 5)
             {
-                result[0].Add(0); result[0].Add(3); result[0].Add(4); result[0].Add(8);
-                result[1].Add(0); result[1].Add(1); result[1].Add(4); result[1].Add(5); result[1].Add(8);
-                result[2].Add(1); result[2].Add(2); result[2].Add(5); result[2].Add(6);
-                result[3].Add(2); result[3].Add(3); result[3].Add(6); result[3].Add(7);
+                // L7 (3 MEGA): matches runtime UpgradeTree 6→7 edges (6.1&6.2→7.1; 6.2–6.5→7.2; 6.5&6.6→7.3, 0-based).
+                result[0].Add(0); result[0].Add(1);
+                result[1].Add(1); result[1].Add(2); result[1].Add(3); result[1].Add(4);
+                result[2].Add(4); result[2].Add(5);
                 return result;
             }
             return result;

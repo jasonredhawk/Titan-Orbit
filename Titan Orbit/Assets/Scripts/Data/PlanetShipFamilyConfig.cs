@@ -26,6 +26,64 @@ namespace TitanOrbit.Data
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]
         public List<ShipFamilyEntry> families = new List<ShipFamilyEntry>();
 
+        /// <summary>
+        /// Linear index into <see cref="ShipFamilyDefinition.upgradeTree"/>: sum of per-level slot counts for levels &lt; L, plus branch.
+        /// Level 7 has 3 slots (MEGA); levels 1–6 have L slots each → total 24 tiers before repeating.
+        /// </summary>
+        public static int GetLadderLinearIndex(int level, int branchIndex)
+        {
+            if (level < 1 || level > 7) return -1;
+            int count = UpgradeTree.GetShipCountForLevel(level);
+            if (branchIndex < 0 || branchIndex >= count) return -1;
+            int offset = 0;
+            for (int L = 1; L < level; L++)
+                offset += UpgradeTree.GetShipCountForLevel(L);
+            return offset + branchIndex;
+        }
+
+        /// <summary>Chassis ID at the ladder slot for this planet's family tree, or null.</summary>
+        public string GetChassisIdForLadderSlot(int planetId, int level, int branchIndex)
+        {
+            int idx = GetLadderLinearIndex(level, branchIndex);
+            if (idx < 0) return null;
+            return GetChassisIdForPlanetAndIndex(planetId, idx);
+        }
+
+        /// <summary>
+        /// Chassis ID at the ladder slot for the family matching <paramref name="currentChassisId"/> prefix
+        /// (e.g. AstroEagle from AstroEagle_02) at the given planet. Falls back to <see cref="GetChassisIdForLadderSlot"/> when prefix cannot be resolved.
+        /// </summary>
+        public string GetChassisIdForLadderSlotForShip(string currentChassisId, int planetId, int level, int branchIndex)
+        {
+            int idx = GetLadderLinearIndex(level, branchIndex);
+            if (idx < 0) return null;
+
+            if (string.IsNullOrEmpty(currentChassisId))
+                return GetChassisIdForLadderSlot(planetId, level, branchIndex);
+
+            int us = currentChassisId.IndexOf('_');
+            if (us <= 0)
+                return GetChassisIdForLadderSlot(planetId, level, branchIndex);
+
+            string prefix = currentChassisId.Substring(0, us);
+            if (families != null)
+            {
+                for (int i = 0; i < families.Count; i++)
+                {
+                    var f = families[i];
+                    if (f?.shipFamilyDefinition?.upgradeTree == null) continue;
+                    if (f.planetId != planetId) continue;
+                    if (!string.Equals(f.shipFamilyDefinition.familyId, prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (idx >= f.shipFamilyDefinition.upgradeTree.Count) return null;
+                    var tier = f.shipFamilyDefinition.upgradeTree[idx];
+                    return tier != null ? tier.chassisId : null;
+                }
+            }
+
+            return GetChassisIdForLadderSlot(planetId, level, branchIndex);
+        }
+
         /// <summary>Gets the family entry for the given planet.</summary>
         public ShipFamilyEntry GetFamilyForPlanet(int planetId)
         {

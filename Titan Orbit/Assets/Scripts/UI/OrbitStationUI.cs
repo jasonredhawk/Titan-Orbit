@@ -90,11 +90,33 @@ namespace TitanOrbit.UI
         private Button[] chassisButtons;
         private TextMeshProUGUI[] chassisLabels;
         private ShipUnlockEntry[] shipUnlockEntries;
-        private GameObject upgradeShipRow;
-        private Button upgradeShipButton;
+        private RectTransform shipTreeCenterRow;
+        private RectTransform shipTreeCanvas;
+        private TextMeshProUGUI shipTreeHintText;
+        private readonly List<GameObject> shipTreeVisuals = new List<GameObject>();
+        private readonly List<ShipTreeNodeView> shipTreeNodes = new List<ShipTreeNodeView>();
+        /// <summary>When unchanged, only update labels/colors — full rebuild was causing visible blinking every store refresh.</summary>
+        private string _shipTreeStructureKey = "";
+        private const int MaxShipTreeColumns = 7;
+        private const float ShipTreeColGap = 6f;
+        private const float ShipTreeLevelSpacing = 78f;
+        /// <summary>Cap tree width; widest row is level 6 (6 columns).</summary>
+        private const float ShipTreeViewportMaxWidth = 572f;
+        private const string ShipTreeStructureKey = "full7_ladder_v6_lvl7x3";
+        private readonly List<int> _shipTreeNextTargets = new List<int>(4);
         private StoreItemType[] itemTypes;
         private Button[] itemButtons;
         private TextMeshProUGUI[] itemLabels;
+
+        private class ShipTreeNodeView
+        {
+            public int Level;
+            public int BranchIndex;
+            public ShipUpgradeNode Node;
+            public Button Button;
+            public TextMeshProUGUI Label;
+            public RectTransform Rect;
+        }
 
         private float _cardsContentHeight;
         private float _shipsContentHeight;
@@ -329,7 +351,6 @@ namespace TitanOrbit.UI
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
             RefreshAll();
             RefreshStoreTabVisibility();
-            RefreshShipsTab();
             // Force layout rebuild so content (slots, store, scroll) gets correct size after panel becomes active.
             if (rootPanel != null)
             {
@@ -343,6 +364,8 @@ namespace TitanOrbit.UI
                 }
                 Canvas.ForceUpdateCanvases();
             }
+            // Ships tab uses parent width to cap tree; run after layout so width is not stale.
+            RefreshShipsTab();
         }
 
         public void Hide()
@@ -373,6 +396,8 @@ namespace TitanOrbit.UI
             storeContentRoot = null;
             cardsTabContent = null;
             shipsTabContent = null;
+            shipTreeCenterRow = null;
+            shipTreeCanvas = null;
             shipsRowsContainer = null;
             shipPreviewsRoot = null;
 
@@ -612,18 +637,65 @@ namespace TitanOrbit.UI
             chassisLabels = new TextMeshProUGUI[MaxShipCards];
             shipUnlockEntries = new ShipUnlockEntry[MaxShipCards];
             float shipY = 0f;
-            upgradeShipRow = CreateUpgradeShipRow(shipsTabContent.transform, ref shipY);
-            upgradeShipButton = upgradeShipRow != null ? upgradeShipRow.GetComponentInChildren<Button>() : null;
-            if (upgradeShipButton != null) upgradeShipButton.onClick.AddListener(OnUpgradeShipLevel);
-            CreateRowLabel(shipsTabContent.transform, "Available Ships (unlocked by home planet level)", ref shipY);
-            shipY -= 6f;
-            for (int i = 0; i < MaxShipCards; i++)
-            {
-                chassisButtons[i] = CreateShipSlotButton(shipsTabContent.transform, ref shipY);
-                chassisLabels[i] = chassisButtons[i].GetComponentInChildren<TextMeshProUGUI>();
-                int idx = i;
-                chassisButtons[i].onClick.AddListener(() => OnBuyChassis(idx));
-            }
+            CreateRowLabel(shipsTabContent.transform, "Ship Upgrade Tree (choose one left/right path each level)", ref shipY);
+            shipY -= 4f;
+
+            var hintGo = new GameObject("ShipTreeHint");
+            hintGo.transform.SetParent(shipsTabContent.transform, false);
+            var hintRect = hintGo.AddComponent<RectTransform>();
+            hintRect.anchorMin = new Vector2(0f, 1f);
+            hintRect.anchorMax = new Vector2(1f, 1f);
+            hintRect.pivot = new Vector2(0.5f, 1f);
+            hintRect.anchoredPosition = new Vector2(0f, shipY);
+            hintRect.sizeDelta = new Vector2(-24f, 20f);
+            shipTreeHintText = hintGo.AddComponent<TextMeshProUGUI>();
+            shipTreeHintText.text = "";
+            shipTreeHintText.fontSize = 12;
+            shipTreeHintText.color = new Color(0.82f, 0.9f, 1f, 0.95f);
+            shipTreeHintText.alignment = TextAlignmentOptions.Left;
+            shipTreeHintText.raycastTarget = false;
+            if (fontAsset != null) shipTreeHintText.font = fontAsset;
+            shipY -= 24f;
+
+            var rowGo = new GameObject("ShipTreeCenterRow");
+            rowGo.transform.SetParent(shipsTabContent.transform, false);
+            shipTreeCenterRow = rowGo.AddComponent<RectTransform>();
+            shipTreeCenterRow.anchorMin = new Vector2(0f, 1f);
+            shipTreeCenterRow.anchorMax = new Vector2(1f, 1f);
+            shipTreeCenterRow.pivot = new Vector2(0.5f, 1f);
+            shipTreeCenterRow.anchoredPosition = new Vector2(0f, shipY);
+            shipTreeCenterRow.sizeDelta = new Vector2(0f, 560f);
+            var rowLe = rowGo.AddComponent<LayoutElement>();
+            rowLe.preferredHeight = 560f;
+            rowLe.flexibleWidth = 1f;
+            rowLe.minHeight = 400f;
+            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
+            rowHlg.childAlignment = TextAnchor.UpperLeft;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = false;
+            rowHlg.childForceExpandHeight = true;
+            rowHlg.spacing = 0f;
+            rowHlg.padding = new RectOffset(8, 12, 0, 0);
+
+            var treeGo = new GameObject("ShipUpgradeTreeCanvas");
+            treeGo.transform.SetParent(rowGo.transform, false);
+            shipTreeCanvas = treeGo.AddComponent<RectTransform>();
+            shipTreeCanvas.anchorMin = new Vector2(0f, 1f);
+            shipTreeCanvas.anchorMax = new Vector2(0f, 1f);
+            shipTreeCanvas.pivot = new Vector2(0f, 1f);
+            shipTreeCanvas.anchoredPosition = Vector2.zero;
+            shipTreeCanvas.sizeDelta = new Vector2(ShipTreeViewportMaxWidth, 560f);
+            var treeLe = treeGo.AddComponent<LayoutElement>();
+            treeLe.preferredWidth = ShipTreeViewportMaxWidth;
+            treeLe.flexibleWidth = 0f;
+            treeLe.minWidth = ShipTreeViewportMaxWidth;
+            var treeBg = treeGo.AddComponent<Image>();
+            treeBg.color = new Color(0.05f, 0.08f, 0.13f, 0.72f);
+            if (buttonSprite != null) { treeBg.sprite = buttonSprite; treeBg.type = Image.Type.Sliced; }
+            treeGo.AddComponent<ScrollRectForwarder>();
+            shipY -= 568f;
+
             shipsRowsContainer = null;
             shipPreviewsRoot = new GameObject("ShipPreviewsRoot").transform;
             shipPreviewsRoot.SetParent(transform, false);
@@ -631,7 +703,7 @@ namespace TitanOrbit.UI
             shipPreviewsRoot.localRotation = Quaternion.identity;
             shipPreviewsRoot.localScale = Vector3.one;
 
-            float shipsContentHeight = Mathf.Max(650f, MaxShipCards * 40f + 60f);
+            float shipsContentHeight = Mathf.Max(820f, MaxShipCards * 40f + 60f);
             _shipsContentHeight = shipsContentHeight;
             var shipsLayoutEl = shipsTabContent.AddComponent<LayoutElement>();
             shipsLayoutEl.preferredHeight = shipsContentHeight;
@@ -840,76 +912,349 @@ namespace TitanOrbit.UI
             return go;
         }
 
-        private void OnUpgradeShipLevel()
+        /// <summary>Keeps the upgrade tree narrow; row is left-aligned in the scroll viewport.</summary>
+        private void ApplyShipTreeCanvasWidth()
         {
-            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
-            var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
-            if (planetNo == null || !planetNo.IsSpawned) return;
-            CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId);
-            pendingGemsRequest = true;
-            if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+            if (shipTreeCanvas == null || shipsTabContent == null) return;
+            var parentRt = shipsTabContent.GetComponent<RectTransform>();
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
+            if (shipTreeCenterRow != null)
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
+            float parentW = parentRt.rect.width;
+            if (parentW < 8f)
+                parentW = Mathf.Max(PanelWidth, SlotPanelWidthConst) - 56f;
+            float treeW = Mathf.Min(ShipTreeViewportMaxWidth, Mathf.Max(220f, parentW - 24f));
+            float h = shipTreeCanvas.sizeDelta.y;
+            shipTreeCanvas.sizeDelta = new Vector2(treeW, h);
+            var le = shipTreeCanvas.GetComponent<LayoutElement>();
+            if (le != null)
+            {
+                le.preferredWidth = treeW;
+                le.minWidth = treeW;
+            }
+            if (shipTreeCenterRow != null)
+            {
+                shipTreeCenterRow.sizeDelta = new Vector2(0f, Mathf.Max(h, 400f));
+                var rowLe = shipTreeCenterRow.GetComponent<LayoutElement>();
+                if (rowLe != null) rowLe.preferredHeight = Mathf.Max(h, 400f);
+            }
         }
 
         private void RefreshShipsTab()
         {
-            if (chassisButtons == null || chassisLabels == null) return;
-            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 6;
-            bool isHome = currentPlanet is HomePlanet;
-            int storePlanetId = currentPlanet != null ? currentPlanet.PlanetId : 0;
-            List<ShipUnlockEntry> unlocked = CardShopSystem.Instance != null
-                ? CardShopSystem.Instance.GetUnlockedChassisEntriesForHomeLevel(homeLevel, isHome, storePlanetId)
-                : new List<ShipUnlockEntry>();
-            if (unlocked == null) unlocked = new List<ShipUnlockEntry>();
+            if (shipTreeCanvas == null) return;
+            ApplyShipTreeCanvasWidth();
 
-            int nextLevel = 0;
-            float upgradeCost = 0f;
-            bool canUpgrade = currentShip != null && currentPlanet != null && CardShopSystem.Instance != null
-                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, currentPlanet, out nextLevel, out upgradeCost, out _);
-            if (upgradeShipRow != null)
+            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
+            if (tree == null || currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
             {
-                upgradeShipRow.SetActive(canUpgrade);
-                if (canUpgrade)
+                _shipTreeStructureKey = "";
+                ClearShipTreeVisuals();
+                if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
+                return;
+            }
+
+            if (shipTreeNodes.Count == 0 || _shipTreeStructureKey != ShipTreeStructureKey)
+            {
+                BuildShipUpgradeTreeVisualFull();
+                _shipTreeStructureKey = ShipTreeStructureKey;
+            }
+            else
+                UpdateShipUpgradeTreeVisualState();
+        }
+
+        private string GetShipDisplayName(ShipUpgradeNode node, int level, int branchIndex)
+        {
+            if (currentShip != null && currentPlanet != null && CardShopSystem.Instance != null)
+            {
+                string cid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+                if (!string.IsNullOrEmpty(cid))
                 {
-                    var tmp = upgradeShipRow.GetComponentInChildren<TextMeshProUGUI>();
-                    if (tmp != null) tmp.text = $"Upgrade to Level {nextLevel} — {upgradeCost:F0}g";
-                    if (upgradeShipButton != null) upgradeShipButton.interactable = contributedGems >= upgradeCost;
+                    ShipChassisDefinition chassis = CardShopSystem.Instance.GetChassisDefinitionByChassisId(cid);
+                    if (chassis != null && !string.IsNullOrEmpty(chassis.displayName))
+                        return chassis.displayName.Trim();
+                    return cid;
                 }
             }
-
-            if (unlocked.Count > 0)
+            if (node != null)
             {
-                unlocked.Sort((a, b) =>
-                {
-                    if (a == null || b == null) return 0;
-                    int tierA = Mathf.Max(1, a.minHomePlanetLevel);
-                    int tierB = Mathf.Max(1, b.minHomePlanetLevel);
-                    if (tierA != tierB) return tierA.CompareTo(tierB);
-                    string nameA = a.chassis != null ? a.chassis.displayName : "";
-                    string nameB = b.chassis != null ? b.chassis.displayName : "";
-                    return string.Compare(nameA, nameB, StringComparison.Ordinal);
-                });
+                if (!string.IsNullOrEmpty(node.shipName)) return node.shipName.Trim();
+                if (node.shipData != null && !string.IsNullOrEmpty(node.shipData.shipName)) return node.shipData.shipName.Trim();
             }
-            for (int i = 0; i < chassisButtons.Length; i++)
+            return "Unassigned";
+        }
+
+        private string GetStarterShipDisplayName()
+        {
+            if (currentShip != null && CardShopSystem.Instance != null && !string.IsNullOrEmpty(currentShip.CurrentChassisId))
             {
-                shipUnlockEntries[i] = null;
-                if (chassisButtons[i] != null)
+                ShipChassisDefinition ch = CardShopSystem.Instance.GetChassisDefinitionByChassisId(currentShip.CurrentChassisId);
+                if (ch != null && !string.IsNullOrEmpty(ch.displayName))
+                    return ch.displayName.Trim();
+                return currentShip.CurrentChassisId;
+            }
+            if (currentShip != null && currentShip.CurrentShipData != null && !string.IsNullOrEmpty(currentShip.CurrentShipData.shipName))
+                return currentShip.CurrentShipData.shipName.Trim();
+            return "Starter";
+        }
+
+        private void UpdateShipUpgradeTreeVisualState()
+        {
+            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
+            if (tree == null || currentShip == null || shipTreeNodes.Count == 0) return;
+
+            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
+            int currentLevel = currentShip.ShipLevel;
+            int currentBranch = currentShip.BranchIndex;
+            int nextLevel = currentLevel + 1;
+            float nextCost = tree.GetGemCostForLevel(nextLevel);
+            var available = tree.GetAvailableUpgrades(currentLevel, currentBranch);
+            bool canBuyAny = currentPlanet != null && CardShopSystem.Instance != null
+                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, currentPlanet, out _, out _, out _);
+
+            if (shipTreeHintText != null)
+            {
+                if (canBuyAny && available != null && available.Count > 0)
                 {
-                    chassisButtons[i].gameObject.SetActive(i < unlocked.Count);
-                    if (i < unlocked.Count)
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("Choose next ship (").Append(nextCost.ToString("F0")).Append("g): ");
+                    UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _shipTreeNextTargets);
+                    for (int i = 0; i < _shipTreeNextTargets.Count; i++)
                     {
-                        ShipUnlockEntry entry = unlocked[i];
-                        shipUnlockEntries[i] = entry;
-                        ShipChassisDefinition chassis = entry?.chassis;
-                        int tierLevel = Mathf.Max(1, entry.minHomePlanetLevel);
-                        float cost = entry.gemCost > 0f ? entry.gemCost : ShipUnlockTable.GetTierCost(tierLevel);
-                        string family = chassis != null && !string.IsNullOrEmpty(chassis.shipFamily) ? chassis.shipFamily : "Ship";
-                        string name = chassis != null ? chassis.displayName : "Ship";
-                        chassisButtons[i].interactable = contributedGems >= cost;
-                        if (chassisLabels[i] != null)
-                            chassisLabels[i].text = $"Lv.{tierLevel} • {name} ({family}) — {cost:F0}g";
+                        int bi = _shipTreeNextTargets[i];
+                        ShipUpgradeNode hintNode = tree.GetNodeForBranch(nextLevel, bi);
+                        string nm = GetShipDisplayName(hintNode, nextLevel, bi);
+                        if (i > 0) sb.Append(" · ");
+                        sb.Append(nm);
+                    }
+                    sb.Append(".");
+                    shipTreeHintText.text = sb.ToString();
+                }
+                else if (nextLevel <= 7 && homeLevel < nextLevel)
+                    shipTreeHintText.text = $"Raise home planet to level {nextLevel} or higher to unlock the next ship upgrade.";
+                else if (canBuyAny)
+                    shipTreeHintText.text = $"Upgrade to tier {nextLevel} ({nextCost:F0}g).";
+                else
+                    shipTreeHintText.text = "Full tree shown — green = your ship; blue = affordable next choices.";
+            }
+
+            for (int v = 0; v < shipTreeNodes.Count; v++)
+            {
+                var view = shipTreeNodes[v];
+                if (view == null || view.Button == null) continue;
+
+                bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
+                bool tierBlockedByPlanet = view.Level > homeLevel;
+                bool isNextChoice = false;
+                if (view.Level == nextLevel)
+                {
+                    UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _shipTreeNextTargets);
+                    isNextChoice = _shipTreeNextTargets.Contains(view.BranchIndex);
+                }
+
+                bool canApplyPurchase = view.Node != null && view.Node.shipData != null;
+                if (!canApplyPurchase && currentPlanet != null && CardShopSystem.Instance != null)
+                {
+                    string ladderCid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, currentPlanet.PlanetId, view.Level, view.BranchIndex);
+                    canApplyPurchase = !string.IsNullOrEmpty(ladderCid);
+                }
+                view.Button.interactable = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlockedByPlanet && canApplyPurchase;
+                var img = view.Button.GetComponent<Image>();
+                if (img != null)
+                {
+                    if (isCurrent) img.color = new Color(0.26f, 0.62f, 0.36f, 0.98f);
+                    else if (tierBlockedByPlanet) img.color = new Color(0.1f, 0.11f, 0.14f, 0.92f);
+                    else if (isNextChoice) img.color = new Color(0.25f, 0.48f, 0.78f, 0.98f);
+                    else img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
+                }
+
+                if (view.Label != null)
+                {
+                    if (view.Level == 1)
+                    {
+                        string starterName = GetStarterShipDisplayName();
+                        view.Label.text = $"Level 1\n{starterName}\n—";
+                    }
+                    else
+                    {
+                        string shipName = GetShipDisplayName(view.Node, view.Level, view.BranchIndex);
+                        float price = tree.GetGemCostForLevel(view.Level);
+                        view.Label.text = $"Level {view.Level}\n{shipName}\n{price:F0}g";
                     }
                 }
             }
+        }
+
+        private void BuildShipUpgradeTreeVisualFull()
+        {
+            ClearShipTreeVisuals();
+            if (shipTreeCanvas == null)
+                return;
+
+            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
+            if (tree == null || currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+            {
+                if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
+                return;
+            }
+
+            ApplyShipTreeCanvasWidth();
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
+            if (shipTreeCenterRow != null)
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCanvas);
+            Canvas.ForceUpdateCanvases();
+
+            const int maxLevel = 7;
+            float margin = 8f;
+            float innerW = Mathf.Max(shipTreeCanvas.rect.width - 2f * margin, 200f);
+            float nodeHeight = 64f;
+            float contentHeight = Mathf.Max(160f, margin * 2f + (maxLevel - 1) * ShipTreeLevelSpacing + nodeHeight);
+            shipTreeCanvas.sizeDelta = new Vector2(shipTreeCanvas.sizeDelta.x, contentHeight);
+            if (shipTreeCenterRow != null)
+            {
+                shipTreeCenterRow.sizeDelta = new Vector2(0f, contentHeight);
+                var rowLe = shipTreeCenterRow.GetComponent<LayoutElement>();
+                if (rowLe != null) rowLe.preferredHeight = contentHeight;
+            }
+
+            var nodesByLevel = new Dictionary<int, List<ShipTreeNodeView>>();
+            for (int level = 1; level <= maxLevel; level++)
+            {
+                int count = UpgradeTree.GetShipCountForLevel(level);
+                var views = new List<ShipTreeNodeView>(count);
+                float rowInner = innerW;
+                float useW = count > 0
+                    ? Mathf.Max(32f, (rowInner - (count - 1) * ShipTreeColGap) / count)
+                    : 48f;
+                float rowW = count * useW + (count - 1) * ShipTreeColGap;
+                float startX = margin + (innerW - rowW) * 0.5f;
+                float y = margin + (level - 1) * ShipTreeLevelSpacing;
+                for (int b = 0; b < count; b++)
+                {
+                    ShipUpgradeNode node = level == 1 ? null : tree.GetNodeForBranch(level, b);
+                    var view = CreateShipTreeNode(level, b, node, useW, nodeHeight);
+                    views.Add(view);
+                    float x = startX + useW * 0.5f + b * (useW + ShipTreeColGap);
+                    view.Rect.anchorMin = new Vector2(0f, 0f);
+                    view.Rect.anchorMax = new Vector2(0f, 0f);
+                    view.Rect.pivot = new Vector2(0.5f, 0.5f);
+                    view.Rect.anchoredPosition = new Vector2(x, y);
+                }
+                nodesByLevel[level] = views;
+            }
+
+            for (int level = 2; level <= maxLevel; level++)
+            {
+                if (!nodesByLevel.TryGetValue(level, out var levelViews)) continue;
+                if (!nodesByLevel.TryGetValue(level - 1, out var previousViews)) continue;
+                foreach (var prevView in previousViews)
+                {
+                    int p = prevView.BranchIndex;
+                    foreach (var nextView in levelViews)
+                    {
+                        int j = nextView.BranchIndex;
+                        if (UpgradeTree.IsValidUpgradeStep(level - 1, p, level, j))
+                            DrawTreeConnector(prevView.Rect.anchoredPosition, nextView.Rect.anchoredPosition);
+                    }
+                }
+            }
+
+            UpdateShipUpgradeTreeVisualState();
+        }
+
+        private void ClearShipTreeVisuals()
+        {
+            for (int i = 0; i < shipTreeVisuals.Count; i++)
+            {
+                if (shipTreeVisuals[i] != null) Destroy(shipTreeVisuals[i]);
+            }
+            shipTreeVisuals.Clear();
+            shipTreeNodes.Clear();
+        }
+
+        private ShipTreeNodeView CreateShipTreeNode(int level, int branchIndex, ShipUpgradeNode node, float width, float height)
+        {
+            var go = new GameObject($"ShipTreeNode_{level}_{branchIndex}");
+            go.transform.SetParent(shipTreeCanvas, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(width, height);
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
+            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+            var btn = go.AddComponent<Button>();
+            var colors = btn.colors;
+            colors.fadeDuration = 0f;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.04f, 1.06f, 1.08f, 1f);
+            colors.pressedColor = new Color(0.88f, 0.9f, 0.94f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(0.55f, 0.55f, 0.58f, 0.72f);
+            btn.colors = colors;
+            int targetBranch = branchIndex;
+            btn.onClick.AddListener(() => OnUpgradeTreeNodeClicked(level, targetBranch));
+
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(6f, 5f);
+            textRect.offsetMax = new Vector2(-6f, -5f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.fontSize = 12;
+            tmp.lineSpacing = -2f;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.enableWordWrapping = true;
+            tmp.overflowMode = TextOverflowModes.Ellipsis;
+            tmp.color = new Color(0.96f, 0.97f, 1f, 1f);
+            tmp.raycastTarget = false;
+            if (fontAsset != null) tmp.font = fontAsset;
+
+            shipTreeVisuals.Add(go);
+            var view = new ShipTreeNodeView
+            {
+                Level = level,
+                BranchIndex = branchIndex,
+                Node = node,
+                Button = btn,
+                Label = tmp,
+                Rect = rect
+            };
+            shipTreeNodes.Add(view);
+            return view;
+        }
+
+        private void DrawTreeConnector(Vector2 from, Vector2 to)
+        {
+            var go = new GameObject("ShipTreeConnector");
+            go.transform.SetParent(shipTreeCanvas, false);
+            var rect = go.AddComponent<RectTransform>();
+            Vector2 delta = to - from;
+            float length = delta.magnitude;
+            rect.sizeDelta = new Vector2(length, 2f);
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(0f, 0f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = from;
+            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+            rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.45f, 0.62f, 0.85f, 0.7f);
+            img.raycastTarget = false;
+            go.transform.SetAsFirstSibling();
+            shipTreeVisuals.Add(go);
+        }
+
+        private void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)
+        {
+            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
+            if (nodeLevel != currentShip.ShipLevel + 1) return;
+            var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
+            if (planetNo == null || !planetNo.IsSpawned) return;
+            CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, targetBranchIndex);
+            pendingGemsRequest = true;
+            if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
         }
 
         private void CreateSectionLabel(Transform parent, string name, string text, ref float y)
@@ -1288,7 +1633,8 @@ namespace TitanOrbit.UI
 
         private void RefreshStoreLabels()
         {
-            if (!pendingGemsRequest) contributedGems = lastReceivedGems;
+            // Server is source of truth (Show() was zeroing contributedGems while pendingGemsRequest blocked syncing).
+            contributedGems = lastReceivedGems;
             if (gemsText != null) gemsText.text = $"Your contributed gems: {contributedGems:F0}";
 
             if (cardRoots == null || cardButtons == null || currentShip == null || currentPlanet == null) return;

@@ -369,6 +369,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>Ship level synced to clients so orbit UI shows correct slot count (level 2 = 2 slots, etc.).</summary>
         private NetworkVariable<int> networkShipLevel = new NetworkVariable<int>(1);
+        /// <summary>Upgrade-tree branch index (0..level-1), synced so clients match ladder choices without relying on shared ShipData assets.</summary>
+        private NetworkVariable<int> networkBranchIndex = new NetworkVariable<int>(0);
 
         [Header("Card Loadout (WIP)")]
         [Tooltip("Equipped upgrade cards for this ship. Server-authoritative; synced to clients via equippedCardIds for UI display.")]
@@ -651,7 +653,7 @@ namespace TitanOrbit.Entities
         public bool HasEmptySlot => equippedCards != null && equippedCards.Count < SlotCount;
         public TeamManager.Team ShipTeam => shipTeam.Value;
         public int ShipLevel => (IsSpawned && networkShipLevel != null) ? networkShipLevel.Value : shipLevel;
-        public int BranchIndex => shipData != null ? shipData.branchIndex : 0;
+        public int BranchIndex => (IsSpawned && networkBranchIndex != null) ? networkBranchIndex.Value : (shipData != null ? shipData.branchIndex : 0);
         public ShipFocusType FocusType => focusType;
         public bool IsInOrbit => currentOrbitPlanet != null;
         public Planet CurrentOrbitPlanet => currentOrbitPlanet;
@@ -868,6 +870,8 @@ namespace TitanOrbit.Entities
             // Server: sync initial ship level so clients show correct slot count
             if (IsServer && networkShipLevel != null)
                 networkShipLevel.Value = Mathf.Max(1, shipLevel);
+            if (IsServer && networkBranchIndex != null && shipData != null)
+                networkBranchIndex.Value = shipData.branchIndex;
 
             // Server: sync existing equipped cards to NetworkList (e.g. from save or late-join)
             if (IsServer && equippedCardIds != null && equippedCards != null)
@@ -2357,11 +2361,6 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet != null) return; // Cannot fire while in orbit zone
             if (gemMoonDocked.Value) return;
             EnsureBulletLastFireTime();
-            Vector3 forward = shipForward;
-            forward.y = 0f;
-            if (forward.sqrMagnitude < 0.01f) forward = Vector3.forward;
-            else forward.Normalize();
-            Vector3 right = Vector3.Cross(Vector3.up, forward);
             Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
             shipVel.y = 0f;
 
@@ -2396,10 +2395,23 @@ namespace TitanOrbit.Entities
                             : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
                     bulletPrefabIndicesFired.Add(bulletIdx);
 
-                    Vector3 fireOrigin = bulletFirePoints[i].position;
+                    Transform firePt = bulletFirePoints[i];
+                    Vector3 fireOrigin = firePt.position;
+
+                    // Horizontal aim basis from this weapon's facing (not ship forward) so side mounts / turrets shoot correctly.
+                    Vector3 cannonFwd = firePt.forward;
+                    cannonFwd.y = 0f;
+                    if (cannonFwd.sqrMagnitude < 0.01f)
+                    {
+                        cannonFwd = shipForward;
+                        cannonFwd.y = 0f;
+                    }
+                    if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
+                    cannonFwd.Normalize();
+                    Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
 
                     float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
-                    Vector3 baseDir = (forward * Mathf.Cos(baseDirAngle) + right * Mathf.Sin(baseDirAngle)).normalized;
+                    Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
                     int numShots = 1;
                     float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
                     if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
@@ -2410,13 +2422,13 @@ namespace TitanOrbit.Entities
                         if (c.spreadType == CannonSpreadType.RandomSpread)
                         {
                             float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
-                            dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
                         }
                         else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
                         {
                             float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
                             float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
-                            dir = (baseDir * Mathf.Cos(spread) + right * Mathf.Sin(spread)).normalized;
+                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
                         }
                         float damage = c.damagePerBullet;
                         float speed = c.bulletSpeed;
@@ -3611,6 +3623,8 @@ namespace TitanOrbit.Entities
             shipData = data;
             if (data != null)
             {
+                if (IsServer && networkBranchIndex != null)
+                    networkBranchIndex.Value = data.branchIndex;
                 // When ship levels up, reset attribute upgrades only (keep cards)
                 if (IsServer && data.shipLevel > shipLevel)
                 {

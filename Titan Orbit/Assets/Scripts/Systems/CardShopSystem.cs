@@ -162,20 +162,30 @@ namespace TitanOrbit.Systems
             return "AstroEagle_01";
         }
 
-        /// <summary>Returns true if the ship can purchase a level upgrade (same ship family, next tier). Cost = same as other ships of that tier. Out params: nextLevel, cost, chassisId.</summary>
+        /// <summary>Chassis ID at (level, branch) from the ship family's <c>upgradeTree</c> ladder (matches orbit upgrade tree layout).</summary>
+        public string GetChassisIdForUpgradeLadderSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            if (planetShipFamilyConfig == null || ship == null) return null;
+            string cid = ship.CurrentChassisId;
+            if (!string.IsNullOrEmpty(cid))
+                return planetShipFamilyConfig.GetChassisIdForLadderSlotForShip(cid, storePlanetId, level, branchIndex);
+            return planetShipFamilyConfig.GetChassisIdForLadderSlot(storePlanetId, level, branchIndex);
+        }
+
+        /// <summary>Resolves a runtime chassis definition for display / naming.</summary>
+        public ShipChassisDefinition GetChassisDefinitionByChassisId(string chassisId)
+        {
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetChassisByChassisId(chassisId) : null;
+        }
+
+        /// <summary>Returns true if the ship can purchase a level upgrade via UpgradeTree and/or family upgrade tree chassis entries.</summary>
         public bool CanPurchaseShipLevelUpgrade(Starship ship, Planet storePlanet, out int nextLevel, out float cost, out string chassisId)
         {
             nextLevel = 0;
             cost = 0f;
             chassisId = null;
-            if (ship == null || storePlanet == null || planetShipFamilyConfig == null) return false;
-            if (ship.ShipLevel >= 6) return false; // Level 7 is special (planet 6 + full gems) - not handled as simple purchase for now
-
-            string currentCid = ship.CurrentChassisId;
-            if (string.IsNullOrEmpty(currentCid)) return false;
-            int usIdx = currentCid.IndexOf('_');
-            if (usIdx <= 0) return false;
-            string shipFamily = currentCid.Substring(0, usIdx);
+            if (ship == null || storePlanet == null) return false;
+            if (ship.ShipLevel >= 7) return false;
 
             HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
             if (homePlanet == null) return false;
@@ -187,13 +197,31 @@ namespace TitanOrbit.Systems
             bool isCaptured = !isHome && storePlanet.TeamOwnership == ship.ShipTeam;
             if (!isHome && !isCaptured) return false;
 
-            int nextChassisIndex = ShipUnlockTable.GetFirstChassisIndexForTier(nextLevel);
-            if (nextChassisIndex >= 20) return false;
+            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
+            if (tree == null) return false;
 
-            chassisId = $"{shipFamily}_{(nextChassisIndex + 1):D2}";
+            int storePlanetId = storePlanet.PlanetId;
+            var available = tree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
+            bool hasPath = available != null && available.Count > 0;
+            if (!hasPath)
+            {
+                var targets = new List<int>(4);
+                UpgradeTree.GetNextLevelBranchTargets(ship.ShipLevel, ship.BranchIndex, targets);
+                for (int t = 0; t < targets.Count; t++)
+                {
+                    int j = targets[t];
+                    chassisId = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, nextLevel, j);
+                    if (!string.IsNullOrEmpty(chassisId))
+                    {
+                        hasPath = true;
+                        break;
+                    }
+                }
+                if (!hasPath) return false;
+            }
 
-            cost = ShipUnlockTable.GetTierCost(nextLevel);
-            return true;
+            cost = tree.GetGemCostForLevel(nextLevel);
+            return cost > 0f;
         }
 
         /// <summary>
@@ -420,10 +448,11 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// Server: purchase a level upgrade for the current ship (same family, next tier). Cost = same as other ships of that tier. Uses contributed gems.
+        /// Server: purchase a level upgrade for the current ship and selected target branch node in the UpgradeTree.
+        /// Uses contributed gems.
         /// </summary>
         [ServerRpc(RequireOwnership = false)]
-        public void PurchaseShipLevelUpgradeServerRpc(ulong planetNetworkId, ulong shipNetworkId, ServerRpcParams rpcParams = default)
+        public void PurchaseShipLevelUpgradeServerRpc(ulong planetNetworkId, ulong shipNetworkId, int targetBranchIndex, ServerRpcParams rpcParams = default)
         {
             ulong clientId = rpcParams.Receive.SenderClientId;
 
@@ -438,15 +467,54 @@ namespace TitanOrbit.Systems
             if (!CanPurchaseShipLevelUpgrade(ship, planet, out int nextLevel, out float cost, out _))
                 return;
 
+            int p = ship.BranchIndex;
+            if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, p, nextLevel, targetBranchIndex)) return;
+
+            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
+            if (tree == null) return;
+
+            int storePlanetId = planet.PlanetId;
+            ShipUpgradeNode targetNode = tree.GetNodeForBranch(nextLevel, targetBranchIndex);
+            string resolvedChassisId = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, nextLevel, targetBranchIndex);
+            if (targetNode == null && string.IsNullOrEmpty(resolvedChassisId))
+                return;
+
             HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
             if (homePlanet == null) return;
             if (!homePlanet.TrySpendContributedGems(clientId, cost))
                 return;
 
-            // Same ship: only increase level (more slots, higher capacity). Keep visual, chassis, cards, and attribute upgrades.
-            ship.SetShipLevelFromTier(nextLevel);
+            if (targetNode != null && targetNode.shipData != null)
+            {
+                ship.SetShipData(targetNode.shipData);
+            }
+            else if (!string.IsNullOrEmpty(resolvedChassisId))
+            {
+                ShipData baseData = ship.CurrentShipData;
+                ShipData runtime = baseData != null ? Instantiate(baseData) : ScriptableObject.CreateInstance<ShipData>();
+                runtime.shipLevel = nextLevel;
+                runtime.branchIndex = targetBranchIndex;
+                runtime.shipPrefab = null;
+                runtime.shipName = resolvedChassisId;
+                ShipChassisDefinition chassisDef = planetShipFamilyConfig != null ? planetShipFamilyConfig.GetChassisByChassisId(resolvedChassisId) : null;
+                if (chassisDef != null && !string.IsNullOrEmpty(chassisDef.displayName))
+                    runtime.shipName = chassisDef.displayName;
+                ship.SetShipData(runtime);
+                ship.SetCurrentChassisId(resolvedChassisId);
+                int chassisIndex = planetShipFamilyConfig != null ? planetShipFamilyConfig.GetIndexForChassisIdForPlanet(resolvedChassisId, storePlanetId) : -1;
+                if (chassisIndex < 0)
+                    chassisIndex = ParseChassisIndexFromId(resolvedChassisId);
+                ship.SetCurrentChassisIndex(chassisIndex);
+                GameObject prefab = GetShipPrefabForChassisId(resolvedChassisId);
+                if (prefab != null)
+                    ship.ApplyShipVisualFromPrefab(prefab);
+                ship.ResetAttributesOnlyFromServer();
+            }
+            else
+                return;
 
-            NotifyShipLevelUpgradedClientRpc(shipNetworkId, nextLevel, new ClientRpcParams
+            string chassisIdForClientVisual = (targetNode != null && targetNode.shipData != null) ? null : resolvedChassisId;
+            NotifyShipLevelUpgradedClientRpc(shipNetworkId, nextLevel, chassisIdForClientVisual, new ClientRpcParams
             {
                 Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
             });
@@ -474,9 +542,15 @@ namespace TitanOrbit.Systems
         }
 
         [ClientRpc]
-        private void NotifyShipLevelUpgradedClientRpc(ulong shipNetworkId, int newLevel, ClientRpcParams rpcParams = default)
+        private void NotifyShipLevelUpgradedClientRpc(ulong shipNetworkId, int newLevel, string chassisIdForVisual, ClientRpcParams rpcParams = default)
         {
-            // Level is already synced via networkShipLevel. No visual change - same ship, more slots/abilities.
+            if (string.IsNullOrEmpty(chassisIdForVisual)) return;
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null) return;
+            GameObject prefab = GetShipPrefabForChassisId(chassisIdForVisual);
+            if (prefab != null)
+                ship.ApplyShipVisualFromPrefab(prefab);
         }
 
         #endregion
