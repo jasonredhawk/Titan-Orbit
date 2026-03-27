@@ -52,7 +52,17 @@ namespace TitanOrbit.Editor
                 {
                     AddShipFamilyStatsPreviewToUpgradeTreePrefabs(def);
                 }
+
+                if (GUILayout.Button("Generate Menu Preview Images (Top-Down)"))
+                {
+                    ShipFamilyMenuPreviewGenerator.GenerateForFamily(def);
+                }
             }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox(
+                "Menu Preview Images: writes PNGs to a MenuPreviews folder next to this asset, imports them as Sprites, and assigns each tier's menuPreviewSprite. Re-run anytime after prefab changes.",
+                MessageType.None);
         }
 
         /// <summary>Adds ShipFamilyStatsPreview to each prefab in the upgrade tree if missing; assigns this definition as Ship Family.</summary>

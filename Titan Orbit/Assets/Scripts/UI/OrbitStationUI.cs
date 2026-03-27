@@ -99,10 +99,13 @@ namespace TitanOrbit.UI
         private string _shipTreeStructureKey = "";
         private const int MaxShipTreeColumns = 7;
         private const float ShipTreeColGap = 6f;
-        private const float ShipTreeLevelSpacing = 78f;
+        private const float ShipTreeLevelSpacing = 132f;
         /// <summary>Cap tree width; widest row is level 6 (6 columns).</summary>
         private const float ShipTreeViewportMaxWidth = 572f;
-        private const string ShipTreeStructureKey = "full7_ladder_v6_lvl7x3";
+        /// <summary>Desired node width; actual width is capped so six columns fit inside the viewport.</summary>
+        private const float ShipTreeNodeFixedWidth = 112f;
+        private const float ShipTreeNodeHeight = 124f;
+        private const string ShipTreeStructureKey = "full8_fixed_vlayout_names_v2_rowgap";
         private readonly List<int> _shipTreeNextTargets = new List<int>(4);
         private StoreItemType[] itemTypes;
         private Button[] itemButtons;
@@ -114,7 +117,10 @@ namespace TitanOrbit.UI
             public int BranchIndex;
             public ShipUpgradeNode Node;
             public Button Button;
-            public TextMeshProUGUI Label;
+            public TextMeshProUGUI LevelNumberText;
+            public TextMeshProUGUI ShipNameText;
+            public Image PreviewImage;
+            public TextMeshProUGUI PriceText;
             public RectTransform Rect;
         }
 
@@ -365,7 +371,7 @@ namespace TitanOrbit.UI
                 Canvas.ForceUpdateCanvases();
             }
             // Ships tab uses parent width to cap tree; run after layout so width is not stale.
-            RefreshShipsTab();
+            RefreshShipsTab(scrollToActiveShipNode: activeStoreTab == 1);
         }
 
         public void Hide()
@@ -809,12 +815,13 @@ namespace TitanOrbit.UI
             if (shipPreviewsRoot != null)
                 shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
 
+            if (activeStoreTab == 1)
+                EnsureShipsTabPopulated();
+
             if (storeScrollRect != null && storeScrollRect.content != null)
             {
                 if (tabChanged)
                 {
-                    // Only when switching tabs: reset scroll and rebuild layout. Do NOT do this on every call or when user clicks items.
-                    storeScrollRect.verticalNormalizedPosition = 1f;
                     LayoutRebuilder.ForceRebuildLayoutImmediate(storeScrollRect.content);
                     Canvas.ForceUpdateCanvases();
                     RectTransform content = storeScrollRect.content;
@@ -824,13 +831,14 @@ namespace TitanOrbit.UI
                         float viewportHeight = viewport.rect.height;
                         float contentHeight = activeStoreTab == 0 ? _cardsContentHeight : _shipsContentHeight;
                         float minContentHeight = viewportHeight + 50f;
-                        if (content.sizeDelta.y < minContentHeight)
-                            content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
+                        content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
                     }
+                    if (activeStoreTab == 0)
+                        storeScrollRect.verticalNormalizedPosition = 1f;
+                    else
+                        ScrollStoreToCurrentShipTreeNode();
                 }
             }
-            if (activeStoreTab == 1)
-                EnsureShipsTabPopulated();
             var cardsImg = tabCardsButton.GetComponent<Image>();
             var shipsImg = tabShipsButton.GetComponent<Image>();
             if (cardsImg != null) cardsImg.color = activeStoreTab == 0 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
@@ -840,7 +848,7 @@ namespace TitanOrbit.UI
         private void EnsureShipsTabPopulated()
         {
             EnsurePanelExists();
-            RefreshShipsTab();
+            RefreshShipsTab(scrollToActiveShipNode: false);
         }
 
         private Button CreateShipSlotButton(Transform parent, ref float y)
@@ -940,7 +948,141 @@ namespace TitanOrbit.UI
             }
         }
 
-        private void RefreshShipsTab()
+        /// <summary>Height of the tree canvas only (matches <see cref="BuildShipUpgradeTreeVisualFull"/>).</summary>
+        private static float ComputeShipTreeCanvasContentHeight()
+        {
+            const int maxLevel = 7;
+            float margin = 8f;
+            return Mathf.Max(160f, margin * 2f + (maxLevel - 1) * ShipTreeLevelSpacing + ShipTreeNodeHeight);
+        }
+
+        /// <summary>
+        /// Ships tab was created with a fixed ~820px height; the tree is taller — sync LayoutElement + scroll content
+        /// so the store ScrollRect can reach the bottom.
+        /// </summary>
+        private void UpdateShipsTabContentHeight()
+        {
+            if (shipsTabContent == null) return;
+            var shipsRt = shipsTabContent.GetComponent<RectTransform>();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(shipsRt);
+            if (shipTreeCenterRow != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
+            if (shipTreeCanvas != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCanvas);
+            Canvas.ForceUpdateCanvases();
+
+            float treeH = shipTreeCanvas != null ? shipTreeCanvas.sizeDelta.y : 0f;
+            if (treeH < 1f)
+                treeH = ComputeShipTreeCanvasContentHeight();
+
+            // Analytic floor: title row (22) + gap (4) + hint row (24) + tree row (treeH) + extra for connectors / rounding
+            const float analyticHeaderAndGap = 50f;
+            const float analyticBottomSlack = 96f;
+            float analytic = analyticHeaderAndGap + treeH + analyticBottomSlack;
+
+            // Measured: union axis-aligned bounds of each top-level child in ships-tab space (includes connectors under canvas)
+            float measured = MeasureShipsTabUnionHeight(shipsRt, shipTreeCanvas);
+            if (measured > 0.5f)
+                measured += 72f; // padding below last pixel (scrollbar thumb, layout rounding)
+
+            float preferred = Mathf.Max(analytic, measured, 400f);
+
+            var shipsLayoutEl = shipsTabContent.GetComponent<LayoutElement>();
+            if (shipsLayoutEl != null)
+            {
+                shipsLayoutEl.preferredHeight = preferred;
+                shipsLayoutEl.minHeight = preferred;
+            }
+            _shipsContentHeight = preferred;
+
+            if (storeContentRoot == null) return;
+            float w = storeContentRoot.sizeDelta.x;
+            float h = Mathf.Max(_cardsContentHeight, _shipsContentHeight, 600f);
+            if (storeScrollRect != null && storeScrollRect.viewport != null)
+            {
+                float vh = storeScrollRect.viewport.rect.height;
+                if (vh > 1f)
+                    h = Mathf.Max(h, vh + 50f);
+            }
+            storeContentRoot.sizeDelta = new Vector2(w, h);
+        }
+
+        /// <summary>
+        /// Unions bounds of each direct child of the ships tab, plus the tree canvas again so connector lines
+        /// that extend past the row/canvas RectTransform are included.
+        /// </summary>
+        private static float MeasureShipsTabUnionHeight(RectTransform shipsRt, RectTransform shipTreeCanvas)
+        {
+            if (shipsRt == null) return 0f;
+            bool first = true;
+            Bounds combined = default;
+            void Encapsulate(RectTransform child)
+            {
+                if (child == null || !child.gameObject.activeInHierarchy) return;
+                Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(shipsRt, child);
+                if (first)
+                {
+                    combined = b;
+                    first = false;
+                }
+                else
+                    combined.Encapsulate(b);
+            }
+            for (int i = 0; i < shipsRt.childCount; i++)
+                Encapsulate(shipsRt.GetChild(i) as RectTransform);
+            Encapsulate(shipTreeCanvas);
+            return first ? 0f : combined.size.y;
+        }
+
+        /// <summary>Scrolls the store viewport so the current ship's tree node is visible (centers when possible).</summary>
+        private void ScrollStoreToCurrentShipTreeNode()
+        {
+            if (activeStoreTab != 1 || storeScrollRect == null || storeContentRoot == null || storeScrollRect.viewport == null)
+                return;
+            if (currentShip == null || shipTreeNodes == null || shipTreeNodes.Count == 0) return;
+
+            ShipTreeNodeView target = null;
+            int curL = currentShip.ShipLevel;
+            int curB = currentShip.BranchIndex;
+            for (int i = 0; i < shipTreeNodes.Count; i++)
+            {
+                var v = shipTreeNodes[i];
+                if (v != null && v.Level == curL && v.BranchIndex == curB)
+                {
+                    target = v;
+                    break;
+                }
+            }
+            if (target?.Rect == null) return;
+
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+
+            RectTransform viewport = storeScrollRect.viewport;
+            RectTransform content = storeContentRoot;
+            RectTransform node = target.Rect;
+
+            for (int iter = 0; iter < 6; iter++)
+            {
+                Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, node);
+                Rect vr = viewport.rect;
+                float dy = 0f;
+                if (b.max.y > vr.yMax) dy = vr.yMax - b.max.y;
+                else if (b.min.y < vr.yMin) dy = vr.yMin - b.min.y;
+                else break;
+
+                Vector2 ap = content.anchoredPosition;
+                ap.y += dy;
+                float maxScroll = Mathf.Max(0f, content.rect.height - viewport.rect.height);
+                ap.y = Mathf.Clamp(ap.y, -maxScroll, 0f);
+                content.anchoredPosition = ap;
+            }
+
+            storeScrollRect.velocity = Vector2.zero;
+        }
+
+        /// <param name="scrollToActiveShipNode">When true, scrolls the store viewport to the current ship node (e.g. opening the panel on Ships tab). Avoid true on periodic refreshes so manual scrolling is not overridden.</param>
+        private void RefreshShipsTab(bool scrollToActiveShipNode = false)
         {
             if (shipTreeCanvas == null) return;
             ApplyShipTreeCanvasWidth();
@@ -951,6 +1093,7 @@ namespace TitanOrbit.UI
                 _shipTreeStructureKey = "";
                 ClearShipTreeVisuals();
                 if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
+                UpdateShipsTabContentHeight();
                 return;
             }
 
@@ -961,20 +1104,22 @@ namespace TitanOrbit.UI
             }
             else
                 UpdateShipUpgradeTreeVisualState();
+
+            UpdateShipsTabContentHeight();
+            if (storeContentRoot != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+            Canvas.ForceUpdateCanvases();
+            if (scrollToActiveShipNode)
+                ScrollStoreToCurrentShipTreeNode();
         }
 
         private string GetShipDisplayName(ShipUpgradeNode node, int level, int branchIndex)
         {
             if (currentShip != null && currentPlanet != null && CardShopSystem.Instance != null)
             {
-                string cid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
-                if (!string.IsNullOrEmpty(cid))
-                {
-                    ShipChassisDefinition chassis = CardShopSystem.Instance.GetChassisDefinitionByChassisId(cid);
-                    if (chassis != null && !string.IsNullOrEmpty(chassis.displayName))
-                        return chassis.displayName.Trim();
-                    return cid;
-                }
+                string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+                if (!string.IsNullOrEmpty(treeName))
+                    return treeName.Trim();
             }
             if (node != null)
             {
@@ -984,14 +1129,24 @@ namespace TitanOrbit.UI
             return "Unassigned";
         }
 
+        private Sprite ResolveShipTreePreviewSprite(int level, int branchIndex)
+        {
+            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return null;
+            if (level <= 1)
+                return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId);
+            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+        }
+
         private string GetStarterShipDisplayName()
         {
             if (currentShip != null && CardShopSystem.Instance != null && !string.IsNullOrEmpty(currentShip.CurrentChassisId))
             {
+                string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForChassisId(currentShip.CurrentChassisId);
+                if (!string.IsNullOrEmpty(treeName))
+                    return treeName.Trim();
                 ShipChassisDefinition ch = CardShopSystem.Instance.GetChassisDefinitionByChassisId(currentShip.CurrentChassisId);
                 if (ch != null && !string.IsNullOrEmpty(ch.displayName))
                     return ch.displayName.Trim();
-                return currentShip.CurrentChassisId;
             }
             if (currentShip != null && currentShip.CurrentShipData != null && !string.IsNullOrEmpty(currentShip.CurrentShipData.shipName))
                 return currentShip.CurrentShipData.shipName.Trim();
@@ -1068,19 +1223,28 @@ namespace TitanOrbit.UI
                     else img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
                 }
 
-                if (view.Label != null)
+                if (view.PreviewImage != null)
+                {
+                    Sprite sp = ResolveShipTreePreviewSprite(view.Level, view.BranchIndex);
+                    view.PreviewImage.sprite = sp;
+                    view.PreviewImage.color = sp != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
+                }
+
+                if (view.LevelNumberText != null)
+                    view.LevelNumberText.text = view.Level == 1 ? "1" : view.Level.ToString();
+                if (view.ShipNameText != null)
                 {
                     if (view.Level == 1)
-                    {
-                        string starterName = GetStarterShipDisplayName();
-                        view.Label.text = $"Level 1\n{starterName}\n—";
-                    }
+                        view.ShipNameText.text = GetStarterShipDisplayName();
                     else
-                    {
-                        string shipName = GetShipDisplayName(view.Node, view.Level, view.BranchIndex);
-                        float price = tree.GetGemCostForLevel(view.Level);
-                        view.Label.text = $"Level {view.Level}\n{shipName}\n{price:F0}g";
-                    }
+                        view.ShipNameText.text = GetShipDisplayName(view.Node, view.Level, view.BranchIndex);
+                }
+                if (view.PriceText != null)
+                {
+                    if (view.Level == 1)
+                        view.PriceText.text = "—";
+                    else
+                        view.PriceText.text = $"{tree.GetGemCostForLevel(view.Level):F0}g";
                 }
             }
         }
@@ -1108,7 +1272,10 @@ namespace TitanOrbit.UI
             const int maxLevel = 7;
             float margin = 8f;
             float innerW = Mathf.Max(shipTreeCanvas.rect.width - 2f * margin, 200f);
-            float nodeHeight = 64f;
+            const float maxCols = 6f;
+            float nodeW = Mathf.Min(ShipTreeNodeFixedWidth, (innerW - (maxCols - 1f) * ShipTreeColGap) / maxCols);
+            nodeW = Mathf.Max(64f, nodeW);
+            float nodeHeight = ShipTreeNodeHeight;
             float contentHeight = Mathf.Max(160f, margin * 2f + (maxLevel - 1) * ShipTreeLevelSpacing + nodeHeight);
             shipTreeCanvas.sizeDelta = new Vector2(shipTreeCanvas.sizeDelta.x, contentHeight);
             if (shipTreeCenterRow != null)
@@ -1123,10 +1290,7 @@ namespace TitanOrbit.UI
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 var views = new List<ShipTreeNodeView>(count);
-                float rowInner = innerW;
-                float useW = count > 0
-                    ? Mathf.Max(32f, (rowInner - (count - 1) * ShipTreeColGap) / count)
-                    : 48f;
+                float useW = nodeW;
                 float rowW = count * useW + (count - 1) * ShipTreeColGap;
                 float startX = margin + (innerW - rowW) * 0.5f;
                 float y = margin + (level - 1) * ShipTreeLevelSpacing;
@@ -1180,9 +1344,20 @@ namespace TitanOrbit.UI
             var rect = go.AddComponent<RectTransform>();
             rect.sizeDelta = new Vector2(width, height);
             var img = go.AddComponent<Image>();
-            img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
+            img.color = new Color(0.1f, 0.14f, 0.22f, 0.98f);
             if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
+
+            var vlg = go.AddComponent<VerticalLayoutGroup>();
+            vlg.padding = new RectOffset(8, 8, 6, 8);
+            vlg.spacing = 4;
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
             var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
             var colors = btn.colors;
             colors.fadeDuration = 0f;
             colors.normalColor = Color.white;
@@ -1194,22 +1369,78 @@ namespace TitanOrbit.UI
             int targetBranch = branchIndex;
             btn.onClick.AddListener(() => OnUpgradeTreeNodeClicked(level, targetBranch));
 
-            var textGo = new GameObject("Text");
-            textGo.transform.SetParent(go.transform, false);
-            var textRect = textGo.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(6f, 5f);
-            textRect.offsetMax = new Vector2(-6f, -5f);
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.fontSize = 12;
-            tmp.lineSpacing = -2f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.enableWordWrapping = true;
-            tmp.overflowMode = TextOverflowModes.Ellipsis;
-            tmp.color = new Color(0.96f, 0.97f, 1f, 1f);
-            tmp.raycastTarget = false;
-            if (fontAsset != null) tmp.font = fontAsset;
+            var headerGo = new GameObject("Header");
+            headerGo.transform.SetParent(go.transform, false);
+            var headerHlg = headerGo.AddComponent<HorizontalLayoutGroup>();
+            headerHlg.padding = new RectOffset(0, 0, 0, 0);
+            headerHlg.spacing = 4;
+            headerHlg.childAlignment = TextAnchor.UpperLeft;
+            headerHlg.childControlWidth = true;
+            headerHlg.childControlHeight = true;
+            headerHlg.childForceExpandWidth = false;
+            headerHlg.childForceExpandHeight = false;
+            var headerLe = headerGo.AddComponent<LayoutElement>();
+            headerLe.preferredHeight = 22f;
+            headerLe.flexibleHeight = 0f;
+
+            var levelGo = new GameObject("Level");
+            levelGo.transform.SetParent(headerGo.transform, false);
+            var levelTmp = levelGo.AddComponent<TextMeshProUGUI>();
+            levelTmp.text = level.ToString();
+            levelTmp.fontSize = 14;
+            levelTmp.fontStyle = FontStyles.Bold;
+            levelTmp.alignment = TextAlignmentOptions.TopLeft;
+            levelTmp.enableWordWrapping = false;
+            levelTmp.color = new Color(0.55f, 0.78f, 1f, 1f);
+            levelTmp.raycastTarget = false;
+            if (fontAsset != null) levelTmp.font = fontAsset;
+            var levelLe = levelGo.AddComponent<LayoutElement>();
+            levelLe.preferredWidth = 26f;
+            levelLe.minWidth = 22f;
+            levelLe.flexibleWidth = 0f;
+
+            var nameGo = new GameObject("ShipName");
+            nameGo.transform.SetParent(headerGo.transform, false);
+            var nameTmp = nameGo.AddComponent<TextMeshProUGUI>();
+            nameTmp.fontSize = 11;
+            nameTmp.alignment = TextAlignmentOptions.MidlineLeft;
+            nameTmp.enableWordWrapping = true;
+            nameTmp.overflowMode = TextOverflowModes.Ellipsis;
+            nameTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
+            nameTmp.raycastTarget = false;
+            if (fontAsset != null) nameTmp.font = fontAsset;
+            var nameLe = nameGo.AddComponent<LayoutElement>();
+            nameLe.flexibleWidth = 1f;
+            nameLe.minWidth = 48f;
+
+            var previewGo = new GameObject("Preview");
+            previewGo.transform.SetParent(go.transform, false);
+            var previewImg = previewGo.AddComponent<Image>();
+            previewImg.preserveAspect = true;
+            previewImg.raycastTarget = false;
+            previewImg.maskable = true;
+            var previewLe = previewGo.AddComponent<LayoutElement>();
+            previewLe.minHeight = 48f;
+            previewLe.preferredHeight = 58f;
+            previewLe.flexibleHeight = 1f;
+            previewLe.flexibleWidth = 1f;
+
+            var priceGo = new GameObject("Price");
+            priceGo.transform.SetParent(go.transform, false);
+            var priceTmp = priceGo.AddComponent<TextMeshProUGUI>();
+            priceTmp.fontSize = 10;
+            priceTmp.alignment = TextAlignmentOptions.Center;
+            priceTmp.enableWordWrapping = false;
+            priceTmp.color = new Color(0.55f, 0.88f, 0.72f, 1f);
+            priceTmp.raycastTarget = false;
+            if (fontAsset != null) priceTmp.font = fontAsset;
+            var priceLe = priceGo.AddComponent<LayoutElement>();
+            priceLe.preferredHeight = 18f;
+            priceLe.flexibleHeight = 0f;
+
+            Sprite initialPreview = ResolveShipTreePreviewSprite(level, branchIndex);
+            previewImg.sprite = initialPreview;
+            previewImg.color = initialPreview != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
 
             shipTreeVisuals.Add(go);
             var view = new ShipTreeNodeView
@@ -1218,7 +1449,10 @@ namespace TitanOrbit.UI
                 BranchIndex = branchIndex,
                 Node = node,
                 Button = btn,
-                Label = tmp,
+                LevelNumberText = levelTmp,
+                ShipNameText = nameTmp,
+                PreviewImage = previewImg,
+                PriceText = priceTmp,
                 Rect = rect
             };
             shipTreeNodes.Add(view);

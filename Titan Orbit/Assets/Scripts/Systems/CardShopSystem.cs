@@ -178,6 +178,34 @@ namespace TitanOrbit.Systems
             return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetChassisByChassisId(chassisId) : null;
         }
 
+        /// <summary>2D menu thumbnail from <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/> (editor-generated or hand-assigned).</summary>
+        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId)
+        {
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetMenuPreviewSpriteForChassisId(chassisId) : null;
+        }
+
+        /// <summary>Player-facing upgrade tree name from <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/>, or null if unset.</summary>
+        public string GetUpgradeTreeShipNameForChassisId(string chassisId)
+        {
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetUpgradeTreeShipNameForChassisId(chassisId) : null;
+        }
+
+        /// <summary>Upgrade tree display name for a ladder slot (resolves chassis, then tier name).</summary>
+        public string GetUpgradeTreeShipNameForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            if (string.IsNullOrEmpty(cid)) return null;
+            return GetUpgradeTreeShipNameForChassisId(cid);
+        }
+
+        /// <summary>Menu thumbnail for an upgrade-tree slot (resolves chassis from ladder, then sprite).</summary>
+        public Sprite GetMenuPreviewSpriteForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            if (string.IsNullOrEmpty(cid)) return null;
+            return GetMenuPreviewSpriteForChassisId(cid);
+        }
+
         /// <summary>Returns true if the ship can purchase a level upgrade via UpgradeTree and/or family upgrade tree chassis entries.</summary>
         public bool CanPurchaseShipLevelUpgrade(Starship ship, Planet storePlanet, out int nextLevel, out float cost, out string chassisId)
         {

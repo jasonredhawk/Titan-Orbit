@@ -226,8 +226,14 @@ namespace TitanOrbit.Data
         [Tooltip("Chassis identifier, e.g. AstroEagle_01.")]
         public string chassisId;
 
+        [Tooltip("Player-facing name in the orbit upgrade tree only. Not the chassis ID; leave empty to fall back to Upgrade Tree node / ShipData names.")]
+        public string upgradeTreeShipName;
+
         [Tooltip("Prefab representing this chassis variant (from the family folder).")]
         public GameObject prefab;
+
+        [Tooltip("Orbit store / upgrade tree thumbnail. Assign manually or generate in editor (Ship Family inspector: Generate Menu Preview Images).")]
+        public Sprite menuPreviewSprite;
 
         [Tooltip("Minimum home planet level required to unlock this chassis in the upgrade tree.")]
         public int minHomePlanetLevel = 1;
@@ -258,6 +264,13 @@ namespace TitanOrbit.Data
         [Header("Upgrade Tree (auto-generated, editable)")]
         [Tooltip("Chassis variants for this family, ordered by power and annotated with minimum planet level.")]
         public List<ShipFamilyChassisTierEntry> upgradeTree = new List<ShipFamilyChassisTierEntry>();
+
+        [Header("Menu preview generation (editor)")]
+        [Tooltip("Clear color when rendering top-down PNGs into MenuPreviews/.")]
+        public Color menuPreviewBackgroundColor = new Color(0.06f, 0.09f, 0.14f, 1f);
+        [Tooltip("Framing margin around combined renderer bounds (larger = more padding).")]
+        [Range(1f, 2.2f)]
+        public float menuPreviewBoundsPadding = 1.22f;
 
         private readonly Dictionary<string, ShipComponentAbilityStats> _lookup =
             new Dictionary<string, ShipComponentAbilityStats>(StringComparer.OrdinalIgnoreCase);
