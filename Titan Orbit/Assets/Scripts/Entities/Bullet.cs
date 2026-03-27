@@ -336,12 +336,20 @@ namespace TitanOrbit.Entities
                     asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
 
                 if (VisualEffectsManager.Instance != null)
+                {
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                         transform.position,
                         (int)FloatingCountChannel.DamageAsteroid,
                         appliedDamage,
                         (int)ownerTeam
                     );
+                    VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
+                        transform.position,
+                        asteroid.RemainingHealth,
+                        asteroid.RemainingGems,
+                        (int)ownerTeam
+                    );
+                }
 
                 DespawnBullet();
                 return true;

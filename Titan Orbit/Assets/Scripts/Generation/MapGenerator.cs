@@ -40,6 +40,10 @@ namespace TitanOrbit.Generation
         [SerializeField] private float minHomePlanetPairSeparation = 90f;
         [Tooltip("Neutral planets, asteroids, and other spawns stay at least this far from each home planet.")]
         [SerializeField] private float clearanceRadiusAroundHomePlanet = 40f;
+        [Tooltip("Randomized team count lower bound (inclusive). Supports 2..5 teams.")]
+        [SerializeField] private int minTeamsPerMatch = 2;
+        [Tooltip("Randomized team count upper bound (inclusive). Supports 2..5 teams.")]
+        [SerializeField] private int maxTeamsPerMatch = 5;
 
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
@@ -79,6 +83,14 @@ namespace TitanOrbit.Generation
         [SerializeField] private float batchDelaySeconds = 0f;
         [Tooltip("Asteroids per batch during progressive generation.")]
         [SerializeField] private int asteroidsPerBatch = 20;
+        [Tooltip("When enabled, world objects spawn progressively for loading-screen visualization even if batch delay is zero.")]
+        [SerializeField] private bool alwaysUseProgressiveGeneration = true;
+        [Tooltip("If progressive generation is enabled and batch delay is zero, auto-compute a small delay so generation remains visible.")]
+        [SerializeField] private float targetProgressiveDurationSeconds = 4.5f;
+        [Tooltip("Shortens asteroid pacing during progressive generation so loading remains visually active without feeling too slow.")]
+        [SerializeField] private bool accelerateAsteroidProgressive = true;
+        [Tooltip("Maximum number of asteroid delay points during progressive generation when acceleration is enabled.")]
+        [SerializeField] private int maxAsteroidDelayBatches = 8;
 
         /// <summary>Loading progress 0-1. Synced to clients for progress bar.</summary>
         private NetworkVariable<float> loadingProgress = new NetworkVariable<float>(0f);
@@ -95,6 +107,9 @@ namespace TitanOrbit.Generation
         private System.Collections.Generic.List<Vector3> homePlanetPositions = new System.Collections.Generic.List<Vector3>();
         private int nextPlanetId = 1;
         private bool hasGenerated;
+
+        private const int MinSupportedTeams = 2;
+        private const int MaxSupportedTeams = 5;
 
         /// <summary>Rolled per map (2–5). Drives home planet count and <see cref="TeamManager"/> active teams.</summary>
         private int homePlanetCountThisMap = 3;
@@ -154,7 +169,8 @@ namespace TitanOrbit.Generation
             }
             hasGenerated = true;
             EnsureParents();
-            if (batchDelaySeconds > 0f && gameObject.activeInHierarchy)
+            bool useProgressiveGeneration = (alwaysUseProgressiveGeneration || batchDelaySeconds > 0f) && gameObject.activeInHierarchy;
+            if (useProgressiveGeneration)
             {
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - starting progressive generation");
                 StartCoroutine(GenerateMapProgressive());
@@ -202,7 +218,7 @@ namespace TitanOrbit.Generation
 
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
-            homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
+            RollHomeTeamCount();
             RollNeutralPlanetCount();
             asteroidPositions.Clear();
             planetPositions.Clear();
@@ -220,12 +236,26 @@ namespace TitanOrbit.Generation
             int totalSteps = homeSteps + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
             if (totalSteps == 0) totalSteps = 1;
             int completed = 0;
+            float effectiveBatchDelay = ComputeEffectiveProgressiveDelay(totalSteps);
+            float effectiveAsteroidDelay = ComputeEffectiveAsteroidDelay(effectiveBatchDelay);
 
-            GenerateHomePlanets();
-            completed += homeSteps;
-            loadingProgress.Value = (float)completed / totalSteps;
+            if (homePlanetPrefab != null)
+            {
+                int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
+                BuildRandomHomePositionsOrFallback(n);
+                if (TeamManager.Instance != null)
+                    TeamManager.Instance.SetActiveTeamCountFromServer(n);
+
+                for (int i = 0; i < n; i++)
+                {
+                    GenerateSingleHomePlanet(i);
+                    completed++;
+                    loadingProgress.Value = (float)completed / totalSteps;
+                    if (effectiveBatchDelay > 0f)
+                        yield return new WaitForSeconds(effectiveBatchDelay);
+                }
+            }
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - after home planets");
-            yield return new WaitForSeconds(batchDelaySeconds);
 
             for (int i = 0; i < numberOfNeutralPlanetsThisMap; i++)
             {
@@ -234,9 +264,9 @@ namespace TitanOrbit.Generation
                     GenerateSingleNeutralPlanet(i);
                     completed++;
                     loadingProgress.Value = (float)completed / totalSteps;
+                    if (effectiveBatchDelay > 0f)
+                        yield return new WaitForSeconds(effectiveBatchDelay);
                 }
-                if (batchDelaySeconds > 0f && i % 2 == 1)
-                    yield return new WaitForSeconds(batchDelaySeconds * 0.5f);
             }
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - after neutral planets");
 
@@ -253,6 +283,7 @@ namespace TitanOrbit.Generation
 
                     int perCluster = Mathf.CeilToInt((float)numberOfAsteroidsThisMap / Mathf.Max(1, asteroidClustersThisMap));
                     int spawned = 0;
+                    int effectiveAsteroidsPerBatch = ComputeEffectiveAsteroidsPerBatch(numberOfAsteroidsThisMap);
                     for (int c = 0; c < asteroidClustersThisMap && spawned < numberOfAsteroidsThisMap; c++)
                     {
                         Vector3 center = clusterCenters[c];
@@ -279,8 +310,8 @@ namespace TitanOrbit.Generation
                             completed++;
                             loadingProgress.Value = (float)completed / totalSteps;
 
-                            if (spawned % asteroidsPerBatch == 0)
-                                yield return new WaitForSeconds(batchDelaySeconds);
+                            if (effectiveAsteroidDelay > 0f && spawned % effectiveAsteroidsPerBatch == 0)
+                                yield return new WaitForSeconds(effectiveAsteroidDelay);
                         }
                     }
                 }
@@ -302,7 +333,7 @@ namespace TitanOrbit.Generation
 
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
-            homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
+            RollHomeTeamCount();
             RollNeutralPlanetCount();
             asteroidPositions.Clear();
             planetPositions.Clear();
@@ -328,25 +359,30 @@ namespace TitanOrbit.Generation
         {
             if (homePlanetPrefab == null) return;
 
-            int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
+            int n = Mathf.Clamp(homePlanetCountThisMap, MinSupportedTeams, MaxSupportedTeams);
             BuildRandomHomePositionsOrFallback(n);
 
             for (int i = 0; i < n; i++)
-            {
-                Vector3 position = homePlanetPositions[i];
-
-                GameObject homePlanetObj = Instantiate(homePlanetPrefab, position, Quaternion.identity);
-                HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
-                NetworkObject netObj = homePlanetObj.GetComponent<NetworkObject>();
-                if (homePlanet != null)
-                    homePlanet.InitForTeam(HomeTeamsOrdered[i]);
-                if (netObj != null) netObj.Spawn();
-
-                planetPositions.Add(position);
-            }
+                GenerateSingleHomePlanet(i);
 
             if (TeamManager.Instance != null)
                 TeamManager.Instance.SetActiveTeamCountFromServer(n);
+        }
+
+        private void GenerateSingleHomePlanet(int index)
+        {
+            if (homePlanetPrefab == null) return;
+            if (index < 0 || index >= homePlanetPositions.Count) return;
+
+            Vector3 position = homePlanetPositions[index];
+            GameObject homePlanetObj = Instantiate(homePlanetPrefab, position, Quaternion.identity);
+            HomePlanet homePlanet = homePlanetObj.GetComponent<HomePlanet>();
+            NetworkObject netObj = homePlanetObj.GetComponent<NetworkObject>();
+            if (homePlanet != null)
+                homePlanet.InitForTeam(HomeTeamsOrdered[index]);
+            if (netObj != null) netObj.Spawn();
+
+            planetPositions.Add(position);
         }
 
         /// <summary>
@@ -547,6 +583,45 @@ namespace TitanOrbit.Generation
         private float GetRandomFloat(float min, float max)
         {
             return min + (float)random.NextDouble() * (max - min);
+        }
+
+        private float ComputeEffectiveProgressiveDelay(int totalSteps)
+        {
+            if (batchDelaySeconds > 0f)
+                return batchDelaySeconds;
+
+            if (!alwaysUseProgressiveGeneration)
+                return 0f;
+
+            int safeSteps = Mathf.Max(1, totalSteps);
+            float targetDuration = Mathf.Max(0f, targetProgressiveDurationSeconds);
+            return targetDuration / safeSteps;
+        }
+
+        private float ComputeEffectiveAsteroidDelay(float baseDelay)
+        {
+            if (!accelerateAsteroidProgressive)
+                return baseDelay;
+            return baseDelay * 0.35f;
+        }
+
+        private int ComputeEffectiveAsteroidsPerBatch(int totalAsteroids)
+        {
+            int baseBatch = Mathf.Max(1, asteroidsPerBatch);
+            if (!accelerateAsteroidProgressive)
+                return baseBatch;
+
+            int maxBatches = Mathf.Max(1, maxAsteroidDelayBatches);
+            int acceleratedBatch = Mathf.CeilToInt((float)Mathf.Max(1, totalAsteroids) / maxBatches);
+            return Mathf.Max(baseBatch, acceleratedBatch);
+        }
+
+        /// <summary>Rolls team/home-planet count using inspector-configured min/max bounds (inclusive), constrained to supported 2..5.</summary>
+        private void RollHomeTeamCount()
+        {
+            int lo = Mathf.Clamp(Mathf.Min(minTeamsPerMatch, maxTeamsPerMatch), MinSupportedTeams, MaxSupportedTeams);
+            int hi = Mathf.Clamp(Mathf.Max(minTeamsPerMatch, maxTeamsPerMatch), MinSupportedTeams, MaxSupportedTeams);
+            homePlanetCountThisMap = random.Next(lo, hi + 1);
         }
 
         /// <summary>Rolled once per map between <see cref="minNeutralPlanets"/> and <see cref="maxNeutralPlanets"/> (inclusive).</summary>

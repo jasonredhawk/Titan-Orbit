@@ -330,8 +330,8 @@ MonoBehaviour:
   - componentId: Weapon
     displayName: Weapon 1
     stats:
-      firePower: 30
-      firePowerPerLevel: 30
+      firePower: 3
+      firePowerPerLevel: 3
       bulletSpeed: 10
       bulletSpeedPerLevel: 5
       fireRate: 2
@@ -340,10 +340,10 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 120
-      energyCapPerLevel: 30
-      energyRegen: 30
-      energyRegenPerLevel: 30
+      energyCap: 15
+      energyCapPerLevel: 3
+      energyRegen: 3
+      energyRegenPerLevel: 3
       moveSpeed: 0
       moveSpeedPerLevel: 0
       turnSpeed: 0
@@ -510,83 +510,83 @@ MonoBehaviour:
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   upgradeTree:
-  - chassisId: AstroEagle_01
+  - chassisId: Hawk
     prefab: {fileID: 1952278464844654, guid: 7a3610850390303418074a50e4b65956, type: 3}
     minHomePlanetLevel: 1
     powerScore: 152.33188
-  - chassisId: AstroEagle_02
+  - chassisId: Turkey
     prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
     minHomePlanetLevel: 2
     powerScore: 166.52948
-  - chassisId: AstroEagle_03
+  - chassisId: Bat
     prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
     minHomePlanetLevel: 2
     powerScore: 169.15857
-  - chassisId: AstroEagle_04
+  - chassisId: Enterprise
     prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
     minHomePlanetLevel: 3
     powerScore: 183.62242
-  - chassisId: AstroEagle_05
+  - chassisId: Eagle
     prefab: {fileID: 8702785273099874958, guid: 5b14bf2ca37c365429274ce322e8859c, type: 3}
     minHomePlanetLevel: 3
     powerScore: 198.86081
-  - chassisId: AstroEagle_06
+  - chassisId: WaterSpider
     prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
     minHomePlanetLevel: 3
     powerScore: 209.23569
-  - chassisId: AstroEagle_07
+  - chassisId: Pancakes
     prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
     minHomePlanetLevel: 4
     powerScore: 211.94742
-  - chassisId: AstroEagle_08
+  - chassisId: Sparrow
     prefab: {fileID: 1560147866539248, guid: 8be3f1654a841a349b6718d270d4841e, type: 3}
     minHomePlanetLevel: 4
     powerScore: 212.34439
-  - chassisId: AstroEagle_09
+  - chassisId: DoubleDragon
     prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
     minHomePlanetLevel: 4
     powerScore: 230.61728
-  - chassisId: AstroEagle_10
+  - chassisId: Feather
     prefab: {fileID: 5623887138846423697, guid: a727c87f8d9d96a4594c3a0c4ea59819, type: 3}
     minHomePlanetLevel: 4
     powerScore: 236.27534
-  - chassisId: AstroEagle_11
+  - chassisId: Squid
     prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
     minHomePlanetLevel: 5
     powerScore: 243.02534
-  - chassisId: AstroEagle_12
+  - chassisId: Tortoise
     prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
     minHomePlanetLevel: 5
     powerScore: 245.66904
-  - chassisId: AstroEagle_13
+  - chassisId: Turtle
     prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
     minHomePlanetLevel: 5
     powerScore: 256.70087
-  - chassisId: AstroEagle_14
+  - chassisId: Stingray
     prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
     minHomePlanetLevel: 5
     powerScore: 267.91217
-  - chassisId: AstroEagle_15
+  - chassisId: Thumper
     prefab: {fileID: 1349471453543982, guid: 503149c1c10fa1943ae9257a4de06608, type: 3}
     minHomePlanetLevel: 5
     powerScore: 277.7353
-  - chassisId: AstroEagle_16
+  - chassisId: Bee
     prefab: {fileID: 2828997707732417688, guid: e7939c8492d27bc46b0e7b2e60d8ea8b, type: 3}
     minHomePlanetLevel: 6
     powerScore: 310.34604
-  - chassisId: AstroEagle_17
+  - chassisId: Slicer
     prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
     minHomePlanetLevel: 6
     powerScore: 311.89145
-  - chassisId: AstroEagle_18
+  - chassisId: Havester
     prefab: {fileID: 3509332871556794328, guid: c983ac63827991543b127ba08780d08e, type: 3}
     minHomePlanetLevel: 6
     powerScore: 322.3647
-  - chassisId: AstroEagle_19
+  - chassisId: DoubleBarrel
     prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
     minHomePlanetLevel: 6
     powerScore: 322.64084
-  - chassisId: AstroEagle_20
+  - chassisId: Hippo
     prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
     minHomePlanetLevel: 6
     powerScore: 325.3221

@@ -46,10 +46,16 @@ namespace TitanOrbit.Systems
         [SerializeField] private float floatingCountIconScale = 0.1f;
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
         [SerializeField] private float floatingCountVerticalOffset = 3.5f;
+        [Header("Floating Count Spread")]
+        [Tooltip("Randomized spawn radius around the point of interest to reduce overlap.")]
+        [SerializeField] private float floatingCountSpawnJitterRadius = 0.45f;
+        [Tooltip("Small deterministic ring offset so bursts stack less directly on top of each other.")]
+        [SerializeField] private float floatingCountSpawnRingStep = 0.12f;
 
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
+        private int floatingPopupSequence;
 
         private void Awake()
         {
@@ -150,6 +156,25 @@ namespace TitanOrbit.Systems
             SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
         }
 
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnAsteroidStatsFloatingTextServerRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
+        {
+            SpawnAsteroidStatsFloatingTextClientRpc(position, remainingHealth, remainingGems, teamInt);
+        }
+
+        [ClientRpc]
+        private void SpawnAsteroidStatsFloatingTextClientRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
+        {
+            TeamManager.Team team = (TeamManager.Team)teamInt;
+            Color hpColor = floatingCountHealthPositiveColor;
+            Color gemsColor = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
+            string hpMessage = $"HP Left: {Mathf.Max(0, Mathf.RoundToInt(remainingHealth))}";
+            string gemsMessage = $"Gems: {Mathf.Max(0, Mathf.RoundToInt(remainingGems))}";
+
+            SpawnCustomFloatingCountPopupLocal(position, hpMessage, floatingCountHealthIcon, hpColor);
+            SpawnCustomFloatingCountPopupLocal(position, gemsMessage, floatingCountGemIcon, gemsColor);
+        }
+
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
             if (floatingCountFeedbackSettings != null && !floatingCountFeedbackSettings.IsEnabled(channel))
@@ -234,11 +259,41 @@ namespace TitanOrbit.Systems
                     break;
             }
 
-            Vector3 spawnPos = position + Vector3.up * floatingCountVerticalOffset;
+            SpawnPopup(message, icon, color, $"FloatingCountPopup_{channel}", position, fontToUse);
+        }
+
+        private void SpawnCustomFloatingCountPopupLocal(Vector3 position, string message, Sprite icon, Color color)
+        {
+            TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
+            if (fontToUse == null)
+                return;
+
+            SpawnPopup(message, icon, color, "FloatingCountPopup_AsteroidStats", position, fontToUse);
+        }
+
+        private Vector3 GetSpreadSpawnPosition(Vector3 position)
+        {
+            float ringRadius = floatingCountSpawnRingStep * (floatingPopupSequence % 6);
+            floatingPopupSequence++;
+
+            Vector2 random = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
+            float angle = (floatingPopupSequence * 57f) * Mathf.Deg2Rad;
+            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringRadius;
+            Vector3 spawnPos = position + ring + new Vector3(random.x, floatingCountVerticalOffset, random.y);
+
             // Hard floor so stale serialized inspector values cannot pin popups to ground.
             if (spawnPos.y < 4f)
                 spawnPos.y = 4f;
-            GameObject go = new GameObject($"FloatingCountPopup_{channel}");
+            return spawnPos;
+        }
+
+        private void SpawnPopup(string message, Sprite icon, Color color, string popupName, Vector3 position, TMP_FontAsset fontToUse)
+        {
+            if (string.IsNullOrEmpty(message))
+                return;
+
+            Vector3 spawnPos = GetSpreadSpawnPosition(position);
+            GameObject go = new GameObject(popupName);
             go.transform.position = spawnPos;
 
             var popup = go.AddComponent<FloatingCountPopup>();

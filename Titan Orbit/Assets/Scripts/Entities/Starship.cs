@@ -2699,13 +2699,6 @@ namespace TitanOrbit.Entities
                     if (shipNo != null)
                         GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, 1f, shipNo.NetworkObjectId, shipTeam.Value);
 
-                    if (VisualEffectsManager.Instance != null)
-                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                            shipPos,
-                            (int)FloatingCountChannel.PeopleLoad,
-                            1f,
-                            (int)shipTeam.Value);
-                    PlayPeopleLoadSoundClientRpc(1f);
                 }
             }
             else
@@ -3297,7 +3290,7 @@ namespace TitanOrbit.Entities
             currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
         }
 
-        /// <summary>Client: start the galactic zoom-out camera animation on the owning player after all gems are deposited.</summary>
+        /// <summary>Client: start the galactic zoom-out camera animation on the owning player.</summary>
         [ClientRpc]
         private void TriggerGalacticZoomClientRpc(ClientRpcParams rpcParams = default)
         {
@@ -3351,6 +3344,27 @@ namespace TitanOrbit.Entities
             currentPeople.Value = Mathf.Min(currentPeople.Value + amount, PeopleCapacity);
         }
 
+        /// <summary>
+        /// Server-only: apply successful people load arrival feedback at ship contact.
+        /// Called by PeopleTransportProjectile when a load projectile reaches this ship.
+        /// </summary>
+        public void OnPeopleLoadArrivedFromProjectile(float amount, TeamManager.Team sourceTeam, Vector3 worldPosition)
+        {
+            if (!IsServer || amount <= 0f) return;
+
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    worldPosition,
+                    (int)FloatingCountChannel.PeopleLoad,
+                    amount,
+                    (int)sourceTeam
+                );
+            }
+
+            PlayPeopleLoadSoundClientRpc(amount);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void RemovePeopleServerRpc(float amount)
         {
@@ -3381,6 +3395,7 @@ namespace TitanOrbit.Entities
         public void ServerSetGemMoonDocked(bool value, Planet planetContext = null)
         {
             if (!IsServer) return;
+            bool wasDocked = gemMoonDocked.Value;
             gemMoonDocked.Value = value;
             if (value && planetContext != null)
             {
@@ -3389,6 +3404,19 @@ namespace TitanOrbit.Entities
             }
             else
                 gemMoonPlanetNetworkObjectId.Value = 0ul;
+
+            // Any time the ship newly enters moon orbit, trigger galactic zoom-out for that ship's owner.
+            if (value && !wasDocked)
+            {
+                var sendParams = new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new ulong[] { OwnerClientId }
+                    }
+                };
+                TriggerGalacticZoomClientRpc(sendParams);
+            }
         }
 
         private Planet ResolveGemMoonDockPlanet()

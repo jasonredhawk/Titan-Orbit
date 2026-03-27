@@ -1680,7 +1680,7 @@ MonoBehaviour:
   ConnectionData:
     Address: 127.0.0.1
     Port: 7777
-    ServerListenAddress: 
+    ServerListenAddress: 127.0.0.1
   DebugSimulator:
     PacketDelayMS: 0
     PacketJitterMS: 0
@@ -2492,7 +2492,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipAttributeUpgradeHUD
   upgradeBarEnabled: 1
-  barHeight: 68
+  barHeight: 56
   buttonWidth: 112
   buttonSpacing: 10
   bottomPadding: 12
@@ -3712,8 +3712,8 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomEnabled: 1
-  galacticZoomOrthoSize: 180
+  galacticZoomEnabled: 0
+  galacticZoomOrthoSize: 90
   galacticZoomOutDuration: 4
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 0}
@@ -5262,6 +5262,8 @@ MonoBehaviour:
   loadingCameraHeight: 200
   mainMenu: {fileID: 1536533385}
   minLoadingDisplayTime: 1
+  teamSelectCameraTransitionSeconds: 1.25
+  teamSelectEndOrthoSize: 18
 --- !u!4 &867079294
 Transform:
   m_ObjectHideFlags: 0
@@ -7822,10 +7824,13 @@ MonoBehaviour:
   maxMapSize: 500
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
-  minHomePlanetPairSeparation: 90
-  clearanceRadiusAroundHomePlanet: 40
+  minHomePlanetPairSeparation: 120
+  clearanceRadiusAroundHomePlanet: 80
+  minTeamsPerMatch: 2
+  maxTeamsPerMatch: 5
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  numberOfPlanets: 17
+  minNeutralPlanets: 9
+  maxNeutralPlanets: 18
   minPlanetSize: 9
   maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
@@ -7841,6 +7846,10 @@ MonoBehaviour:
   homePlanetsParent: {fileID: 0}
   batchDelaySeconds: 0
   asteroidsPerBatch: 20
+  alwaysUseProgressiveGeneration: 1
+  targetProgressiveDurationSeconds: 4.5
+  accelerateAsteroidProgressive: 1
+  maxAsteroidDelayBatches: 8
 --- !u!1 &1207700297
 GameObject:
   m_ObjectHideFlags: 0
@@ -8021,6 +8030,8 @@ MonoBehaviour:
   floatingCountIconScale: 0.14
   floatingCountIconLocalOffset: {x: -0.45, y: 0, z: 0}
   floatingCountVerticalOffset: 0.65
+  floatingCountSpawnJitterRadius: 0.45
+  floatingCountSpawnRingStep: 0.12
   floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}

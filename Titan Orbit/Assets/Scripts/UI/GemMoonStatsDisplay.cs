@@ -130,15 +130,15 @@ namespace TitanOrbit.UI
             ApplyOutline(shieldMaxText, Color.white, 0.25f);
 
             if (gemIconSprite != null)
-                AddStatIcon(rt, "GemMoonGemIcon", gemIconSprite, new Vector2(StatIconCenterX, GemsIconCenterY), gemsColor, Color.white);
+                AddStatIcon(rt, "GemMoonGemIcon", gemIconSprite, new Vector2(StatIconCenterX, GemsIconCenterY), gemsColor);
             if (shieldIconSprite != null)
-                AddStatIcon(rt, "GemMoonShieldIcon", shieldIconSprite, new Vector2(StatIconCenterX, ShieldIconCenterY), shieldColor, Color.white);
+                AddStatIcon(rt, "GemMoonShieldIcon", shieldIconSprite, new Vector2(StatIconCenterX, ShieldIconCenterY), shieldColor);
 
             rootRect = rt;
             UpdatePanelPlacement();
         }
 
-        private static void AddStatIcon(Transform parent, string name, Sprite sprite, Vector2 anchoredPosition, Color tintColor, Color outlineColor)
+        private static void AddStatIcon(Transform parent, string name, Sprite sprite, Vector2 anchoredPosition, Color tintColor)
         {
             if (sprite == null) return;
             var iconGo = new GameObject(name);
@@ -148,10 +148,6 @@ namespace TitanOrbit.UI
             img.color = tintColor;
             img.preserveAspect = true;
             img.raycastTarget = false;
-            var outline = iconGo.AddComponent<Outline>();
-            outline.effectColor = outlineColor;
-            outline.effectDistance = new Vector2(1.5f, -1.5f);
-            outline.useGraphicAlpha = true;
             var rect = iconGo.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);

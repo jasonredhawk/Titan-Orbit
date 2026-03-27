@@ -4,6 +4,8 @@ using TMPro;
 using TitanOrbit.Camera;
 using TitanOrbit.Generation;
 using TitanOrbit.Networking;
+using Unity.Netcode;
+using System.Collections;
 
 namespace TitanOrbit.UI
 {
@@ -30,11 +32,16 @@ namespace TitanOrbit.UI
         [SerializeField] private MainMenu mainMenu;
         [Tooltip("Minimum time to show loading screen (seconds) before team menu appears.")]
         [SerializeField] private float minLoadingDisplayTime = 1f;
+        [Tooltip("Seconds to animate from loading zoomed-out view to the selected team's spawn point.")]
+        [SerializeField] private float teamSelectCameraTransitionSeconds = 1.25f;
+        [Tooltip("Final orthographic size once transition reaches the player ship.")]
+        [SerializeField] private float teamSelectEndOrthoSize = 18f;
 
         private UnityEngine.Camera cam;
         private bool wasShowing;
         private float loadingStartTime;
         private bool cameraOverridden;
+        private Coroutine teamSelectTransitionRoutine;
 
         private void Awake()
         {
@@ -64,7 +71,7 @@ namespace TitanOrbit.UI
 
         private void OnTeamChosen(Core.TeamManager.Team team)
         {
-            ReleaseCameraToShip();
+            StartTeamSelectCameraTransition();
         }
 
         private void CreateLoadingUI()
@@ -218,7 +225,77 @@ namespace TitanOrbit.UI
         /// <summary>Release camera to follow player ship. Called when player chooses a team.</summary>
         public void ReleaseCameraToShip()
         {
+            if (teamSelectTransitionRoutine != null)
+            {
+                StopCoroutine(teamSelectTransitionRoutine);
+                teamSelectTransitionRoutine = null;
+            }
             OverrideCameraForLoading(false);
+        }
+
+        private void StartTeamSelectCameraTransition()
+        {
+            if (teamSelectTransitionRoutine != null)
+                StopCoroutine(teamSelectTransitionRoutine);
+            teamSelectTransitionRoutine = StartCoroutine(AnimateToLocalPlayerAndRelease());
+        }
+
+        private IEnumerator AnimateToLocalPlayerAndRelease()
+        {
+            if (cam == null)
+            {
+                ReleaseCameraToShip();
+                yield break;
+            }
+
+            Transform playerTransform = null;
+            const float maxWaitSeconds = 2.5f;
+            float waitStart = Time.realtimeSinceStartup;
+            while (playerTransform == null && Time.realtimeSinceStartup - waitStart < maxWaitSeconds)
+            {
+                if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
+                {
+                    var localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
+                    if (localPlayer != null)
+                        playerTransform = localPlayer.transform;
+                }
+                if (playerTransform == null)
+                    yield return null;
+            }
+
+            if (playerTransform == null)
+            {
+                ReleaseCameraToShip();
+                yield break;
+            }
+
+            if (cameraController != null)
+                cameraController.SetTarget(playerTransform);
+
+            Vector3 startPos = cam.transform.position;
+            float startSize = cam.orthographic ? cam.orthographicSize : loadingOrthoSize;
+            float duration = Mathf.Max(0.01f, teamSelectCameraTransitionSeconds);
+
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.unscaledDeltaTime;
+                float p = Mathf.Clamp01(t / duration);
+                float eased = 1f - Mathf.Pow(1f - p, 3f);
+                // Re-sample each frame so delayed server spawn/teleport still lands on the chosen home planet.
+                Vector3 liveTargetPos = new Vector3(playerTransform.position.x, loadingCameraHeight, playerTransform.position.z);
+                cam.transform.position = Vector3.Lerp(startPos, liveTargetPos, eased);
+                if (cam.orthographic)
+                    cam.orthographicSize = Mathf.Lerp(startSize, teamSelectEndOrthoSize, eased);
+                yield return null;
+            }
+
+            cam.transform.position = new Vector3(playerTransform.position.x, loadingCameraHeight, playerTransform.position.z);
+            if (cam.orthographic)
+                cam.orthographicSize = teamSelectEndOrthoSize;
+
+            teamSelectTransitionRoutine = null;
+            ReleaseCameraToShip();
         }
 
         private void OverrideCameraForLoading(bool overrideOn)
@@ -249,6 +326,8 @@ namespace TitanOrbit.UI
 
         private void OnDestroy()
         {
+            if (teamSelectTransitionRoutine != null)
+                StopCoroutine(teamSelectTransitionRoutine);
             if (cameraOverridden && cameraController != null)
                 cameraController.enabled = true;
         }

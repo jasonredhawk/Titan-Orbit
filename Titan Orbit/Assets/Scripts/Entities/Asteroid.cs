@@ -19,9 +19,7 @@ namespace TitanOrbit.Entities
         public static readonly System.Collections.Generic.List<Asteroid> AllAsteroids = new System.Collections.Generic.List<Asteroid>();
         [Header("Asteroid Settings")]
         [SerializeField] private float baseGemCount = 100f;
-        [SerializeField] private float baseHealth = 50f;
         [SerializeField] private float respawnTime = 30f;
-        [SerializeField] private float healthScalingMultiplier = 3f; // Multiplier for HP scaling (larger asteroids get much more HP)
 
         private NetworkVariable<float> remainingGems = new NetworkVariable<float>(0f);
         private NetworkVariable<float> maxGems = new NetworkVariable<float>(100f);
@@ -49,6 +47,7 @@ namespace TitanOrbit.Entities
 
         public float RemainingGems => remainingGems.Value;
         public float MaxGems => maxGems.Value;
+        public float RemainingHealth => health.Value;
         public float AsteroidSize => asteroidSize;
         public bool IsDestroyed => isDestroyed.Value;
         public Vector3 WorldVelocity => rb != null ? rb.linearVelocity : Vector3.zero;
@@ -170,9 +169,8 @@ namespace TitanOrbit.Entities
                 maxGems.Value = normalizedSize;
                 remainingGems.Value = maxGems.Value;
 
-                // HP scales with physical size (proportionate to radius / volume)
-                float healthMultiplier = rawSize * (1f + rawSize * (healthScalingMultiplier - 1f));
-                health.Value = baseHealth * healthMultiplier;
+                // Keep asteroid HP at a fixed 3:1 ratio with gem value (e.g. 50 gems => 150 HP).
+                health.Value = maxGems.Value * 3f;
                 isDestroyed.Value = false;
                 damageByShip.Clear();
                 

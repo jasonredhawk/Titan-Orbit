@@ -102,6 +102,9 @@ namespace TitanOrbit.Entities
                     if (toAdd > 0f)
                     {
                         ship.AddPeopleServerRpc(toAdd);
+                        Vector3 feedbackPos = ship.transform.position;
+                        feedbackPos.y = 0f;
+                        ship.OnPeopleLoadArrivedFromProjectile(toAdd, (TeamManager.Team)team.Value, feedbackPos);
                         ship.ReleasePeopleInTransit(toAdd);
                         if (ScoreSystem.Instance != null)
                             ScoreSystem.Instance.AwardFriendlyLoad(ship, toAdd);

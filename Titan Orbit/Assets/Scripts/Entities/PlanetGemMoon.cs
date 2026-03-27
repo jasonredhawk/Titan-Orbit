@@ -708,6 +708,7 @@ namespace TitanOrbit.Entities
             }
 
             bool shouldBeActive = shieldPoints > 0.001f;
+            SetShieldBarrierColliderEnabled(shouldBeActive);
             _matrixShieldInstance.SetActive(shouldBeActive);
 
             // Show depletion as reduced particle emission (instead of only toggling on/off).
@@ -721,6 +722,17 @@ namespace TitanOrbit.Entities
                     emission.rateOverTimeMultiplier = ratio;
                 }
             }
+        }
+
+        /// <summary>
+        /// Shield barrier collider is active only while shield points remain.
+        /// When shield is down, bullets can travel past the outer barrier and hit deeper moon colliders.
+        /// </summary>
+        private void SetShieldBarrierColliderEnabled(bool enabled)
+        {
+            if (_shieldTrigger == null) return;
+            if (_shieldTrigger.enabled == enabled) return;
+            _shieldTrigger.enabled = enabled;
         }
 
         private double GetServerTimeNowSeconds()
