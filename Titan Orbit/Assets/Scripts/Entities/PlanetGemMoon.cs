@@ -374,7 +374,9 @@ namespace TitanOrbit.Entities
                 statsDisplay = GetComponent<GemMoonStatsDisplay>();
             if (statsDisplay == null)
                 statsDisplay = gameObject.AddComponent<GemMoonStatsDisplay>();
-            statsDisplay.Init(this);
+            statsDisplay.Init(this,
+                planet != null ? planet.GemMoonHudGemIcon : null,
+                planet != null ? planet.GemMoonHudShieldIcon : null);
         }
 
         /// <summary>Server-only: push shield + moon gems to all clients (e.g. after spawn or combat).</summary>
@@ -611,6 +613,28 @@ namespace TitanOrbit.Entities
             shieldPoints = Mathf.Min(runtimeMaxShieldPoints, shieldPoints + regenRatePerSecond * Time.fixedDeltaTime);
         }
 
+        /// <summary>
+        /// Gem moons created at runtime have no prefab asset; <see cref="Planet"/> assigns Archanor MatrixShield prefabs here so builds (and Team D/E) get VFX.
+        /// </summary>
+        public void InjectMatrixShieldPrefabsIfMissing(GameObject red, GameObject blue, GameObject green, GameObject modular)
+        {
+            bool added = false;
+            if (matrixShieldRedPrefab == null && red != null) { matrixShieldRedPrefab = red; added = true; }
+            if (matrixShieldBluePrefab == null && blue != null) { matrixShieldBluePrefab = blue; added = true; }
+            if (matrixShieldGreenPrefab == null && green != null) { matrixShieldGreenPrefab = green; added = true; }
+            if (matrixShieldModularPrefab == null && modular != null) { matrixShieldModularPrefab = modular; added = true; }
+            if (!added) return;
+
+            if (_matrixShieldInstance != null)
+            {
+                Destroy(_matrixShieldInstance);
+                _matrixShieldInstance = null;
+                _matrixShieldParticles = null;
+                _matrixShieldTeam = TeamManager.Team.None;
+            }
+            UpdateMatrixShieldVisual();
+        }
+
         public void ApplyShieldClientSync(float currentShieldPoints, float syncMaxShieldPoints, float lastHitServerTimeSeconds, float currentMoonGemPoints)
         {
             shieldPoints = Mathf.Max(0f, currentShieldPoints);
@@ -740,6 +764,8 @@ namespace TitanOrbit.Entities
                     TeamManager.Team.TeamA => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldRed.prefab",
                     TeamManager.Team.TeamB => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldBlue.prefab",
                     TeamManager.Team.TeamC => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldGreen.prefab",
+                    TeamManager.Team.TeamD => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldModular.prefab",
+                    TeamManager.Team.TeamE => "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Shield/MatrixShield/MatrixShieldModular.prefab",
                     _ => null
                 };
 

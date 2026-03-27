@@ -29,6 +29,8 @@ namespace TitanOrbit.Generation
         private int numberOfAsteroidsThisMap;
         /// <summary>Rolled once per map between <see cref="minAsteroidClusters"/> and <see cref="maxAsteroidClusters"/>.</summary>
         private int asteroidClustersThisMap;
+        /// <summary>Rolled once per map between <see cref="minNeutralPlanets"/> and <see cref="maxNeutralPlanets"/>.</summary>
+        private int numberOfNeutralPlanetsThisMap;
 
         [Header("Home Planet Settings")]
         [SerializeField] private GameObject homePlanetPrefab;
@@ -41,7 +43,10 @@ namespace TitanOrbit.Generation
 
         [Header("Neutral Planet Settings")]
         [SerializeField] private GameObject planetPrefab;
-        [SerializeField] private int numberOfPlanets = 17;
+        [Tooltip("Each map rolls a random neutral planet count in this range (inclusive).")]
+        [SerializeField] private int minNeutralPlanets = 9;
+        [Tooltip("Each map rolls a random neutral planet count in this range (inclusive).")]
+        [SerializeField] private int maxNeutralPlanets = 27;
         [SerializeField] private float minPlanetSize = 9f;
         [SerializeField] private float maxPlanetSize = 18f;
 
@@ -162,8 +167,8 @@ namespace TitanOrbit.Generation
                 loadingComplete.Value = true;
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
                 int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-                int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
-                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
+                int total = homeN + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
             }
         }
 
@@ -198,6 +203,7 @@ namespace TitanOrbit.Generation
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
             homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
+            RollNeutralPlanetCount();
             asteroidPositions.Clear();
             planetPositions.Clear();
             homePlanetPositions.Clear();
@@ -211,7 +217,7 @@ namespace TitanOrbit.Generation
                 Debug.LogWarning("MapGenerator: asteroidPrefab is not assigned. Assign it in the Inspector.");
 
             int homeSteps = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-            int totalSteps = homeSteps + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
+            int totalSteps = homeSteps + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
             if (totalSteps == 0) totalSteps = 1;
             int completed = 0;
 
@@ -221,7 +227,7 @@ namespace TitanOrbit.Generation
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - after home planets");
             yield return new WaitForSeconds(batchDelaySeconds);
 
-            for (int i = 0; i < numberOfPlanets; i++)
+            for (int i = 0; i < numberOfNeutralPlanetsThisMap; i++)
             {
                 if (planetPrefab != null)
                 {
@@ -283,8 +289,8 @@ namespace TitanOrbit.Generation
             loadingProgress.Value = 1f;
             loadingComplete.Value = true;
             int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-            int total = homeN + (planetPrefab != null ? numberOfPlanets : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfPlanets : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
+            int total = homeN + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
@@ -297,6 +303,7 @@ namespace TitanOrbit.Generation
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
             homePlanetCountThisMap = random.Next(2, 6); // inclusive 2..5
+            RollNeutralPlanetCount();
             asteroidPositions.Clear();
             planetPositions.Clear();
             homePlanetPositions.Clear();
@@ -446,7 +453,7 @@ namespace TitanOrbit.Generation
         {
             if (planetPrefab == null) return;
 
-            for (int i = 0; i < numberOfPlanets; i++)
+            for (int i = 0; i < numberOfNeutralPlanetsThisMap; i++)
                 GenerateSingleNeutralPlanet(i);
         }
 
@@ -540,6 +547,14 @@ namespace TitanOrbit.Generation
         private float GetRandomFloat(float min, float max)
         {
             return min + (float)random.NextDouble() * (max - min);
+        }
+
+        /// <summary>Rolled once per map between <see cref="minNeutralPlanets"/> and <see cref="maxNeutralPlanets"/> (inclusive).</summary>
+        private void RollNeutralPlanetCount()
+        {
+            int lo = Mathf.Min(minNeutralPlanets, maxNeutralPlanets);
+            int hi = Mathf.Max(minNeutralPlanets, maxNeutralPlanets);
+            numberOfNeutralPlanetsThisMap = random.Next(lo, hi + 1);
         }
 
         /// <summary>Derives asteroid count from rolled map side length (linear between min/max map size bounds) and rolls cluster count.</summary>

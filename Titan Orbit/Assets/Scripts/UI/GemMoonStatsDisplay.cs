@@ -6,11 +6,18 @@ using TitanOrbit.Entities;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// World-space gem moon: single number for moon gem reservoir (synced from server).
+    /// World-space gem moon: moon gem reservoir + shield points (synced from server).
     /// </summary>
     public class GemMoonStatsDisplay : MonoBehaviour
     {
         private const float MoonSurfacePaddingLocal = 0.12f;
+        private const float StatIconSize = 17f;
+        private const float StatIconCenterX = -62f;
+        /// <summary>Vertical center between gems main and max lines (anchored Y 52 and 22).</summary>
+        private const float GemsIconCenterY = 37f;
+        /// <summary>Vertical center between shield main and max lines (anchored Y -24 and -50).</summary>
+        private const float ShieldIconCenterY = -37f;
+
         private PlanetGemMoon moon;
         private Canvas canvas;
         private RectTransform rootRect;
@@ -18,12 +25,16 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI gemsMaxText;
         private TextMeshProUGUI shieldText;
         private TextMeshProUGUI shieldMaxText;
+        private Sprite gemIconSprite;
+        private Sprite shieldIconSprite;
         private const float RefreshInterval = 0.2f;
         private float lastRefresh;
 
-        public void Init(PlanetGemMoon m)
+        public void Init(PlanetGemMoon m, Sprite gemIcon, Sprite shieldIcon)
         {
             moon = m;
+            gemIconSprite = gemIcon;
+            shieldIconSprite = shieldIcon;
         }
 
         private void BuildCanvas()
@@ -59,8 +70,11 @@ namespace TitanOrbit.UI
             if (scaler != null)
                 scaler.dynamicPixelsPerUnit = 10f;
 
+            Color gemsColor = new Color(1f, 0.2f, 0.2f); // red
+            Color shieldColor = new Color(0.25f, 0.95f, 1f); // cyan
+
             gemsText = AddText(rt, "0", 36);
-            gemsText.color = new Color(1f, 0.2f, 0.2f); // red
+            gemsText.color = gemsColor;
             gemsText.alignment = TextAlignmentOptions.Center;
             var gemsRect = gemsText.GetComponent<RectTransform>();
             if (gemsRect != null)
@@ -74,7 +88,7 @@ namespace TitanOrbit.UI
             ApplyOutline(gemsText, Color.white, 0.25f);
 
             gemsMaxText = AddText(rt, "0", 18);
-            gemsMaxText.color = new Color(1f, 0.2f, 0.2f); // red
+            gemsMaxText.color = gemsColor;
             gemsMaxText.alignment = TextAlignmentOptions.Center;
             var gemsMaxRect = gemsMaxText.GetComponent<RectTransform>();
             if (gemsMaxRect != null)
@@ -88,7 +102,7 @@ namespace TitanOrbit.UI
             ApplyOutline(gemsMaxText, Color.white, 0.25f);
 
             shieldText = AddText(rt, "0", 32);
-            shieldText.color = new Color(0.25f, 0.95f, 1f); // cyan
+            shieldText.color = shieldColor;
             shieldText.alignment = TextAlignmentOptions.Center;
             var shieldRect = shieldText.GetComponent<RectTransform>();
             if (shieldRect != null)
@@ -102,7 +116,7 @@ namespace TitanOrbit.UI
             ApplyOutline(shieldText, Color.white, 0.25f);
 
             shieldMaxText = AddText(rt, "0", 16);
-            shieldMaxText.color = new Color(0.25f, 0.95f, 1f); // cyan
+            shieldMaxText.color = shieldColor;
             shieldMaxText.alignment = TextAlignmentOptions.Center;
             var shieldMaxRect = shieldMaxText.GetComponent<RectTransform>();
             if (shieldMaxRect != null)
@@ -115,8 +129,35 @@ namespace TitanOrbit.UI
             }
             ApplyOutline(shieldMaxText, Color.white, 0.25f);
 
+            if (gemIconSprite != null)
+                AddStatIcon(rt, "GemMoonGemIcon", gemIconSprite, new Vector2(StatIconCenterX, GemsIconCenterY), gemsColor, Color.white);
+            if (shieldIconSprite != null)
+                AddStatIcon(rt, "GemMoonShieldIcon", shieldIconSprite, new Vector2(StatIconCenterX, ShieldIconCenterY), shieldColor, Color.white);
+
             rootRect = rt;
             UpdatePanelPlacement();
+        }
+
+        private static void AddStatIcon(Transform parent, string name, Sprite sprite, Vector2 anchoredPosition, Color tintColor, Color outlineColor)
+        {
+            if (sprite == null) return;
+            var iconGo = new GameObject(name);
+            iconGo.transform.SetParent(parent, false);
+            var img = iconGo.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = tintColor;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            var outline = iconGo.AddComponent<Outline>();
+            outline.effectColor = outlineColor;
+            outline.effectDistance = new Vector2(1.5f, -1.5f);
+            outline.useGraphicAlpha = true;
+            var rect = iconGo.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = new Vector2(StatIconSize, StatIconSize);
         }
 
         private void UpdatePanelPlacement()

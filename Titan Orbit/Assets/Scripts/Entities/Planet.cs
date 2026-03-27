@@ -65,6 +65,22 @@ namespace TitanOrbit.Entities
         [Tooltip("Spin speed in degrees/second. Clockwise when viewed from the positive ring axis.")]
         [SerializeField] private float spinDegreesPerSecond = 2f;
 
+        [Header("Gem moon matrix shield VFX")]
+        [Tooltip("Runtime-created GemMoon has no prefab asset, so MatrixShield references must be assigned on the planet (or they stay null in builds).")]
+        [SerializeField] private GameObject gemMoonMatrixShieldRedPrefab;
+        [SerializeField] private GameObject gemMoonMatrixShieldBluePrefab;
+        [SerializeField] private GameObject gemMoonMatrixShieldGreenPrefab;
+        [SerializeField] private GameObject gemMoonMatrixShieldModularPrefab;
+        [Tooltip("World-space gem moon stats UI: icon beside moon gem counts (defaults assigned on planet prefabs).")]
+        [SerializeField] private Sprite gemMoonHudGemIcon;
+        [Tooltip("World-space gem moon stats UI: icon beside shield point counts.")]
+        [SerializeField] private Sprite gemMoonHudShieldIcon;
+
+        /// <summary>Icons for <see cref="GemMoonStatsDisplay"/> on the gem moon; optional.</summary>
+        public Sprite GemMoonHudGemIcon => gemMoonHudGemIcon;
+        /// <summary>Icons for <see cref="GemMoonStatsDisplay"/> on the gem moon; optional.</summary>
+        public Sprite GemMoonHudShieldIcon => gemMoonHudShieldIcon;
+
         /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85, then scaled to 75% of that). Grows 5% per planet level.</summary>
         private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
         private const float OrbitZoneGrowthPerLevel = 0.05f;
@@ -647,6 +663,7 @@ namespace TitanOrbit.Entities
                 RefreshGemMoonDockTriggerRadius();
                 ApplyGemMoonVisualScale();
                 RefreshGemMoonVisualMaterial();
+                InjectGemMoonMatrixShieldPrefabs();
                 return;
             }
 
@@ -690,6 +707,18 @@ namespace TitanOrbit.Entities
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 ApplyGemMoonSurfaceToRenderer(renderer);
             }
+
+            InjectGemMoonMatrixShieldPrefabs();
+        }
+
+        private void InjectGemMoonMatrixShieldPrefabs()
+        {
+            if (gemMoon == null) return;
+            gemMoon.InjectMatrixShieldPrefabsIfMissing(
+                gemMoonMatrixShieldRedPrefab,
+                gemMoonMatrixShieldBluePrefab,
+                gemMoonMatrixShieldGreenPrefab,
+                gemMoonMatrixShieldModularPrefab);
         }
 
         /// <summary>SGT planet shader: disable water so the moon shows dry terrain only.</summary>

@@ -74,7 +74,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 455562950
+  GlobalObjectIdHash: 2594608850
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -100,6 +100,9 @@ MonoBehaviour:
   baseGrowthRate: 0.033333335
   planetSize: 1
   captureRadius: 5
+  minStartingLevel: 1
+  maxStartingLevel: 3
+  randomizeNeutralStartingLevel: 1
   planetRenderer: {fileID: 0}
   sgtPlanet: {fileID: 8444628455997742549}
   materialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
@@ -107,6 +110,8 @@ MonoBehaviour:
   teamAMaterial: {fileID: 2100000, guid: 801d289287ec4a041a954f2a7d8608f1, type: 2}
   teamBMaterial: {fileID: 2100000, guid: d1ac48592d2dcf0418cf1214399a4941, type: 2}
   teamCMaterial: {fileID: 2100000, guid: ce7531fc382a1224c9b4cc6e27ab88b1, type: 2}
+  teamDMaterial: {fileID: 0}
+  teamEMaterial: {fileID: 0}
   populationText: {fileID: 3314496731455080961}
   planetStatsDisplay: {fileID: 0}
   regularPlanetTintIntensity: 0.2
@@ -114,6 +119,12 @@ MonoBehaviour:
   atmosphereOuterMesh: {fileID: 0}
   enableSpin: 1
   spinDegreesPerSecond: 2
+  gemMoonMatrixShieldRedPrefab: {fileID: 1102373107344675128, guid: 5960e14214e58194bb0947343028f736, type: 3}
+  gemMoonMatrixShieldBluePrefab: {fileID: 6836084496981915754, guid: d51f631c8638abd45a64b8bb5298c153, type: 3}
+  gemMoonMatrixShieldGreenPrefab: {fileID: 2201477345632506986, guid: 505fe711ce4d402408f14facd555199c, type: 3}
+  gemMoonMatrixShieldModularPrefab: {fileID: 1336921843473261954, guid: 5e2d9fe5137c8ff48b18f518c09baab1, type: 3}
+  gemMoonHudGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
+  gemMoonHudShieldIcon: {fileID: 21300000, guid: d2d4f225d1dcff441b06778ecf922ad5, type: 3}
   baseMaxGemsLevel1: 200
   maxShipLevelPerPlanetLevel: 00000000010000000200000003000000040000000500000006000000
   levelUpPulseScale: 1.15

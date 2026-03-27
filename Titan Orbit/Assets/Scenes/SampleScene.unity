@@ -2492,7 +2492,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipAttributeUpgradeHUD
   upgradeBarEnabled: 1
-  barHeight: 56
+  barHeight: 68
   buttonWidth: 112
   buttonSpacing: 10
   bottomPadding: 12
@@ -7819,7 +7819,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
   minMapSize: 300
-  maxMapSize: 1000
+  maxMapSize: 500
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 90
@@ -7829,10 +7829,10 @@ MonoBehaviour:
   minPlanetSize: 9
   maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 120
-  asteroidsAtMaxMapSize: 400
+  asteroidsAtMinMapSize: 400
+  asteroidsAtMaxMapSize: 700
   minAsteroidClusters: 8
-  maxAsteroidClusters: 35
+  maxAsteroidClusters: 100
   minAsteroidSize: 1
   maxAsteroidSize: 70
   minAsteroidSpacing: 1.5

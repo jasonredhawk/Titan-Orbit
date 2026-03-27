@@ -18,8 +18,8 @@ namespace TitanOrbit.UI
         [SerializeField] private bool upgradeBarEnabled = true;
 
         [Header("Layout")]
-        [SerializeField] private float barHeight = 56f;
-        [SerializeField] private float buttonWidth = 112f;
+        [SerializeField] private float barHeight = 68f;
+        [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
         [SerializeField] private float bottomPadding = 8f;
 
@@ -159,10 +159,10 @@ namespace TitanOrbit.UI
             keyRect.anchorMax = new Vector2(0f, 1f);
             keyRect.pivot = new Vector2(0f, 1f);
             keyRect.anchoredPosition = new Vector2(4f, -4f);
-            keyRect.sizeDelta = new Vector2(14f, 12f);
+            keyRect.sizeDelta = new Vector2(20f, 16f);
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
-            keyLabel.fontSize = 9f;
+            keyLabel.fontSize = 13f;
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
             keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
@@ -192,7 +192,7 @@ namespace TitanOrbit.UI
             tickRect.anchorMax = new Vector2(0.5f, 0.5f);
             tickRect.pivot = new Vector2(0.5f, 0.5f);
             tickRect.anchoredPosition = new Vector2(0f, -6f);
-            tickRect.sizeDelta = new Vector2(54f, 8f);
+            tickRect.sizeDelta = new Vector2(Mathf.Min(buttonWidth - 16f, 78f), 10f);
 
             HorizontalLayoutGroup tickLayout = tickContainer.AddComponent<HorizontalLayoutGroup>();
             tickLayout.spacing = 2f;
@@ -210,10 +210,10 @@ namespace TitanOrbit.UI
             costRect.anchorMax = new Vector2(0.5f, 0f);
             costRect.pivot = new Vector2(0.5f, 0f);
             costRect.anchoredPosition = new Vector2(0f, 3f);
-            costRect.sizeDelta = new Vector2(buttonWidth - 6f, 10f);
+            costRect.sizeDelta = new Vector2(buttonWidth - 6f, 14f);
             TextMeshProUGUI costLabel = costObj.AddComponent<TextMeshProUGUI>();
             costLabel.text = "";
-            costLabel.fontSize = 7.5f;
+            costLabel.fontSize = 11f;
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
             costLabel.alignment = TextAlignmentOptions.Center;
@@ -231,8 +231,8 @@ namespace TitanOrbit.UI
                 Image img = tick.AddComponent<Image>();
                 img.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
                 LayoutElement le = tick.AddComponent<LayoutElement>();
-                le.preferredWidth = 6f;
-                le.preferredHeight = 6f;
+                le.preferredWidth = 7f;
+                le.preferredHeight = 7f;
             }
         }
 
