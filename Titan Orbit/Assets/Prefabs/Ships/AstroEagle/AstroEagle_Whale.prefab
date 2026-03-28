@@ -61,22 +61,22 @@ MonoBehaviour:
     bulletSpeedPerLevel: 20.168772
     fireRate: 7.9664574
     fireRatePerLevel: 0
-    healthCap: 548.80237
-    healthCapPerLevel: 119.287
-    healthRegen: 170.09055
-    healthRegenPerLevel: 37.21811
-    energyCap: 206.09055
-    energyCapPerLevel: 55.827164
-    energyRegen: 36
-    energyRegenPerLevel: 20
+    healthCap: 230.53069
+    healthCapPerLevel: 55.632675
+    healthRegen: 64
+    healthRegenPerLevel: 16
+    energyCap: 60
+    energyCapPerLevel: 12
+    energyRegen: 12
+    energyRegenPerLevel: 12
     moveSpeed: 50.884495
     moveSpeedPerLevel: 20.353798
-    turnSpeed: 403.53796
-    turnSpeedPerLevel: 130.88449
-    maxGems: 306.09055
-    maxGemsPerLevel: 61.21811
-    maxPeople: 146.09055
-    maxPeoplePerLevel: 29.21811
+    turnSpeed: 40.353798
+    turnSpeedPerLevel: 13.0884495
+    maxGems: 160
+    maxGemsPerLevel: 32
+    maxPeople: 80
+    maxPeoplePerLevel: 16
   matchedComponentIds:
   - Cockpit
   - Engine_2
@@ -87,7 +87,7 @@ MonoBehaviour:
   - Weapon
   - Wing_4
   matchedScaleFactors:
-  - 29.21811
+  - 8
   - 5.0884495
   - 5.0884495
   - 1.0126833
@@ -102,22 +102,22 @@ MonoBehaviour:
     bulletSpeedPerLevel: 0
     fireRate: 0
     fireRatePerLevel: 0
-    healthCap: 438.27164
-    healthCapPerLevel: 87.65433
-    healthRegen: 146.09055
-    healthRegenPerLevel: 29.21811
-    energyCap: 146.09055
-    energyCapPerLevel: 43.827164
+    healthCap: 120
+    healthCapPerLevel: 24
+    healthRegen: 40
+    healthRegenPerLevel: 8
+    energyCap: 0
+    energyCapPerLevel: 0
     energyRegen: 0
     energyRegenPerLevel: 0
     moveSpeed: 0
     moveSpeedPerLevel: 0
     turnSpeed: 0
     turnSpeedPerLevel: 0
-    maxGems: 146.09055
-    maxGemsPerLevel: 29.21811
-    maxPeople: 146.09055
-    maxPeoplePerLevel: 29.21811
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 80
+    maxPeoplePerLevel: 16
   - firePower: 0
     firePowerPerLevel: 0
     bulletSpeed: 0
@@ -156,8 +156,8 @@ MonoBehaviour:
     energyRegenPerLevel: 0
     moveSpeed: 0
     moveSpeedPerLevel: 0
-    turnSpeed: 203.53798
-    turnSpeedPerLevel: 50.884495
+    turnSpeed: 20.353798
+    turnSpeedPerLevel: 5.0884495
     maxGems: 0
     maxGemsPerLevel: 0
     maxPeople: 0
@@ -262,12 +262,12 @@ MonoBehaviour:
     healthRegenPerLevel: 8
     energyCap: 0
     energyCapPerLevel: 0
-    energyRegen: 24
-    energyRegenPerLevel: 8
+    energyRegen: 0
+    energyRegenPerLevel: 0
     moveSpeed: 0
     moveSpeedPerLevel: 0
-    turnSpeed: 200
-    turnSpeedPerLevel: 80
+    turnSpeed: 20
+    turnSpeedPerLevel: 8
     maxGems: 160
     maxGemsPerLevel: 32
     maxPeople: 0
@@ -540,15 +540,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalScale.x
-      value: 3.08
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalScale.y
-      value: 3.08
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalScale.z
-      value: 3.08
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalPosition.x
@@ -560,7 +560,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 2.44
+      value: 1.35
       objectReference: {fileID: 0}
     - target: {fileID: 4442598646160058, guid: bf665c3cba0926d40ac794162477c231, type: 3}
       propertyPath: m_LocalRotation.w
