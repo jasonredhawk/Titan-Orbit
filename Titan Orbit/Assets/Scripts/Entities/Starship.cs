@@ -326,7 +326,9 @@ namespace TitanOrbit.Entities
         [Tooltip("Base mass when no chassis. Chassis components override with component weights. Mass is not scaled by ship level or cards.")]
         [SerializeField] private float baseMass = 1f;
         [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
-        [SerializeField] private float massPerGem = 0.01f;
+        [SerializeField] private float massPerGem = 0.008f;
+        [Tooltip("Multiplies chassis component mass (or baseMass when no chassis). Does not scale gem load.")]
+        [SerializeField] private float hullMassScale = 0.7f;
 
         [Header("Energy (weapon system)")]
         [SerializeField] private float energyCapacity = 50f;
@@ -538,13 +540,15 @@ namespace TitanOrbit.Entities
         public float EditorMaxPeople => PeopleCapacity;
 #endif
 
+        /// <summary>Chassis or fallback base mass after hullMassScale (excludes gem load). Used with EffectiveMaxSpeed for ramming baseline.</summary>
+        private float ScaledHullMassReference => (componentMass > 0f ? componentMass : baseMass) * hullMassScale;
+
         /// <summary>Mass from components + gems. Not scaled by ship level or cards.</summary>
         private float EffectiveMass
         {
             get
             {
-                float baseValue = componentMass > 0f ? componentMass : baseMass;
-                return Mathf.Max(0.5f, baseValue + currentGems.Value * massPerGem);
+                return Mathf.Max(0.5f, ScaledHullMassReference + currentGems.Value * massPerGem);
             }
         }
 
@@ -615,6 +619,21 @@ namespace TitanOrbit.Entities
 
         /// <summary>Base gem capacity without card bonuses. Comes from ShipFamilyDefinition (via chassis components).</summary>
         public float BaseGemCapacity => Mathf.Max(0f, gemCapacity);
+
+        /// <summary>Horizontal speed in the play plane (XZ), units/sec. Matches movement clamp / HUD speedometer.</summary>
+        public float CurrentHorizontalSpeed
+        {
+            get
+            {
+                if (rb == null) return 0f;
+                Vector3 v = rb.linearVelocity;
+                v.y = 0f;
+                return v.magnitude;
+            }
+        }
+
+        /// <summary>Effective maximum movement speed cap (same units as <see cref="CurrentHorizontalSpeed"/>).</summary>
+        public float MaxMoveSpeed => EffectiveMaxSpeed;
 
         /// <summary>Stat value as if no attribute upgrades (attr=0). Used to scale components by percentage increase (current/base).</summary>
         private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth + GetCardMaxHealthAdd());
@@ -3109,7 +3128,7 @@ namespace TitanOrbit.Entities
         {
             float mass = Mathf.Max(0.5f, rb.mass);
             float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
-            float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+            float baselineMomentum = Mathf.Max(0.01f, ScaledHullMassReference * effectiveMax);
             float momentum01 = (mass * pushAmount) / baselineMomentum;
             float momentumInfluence = Mathf.Sqrt(Mathf.Clamp(momentum01, 0f, 4f));
             float momentumMultiplier = 1f + rammingMomentumDamageScale * momentumInfluence;
@@ -3186,7 +3205,7 @@ namespace TitanOrbit.Entities
                     float speed01 = Mathf.Clamp01(impactSpeed / effectiveMax);
 
                     // Momentum/mass scaling: heavier and faster ships should feel meaningfully stronger.
-                    float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                    float baselineMomentum = Mathf.Max(0.01f, ScaledHullMassReference * effectiveMax);
                     float momentum01 = (mass * impactSpeed) / baselineMomentum;
                     float momentumInfluence = Mathf.Sqrt(Mathf.Clamp(momentum01, 0f, 4f)); // soften extremes
                     float momentumMultiplier = 1f + rammingMomentumDamageScale * momentumInfluence;
@@ -3236,7 +3255,7 @@ namespace TitanOrbit.Entities
                     float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
                     float speed01 = Mathf.Clamp01(impactSpeed / effectiveMax);
 
-                    float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                    float baselineMomentum = Mathf.Max(0.01f, ScaledHullMassReference * effectiveMax);
                     float momentum01 = (mass * impactSpeed) / baselineMomentum;
 
                     float firePowerMultiplier = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
@@ -3379,7 +3398,7 @@ namespace TitanOrbit.Entities
                 Vector3 pushDir = normal; // away from asteroid
                 float mass = Mathf.Max(0.5f, rb.mass);
                 float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
-                float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                float baselineMomentum = Mathf.Max(0.01f, ScaledHullMassReference * effectiveMax);
                 float momentum01 = (mass * pushAmount) / baselineMomentum;
 
                 // High momentum should reduce pushback so the ship can "crash through" instead of always bouncing away.

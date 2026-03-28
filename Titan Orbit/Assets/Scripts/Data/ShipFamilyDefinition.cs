@@ -32,8 +32,10 @@ namespace TitanOrbit.Data
         public float energyRegenPerLevel;  // Energy Regen gained per ship level
 
         [Header("Movement")]
-        public float moveSpeed;            // Move Speed (engine thrust / max speed contribution)
-        public float moveSpeedPerLevel;    // Move Speed gained per ship level
+        [Tooltip("Engine/thruster: authoritative game units for thrust (sum) and max speed (best engine). Not multiplied by part scale—matches speedometer and physics cap.")]
+        public float moveSpeed;
+        [Tooltip("Added per ship level after level 1; same units as Move Speed.")]
+        public float moveSpeedPerLevel;
         public float turnSpeed;            // Turn Speed (rotation speed)
         public float turnSpeedPerLevel;    // Turn Speed gained per ship level
 
@@ -98,7 +100,7 @@ namespace TitanOrbit.Data
             maxPeoplePerLevel += other.maxPeoplePerLevel;
         }
 
-        /// <summary>Multiply all ability values by a factor (e.g. normalized scale: scale.x * scale.y * scale.z). Used so stretched components contribute proportionally.</summary>
+        /// <summary>Multiply all ability values by a factor (e.g. average of localScale x,y,z). Used so stretched components contribute proportionally.</summary>
         public static ShipComponentAbilityStats operator *(ShipComponentAbilityStats s, float factor)
         {
             return new ShipComponentAbilityStats
@@ -128,12 +130,12 @@ namespace TitanOrbit.Data
             };
         }
 
-        /// <summary>Normalized scale factor from transform: product of x*y*z. (1,1,1)=1; (4,0.5,1)=2. Use to scale component abilities by physical size.</summary>
+        /// <summary>Scale factor from transform: arithmetic mean of localScale x, y, z (same idea as <see cref="ChassisComponentStats.GetScaleFactor"/>). (1,1,1)=1.</summary>
         public static float GetNormalizedScaleFromTransform(Transform t)
         {
             if (t == null) return 1f;
             Vector3 s = t.localScale;
-            return s.x * s.y * s.z;
+            return (s.x + s.y + s.z) / 3f;
         }
 
         /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Weapons use x*y for fire power and 1/z for fire rate.</summary>
@@ -158,8 +160,8 @@ namespace TitanOrbit.Data
         /// Scale stats by transform.
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
         ///          Other weapon properties (health, energy, etc.) are NOT scaled by transform.
-        /// Non-weapons: stats scale by x*y*z except turn speed — authored turn values are used as-is; <c>Starship</c>
-        /// converts definition units to degrees per second only when applying rotation.
+        /// Non-weapons: stats scale by average(x,y,z) except turn speed and engine/thruster move speed (authored as-is).
+        /// <c>Starship</c> converts turn definition units to degrees per second when applying rotation.
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(ShipComponentAbilityStats stats, Transform t, string componentId)
         {
@@ -200,10 +202,16 @@ namespace TitanOrbit.Data
                 };
             }
 
-            float scale = x * y * z;
+            float scale = (x + y + z) / 3f;
             ShipComponentAbilityStats scaled = stats * scale;
             scaled.turnSpeed = stats.turnSpeed;
             scaled.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+            // Do not scale engine/thruster move speed by part volume—designers tune these to match gameplay speeds.
+            if (IsEngineComponent(componentId) || IsThrusterComponent(componentId))
+            {
+                scaled.moveSpeed = stats.moveSpeed;
+                scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
+            }
             return scaled;
         }
     }
