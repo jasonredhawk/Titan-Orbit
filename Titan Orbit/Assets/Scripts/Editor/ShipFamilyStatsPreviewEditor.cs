@@ -89,11 +89,15 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField("Move Speed", total.moveSpeed);
                 EditorGUILayout.FloatField("Move Speed / Level", total.moveSpeedPerLevel);
                 EditorGUILayout.FloatField(
-                    "Turn Speed (applied °/s)",
-                    total.turnSpeed * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                    new GUIContent(
+                        "Turn Speed",
+                        "Definition units (same as Ship Family component entry). Starship converts to °/s only when rotating."),
+                    total.turnSpeed);
                 EditorGUILayout.FloatField(
-                    "Turn Speed / Level (applied)",
-                    total.turnSpeedPerLevel * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                    new GUIContent(
+                        "Turn Speed / Level",
+                        "Definition units per ship level. Starship converts to °/s only when rotating."),
+                    total.turnSpeedPerLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
@@ -154,11 +158,15 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.FloatField("  Move Speed", s.moveSpeed);
                             EditorGUILayout.FloatField("  Move Speed / Level", s.moveSpeedPerLevel);
                             EditorGUILayout.FloatField(
-                                "  Turn Speed (applied °/s)",
-                                s.turnSpeed * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                                new GUIContent(
+                                    "  Turn Speed",
+                                    "Definition units. Starship converts to °/s only when rotating."),
+                                s.turnSpeed);
                             EditorGUILayout.FloatField(
-                                "  Turn Speed / Level (applied)",
-                                s.turnSpeedPerLevel * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                                new GUIContent(
+                                    "  Turn Speed / Level",
+                                    "Definition units per ship level. Starship converts to °/s only when rotating."),
+                                s.turnSpeedPerLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Max Gems", s.maxGems);

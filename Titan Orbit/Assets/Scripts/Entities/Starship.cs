@@ -53,7 +53,12 @@ namespace TitanOrbit.Entities
         [Header("Movement")]
         [Tooltip("Engine thrust (force) when no chassis applied. Chassis engines override.")]
         [SerializeField] private float engineThrust = 12f;
+        /// <summary>When set from Ship Family preview stats, stores authored turn units (small numbers). Otherwise legacy/world °/s (e.g. ShipData or scale fallback). See <see cref="rotationSpeedFromShipFamilyDefinition"/>.</summary>
         [SerializeField] private float rotationSpeed = 180f;
+        /// <summary>True: <see cref="rotationSpeed"/> is family definition units — multiply by <see cref="ShipTurnDefinitionToDegreesPerSecond"/> only in rotation/banking. False: already °/s (ShipData, chassis scale fallback).</summary>
+        private bool rotationSpeedFromShipFamilyDefinition;
+        /// <summary>Converts family-authored turn stats to °/s. Applied only in rotation and related visuals — not in power scores or persisted data.</summary>
+        private const float ShipTurnDefinitionToDegreesPerSecond = 10f;
         [SerializeField] private float acceleration = 32f;
         [Tooltip("When space brakes are on, speed is reduced by this amount per second (higher = more friction, faster stop).")]
         [SerializeField] private float brakeDeceleration = 7f;
@@ -479,7 +484,10 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                float baseWithCards = rotationSpeed + GetCardRotationSpeedAdd();
+                float chassis = rotationSpeedFromShipFamilyDefinition
+                    ? Mathf.Max(1f, rotationSpeed) * ShipTurnDefinitionToDegreesPerSecond
+                    : rotationSpeed;
+                float baseWithCards = chassis + GetCardRotationSpeedAdd();
                 float attrScale = 1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 return baseWithCards * attrScale;
             }
@@ -610,7 +618,16 @@ namespace TitanOrbit.Entities
         private float BasePeopleCapacityNoAttr => Mathf.Max(0.1f, peopleCapacity);
         private float BaseEnergyCapacityNoAttr => Mathf.Max(0.1f, energyCapacity + GetCardEnergyCapacityAdd());
         private float BaseEnergyRegenNoAttr => Mathf.Max(0.01f, energyRegenRate + GetCardEnergyRegenAdd());
-        private float BaseRotationSpeedNoAttr => Mathf.Max(1f, rotationSpeed + GetCardRotationSpeedAdd());
+        private float BaseRotationSpeedNoAttr
+        {
+            get
+            {
+                float chassis = rotationSpeedFromShipFamilyDefinition
+                    ? Mathf.Max(1f, rotationSpeed) * ShipTurnDefinitionToDegreesPerSecond
+                    : rotationSpeed;
+                return Mathf.Max(1f, chassis + GetCardRotationSpeedAdd());
+            }
+        }
         private float BaseHealthRegenNoAttr => Mathf.Max(0.01f, healthRegenRate + GetCardHealthRegenAdd());
         private float BaseMaxSpeedNoAttr
         {
@@ -2265,6 +2282,7 @@ namespace TitanOrbit.Entities
 
         private void HandleRotation()
         {
+            // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
             // Always rotate toward mouse cursor - works in place, no movement required
             UnityEngine.Camera cam = UnityEngine.Camera.main;
             if (cam != null && inputHandler != null)
@@ -3776,6 +3794,7 @@ namespace TitanOrbit.Entities
                     maxHealth = data.baseMaxHealth;
                     healthRegenRate = data.baseHealthRegenRate;
                     rotationSpeed = data.baseRotationSpeed;
+                    rotationSpeedFromShipFamilyDefinition = false;
                     gemCapacity = data.baseGemCapacity;
                     peopleCapacity = data.basePeopleCapacity;
                     energyCapacity = data.baseEnergyCapacity;
@@ -3980,7 +3999,8 @@ namespace TitanOrbit.Entities
                 healthRegenRate = Mathf.Max(0f, s.healthRegen + s.healthRegenPerLevel * perLvl);
                 energyCapacity = Mathf.Max(1f, s.energyCap + s.energyCapPerLevel * perLvl);
                 energyRegenRate = Mathf.Max(0f, s.energyRegen + s.energyRegenPerLevel * perLvl);
-                rotationSpeed = Mathf.Max(1f, (s.turnSpeed + s.turnSpeedPerLevel * perLvl) * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                rotationSpeed = Mathf.Max(1f, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
+                rotationSpeedFromShipFamilyDefinition = true;
                 gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
 
@@ -4049,6 +4069,7 @@ namespace TitanOrbit.Entities
                 float energyRegenVal = stats.cockpitCannonScaleTotal;
 
                 rotationSpeed = Mathf.Max(1f, turnVal);
+                rotationSpeedFromShipFamilyDefinition = false;
                 maxHealth = Mathf.Max(1f, healthVal);
                 healthRegenRate = Mathf.Max(0f, healthRegenVal);
                 gemCapacity = Mathf.Max(0f, gemVal);

@@ -69,7 +69,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Scan all child transforms, parse names of the form Family_ComponentId, and sum their stats.
-        /// Each component's contribution is scaled by transform: non-weapons use normalized scale (x*y*z).
+        /// Each component's contribution is scaled by transform: non-weapons use normalized scale (x*y*z) for most stats;
+        /// turn speed uses authored values only (see <see cref="ShipComponentAbilityStats.ScaleStatsByTransform"/>).
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
         /// </summary>
         public void RecalculateFromChildren()

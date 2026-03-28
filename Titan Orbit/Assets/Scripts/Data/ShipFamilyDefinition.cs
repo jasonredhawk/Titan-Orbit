@@ -152,7 +152,8 @@ namespace TitanOrbit.Data
         /// Scale stats by transform.
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
         ///          Other weapon properties (health, energy, etc.) are NOT scaled by transform.
-        /// Non-weapons: all stats scale by x*y*z.
+        /// Non-weapons: stats scale by x*y*z except turn speed — authored turn values are used as-is; <c>Starship</c>
+        /// converts definition units to degrees per second only when applying rotation.
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(ShipComponentAbilityStats stats, Transform t, string componentId)
         {
@@ -194,7 +195,10 @@ namespace TitanOrbit.Data
             }
 
             float scale = x * y * z;
-            return stats * scale;
+            ShipComponentAbilityStats scaled = stats * scale;
+            scaled.turnSpeed = stats.turnSpeed;
+            scaled.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+            return scaled;
         }
     }
 
@@ -273,13 +277,6 @@ namespace TitanOrbit.Data
     [CreateAssetMenu(fileName = "NewShipFamily", menuName = "Titan Orbit/Ship Family Definition")]
     public class ShipFamilyDefinition : ScriptableObject
     {
-        /// <summary>
-        /// Multiplier applied at runtime to summed <see cref="ShipComponentAbilityStats.turnSpeed"/> and
-        /// <see cref="ShipComponentAbilityStats.turnSpeedPerLevel"/> from chassis preview stats. Lets authored
-        /// definition values use a smaller numeric range (e.g. divide assets by 10 when this is 10) while keeping the same turn rate.
-        /// </summary>
-        public const float AppliedTurnSpeedScale = 10f;
-
         [Tooltip("Ship family identifier prefix used in child names. Example: 'AstroEagle' for objects named 'AstroEagle_Cockpit'.")]
         public string familyId;
 
