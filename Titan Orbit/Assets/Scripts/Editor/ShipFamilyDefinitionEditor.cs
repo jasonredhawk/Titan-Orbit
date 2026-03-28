@@ -277,8 +277,21 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Sort by power ascending so weaker ships unlock earlier
+            // Weaker ships unlock earlier (global order by power). Within each planet tier row, order left→right
+            // on the O–D–E–M–C spectrum (offense-heavy left, capacity-heavy right) to match the orbit tree layout.
             list.Sort((a, b) => a.power.CompareTo(b.power));
+            var orderedForTree = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+            int listIdx = 0;
+            int chunkSize = 1;
+            while (listIdx < list.Count)
+            {
+                var chunk = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+                for (int c = 0; c < chunkSize && listIdx < list.Count; c++)
+                    chunk.Add(list[listIdx++]);
+                chunk.Sort(CompareOdEmcSpectrumInTier);
+                orderedForTree.AddRange(chunk);
+                chunkSize++;
+            }
 
             Undo.RecordObject(def, "Build Ship Family Upgrade Tree");
 
@@ -287,7 +300,7 @@ namespace TitanOrbit.Editor
             else
                 def.upgradeTree.Clear();
 
-            int count = list.Count;
+            int count = orderedForTree.Count;
             int index = 0;
             int currentLevel = 1;
             int shipsAtCurrentLevel = 1;
@@ -295,7 +308,7 @@ namespace TitanOrbit.Editor
 
             for (int i = 0; i < count; i++)
             {
-                var (prefab, power, breakdown) = list[i];
+                var (prefab, power, breakdown) = orderedForTree[i];
                 if (prefab == null) continue;
 
                 if (assignedAtThisLevel >= shipsAtCurrentLevel)
@@ -364,6 +377,28 @@ namespace TitanOrbit.Editor
             if (parts.Length < 2)
                 return string.Empty;
             return parts[1];
+        }
+
+        /// <summary>0 = offense-heavy, 4 = capacity-heavy; weighted mean of category indices O/D/E/M/C.</summary>
+        private static float OdEmcAxisPosition(ShipFamilyPowerScoreBreakdown x)
+        {
+            float s = x.offense + x.defense + x.energy + x.mobility + x.capacity;
+            if (s <= 0.0001f) return 2f;
+            return (0f * x.offense + 1f * x.defense + 2f * x.energy + 3f * x.mobility + 4f * x.capacity) / s;
+        }
+
+        /// <summary>Left branch = lower axis (more O); right = higher (more C). Tie-break: offense desc, capacity asc.</summary>
+        private static int CompareOdEmcSpectrumInTier(
+            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) a,
+            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) b)
+        {
+            float pa = OdEmcAxisPosition(a.breakdown);
+            float pb = OdEmcAxisPosition(b.breakdown);
+            int cmp = pa.CompareTo(pb);
+            if (cmp != 0) return cmp;
+            cmp = b.breakdown.offense.CompareTo(a.breakdown.offense);
+            if (cmp != 0) return cmp;
+            return a.breakdown.capacity.CompareTo(b.breakdown.capacity);
         }
 
         private static ShipFamilyPowerScoreBreakdown ComputePowerScoreBreakdown(ShipComponentAbilityStats s)

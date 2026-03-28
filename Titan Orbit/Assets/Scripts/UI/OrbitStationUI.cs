@@ -26,7 +26,7 @@ namespace TitanOrbit.UI
         [Tooltip("e.g. Rajdhani from Shift UI/Fonts.")]
         [SerializeField] private TMP_FontAsset fontAsset;
 
-        private const float PanelWidth = 420f;
+        private const float PanelWidth = 486f;
         private const float LeftMargin = 12f;
         /// <summary>Vertical offset from top so orbit panel sits below ShipStatsPanel (top-left anchor).</summary>
         private const float TopOffsetBelowShipStats = 168f;
@@ -34,10 +34,10 @@ namespace TitanOrbit.UI
         private const int MaxSlotRows = 12;
         private const int SlotGridColumns = 6;
         /// <summary>Roomier slot card height so title/description/level bubble all fit.</summary>
-        private const float SlotCardWidth = 100f;
+        private const float SlotCardWidth = 110f;
         private const float SlotCardHeight = 82f;
-        private const float SlotCellSpacing = 10f;
-        private const float SlotPanelWidthConst = 12f + 6 * 100f + 5 * 10f + 12f; // 6 cards + spacing
+        private const float SlotCellSpacing = 11f;
+        private const float SlotPanelWidthConst = 12f + 6 * SlotCardWidth + 5 * SlotCellSpacing + 12f; // 6 cards + spacing
         private const float SlotPanelHeaderHeight = 28f;
 
         private GameObject rootPanel;
@@ -99,21 +99,14 @@ namespace TitanOrbit.UI
         private string _shipTreeStructureKey = "";
         private const int MaxShipTreeColumns = 7;
         private const float ShipTreeColGap = 6f;
-        private const float ShipTreeLevelSpacing = 150f;
-        /// <summary>Cap tree width; widest row is level 6 (6 columns).</summary>
-        private const float ShipTreeViewportMaxWidth = 572f;
-        /// <summary>Desired node width; actual width is capped so six columns fit inside the viewport.</summary>
-        private const float ShipTreeNodeFixedWidth = 120f;
-        private const float ShipTreeNodeHeight = 176f;
-        private const string ShipTreeStructureKey = "full8_fixed_vlayout_powerbreakdown_v1";
-        private static readonly Color[] ShipTreePowerCategoryColors =
-        {
-            new Color(1f, 0.42f, 0.42f, 1f),
-            new Color(0.31f, 0.8f, 0.77f, 1f),
-            new Color(1f, 0.9f, 0.43f, 1f),
-            new Color(0.58f, 0.88f, 0.83f, 1f),
-            new Color(0.65f, 0.55f, 0.98f, 1f),
-        };
+        private const int ShipTreeMaxColumns = 6;
+        /// <summary>Left/right inset from canvas edge to the node layout area (matches <see cref="BuildShipUpgradeTreeVisualFull"/> margin).</summary>
+        private const float ShipTreeCanvasInnerMargin = 8f;
+        private const float ShipTreeNodeHeight = 188f;
+        /// <summary>Vertical distance between node centers; must exceed <see cref="ShipTreeNodeHeight"/> so rows do not overlap.</summary>
+        private const float ShipTreeLevelSpacing = ShipTreeNodeHeight + 44f;
+        private const string ShipTreeStructureKey = "full8_fixed_vlayout_powerbreakdown_v4_basis6col_centered";
+        private float _cachedShipTreeBasisWidth = -999f;
         private static readonly string[] ShipTreePowerCategoryLetters = { "O", "D", "E", "M", "C" };
         private readonly List<int> _shipTreeNextTargets = new List<int>(4);
         private StoreItemType[] itemTypes;
@@ -186,6 +179,11 @@ namespace TitanOrbit.UI
             if (rootPanel != null) rootPanel.SetActive(false);
         }
 
+        private void OnRectTransformDimensionsChange()
+        {
+            _cachedShipTreeBasisWidth = -999f;
+        }
+
         private void Update()
         {
             if (rootPanel == null || !rootPanel.activeSelf || currentShip == null || currentPlanet == null) return;
@@ -205,6 +203,8 @@ namespace TitanOrbit.UI
             }
             // Fallback: apply mouse scroll and drag to store ScrollRect when pointer is over the viewport (works even if event system doesn't deliver to children)
             ApplyStoreScrollFallback();
+            if (rootPanel != null && rootPanel.activeSelf && activeStoreTab == 1)
+                CheckShipTreeLayoutBasisChanged();
         }
 
         private void ApplyStoreScrollFallback()
@@ -569,11 +569,12 @@ namespace TitanOrbit.UI
             storeScrollRect.viewport = viewportRect;
             storeContentRoot = new GameObject("StoreContent").AddComponent<RectTransform>();
             storeContentRoot.SetParent(viewport.transform, false);
+            // Horizontal stretch: width = viewportWidth + sizeDelta.x — keep x=0 so content matches viewport (not 2× wide).
             storeContentRoot.anchorMin = new Vector2(0f, 1f);
             storeContentRoot.anchorMax = new Vector2(1f, 1f);
             storeContentRoot.pivot = new Vector2(0f, 1f);
             storeContentRoot.anchoredPosition = Vector2.zero;
-            storeContentRoot.sizeDelta = new Vector2(Mathf.Max(PanelWidth - 24f, 360f), 800f); // updated below after content built
+            storeContentRoot.sizeDelta = new Vector2(0f, 800f); // height updated below; width follows viewport
             var contentBg = storeContentRoot.gameObject.AddComponent<Image>();
             contentBg.color = new Color(0f, 0f, 0f, 0.01f);
             contentBg.raycastTarget = true;
@@ -702,15 +703,16 @@ namespace TitanOrbit.UI
             var treeGo = new GameObject("ShipUpgradeTreeCanvas");
             treeGo.transform.SetParent(rowGo.transform, false);
             shipTreeCanvas = treeGo.AddComponent<RectTransform>();
-            shipTreeCanvas.anchorMin = new Vector2(0f, 1f);
-            shipTreeCanvas.anchorMax = new Vector2(0f, 1f);
-            shipTreeCanvas.pivot = new Vector2(0f, 1f);
+            shipTreeCanvas.anchorMin = new Vector2(0.5f, 1f);
+            shipTreeCanvas.anchorMax = new Vector2(0.5f, 1f);
+            shipTreeCanvas.pivot = new Vector2(0.5f, 1f);
             shipTreeCanvas.anchoredPosition = Vector2.zero;
-            shipTreeCanvas.sizeDelta = new Vector2(ShipTreeViewportMaxWidth, 560f);
+            float treeInitW = Mathf.Max(200f, Mathf.Max(PanelWidth, SlotPanelWidthConst) - 56f);
+            shipTreeCanvas.sizeDelta = new Vector2(treeInitW, 560f);
             var treeLe = treeGo.AddComponent<LayoutElement>();
-            treeLe.preferredWidth = ShipTreeViewportMaxWidth;
+            treeLe.preferredWidth = treeInitW;
             treeLe.flexibleWidth = 0f;
-            treeLe.minWidth = ShipTreeViewportMaxWidth;
+            treeLe.minWidth = 100f;
             var treeBg = treeGo.AddComponent<Image>();
             treeBg.color = new Color(0f, 0f, 0f, 0f);
             treeBg.raycastTarget = true; // Keep hit target for scroll forwarding; no visible panel behind the tree
@@ -730,8 +732,7 @@ namespace TitanOrbit.UI
             shipsLayoutEl.preferredHeight = shipsContentHeight;
             shipsLayoutEl.flexibleWidth = 1f;
 
-            float contentWidth = Mathf.Max(PanelWidth - 24f, 360f);
-            storeContentRoot.sizeDelta = new Vector2(contentWidth, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
+            storeContentRoot.sizeDelta = new Vector2(0f, Mathf.Max(cardsContentHeight, shipsContentHeight, 600f));
 
             // Vertical scrollbar for store + scroll up/down buttons
             const float scrollBtnHeight = 28f;
@@ -846,7 +847,7 @@ namespace TitanOrbit.UI
                         float viewportHeight = viewport.rect.height;
                         float contentHeight = activeStoreTab == 0 ? _cardsContentHeight : _shipsContentHeight;
                         float minContentHeight = viewportHeight + 50f;
-                        content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(contentHeight, minContentHeight));
+                        content.sizeDelta = new Vector2(0f, Mathf.Max(contentHeight, minContentHeight));
                     }
                     if (activeStoreTab == 0)
                         storeScrollRect.verticalNormalizedPosition = 1f;
@@ -935,7 +936,48 @@ namespace TitanOrbit.UI
             return go;
         }
 
-        /// <summary>Keeps the upgrade tree narrow; row is left-aligned in the scroll viewport.</summary>
+        private float GetOrbitStationPanelWidth()
+        {
+            var rt = transform as RectTransform;
+            if (rt == null) return Mathf.Max(PanelWidth, SlotPanelWidthConst);
+            return Mathf.Max(1f, rt.rect.width);
+        }
+
+        /// <summary>Width available for laying out the ship tree (row / ships tab / orbit, widest reliable source).</summary>
+        private float GetShipTreeLayoutBasisWidth()
+        {
+            if (shipTreeCenterRow != null && shipTreeCenterRow.rect.width > 8f)
+                return shipTreeCenterRow.rect.width;
+            if (shipsTabContent != null)
+            {
+                var srt = shipsTabContent.GetComponent<RectTransform>();
+                if (srt != null && srt.rect.width > 8f)
+                    return srt.rect.width;
+            }
+            return Mathf.Max(160f, GetOrbitStationPanelWidth() - 52f);
+        }
+
+        /// <summary>Tree canvas width and per-node width from basis ÷ 6 columns + gaps (orbit menu scales → tree reflows).</summary>
+        private void ComputeShipTreeGeometry(out float treeCanvasWidth, out float nodeWidth, out float innerLayoutWidth)
+        {
+            int cols = ShipTreeMaxColumns;
+            var rowRt = shipTreeCenterRow != null ? shipTreeCenterRow : null;
+            float rowHlgPad = 0f;
+            if (rowRt != null)
+            {
+                var hlg = rowRt.GetComponent<HorizontalLayoutGroup>();
+                if (hlg != null)
+                    rowHlgPad = hlg.padding.left + hlg.padding.right;
+            }
+            float basis = GetShipTreeLayoutBasisWidth();
+            float usable = Mathf.Max(120f, basis - rowHlgPad);
+            nodeWidth = (usable - (cols - 1) * ShipTreeColGap) / cols;
+            nodeWidth = Mathf.Max(52f, nodeWidth);
+            innerLayoutWidth = cols * nodeWidth + (cols - 1) * ShipTreeColGap;
+            treeCanvasWidth = innerLayoutWidth + 2f * ShipTreeCanvasInnerMargin;
+        }
+
+        /// <summary>Sets tree canvas width to exactly 6 columns + gaps (+ inner margin); centered in the row, not stretched.</summary>
         private void ApplyShipTreeCanvasWidth()
         {
             if (shipTreeCanvas == null || shipsTabContent == null) return;
@@ -943,10 +985,7 @@ namespace TitanOrbit.UI
             UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
             if (shipTreeCenterRow != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
-            float parentW = parentRt.rect.width;
-            if (parentW < 8f)
-                parentW = Mathf.Max(PanelWidth, SlotPanelWidthConst) - 56f;
-            float treeW = Mathf.Min(ShipTreeViewportMaxWidth, Mathf.Max(220f, parentW - 24f));
+            ComputeShipTreeGeometry(out float treeW, out _, out _);
             float h = shipTreeCanvas.sizeDelta.y;
             shipTreeCanvas.sizeDelta = new Vector2(treeW, h);
             var le = shipTreeCanvas.GetComponent<LayoutElement>();
@@ -954,6 +993,7 @@ namespace TitanOrbit.UI
             {
                 le.preferredWidth = treeW;
                 le.minWidth = treeW;
+                le.flexibleWidth = 0f;
             }
             if (shipTreeCenterRow != null)
             {
@@ -961,6 +1001,18 @@ namespace TitanOrbit.UI
                 var rowLe = shipTreeCenterRow.GetComponent<LayoutElement>();
                 if (rowLe != null) rowLe.preferredHeight = Mathf.Max(h, 400f);
             }
+        }
+
+        private void CheckShipTreeLayoutBasisChanged()
+        {
+            if (shipTreeCanvas == null || shipsTabContent == null) return;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
+            float b = GetShipTreeLayoutBasisWidth();
+            if (Mathf.Abs(b - _cachedShipTreeBasisWidth) < 0.5f) return;
+            _cachedShipTreeBasisWidth = b;
+            _shipTreeStructureKey = "";
+            if (UpgradeSystem.Instance != null && currentShip != null && currentPlanet != null && CardShopSystem.Instance != null)
+                RefreshShipsTab(false);
         }
 
         /// <summary>Height of the tree canvas only (matches <see cref="BuildShipUpgradeTreeVisualFull"/>).</summary>
@@ -1011,7 +1063,6 @@ namespace TitanOrbit.UI
             _shipsContentHeight = preferred;
 
             if (storeContentRoot == null) return;
-            float w = storeContentRoot.sizeDelta.x;
             float h = Mathf.Max(_cardsContentHeight, _shipsContentHeight, 600f);
             if (storeScrollRect != null && storeScrollRect.viewport != null)
             {
@@ -1019,7 +1070,7 @@ namespace TitanOrbit.UI
                 if (vh > 1f)
                     h = Mathf.Max(h, vh + 50f);
             }
-            storeContentRoot.sizeDelta = new Vector2(w, h);
+            storeContentRoot.sizeDelta = new Vector2(0f, h);
         }
 
         /// <summary>
@@ -1287,11 +1338,10 @@ namespace TitanOrbit.UI
             Canvas.ForceUpdateCanvases();
 
             const int maxLevel = 7;
-            float margin = 8f;
-            float innerW = Mathf.Max(shipTreeCanvas.rect.width - 2f * margin, 200f);
-            const float maxCols = 6f;
-            float nodeW = Mathf.Min(ShipTreeNodeFixedWidth, (innerW - (maxCols - 1f) * ShipTreeColGap) / maxCols);
-            nodeW = Mathf.Max(64f, nodeW);
+            float margin = ShipTreeCanvasInnerMargin;
+            ComputeShipTreeGeometry(out _, out float nodeW, out float innerW);
+            innerW = Mathf.Max(120f, innerW);
+            nodeW = Mathf.Max(52f, nodeW);
             float nodeHeight = ShipTreeNodeHeight;
             float contentHeight = Mathf.Max(160f, margin * 2f + (maxLevel - 1) * ShipTreeLevelSpacing + nodeHeight);
             shipTreeCanvas.sizeDelta = new Vector2(shipTreeCanvas.sizeDelta.x, contentHeight);
@@ -1395,9 +1445,10 @@ namespace TitanOrbit.UI
             headerHlg.childControlWidth = true;
             headerHlg.childControlHeight = true;
             headerHlg.childForceExpandWidth = false;
-            headerHlg.childForceExpandHeight = false;
+            headerHlg.childForceExpandHeight = true;
             var headerLe = headerGo.AddComponent<LayoutElement>();
-            headerLe.preferredHeight = 22f;
+            headerLe.minHeight = 22f;
+            headerLe.preferredHeight = 30f;
             headerLe.flexibleHeight = 0f;
 
             var levelGo = new GameObject("Level");
@@ -1420,7 +1471,8 @@ namespace TitanOrbit.UI
             nameGo.transform.SetParent(headerGo.transform, false);
             var nameTmp = nameGo.AddComponent<TextMeshProUGUI>();
             nameTmp.fontSize = 11;
-            nameTmp.alignment = TextAlignmentOptions.MidlineLeft;
+            nameTmp.lineSpacing = -2f;
+            nameTmp.alignment = TextAlignmentOptions.TopLeft;
             nameTmp.enableWordWrapping = true;
             nameTmp.overflowMode = TextOverflowModes.Ellipsis;
             nameTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
@@ -1429,6 +1481,9 @@ namespace TitanOrbit.UI
             var nameLe = nameGo.AddComponent<LayoutElement>();
             nameLe.flexibleWidth = 1f;
             nameLe.minWidth = 48f;
+            nameLe.minHeight = 14f;
+            nameLe.preferredHeight = 30f;
+            nameLe.flexibleHeight = 0f;
 
             var previewGo = new GameObject("Preview");
             previewGo.transform.SetParent(go.transform, false);
@@ -1463,7 +1518,7 @@ namespace TitanOrbit.UI
                 var segGo = new GameObject("Seg_" + pi);
                 segGo.transform.SetParent(barRowGo.transform, false);
                 var segImg = segGo.AddComponent<Image>();
-                segImg.color = ShipTreePowerCategoryColors[pi];
+                segImg.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
                 segImg.raycastTarget = false;
                 var segLe = segGo.AddComponent<LayoutElement>();
                 segLe.flexibleWidth = 1f;
@@ -1525,7 +1580,7 @@ namespace TitanOrbit.UI
                 valTmp.fontStyle = FontStyles.Bold;
                 valTmp.alignment = TextAlignmentOptions.Center;
                 valTmp.enableWordWrapping = false;
-                valTmp.color = ShipTreePowerCategoryColors[pi];
+                valTmp.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
                 valTmp.raycastTarget = false;
                 if (fontAsset != null) valTmp.font = fontAsset;
                 var valLe = valGo.AddComponent<LayoutElement>();
@@ -1595,7 +1650,7 @@ namespace TitanOrbit.UI
                 if (view.PowerStatValues != null && i < view.PowerStatValues.Length && view.PowerStatValues[i] != null)
                 {
                     view.PowerStatValues[i].text = hasData ? vals[i].ToString("F0") : "—";
-                    view.PowerStatValues[i].color = hasData ? ShipTreePowerCategoryColors[i] : new Color(0.45f, 0.48f, 0.55f, 0.85f);
+                    view.PowerStatValues[i].color = hasData ? ShipAbilityCategoryColors.PowerBreakdownOdEmc[i] : new Color(0.45f, 0.48f, 0.55f, 0.85f);
                 }
                 if (view.PowerBarSegments != null && i < view.PowerBarSegments.Length && view.PowerBarSegments[i] != null)
                 {
@@ -1604,7 +1659,7 @@ namespace TitanOrbit.UI
                     if (le != null)
                         le.flexibleWidth = hasData ? Mathf.Max(0.02f, vals[i]) : 1f;
                     seg.color = hasData
-                        ? ShipTreePowerCategoryColors[i]
+                        ? ShipAbilityCategoryColors.PowerBreakdownOdEmc[i]
                         : new Color(0.22f, 0.25f, 0.3f, 0.55f);
                 }
             }
@@ -2163,7 +2218,7 @@ namespace TitanOrbit.UI
             {
                 float contentH = storeContentRoot.sizeDelta.y;
                 if (totalHeight + 80f > contentH)
-                    storeContentRoot.sizeDelta = new Vector2(storeContentRoot.sizeDelta.x, totalHeight + 80f);
+                    storeContentRoot.sizeDelta = new Vector2(0f, totalHeight + 80f);
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
             }
         }

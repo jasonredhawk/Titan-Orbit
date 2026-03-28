@@ -30,11 +30,11 @@ namespace TitanOrbit.UI
         [SerializeField] private Color buttonShadowColor = new Color(0f, 0f, 0f, 0.45f);
 
         [Header("Category Colors")]
-        [SerializeField] private Color weaponColor = new Color(0.9f, 0.35f, 0.2f, 0.9f);
-        [SerializeField] private Color healthColor = new Color(0.2f, 0.85f, 0.4f, 0.9f);
-        [SerializeField] private Color energyColor = new Color(0.95f, 0.8f, 0.2f, 0.9f);
-        [SerializeField] private Color shipColor = new Color(0.2f, 0.7f, 0.95f, 0.9f);
-        [SerializeField] private Color cargoColor = new Color(0.65f, 0.4f, 0.9f, 0.9f);
+        [SerializeField] private Color weaponColor = ShipAbilityCategoryColors.WeaponForHud;
+        [SerializeField] private Color healthColor = ShipAbilityCategoryColors.HealthForHud;
+        [SerializeField] private Color energyColor = ShipAbilityCategoryColors.EnergyForHud;
+        [SerializeField] private Color shipColor = ShipAbilityCategoryColors.ShipForHud;
+        [SerializeField] private Color cargoColor = ShipAbilityCategoryColors.CargoForHud;
 
         private static readonly string[] Titles = new[]
         {
