@@ -13,8 +13,8 @@ GameObject:
   - component: {fileID: 13545170}
   - component: {fileID: 5491292}
   - component: {fileID: 11436854}
-  - component: {fileID: 1187078726229402461}
   - component: {fileID: 1054003192092652707}
+  - component: {fileID: 1187078726229402461}
   m_Layer: 0
   m_Name: FireballBlueV2OBJ
   m_TagString: Untagged
@@ -111,6 +111,27 @@ MonoBehaviour:
   trailParticles: []
   colliderRadius: 0.15
   collideOffset: 0.25
+--- !u!114 &1054003192092652707
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 146288}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 1979352011
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!114 &1187078726229402461
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -142,24 +163,3 @@ MonoBehaviour:
   impactEffectPrefab: {fileID: 0}
   impactEffectDuration: 3
   impactEffectScale: 0.5
---- !u!114 &1054003192092652707
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 146288}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 0
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 1
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1

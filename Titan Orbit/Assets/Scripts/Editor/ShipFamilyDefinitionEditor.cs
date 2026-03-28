@@ -426,8 +426,8 @@ namespace TitanOrbit.Editor
                 mobility =
                     s.moveSpeed * 0.5f +
                     s.moveSpeedPerLevel * 0.8f +
-                    s.turnSpeed * 0.6f +
-                    s.turnSpeedPerLevel * 0.9f,
+                    s.turnSpeed * 0.6f * ShipFamilyDefinition.AppliedTurnSpeedScale +
+                    s.turnSpeedPerLevel * 0.9f * ShipFamilyDefinition.AppliedTurnSpeedScale,
                 capacity =
                     s.maxGems * 0.01f +
                     s.maxGemsPerLevel * 0.2f +

@@ -124,6 +124,8 @@ namespace TitanOrbit.UI
             public Image PreviewImage;
             public TextMeshProUGUI PriceText;
             public RectTransform Rect;
+            /// <summary>Node button width (for scaling the power bar track vs max power in tree).</summary>
+            public float NodeButtonWidth;
             public RectTransform PowerBarRow;
             public Image[] PowerBarSegments;
             public TextMeshProUGUI[] PowerStatLabels;
@@ -1313,7 +1315,8 @@ namespace TitanOrbit.UI
                         view.PriceText.text = $"{tree.GetGemCostForLevel(view.Level):F0}g";
                 }
 
-                ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex));
+                float maxPowerTree = ComputeMaxPowerScoreAcrossTree();
+                ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPowerTree);
             }
         }
 
@@ -1352,6 +1355,8 @@ namespace TitanOrbit.UI
                 if (rowLe != null) rowLe.preferredHeight = contentHeight;
             }
 
+            float maxPowerTree = ComputeMaxPowerScoreAcrossTree();
+
             var nodesByLevel = new Dictionary<int, List<ShipTreeNodeView>>();
             for (int level = 1; level <= maxLevel; level++)
             {
@@ -1364,7 +1369,7 @@ namespace TitanOrbit.UI
                 for (int b = 0; b < count; b++)
                 {
                     ShipUpgradeNode node = level == 1 ? null : tree.GetNodeForBranch(level, b);
-                    var view = CreateShipTreeNode(level, b, node, useW, nodeHeight);
+                    var view = CreateShipTreeNode(level, b, node, useW, nodeHeight, maxPowerTree);
                     views.Add(view);
                     float x = startX + useW * 0.5f + b * (useW + ShipTreeColGap);
                     view.Rect.anchorMin = new Vector2(0f, 0f);
@@ -1404,7 +1409,7 @@ namespace TitanOrbit.UI
             shipTreeNodes.Clear();
         }
 
-        private ShipTreeNodeView CreateShipTreeNode(int level, int branchIndex, ShipUpgradeNode node, float width, float height)
+        private ShipTreeNodeView CreateShipTreeNode(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float maxPowerAcrossTree)
         {
             var go = new GameObject($"ShipTreeNode_{level}_{branchIndex}");
             go.transform.SetParent(shipTreeCanvas, false);
@@ -1504,6 +1509,7 @@ namespace TitanOrbit.UI
             barRowLe.preferredHeight = 10f;
             barRowLe.flexibleHeight = 0f;
             barRowLe.minHeight = 10f;
+            barRowLe.flexibleWidth = 0f;
             var barHlg = barRowGo.AddComponent<HorizontalLayoutGroup>();
             barHlg.padding = new RectOffset(0, 0, 0, 0);
             barHlg.spacing = 1;
@@ -1620,13 +1626,14 @@ namespace TitanOrbit.UI
                 PreviewImage = previewImg,
                 PriceText = priceTmp,
                 Rect = rect,
+                NodeButtonWidth = width,
                 PowerBarRow = barRowRect,
                 PowerBarSegments = powerBarSegments,
                 PowerStatLabels = powerLabels,
                 PowerStatValues = powerValues
             };
             shipTreeNodes.Add(view);
-            ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(level, branchIndex));
+            ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(level, branchIndex), maxPowerAcrossTree);
             return view;
         }
 
@@ -1639,12 +1646,43 @@ namespace TitanOrbit.UI
             return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
         }
 
-        private static void ApplyPowerBreakdownToNodeView(ShipTreeNodeView view, ShipFamilyPowerScoreBreakdown b)
+        /// <summary>Strongest ship’s total power (O+D+E+M+C) in the visible tree — used as the width scale for stacked segments.</summary>
+        private float ComputeMaxPowerScoreAcrossTree()
+        {
+            float max = 0f;
+            for (int level = 1; level <= 7; level++)
+            {
+                int count = UpgradeTree.GetShipCountForLevel(level);
+                for (int b = 0; b < count; b++)
+                {
+                    var bd = GetPowerBreakdownForTreeNode(level, b);
+                    float t = bd.Total;
+                    if (t > max) max = t;
+                }
+            }
+            return Mathf.Max(max, 0.001f);
+        }
+
+        /// <summary>
+        /// Stacked bar: segment i width = nodeWidth × (stat[i] / strongestShipTotal). Sum of segments = nodeWidth × (thisShipTotal / strongest) — absolute stats, not within-ship %.
+        /// </summary>
+        private static void ApplyPowerBreakdownToNodeView(ShipTreeNodeView view, ShipFamilyPowerScoreBreakdown b, float strongestShipTotalPower)
         {
             if (view == null) return;
             float[] vals = { b.offense, b.defense, b.energy, b.mobility, b.capacity };
-            float total = b.offense + b.defense + b.energy + b.mobility + b.capacity;
+            float total = b.Total;
             bool hasData = total > 0.01f;
+            float nodeW = view.NodeButtonWidth > 1f ? view.NodeButtonWidth : (view.Rect != null ? view.Rect.sizeDelta.x : 100f);
+            float maxDen = Mathf.Max(strongestShipTotalPower, 0.001f);
+
+            float gapPx = 1f;
+            if (view.PowerBarRow != null)
+            {
+                var barHlg = view.PowerBarRow.GetComponent<HorizontalLayoutGroup>();
+                if (barHlg != null) gapPx = barHlg.spacing;
+            }
+
+            float sumSegW = 0f;
             for (int i = 0; i < 5; i++)
             {
                 if (view.PowerStatValues != null && i < view.PowerStatValues.Length && view.PowerStatValues[i] != null)
@@ -1656,15 +1694,39 @@ namespace TitanOrbit.UI
                 {
                     var seg = view.PowerBarSegments[i];
                     var le = seg.GetComponent<LayoutElement>();
+                    float segW;
+                    if (hasData)
+                    {
+                        segW = nodeW * vals[i] / maxDen;
+                        if (vals[i] > 0.01f && segW > 0f && segW < 1f)
+                            segW = 1f;
+                    }
+                    else
+                        segW = Mathf.Max(2f, nodeW * 0.18f);
+
                     if (le != null)
-                        le.flexibleWidth = hasData ? Mathf.Max(0.02f, vals[i]) : 1f;
+                    {
+                        le.preferredWidth = segW;
+                        le.flexibleWidth = 0f;
+                        le.minWidth = 0f;
+                    }
+                    sumSegW += segW;
                     seg.color = hasData
                         ? ShipAbilityCategoryColors.PowerBreakdownOdEmc[i]
                         : new Color(0.22f, 0.25f, 0.3f, 0.55f);
                 }
             }
+
             if (view.PowerBarRow != null)
+            {
+                var barLe = view.PowerBarRow.GetComponent<LayoutElement>();
+                if (barLe != null)
+                {
+                    barLe.preferredWidth = sumSegW + 4f * gapPx;
+                    barLe.flexibleWidth = 0f;
+                }
                 LayoutRebuilder.ForceRebuildLayoutImmediate(view.PowerBarRow);
+            }
         }
 
         private void DrawTreeConnector(Vector2 from, Vector2 to)

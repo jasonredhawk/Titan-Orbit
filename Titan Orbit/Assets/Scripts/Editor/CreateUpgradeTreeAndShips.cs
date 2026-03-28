@@ -401,7 +401,7 @@ namespace TitanOrbit.Editor
                 }
             }
 
-            // Ensure level 2 cost = 100 so full starter ship (cap 100) can upgrade
+            // Legacy serialized costs (unused at runtime; see UpgradeTree.GetGemCostForLevel / ShipUnlockTable.GetTierCost)
             var costProp = so.FindProperty("gemCostsPerLevel");
             if (costProp != null && costProp.isArray)
             {

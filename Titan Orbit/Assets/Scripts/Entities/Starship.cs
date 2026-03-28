@@ -252,13 +252,27 @@ namespace TitanOrbit.Entities
         [Tooltip("Cap for sustained ramming DPS (pre asteroid/self split).")]
         [SerializeField] private float maxRammingDamagePerSecond = 90f;
 
-        [Header("Asteroid Impact Feedback")]
-        [Tooltip("Camera shake amount on asteroid impacts for the owning player (0..1).")]
+        [Header("Collision Impact Feedback")]
+        [Tooltip("Camera shake amount on asteroid and ship impacts for the owning player (0..1).")]
         [SerializeField] private float collisionShakeAmountMin = 0.05f;
-        [Tooltip("Camera shake amount on asteroid impacts for the owning player (0..1).")]
+        [Tooltip("Camera shake amount on asteroid and ship impacts for the owning player (0..1).")]
         [SerializeField] private float collisionShakeAmountMax = 0.35f;
-        [Tooltip("Momentum scaling for collision shake/SFX intensity.")]
+        [Tooltip("Multiplier on damage-based shake intensity (sustained and impacts).")]
         [SerializeField] private float collisionShakeMomentumScale = 1f;
+        [Tooltip("Self hull damage on one ram impact at or above this value maps to full impact shake.")]
+        [SerializeField] private float collisionShakeFullAtSelfDamage = 25f;
+        [Tooltip("Self hull damage per second while grinding at or above this maps to full sustained shake.")]
+        [SerializeField] private float collisionShakeFullAtSelfDps = 45f;
+        [Tooltip("Ship–ship bumps use no hull damage; blend in shake from closing speed up to this fraction of full shake.")]
+        [SerializeField] private float shipRamContactShakeFromSpeed = 0.42f;
+
+        /// <summary>Tracks asteroid collision pairs so we clear sustained shake only when the last asteroid contact ends.</summary>
+        private readonly HashSet<int> _asteroidRamContactInstanceIds = new HashSet<int>();
+
+        private ClientRpcParams OwnerOnlyClientRpcParams => new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+        };
 
         private static WeaponConfig defaultWeaponConfig;
 
@@ -2891,6 +2905,9 @@ namespace TitanOrbit.Entities
             gemMoonDocked.Value = false;
             gemMoonPlanetNetworkObjectId.Value = 0ul;
 
+            if (!_isAIControlled)
+                ClearRammingShakeDriveClientRpc(OwnerOnlyClientRpcParams);
+
             // Stop all movement immediately when dead
             if (rb != null)
             {
@@ -3060,6 +3077,37 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Instantaneous self hull DPS while pushing into an asteroid at this inward speed.</summary>
+        private float ComputeSelfDamagePerSecondFromAsteroidRam(float pushAmount)
+        {
+            float mass = Mathf.Max(0.5f, rb.mass);
+            float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
+            float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+            float momentum01 = (mass * pushAmount) / baselineMomentum;
+            float momentumInfluence = Mathf.Sqrt(Mathf.Clamp(momentum01, 0f, 4f));
+            float momentumMultiplier = 1f + rammingMomentumDamageScale * momentumInfluence;
+            float firePowerMultiplier = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+            firePowerMultiplier *= Mathf.Max(0.01f, rammingFirePowerDamageMultiplier);
+            float intensity = Mathf.Clamp01(pushAmount / Mathf.Max(0.1f, EffectiveMaxSpeed));
+            float perSecondAtThisPush = ramDamagePerSecond * intensity * momentumMultiplier * firePowerMultiplier;
+            perSecondAtThisPush = Mathf.Min(perSecondAtThisPush, maxRammingDamagePerSecond);
+            return perSecondAtThisPush * HullRammingSelfDamageMultiplier;
+        }
+
+        private float ShakeStrengthFromSelfDamage(float selfDamage, float fullDamageReference)
+        {
+            float t = Mathf.Clamp01(
+                selfDamage * Mathf.Max(0.01f, collisionShakeMomentumScale) / Mathf.Max(0.01f, fullDamageReference));
+            return Mathf.Lerp(collisionShakeAmountMin, collisionShakeAmountMax, t);
+        }
+
+        private float ShakeStrengthFromSelfDps(float selfDps)
+        {
+            float t = Mathf.Clamp01(
+                selfDps * Mathf.Max(0.01f, collisionShakeMomentumScale) / Mathf.Max(0.01f, collisionShakeFullAtSelfDps));
+            return Mathf.Lerp(collisionShakeAmountMin, collisionShakeAmountMax, t);
+        }
+
         private void OnCollisionEnter(Collision collision)
         {
             if (!IsServer || rb == null) return;
@@ -3070,6 +3118,7 @@ namespace TitanOrbit.Entities
 
             if (asteroid != null && !asteroid.IsDestroyed)
             {
+                _asteroidRamContactInstanceIds.Add(asteroid.gameObject.GetInstanceID());
                 // Spawn collision spark VFX at contact point
                 if (VisualEffectsManager.Instance != null)
                 {
@@ -3128,11 +3177,9 @@ namespace TitanOrbit.Entities
                     float ramIntensity01 = Mathf.Clamp01((0.6f * speed01 + 0.4f * Mathf.Clamp01(momentum01)) * firePowerMultiplier);
                     float impactPitch = Mathf.Lerp(2.1f, 0.45f, ramIntensity01); // stronger = deeper
 
-                    float shake01 = Mathf.Clamp01(momentum01 * firePowerMultiplier * Mathf.Max(0.01f, collisionShakeMomentumScale));
-                    float shakeAmount = Mathf.Lerp(collisionShakeAmountMin, collisionShakeAmountMax, shake01);
-
                     float toAsteroid = damage * HullRammingToAsteroidMultiplier;
                     float toSelf = damage * HullRammingSelfDamageMultiplier;
+                    float shakeAmount = ShakeStrengthFromSelfDamage(toSelf, collisionShakeFullAtSelfDamage);
                     if (VisualEffectsManager.Instance != null && toAsteroid > 0.01f)
                     {
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
@@ -3147,6 +3194,49 @@ namespace TitanOrbit.Entities
                     PlayCollisionImpactFeedbackClientRpc(impactPitch, shakeAmount);
                 }
             }
+
+            Starship otherShip = collision.collider.GetComponentInParent<Starship>();
+            if (otherShip != null && otherShip != this && !otherShip.IsDead && !IsDead)
+            {
+                var otherNo = otherShip.GetComponent<NetworkObject>();
+                if (otherNo != null && otherNo.IsSpawned)
+                {
+                    float impactSpeed = collision.relativeVelocity.magnitude;
+                    impactSpeed = Mathf.Max(0f, impactSpeed - 0.5f);
+                    if (impactSpeed < 0.25f) return;
+
+                    float mass = Mathf.Max(0.5f, rb.mass);
+                    float effectiveMax = Mathf.Max(0.1f, EffectiveMaxSpeed);
+                    float speed01 = Mathf.Clamp01(impactSpeed / effectiveMax);
+
+                    float baselineMomentum = Mathf.Max(0.01f, baseMass * effectiveMax);
+                    float momentum01 = (mass * impactSpeed) / baselineMomentum;
+
+                    float firePowerMultiplier = 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
+                    firePowerMultiplier *= Mathf.Max(0.01f, rammingFirePowerDamageMultiplier);
+
+                    float ramIntensity01 = Mathf.Clamp01((0.6f * speed01 + 0.4f * Mathf.Clamp01(momentum01)) * firePowerMultiplier);
+                    float impactPitch = Mathf.Lerp(2.1f, 0.45f, ramIntensity01);
+
+                    float speedT = Mathf.Clamp01(impactSpeed / effectiveMax) * shipRamContactShakeFromSpeed;
+                    float shakeAmount = Mathf.Lerp(collisionShakeAmountMin, collisionShakeAmountMax, speedT);
+
+                    PlayCollisionImpactFeedbackClientRpc(impactPitch, shakeAmount);
+                }
+            }
+        }
+
+        private void OnCollisionExit(Collision collision)
+        {
+            if (!IsServer || _isAIControlled) return;
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid == null)
+                asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
+            if (asteroid == null) return;
+
+            int id = asteroid.gameObject.GetInstanceID();
+            if (_asteroidRamContactInstanceIds.Remove(id) && _asteroidRamContactInstanceIds.Count == 0)
+                ClearRammingShakeDriveClientRpc(OwnerOnlyClientRpcParams);
         }
 
         [ClientRpc]
@@ -3158,9 +3248,33 @@ namespace TitanOrbit.Entities
             // Only the owning player's ship should shake the camera (prevents everyone shaking every ram).
             if (!IsOwner) return;
 
-            var shaker = AllIn1VfxToolkit.Demo.Scripts.AllIn1Shaker.i;
-            if (shaker != null)
-                shaker.DoCameraShake(Mathf.Clamp01(shakeAmount));
+            if (s_cachedCameraController == null)
+                s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            if (s_cachedCameraController == null || !s_cachedCameraController.IsCollisionCameraShakeEnabled)
+                return;
+
+            s_cachedCameraController.ApplyCollisionShake(Mathf.Clamp01(shakeAmount));
+        }
+
+        [ClientRpc]
+        private void ApplyRammingShakeDriveClientRpc(float shakeStrength, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner) return;
+            if (s_cachedCameraController == null)
+                s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            if (s_cachedCameraController == null || !s_cachedCameraController.IsCollisionCameraShakeEnabled)
+                return;
+            s_cachedCameraController.SetRammingShakeDrive(Mathf.Clamp01(shakeStrength));
+        }
+
+        [ClientRpc]
+        private void ClearRammingShakeDriveClientRpc(ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner) return;
+            if (s_cachedCameraController == null)
+                s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+            if (s_cachedCameraController == null) return;
+            s_cachedCameraController.SetRammingShakeDrive(0f);
         }
 
         /// <summary>
@@ -3190,6 +3304,8 @@ namespace TitanOrbit.Entities
                 vel += outward * (overlapEscapeSpeed * Time.fixedDeltaTime);
                 rb.linearVelocity = new Vector3(vel.x, 0f, vel.z);
                 currentVelocity = rb.linearVelocity;
+                if (!_isAIControlled)
+                    ApplyRammingShakeDriveClientRpc(0f, OwnerOnlyClientRpcParams);
                 return; // don't do ramming stick/damage while we're escaping overlap
             }
 
@@ -3198,7 +3314,12 @@ namespace TitanOrbit.Entities
             Vector3 vel2 = rb.linearVelocity;
             vel2.y = 0f;
             float pushAmount = Vector3.Dot(vel2, intoAsteroid);
-            if (pushAmount <= 0f) return; // Not pushing in
+            if (pushAmount <= 0f)
+            {
+                if (!_isAIControlled)
+                    ApplyRammingShakeDriveClientRpc(0f, OwnerOnlyClientRpcParams);
+                return; // Not pushing in
+            }
 
             // Keep only the "pushing in" component so we don't slide sideways
             Vector3 ramVelocity = intoAsteroid * pushAmount;
@@ -3214,6 +3335,11 @@ namespace TitanOrbit.Entities
             shipRight.y = 0f;
             float sideSign = Mathf.Sign(Vector3.Dot(shipRight, normal));
             targetCollisionPitchAngle = desiredPitch * sideSign;
+
+            float selfDps = ComputeSelfDamagePerSecondFromAsteroidRam(pushAmount);
+            float shakeStrength = ShakeStrengthFromSelfDps(selfDps);
+            if (!_isAIControlled)
+                ApplyRammingShakeDriveClientRpc(shakeStrength, OwnerOnlyClientRpcParams);
 
             // Every ramTickInterval while pushing in, apply a noticeable pushback "bounce" and mutual damage.
             float now = Time.time;
@@ -3854,7 +3980,7 @@ namespace TitanOrbit.Entities
                 healthRegenRate = Mathf.Max(0f, s.healthRegen + s.healthRegenPerLevel * perLvl);
                 energyCapacity = Mathf.Max(1f, s.energyCap + s.energyCapPerLevel * perLvl);
                 energyRegenRate = Mathf.Max(0f, s.energyRegen + s.energyRegenPerLevel * perLvl);
-                rotationSpeed = Mathf.Max(1f, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
+                rotationSpeed = Mathf.Max(1f, (s.turnSpeed + s.turnSpeedPerLevel * perLvl) * ShipFamilyDefinition.AppliedTurnSpeedScale);
                 gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
 

@@ -273,6 +273,13 @@ namespace TitanOrbit.Data
     [CreateAssetMenu(fileName = "NewShipFamily", menuName = "Titan Orbit/Ship Family Definition")]
     public class ShipFamilyDefinition : ScriptableObject
     {
+        /// <summary>
+        /// Multiplier applied at runtime to summed <see cref="ShipComponentAbilityStats.turnSpeed"/> and
+        /// <see cref="ShipComponentAbilityStats.turnSpeedPerLevel"/> from chassis preview stats. Lets authored
+        /// definition values use a smaller numeric range (e.g. divide assets by 10 when this is 10) while keeping the same turn rate.
+        /// </summary>
+        public const float AppliedTurnSpeedScale = 10f;
+
         [Tooltip("Ship family identifier prefix used in child names. Example: 'AstroEagle' for objects named 'AstroEagle_Cockpit'.")]
         public string familyId;
 

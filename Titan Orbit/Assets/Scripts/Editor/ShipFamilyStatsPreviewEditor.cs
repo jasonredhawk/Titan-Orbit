@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using TitanOrbit.Data;
 using TitanOrbit.Entities;
 
 namespace TitanOrbit.Editor
@@ -87,8 +88,12 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Move Speed", total.moveSpeed);
                 EditorGUILayout.FloatField("Move Speed / Level", total.moveSpeedPerLevel);
-                EditorGUILayout.FloatField("Turn Speed", total.turnSpeed);
-                EditorGUILayout.FloatField("Turn Speed / Level", total.turnSpeedPerLevel);
+                EditorGUILayout.FloatField(
+                    "Turn Speed (applied °/s)",
+                    total.turnSpeed * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                EditorGUILayout.FloatField(
+                    "Turn Speed / Level (applied)",
+                    total.turnSpeedPerLevel * ShipFamilyDefinition.AppliedTurnSpeedScale);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
@@ -148,8 +153,12 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Move Speed", s.moveSpeed);
                             EditorGUILayout.FloatField("  Move Speed / Level", s.moveSpeedPerLevel);
-                            EditorGUILayout.FloatField("  Turn Speed", s.turnSpeed);
-                            EditorGUILayout.FloatField("  Turn Speed / Level", s.turnSpeedPerLevel);
+                            EditorGUILayout.FloatField(
+                                "  Turn Speed (applied °/s)",
+                                s.turnSpeed * ShipFamilyDefinition.AppliedTurnSpeedScale);
+                            EditorGUILayout.FloatField(
+                                "  Turn Speed / Level (applied)",
+                                s.turnSpeedPerLevel * ShipFamilyDefinition.AppliedTurnSpeedScale);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Max Gems", s.maxGems);
