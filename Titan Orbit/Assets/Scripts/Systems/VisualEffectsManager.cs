@@ -29,8 +29,11 @@ namespace TitanOrbit.Systems
         [SerializeField] private float gemPickupTextDuration = 1f;
 
         [Header("Floating Count Popups")]
-        [Tooltip("Per-action toggles, people color/icon, etc. Create: Assets → Create → Titan Orbit → Floating Count Feedback Settings. If null, all channels show.")]
+        [Tooltip("Optional: overrides for People load/unload icon and color. Per-channel on/off is in Floating Count Visibility below.")]
         [SerializeField] private FloatingCountFeedbackSettings floatingCountFeedbackSettings;
+        [Header("Floating count — show per channel")]
+        [Tooltip("World-space +N popups for each gameplay source.")]
+        [SerializeField] private FloatingCountChannelVisibility floatingCountVisibility = new FloatingCountChannelVisibility();
         [Tooltip("World-space font used to render the floating (+N) popup text.")]
         [SerializeField] private TMP_FontAsset floatingCountFont;
         [SerializeField] private Sprite floatingCountGemIcon;
@@ -133,6 +136,8 @@ namespace TitanOrbit.Systems
         private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.GemPickup))
+                return;
 
             // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
             // there is no usable TMP font (assigned or default).
@@ -172,6 +177,9 @@ namespace TitanOrbit.Systems
         private void SpawnAsteroidStatsFloatingTextClientRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+                return;
+
             Color hpColor = floatingCountHealthPositiveColor;
             Color gemsColor = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
             string hpMessage = $"HP Left: {Mathf.Max(0, Mathf.RoundToInt(remainingHealth))}";
@@ -183,7 +191,7 @@ namespace TitanOrbit.Systems
 
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
-            if (floatingCountFeedbackSettings != null && !floatingCountFeedbackSettings.IsEnabled(channel))
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(channel))
                 return;
 
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;

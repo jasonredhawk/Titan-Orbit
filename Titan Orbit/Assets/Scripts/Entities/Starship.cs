@@ -214,7 +214,7 @@ namespace TitanOrbit.Entities
         private float componentMass = 0f;
         /// <summary>Thrust force from engine components. Applied via AddForce; acceleration = thrust/mass.</summary>
         private float componentEngineThrust = 0f;
-        /// <summary>Max speed from engine components. More engines = higher top speed cap.</summary>
+        /// <summary>Max speed from chassis: best single engine (or best thruster if no engines). Not summed across engines.</summary>
         private float componentEngineMaxSpeed = 0f;
 
         private WeaponConfig weaponConfig;
@@ -242,6 +242,8 @@ namespace TitanOrbit.Entities
         [Tooltip("Interval between collision ramming ticks (seconds). Every tick applies a small pushback and mutual damage while in contact with an asteroid.")]
         [SerializeField] private float ramTickInterval = 0.25f;
         private float lastRamDamageTime = -999f;
+        /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
+        private float lastHullDamageServerTime = -999f;
         [Tooltip("When overlapping an asteroid (e.g. after respawn), ship is pushed outward at this speed for a smooth escape.")]
         [SerializeField] private float overlapEscapeSpeed = 4f;
         [Tooltip("Base pushback speed applied on each collision tick while in contact with an asteroid. Higher = stronger bounce. Scaled by asteroid size.")]
@@ -313,6 +315,8 @@ namespace TitanOrbit.Entities
         [Header("Health")]
         [SerializeField] private float maxHealth = 100f;
         [SerializeField] private float healthRegenRate = 6f;
+        [Tooltip("Seconds after hull damage before health regen applies again.")]
+        [SerializeField] private float healthRegenDelayAfterDamage = 0.35f;
 
         [Header("Capacity (ship level only - upgrades with ship level)")]
         [SerializeField] private float gemCapacity = 100f;
@@ -413,7 +417,7 @@ namespace TitanOrbit.Entities
                 return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier * ENGINE_THRUST_VISIBILITY;
             }
         }
-        /// <summary>Max speed from engines. More engines = higher cap. Scaled by attr/cards.</summary>
+        /// <summary>Max speed from best engine (single highest move speed among engines). Scaled by attr/cards.</summary>
         private float EffectiveMaxSpeed
         {
             get
@@ -2310,6 +2314,8 @@ namespace TitanOrbit.Entities
             // Only prevent regen when dead
             if (IsServer && !isDead.Value && currentHealth.Value < MaxHealth)
             {
+                if (Time.time < lastHullDamageServerTime + healthRegenDelayAfterDamage)
+                    return;
                 float regen = EffectiveHealthRegen * Time.deltaTime;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
                 float newHealth = currentHealth.Value + regen;
@@ -2610,6 +2616,9 @@ namespace TitanOrbit.Entities
             if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
             if (isDead.Value) return;
             if (gemMoonDocked.Value) return;
+
+            if (damage > 0.0001f)
+                lastHullDamageServerTime = Time.time;
 
             // Gem expulsion tuning: how quickly gems are lost once health hits 0.
             // Lower values = slower gem loss; higher values = faster loss.
@@ -4005,22 +4014,32 @@ namespace TitanOrbit.Entities
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
 
                 float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
-                componentEngineThrust = Mathf.Max(0f, moveVal);
-                // Max speed from largest engine only (more engines = more acceleration, not higher top speed)
+                // Thrust = sum of engine + thruster move speeds; max speed = best engine (or best thruster if no engines). Never use total moveVal as top speed.
+                float sumPropulsionMoveSpeed = 0f;
                 float maxEngineMoveSpeed = 0f;
+                float maxThrusterMoveSpeed = 0f;
                 if (matchedComponentIds != null && perComponentStats != null)
                 {
                     for (int k = 0; k < matchedComponentIds.Count && k < perComponentStats.Count; k++)
                     {
-                        if (ShipComponentAbilityStats.IsEngineComponent(matchedComponentIds[k]))
+                        string cid = matchedComponentIds[k];
+                        ShipComponentAbilityStats comp = perComponentStats[k];
+                        float partSpeed = comp.moveSpeed + comp.moveSpeedPerLevel * perLvl;
+                        if (ShipComponentAbilityStats.IsEngineComponent(cid))
                         {
-                            ShipComponentAbilityStats comp = perComponentStats[k];
-                            float engineSpeed = comp.moveSpeed + comp.moveSpeedPerLevel * perLvl;
-                            if (engineSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = engineSpeed;
+                            sumPropulsionMoveSpeed += partSpeed;
+                            if (partSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = partSpeed;
+                        }
+                        else if (ShipComponentAbilityStats.IsThrusterComponent(cid))
+                        {
+                            sumPropulsionMoveSpeed += partSpeed;
+                            if (partSpeed > maxThrusterMoveSpeed) maxThrusterMoveSpeed = partSpeed;
                         }
                     }
                 }
-                componentEngineMaxSpeed = Mathf.Max(0.1f, maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : moveVal);
+                componentEngineThrust = Mathf.Max(0f, sumPropulsionMoveSpeed > 0f ? sumPropulsionMoveSpeed : moveVal);
+                float capFromParts = maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : maxThrusterMoveSpeed;
+                componentEngineMaxSpeed = Mathf.Max(0.1f, capFromParts > 0f ? capFromParts : engineThrust * 0.5f);
 
                 componentMass =
                     stats.engineScaleTotal +

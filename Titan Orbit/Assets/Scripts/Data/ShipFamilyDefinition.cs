@@ -148,6 +148,12 @@ namespace TitanOrbit.Data
             return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Engine", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>True if the component is a thruster (componentId starts with "Thruster"). Thrust stacks with engines; max speed cap uses best engine first, else best thruster.</summary>
+        public static bool IsThrusterComponent(string componentId)
+        {
+            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Thruster", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Scale stats by transform.
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).

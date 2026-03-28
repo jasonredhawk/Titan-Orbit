@@ -8027,6 +8027,19 @@ MonoBehaviour:
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
   floatingCountFeedbackSettings: {fileID: 0}
+  floatingCountVisibility:
+    gemPickup: 1
+    gemDeposit: 1
+    damageAsteroid: 0
+    damageShipOrDrone: 1
+    damageMoon: 1
+    healthChange: 1
+    peopleLoad: 1
+    peopleUnload: 1
+    healing: 1
+    healthRegen: 1
+    energy: 1
+    upgrades: 1
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}
