@@ -47,10 +47,16 @@ namespace TitanOrbit.Systems
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
         [SerializeField] private float floatingCountVerticalOffset = 3.5f;
         [Header("Floating Count Spread")]
-        [Tooltip("Randomized spawn radius around the point of interest to reduce overlap.")]
-        [SerializeField] private float floatingCountSpawnJitterRadius = 0.45f;
-        [Tooltip("Small deterministic ring offset so bursts stack less directly on top of each other.")]
-        [SerializeField] private float floatingCountSpawnRingStep = 0.12f;
+        [Tooltip("Extra random XZ offset around the anchor so simultaneous popups do not share one spot.")]
+        [SerializeField] private float floatingCountSpawnJitterRadius = 1.05f;
+        [Tooltip("Scales the golden-spiral ring radius (√n * step), capped by Max Spread Radius.")]
+        [SerializeField] private float floatingCountSpawnRingStep = 0.32f;
+        [Tooltip("Upper bound for spiral radius from the anchor (world units on XZ).")]
+        [SerializeField] private float floatingCountMaxSpreadRadius = 3.75f;
+        [Tooltip("How many spiral steps before radius wraps (angle still advances, so overlap stays low).")]
+        [SerializeField] private int floatingCountSpiralPeriod = 40;
+        [Tooltip("Perpendicular drift speed on the play plane so popups fan out instead of stacking in one line.")]
+        [SerializeField] private float floatingCountLateralDriftMax = 0.55f;
 
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
@@ -271,15 +277,25 @@ namespace TitanOrbit.Systems
             SpawnPopup(message, icon, color, "FloatingCountPopup_AsteroidStats", position, fontToUse);
         }
 
+        /// <summary>
+        /// Picks a spawn point using a golden-angle spiral plus anchor-based phase and jitter.
+        /// Sequential popups at the same world spot spread on XZ instead of stacking in one column.
+        /// </summary>
         private Vector3 GetSpreadSpawnPosition(Vector3 position)
         {
-            float ringRadius = floatingCountSpawnRingStep * (floatingPopupSequence % 6);
-            floatingPopupSequence++;
+            int n = floatingPopupSequence++;
+            // Golden angle (~137.5°): well-distributed angles; irrational step avoids periodic clumping.
+            const float goldenAngle = 2.39996323f;
+            // Phase from anchor so different locations do not share identical spiral alignment.
+            float phase = (position.x * 12.9898f + position.z * 78.233f) * 0.215f;
+            float angle = phase + goldenAngle * n;
+            int period = Mathf.Max(8, floatingCountSpiralPeriod);
+            float ringR = Mathf.Sqrt((n % period) + 1) * Mathf.Max(0.01f, floatingCountSpawnRingStep);
+            ringR = Mathf.Min(ringR, Mathf.Max(0.5f, floatingCountMaxSpreadRadius));
 
-            Vector2 random = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
-            float angle = (floatingPopupSequence * 57f) * Mathf.Deg2Rad;
-            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringRadius;
-            Vector3 spawnPos = position + ring + new Vector3(random.x, floatingCountVerticalOffset, random.y);
+            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringR;
+            Vector2 jitter = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
+            Vector3 spawnPos = position + ring + new Vector3(jitter.x, floatingCountVerticalOffset, jitter.y);
 
             // Hard floor so stale serialized inspector values cannot pin popups to ground.
             if (spawnPos.y < 4f)
@@ -306,7 +322,8 @@ namespace TitanOrbit.Systems
                 floatingCountDuration,
                 floatingCountRiseSpeed,
                 floatingCountIconScale,
-                floatingCountIconLocalOffset
+                floatingCountIconLocalOffset,
+                Mathf.Max(0f, floatingCountLateralDriftMax)
             );
         }
 

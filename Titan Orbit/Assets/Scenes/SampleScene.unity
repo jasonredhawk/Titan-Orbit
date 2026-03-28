@@ -3717,6 +3717,11 @@ MonoBehaviour:
   galacticZoomOutDuration: 4
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 0}
+  collisionCameraShakeEnabled: 1
+  collisionShakeMaxTranslation: {x: 0.45, y: 0.45, z: 0.45}
+  collisionShakeFrequency: 25
+  collisionShakeRecoverPerSecond: 1.2
+  collisionShakeSmoothingExponent: 1
   mouseZoomEnabled: 0
   maxManualZoomOutOrthoSize: 80
   mouseWheelZoomSensitivity: 0.12
@@ -8034,8 +8039,11 @@ MonoBehaviour:
   floatingCountIconScale: 0.14
   floatingCountIconLocalOffset: {x: -0.45, y: 0, z: 0}
   floatingCountVerticalOffset: 0.65
-  floatingCountSpawnJitterRadius: 0.45
+  floatingCountSpawnJitterRadius: 2.45
   floatingCountSpawnRingStep: 0.12
+  floatingCountMaxSpreadRadius: 5.75
+  floatingCountSpiralPeriod: 40
+  floatingCountLateralDriftMax: 0
   floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
