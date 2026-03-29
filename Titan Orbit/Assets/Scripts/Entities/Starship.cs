@@ -2116,11 +2116,12 @@ namespace TitanOrbit.Entities
                 }
                 else
                 {
-                    // At max speed: apply steering force only (perpendicular to velocity) so we turn without overspeeding. Keeps physics intact.
+                    // At max speed: drop only thrust that would add more speed along current velocity (so we don't overshoot max).
+                    // If thrust opposes velocity (quick 180°), alongVel is negative — do not cancel that; full thrust slows/reverses.
                     Vector3 velNorm = currentVelocity.normalized;
                     Vector3 thrustVec = moveDirection * EffectiveEngineThrust;
                     float alongVel = Vector3.Dot(thrustVec, velNorm);
-                    Vector3 steerForce = thrustVec - velNorm * alongVel; // Remove forward component; only steer
+                    Vector3 steerForce = thrustVec - velNorm * Mathf.Max(0f, alongVel);
                     rb.AddForce(steerForce, ForceMode.Force);
                 }
             }
