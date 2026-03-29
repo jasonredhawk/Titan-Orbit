@@ -37,7 +37,7 @@ namespace TitanOrbit.Data
         [Tooltip("Card level (1–n). A ship can only equip cards with level <= ship level. Higher level = stronger stat buffs.")]
         public int cardLevel = 1;
 
-        [Tooltip("Rarity 1=Common, 2=Uncommon, 3=Rare, 4=Epic. Higher rarity multiplies the card's stat bonuses.")]
+        [Tooltip("Rarity 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary. Higher rarity multiplies the card's stat bonuses.")]
         public int rarity = 1;
 
         [Tooltip("Minimum home planet level required before this card can appear in any store.")]

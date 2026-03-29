@@ -716,6 +716,14 @@ namespace TitanOrbit.Entities
         public bool WantToDepositGems => wantToDepositGems.Value;
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
+        /// <summary>True when this ship is gem-moon docked and the dock target is <paramref name="planet"/>.</summary>
+        public bool IsGemMoonDockedAtPlanet(Planet planet)
+        {
+            if (planet == null || !gemMoonDocked.Value) return false;
+            var planetNo = planet.GetComponent<NetworkObject>();
+            if (planetNo == null) return false;
+            return gemMoonPlanetNetworkObjectId.Value == planetNo.NetworkObjectId;
+        }
         public float GemMoonDockIgnoreUntilServerTime => gemMoonDockIgnoreUntilServerTime.Value;
         public int SmallRocketsCount => smallRocketsCount.Value;
         public int LargeRocketsCount => largeRocketsCount.Value;
@@ -4551,7 +4559,8 @@ namespace TitanOrbit.Entities
             if (rarity <= 1) return 1f;
             if (rarity == 2) return 1.25f;
             if (rarity == 3) return 1.5f;
-            return 2f; // Epic
+            if (rarity == 4) return 2f;
+            return 2.35f; // 5+ Legendary
         }
 
         private float GetCardMovementSpeedAdd()

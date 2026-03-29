@@ -280,6 +280,8 @@ namespace TitanOrbit.UI
             }
 
             bool show = playerShip != null && playerShip.IsSpawned && !playerShip.IsDead && playerShip.ShipTeam != TeamManager.Team.None;
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+                show = false;
             rootPanel.SetActive(show);
 
             if (!show || playerShip == null) return;
@@ -309,6 +311,7 @@ namespace TitanOrbit.UI
         private void LateUpdate()
         {
             if (!upgradeBarEnabled) return;
+            if (HUDController.ShipUpgradeTreeObscuresHud) return;
             var keyboard = Keyboard.current;
             if (keyboard == null || playerShip == null || !playerShip.IsSpawned) return;
 

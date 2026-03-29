@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
@@ -21,6 +22,17 @@ namespace TitanOrbit.Systems
         [SerializeField] private PlanetShipFamilyConfig planetShipFamilyConfig;
         [SerializeField] private List<CardData> allCards = new List<CardData>();
 
+        /// <summary>Server-only: last spin offer per ship (NetworkObject id). Client uses <see cref="ClientSpinOfferCardIds"/>.</summary>
+        private readonly Dictionary<ulong, PendingCardSpin> _pendingCardSpins = new Dictionary<ulong, PendingCardSpin>();
+
+        private sealed class PendingCardSpin
+        {
+            public string[] CardIds = new string[3];
+        }
+
+        /// <summary>Last card IDs received from a spin (client). Empty strings mean no offer in that slot.</summary>
+        private readonly string[] _clientSpinOfferCardIds = new string[3];
+
         private void Awake()
         {
             if (Instance == null)
@@ -35,24 +47,24 @@ namespace TitanOrbit.Systems
                 allCards = GetDefaultCards();
         }
 
-        /// <summary>Creates a runtime list of exactly 20 default cards for the shop. Used when no cards are assigned in the inspector.</summary>
+        /// <summary>Creates a large runtime card pool when no assets are assigned in the inspector.</summary>
         private static List<CardData> GetDefaultCards()
         {
             var list = new List<CardData>();
             int id = 0;
 
-            CardData Add(string name, string desc, int level, int rar, float cost, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f)
+            CardData Add(string name, string desc, int level, int rar, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f, float miningAdd = 0f, float peopleAdd = 0f)
             {
                 var c = ScriptableObject.CreateInstance<CardData>();
                 c.cardId = "card_" + (id++);
                 c.displayName = name;
                 c.description = desc;
                 c.cardLevel = level;
-                c.rarity = Mathf.Clamp(rar, 1, 4);
+                c.rarity = Mathf.Clamp(rar, 1, 5);
                 c.slotType = slotType;
                 c.minHomePlanetLevel = 1;
                 c.originPlanetId = 0;
-                c.gemCost = cost;
+                c.gemCost = 0f;
                 c.damageMultiplier = dmgMul;
                 c.gemCapacityAdd = gemAdd;
                 c.energyRegenAdd = energyRegenAdd;
@@ -62,31 +74,36 @@ namespace TitanOrbit.Systems
                 c.movementSpeedAdd = moveAdd;
                 c.rotationSpeedAdd = rotAdd;
                 c.bulletSpeedMultiplier = bulletSpeedMul;
+                c.miningRateAdd = miningAdd;
+                c.peopleCapacityAdd = peopleAdd;
                 list.Add(c);
                 return c;
             }
 
-            // 20 distinct shop cards: variety of effects and levels (Weapon / Ship / Cargo slot types)
-            Add("Weapon Damage", "+5% weapon damage.", 1, 1, 15f, SlotType.Weapon, dmgMul: 1.05f);
-            Add("Gem Capacity", "+20 gem capacity.", 1, 1, 18f, SlotType.Cargo, gemAdd: 20f);
-            Add("Energy Regen", "+1.5 energy/sec.", 1, 1, 12f, SlotType.Ship, energyRegenAdd: 1.5f);
-            Add("Energy Capacity", "+10 energy capacity.", 1, 1, 14f, SlotType.Ship, energyCapAdd: 10f);
-            Add("Max Health", "+15 max health.", 1, 1, 16f, SlotType.Ship, healthAdd: 15f);
-            Add("Health Regen", "+0.3 health/sec.", 1, 1, 10f, SlotType.Ship, healthRegenAdd: 0.3f);
-            Add("Movement Speed", "+0.5 move speed.", 1, 1, 12f, SlotType.Ship, moveAdd: 0.5f);
-            Add("Rotation Speed", "+15 rotation speed.", 1, 1, 10f, SlotType.Ship, rotAdd: 15f);
-            Add("Bullet Speed", "+6% bullet speed.", 1, 1, 11f, SlotType.Weapon, bulletSpeedMul: 1.06f);
-            Add("Weapon Damage II", "+8% weapon damage.", 2, 1, 28f, SlotType.Weapon, dmgMul: 1.08f);
-            Add("Gem Capacity II", "+38 gem capacity.", 2, 1, 32f, SlotType.Cargo, gemAdd: 38f);
-            Add("Energy Regen II", "+3 energy/sec.", 2, 1, 24f, SlotType.Ship, energyRegenAdd: 3f);
-            Add("Max Health II", "+28 max health.", 2, 1, 30f, SlotType.Ship, healthAdd: 28f);
-            Add("Weapon Damage III", "+12% weapon damage.", 3, 1, 45f, SlotType.Weapon, dmgMul: 1.12f);
-            Add("Gem Capacity III", "+55 gem capacity.", 3, 1, 52f, SlotType.Cargo, gemAdd: 55f);
-            Add("Energy Regen III", "+4.5 energy/sec.", 3, 1, 40f, SlotType.Ship, energyRegenAdd: 4.5f);
-            Add("Max Health III", "+45 max health.", 3, 1, 48f, SlotType.Ship, healthAdd: 45f);
-            Add("Weapon Damage IV", "+18% weapon damage.", 4, 1, 65f, SlotType.Weapon, dmgMul: 1.18f);
-            Add("Gem Capacity IV", "+80 gem capacity.", 4, 1, 75f, SlotType.Cargo, gemAdd: 80f);
-            Add("Energy Regen IV", "+6 energy/sec.", 4, 1, 58f, SlotType.Ship, energyRegenAdd: 6f);
+            string[] rn = { "", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
+
+            for (int L = 1; L <= 7; L++)
+            {
+                float f = L;
+                for (int r = 1; r <= 4; r++)
+                {
+                    float rs = 1f + (r - 1) * 0.08f;
+                    Add($"Kinetic Focus {L} ({rn[r]})", $"+{(4 + r * 2 + L):F0}% effective weapon output.", L, r, SlotType.Weapon, dmgMul: 1f + (0.028f * f + 0.015f * r) * rs);
+                    Add($"Aegis Plating {L} ({rn[r]})", $"+{10f + L * 6f + r * 4f:F0} max hull.", L, r, SlotType.Ship, healthAdd: (10f + L * 6f + r * 4f) * rs);
+                    Add($"Cargo Bay {L} ({rn[r]})", $"+{12f + L * 10f + r * 6f:F0} gem capacity.", L, r, SlotType.Cargo, gemAdd: (12f + L * 10f + r * 6f) * rs);
+                    Add($"Shard Projector {L} ({rn[r]})", $"+{(6 + L + r):F0}% projectile velocity.", L, r, SlotType.Weapon, bulletSpeedMul: 1f + (0.04f * f + 0.02f * r) * rs);
+                    Add($"Arc Reactor {L} ({rn[r]})", $"+{1.2f + L * 0.45f + r * 0.25f:F1} energy/sec.", L, r, SlotType.Ship, energyRegenAdd: (1.2f + L * 0.45f + r * 0.25f) * rs);
+                    Add($"Capacitor Bank {L} ({rn[r]})", $"+{8f + L * 5f + r * 3f:F0} energy capacity.", L, r, SlotType.Ship, energyCapAdd: (8f + L * 5f + r * 3f) * rs);
+                }
+
+                Add($"Afterburner {L}", $"+{0.25f + L * 0.12f:F2} thrust.", L, 3, SlotType.Ship, moveAdd: 0.25f + L * 0.12f);
+                Add($"Gyro Stabilizer {L}", $"+{12f + L * 6f:F0} turn rate.", L, 2, SlotType.Ship, rotAdd: 12f + L * 6f);
+                Add($"Regen Gel {L}", $"+{0.15f + L * 0.05f:F2} hull/sec.", L, 2, SlotType.Ship, healthRegenAdd: 0.15f + L * 0.05f);
+                Add($"Mining Laser {L}", $"+{0.4f + L * 0.15f:F2} mining rate.", L, 2, SlotType.Cargo, miningAdd: 0.4f + L * 0.15f);
+                Add($"Colony Pod {L}", $"+{2f + L:F0} people capacity.", L, 1, SlotType.Cargo, peopleAdd: 2f + L);
+
+                Add($"Titanforge {L} ({rn[5]})", $"Elite damage + hull.", L, 5, SlotType.Weapon, dmgMul: 1f + 0.06f * f, healthAdd: 8f + L * 4f);
+            }
 
             return list;
         }
@@ -338,13 +355,175 @@ namespace TitanOrbit.Systems
             return result;
         }
 
+        /// <summary>
+        /// Card tier for a spin: matches the ship’s level, capped by home planet level (so a level 1 ship always draws level 1 cards).
+        /// </summary>
+        public static int GetSpinCardTier(int shipLevel, int homePlanetLevel)
+        {
+            int s = Mathf.Max(1, shipLevel);
+            int h = Mathf.Max(1, homePlanetLevel);
+            return Mathf.Min(s, h);
+        }
+
+        /// <summary>Gem cost for one spin at this card tier (matches upgrade-tree tier pricing).</summary>
+        public float GetCardSpinCost(int spinCardTier)
+        {
+            int t = Mathf.Max(1, spinCardTier);
+            int gemLevel = Mathf.Clamp(t + 1, 2, 24);
+            if (UpgradeSystem.Instance != null && UpgradeSystem.Instance.UpgradeTree != null)
+                return Mathf.Max(15f, UpgradeSystem.Instance.UpgradeTree.GetGemCostForLevel(gemLevel));
+            float n = gemLevel - 1f;
+            return Mathf.Max(15f, 20f * n * n);
+        }
+
+        /// <summary>
+        /// Cards for a spin: store availability uses <paramref name="homePlanetLevel"/>; drawn cards match <paramref name="spinCardTier"/>.
+        /// </summary>
+        public List<CardData> GetCardPoolForSpin(int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        {
+            var pool = new List<CardData>();
+            if (allCards == null) return pool;
+            int tier = Mathf.Max(1, spinCardTier);
+            int home = Mathf.Max(1, homePlanetLevel);
+            List<CardData> baseList = isHomeStore
+                ? GetAvailableCardsForHomeStore(home, team)
+                : GetAvailableCardsForPlanet(home, storePlanetId);
+            for (int i = 0; i < baseList.Count; i++)
+            {
+                CardData c = baseList[i];
+                if (c == null) continue;
+                if (Mathf.Max(1, c.cardLevel) != tier) continue;
+                pool.Add(c);
+            }
+            return pool;
+        }
+
+        /// <summary>Count of cards in the spin pool without allocating a new list.</summary>
+        public int GetCardPoolCountForSpin(int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        {
+            if (allCards == null) return 0;
+            int tier = Mathf.Max(1, spinCardTier);
+            int home = Mathf.Max(1, homePlanetLevel);
+            List<CardData> baseList = isHomeStore
+                ? GetAvailableCardsForHomeStore(home, team)
+                : GetAvailableCardsForPlanet(home, storePlanetId);
+            int n = 0;
+            for (int i = 0; i < baseList.Count; i++)
+            {
+                CardData c = baseList[i];
+                if (c == null) continue;
+                if (Mathf.Max(1, c.cardLevel) != tier) continue;
+                n++;
+            }
+            return n;
+        }
+
+        public string GetClientSpinOfferCardId(int index)
+        {
+            if ((uint)index >= 3u) return null;
+            string s = _clientSpinOfferCardIds[index];
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+
+        private static int GetRarityWeight(int rarity)
+        {
+            if (rarity <= 1) return 48;
+            if (rarity == 2) return 30;
+            if (rarity == 3) return 14;
+            if (rarity == 4) return 6;
+            return 2;
+        }
+
+        private static CardData PickOneWeighted(List<CardData> pool, System.Random rng)
+        {
+            if (pool == null || pool.Count == 0) return null;
+            int total = 0;
+            for (int i = 0; i < pool.Count; i++)
+                total += GetRarityWeight(Mathf.Max(1, pool[i].rarity));
+            if (total <= 0) return pool[rng.Next(pool.Count)];
+            int roll = rng.Next(0, total);
+            int acc = 0;
+            for (int i = 0; i < pool.Count; i++)
+            {
+                acc += GetRarityWeight(Mathf.Max(1, pool[i].rarity));
+                if (roll < acc) return pool[i];
+            }
+            return pool[pool.Count - 1];
+        }
+
+        /// <summary>Server: pay spin cost, roll three weighted random cards for this planet tier, store pending offer for <see cref="PurchaseCardServerRpc"/>.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void CardSpinServerRpc(ulong planetNetworkId, ulong shipNetworkId, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+
+            NetworkObject planetNet = GetNetworkObject(planetNetworkId);
+            Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
+            if (planet == null) return;
+
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+
+            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null) return;
+            int homeLevel = Mathf.Max(1, homePlanet.HomePlanetLevel);
+            int spinTier = GetSpinCardTier(ship.ShipLevel, homeLevel);
+
+            bool isHome = planet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isCapturedPlanet = !isHome && planet.TeamOwnership == ship.ShipTeam;
+            if (!isHome && !isCapturedPlanet) return;
+
+            int storePlanetId = planet.PlanetId;
+            List<CardData> pool = GetCardPoolForSpin(spinTier, homeLevel, isHome, storePlanetId, ship.ShipTeam);
+            if (pool == null || pool.Count == 0)
+            {
+                NotifyCardSpinResultClientRpc(string.Empty, string.Empty, string.Empty, shipNetworkId, new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+                });
+                return;
+            }
+
+            float spinCost = GetCardSpinCost(spinTier);
+            if (!homePlanet.TrySpendContributedGems(clientId, spinCost))
+                return;
+
+            var rng = new System.Random((int)(DateTime.UtcNow.Ticks ^ (long)shipNetworkId ^ (long)clientId));
+            CardData p0 = PickOneWeighted(pool, rng);
+            CardData p1 = PickOneWeighted(pool, rng);
+            CardData p2 = PickOneWeighted(pool, rng);
+            string a = p0 != null ? p0.cardId : string.Empty;
+            string b = p1 != null ? p1.cardId : string.Empty;
+            string c = p2 != null ? p2.cardId : string.Empty;
+
+            if (!_pendingCardSpins.ContainsKey(shipNetworkId))
+                _pendingCardSpins[shipNetworkId] = new PendingCardSpin();
+            PendingCardSpin pend = _pendingCardSpins[shipNetworkId];
+            pend.CardIds[0] = a;
+            pend.CardIds[1] = b;
+            pend.CardIds[2] = c;
+
+            NotifyCardSpinResultClientRpc(a, b, c, shipNetworkId, new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            });
+        }
+
+        [ClientRpc]
+        private void NotifyCardSpinResultClientRpc(string a, string b, string c, ulong _, ClientRpcParams rpcParams = default)
+        {
+            _clientSpinOfferCardIds[0] = a ?? string.Empty;
+            _clientSpinOfferCardIds[1] = b ?? string.Empty;
+            _clientSpinOfferCardIds[2] = c ?? string.Empty;
+        }
+
         #endregion
 
         #region Purchases
 
         /// <summary>
-        /// Server: purchase a card at the given planet for the given ship, using contributed gems.
-        /// The client passes the cardId and the planetNetworkId where they are docked.
+        /// Server: take one card from the current spin offer and add it to the ship (spin already paid for the pull).
         /// </summary>
         [ServerRpc(RequireOwnership = false)]
         public void PurchaseCardServerRpc(ulong planetNetworkId, ulong shipNetworkId, string cardId, ServerRpcParams rpcParams = default)
@@ -360,54 +539,53 @@ namespace TitanOrbit.Systems
             Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
             if (ship == null || ship.OwnerClientId != clientId) return;
 
-            // Determine home planet and home level for this team.
             HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
             if (homePlanet == null) return;
             int homeLevel = homePlanet.HomePlanetLevel;
 
-            // Lookup card.
             CardData card = FindCardById(cardId);
             if (card == null) return;
             if (homeLevel < card.minHomePlanetLevel) return;
 
-            // Slots: 1 per ship level, 1 card per slot. Only allow purchase if ship has an empty slot.
             if (!ship.HasEmptySlot) return;
 
-            // Card level: ship can only equip cards with level <= ship level.
             int cardLvl = Mathf.Max(1, card.cardLevel);
             if (cardLvl > ship.ShipLevel) return;
 
-            // Planet gating: home planet sells all unlocked cards; captured planet sells its unique cards.
             int originPlanetId = card.originPlanetId;
             bool isHome = planet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
             bool isCapturedPlanet = !isHome && planet.TeamOwnership == ship.ShipTeam;
 
             if (isHome)
             {
-                // At home we allow any unlocked card whose originPlanetId <= 0 (global) or belongs to a captured planet.
                 if (originPlanetId > 0 && !TeamOwnsPlanetId(ship.ShipTeam, originPlanetId))
                     return;
             }
             else if (isCapturedPlanet)
             {
-                // At captured planet: only that planet's own cards (by originPlanetId).
-                if (originPlanetId != planet.PlanetId) // assumes Planet has PlanetId; otherwise this will be wired later.
+                if (originPlanetId != planet.PlanetId)
                     return;
             }
             else
             {
-                // Neutral or enemy planet: no purchases.
                 return;
             }
 
-            float cost = card.gemCost;
-            if (cost <= 0f) cost = 20f;
-
-            // Use contributed gems at the team's home planet as currency.
-            if (!homePlanet.TrySpendContributedGems(clientId, cost))
+            if (!_pendingCardSpins.TryGetValue(shipNetworkId, out PendingCardSpin pend) || pend?.CardIds == null)
                 return;
+            bool inOffer = false;
+            for (int i = 0; i < pend.CardIds.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(pend.CardIds[i]) && pend.CardIds[i] == cardId)
+                {
+                    inOffer = true;
+                    break;
+                }
+            }
+            if (!inOffer) return;
 
-            // Add card to the ship's server-side loadout. UI/grid placement will be layered on later.
+            _pendingCardSpins.Remove(shipNetworkId);
+
             ship.AddCardFromServer(card);
             NotifyCardPurchasedClientRpc(cardId, shipNetworkId, new ClientRpcParams
             {

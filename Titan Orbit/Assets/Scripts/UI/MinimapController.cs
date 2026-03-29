@@ -1203,6 +1203,12 @@ namespace TitanOrbit.UI
                 }
             }
 
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+            {
+                SetMinimapVisible(false);
+                return;
+            }
+
             // Toggle minimap expanded/minimized with M key
             if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
                 ToggleExpand();

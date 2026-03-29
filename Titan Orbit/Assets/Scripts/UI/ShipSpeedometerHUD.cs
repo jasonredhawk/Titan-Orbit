@@ -228,6 +228,8 @@ namespace TitanOrbit.UI
 
             Starship ship = GetPlayerShip();
             bool show = ship != null && ship.IsSpawned && !ship.IsDead;
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+                show = false;
             rootPanel.SetActive(show);
             if (!show || ship == null)
                 return;
