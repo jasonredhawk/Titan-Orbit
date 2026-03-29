@@ -210,6 +210,8 @@ namespace TitanOrbit.AI
             }
             if (dataToApply != null)
                 starship.SetShipData(dataToApply);
+            starship.EnsureSyncedChassisForAiVisual();
+            starship.RefreshAIControlledFlag();
 
             // Assign team only
             starship.AssignTeamOnly(team);

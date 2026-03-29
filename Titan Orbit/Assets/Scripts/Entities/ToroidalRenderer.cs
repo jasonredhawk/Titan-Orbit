@@ -23,12 +23,14 @@ namespace TitanOrbit.Entities
         private static int s_cachedCameraFrame = -1;
         /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
         private bool _isShip;
+        private Starship _starship;
 
         private void Start()
         {
             rb = GetComponent<Rigidbody>();
-            _isShip = GetComponent<Starship>() != null;
-            // Ships never wrap (player stays in world space); skip Visual child so banking and hierarchy stay intact.
+            _starship = GetComponent<Starship>();
+            _isShip = _starship != null;
+            // Local player: no wrap on BankPivot. Non-local ships: LateUpdate positions BankPivot toroidally.
             if (_isShip)
                 return;
             // Only use Visual child for non-kinematic Rigidbodies (gems, bullets). Kinematic (e.g. asteroids)
@@ -49,7 +51,10 @@ namespace TitanOrbit.Entities
             if (rb == null)
                 rb = GetComponent<Rigidbody>();
             if (!_isShip && GetComponent<Starship>() != null)
+            {
                 _isShip = true;
+                _starship = GetComponent<Starship>();
+            }
             if (_isShip)
                 return;
             if (rb != null && !rb.isKinematic && visualChild == null)
@@ -122,7 +127,19 @@ namespace TitanOrbit.Entities
             UnityEngine.Camera cam = s_cachedMainCamera;
             if (cam == null) return;
 
-            // Ships never wrap; don't move or reparent them so banking (visualRoot) works.
+            if (_isShip && _starship != null)
+            {
+                if (_starship.IsLocalPlayerShip() || _starship.GemMoonDocked)
+                    return;
+                Transform bankPivot = _starship.BankPivotTransform;
+                if (bankPivot == null || bankPivot == transform)
+                    return;
+                Vector3 logical = rb != null ? rb.position : transform.position;
+                Vector3 display = ToroidalMap.GetDisplayPosition(logical, cam.transform.position);
+                bankPivot.position = display;
+                return;
+            }
+
             if (_isShip)
                 return;
 
