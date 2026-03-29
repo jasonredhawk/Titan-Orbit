@@ -34,10 +34,11 @@ namespace TitanOrbit.Data
         [Header("Movement")]
         [Tooltip("Engine/thruster: authoritative game units for thrust (sum) and max speed (best engine). Not multiplied by part scale—matches speedometer and physics cap.")]
         public float moveSpeed;
-        [Tooltip("Added per ship level after level 1; same units as Move Speed.")]
+        [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
         public float moveSpeedPerLevel;
         public float turnSpeed;            // Turn Speed (rotation speed)
-        public float turnSpeedPerLevel;    // Turn Speed gained per ship level
+        [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
+        public float turnSpeedPerLevel;
 
         [Header("Capacity")]
         public float maxGems;              // Gem Capacity

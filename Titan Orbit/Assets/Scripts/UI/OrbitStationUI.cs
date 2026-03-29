@@ -23,8 +23,14 @@ namespace TitanOrbit.UI
         [Tooltip("Assign Shift UI panel/sprite for sci-fi look.")]
         [SerializeField] private Sprite panelBackgroundSprite;
         [SerializeField] private Sprite buttonSprite;
+        [Tooltip("Spin cards: defaults to Resources/SpinCardShiftVisuals if unset.")]
+        [SerializeField] private SpinCardShiftVisuals spinCardShiftVisuals;
         [Tooltip("e.g. Rajdhani from Shift UI/Fonts.")]
         [SerializeField] private TMP_FontAsset fontAsset;
+
+        private SpinCardShiftVisuals _cachedSpinCardShiftVisuals;
+        private bool _spinCardShiftResolveAttempted;
+        private Image cardSpinButtonImage;
 
         private const float PanelWidth = 486f;
         private const float LeftMargin = 12f;
@@ -66,7 +72,6 @@ namespace TitanOrbit.UI
         private static float lastReceivedGems;
         private static bool pendingGemsRequest;
 
-        private Button btnOrbitDepositGems;
         private GameObject slotGridRoot;
         private RectTransform slotPanelRect;
         private RectTransform slotGridRect;
@@ -78,6 +83,11 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI[] slotLevelTexts;
         private TextMeshProUGUI[] slotTitleTexts;
         private TextMeshProUGUI[] slotDescTexts;
+        private Button[] slotDeleteButtons;
+
+        private GameObject cardRemoveConfirmRoot;
+        private TextMeshProUGUI cardRemoveConfirmBodyText;
+        private int _pendingRemoveSlotIndex = -1;
 
         private TextMeshProUGUI gemsText;
         private GameObject[] cardRoots;
@@ -232,6 +242,46 @@ namespace TitanOrbit.UI
         {
             EnsurePanelExists();
             if (rootPanel != null) rootPanel.SetActive(false);
+        }
+
+        private void OnEnable()
+        {
+            CardShopSystem.ClientSpinOfferConsumed += OnClientSpinOfferConsumed;
+        }
+
+        private void OnDisable()
+        {
+            CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
+        }
+
+        private void OnClientSpinOfferConsumed()
+        {
+            RefreshStoreLabels();
+            RefreshSlots();
+        }
+
+        private SpinCardShiftVisuals GetSpinCardShiftVisuals()
+        {
+            if (spinCardShiftVisuals != null) return spinCardShiftVisuals;
+            if (_spinCardShiftResolveAttempted) return _cachedSpinCardShiftVisuals;
+            _spinCardShiftResolveAttempted = true;
+            _cachedSpinCardShiftVisuals = Resources.Load<SpinCardShiftVisuals>("SpinCardShiftVisuals");
+            return _cachedSpinCardShiftVisuals;
+        }
+
+        private void ApplySpinCardImageSprite(Image img, Sprite sp, Image.Type type)
+        {
+            if (img == null) return;
+            if (sp != null)
+            {
+                img.sprite = sp;
+                img.type = type;
+            }
+            else if (buttonSprite != null)
+            {
+                img.sprite = buttonSprite;
+                img.type = Image.Type.Sliced;
+            }
         }
 
         private void OnRectTransformDimensionsChange()
@@ -443,6 +493,7 @@ namespace TitanOrbit.UI
 
         public void Hide()
         {
+            HideCardRemoveConfirm();
             ExitMoonDockLayout();
             currentShip = null;
             currentPlanet = null;
@@ -503,8 +554,7 @@ namespace TitanOrbit.UI
             // —— Independent Ship Slot Panel (6 wide, roomy cards) ——
             int slotGridRows = Mathf.Min(2, (MaxSlotRows + SlotGridColumns - 1) / SlotGridColumns);
             float slotGridTotalH = slotGridRows * SlotCardHeight + (slotGridRows - 1) * SlotCellSpacing;
-            const float orbitActionsHeight = 32f;
-            float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
+            float slotPanelHeight = SlotPanelHeaderHeight + 8f + slotGridTotalH + 12f;
 
             slotPanel = new GameObject("ShipSlotPanel");
             slotPanel.transform.SetParent(rootPanel.transform, false);
@@ -520,10 +570,7 @@ namespace TitanOrbit.UI
             if (panelBackgroundSprite != null) { slotPanelImg.sprite = panelBackgroundSprite; slotPanelImg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
 
             float slotY = -4f;
-            btnOrbitDepositGems = CreateOrbitActionButton(slotPanel.transform, "Deposit Gems", ref slotY);
-            if (btnOrbitDepositGems != null) btnOrbitDepositGems.onClick.AddListener(OnOrbitDepositGemsClick);
-            slotY -= 6f;
-            loadoutSectionLabel = CreateSectionLabelWithRef(slotPanel.transform, "Loadout", "Ship Loadout (click card to remove)", ref slotY);
+            loadoutSectionLabel = CreateSectionLabelWithRef(slotPanel.transform, "Loadout", "Ship Loadout — tap ✕ on a card to remove it", ref slotY);
             slotY -= 8f;
             slotGridRoot = new GameObject("SlotGrid");
             slotGridRoot.transform.SetParent(slotPanel.transform, false);
@@ -545,12 +592,13 @@ namespace TitanOrbit.UI
             slotLevelTexts = new TextMeshProUGUI[MaxSlotRows];
             slotTitleTexts = new TextMeshProUGUI[MaxSlotRows];
             slotDescTexts = new TextMeshProUGUI[MaxSlotRows];
+            slotDeleteButtons = new Button[MaxSlotRows];
             for (int i = 0; i < MaxSlotRows; i++)
             {
-                CreateSlotBoxForGrid(slotGridRoot.transform, SlotCardWidth, SlotCardHeight, i, out slotBoxes[i], out slotBgImages[i], out slotBorderImages[i], out slotLevelTexts[i], out slotTitleTexts[i], out slotDescTexts[i]);
+                CreateSlotBoxForGrid(slotGridRoot.transform, SlotCardWidth, SlotCardHeight, i, out slotBoxes[i], out slotBgImages[i], out slotBorderImages[i], out slotLevelTexts[i], out slotTitleTexts[i], out slotDescTexts[i], out slotDeleteButtons[i]);
                 int idx = i;
-                var slotBtn = slotBoxes[i].GetComponent<Button>();
-                if (slotBtn != null) slotBtn.onClick.AddListener(() => OnRemoveCard(idx));
+                if (slotDeleteButtons[i] != null)
+                    slotDeleteButtons[i].onClick.AddListener(() => ShowCardRemoveConfirm(idx));
             }
 
             // —— Store Panel (tabs: Cards | Ships) ——
@@ -669,8 +717,19 @@ namespace TitanOrbit.UI
             spinBtnRect.sizeDelta = new Vector2(-24f, 44f);
             y -= 50f;
             var spinImg = spinBtnGo.AddComponent<Image>();
-            spinImg.color = new Color(0.15f, 0.42f, 0.72f, 1f);
-            if (buttonSprite != null) { spinImg.sprite = buttonSprite; spinImg.type = Image.Type.Sliced; }
+            cardSpinButtonImage = spinImg;
+            var shiftSpin = GetSpinCardShiftVisuals();
+            if (shiftSpin != null && shiftSpin.chooseButtonSliced != null)
+            {
+                spinImg.sprite = shiftSpin.chooseButtonSliced;
+                spinImg.type = Image.Type.Sliced;
+                spinImg.color = new Color(0.39f, 0.78f, 1f, 0.92f);
+            }
+            else
+            {
+                spinImg.color = new Color(0.15f, 0.42f, 0.72f, 1f);
+                if (buttonSprite != null) { spinImg.sprite = buttonSprite; spinImg.type = Image.Type.Sliced; }
+            }
             cardSpinButton = spinBtnGo.AddComponent<Button>();
             cardSpinButton.onClick.AddListener(OnCardSpinClick);
             var spinLabelGo = new GameObject("Text");
@@ -695,12 +754,12 @@ namespace TitanOrbit.UI
             cardSpinRowRect.anchorMax = new Vector2(1f, 1f);
             cardSpinRowRect.pivot = new Vector2(0.5f, 1f);
             cardSpinRowRect.anchoredPosition = new Vector2(0f, y);
-            float spinRowHeight = 340f;
+            float spinRowHeight = 356f;
             cardSpinRowRect.sizeDelta = new Vector2(-20f, spinRowHeight);
             y -= spinRowHeight + 14f;
             _cardSpinRowLayout = cardSpinRowGo.AddComponent<HorizontalLayoutGroup>();
-            _cardSpinRowLayout.spacing = 16f;
-            _cardSpinRowLayout.padding = new RectOffset(6, 6, 8, 8);
+            _cardSpinRowLayout.spacing = 18f;
+            _cardSpinRowLayout.padding = new RectOffset(8, 8, 10, 10);
             _cardSpinRowLayout.childAlignment = TextAnchor.UpperCenter;
             _cardSpinRowLayout.childControlWidth = true;
             _cardSpinRowLayout.childControlHeight = true;
@@ -2370,8 +2429,8 @@ namespace TitanOrbit.UI
             y -= 46f;
         }
 
-        /// <summary>Creates a roomy slot card: level bubble (top-right), title (top-center), description (bottom-center), bg + highlighted border by slot type.</summary>
-        private void CreateSlotBoxForGrid(Transform gridParent, float cellW, float cellH, int index, out GameObject boxRoot, out Image bgImage, out Image borderImage, out TextMeshProUGUI levelText, out TextMeshProUGUI titleText, out TextMeshProUGUI descText)
+        /// <summary>Creates a roomy slot card: level bubble (top-right), title (top-center), description (bottom-center), bg + highlighted border by slot type; small delete control (top-left).</summary>
+        private void CreateSlotBoxForGrid(Transform gridParent, float cellW, float cellH, int index, out GameObject boxRoot, out Image bgImage, out Image borderImage, out TextMeshProUGUI levelText, out TextMeshProUGUI titleText, out TextMeshProUGUI descText, out Button deleteButton)
         {
             boxRoot = new GameObject("SlotBox_" + (index + 1));
             boxRoot.transform.SetParent(gridParent, false);
@@ -2383,7 +2442,7 @@ namespace TitanOrbit.UI
             bgImage = boxRoot.AddComponent<Image>();
             bgImage.color = new Color(0.18f, 0.22f, 0.32f, 0.95f);
             if (buttonSprite != null) { bgImage.sprite = buttonSprite; bgImage.type = Image.Type.Sliced; }
-            boxRoot.AddComponent<Button>(); // Click to remove card (handler set in EnsurePanelExists)
+            bgImage.raycastTarget = false;
 
             var borderGo = new GameObject("Border");
             borderGo.transform.SetParent(boxRoot.transform, false);
@@ -2428,8 +2487,8 @@ namespace TitanOrbit.UI
             titleRect.anchorMin = new Vector2(0f, 1f);
             titleRect.anchorMax = new Vector2(1f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -6f);
-            titleRect.sizeDelta = new Vector2(-36f, -24f);
+            titleRect.anchoredPosition = new Vector2(14f, -6f);
+            titleRect.sizeDelta = new Vector2(-64f, -24f);
             titleText = titleGo.AddComponent<TextMeshProUGUI>();
             titleText.text = "Empty";
             titleText.fontSize = 12;
@@ -2459,6 +2518,34 @@ namespace TitanOrbit.UI
             descText.color = new Color(0.75f, 0.82f, 0.9f, 0.92f);
             descText.overflowMode = TextOverflowModes.Ellipsis;
             if (fontAsset != null) descText.font = fontAsset;
+
+            var delGo = new GameObject("Delete");
+            delGo.transform.SetParent(boxRoot.transform, false);
+            var delRt = delGo.AddComponent<RectTransform>();
+            delRt.anchorMin = new Vector2(0f, 1f);
+            delRt.anchorMax = new Vector2(0f, 1f);
+            delRt.pivot = new Vector2(0f, 1f);
+            delRt.anchoredPosition = new Vector2(4f, -4f);
+            delRt.sizeDelta = new Vector2(22f, 22f);
+            var delImg = delGo.AddComponent<Image>();
+            delImg.color = new Color(0.42f, 0.18f, 0.2f, 0.96f);
+            if (buttonSprite != null) { delImg.sprite = buttonSprite; delImg.type = Image.Type.Sliced; }
+            deleteButton = delGo.AddComponent<Button>();
+            var delTxtGo = new GameObject("Text");
+            delTxtGo.transform.SetParent(delGo.transform, false);
+            var delTxtRect = delTxtGo.AddComponent<RectTransform>();
+            delTxtRect.anchorMin = Vector2.zero;
+            delTxtRect.anchorMax = Vector2.one;
+            delTxtRect.offsetMin = Vector2.zero;
+            delTxtRect.offsetMax = Vector2.zero;
+            var delTmp = delTxtGo.AddComponent<TextMeshProUGUI>();
+            delTmp.text = "×";
+            delTmp.fontSize = 16;
+            delTmp.alignment = TextAlignmentOptions.Center;
+            delTmp.color = new Color(1f, 0.92f, 0.92f, 1f);
+            if (fontAsset != null) delTmp.font = fontAsset;
+            delTmp.raycastTarget = false;
+            deleteButton.gameObject.SetActive(false);
         }
 
         private void CreateSlotBox(Transform parent, int index, ref float y, out GameObject boxRoot, out Image iconImage, out TextMeshProUGUI levelText)
@@ -2594,10 +2681,12 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Wide sci-fi card: glowing frame, scan line, icon dock, high-contrast type.</summary>
+        /// <summary>Spin offer card using Shift Sci-Fi UI frames/panels when <see cref="SpinCardShiftVisuals"/> is available.</summary>
         private void CreateSpinOfferCard(Transform parent, int index, out GameObject root, out Image rarityFrame, out Image bgImage, out Image iconImage, out TextMeshProUGUI titleText, out TextMeshProUGUI levelText, out TextMeshProUGUI rarityLabel, out TextMeshProUGUI descText, out Button takeButton)
         {
-            const float cardH = 332f;
+            SpinCardShiftVisuals shift = GetSpinCardShiftVisuals();
+            bool useShift = shift != null && shift.outerFrameSliced != null;
+            const float cardH = 356f;
             root = new GameObject("SpinOffer_" + (index + 1));
             root.transform.SetParent(parent, false);
             var le = root.AddComponent<LayoutElement>();
@@ -2607,9 +2696,28 @@ namespace TitanOrbit.UI
             le.minHeight = cardH;
 
             rarityFrame = root.AddComponent<Image>();
-            rarityFrame.color = GetCardRarityFrameColor(1);
             rarityFrame.raycastTarget = false;
-            if (buttonSprite != null) { rarityFrame.sprite = buttonSprite; rarityFrame.type = Image.Type.Sliced; }
+            ApplySpinCardImageSprite(rarityFrame, useShift ? shift.outerFrameSliced : null, Image.Type.Sliced);
+            rarityFrame.color = useShift
+                ? new Color(0.42f, 0.72f, 0.95f, 0.92f)
+                : GetCardRarityFrameColor(1);
+
+            if (useShift && shift.innerGlowSliced != null)
+            {
+                var glowGo = new GameObject("InnerGlow");
+                glowGo.transform.SetParent(root.transform, false);
+                var glowRt = glowGo.AddComponent<RectTransform>();
+                glowRt.SetAsFirstSibling();
+                glowRt.anchorMin = Vector2.zero;
+                glowRt.anchorMax = Vector2.one;
+                glowRt.offsetMin = new Vector2(5f, 5f);
+                glowRt.offsetMax = new Vector2(-5f, -5f);
+                var glowImg = glowGo.AddComponent<Image>();
+                glowImg.sprite = shift.innerGlowSliced;
+                glowImg.type = Image.Type.Simple;
+                glowImg.color = new Color(0.4f, 0.75f, 1f, 0.14f);
+                glowImg.raycastTarget = false;
+            }
 
             var inner = new GameObject("Inner");
             inner.transform.SetParent(root.transform, false);
@@ -2618,43 +2726,56 @@ namespace TitanOrbit.UI
             {
                 innerRt.anchorMin = Vector2.zero;
                 innerRt.anchorMax = Vector2.one;
-                innerRt.offsetMin = new Vector2(6f, 6f);
-                innerRt.offsetMax = new Vector2(-6f, -6f);
+                innerRt.offsetMin = new Vector2(useShift ? 10f : 6f, useShift ? 10f : 6f);
+                innerRt.offsetMax = new Vector2(useShift ? -10f : -6f, useShift ? -10f : -6f);
             }
             bgImage = inner.AddComponent<Image>();
-            bgImage.color = new Color(0.03f, 0.06f, 0.12f, 1f);
             bgImage.raycastTarget = false;
-            if (buttonSprite != null) { bgImage.sprite = buttonSprite; bgImage.type = Image.Type.Sliced; }
+            ApplySpinCardImageSprite(bgImage, useShift ? shift.innerPanelSliced : null, Image.Type.Simple);
+            bgImage.color = useShift
+                ? new Color(0.06f, 0.09f, 0.14f, 0.98f)
+                : new Color(0.03f, 0.06f, 0.12f, 1f);
 
             var innerVlg = inner.AddComponent<VerticalLayoutGroup>();
-            innerVlg.padding = new RectOffset(10, 10, 12, 10);
-            innerVlg.spacing = 8;
+            innerVlg.padding = new RectOffset(12, 12, 14, 12);
+            innerVlg.spacing = useShift ? 10 : 8;
             innerVlg.childAlignment = TextAnchor.UpperCenter;
             innerVlg.childControlWidth = true;
             innerVlg.childControlHeight = true;
             innerVlg.childForceExpandWidth = true;
             innerVlg.childForceExpandHeight = false;
 
-            var scanLine = new GameObject("ScanLine");
-            scanLine.transform.SetParent(inner.transform, false);
-            var scanLe = scanLine.AddComponent<LayoutElement>();
-            scanLe.preferredHeight = 3f;
-            scanLe.minHeight = 3f;
-            var scanImg = scanLine.AddComponent<Image>();
-            scanImg.color = new Color(0.35f, 0.75f, 1f, 0.65f);
-            scanImg.raycastTarget = false;
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(inner.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = useShift ? 4f : 3f;
+            accentLe.minHeight = useShift ? 4f : 3f;
+            var accentImg = accentGo.AddComponent<Image>();
+            accentImg.raycastTarget = false;
+            if (useShift && shift.accentLineSliced != null)
+            {
+                accentImg.sprite = shift.accentLineSliced;
+                accentImg.type = Image.Type.Sliced;
+                accentImg.color = new Color(0.45f, 0.82f, 1f, 0.45f);
+            }
+            else
+            {
+                accentImg.color = new Color(0.35f, 0.75f, 1f, 0.35f);
+            }
 
             var iconDock = new GameObject("IconDock");
             iconDock.transform.SetParent(inner.transform, false);
             var dockLe = iconDock.AddComponent<LayoutElement>();
-            dockLe.preferredWidth = 76f;
-            dockLe.preferredHeight = 76f;
-            dockLe.minWidth = 76f;
-            dockLe.minHeight = 76f;
+            dockLe.preferredWidth = 82f;
+            dockLe.preferredHeight = 82f;
+            dockLe.minWidth = 82f;
+            dockLe.minHeight = 82f;
             var dockBg = iconDock.AddComponent<Image>();
-            dockBg.color = new Color(0.06f, 0.12f, 0.22f, 1f);
             dockBg.raycastTarget = false;
-            if (buttonSprite != null) { dockBg.sprite = buttonSprite; dockBg.type = Image.Type.Sliced; }
+            ApplySpinCardImageSprite(dockBg, useShift ? shift.iconDockSliced : null, Image.Type.Sliced);
+            dockBg.color = useShift
+                ? new Color(0.12f, 0.2f, 0.32f, 0.95f)
+                : new Color(0.06f, 0.12f, 0.22f, 1f);
 
             var iconInner = new GameObject("Icon");
             iconInner.transform.SetParent(iconDock.transform, false);
@@ -2663,21 +2784,12 @@ namespace TitanOrbit.UI
             {
                 iconInnerRt.anchorMin = new Vector2(0.5f, 0.5f);
                 iconInnerRt.anchorMax = new Vector2(0.5f, 0.5f);
-                iconInnerRt.sizeDelta = new Vector2(64f, 64f);
+                iconInnerRt.sizeDelta = new Vector2(68f, 68f);
                 iconInnerRt.anchoredPosition = Vector2.zero;
             }
             iconImage = iconInner.AddComponent<Image>();
-            iconImage.color = new Color(0.2f, 0.55f, 0.9f, 0.5f);
+            iconImage.color = new Color(0.25f, 0.6f, 0.95f, 0.55f);
             iconImage.raycastTarget = false;
-
-            var rule = new GameObject("Rule");
-            rule.transform.SetParent(inner.transform, false);
-            var ruleLe = rule.AddComponent<LayoutElement>();
-            ruleLe.preferredHeight = 1f;
-            ruleLe.minHeight = 1f;
-            var ruleImg = rule.AddComponent<Image>();
-            ruleImg.color = new Color(0.25f, 0.45f, 0.62f, 0.55f);
-            ruleImg.raycastTarget = false;
 
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(inner.transform, false);
@@ -2717,11 +2829,13 @@ namespace TitanOrbit.UI
             descPanelLe.flexibleHeight = 1f;
             descPanelLe.minHeight = 72f;
             var descBg = descPanel.AddComponent<Image>();
-            descBg.color = new Color(0.05f, 0.09f, 0.16f, 0.98f);
             descBg.raycastTarget = false;
-            if (buttonSprite != null) { descBg.sprite = buttonSprite; descBg.type = Image.Type.Sliced; }
+            ApplySpinCardImageSprite(descBg, useShift ? shift.innerPanelSliced : null, Image.Type.Simple);
+            descBg.color = useShift
+                ? new Color(0.04f, 0.07f, 0.11f, 0.94f)
+                : new Color(0.05f, 0.09f, 0.16f, 0.98f);
             var descVlg = descPanel.AddComponent<VerticalLayoutGroup>();
-            descVlg.padding = new RectOffset(8, 8, 8, 8);
+            descVlg.padding = new RectOffset(useShift ? 10 : 8, useShift ? 10 : 8, useShift ? 10 : 8, useShift ? 10 : 8);
             descVlg.childAlignment = TextAnchor.UpperLeft;
             descVlg.childControlWidth = true;
             descVlg.childControlHeight = true;
@@ -2753,8 +2867,10 @@ namespace TitanOrbit.UI
             takeBtnLe.preferredHeight = 38f;
             takeBtnLe.minHeight = 38f;
             var takeImg = takeGo.AddComponent<Image>();
-            takeImg.color = new Color(0.12f, 0.55f, 0.42f, 1f);
-            if (buttonSprite != null) { takeImg.sprite = buttonSprite; takeImg.type = Image.Type.Sliced; }
+            ApplySpinCardImageSprite(takeImg, useShift ? shift.chooseButtonSliced : null, Image.Type.Sliced);
+            takeImg.color = useShift
+                ? new Color(0.38f, 0.78f, 1f, 0.9f)
+                : new Color(0.12f, 0.55f, 0.42f, 1f);
             takeButton = takeGo.AddComponent<Button>();
             var takeLabelGo = new GameObject("Text");
             takeLabelGo.transform.SetParent(takeGo.transform, false);
@@ -2842,6 +2958,12 @@ namespace TitanOrbit.UI
             {
                 cardSpinButton.gameObject.SetActive(true);
                 cardSpinButton.interactable = poolCount > 0 && contributedGems >= spinCost;
+                if (cardSpinButtonImage != null)
+                {
+                    var ca = cardSpinButtonImage.color;
+                    ca.a = cardSpinButton.interactable ? 1f : 0.45f;
+                    cardSpinButtonImage.color = ca;
+                }
             }
             if (cardSpinButtonLabel != null)
                 cardSpinButtonLabel.text = $"Spin — {spinCost:F0} g";
@@ -2856,18 +2978,24 @@ namespace TitanOrbit.UI
 
                 if (card == null)
                 {
+                    SpinCardShiftVisuals shEmpty = GetSpinCardShiftVisuals();
+                    bool shiftEmpty = shEmpty != null && shEmpty.outerFrameSliced != null;
                     if (cardTitleTexts[i] != null)
                     {
                         cardTitleTexts[i].enableAutoSizing = false;
                         cardTitleTexts[i].fontSize = 30f;
-                        cardTitleTexts[i].color = new Color(0.5f, 0.65f, 0.88f, 0.95f);
+                        cardTitleTexts[i].color = shiftEmpty
+                            ? new Color(0.45f, 0.62f, 0.85f, 0.88f)
+                            : new Color(0.5f, 0.65f, 0.88f, 0.95f);
                         cardTitleTexts[i].text = (i + 1).ToString();
                         ApplySpaceCardOutline(cardTitleTexts[i], 0.2f);
                     }
                     if (cardDescTexts[i] != null)
                     {
                         cardDescTexts[i].fontSize = 11f;
-                        cardDescTexts[i].color = new Color(0.72f, 0.8f, 0.92f, 1f);
+                        cardDescTexts[i].color = shiftEmpty
+                            ? new Color(0.65f, 0.78f, 0.94f, 0.92f)
+                            : new Color(0.72f, 0.8f, 0.92f, 1f);
                         cardDescTexts[i].text = "Appears after a spin";
                         ApplySpaceCardOutline(cardDescTexts[i], 0.15f);
                     }
@@ -2877,17 +3005,30 @@ namespace TitanOrbit.UI
                         cardRarityLabels[i].color = new Color(0.55f, 0.88f, 1f, 1f);
                     }
                     if (cardRarityFrameImages != null && i < cardRarityFrameImages.Length && cardRarityFrameImages[i] != null)
-                        cardRarityFrameImages[i].color = new Color(0.4f, 0.48f, 0.58f, 0.75f);
+                        cardRarityFrameImages[i].color = shiftEmpty
+                            ? new Color(0.36f, 0.5f, 0.66f, 0.5f)
+                            : new Color(0.4f, 0.48f, 0.58f, 0.75f);
                     if (cardIconImages != null && i < cardIconImages.Length && cardIconImages[i] != null)
                     {
                         cardIconImages[i].sprite = null;
-                        cardIconImages[i].color = new Color(0.22f, 0.35f, 0.52f, 0.55f);
+                        cardIconImages[i].color = shiftEmpty
+                            ? new Color(0.2f, 0.38f, 0.58f, 0.42f)
+                            : new Color(0.22f, 0.35f, 0.52f, 0.55f);
                     }
                     if (cardBgImages != null && i < cardBgImages.Length && cardBgImages[i] != null)
-                        cardBgImages[i].color = new Color(0.04f, 0.07f, 0.13f, 1f);
+                        cardBgImages[i].color = shiftEmpty
+                            ? new Color(0.05f, 0.08f, 0.12f, 0.94f)
+                            : new Color(0.04f, 0.07f, 0.13f, 1f);
                     if (cardButtons[i] != null)
                     {
                         cardButtons[i].interactable = false;
+                        var takeImgEmpty = cardButtons[i].GetComponent<Image>();
+                        if (takeImgEmpty != null && shEmpty != null && shEmpty.chooseButtonSliced != null)
+                        {
+                            takeImgEmpty.sprite = shEmpty.chooseButtonSliced;
+                            takeImgEmpty.type = Image.Type.Sliced;
+                            takeImgEmpty.color = new Color(0.15f, 0.17f, 0.22f, 0.62f);
+                        }
                         var tl = cardButtons[i].GetComponentInChildren<TextMeshProUGUI>();
                         if (tl != null)
                         {
@@ -2909,10 +3050,21 @@ namespace TitanOrbit.UI
                 }
                 int rar = Mathf.Clamp(card.rarity, 1, 5);
                 int cl = Mathf.Max(1, card.cardLevel);
+                SpinCardShiftVisuals shCard = GetSpinCardShiftVisuals();
+                bool shiftCard = shCard != null && shCard.outerFrameSliced != null;
                 if (cardRarityFrameImages != null && i < cardRarityFrameImages.Length && cardRarityFrameImages[i] != null)
-                    cardRarityFrameImages[i].color = GetCardRarityFrameColor(rar);
+                {
+                    Color rc = GetCardRarityFrameColor(rar);
+                    cardRarityFrameImages[i].color = shiftCard
+                        ? Color.Lerp(new Color(0.42f, 0.72f, 0.95f, 0.92f), rc, 0.55f)
+                        : rc;
+                }
                 if (cardBgImages != null && i < cardBgImages.Length && cardBgImages[i] != null)
-                    cardBgImages[i].color = Color.Lerp(new Color(0.04f, 0.07f, 0.13f, 1f), GetSlotTypeColor(card.slotType), 0.22f);
+                {
+                    cardBgImages[i].color = shiftCard
+                        ? Color.Lerp(new Color(0.06f, 0.09f, 0.14f, 0.98f), GetSlotTypeColor(card.slotType), 0.2f)
+                        : Color.Lerp(new Color(0.04f, 0.07f, 0.13f, 1f), GetSlotTypeColor(card.slotType), 0.22f);
+                }
                 if (cardIconImages != null && i < cardIconImages.Length && cardIconImages[i] != null)
                 {
                     if (card.icon != null)
@@ -2945,6 +3097,15 @@ namespace TitanOrbit.UI
                 {
                     bool canChoose = hasEmptySlot && levelOk && !string.IsNullOrEmpty(offerId);
                     cardButtons[i].interactable = canChoose;
+                    var takeImgFilled = cardButtons[i].GetComponent<Image>();
+                    if (takeImgFilled != null && shCard != null && shCard.chooseButtonSliced != null)
+                    {
+                        takeImgFilled.sprite = shCard.chooseButtonSliced;
+                        takeImgFilled.type = Image.Type.Sliced;
+                        takeImgFilled.color = canChoose
+                            ? new Color(0.36f, 0.78f, 1f, 0.95f)
+                            : new Color(0.22f, 0.25f, 0.32f, 0.88f);
+                    }
                     var takeLabel = cardButtons[i].GetComponentInChildren<TextMeshProUGUI>();
                     if (takeLabel != null)
                     {
@@ -3231,73 +3392,185 @@ namespace TitanOrbit.UI
             rotator.SetPreviewRect(previewRect);
         }
 
-        private Button CreateOrbitActionButton(Transform parent, string label, ref float y)
+        private void EnsureCardRemoveConfirmModal()
         {
-            var go = new GameObject("Btn_" + label.Replace(" ", ""));
-            go.transform.SetParent(parent, false);
-            var rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, y);
-            rect.sizeDelta = new Vector2(-24f, 32f);
-            y -= 32f;
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.2f, 0.35f, 0.55f, 0.95f);
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-            var btn = go.AddComponent<Button>();
-            var textGo = new GameObject("Text");
-            textGo.transform.SetParent(go.transform, false);
-            var textRect = textGo.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(8f, 4f);
-            textRect.offsetMax = new Vector2(-8f, -4f);
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 14;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            if (fontAsset != null) tmp.font = fontAsset;
-            tmp.raycastTarget = false;
-            return btn;
+            if (cardRemoveConfirmRoot != null) return;
+            var canvas = GetComponentInParent<Canvas>();
+            Transform parent = canvas != null ? canvas.transform : transform;
+            cardRemoveConfirmRoot = new GameObject("CardRemoveConfirm");
+            cardRemoveConfirmRoot.transform.SetParent(parent, false);
+            var rootRt = cardRemoveConfirmRoot.AddComponent<RectTransform>();
+            rootRt.anchorMin = Vector2.zero;
+            rootRt.anchorMax = Vector2.one;
+            rootRt.offsetMin = Vector2.zero;
+            rootRt.offsetMax = Vector2.zero;
+            var backdrop = new GameObject("Backdrop");
+            backdrop.transform.SetParent(cardRemoveConfirmRoot.transform, false);
+            var bdRt = backdrop.AddComponent<RectTransform>();
+            bdRt.anchorMin = Vector2.zero;
+            bdRt.anchorMax = Vector2.one;
+            bdRt.offsetMin = Vector2.zero;
+            bdRt.offsetMax = Vector2.zero;
+            var bdImg = backdrop.AddComponent<Image>();
+            bdImg.color = new Color(0.02f, 0.04f, 0.08f, 0.72f);
+            var bdBtn = backdrop.AddComponent<Button>();
+            bdBtn.targetGraphic = bdImg;
+            bdBtn.onClick.AddListener(OnCardRemoveConfirmCancel);
+
+            var panel = new GameObject("Panel");
+            panel.transform.SetParent(cardRemoveConfirmRoot.transform, false);
+            var panelRt = panel.AddComponent<RectTransform>();
+            panelRt.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRt.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRt.sizeDelta = new Vector2(360f, 168f);
+            var panelImg = panel.AddComponent<Image>();
+            panelImg.color = new Color(0.1f, 0.12f, 0.18f, 0.98f);
+            if (panelBackgroundSprite != null) { panelImg.sprite = panelBackgroundSprite; panelImg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(panel.transform, false);
+            var titleRt = titleGo.AddComponent<RectTransform>();
+            titleRt.anchorMin = new Vector2(0f, 1f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.pivot = new Vector2(0.5f, 1f);
+            titleRt.anchoredPosition = new Vector2(0f, -12f);
+            titleRt.sizeDelta = new Vector2(-32f, 28f);
+            var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
+            titleTmp.text = "Remove card?";
+            titleTmp.fontSize = 18;
+            titleTmp.fontStyle = FontStyles.Bold;
+            titleTmp.alignment = TextAlignmentOptions.Center;
+            titleTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
+            if (fontAsset != null) titleTmp.font = fontAsset;
+
+            var bodyGo = new GameObject("Body");
+            bodyGo.transform.SetParent(panel.transform, false);
+            var bodyRt = bodyGo.AddComponent<RectTransform>();
+            bodyRt.anchorMin = new Vector2(0f, 0f);
+            bodyRt.anchorMax = new Vector2(1f, 1f);
+            bodyRt.offsetMin = new Vector2(20f, 56f);
+            bodyRt.offsetMax = new Vector2(-20f, -44f);
+            cardRemoveConfirmBodyText = bodyGo.AddComponent<TextMeshProUGUI>();
+            cardRemoveConfirmBodyText.text = "";
+            cardRemoveConfirmBodyText.fontSize = 14;
+            cardRemoveConfirmBodyText.alignment = TextAlignmentOptions.Top;
+            cardRemoveConfirmBodyText.enableWordWrapping = true;
+            cardRemoveConfirmBodyText.color = new Color(0.82f, 0.88f, 0.96f, 0.98f);
+            if (fontAsset != null) cardRemoveConfirmBodyText.font = fontAsset;
+
+            var row = new GameObject("Buttons");
+            row.transform.SetParent(panel.transform, false);
+            var rowRt = row.AddComponent<RectTransform>();
+            rowRt.anchorMin = new Vector2(0f, 0f);
+            rowRt.anchorMax = new Vector2(1f, 0f);
+            rowRt.pivot = new Vector2(0.5f, 0f);
+            rowRt.anchoredPosition = new Vector2(0f, 14f);
+            rowRt.sizeDelta = new Vector2(-32f, 36f);
+            var rowH = row.AddComponent<HorizontalLayoutGroup>();
+            rowH.spacing = 12f;
+            rowH.childAlignment = TextAnchor.MiddleCenter;
+            rowH.childControlWidth = true;
+            rowH.childControlHeight = true;
+            rowH.childForceExpandWidth = true;
+            rowH.childForceExpandHeight = true;
+
+            var cancelGo = new GameObject("Cancel");
+            cancelGo.transform.SetParent(row.transform, false);
+            var cancelRt = cancelGo.AddComponent<RectTransform>();
+            cancelRt.sizeDelta = new Vector2(120f, 36f);
+            var cancelImg = cancelGo.AddComponent<Image>();
+            cancelImg.color = new Color(0.22f, 0.24f, 0.32f, 0.98f);
+            if (buttonSprite != null) { cancelImg.sprite = buttonSprite; cancelImg.type = Image.Type.Sliced; }
+            var cancelBtn = cancelGo.AddComponent<Button>();
+            cancelBtn.onClick.AddListener(OnCardRemoveConfirmCancel);
+            var cancelTxtGo = new GameObject("Text");
+            cancelTxtGo.transform.SetParent(cancelGo.transform, false);
+            var cancelTxtRt = cancelTxtGo.AddComponent<RectTransform>();
+            cancelTxtRt.anchorMin = Vector2.zero;
+            cancelTxtRt.anchorMax = Vector2.one;
+            cancelTxtRt.offsetMin = new Vector2(8f, 4f);
+            cancelTxtRt.offsetMax = new Vector2(-8f, -4f);
+            var cancelTmp = cancelTxtGo.AddComponent<TextMeshProUGUI>();
+            cancelTmp.text = "Cancel";
+            cancelTmp.fontSize = 14;
+            cancelTmp.alignment = TextAlignmentOptions.Center;
+            cancelTmp.color = Color.white;
+            if (fontAsset != null) cancelTmp.font = fontAsset;
+            cancelTmp.raycastTarget = false;
+
+            var removeGo = new GameObject("Remove");
+            removeGo.transform.SetParent(row.transform, false);
+            var removeRt = removeGo.AddComponent<RectTransform>();
+            removeRt.sizeDelta = new Vector2(120f, 36f);
+            var removeImg = removeGo.AddComponent<Image>();
+            removeImg.color = new Color(0.5f, 0.22f, 0.22f, 0.98f);
+            if (buttonSprite != null) { removeImg.sprite = buttonSprite; removeImg.type = Image.Type.Sliced; }
+            var removeBtn = removeGo.AddComponent<Button>();
+            removeBtn.onClick.AddListener(OnCardRemoveConfirmYes);
+            var removeTxtGo = new GameObject("Text");
+            removeTxtGo.transform.SetParent(removeGo.transform, false);
+            var removeTxtRt = removeTxtGo.AddComponent<RectTransform>();
+            removeTxtRt.anchorMin = Vector2.zero;
+            removeTxtRt.anchorMax = Vector2.one;
+            removeTxtRt.offsetMin = new Vector2(8f, 4f);
+            removeTxtRt.offsetMax = new Vector2(-8f, -4f);
+            var removeTmp = removeTxtGo.AddComponent<TextMeshProUGUI>();
+            removeTmp.text = "Remove";
+            removeTmp.fontSize = 14;
+            removeTmp.alignment = TextAlignmentOptions.Center;
+            removeTmp.color = Color.white;
+            if (fontAsset != null) removeTmp.font = fontAsset;
+            removeTmp.raycastTarget = false;
+
+            cardRemoveConfirmRoot.SetActive(false);
         }
 
-        private void OnOrbitDepositGemsClick()
+        private void ShowCardRemoveConfirm(int slotIndex)
         {
             if (currentShip == null) return;
-            currentShip.SetWantToDepositGemsServerRpc(!currentShip.WantToDepositGems);
-            // Request contributed gems soon so UI updates as gems deposit
-            contributedGemsRequestAccum = ContributedGemsRequestInterval - 0.5f;
+            var cards = currentShip.EquippedCards;
+            if (cards == null || slotIndex < 0 || slotIndex >= cards.Count) return;
+            var c = cards[slotIndex];
+            if (c == null) return;
+            _pendingRemoveSlotIndex = slotIndex;
+            EnsureCardRemoveConfirmModal();
+            if (cardRemoveConfirmBodyText != null)
+                cardRemoveConfirmBodyText.text = $"Remove \"{c.displayName}\" from your loadout?";
+            cardRemoveConfirmRoot.SetActive(true);
+            cardRemoveConfirmRoot.transform.SetAsLastSibling();
+        }
+
+        private void OnCardRemoveConfirmYes()
+        {
+            if (currentShip != null && _pendingRemoveSlotIndex >= 0)
+                currentShip.RemoveCardServerRpc(_pendingRemoveSlotIndex);
+            HideCardRemoveConfirm();
+        }
+
+        private void OnCardRemoveConfirmCancel()
+        {
+            HideCardRemoveConfirm();
+        }
+
+        private void HideCardRemoveConfirm()
+        {
+            _pendingRemoveSlotIndex = -1;
+            if (cardRemoveConfirmRoot != null)
+                cardRemoveConfirmRoot.SetActive(false);
         }
 
         private void RefreshSlots()
         {
             if (currentShip == null || slotBoxes == null) return;
 
-            // Refresh Deposit Gems button: show active state, disable when no gems or can't deposit at this planet
-            if (btnOrbitDepositGems != null && currentPlanet != null)
-            {
-                bool canDeposit = (currentPlanet is HomePlanet hp && (hp.AssignedTeam == TeamManager.Team.None || hp.AssignedTeam == currentShip.ShipTeam))
-                    || (currentPlanet.TeamOwnership == currentShip.ShipTeam);
-                bool hasGems = currentShip.CurrentGems > 0f;
-                btnOrbitDepositGems.interactable = canDeposit && hasGems;
-                var btnImg = btnOrbitDepositGems.GetComponent<Image>();
-                var btnText = btnOrbitDepositGems.GetComponentInChildren<TextMeshProUGUI>();
-                if (btnImg != null)
-                    btnImg.color = currentShip.WantToDepositGems ? new Color(0.3f, 0.6f, 0.35f, 0.98f) : new Color(0.2f, 0.35f, 0.55f, 0.95f);
-                if (btnText != null)
-                    btnText.text = currentShip.WantToDepositGems ? "Depositing Gems..." : "Deposit Gems";
-            }
             int slotCount = currentShip.SlotCount;
 
             // Resize slot panel and grid to match ship's slot count (level 2 = 2 slots, level 3 = 3 slots, etc.)
             if (!_moonDockLayoutActive && slotPanelRect != null && slotGridRect != null && storePanelRect != null)
             {
-                const float orbitActionsHeight = 32f;
                 int effectiveSlotRows = Mathf.Max(1, Mathf.Min(MaxSlotRows / SlotGridColumns, Mathf.CeilToInt((float)slotCount / SlotGridColumns)));
                 float slotGridTotalH = effectiveSlotRows * SlotCardHeight + (effectiveSlotRows - 1) * SlotCellSpacing;
-                float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
+                float slotPanelHeight = SlotPanelHeaderHeight + 8f + slotGridTotalH + 12f;
                 slotPanelRect.offsetMin = new Vector2(12f, -slotPanelHeight);
                 slotPanelRect.offsetMax = new Vector2(-12f, 0f);
                 slotGridRect.sizeDelta = new Vector2(-24f, slotGridTotalH);
@@ -3306,16 +3579,15 @@ namespace TitanOrbit.UI
             }
             else if (_moonDockLayoutActive && slotPanelRect != null && slotGridRect != null)
             {
-                const float orbitActionsHeight = 32f;
                 int effectiveSlotRows = Mathf.Max(1, Mathf.Min(MaxSlotRows / SlotGridColumns, Mathf.CeilToInt((float)slotCount / SlotGridColumns)));
                 float slotGridTotalH = effectiveSlotRows * SlotCardHeight + (effectiveSlotRows - 1) * SlotCellSpacing;
-                float slotPanelHeight = SlotPanelHeaderHeight + 8f + orbitActionsHeight + 8f + slotGridTotalH + 12f;
+                float slotPanelHeight = SlotPanelHeaderHeight + 8f + slotGridTotalH + 12f;
                 slotPanelRect.offsetMin = new Vector2(12f, -slotPanelHeight);
                 slotPanelRect.offsetMax = new Vector2(-12f, 0f);
                 slotGridRect.sizeDelta = new Vector2(-24f, slotGridTotalH);
             }
             if (loadoutSectionLabel != null)
-                loadoutSectionLabel.text = $"Ship Loadout ({slotCount} slot{(slotCount != 1 ? "s" : "")}) — click card to remove";
+                loadoutSectionLabel.text = $"Ship Loadout ({slotCount} slot{(slotCount != 1 ? "s" : "")}) — tap ✕ on a card to remove";
             var cards = currentShip.EquippedCards;
             for (int i = 0; i < slotBoxes.Length; i++)
             {
@@ -3341,17 +3613,12 @@ namespace TitanOrbit.UI
                     slotBorderImages[i].enabled = true;
                     slotBorderImages[i].color = card != null ? GetSlotTypeBorderColor(card.slotType) : new Color(0.35f, 0.4f, 0.5f, 0.8f);
                 }
-                var slotBtn = slotBoxes[i].GetComponent<Button>();
-                if (slotBtn != null) slotBtn.interactable = (card != null); // Only clickable when slot has a card (to remove)
+                if (slotDeleteButtons != null && i < slotDeleteButtons.Length && slotDeleteButtons[i] != null)
+                {
+                    slotDeleteButtons[i].gameObject.SetActive(card != null);
+                    slotDeleteButtons[i].interactable = card != null;
+                }
             }
-        }
-
-        private void OnRemoveCard(int slotIndex)
-        {
-            if (currentShip == null) return;
-            var cards = currentShip.EquippedCards;
-            if (cards == null || slotIndex < 0 || slotIndex >= cards.Count) return;
-            currentShip.RemoveCardServerRpc(slotIndex);
         }
 
         private void OnCardSpinClick()
@@ -3615,7 +3882,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Inserts a tall spacer + divider + extra air so the card shop sits well below loadout slots.</summary>
+        /// <summary>Inserts a tall spacer + extra air so the card shop sits well below loadout slots (no decorative line — avoids a bar crossing the slot row).</summary>
         private void EnsureMoonDockLoadoutCardsGap()
         {
             if (_moonDockLoadoutCardsGap != null || moonDockCenterCardsHost == null || cardsTabContent == null) return;
@@ -3628,23 +3895,6 @@ namespace TitanOrbit.UI
             gapLe.preferredHeight = 72f;
             gapLe.minHeight = 72f;
             gapLe.flexibleHeight = 0f;
-            var gapVlg = _moonDockLoadoutCardsGap.AddComponent<VerticalLayoutGroup>();
-            gapVlg.childAlignment = TextAnchor.MiddleCenter;
-            gapVlg.childControlWidth = true;
-            gapVlg.childControlHeight = true;
-            gapVlg.childForceExpandWidth = true;
-            gapVlg.padding = new RectOffset(12, 12, 20, 12);
-
-            var line = new GameObject("Divider");
-            line.transform.SetParent(_moonDockLoadoutCardsGap.transform, false);
-            var lineLe = line.AddComponent<LayoutElement>();
-            lineLe.preferredHeight = 2f;
-            lineLe.minHeight = 2f;
-            var lineImg = line.AddComponent<Image>();
-            lineImg.color = new Color(0.45f, 0.78f, 1f, 0.55f);
-            var lineRt = line.GetComponent<RectTransform>();
-            if (lineRt != null)
-                lineRt.sizeDelta = new Vector2(-48f, 2f);
 
             _moonDockLoadoutCardsGap.transform.SetSiblingIndex(insertAt);
 

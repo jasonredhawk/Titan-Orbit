@@ -33,6 +33,9 @@ namespace TitanOrbit.Systems
         /// <summary>Last card IDs received from a spin (client). Empty strings mean no offer in that slot.</summary>
         private readonly string[] _clientSpinOfferCardIds = new string[3];
 
+        /// <summary>Fires on the purchasing client after a spin card is equipped — offer is cleared so the UI can show empty slots until the next spin.</summary>
+        public static event Action ClientSpinOfferConsumed;
+
         private void Awake()
         {
             if (Instance == null)
@@ -747,7 +750,10 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void NotifyCardPurchasedClientRpc(string cardId, ulong shipNetworkId, ClientRpcParams rpcParams = default)
         {
-            // Hook for UI feedback (e.g. floating text, SFX).
+            _clientSpinOfferCardIds[0] = string.Empty;
+            _clientSpinOfferCardIds[1] = string.Empty;
+            _clientSpinOfferCardIds[2] = string.Empty;
+            ClientSpinOfferConsumed?.Invoke();
         }
 
         [ClientRpc]

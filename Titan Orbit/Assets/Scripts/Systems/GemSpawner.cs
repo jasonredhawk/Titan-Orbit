@@ -180,7 +180,7 @@ namespace TitanOrbit.Systems
             return Mathf.Lerp(1.5f, 2.2f, (gemValue - 45f) / 25f);
         }
         
-        /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot collect for 3 sec.</summary>
+        /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
         {
@@ -201,7 +201,7 @@ namespace TitanOrbit.Systems
             }
         }
 
-        /// <summary>Spawns a gem expelled from ship toward planet for deposit. 1 gem/sec. Value = shipLevel×5; size shows value.</summary>
+        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value = amount passed in; size shows value.</summary>
         public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, int shipLevel, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             GameObject prefab = GetGemPrefab();

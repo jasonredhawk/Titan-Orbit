@@ -405,6 +405,15 @@ namespace TitanOrbit.Entities
         private NetworkList<EquippedCardId> equippedCardIds;
 
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
+        /// <summary>Per level after 1, mobility loses this fraction of the <em>base</em> stat: base − (base × this) × (level − 1).</summary>
+        private const float ShipLevelMobilityPenaltyFractionPerLevel = 0.11f;
+
+        /// <summary>Ship-level mobility: moveSpeed − (moveSpeed × 0.11) × (level−1); same pattern for rotation and per-part move.</summary>
+        private static float ApplyShipLevelMobilityScale(float baseStat, float perLvlAfterOne)
+        {
+            if (perLvlAfterOne <= 0f || baseStat <= 0f) return baseStat;
+            return baseStat - (baseStat * ShipLevelMobilityPenaltyFractionPerLevel) * perLvlAfterOne;
+        }
 
         /// <summary>Engine thrust force. More engines = more force; heavier ship = less acceleration (F/m).</summary>
         private float EffectiveEngineThrust
@@ -568,7 +577,7 @@ namespace TitanOrbit.Entities
         private float lastOrbitDetectClientTime = -999f;
         private const float OrbitDetectInterval = 1.5f;
         private bool wasMovePressedLastFrame;
-        private float depositAccumulator; // Gems accumulated for deposit (1 gem per spawn, interval = 1/(shipLevel*2) sec)
+        private float depositAccumulator; // Accumulates toward next deposit chunk (shipLevel gems per chunk, 2 chunks/sec)
         private float lastDepositSpawnTime = -999f;
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
@@ -2847,7 +2856,7 @@ namespace TitanOrbit.Entities
                 ScoreSystem.Instance.AwardDeposit(this, amount);
         }
 
-        /// <summary>Server: while docked at gem moon, 1 gem/sec of value shipLevel×5; applied directly to planet level gems.</summary>
+        /// <summary>Server: while docked at gem moon, deposits shipLevel gems per tick at 2 ticks/sec; applied directly to planet level gems.</summary>
         private void TickOrbitGemDeposit()
         {
             if (!gemMoonDocked.Value)
@@ -2890,8 +2899,8 @@ namespace TitanOrbit.Entities
             }
             else
             {
-            float gemValue = ShipLevel * 5f; // e.g. level 3 = 15 value per gem
-            float rate = gemValue * Time.fixedDeltaTime; // 1 gem per second
+            float gemValue = Mathf.Max(1f, ShipLevel); // gems credited per deposit tick
+            float rate = gemValue * 2f * Time.fixedDeltaTime; // 2 deposit ticks per second
             if (debugModeEnabled) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
@@ -2899,7 +2908,7 @@ namespace TitanOrbit.Entities
 
             depositAccumulator += amount;
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
-            const float gemInterval = 1f; // always 1 gem per second
+            const float gemInterval = 0.5f; // twice per second
             bool shouldDepositChunk = depositAccumulator >= gemValue && currentGems.Value >= gemValue && (now - lastDepositSpawnTime) >= gemInterval;
             if (shouldDepositChunk)
             {
@@ -4036,12 +4045,13 @@ namespace TitanOrbit.Entities
                 healthRegenRate = Mathf.Max(0f, s.healthRegen + s.healthRegenPerLevel * perLvl);
                 energyCapacity = Mathf.Max(1f, s.energyCap + s.energyCapPerLevel * perLvl);
                 energyRegenRate = Mathf.Max(0f, s.energyRegen + s.energyRegenPerLevel * perLvl);
-                rotationSpeed = Mathf.Max(1f, s.turnSpeed + s.turnSpeedPerLevel * perLvl);
+                rotationSpeed = Mathf.Max(1f, ApplyShipLevelMobilityScale(s.turnSpeed, perLvl));
                 rotationSpeedFromShipFamilyDefinition = true;
                 gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
 
-                float moveVal = s.moveSpeed + s.moveSpeedPerLevel * perLvl;
+                // Movement: proportional penalty per level (see ApplyShipLevelMobilityScale).
+                float moveVal = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(s.moveSpeed, perLvl));
                 // Thrust = sum of engine + thruster move speeds; max speed = best engine (or best thruster if no engines). Never use total moveVal as top speed.
                 float sumPropulsionMoveSpeed = 0f;
                 float maxEngineMoveSpeed = 0f;
@@ -4052,7 +4062,7 @@ namespace TitanOrbit.Entities
                     {
                         string cid = matchedComponentIds[k];
                         ShipComponentAbilityStats comp = perComponentStats[k];
-                        float partSpeed = comp.moveSpeed + comp.moveSpeedPerLevel * perLvl;
+                        float partSpeed = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(comp.moveSpeed, perLvl));
                         if (ShipComponentAbilityStats.IsEngineComponent(cid))
                         {
                             sumPropulsionMoveSpeed += partSpeed;

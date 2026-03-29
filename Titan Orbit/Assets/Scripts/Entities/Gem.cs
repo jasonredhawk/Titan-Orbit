@@ -28,6 +28,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
+        [Tooltip("Extra distance beyond collectRadius for center-to-center checks (covers ship hull size when triggers miss spawn-overlap).")]
+        [SerializeField] private float shipProximitySlop = 1.35f;
         [Header("Visuals")]
         [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
         [SerializeField] private Color bonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
@@ -36,12 +38,12 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> gemSize = new NetworkVariable<float>(1f); // Size multiplier (affects visual scale and value)
         private NetworkVariable<float> asteroidPhysicalSize = new NetworkVariable<float>(0.5f); // Asteroid scale for "half asteroid" gem size
         private NetworkVariable<float> spawnTime = new NetworkVariable<float>(0f); // Server time when gem was spawned
-        private NetworkVariable<ulong> expelledByShipId = new NetworkVariable<ulong>(0); // When non-zero: victim ship cannot collect for 3 sec
+        private NetworkVariable<ulong> expelledByShipId = new NetworkVariable<ulong>(0); // When non-zero: victim ship cannot collect for this many sec
         private NetworkVariable<ulong> depositTargetPlanetId = new NetworkVariable<ulong>(0); // When non-zero: deposit gem flying toward planet
         private NetworkVariable<int> depositTeam = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> depositClientId = new NetworkVariable<ulong>(0);
         private NetworkVariable<ulong> magnetPriorityShipId = new NetworkVariable<ulong>(0); // Ship that dealt most damage to source asteroid
-        private const float EXPELLED_UNCOLLECTABLE_DURATION = 3f;
+        private const float EXPELLED_UNCOLLECTABLE_DURATION = 2f;
         private Rigidbody rb;
         private Renderer gemRenderer;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
@@ -191,7 +193,7 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect for 3 sec; enemies can collect immediately.</summary>
+        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect for 2 sec; enemies can collect immediately.</summary>
         public void InitializeFromShip(float gemValue, float sizeMultiplier, ulong expelledByShipNetworkId)
         {
             if (IsServer)
@@ -251,7 +253,14 @@ namespace TitanOrbit.Entities
             if (IsServer) isInPool.Value = false;
         }
 
-        private void OnTriggerEnter(Collider other)
+        private void OnTriggerEnter(Collider other) => TryHandlePickupTrigger(other);
+
+        /// <summary>
+        /// Gems that spawn already overlapping the ship often never get OnTriggerEnter; Stay keeps collection working while overlapped.
+        /// </summary>
+        private void OnTriggerStay(Collider other) => TryHandlePickupTrigger(other);
+
+        private void TryHandlePickupTrigger(Collider other)
         {
             if (!IsServer) return;
             if (value.Value <= 0) return;
@@ -305,20 +314,52 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponent<Starship>();
             if (ship == null) return;
 
-            // Respect expelled cooldown: victim ship cannot collect for a short duration
-            ulong expelledId = expelledByShipId.Value;
-            if (expelledId != 0)
-            {
-                var shipNo = ship.NetworkObject;
-                if (shipNo != null && shipNo.NetworkObjectId == expelledId)
-                {
-                    float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
-                    if (elapsed < EXPELLED_UNCOLLECTABLE_DURATION)
-                        return;
-                }
-            }
+            if (IsExpelledVictimStillBlocked(ship))
+                return;
 
             CollectToShip(ship);
+        }
+
+        private bool IsExpelledVictimStillBlocked(Starship ship)
+        {
+            ulong expelledId = expelledByShipId.Value;
+            if (expelledId == 0) return false;
+            var shipNo = ship.NetworkObject;
+            if (shipNo == null || shipNo.NetworkObjectId != expelledId) return false;
+            float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+            return elapsed < EXPELLED_UNCOLLECTABLE_DURATION;
+        }
+
+        /// <summary>
+        /// Fallback when trigger enter/stay never run (e.g. spawned deep inside hull, or trigger pairs not registered yet).
+        /// </summary>
+        private void TryProximityCollectShip()
+        {
+            if (value.Value <= 0f) return;
+            if (depositTargetPlanetId.Value != 0) return;
+
+            Vector3 gemPos = rb != null ? rb.position : transform.position;
+            gemPos.y = 0f;
+
+            float maxDist = collectRadius + shipProximitySlop;
+
+            foreach (var ship in GetCachedShipsForServer())
+            {
+                if (ship == null || ship.IsDead) continue;
+                Vector3 shipPos = ship.transform.position;
+                var srb = ship.GetComponent<Rigidbody>();
+                if (srb != null) shipPos = srb.position;
+                shipPos.y = 0f;
+
+                if (ToroidalMap.ToroidalDistance(gemPos, shipPos) > maxDist)
+                    continue;
+
+                if (IsExpelledVictimStillBlocked(ship))
+                    continue;
+
+                CollectToShip(ship);
+                return;
+            }
         }
 
         private void CollectToShip(Starship ship)
@@ -421,6 +462,8 @@ namespace TitanOrbit.Entities
                     rb.linearDamping = 0f;
                 }
             }
+
+            TryProximityCollectShip();
         }
 
         private static Starship[] GetCachedShipsForServer()

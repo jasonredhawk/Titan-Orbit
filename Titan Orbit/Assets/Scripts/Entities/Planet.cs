@@ -24,6 +24,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private int planetId = 0;
         [SerializeField] private float baseMaxPopulation = 100f;
         [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
+        [Tooltip("Seconds after the last hostile unload (people dropped on this planet) before passive population growth resumes.")]
+        [SerializeField] private float populationGrowthPauseAfterAttackSeconds = 1f;
         [SerializeField] private float planetSize = 1f;
         [SerializeField] private float captureRadius = 5f;
 
@@ -247,6 +249,8 @@ namespace TitanOrbit.Entities
 
         private const float PopulationDisplayInterval = 0.2f;
         private float lastPopulationDisplayUpdate = -999f;
+        /// <summary>Server Time.time when hostile unload last reduced population (capture pressure). Growth waits until pause elapses.</summary>
+        private float lastHostilePopulationImpactServerTime = -999f;
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
@@ -453,7 +457,8 @@ namespace TitanOrbit.Entities
             {
                 // Grow population over time for all planets (owned and neutral) up to cap.
                 float effectiveMax = MaxPopulation;
-                if (currentPopulation.Value < effectiveMax)
+                if (currentPopulation.Value < effectiveMax
+                    && Time.time >= lastHostilePopulationImpactServerTime + populationGrowthPauseAfterAttackSeconds)
                 {
                     float growth = GetGrowthRatePerSecond() * Time.deltaTime;
                     if (GameManager.Instance != null && GameManager.Instance.DebugMode) growth *= 100f;
@@ -1062,6 +1067,8 @@ namespace TitanOrbit.Entities
                 return;
             }
             // Neutral or enemy: unload decreases their population (capture attempt)
+            if (amount > 0f)
+                lastHostilePopulationImpactServerTime = Time.time;
             currentPopulation.Value -= amount;
             if (currentPopulation.Value <= 0)
             {
