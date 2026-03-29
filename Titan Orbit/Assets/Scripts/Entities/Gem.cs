@@ -44,6 +44,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<ulong> depositClientId = new NetworkVariable<ulong>(0);
         private NetworkVariable<ulong> magnetPriorityShipId = new NetworkVariable<ulong>(0); // Ship that dealt most damage to source asteroid
         private const float EXPELLED_UNCOLLECTABLE_DURATION = 2f;
+        /// <summary>Server-only pickup gate: this ship cannot collect until <see cref="serverNoImmediatePickupUntilTime"/> (set for hull-expelled gems and asteroid burst gems for the top damager).</summary>
+        private ulong serverNoImmediatePickupShipId;
+        private float serverNoImmediatePickupUntilTime;
         private Rigidbody rb;
         private Renderer gemRenderer;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
@@ -189,6 +192,15 @@ namespace TitanOrbit.Entities
                 magnetPriorityShipId.Value = priorityShipNetworkId;
                 isBonusGem.Value = bonusGem;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
+                // Same short cooldown as hull expulsion: top damager cannot instantly vacuum burst gems (e.g. ramming ship on the asteroid).
+                float t = (float)NetworkManager.Singleton.ServerTime.Time;
+                if (priorityShipNetworkId != 0)
+                {
+                    serverNoImmediatePickupShipId = priorityShipNetworkId;
+                    serverNoImmediatePickupUntilTime = t + EXPELLED_UNCOLLECTABLE_DURATION;
+                }
+                else
+                    ClearServerPickupGate();
             }
             UpdateVisualScale();
         }
@@ -205,6 +217,14 @@ namespace TitanOrbit.Entities
                 depositTargetPlanetId.Value = 0;
                 isBonusGem.Value = false;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
+                float t = (float)NetworkManager.Singleton.ServerTime.Time;
+                if (expelledByShipNetworkId != 0)
+                {
+                    serverNoImmediatePickupShipId = expelledByShipNetworkId;
+                    serverNoImmediatePickupUntilTime = t + EXPELLED_UNCOLLECTABLE_DURATION;
+                }
+                else
+                    ClearServerPickupGate();
             }
             UpdateVisualScale();
         }
@@ -223,6 +243,7 @@ namespace TitanOrbit.Entities
                 depositClientId.Value = clientId;
                 isBonusGem.Value = false;
                 spawnTime.Value = (float)NetworkManager.Singleton.ServerTime.Time;
+                ClearServerPickupGate();
                 if (rb != null) rb.linearDamping = 0f; // No slowdown - fly straight to planet
             }
             UpdateVisualScale();
@@ -237,6 +258,7 @@ namespace TitanOrbit.Entities
             magnetPriorityShipId.Value = 0;
             expelledByShipId.Value = 0;
             isBonusGem.Value = false;
+            ClearServerPickupGate();
             transform.position = Vector3.zero;
             if (rb != null)
             {
@@ -251,6 +273,12 @@ namespace TitanOrbit.Entities
         public void ServerActivateFromPool()
         {
             if (IsServer) isInPool.Value = false;
+        }
+
+        private void ClearServerPickupGate()
+        {
+            serverNoImmediatePickupShipId = 0;
+            serverNoImmediatePickupUntilTime = 0f;
         }
 
         private void OnTriggerEnter(Collider other) => TryHandlePickupTrigger(other);
@@ -314,20 +342,19 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponent<Starship>();
             if (ship == null) return;
 
-            if (IsExpelledVictimStillBlocked(ship))
+            if (IsShipTemporarilyBlockedFromPickup(ship))
                 return;
 
             CollectToShip(ship);
         }
 
-        private bool IsExpelledVictimStillBlocked(Starship ship)
+        /// <summary>Server: hull-expelled gems and asteroid burst gems both gate the relevant ship for a short time (authoritative fields, not NetworkVariables).</summary>
+        private bool IsShipTemporarilyBlockedFromPickup(Starship ship)
         {
-            ulong expelledId = expelledByShipId.Value;
-            if (expelledId == 0) return false;
+            if (serverNoImmediatePickupShipId == 0) return false;
             var shipNo = ship.NetworkObject;
-            if (shipNo == null || shipNo.NetworkObjectId != expelledId) return false;
-            float elapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
-            return elapsed < EXPELLED_UNCOLLECTABLE_DURATION;
+            if (shipNo == null || shipNo.NetworkObjectId != serverNoImmediatePickupShipId) return false;
+            return (float)NetworkManager.Singleton.ServerTime.Time < serverNoImmediatePickupUntilTime;
         }
 
         /// <summary>
@@ -354,7 +381,7 @@ namespace TitanOrbit.Entities
                 if (ToroidalMap.ToroidalDistance(gemPos, shipPos) > maxDist)
                     continue;
 
-                if (IsExpelledVictimStillBlocked(ship))
+                if (IsShipTemporarilyBlockedFromPickup(ship))
                     continue;
 
                 CollectToShip(ship);

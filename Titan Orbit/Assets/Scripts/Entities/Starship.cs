@@ -2948,7 +2948,24 @@ namespace TitanOrbit.Entities
         }
 
         [Header("Respawn Settings")]
+        [Tooltip("Seconds after death before the ship respawns at its home/origin orbit.")]
         [SerializeField] private float respawnDelay = 5f;
+
+        [Header("Death breakup (client-only)")]
+        [Tooltip("Cap for detached physics pieces so huge modular ships stay affordable.")]
+        [SerializeField] private int maxDeathDebrisPieces = 64;
+        [SerializeField] private float deathDebrisMinImpulse = 5f;
+        [SerializeField] private float deathDebrisMaxImpulse = 14f;
+        [Tooltip("Each shard multiplies its sampled horizontal speed by a value in this range (strongly differentiates pieces).")]
+        [SerializeField] private float deathDebrisPieceSpeedMulMin = 0.35f;
+        [SerializeField] private float deathDebrisPieceSpeedMulMax = 1.95f;
+        [SerializeField] private float deathDebrisUpImpulseMin = 0f;
+        [SerializeField] private float deathDebrisUpImpulseMax = 3.5f;
+        [SerializeField] private float deathDebrisAngularVelMin = 2.5f;
+        [SerializeField] private float deathDebrisAngularVelMax = 12f;
+        [SerializeField] private float deathDebrisDrag = 2.2f;
+        [Tooltip("How long debris objects live before Destroy (match or exceed respawn delay).")]
+        [SerializeField] private float deathDebrisLifetime = 5f;
 
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc(ulong killerShipNetworkId = 0)
@@ -2980,11 +2997,10 @@ namespace TitanOrbit.Entities
                 moveDirection = Vector3.zero;
             }
             
-            // Hide ship visually and spawn explosion
-            HideShipVisuals();
+            // Detach mesh pieces with physics on clients, then hide the real ship; central explosion VFX
+            ShipDeathBreakupClientRpc();
             SpawnDeathExplosion();
-            
-            // Delay respawn by 5 seconds
+
             Invoke(nameof(RespawnServerRpc), respawnDelay);
         }
 
@@ -3080,14 +3096,105 @@ namespace TitanOrbit.Entities
                 PlaceShipInOrbitAround(home);
         }
 
-        /// <summary>Hide all renderers to make ship invisible when dead.</summary>
-        private void HideShipVisuals()
+        [ClientRpc]
+        private void ShipDeathBreakupClientRpc()
         {
-            HideShipVisualsClientRpc();
+            SpawnDeathDebrisClientLocal();
+            DisableShipRenderersAndCollidersClientLocal();
         }
 
-        [ClientRpc]
-        private void HideShipVisualsClientRpc()
+        /// <summary>Spawns non-networked rigidbody shards from the ship visual (Prefab + card parts) for a local breakup effect.</summary>
+        private void SpawnDeathDebrisClientLocal()
+        {
+            Transform root = GetCardVisualRoot();
+            if (root == null && visualRoot != null)
+                root = visualRoot;
+            if (root == null) return;
+
+            Vector3 explosionCenter = transform.position;
+            explosionCenter.y = FIXED_Y_POSITION;
+            int count = 0;
+
+            var meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < meshFilters.Length && count < maxDeathDebrisPieces; i++)
+            {
+                MeshFilter mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null) continue;
+                MeshRenderer mr = mf.GetComponent<MeshRenderer>();
+                if (mr == null || !mr.enabled) continue;
+                if (mr.bounds.extents.sqrMagnitude < 1e-8f) continue;
+                if (TrySpawnOneDebrisPiece(mf.transform, mf.sharedMesh, mr.sharedMaterials, false, null, explosionCenter))
+                    count++;
+            }
+
+            var skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            for (int i = 0; i < skins.Length && count < maxDeathDebrisPieces; i++)
+            {
+                SkinnedMeshRenderer skin = skins[i];
+                if (skin == null || !skin.enabled) continue;
+                if (skin.bounds.extents.sqrMagnitude < 1e-8f) continue;
+                Mesh baked = new Mesh();
+                skin.BakeMesh(baked, true);
+                if (TrySpawnOneDebrisPiece(skin.transform, baked, skin.sharedMaterials, true, baked, explosionCenter))
+                    count++;
+            }
+        }
+
+        private bool TrySpawnOneDebrisPiece(Transform source, Mesh mesh, Material[] materials, bool destroyMeshWithPiece, Mesh meshToDestroy, Vector3 explosionCenter)
+        {
+            if (mesh == null) return false;
+
+            var go = new GameObject("ShipDebris");
+            go.transform.SetPositionAndRotation(source.position, source.rotation);
+            go.transform.localScale = source.lossyScale;
+
+            var mf = go.AddComponent<MeshFilter>();
+            mf.sharedMesh = mesh;
+
+            var mr = go.AddComponent<MeshRenderer>();
+            if (materials != null && materials.Length > 0)
+                mr.sharedMaterials = materials;
+
+            Bounds mb = mesh.bounds;
+            var box = go.AddComponent<BoxCollider>();
+            box.center = mb.center;
+            box.size = mb.size;
+
+            var debRb = go.AddComponent<Rigidbody>();
+            debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            debRb.linearDamping = deathDebrisDrag;
+            debRb.angularDamping = 0.8f;
+            debRb.mass = Mathf.Clamp(mb.size.magnitude * 0.35f, 0.04f, 3f);
+
+            Vector3 shardPos = go.transform.TransformPoint(mb.center);
+            Vector3 dir = shardPos - explosionCenter;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+            {
+                Vector2 c = Random.insideUnitCircle.normalized;
+                dir = new Vector3(c.x, 0f, c.y);
+            }
+            else
+                dir.Normalize();
+
+            float horizontalSpeed = Random.Range(deathDebrisMinImpulse, deathDebrisMaxImpulse)
+                * Random.Range(deathDebrisPieceSpeedMulMin, deathDebrisPieceSpeedMulMax);
+            Vector3 vel = dir * horizontalSpeed;
+            vel.y = Random.Range(deathDebrisUpImpulseMin, deathDebrisUpImpulseMax);
+            debRb.linearVelocity = vel;
+            debRb.angularVelocity = Random.insideUnitSphere * Random.Range(deathDebrisAngularVelMin, deathDebrisAngularVelMax);
+
+            if (destroyMeshWithPiece && meshToDestroy != null)
+            {
+                var disposer = go.AddComponent<DestroyMeshWithGameObject>();
+                disposer.Mesh = meshToDestroy;
+            }
+
+            Object.Destroy(go, deathDebrisLifetime);
+            return true;
+        }
+
+        private void DisableShipRenderersAndCollidersClientLocal()
         {
             Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
             foreach (var renderer in renderers)
@@ -3095,8 +3202,7 @@ namespace TitanOrbit.Entities
                 if (renderer != null)
                     renderer.enabled = false;
             }
-            
-            // Also disable colliders so dead ships don't interfere
+
             Collider[] colliders = GetComponentsInChildren<Collider>(true);
             foreach (var collider in colliders)
             {
@@ -4700,6 +4806,18 @@ namespace TitanOrbit.Entities
             shipLevel = level;
             if (networkShipLevel != null)
                 networkShipLevel.Value = level;
+        }
+
+        /// <summary>Releases runtime baked meshes used for death debris so they do not leak.</summary>
+        private sealed class DestroyMeshWithGameObject : MonoBehaviour
+        {
+            public Mesh Mesh;
+
+            private void OnDestroy()
+            {
+                if (Mesh != null)
+                    Destroy(Mesh);
+            }
         }
     }
 }
