@@ -1344,7 +1344,7 @@ namespace TitanOrbit.UI
             ApplyShipTreeCanvasWidth();
 
             UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
             {
                 _shipTreeStructureKey = "";
                 ClearShipTreeVisuals();
@@ -1386,9 +1386,10 @@ namespace TitanOrbit.UI
 
         private string GetShipDisplayName(ShipUpgradeNode node, int level, int branchIndex)
         {
-            if (currentShip != null && currentPlanet != null && CardShopSystem.Instance != null)
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (currentShip != null && storePlanet != null && CardShopSystem.Instance != null)
             {
-                string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+                string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
                 if (!string.IsNullOrEmpty(treeName))
                     return treeName.Trim();
             }
@@ -1402,10 +1403,11 @@ namespace TitanOrbit.UI
 
         private Sprite ResolveShipTreePreviewSprite(int level, int branchIndex)
         {
-            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return null;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return null;
             if (level <= 1)
                 return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
         }
 
         private string GetStarterShipDisplayName()
@@ -1428,6 +1430,8 @@ namespace TitanOrbit.UI
         {
             UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
             if (tree == null || currentShip == null || shipTreeNodes.Count == 0) return;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (storePlanet == null) return;
 
             int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
             int currentLevel = currentShip.ShipLevel;
@@ -1435,8 +1439,8 @@ namespace TitanOrbit.UI
             int nextLevel = currentLevel + 1;
             float nextCost = tree.GetGemCostForLevel(nextLevel);
             var available = tree.GetAvailableUpgrades(currentLevel, currentBranch);
-            bool canBuyAny = currentPlanet != null && CardShopSystem.Instance != null
-                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, currentPlanet, out _, out _, out _);
+            bool canBuyAny = CardShopSystem.Instance != null
+                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, storePlanet, out _, out _, out _);
 
             if (shipTreeHintText != null)
             {
@@ -1478,9 +1482,9 @@ namespace TitanOrbit.UI
                 }
 
                 bool canApplyPurchase = view.Node != null && view.Node.shipData != null;
-                if (!canApplyPurchase && currentPlanet != null && CardShopSystem.Instance != null)
+                if (!canApplyPurchase && CardShopSystem.Instance != null)
                 {
-                    string ladderCid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, currentPlanet.PlanetId, view.Level, view.BranchIndex);
+                    string ladderCid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex);
                     canApplyPurchase = !string.IsNullOrEmpty(ladderCid);
                 }
                 view.Button.interactable = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlockedByPlanet && canApplyPurchase;
@@ -1540,7 +1544,7 @@ namespace TitanOrbit.UI
             }
 
             UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
             {
                 if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
                 return;
@@ -2201,11 +2205,12 @@ namespace TitanOrbit.UI
 
         private ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
-            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null)
                 return default;
             if (level <= 1)
                 return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, currentPlanet.PlanetId, level, branchIndex);
+            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
         }
 
         /// <summary>Strongest ship’s total power (O+D+E+M+C) in the visible tree — used as the width scale for stacked segments.</summary>
@@ -2332,9 +2337,10 @@ namespace TitanOrbit.UI
 
         private void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)
         {
-            if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
             if (nodeLevel != currentShip.ShipLevel + 1) return;
-            var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
+            var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
             CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, targetBranchIndex);
             pendingGemsRequest = true;
@@ -4120,7 +4126,7 @@ namespace TitanOrbit.UI
             if (shipTreeCanvas == null) return;
 
             UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || currentPlanet == null || CardShopSystem.Instance == null)
+            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
             {
                 if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
                 return;
@@ -4221,6 +4227,21 @@ namespace TitanOrbit.UI
 
             if (shipTreeCenterRow != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
+        }
+
+        private Planet GetShipUpgradeStorePlanet()
+        {
+            if (currentShip == null) return null;
+            if (currentPlanet != null)
+            {
+                bool isHome = currentPlanet is HomePlanet hp && hp.AssignedTeam == currentShip.ShipTeam;
+                bool isCaptured = !isHome && currentPlanet.TeamOwnership == currentShip.ShipTeam;
+                if (isHome || isCaptured)
+                    return currentPlanet;
+            }
+            if (currentHomePlanet != null && currentHomePlanet.AssignedTeam == currentShip.ShipTeam)
+                return currentHomePlanet;
+            return currentPlanet;
         }
 
         private void OnBuyChassis(int index)

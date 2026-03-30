@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
@@ -28,6 +29,8 @@ namespace TitanOrbit.Entities
 
         [Header("Visual")]
         [SerializeField] private Renderer asteroidRenderer;
+        [SerializeField] private float respawnScaleAnimDuration = 0.45f;
+        [SerializeField, Range(0.01f, 1f)] private float respawnScaleAnimStartMultiplier = 0.08f;
 
         private Vector3 spawnPosition;
         private Vector3 spawnScale;
@@ -36,6 +39,7 @@ namespace TitanOrbit.Entities
         private Collider col;
         private Vector3 rotationAxis;
         private float rotationSpeed;
+        private Coroutine respawnScaleAnimRoutine;
 
         private Color? originalColor;
         private bool hasAppliedSurfaceVariation;
@@ -128,11 +132,6 @@ namespace TitanOrbit.Entities
                 {
                     sphereCol.isTrigger = false;
                 }
-                // High-friction material so ships can ram and sustain pressure without slipping off
-                if (col.sharedMaterial == null)
-                {
-                    col.sharedMaterial = GetOrCreateAsteroidRammingMaterial();
-                }
             }
         }
 
@@ -147,21 +146,6 @@ namespace TitanOrbit.Entities
                 originalColor = mat.GetColor("_Color");
             else if (mat.HasProperty("_BaseColor"))
                 originalColor = mat.GetColor("_BaseColor");
-        }
-
-        private static PhysicsMaterial asteroidRammingMaterial;
-        private static PhysicsMaterial GetOrCreateAsteroidRammingMaterial()
-        {
-            if (asteroidRammingMaterial != null) return asteroidRammingMaterial;
-            asteroidRammingMaterial = new PhysicsMaterial("AsteroidRamming")
-            {
-                dynamicFriction = 0.9f,
-                staticFriction = 0.9f,
-                frictionCombine = PhysicsMaterialCombine.Maximum,
-                bounceCombine = PhysicsMaterialCombine.Minimum,
-                bounciness = 0f
-            };
-            return asteroidRammingMaterial;
         }
 
         public override void OnNetworkSpawn()
@@ -284,6 +268,52 @@ namespace TitanOrbit.Entities
         private void OnDestroy()
         {
             AllAsteroids.Remove(this);
+        }
+
+        public void TriggerRespawnScaleAnimation()
+        {
+            if (!IsServer || !IsSpawned) return;
+            PlayRespawnScaleAnimationClientRpc(transform.localScale);
+        }
+
+        [ClientRpc]
+        private void PlayRespawnScaleAnimationClientRpc(Vector3 targetScale)
+        {
+            StartRespawnScaleAnimation(targetScale);
+        }
+
+        private void StartRespawnScaleAnimation(Vector3 targetScale)
+        {
+            if (respawnScaleAnimRoutine != null)
+                StopCoroutine(respawnScaleAnimRoutine);
+
+            if (respawnScaleAnimDuration <= 0f || respawnScaleAnimStartMultiplier >= 1f)
+            {
+                transform.localScale = targetScale;
+                return;
+            }
+
+            respawnScaleAnimRoutine = StartCoroutine(AnimateRespawnScale(targetScale));
+        }
+
+        private IEnumerator AnimateRespawnScale(Vector3 targetScale)
+        {
+            Vector3 startScale = targetScale * Mathf.Max(0.001f, respawnScaleAnimStartMultiplier);
+            transform.localScale = startScale;
+
+            float elapsed = 0f;
+            while (elapsed < respawnScaleAnimDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / respawnScaleAnimDuration);
+                // Smooth out the first/last few frames so scale-in feels less mechanical.
+                t = t * t * (3f - 2f * t);
+                transform.localScale = Vector3.LerpUnclamped(startScale, targetScale, t);
+                yield return null;
+            }
+
+            transform.localScale = targetScale;
+            respawnScaleAnimRoutine = null;
         }
 
         /// <summary>

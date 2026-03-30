@@ -29,10 +29,10 @@ namespace TitanOrbit.Audio
         private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
-        private const float WEAPON_PITCH_MIN = 0.3f;
+        private const float WEAPON_PITCH_MIN = 0.1f;
         private const float WEAPON_PITCH_MAX = 3.2f;
         private const int GEM_SOUND_POOL_SIZE = 6;
-        private const float GEM_PITCH_MIN = 0.35f;
+        private const float GEM_PITCH_MIN = 0.12f;
         private const float GEM_PITCH_MAX = 2.6f;
         private const float GEM_AMOUNT_MIN = 1f;
         private const float GEM_AMOUNT_MAX = 120f;

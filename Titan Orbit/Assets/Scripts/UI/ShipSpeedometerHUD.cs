@@ -238,7 +238,8 @@ namespace TitanOrbit.UI
             float cur = ship.CurrentHorizontalSpeed;
             float max = Mathf.Max(0.01f, ship.MaxMoveSpeed);
             speedSlider.value = Mathf.Clamp01(cur / max);
-            speedLabel.text = $"{cur:0.0} / {max:0.0}";
+            float mass = ship.CurrentMass;
+            speedLabel.text = $"SPD {cur:0.0}/{max:0.0}   MASS {mass:0.0}";
         }
     }
 }

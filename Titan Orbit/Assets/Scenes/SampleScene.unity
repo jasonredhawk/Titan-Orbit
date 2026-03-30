@@ -7852,8 +7852,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  minMapSize: 300
-  maxMapSize: 500
+  minMapSize: 100
+  maxMapSize: 100
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 120
@@ -7861,15 +7861,15 @@ MonoBehaviour:
   minTeamsPerMatch: 2
   maxTeamsPerMatch: 5
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  minNeutralPlanets: 9
-  maxNeutralPlanets: 18
+  minNeutralPlanets: 2
+  maxNeutralPlanets: 2
   minPlanetSize: 9
   maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 400
-  asteroidsAtMaxMapSize: 700
+  asteroidsAtMinMapSize: 100
+  asteroidsAtMaxMapSize: 100
   minAsteroidClusters: 8
-  maxAsteroidClusters: 100
+  maxAsteroidClusters: 20
   minAsteroidSize: 1
   maxAsteroidSize: 70
   minAsteroidSpacing: 1.5
@@ -8053,7 +8053,7 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    damageAsteroid: 0
+    damageAsteroid: 1
     damageShipOrDrone: 1
     damageMoon: 1
     healthChange: 1
@@ -13066,7 +13066,7 @@ MonoBehaviour:
   miningSound: {fileID: 8300000, guid: 15ec042c5330b894397fe2b560e22a98, type: 3}
   captureSound: {fileID: 8300000, guid: 468f662ba85278c419ef967f7c33907b, type: 3}
   explosionSound: {fileID: 8300000, guid: fdc616161abe92e4f911164effc34bfb, type: 3}
-  shipDeathSound: {fileID: 0}
+  shipDeathSound: {fileID: 8300000, guid: 8e9fd8d802b2ef144a125970278e3b9d, type: 3}
   upgradeSound: {fileID: 8300000, guid: 78419f98379502c4dbfb2774bc94e7c1, type: 3}
   musicVolume: 0.7
   sfxVolume: 1
