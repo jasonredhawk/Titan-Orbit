@@ -64,11 +64,27 @@ namespace TitanOrbit.Entities
             foreach (var r in GetComponentsInChildren<Renderer>())
             {
                 if (r == null) continue;
+                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
                 string n = r.gameObject.name;
                 if (n == "Cockpit" || n.StartsWith("Engine") || n.StartsWith("Wing"))
                     list.Add(r);
             }
-            cachedRenderers = list.Count > 0 ? list.ToArray() : GetComponentsInChildren<Renderer>();
+            if (list.Count > 0)
+            {
+                cachedRenderers = list.ToArray();
+                return cachedRenderers;
+            }
+
+            var all = GetComponentsInChildren<Renderer>();
+            var filtered = new System.Collections.Generic.List<Renderer>(all.Length);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Renderer r = all[i];
+                if (r == null) continue;
+                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
+                filtered.Add(r);
+            }
+            cachedRenderers = filtered.ToArray();
             return cachedRenderers;
         }
 

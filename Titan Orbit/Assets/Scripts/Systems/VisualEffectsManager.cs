@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TMPro;
 
@@ -92,6 +93,8 @@ namespace TitanOrbit.Systems
                 GameObject effect = Instantiate(explosionEffect, position, Quaternion.identity);
                 Destroy(effect, 5f);
             }
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayExplosionSound();
         }
 
         [ServerRpc(RequireOwnership = false)]

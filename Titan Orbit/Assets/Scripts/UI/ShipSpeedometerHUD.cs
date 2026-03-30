@@ -4,6 +4,7 @@ using UnityEngine.Serialization;
 using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.UI
 {
@@ -227,7 +228,7 @@ namespace TitanOrbit.UI
                 return;
 
             Starship ship = GetPlayerShip();
-            bool show = ship != null && ship.IsSpawned && !ship.IsDead;
+            bool show = ship != null && ship.IsSpawned && !ship.IsDead && ship.ShipTeam != TeamManager.Team.None;
             if (HUDController.ShipUpgradeTreeObscuresHud)
                 show = false;
             rootPanel.SetActive(show);

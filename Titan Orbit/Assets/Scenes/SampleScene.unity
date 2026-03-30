@@ -8183,8 +8183,8 @@ MonoBehaviour:
   gemPrefab: {fileID: 0}
   peopleTransportPrefab: {fileID: 0}
   useGemPool: 0
-  explosionSpeed: 2
-  explosionRadius: 1
+  explosionSpeed: 4
+  explosionRadius: 2
   asteroidExplosionSpeed: 2.2
   asteroidExplosionRadius: 1.4
 --- !u!114 &1207700313
@@ -13065,7 +13065,8 @@ MonoBehaviour:
   peopleTransferSound: {fileID: 8300000, guid: a6473f5264a14804e992a7a4a29cd744, type: 3}
   miningSound: {fileID: 8300000, guid: 15ec042c5330b894397fe2b560e22a98, type: 3}
   captureSound: {fileID: 8300000, guid: 468f662ba85278c419ef967f7c33907b, type: 3}
-  explosionSound: {fileID: 0}
+  explosionSound: {fileID: 8300000, guid: fdc616161abe92e4f911164effc34bfb, type: 3}
+  shipDeathSound: {fileID: 0}
   upgradeSound: {fileID: 8300000, guid: 78419f98379502c4dbfb2774bc94e7c1, type: 3}
   musicVolume: 0.7
   sfxVolume: 1

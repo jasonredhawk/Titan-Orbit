@@ -52,7 +52,10 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioClip peopleTransferSound;
         [SerializeField] private AudioClip miningSound;
         [SerializeField] private AudioClip captureSound;
+        [Tooltip("Large boom when the ship (or other) explosion VFX spawns.")]
         [SerializeField] private AudioClip explosionSound;
+        [Tooltip("Hull break / death sting when a ship is destroyed (plays with breakup VFX).")]
+        [SerializeField] private AudioClip shipDeathSound;
         [SerializeField] private AudioClip upgradeSound;
 
         [Header("Settings")]
@@ -210,6 +213,11 @@ namespace TitanOrbit.Audio
         public void PlayExplosionSound()
         {
             PlaySFX(explosionSound);
+        }
+
+        public void PlayShipDeathSound()
+        {
+            PlaySFX(shipDeathSound);
         }
 
         public void PlayUpgradeSound()

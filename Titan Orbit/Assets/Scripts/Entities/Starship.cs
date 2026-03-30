@@ -340,6 +340,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private Rigidbody rb;
         [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced. Also the transform we tilt for banking; if null at Start, a pivot is created so banking works.")]
         [SerializeField] private Transform visualRoot;
+        /// <summary>Banking pivot (Starship → BankPivot → Prefab). ToroidalRenderer repositions this for non-local ships.</summary>
+        public Transform BankPivotTransform => visualRoot;
         [Tooltip("Multiplies the loaded ship prefab scale (chassis size in the world). Lower values make the whole ship look smaller; gem-moon dock scales apply on top of this.")]
         [SerializeField] private float shipVisualScaleMultiplier = 0.175f;
 
@@ -388,9 +390,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> largeMinesCount = new NetworkVariable<int>(0);
 
         /// <summary>Index into ShipUnlockTable.entries for the current chassis (-1 = default/unknown grid). Synced so clients can show correct grid sizes.</summary>
-        private NetworkVariable<int> currentChassisIndex = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private NetworkVariable<int> currentChassisIndex = new NetworkVariable<int>(-1);
         /// <summary>Chassis ID (e.g. CraizanStar_05) when using planet ship families. Used to resolve prefab from correct family.</summary>
-        private NetworkVariable<FixedString64Bytes> currentChassisId = new NetworkVariable<FixedString64Bytes>(default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private NetworkVariable<FixedString64Bytes> currentChassisId = new NetworkVariable<FixedString64Bytes>(default);
 
         /// <summary>Ship level synced to clients so orbit UI shows correct slot count (level 2 = 2 slots, etc.).</summary>
         private NetworkVariable<int> networkShipLevel = new NetworkVariable<int>(1);
@@ -403,8 +405,6 @@ namespace TitanOrbit.Entities
 
         /// <summary>Synced list of equipped card IDs so clients can display loadout. Server keeps this in sync with equippedCards.</summary>
         private NetworkList<EquippedCardId> equippedCardIds;
-        /// <summary>Per modular hull part current health (server-authoritative).</summary>
-        private NetworkList<float> hullComponentHealth;
 
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
         /// <summary>Per level after 1, mobility loses this fraction of the <em>base</em> stat: base − (base × this) × (level − 1).</summary>
@@ -787,9 +787,12 @@ namespace TitanOrbit.Entities
 
         private void Awake()
         {
-            RefreshAIControlledFlag();
+            _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             // Run before OnNetworkSpawn/SetShipData so the BankPivot + Prefab structure exists.
             EnsureVisualRootForBanking();
+
+            if (_isAIControlled)
+                EnemyShipWorldStatsPanel.CreateAsStarshipChild(this);
 
             baseLocalScale = transform.localScale;
 
@@ -816,27 +819,11 @@ namespace TitanOrbit.Entities
                 shipCol.sharedMaterial = GetOrCreateShipRammingMaterial();
             }
 
-            // ToroidalRenderer moves BankPivot for non-local ships; local player stays unwrapped.
+            // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
             if (GetComponent<ToroidalRenderer>() == null)
                 gameObject.AddComponent<ToroidalRenderer>();
 
             equippedCardIds = new NetworkList<EquippedCardId>();
-            hullComponentHealth = new NetworkList<float>();
-        }
-
-        /// <summary>
-        /// AIShipMarker / AIStarshipController are added after prefab Awake when spawned by AIStarshipManager.
-        /// Refresh so server collision paths and owner Update logic treat AI correctly.
-        /// </summary>
-        public void RefreshAIControlledFlag()
-        {
-            _isAIControlled = GetComponent<TitanOrbit.AI.AIShipMarker>() != null
-                || GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
-        }
-
-        private void Start()
-        {
-            RefreshAIControlledFlag();
         }
 
         private const string PREFAB_CONTAINER_NAME = "Prefab";
@@ -933,12 +920,9 @@ namespace TitanOrbit.Entities
 
         private void OnDestroy()
         {
-            currentChassisIndex.OnValueChanged -= OnChassisIndexNetworkChanged;
-            currentChassisId.OnValueChanged -= OnChassisIdNetworkChanged;
             // Remove from global registry if present
             AllStarships.Remove(this);
             equippedCardIds?.Dispose();
-            hullComponentHealth?.Dispose();
             // Cancel any pending respawn invokes
             CancelInvoke(nameof(RespawnServerRpc));
         }
@@ -957,7 +941,6 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
-            RefreshAIControlledFlag();
             if (!AllStarships.Contains(this))
                 AllStarships.Add(this);
             // Server: sync initial ship level so clients show correct slot count
@@ -1039,49 +1022,6 @@ namespace TitanOrbit.Entities
             }
 
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
-
-            currentChassisIndex.OnValueChanged += OnChassisIndexNetworkChanged;
-            currentChassisId.OnValueChanged += OnChassisIdNetworkChanged;
-            TryApplyChassisVisualFromSyncedState();
-        }
-
-        private void OnChassisIndexNetworkChanged(int previous, int current)
-        {
-            TryApplyChassisVisualFromSyncedState();
-        }
-
-        private void OnChassisIdNetworkChanged(FixedString64Bytes previous, FixedString64Bytes current)
-        {
-            TryApplyChassisVisualFromSyncedState();
-        }
-
-        /// <summary>
-        /// Builds hull from networked chassis id/index on every peer. Retries when CardShop is not ready; uses <see cref="shipData.shipPrefab"/> as fallback (AI SetShipData is server-only).
-        /// </summary>
-        private void TryApplyChassisVisualFromSyncedState()
-        {
-            int idx = currentChassisIndex.Value;
-            if (idx < 0) return;
-            if (idx == _lastAppliedChassisIndex) return;
-
-            GameObject prefab = null;
-            if (CardShopSystem.Instance != null)
-            {
-                string cid = currentChassisId.Value.ToString();
-                if (!string.IsNullOrEmpty(cid))
-                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisId(cid);
-                if (prefab == null)
-                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(idx);
-            }
-
-            if (prefab == null && shipData != null && shipData.shipPrefab != null)
-                prefab = shipData.shipPrefab;
-
-            if (prefab == null)
-                return;
-
-            ApplyShipVisualFromPrefab(prefab);
-            _lastAppliedChassisIndex = idx;
         }
 
         /// <summary>Server only: called by NetworkGameManager when team is assigned (after client connect). Sets team and starts in orbit.</summary>
@@ -1097,26 +1037,6 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             shipTeam.Value = team;
-        }
-
-        /// <summary>
-        /// AI ships skip the starter chassis path in <see cref="OnNetworkSpawn"/>. Replicate chassis so clients instantiate the same prefab.
-        /// </summary>
-        public void EnsureSyncedChassisForAiVisual()
-        {
-            if (!IsServer) return;
-            if (GetComponent<TitanOrbit.AI.AIShipMarker>() == null) return;
-            if (currentChassisIndex.Value >= 0) return;
-            if (CardShopSystem.Instance == null)
-            {
-                Debug.LogWarning("Starship: EnsureSyncedChassisForAiVisual — CardShopSystem missing; AI ships may be invisible on clients.");
-                return;
-            }
-
-            string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
-            SetCurrentChassisIndex(0);
-            if (!string.IsNullOrEmpty(starterChassisId))
-                SetCurrentChassisId(starterChassisId);
         }
 
         /// <summary>Server: position ship in orbit around its team's home planet at spawn.</summary>
@@ -1174,8 +1094,24 @@ namespace TitanOrbit.Entities
                     _lastAppliedChassisIndex = 0;
                 }
             }
-            // Chassis visual: all peers (AI/other players need mesh on non-owners). Callbacks + TryApply handle retries.
-            TryApplyChassisVisualFromSyncedState();
+            // Owner: when chassis index is set (or synced), apply that ship visual so client sees the correct model
+            if (IsOwner && currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
+            {
+                string cid = currentChassisId.Value.ToString();
+                GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : null;
+                if (prefab == null)
+                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+                if (prefab != null)
+                {
+                    ApplyShipVisualFromPrefab(prefab);
+                    _lastAppliedChassisIndex = currentChassisIndex.Value;
+                }
+                else if (currentChassisIndex.Value != _lastAppliedChassisIndex)
+                {
+                    Debug.LogWarning($"Starship: No prefab for chassis '{cid}' (index {currentChassisIndex.Value}). Assign ShipUnlockTable.homeShipFamilyDefinition with an upgrade tree that has prefabs set, or assign CardShopSystem's Ship Unlock Table.");
+                    _lastAppliedChassisIndex = currentChassisIndex.Value;
+                }
+            }
 
             if (!IsOwner) return;
             // AI ships have their own controller; skip player input and orbit UI logic
@@ -1599,7 +1535,8 @@ namespace TitanOrbit.Entities
                 }
             }
             
-            // Never wrap ship RB/root: logical coords for physics/sync. Non-local ships: ToroidalRenderer moves BankPivot for display.
+            // Never wrap ship position: ship stays in world space (e.g. 100, 310). All other
+            // entities are repositioned around the player via ToroidalRenderer (display copy closest to camera).
             // Keep Y velocity constrained unless docked on moon tilted-axis track.
             if (!gemMoonDocked.Value && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
             {
@@ -3167,6 +3104,8 @@ namespace TitanOrbit.Entities
         [ClientRpc]
         private void ShipDeathBreakupClientRpc()
         {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayShipDeathSound();
             SpawnDeathDebrisClientLocal();
             DisableShipRenderersAndCollidersClientLocal();
         }
@@ -3897,6 +3836,58 @@ namespace TitanOrbit.Entities
             wantToDepositGems.Value = value;
         }
 
+        /// <summary>
+        /// Server: for AI ships, ensure networked chassis index/id are set and the matching prefab is applied so all clients see the correct hull.
+        /// Call after <see cref="SetShipData"/> when spawning AI (player starter logic in <see cref="OnNetworkSpawn"/> does not run for AI).
+        /// </summary>
+        public void EnsureSyncedChassisForAiVisual()
+        {
+            if (!IsServer || CardShopSystem.Instance == null) return;
+
+            if (currentChassisIndex.Value < 0)
+            {
+                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
+                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId)
+                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId)
+                    : null;
+                if (starterPrefab == null)
+                    starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                if (starterPrefab != null)
+                {
+                    ApplyShipVisualFromPrefab(starterPrefab);
+                    SetCurrentChassisIndex(0);
+                    if (!string.IsNullOrEmpty(starterChassisId))
+                        SetCurrentChassisId(starterChassisId);
+                    _lastAppliedChassisIndex = 0;
+                }
+            }
+            else
+            {
+                string cid = currentChassisId.Value.ToString();
+                GameObject prefab = !string.IsNullOrEmpty(cid)
+                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid)
+                    : null;
+                if (prefab == null && currentChassisIndex.Value >= 0)
+                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+                if (prefab != null)
+                {
+                    ApplyShipVisualFromPrefab(prefab);
+                    _lastAppliedChassisIndex = currentChassisIndex.Value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Re-cache AI control after <see cref="TitanOrbit.AI.AIStarshipController"/> is added at runtime, and ensure the enemy world stats panel exists.
+        /// </summary>
+        public void RefreshAIControlledFlag()
+        {
+            _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
+            if (!_isAIControlled) return;
+            if (transform.Find(EnemyShipWorldStatsPanel.ChildObjectName) != null) return;
+            EnemyShipWorldStatsPanel.CreateAsStarshipChild(this);
+        }
+
         /// <summary>Server-only: detect if ship is inside a planet's orbit zone (e.g. after spawning there). OnTriggerEnter doesn't fire for objects that start inside.</summary>
         private void TryDetectOrbitZoneServer()
         {
@@ -3946,9 +3937,6 @@ namespace TitanOrbit.Entities
             var netObj = GetComponent<NetworkObject>();
             return localPlayer != null && netObj != null && localPlayer == netObj;
         }
-
-        /// <summary>BankPivot — used by <see cref="ToroidalRenderer"/> for non-local ships.</summary>
-        public Transform BankPivotTransform => visualRoot;
 
         /// <summary>Called by PlanetOrbitZone when ship enters the orbit/loading zone. Menu is shown only once in stable orbit (see Update).</summary>
         public void EnterOrbitZone(Planet planet)
