@@ -7859,7 +7859,7 @@ MonoBehaviour:
   minHomePlanetPairSeparation: 120
   clearanceRadiusAroundHomePlanet: 80
   minTeamsPerMatch: 2
-  maxTeamsPerMatch: 5
+  maxTeamsPerMatch: 2
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
   minNeutralPlanets: 2
   maxNeutralPlanets: 2
@@ -7978,7 +7978,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba7e456b88b2f1142aa5aae88e8dc4d1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
-  aiShipsEnabled: 1
+  aiShipsEnabled: 0
   starshipPrefab: {fileID: 0}
   aiShipData: {fileID: 0}
   minAIShipsPerTeam: 5
@@ -8053,15 +8053,15 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    damageAsteroid: 1
-    damageShipOrDrone: 1
+    damageAsteroid: 0
+    damageShipOrDrone: 0
     damageMoon: 1
-    healthChange: 1
+    healthChange: 0
     peopleLoad: 1
     peopleUnload: 1
-    healing: 1
-    healthRegen: 1
-    energy: 1
+    healing: 0
+    healthRegen: 0
+    energy: 0
     upgrades: 1
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
@@ -8071,7 +8071,7 @@ MonoBehaviour:
   floatingCountPeopleColor: {r: 1, g: 0.9, b: 0.25, a: 1}
   floatingCountDuration: 1.7
   floatingCountRiseSpeed: 3
-  floatingCountFontSize: 10
+  floatingCountFontSize: 5
   floatingCountIconScale: 0.14
   floatingCountIconLocalOffset: {x: -0.45, y: 0, z: 0}
   floatingCountVerticalOffset: 0.65
@@ -8083,6 +8083,7 @@ MonoBehaviour:
   floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
+  floatingCountImpactForceColor: {r: 1, g: 0.75, b: 0.2, a: 1}
 --- !u!114 &1207700306
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8183,8 +8184,8 @@ MonoBehaviour:
   gemPrefab: {fileID: 0}
   peopleTransportPrefab: {fileID: 0}
   useGemPool: 0
-  explosionSpeed: 4
-  explosionRadius: 2
+  explosionSpeed: 2.2
+  explosionRadius: 1.4
   asteroidExplosionSpeed: 2.2
   asteroidExplosionRadius: 1.4
 --- !u!114 &1207700313

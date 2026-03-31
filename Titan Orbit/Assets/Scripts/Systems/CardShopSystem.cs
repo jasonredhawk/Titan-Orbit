@@ -56,7 +56,7 @@ namespace TitanOrbit.Systems
             var list = new List<CardData>();
             int id = 0;
 
-            CardData Add(string name, string desc, int level, int rar, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f, float miningAdd = 0f, float peopleAdd = 0f)
+            CardData Add(string name, string desc, int level, int rar, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f, float miningAdd = 0f, float peopleAdd = 0f, float gemDepositSpeedMul = 1f, float peopleTransferSpeedMul = 1f)
             {
                 var c = ScriptableObject.CreateInstance<CardData>();
                 c.cardId = "card_" + (id++);
@@ -79,6 +79,8 @@ namespace TitanOrbit.Systems
                 c.bulletSpeedMultiplier = bulletSpeedMul;
                 c.miningRateAdd = miningAdd;
                 c.peopleCapacityAdd = peopleAdd;
+                c.gemDepositSpeedMultiplier = gemDepositSpeedMul;
+                c.peopleTransferSpeedMultiplier = peopleTransferSpeedMul;
                 list.Add(c);
                 return c;
             }
@@ -97,6 +99,8 @@ namespace TitanOrbit.Systems
                     Add($"Shard Projector {L} ({rn[r]})", $"+{(6 + L + r):F0}% projectile velocity.", L, r, SlotType.Weapon, bulletSpeedMul: 1f + (0.04f * f + 0.02f * r) * rs);
                     Add($"Arc Reactor {L} ({rn[r]})", $"+{1.2f + L * 0.45f + r * 0.25f:F1} energy/sec.", L, r, SlotType.Ship, energyRegenAdd: (1.2f + L * 0.45f + r * 0.25f) * rs);
                     Add($"Capacitor Bank {L} ({rn[r]})", $"+{8f + L * 5f + r * 3f:F0} energy capacity.", L, r, SlotType.Ship, energyCapAdd: (8f + L * 5f + r * 3f) * rs);
+                    Add($"Refinery Drones {L} ({rn[r]})", $"+{(6 + L + r * 2):F0}% gem deposit speed.", L, r, SlotType.Cargo, gemDepositSpeedMul: 1f + (0.02f * f + 0.015f * r) * rs);
+                    Add($"Transit Uplink {L} ({rn[r]})", $"+{(6 + L + r * 2):F0}% people load/unload speed.", L, r, SlotType.Cargo, peopleTransferSpeedMul: 1f + (0.02f * f + 0.015f * r) * rs);
                 }
 
                 Add($"Afterburner {L}", $"+{0.25f + L * 0.12f:F2} thrust.", L, 3, SlotType.Ship, moveAdd: 0.25f + L * 0.12f);
@@ -430,28 +434,57 @@ namespace TitanOrbit.Systems
 
         private static int GetRarityWeight(int rarity)
         {
-            if (rarity <= 1) return 48;
-            if (rarity == 2) return 30;
+            // Balanced rarity drop rates (applied at rarity-selection stage):
+            // Common 50%, Uncommon 27%, Rare 14%, Epic 7%, Legendary 2%.
+            if (rarity <= 1) return 50;
+            if (rarity == 2) return 27;
             if (rarity == 3) return 14;
-            if (rarity == 4) return 6;
+            if (rarity == 4) return 7;
             return 2;
         }
 
         private static CardData PickOneWeighted(List<CardData> pool, System.Random rng)
         {
             if (pool == null || pool.Count == 0) return null;
-            int total = 0;
-            for (int i = 0; i < pool.Count; i++)
-                total += GetRarityWeight(Mathf.Max(1, pool[i].rarity));
-            if (total <= 0) return pool[rng.Next(pool.Count)];
-            int roll = rng.Next(0, total);
-            int acc = 0;
+
+            // Stage 1: roll rarity by target distribution.
+            int totalRarityWeight = 0;
+            for (int rarity = 1; rarity <= 5; rarity++)
+                totalRarityWeight += GetRarityWeight(rarity);
+            int rarityRoll = rng.Next(0, Mathf.Max(1, totalRarityWeight));
+            int selectedRarity = 1;
+            int rarityAcc = 0;
+            for (int rarity = 1; rarity <= 5; rarity++)
+            {
+                rarityAcc += GetRarityWeight(rarity);
+                if (rarityRoll < rarityAcc)
+                {
+                    selectedRarity = rarity;
+                    break;
+                }
+            }
+
+            // Stage 2: choose uniformly among cards in that rarity.
+            int matches = 0;
             for (int i = 0; i < pool.Count; i++)
             {
-                acc += GetRarityWeight(Mathf.Max(1, pool[i].rarity));
-                if (roll < acc) return pool[i];
+                if (Mathf.Max(1, pool[i].rarity) == selectedRarity)
+                    matches++;
             }
-            return pool[pool.Count - 1];
+            if (matches > 0)
+            {
+                int pick = rng.Next(matches);
+                int seen = 0;
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    if (Mathf.Max(1, pool[i].rarity) != selectedRarity) continue;
+                    if (seen == pick) return pool[i];
+                    seen++;
+                }
+            }
+
+            // Fallback if this tier has no cards at selected rarity.
+            return pool[rng.Next(pool.Count)];
         }
 
         /// <summary>Server: pay spin cost, roll three weighted random cards for this planet tier, store pending offer for <see cref="PurchaseCardServerRpc"/>.</summary>

@@ -209,6 +209,8 @@ namespace TitanOrbit.Entities
         private float _cachedCardPeopleCapacityAdd;
         private float _cachedCardDamageMultiplier = 1f;
         private float _cachedCardBulletSpeedMultiplier = 1f;
+        private float _cachedCardGemDepositSpeedMultiplier = 1f;
+        private float _cachedCardPeopleTransferSpeedMultiplier = 1f;
 
         /// <summary>Mass from chassis components (Engine, Thruster, Wing, Cockpit, Part, etc.). Used when chassis applied.</summary>
         private float componentMass = 0f;
@@ -225,7 +227,13 @@ namespace TitanOrbit.Entities
         [Header("Collision")]
         [Tooltip("How bouncy: fraction of incoming speed along the impact normal kept after bounce (0..1). Higher = bouncier (e.g. 0.95 ⇒ head-on +10 → about −9.5). 1 = full speed reversal along the normal; tangential speed unchanged (no friction).")]
         [SerializeField, Range(0f, 1f), FormerlySerializedAs("asteroidCollisionEnergyRetention")]
-        private float asteroidCollisionNormalSpeedRetention = 0.95f;
+        private float asteroidCollisionNormalSpeedRetention = 0.90f;
+        [Tooltip("Minimum impact force (N) required before showing a floating impact number on asteroid collisions.")]
+        [SerializeField, Min(0f)] private float asteroidImpactForcePopupMin = 80f;
+        [Tooltip("Ship collision damage = impact force * this value. Lower this to heavily scale down collision damage.")]
+        [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.0025f;
+        [Tooltip("Asteroid collision damage = impact force * this value. Tune separately from ship damage.")]
+        [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.0015f;
 
         private bool _hasPendingAsteroidBounce;
         private Vector3 _pendingAsteroidBounceVelocity;
@@ -601,12 +609,12 @@ namespace TitanOrbit.Entities
         /// <summary>Current rigidbody mass used by movement, momentum, and collisions.</summary>
         public float CurrentMass => rb != null ? rb.mass : EffectiveMass;
 
-        /// <summary>Stat value as if no attribute upgrades (attr=0). Used to scale components by percentage increase (current/base).</summary>
-        private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth + GetCardMaxHealthAdd());
-        private float BaseGemCapacityNoAttr => Mathf.Max(0.1f, gemCapacity + GetCardGemCapacityAdd());
+        /// <summary>Raw chassis/base stat with no attribute upgrades and no card bonuses. Used to scale components by percentage increase (current/base).</summary>
+        private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth);
+        private float BaseGemCapacityNoAttr => Mathf.Max(0.1f, gemCapacity);
         private float BasePeopleCapacityNoAttr => Mathf.Max(0.1f, peopleCapacity);
-        private float BaseEnergyCapacityNoAttr => Mathf.Max(0.1f, energyCapacity + GetCardEnergyCapacityAdd());
-        private float BaseEnergyRegenNoAttr => Mathf.Max(0.01f, energyRegenRate + GetCardEnergyRegenAdd());
+        private float BaseEnergyCapacityNoAttr => Mathf.Max(0.1f, energyCapacity);
+        private float BaseEnergyRegenNoAttr => Mathf.Max(0.01f, energyRegenRate);
         private float BaseRotationSpeedNoAttr
         {
             get
@@ -614,20 +622,20 @@ namespace TitanOrbit.Entities
                 float chassis = rotationSpeedFromShipFamilyDefinition
                     ? Mathf.Max(1f, rotationSpeed) * ShipTurnDefinitionToDegreesPerSecond
                     : rotationSpeed;
-                return Mathf.Max(1f, chassis + GetCardRotationSpeedAdd());
+                return Mathf.Max(1f, chassis);
             }
         }
-        private float BaseHealthRegenNoAttr => Mathf.Max(0.01f, healthRegenRate + GetCardHealthRegenAdd());
+        private float BaseHealthRegenNoAttr => Mathf.Max(0.01f, healthRegenRate);
         private float BaseMaxSpeedNoAttr
         {
             get
             {
                 float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
-                return Mathf.Max(0.1f, baseSpeed + GetCardMovementSpeedAdd() * 0.5f);
+                return Mathf.Max(0.1f, baseSpeed);
             }
         }
-        private float BaseDamageMultiplierNoAttr => Mathf.Max(0.1f, GetCardDamageMultiplier());
-        private float BaseSpeedMultiplierNoAttr => Mathf.Max(0.1f, GetCardBulletSpeedMultiplier());
+        private float BaseDamageMultiplierNoAttr => 1f;
+        private float BaseSpeedMultiplierNoAttr => 1f;
         public float CurrentPeople => currentPeople.Value;
         /// <summary>Server-only: release people-in-transit when a load projectile delivers. Call from PeopleTransportProjectile.</summary>
         public void ReleasePeopleInTransit(float amount)
@@ -1196,6 +1204,8 @@ namespace TitanOrbit.Entities
             _cachedCardPeopleCapacityAdd = 0f;
             _cachedCardDamageMultiplier = 1f;
             _cachedCardBulletSpeedMultiplier = 1f;
+            _cachedCardGemDepositSpeedMultiplier = 1f;
+            _cachedCardPeopleTransferSpeedMultiplier = 1f;
 
             if (equippedCards == null) return;
             foreach (var card in equippedCards)
@@ -1219,6 +1229,16 @@ namespace TitanOrbit.Entities
                 {
                     float bonus = (card.bulletSpeedMultiplier - 1f) * scale + 1f;
                     _cachedCardBulletSpeedMultiplier *= bonus;
+                }
+                if (card.gemDepositSpeedMultiplier > 0f)
+                {
+                    float bonus = (card.gemDepositSpeedMultiplier - 1f) * scale + 1f;
+                    _cachedCardGemDepositSpeedMultiplier *= bonus;
+                }
+                if (card.peopleTransferSpeedMultiplier > 0f)
+                {
+                    float bonus = (card.peopleTransferSpeedMultiplier - 1f) * scale + 1f;
+                    _cachedCardPeopleTransferSpeedMultiplier *= bonus;
                 }
             }
         }
@@ -2710,7 +2730,8 @@ namespace TitanOrbit.Entities
             float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
             bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
 
-            float rate = shipLevel * Time.fixedDeltaTime; // e.g. level 1 = 1 per second
+            float peopleDropValue = Mathf.Max(1f, ShipLevel); // people moved per transfer tick
+            float rate = peopleDropValue * 2f * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier(); // 2 transfer ticks/sec, card-scaled
             if (debugModeEnabled) rate *= 100f;
             if (rate <= 0f) return;
 
@@ -2718,7 +2739,7 @@ namespace TitanOrbit.Entities
                 || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
-            float peopleInterval = shipLevel > 0 ? 1f / shipLevel : 1f; // 1 person per spawn, shipLevel per second
+            const float peopleInterval = 0.5f; // twice per second
             bool shouldSpawnPeople = (now - lastPeopleSpawnTime) >= peopleInterval;
 
             if (friendly)
@@ -2739,19 +2760,44 @@ namespace TitanOrbit.Entities
                 float amount = Mathf.Min(rate, peopleSpaceAvailable, available);
                 if (amount > 0f) peopleLoadAccumulator += amount;
 
-                if (shouldSpawnPeople && peopleLoadAccumulator >= 1f && peopleSpaceAvailable >= 1f && available >= 1f && GemSpawner.Instance != null)
+                bool canSpawnChunk = peopleLoadAccumulator >= peopleDropValue
+                    && peopleSpaceAvailable >= peopleDropValue
+                    && available >= peopleDropValue
+                    && GemSpawner.Instance != null;
+                if (shouldSpawnPeople && canSpawnChunk)
                 {
-                    currentOrbitPlanet.RemovePopulationServerRpc(1f);
-                    peopleLoadAccumulator -= 1f;
-                    peopleInTransit += 1f;
+                    currentOrbitPlanet.RemovePopulationServerRpc(peopleDropValue);
+                    peopleLoadAccumulator -= peopleDropValue;
+                    peopleInTransit += peopleDropValue;
                     lastPeopleSpawnTime = now;
 
                     Vector3 planetPos = currentOrbitPlanet.transform.position;
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
                     var shipNo = GetComponent<NetworkObject>();
                     if (shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, 1f, shipNo.NetworkObjectId, shipTeam.Value);
+                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, peopleDropValue, shipNo.NetworkObjectId, shipTeam.Value);
 
+                }
+                else if (shouldSpawnPeople
+                    && (peopleSpaceAvailable < peopleDropValue || available < peopleDropValue)
+                    && peopleSpaceAvailable > 0f
+                    && available > 0f
+                    && GemSpawner.Instance != null)
+                {
+                    float remainder = Mathf.Min(peopleSpaceAvailable, available);
+                    if (remainder > 0f)
+                    {
+                        currentOrbitPlanet.RemovePopulationServerRpc(remainder);
+                        peopleLoadAccumulator = 0f;
+                        peopleInTransit += remainder;
+                        lastPeopleSpawnTime = now;
+
+                        Vector3 planetPos = currentOrbitPlanet.transform.position;
+                        Vector3 shipPos = rb != null ? rb.position : transform.position;
+                        var shipNo = GetComponent<NetworkObject>();
+                        if (shipNo != null)
+                            GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, remainder, shipNo.NetworkObjectId, shipTeam.Value);
+                    }
                 }
             }
             else
@@ -2772,10 +2818,13 @@ namespace TitanOrbit.Entities
                 float amount = Mathf.Min(rate, currentPeople.Value);
                 if (amount > 0f) peopleUnloadAccumulator += amount;
 
-                if (shouldSpawnPeople && peopleUnloadAccumulator >= 1f && GemSpawner.Instance != null)
+                bool canSpawnChunk = peopleUnloadAccumulator >= peopleDropValue
+                    && currentPeople.Value >= peopleDropValue
+                    && GemSpawner.Instance != null;
+                if (shouldSpawnPeople && canSpawnChunk)
                 {
-                    RemovePeopleServerRpc(1f);
-                    peopleUnloadAccumulator -= 1f;
+                    RemovePeopleServerRpc(peopleDropValue);
+                    peopleUnloadAccumulator -= peopleDropValue;
                     lastPeopleSpawnTime = now;
 
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
@@ -2783,15 +2832,40 @@ namespace TitanOrbit.Entities
                     var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                     var shipNo = GetComponent<NetworkObject>();
                     if (planetNo != null && shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, 1f, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleDropValue, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             planetPos,
                             (int)FloatingCountChannel.PeopleUnload,
-                            1f,
+                            peopleDropValue,
                             (int)shipTeam.Value);
-                    PlayPeopleUnloadSoundClientRpc(1f);
+                    PlayPeopleUnloadSoundClientRpc(peopleDropValue);
+                }
+                else if (shouldSpawnPeople
+                    && currentPeople.Value > 0f
+                    && currentPeople.Value < peopleDropValue
+                    && GemSpawner.Instance != null)
+                {
+                    float remainder = currentPeople.Value;
+                    RemovePeopleServerRpc(remainder);
+                    peopleUnloadAccumulator = 0f;
+                    lastPeopleSpawnTime = now;
+
+                    Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    Vector3 planetPos = currentOrbitPlanet.transform.position;
+                    var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
+                    var shipNo = GetComponent<NetworkObject>();
+                    if (planetNo != null && shipNo != null)
+                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, remainder, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+
+                    if (VisualEffectsManager.Instance != null)
+                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                            planetPos,
+                            (int)FloatingCountChannel.PeopleUnload,
+                            remainder,
+                            (int)shipTeam.Value);
+                    PlayPeopleUnloadSoundClientRpc(remainder);
                 }
             }
         }
@@ -2863,7 +2937,7 @@ namespace TitanOrbit.Entities
             else
             {
             float gemValue = Mathf.Max(1f, ShipLevel); // gems credited per deposit tick
-            float rate = gemValue * 2f * Time.fixedDeltaTime; // 2 deposit ticks per second
+            float rate = gemValue * 2f * Time.fixedDeltaTime * GetCardGemDepositSpeedMultiplier(); // 2 deposit ticks/sec, card-scaled
             if (debugModeEnabled) rate *= 100f;
             if (rate <= 0f) return;
             float amount = Mathf.Min(rate, currentGems.Value);
@@ -2917,18 +2991,19 @@ namespace TitanOrbit.Entities
         [Header("Death breakup (client-only)")]
         [Tooltip("Cap for detached physics pieces so huge modular ships stay affordable.")]
         [SerializeField] private int maxDeathDebrisPieces = 64;
-        [SerializeField] private float deathDebrisMinImpulse = 5f;
-        [SerializeField] private float deathDebrisMaxImpulse = 14f;
+        [SerializeField] private float deathDebrisMinImpulse = 1f;
+        [SerializeField] private float deathDebrisMaxImpulse = 3f;
         [Tooltip("Each shard multiplies its sampled horizontal speed by a value in this range (strongly differentiates pieces).")]
-        [SerializeField] private float deathDebrisPieceSpeedMulMin = 0.35f;
-        [SerializeField] private float deathDebrisPieceSpeedMulMax = 1.95f;
+        [SerializeField] private float deathDebrisPieceSpeedMulMin = 0.2f;
+        [SerializeField] private float deathDebrisPieceSpeedMulMax = 1.1f;
         [SerializeField] private float deathDebrisUpImpulseMin = 0f;
-        [SerializeField] private float deathDebrisUpImpulseMax = 3.5f;
+        [SerializeField] private float deathDebrisUpImpulseMax = 1.5f;
         [SerializeField] private float deathDebrisAngularVelMin = 2.5f;
         [SerializeField] private float deathDebrisAngularVelMax = 12f;
         [SerializeField] private float deathDebrisDrag = 2.2f;
         [Tooltip("How long debris objects live before Destroy (match or exceed respawn delay).")]
         [SerializeField] private float deathDebrisLifetime = 5f;
+        private static PhysicsMaterial s_deathDebrisNoFrictionMaterial;
 
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc(ulong killerShipNetworkId = 0)
@@ -3112,6 +3187,7 @@ namespace TitanOrbit.Entities
             var go = new GameObject("ShipDebris");
             go.transform.SetPositionAndRotation(source.position, source.rotation);
             go.transform.localScale = source.lossyScale;
+            go.layer = source.gameObject.layer;
 
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = mesh;
@@ -3124,10 +3200,12 @@ namespace TitanOrbit.Entities
             var box = go.AddComponent<BoxCollider>();
             box.center = mb.center;
             box.size = mb.size;
+            box.material = GetDeathDebrisNoFrictionMaterial();
 
             var debRb = go.AddComponent<Rigidbody>();
             debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-            debRb.linearDamping = deathDebrisDrag;
+            // Keep breakup pieces moving and bouncing for the full respawn timeout.
+            debRb.linearDamping = 0f;
             debRb.angularDamping = 0.8f;
             debRb.mass = Mathf.Clamp(mb.size.magnitude * 0.35f, 0.04f, 3f);
 
@@ -3157,6 +3235,23 @@ namespace TitanOrbit.Entities
 
             Object.Destroy(go, deathDebrisLifetime);
             return true;
+        }
+
+        private static PhysicsMaterial GetDeathDebrisNoFrictionMaterial()
+        {
+            if (s_deathDebrisNoFrictionMaterial != null)
+                return s_deathDebrisNoFrictionMaterial;
+
+            s_deathDebrisNoFrictionMaterial = new PhysicsMaterial("DeathDebris_NoFriction_Bouncy")
+            {
+                dynamicFriction = 0f,
+                staticFriction = 0f,
+                bounciness = 1f,
+                frictionCombine = PhysicsMaterialCombine.Minimum,
+                bounceCombine = PhysicsMaterialCombine.Maximum
+            };
+
+            return s_deathDebrisNoFrictionMaterial;
         }
 
         private void DisableShipRenderersAndCollidersClientLocal()
@@ -3253,6 +3348,52 @@ namespace TitanOrbit.Entities
 
             float e = Mathf.Clamp01(asteroidCollisionNormalSpeedRetention);
             Vector3 vOut = vInc - (1f + e) * vn * n;
+
+            // Normal impulse approximation from the scripted bounce response:
+            // Jn = m * (1 + e) * |vn|, force ~= Jn / dt.
+            float deltaNormalSpeed = (1f + e) * Mathf.Abs(vn);
+            float impactImpulse = rb.mass * deltaNormalSpeed;
+            float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
+
+            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);
+            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToAsteroidDamageScale);
+
+            if (shipCollisionDamage > 0.0001f)
+            {
+                // Self-inflicted collision damage: Team.None bypasses friendly-fire checks.
+                TakeDamageServerRpc(shipCollisionDamage, TeamManager.Team.None, 0);
+            }
+
+            if (asteroidCollisionDamage > 0.0001f)
+            {
+                ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
+                asteroid.TakeDamageServerRpc(asteroidCollisionDamage, attackerShipId);
+
+                if (VisualEffectsManager.Instance != null)
+                {
+                    Vector3 asteroidHitPos = contact.point;
+                    asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        asteroidHitPos,
+                        (int)FloatingCountChannel.DamageAsteroid,
+                        asteroidCollisionDamage,
+                        (int)shipTeam.Value
+                    );
+                    VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
+                        asteroidHitPos,
+                        asteroid.RemainingHealth,
+                        asteroid.RemainingGems,
+                        (int)shipTeam.Value
+                    );
+                }
+            }
+
+            if (impactForceNewtons >= asteroidImpactForcePopupMin && VisualEffectsManager.Instance != null)
+            {
+                Vector3 impactPos = contact.point;
+                impactPos.y = Mathf.Max(impactPos.y, 0f);
+                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextServerRpc(impactPos, impactForceNewtons);
+            }
 
             _pendingAsteroidBounceVelocity = vOut;
             _hasPendingAsteroidBounce = true;
@@ -4509,6 +4650,20 @@ namespace TitanOrbit.Entities
             if (equippedCards == null || equippedCards.Count == 0) return 1f;
             if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
             return _cachedCardBulletSpeedMultiplier;
+        }
+
+        private float GetCardGemDepositSpeedMultiplier()
+        {
+            if (equippedCards == null || equippedCards.Count == 0) return 1f;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardGemDepositSpeedMultiplier;
+        }
+
+        private float GetCardPeopleTransferSpeedMultiplier()
+        {
+            if (equippedCards == null || equippedCards.Count == 0) return 1f;
+            if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
+            return _cachedCardPeopleTransferSpeedMultiplier;
         }
 
         #endregion

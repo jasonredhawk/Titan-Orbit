@@ -29,11 +29,11 @@ namespace TitanOrbit.Audio
         private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
-        private const float WEAPON_PITCH_MIN = 0.1f;
-        private const float WEAPON_PITCH_MAX = 3.2f;
+        private const float WEAPON_PITCH_MIN = 0.01f;
+        private const float WEAPON_PITCH_MAX = 1.0f;
         private const int GEM_SOUND_POOL_SIZE = 6;
-        private const float GEM_PITCH_MIN = 0.12f;
-        private const float GEM_PITCH_MAX = 2.6f;
+        private const float GEM_PITCH_MIN = 0.01f;
+        private const float GEM_PITCH_MAX = 1.0f;
         private const float GEM_AMOUNT_MIN = 1f;
         private const float GEM_AMOUNT_MAX = 120f;
         private const int IMPACT_SOUND_POOL_SIZE = 6;
@@ -274,7 +274,7 @@ namespace TitanOrbit.Audio
             float normalized = Mathf.InverseLerp(1f, 10f, Mathf.Max(0f, amount));
             float basePitch = isLoad ? 1.12f : 0.92f;
             float amountPitchOffset = Mathf.Lerp(0.16f, -0.12f, normalized);
-            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, 0.65f, 1.5f);
+            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, GEM_PITCH_MIN, GEM_PITCH_MAX);
 
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;

@@ -65,6 +65,7 @@ namespace TitanOrbit.Systems
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
+        [SerializeField] private Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
         private int floatingPopupSequence;
 
         private void Awake()
@@ -190,6 +191,26 @@ namespace TitanOrbit.Systems
 
             SpawnCustomFloatingCountPopupLocal(position, hpMessage, floatingCountHealthIcon, hpColor);
             SpawnCustomFloatingCountPopupLocal(position, gemsMessage, floatingCountGemIcon, gemsColor);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnImpactForceFloatingTextServerRpc(Vector3 position, float impactForceNewtons)
+        {
+            SpawnImpactForceFloatingTextClientRpc(position, impactForceNewtons);
+        }
+
+        [ClientRpc]
+        private void SpawnImpactForceFloatingTextClientRpc(Vector3 position, float impactForceNewtons)
+        {
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+                return;
+
+            float clampedForce = Mathf.Max(0f, impactForceNewtons);
+            if (clampedForce < 1f)
+                return;
+
+            string message = $"{Mathf.RoundToInt(clampedForce):N0}";
+            SpawnCustomFloatingCountPopupLocal(position, message, floatingCountDamageIcon, floatingCountImpactForceColor);
         }
 
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)

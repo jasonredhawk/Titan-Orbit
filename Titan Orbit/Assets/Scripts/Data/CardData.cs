@@ -75,6 +75,10 @@ namespace TitanOrbit.Data
         public float damageMultiplier = 1f;
         public float fireRateMultiplier = 1f;
         public float bulletSpeedMultiplier = 1f;
+        [Tooltip("Multiplies gem deposit transfer speed while docked at a gem moon.")]
+        public float gemDepositSpeedMultiplier = 1f;
+        [Tooltip("Multiplies people load/unload transfer speed while in orbit.")]
+        public float peopleTransferSpeedMultiplier = 1f;
 
         [Header("Mass & Visual")]
         [Tooltip("Additional mass contributed by this part.")]
