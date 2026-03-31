@@ -696,6 +696,7 @@ namespace TitanOrbit.Systems
             ship.SetCurrentChassisIndex(chassisIndex);
             ship.SetCurrentChassisId(chassisId);
             ship.ResetAttributesOnlyFromServer();
+            ship.RefillCombatVitalsToMaxFromServer();
 
             NotifyChassisPurchasedClientRpc(chassisId, chassisIndex, shipNetworkId, new ClientRpcParams
             {
@@ -768,6 +769,8 @@ namespace TitanOrbit.Systems
             }
             else
                 return;
+
+            ship.RefillCombatVitalsToMaxFromServer();
 
             string chassisIdForClientVisual = (targetNode != null && targetNode.shipData != null) ? null : resolvedChassisId;
             NotifyShipLevelUpgradedClientRpc(shipNetworkId, nextLevel, chassisIdForClientVisual, new ClientRpcParams

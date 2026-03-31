@@ -1956,6 +1956,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             if (isDead.Value) return;
+            if (IsGemCollectionSuppressed) return;
             if (currentGems.Value >= GemCapacity) return;
             if (gemMoonDocked.Value) return;
 
@@ -2671,6 +2672,30 @@ namespace TitanOrbit.Entities
         }
 
         private NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
+        // Server-only cooldown window that suppresses gem magnet + pickup while this ship is in death flow.
+        private float gemCollectionSuppressedUntilServerTime = 0f;
+        private const float GemCollectionSuppressionSeconds = 2f;
+
+        public bool IsGemCollectionSuppressed
+        {
+            get
+            {
+                float now = NetworkManager.Singleton != null
+                    ? (float)NetworkManager.Singleton.ServerTime.Time
+                    : Time.time;
+                return now < gemCollectionSuppressedUntilServerTime;
+            }
+        }
+
+        private void SuppressGemCollectionForRespawnDelay()
+        {
+            float now = NetworkManager.Singleton != null
+                ? (float)NetworkManager.Singleton.ServerTime.Time
+                : Time.time;
+            float until = now + GemCollectionSuppressionSeconds;
+            if (until > gemCollectionSuppressedUntilServerTime)
+                gemCollectionSuppressedUntilServerTime = until;
+        }
 
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam, ulong attackerShipNetworkId = 0)
@@ -2748,6 +2773,8 @@ namespace TitanOrbit.Entities
 
             // Check for death - use small epsilon to handle floating point precision
             const float DEATH_THRESHOLD = 0.001f;
+            if (currentHealth.Value <= DEATH_THRESHOLD)
+                SuppressGemCollectionForRespawnDelay();
             if (currentHealth.Value <= DEATH_THRESHOLD && currentGems.Value <= DEATH_THRESHOLD)
             {
                 DieServerRpc(attackerShipNetworkId);
@@ -3032,26 +3059,15 @@ namespace TitanOrbit.Entities
         [SerializeField] private float respawnDelay = 5f;
 
         [Header("Death breakup (client-only)")]
-        [Tooltip("Cap for detached physics pieces so huge modular ships stay affordable.")]
-        [SerializeField] private int maxDeathDebrisPieces = 64;
-        [SerializeField] private float deathDebrisMinImpulse = 1f;
-        [SerializeField] private float deathDebrisMaxImpulse = 3f;
-        [Tooltip("Each shard multiplies its sampled horizontal speed by a value in this range (strongly differentiates pieces).")]
-        [SerializeField] private float deathDebrisPieceSpeedMulMin = 0.2f;
-        [SerializeField] private float deathDebrisPieceSpeedMulMax = 1.1f;
-        [SerializeField] private float deathDebrisUpImpulseMin = 0f;
-        [SerializeField] private float deathDebrisUpImpulseMax = 1.5f;
-        [SerializeField] private float deathDebrisAngularVelMin = 2.5f;
-        [SerializeField] private float deathDebrisAngularVelMax = 12f;
-        [SerializeField] private float deathDebrisDrag = 2.2f;
-        [Tooltip("How long debris objects live before Destroy (match or exceed respawn delay).")]
-        [SerializeField] private float deathDebrisLifetime = 5f;
+        [Tooltip("Death breakup tuning now lives on CombatSystem > Ship Death Breakup.")]
+        [SerializeField] private bool useCombatSystemDeathBreakupTuning = true;
         private static PhysicsMaterial s_deathDebrisNoFrictionMaterial;
 
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc(ulong killerShipNetworkId = 0)
         {
             if (isDead.Value) return;
+            SuppressGemCollectionForRespawnDelay();
             if (killerShipNetworkId != 0 && ScoreSystem.Instance != null)
             {
                 var spawnManager = NetworkManager.Singleton != null ? NetworkManager.Singleton.SpawnManager : null;
@@ -3094,6 +3110,7 @@ namespace TitanOrbit.Entities
             currentPeople.Value = 0f;
             currentEnergy.Value = EffectiveEnergyCapacity;
             isDead.Value = false;
+            gemCollectionSuppressedUntilServerTime = 0f;
             
             // Show ship visuals again
             ShowShipVisuals();
@@ -3197,9 +3214,11 @@ namespace TitanOrbit.Entities
             Vector3 explosionCenter = transform.position;
             explosionCenter.y = FIXED_Y_POSITION;
             int count = 0;
+            CombatSystem combat = useCombatSystemDeathBreakupTuning ? CombatSystem.Instance : null;
+            int maxPieces = combat != null ? combat.DeathDebrisMaxPieces : 64;
 
             var meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
-            for (int i = 0; i < meshFilters.Length && count < maxDeathDebrisPieces; i++)
+            for (int i = 0; i < meshFilters.Length && count < maxPieces; i++)
             {
                 MeshFilter mf = meshFilters[i];
                 if (mf == null || mf.sharedMesh == null) continue;
@@ -3211,7 +3230,7 @@ namespace TitanOrbit.Entities
             }
 
             var skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            for (int i = 0; i < skins.Length && count < maxDeathDebrisPieces; i++)
+            for (int i = 0; i < skins.Length && count < maxPieces; i++)
             {
                 SkinnedMeshRenderer skin = skins[i];
                 if (skin == null || !skin.enabled) continue;
@@ -3248,7 +3267,23 @@ namespace TitanOrbit.Entities
             var debRb = go.AddComponent<Rigidbody>();
             debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             // Keep breakup pieces moving and bouncing for the full respawn timeout.
-            debRb.linearDamping = 0f;
+            CombatSystem combat = useCombatSystemDeathBreakupTuning ? CombatSystem.Instance : null;
+            float minImpulse = combat != null ? combat.DeathDebrisMinImpulse : 1f;
+            float maxImpulse = combat != null ? combat.DeathDebrisMaxImpulse : 3f;
+            float minPieceMul = combat != null ? combat.DeathDebrisPieceSpeedMulMin : 0.2f;
+            float maxPieceMul = combat != null ? combat.DeathDebrisPieceSpeedMulMax : 1.1f;
+            float minUpImpulse = combat != null ? combat.DeathDebrisUpImpulseMin : 0f;
+            float maxUpImpulse = combat != null ? combat.DeathDebrisUpImpulseMax : 1.5f;
+            float minAngularVel = combat != null ? combat.DeathDebrisAngularVelMin : 2.5f;
+            float maxAngularVel = combat != null ? combat.DeathDebrisAngularVelMax : 12f;
+            float debrisLinearDamping = combat != null ? combat.DeathDebrisLinearDamping : 0f;
+            float debrisLifetime = combat != null ? combat.DeathDebrisLifetime : 5f;
+            float asteroidBounceMultiplier = combat != null ? combat.DeathDebrisAsteroidBounceMultiplier : 0.9f;
+            float asteroidBounceMinSpeed = combat != null ? combat.DeathDebrisAsteroidBounceMinSpeed : 0.15f;
+            bool debrisBlocksEnemyBullets = combat == null || combat.DeathDebrisBlocksEnemyBullets;
+            int debrisBulletHitsToBreak = combat != null ? combat.DeathDebrisBulletHitsToBreak : 3;
+            float debrisBulletShieldDuration = combat != null ? combat.DeathDebrisBulletShieldDuration : debrisLifetime;
+            debRb.linearDamping = debrisLinearDamping;
             debRb.angularDamping = 0.8f;
             debRb.mass = Mathf.Clamp(mb.size.magnitude * 0.35f, 0.04f, 3f);
 
@@ -3263,12 +3298,20 @@ namespace TitanOrbit.Entities
             else
                 dir.Normalize();
 
-            float horizontalSpeed = Random.Range(deathDebrisMinImpulse, deathDebrisMaxImpulse)
-                * Random.Range(deathDebrisPieceSpeedMulMin, deathDebrisPieceSpeedMulMax);
+            float horizontalSpeed = Random.Range(minImpulse, maxImpulse)
+                * Random.Range(minPieceMul, maxPieceMul);
             Vector3 vel = dir * horizontalSpeed;
-            vel.y = Random.Range(deathDebrisUpImpulseMin, deathDebrisUpImpulseMax);
+            vel.y = Random.Range(minUpImpulse, maxUpImpulse);
             debRb.linearVelocity = vel;
-            debRb.angularVelocity = Random.insideUnitSphere * Random.Range(deathDebrisAngularVelMin, deathDebrisAngularVelMax);
+            debRb.angularVelocity = Random.insideUnitSphere * Random.Range(minAngularVel, maxAngularVel);
+            var bounceAssist = go.AddComponent<ShipDebrisAsteroidBounceAssist>();
+            bounceAssist.BounceMultiplier = asteroidBounceMultiplier;
+            bounceAssist.MinSpeed = asteroidBounceMinSpeed;
+            if (IsServer && debrisBlocksEnemyBullets)
+            {
+                var shield = go.AddComponent<ShipDeathDebris>();
+                shield.Initialize(shipTeam.Value, debrisBulletHitsToBreak, debrisBulletShieldDuration);
+            }
 
             if (destroyMeshWithPiece && meshToDestroy != null)
             {
@@ -3276,7 +3319,7 @@ namespace TitanOrbit.Entities
                 disposer.Mesh = meshToDestroy;
             }
 
-            Object.Destroy(go, deathDebrisLifetime);
+            Object.Destroy(go, debrisLifetime);
             return true;
         }
 
@@ -3358,6 +3401,19 @@ namespace TitanOrbit.Entities
             bool canApplyBounce = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
             if (!canApplyBounce) return;
 
+            float relativeSpeed = collision.relativeVelocity.magnitude;
+            float collisionSoundPitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relativeSpeed));
+
+            Starship otherShip = collision.gameObject.GetComponent<Starship>();
+            if (otherShip == null)
+                otherShip = collision.gameObject.GetComponentInParent<Starship>();
+            if (otherShip != null && otherShip != this)
+            {
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
+                return;
+            }
+
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
             if (asteroid == null)
                 asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
@@ -3397,6 +3453,12 @@ namespace TitanOrbit.Entities
             float deltaNormalSpeed = (1f + e) * Mathf.Abs(vn);
             float impactImpulse = rb.mass * deltaNormalSpeed;
             float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
+
+            if (AudioManager.Instance != null)
+            {
+                float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
+                AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
+            }
 
             float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);
             float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToAsteroidDamageScale);
@@ -4590,6 +4652,14 @@ namespace TitanOrbit.Entities
             ResetAttributeLevels();
         }
 
+        /// <summary>Server only: refills combat vitals to their current effective caps (used after ship/chassis upgrades).</summary>
+        public void RefillCombatVitalsToMaxFromServer()
+        {
+            if (!IsServer) return;
+            currentHealth.Value = MaxHealth;
+            currentEnergy.Value = EffectiveEnergyCapacity;
+        }
+
         /// <summary>Server only: removes all equipped cards. Called when ship levels up.</summary>
         private void ClearAllCardsFromServer()
         {
@@ -4786,6 +4856,122 @@ namespace TitanOrbit.Entities
                 if (Mesh != null)
                     Destroy(Mesh);
             }
+        }
+
+        /// <summary>Ensures death debris visibly rebounds when colliding with asteroids.</summary>
+        private sealed class ShipDebrisAsteroidBounceAssist : MonoBehaviour
+        {
+            public float BounceMultiplier = 0.9f;
+            public float MinSpeed = 0.15f;
+
+            private Rigidbody rb;
+            private Collider col;
+            private Vector3 previousPosition;
+            private float castRadius = 0.08f;
+
+            private void Awake()
+            {
+                rb = GetComponent<Rigidbody>();
+                col = GetComponent<Collider>();
+                previousPosition = transform.position;
+                if (col != null)
+                {
+                    Vector3 e = col.bounds.extents;
+                    castRadius = Mathf.Max(0.03f, Mathf.Min(e.x, e.z) * 0.8f);
+                }
+            }
+
+            private void OnEnable()
+            {
+                previousPosition = transform.position;
+            }
+
+            private void FixedUpdate()
+            {
+                if (rb == null) return;
+
+                Vector3 currentPosition = rb.position;
+                Vector3 travel = currentPosition - previousPosition;
+                float distance = travel.magnitude;
+                if (distance > 0.0001f)
+                {
+                    Vector3 direction = travel / distance;
+                    float castDistance = distance + 0.02f;
+                    if (Physics.SphereCast(previousPosition, castRadius, direction, out RaycastHit hit, castDistance, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        Asteroid asteroid = hit.collider != null ? hit.collider.GetComponentInParent<Asteroid>() : null;
+                        if (asteroid != null)
+                        {
+                            Vector3 safePos = hit.point + hit.normal.normalized * (castRadius + 0.01f);
+                            rb.position = safePos;
+                            ApplyBounce(hit.normal);
+                            currentPosition = rb.position;
+                        }
+                    }
+                }
+
+                previousPosition = currentPosition;
+            }
+
+            private void OnCollisionEnter(Collision collision)
+            {
+                if (rb == null || collision == null || collision.contactCount == 0)
+                    return;
+
+                Asteroid asteroid = collision.collider != null ? collision.collider.GetComponentInParent<Asteroid>() : null;
+                if (asteroid == null)
+                    asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
+                if (asteroid == null)
+                    return;
+
+                Vector3 normal = collision.GetContact(0).normal;
+                ApplyBounce(normal);
+            }
+
+            private void ApplyBounce(Vector3 normal)
+            {
+                if (rb == null || normal.sqrMagnitude < 0.0001f)
+                    return;
+
+                Vector3 currentVelocity = rb.linearVelocity;
+                float speed = currentVelocity.magnitude;
+                if (speed < MinSpeed)
+                    return;
+
+                Vector3 reflected = Vector3.Reflect(currentVelocity, normal.normalized);
+                if (reflected.sqrMagnitude < 0.0001f)
+                    return;
+
+                rb.linearVelocity = reflected.normalized * speed * Mathf.Clamp(BounceMultiplier, 0f, 2f);
+            }
+        }
+    }
+
+    /// <summary>Server-side marker for ship death debris that can absorb enemy bullets.</summary>
+    public sealed class ShipDeathDebris : MonoBehaviour
+    {
+        private TeamManager.Team ownerTeam = TeamManager.Team.None;
+        private int remainingHits;
+        private float activeUntilTime;
+
+        public void Initialize(TeamManager.Team team, int bulletHitsToBreak, float shieldDurationSeconds)
+        {
+            ownerTeam = team;
+            remainingHits = Mathf.Max(1, bulletHitsToBreak);
+            activeUntilTime = Time.time + Mathf.Max(0.05f, shieldDurationSeconds);
+        }
+
+        public bool TryAbsorbBullet(TeamManager.Team bulletTeam)
+        {
+            if (Time.time > activeUntilTime)
+                return false;
+            if (ownerTeam != TeamManager.Team.None && bulletTeam == ownerTeam)
+                return false;
+
+            remainingHits--;
+            if (remainingHits <= 0)
+                Destroy(gameObject);
+            return true;
         }
     }
 }

@@ -8329,6 +8329,19 @@ MonoBehaviour:
   maxBullets: 200
   bulletSpeedMultiplier: 1
   spawnOffset: 1.3
+  deathDebrisMaxPieces: 64
+  deathDebrisMinImpulse: 0.1
+  deathDebrisMaxImpulse: 0.3
+  deathDebrisPieceSpeedMulMin: 0.1
+  deathDebrisPieceSpeedMulMax: 0.3
+  deathDebrisUpImpulseMin: 0
+  deathDebrisUpImpulseMax: 0.1
+  deathDebrisAngularVelMin: 0.3
+  deathDebrisAngularVelMax: 0.5
+  deathDebrisLinearDamping: 0
+  deathDebrisLifetime: 5
+  deathDebrisAsteroidBounceMultiplier: 0.9
+  deathDebrisAsteroidBounceMinSpeed: 0.15
 --- !u!1 &1229198908
 GameObject:
   m_ObjectHideFlags: 0
@@ -13062,8 +13075,10 @@ MonoBehaviour:
   backgroundMusic: {fileID: 8300000, guid: 7ac1670904bb1624b87dc52bc71f00bc, type: 3}
   shootSound: {fileID: 0}
   impactSound: {fileID: 0}
-  gemCollectSound: {fileID: 8300000, guid: b7f8695cf65a4f24eb37544298821146, type: 3}
-  peopleTransferSound: {fileID: 8300000, guid: a6473f5264a14804e992a7a4a29cd744, type: 3}
+  asteroidCollisionSound: {fileID: 8300000, guid: b90e191ec1b51184f99070a4b053621c, type: 3}
+  shipCollisionSound: {fileID: 8300000, guid: c56364e54264bce449307e70e6fcde40, type: 3}
+  gemCollectSound: {fileID: 8300000, guid: 9c9f51bc443168e49a9eb3d3268a6182, type: 3}
+  peopleTransferSound: {fileID: 8300000, guid: 433b7f09d5743a64595c8742ecfb252b, type: 3}
   miningSound: {fileID: 8300000, guid: 15ec042c5330b894397fe2b560e22a98, type: 3}
   captureSound: {fileID: 8300000, guid: 468f662ba85278c419ef967f7c33907b, type: 3}
   explosionSound: {fileID: 8300000, guid: fdc616161abe92e4f911164effc34bfb, type: 3}
@@ -13071,6 +13086,17 @@ MonoBehaviour:
   upgradeSound: {fileID: 8300000, guid: 78419f98379502c4dbfb2774bc94e7c1, type: 3}
   musicVolume: 0.7
   sfxVolume: 1
+  shootVolume: 1
+  impactVolume: 1
+  asteroidCollisionVolume: 0.3
+  shipCollisionVolume: 0.3
+  gemVolume: 0.3
+  peopleVolume: 0.5
+  miningVolume: 1
+  captureVolume: 1
+  explosionVolume: 1
+  shipDeathVolume: 1
+  upgradeVolume: 1
   playMusicOnStart: 1
 --- !u!4 &1959116599
 Transform:

@@ -404,6 +404,7 @@ namespace TitanOrbit.Entities
             foreach (var ship in GetCachedShipsForServer())
             {
                 if (ship == null || ship.IsDead) continue;
+                if (ship.IsGemCollectionSuppressed) continue;
                 Vector3 shipPos = ship.transform.position;
                 var srb = ship.GetComponent<Rigidbody>();
                 if (srb != null) shipPos = srb.position;
@@ -444,7 +445,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || ship == null) return;
             if (value.Value <= 0f) return;
-            if (ship.IsDead || ship.CurrentGems >= ship.GemCapacity) return;
+            if (ship.IsDead || ship.IsGemCollectionSuppressed || ship.CurrentGems >= ship.GemCapacity) return;
 
             Vector3 gemPos = rb != null ? rb.position : transform.position;
 

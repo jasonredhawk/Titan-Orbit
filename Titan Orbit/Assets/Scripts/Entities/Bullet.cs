@@ -378,6 +378,13 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
+            ShipDeathDebris debrisShield = other.GetComponentInParent<ShipDeathDebris>();
+            if (debrisShield != null && debrisShield.TryAbsorbBullet(ownerTeam))
+            {
+                DespawnBullet();
+                return true;
+            }
+
             Starship ship = other.GetComponentInParent<Starship>();
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
