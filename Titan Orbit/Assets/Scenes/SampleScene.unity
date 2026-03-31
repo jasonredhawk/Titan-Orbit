@@ -8332,16 +8332,19 @@ MonoBehaviour:
   deathDebrisMaxPieces: 64
   deathDebrisMinImpulse: 0.1
   deathDebrisMaxImpulse: 0.3
-  deathDebrisPieceSpeedMulMin: 0.1
-  deathDebrisPieceSpeedMulMax: 0.3
+  deathDebrisPieceSpeedMulMin: 0.05
+  deathDebrisPieceSpeedMulMax: 0.1
   deathDebrisUpImpulseMin: 0
   deathDebrisUpImpulseMax: 0.1
   deathDebrisAngularVelMin: 0.3
   deathDebrisAngularVelMax: 0.5
-  deathDebrisLinearDamping: 0
-  deathDebrisLifetime: 5
+  deathDebrisLinearDamping: 0.5
+  deathDebrisLifetime: 20
   deathDebrisAsteroidBounceMultiplier: 0.9
   deathDebrisAsteroidBounceMinSpeed: 0.15
+  deathDebrisBlocksEnemyBullets: 1
+  deathDebrisBulletHitsToBreak: 3
+  deathDebrisBulletShieldDuration: 5
 --- !u!1 &1229198908
 GameObject:
   m_ObjectHideFlags: 0

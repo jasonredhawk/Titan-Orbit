@@ -3225,7 +3225,7 @@ namespace TitanOrbit.Entities
                 MeshRenderer mr = mf.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled) continue;
                 if (mr.bounds.extents.sqrMagnitude < 1e-8f) continue;
-                if (TrySpawnOneDebrisPiece(mf.transform, mf.sharedMesh, mr.sharedMaterials, false, null, explosionCenter))
+                if (TrySpawnOneDebrisPiece(mf.transform, mf.sharedMesh, mr, false, null, explosionCenter))
                     count++;
             }
 
@@ -3237,35 +3237,55 @@ namespace TitanOrbit.Entities
                 if (skin.bounds.extents.sqrMagnitude < 1e-8f) continue;
                 Mesh baked = new Mesh();
                 skin.BakeMesh(baked, true);
-                if (TrySpawnOneDebrisPiece(skin.transform, baked, skin.sharedMaterials, true, baked, explosionCenter))
+                if (TrySpawnOneDebrisPiece(skin.transform, baked, skin, true, baked, explosionCenter))
                     count++;
             }
         }
 
-        private bool TrySpawnOneDebrisPiece(Transform source, Mesh mesh, Material[] materials, bool destroyMeshWithPiece, Mesh meshToDestroy, Vector3 explosionCenter)
+        private bool TrySpawnOneDebrisPiece(Transform source, Mesh mesh, Renderer sourceRenderer, bool destroyMeshWithPiece, Mesh meshToDestroy, Vector3 explosionCenter)
         {
             if (mesh == null) return false;
 
             var go = new GameObject("ShipDebris");
             go.transform.SetPositionAndRotation(source.position, source.rotation);
             go.transform.localScale = source.lossyScale;
-            go.layer = source.gameObject.layer;
+            go.layer = 0; // Default layer to avoid inheriting non-colliding ship layers.
 
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = mesh;
 
             var mr = go.AddComponent<MeshRenderer>();
-            if (materials != null && materials.Length > 0)
-                mr.sharedMaterials = materials;
+            if (sourceRenderer != null)
+            {
+                // Preserve runtime team tint/material state from the live ship piece.
+                Material[] runtimeMaterials = sourceRenderer.materials;
+                if (runtimeMaterials != null && runtimeMaterials.Length > 0)
+                    mr.materials = runtimeMaterials;
+                else if (sourceRenderer.sharedMaterials != null && sourceRenderer.sharedMaterials.Length > 0)
+                    mr.sharedMaterials = sourceRenderer.sharedMaterials;
+
+                var propertyBlock = new MaterialPropertyBlock();
+                sourceRenderer.GetPropertyBlock(propertyBlock);
+                mr.SetPropertyBlock(propertyBlock);
+            }
 
             Bounds mb = mesh.bounds;
             var box = go.AddComponent<BoxCollider>();
             box.center = mb.center;
-            box.size = mb.size;
+            box.size = new Vector3(
+                Mathf.Max(0.12f, mb.size.x),
+                Mathf.Max(0.06f, mb.size.y),
+                Mathf.Max(0.12f, mb.size.z)
+            );
+            box.contactOffset = Mathf.Max(0.03f, box.contactOffset);
             box.material = GetDeathDebrisNoFrictionMaterial();
 
             var debRb = go.AddComponent<Rigidbody>();
-            debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            debRb.interpolation = RigidbodyInterpolation.Interpolate;
+            debRb.useGravity = false;
+            // Keep debris on the same gameplay plane as ships/asteroids.
+            debRb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
             // Keep breakup pieces moving and bouncing for the full respawn timeout.
             CombatSystem combat = useCombatSystemDeathBreakupTuning ? CombatSystem.Instance : null;
             float minImpulse = combat != null ? combat.DeathDebrisMinImpulse : 1f;
@@ -3286,6 +3306,7 @@ namespace TitanOrbit.Entities
             debRb.linearDamping = debrisLinearDamping;
             debRb.angularDamping = 0.8f;
             debRb.mass = Mathf.Clamp(mb.size.magnitude * 0.35f, 0.04f, 3f);
+            debRb.maxDepenetrationVelocity = 10f;
 
             Vector3 shardPos = go.transform.TransformPoint(mb.center);
             Vector3 dir = shardPos - explosionCenter;
@@ -3301,12 +3322,9 @@ namespace TitanOrbit.Entities
             float horizontalSpeed = Random.Range(minImpulse, maxImpulse)
                 * Random.Range(minPieceMul, maxPieceMul);
             Vector3 vel = dir * horizontalSpeed;
-            vel.y = Random.Range(minUpImpulse, maxUpImpulse);
+            vel.y = 0f;
             debRb.linearVelocity = vel;
-            debRb.angularVelocity = Random.insideUnitSphere * Random.Range(minAngularVel, maxAngularVel);
-            var bounceAssist = go.AddComponent<ShipDebrisAsteroidBounceAssist>();
-            bounceAssist.BounceMultiplier = asteroidBounceMultiplier;
-            bounceAssist.MinSpeed = asteroidBounceMinSpeed;
+            debRb.angularVelocity = Vector3.up * Random.Range(minAngularVel, maxAngularVel);
             if (IsServer && debrisBlocksEnemyBullets)
             {
                 var shield = go.AddComponent<ShipDeathDebris>();
@@ -4858,93 +4876,6 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Ensures death debris visibly rebounds when colliding with asteroids.</summary>
-        private sealed class ShipDebrisAsteroidBounceAssist : MonoBehaviour
-        {
-            public float BounceMultiplier = 0.9f;
-            public float MinSpeed = 0.15f;
-
-            private Rigidbody rb;
-            private Collider col;
-            private Vector3 previousPosition;
-            private float castRadius = 0.08f;
-
-            private void Awake()
-            {
-                rb = GetComponent<Rigidbody>();
-                col = GetComponent<Collider>();
-                previousPosition = transform.position;
-                if (col != null)
-                {
-                    Vector3 e = col.bounds.extents;
-                    castRadius = Mathf.Max(0.03f, Mathf.Min(e.x, e.z) * 0.8f);
-                }
-            }
-
-            private void OnEnable()
-            {
-                previousPosition = transform.position;
-            }
-
-            private void FixedUpdate()
-            {
-                if (rb == null) return;
-
-                Vector3 currentPosition = rb.position;
-                Vector3 travel = currentPosition - previousPosition;
-                float distance = travel.magnitude;
-                if (distance > 0.0001f)
-                {
-                    Vector3 direction = travel / distance;
-                    float castDistance = distance + 0.02f;
-                    if (Physics.SphereCast(previousPosition, castRadius, direction, out RaycastHit hit, castDistance, ~0, QueryTriggerInteraction.Ignore))
-                    {
-                        Asteroid asteroid = hit.collider != null ? hit.collider.GetComponentInParent<Asteroid>() : null;
-                        if (asteroid != null)
-                        {
-                            Vector3 safePos = hit.point + hit.normal.normalized * (castRadius + 0.01f);
-                            rb.position = safePos;
-                            ApplyBounce(hit.normal);
-                            currentPosition = rb.position;
-                        }
-                    }
-                }
-
-                previousPosition = currentPosition;
-            }
-
-            private void OnCollisionEnter(Collision collision)
-            {
-                if (rb == null || collision == null || collision.contactCount == 0)
-                    return;
-
-                Asteroid asteroid = collision.collider != null ? collision.collider.GetComponentInParent<Asteroid>() : null;
-                if (asteroid == null)
-                    asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
-                if (asteroid == null)
-                    return;
-
-                Vector3 normal = collision.GetContact(0).normal;
-                ApplyBounce(normal);
-            }
-
-            private void ApplyBounce(Vector3 normal)
-            {
-                if (rb == null || normal.sqrMagnitude < 0.0001f)
-                    return;
-
-                Vector3 currentVelocity = rb.linearVelocity;
-                float speed = currentVelocity.magnitude;
-                if (speed < MinSpeed)
-                    return;
-
-                Vector3 reflected = Vector3.Reflect(currentVelocity, normal.normalized);
-                if (reflected.sqrMagnitude < 0.0001f)
-                    return;
-
-                rb.linearVelocity = reflected.normalized * speed * Mathf.Clamp(BounceMultiplier, 0f, 2f);
-            }
-        }
     }
 
     /// <summary>Server-side marker for ship death debris that can absorb enemy bullets.</summary>
