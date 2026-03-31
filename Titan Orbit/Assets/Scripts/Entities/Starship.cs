@@ -223,6 +223,8 @@ namespace TitanOrbit.Entities
         /// <summary>Bullets from Weapon: light projectiles, low energy. Only weapons fire; cockpits do not.</summary>
         private WeaponConfig bulletConfig;
         private float[] bulletLastFireTime;
+        /// <summary>Per-energy-cost round-robin cursor so equal-cost weapons alternate fairly.</summary>
+        private readonly System.Collections.Generic.Dictionary<int, int> bulletRoundRobinStartByEnergy = new System.Collections.Generic.Dictionary<int, int>();
 
         [Header("Collision")]
         [Tooltip("How bouncy: fraction of incoming speed along the impact normal kept after bounce (0..1). Higher = bouncier (e.g. 0.95 ⇒ head-on +10 → about −9.5). 1 = full speed reversal along the normal; tangential speed unchanged (no friction).")]
@@ -276,6 +278,12 @@ namespace TitanOrbit.Entities
                 bulletLastFireTime = new float[bn];
                 for (int i = 0; i < bn; i++) bulletLastFireTime[i] = -999f;
             }
+        }
+
+        private static int GetEnergyCostGroupKey(float energyCostPerShot)
+        {
+            // Quantize float energy costs to stable integer groups.
+            return Mathf.RoundToInt(Mathf.Max(0f, energyCostPerShot) * 1000f);
         }
 
         [Header("Health")]
@@ -2430,73 +2438,108 @@ namespace TitanOrbit.Entities
             int maxCannons = (bulletFirePoints != null && bulletFirePoints.Count > 0) ? bulletFirePoints.Count : 0;
             if (bulletWc.cannons != null && maxCannons > 0)
             {
-                for (int i = 0; i < bulletWc.cannons.Count && i < maxCannons; i++)
+                var cannonsByEnergy = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<int>>();
+                int cannonCount = Mathf.Min(bulletWc.cannons.Count, maxCannons);
+                for (int i = 0; i < cannonCount; i++)
                 {
-                    var c = bulletWc.cannons[i];
-                    // Only fire from actual weapon positions; skip if no fire point (no phantom from ship center).
-                    if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null)
-                        continue;
-                    if (currentEnergy.Value < c.energyCostPerShot) continue;
-                    float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
-                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
-
-                    currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
-                    bulletLastFireTime[i] = Time.time;
-                    bulletIndicesFired.Add((byte)i);
-
-                    int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
-                    // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
-                    int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
-                        ? (runtimeBulletPrefabIndex.Value % bankCount)
-                        : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
-                            ? c.bulletPrefabIndex
-                            : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
-                    bulletPrefabIndicesFired.Add(bulletIdx);
-
-                    Transform firePt = bulletFirePoints[i];
-                    Vector3 fireOrigin = firePt.position;
-
-                    // Horizontal aim basis from this weapon's facing (not ship forward) so side mounts / turrets shoot correctly.
-                    Vector3 cannonFwd = firePt.forward;
-                    cannonFwd.y = 0f;
-                    if (cannonFwd.sqrMagnitude < 0.01f)
+                    if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null) continue;
+                    int energyKey = GetEnergyCostGroupKey(bulletWc.cannons[i].energyCostPerShot);
+                    if (!cannonsByEnergy.TryGetValue(energyKey, out var group))
                     {
-                        cannonFwd = shipForward;
-                        cannonFwd.y = 0f;
+                        group = new System.Collections.Generic.List<int>();
+                        cannonsByEnergy.Add(energyKey, group);
                     }
-                    if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
-                    cannonFwd.Normalize();
-                    Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
+                    group.Add(i);
+                }
 
-                    float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
-                    Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
-                    int numShots = 1;
-                    float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
-                    if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
-                        numShots = Mathf.Max(1, c.spreadProjectileCount);
-                    for (int s = 0; s < numShots; s++)
+                foreach (var kv in cannonsByEnergy)
+                {
+                    int energyKey = kv.Key;
+                    var group = kv.Value;
+                    if (group == null || group.Count == 0) continue;
+
+                    int start = 0;
+                    if (bulletRoundRobinStartByEnergy.TryGetValue(energyKey, out int savedStart) && group.Count > 0)
+                        start = ((savedStart % group.Count) + group.Count) % group.Count;
+
+                    bool firedInGroup = false;
+                    int nextStart = start;
+
+                    for (int step = 0; step < group.Count; step++)
                     {
-                        Vector3 dir = baseDir;
-                        if (c.spreadType == CannonSpreadType.RandomSpread)
+                        int i = group[(start + step) % group.Count];
+                        var c = bulletWc.cannons[i];
+                        if (currentEnergy.Value < c.energyCostPerShot) continue;
+
+                        float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                        if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
+
+                        currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
+                        bulletLastFireTime[i] = Time.time;
+                        bulletIndicesFired.Add((byte)i);
+
+                        int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
+                        // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
+                        int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
+                            ? (runtimeBulletPrefabIndex.Value % bankCount)
+                            : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
+                                ? c.bulletPrefabIndex
+                                : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
+                        bulletPrefabIndicesFired.Add(bulletIdx);
+
+                        Transform firePt = bulletFirePoints[i];
+                        Vector3 fireOrigin = firePt.position;
+
+                        // Horizontal aim basis from this weapon's facing (not ship forward) so side mounts / turrets shoot correctly.
+                        Vector3 cannonFwd = firePt.forward;
+                        cannonFwd.y = 0f;
+                        if (cannonFwd.sqrMagnitude < 0.01f)
                         {
-                            float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
-                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                            cannonFwd = shipForward;
+                            cannonFwd.y = 0f;
                         }
-                        else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                        if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
+                        cannonFwd.Normalize();
+                        Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
+
+                        float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
+                        Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
+                        int numShots = 1;
+                        float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
+                        if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                            numShots = Mathf.Max(1, c.spreadProjectileCount);
+                        for (int s = 0; s < numShots; s++)
                         {
-                            float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
-                            float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
-                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                            Vector3 dir = baseDir;
+                            if (c.spreadType == CannonSpreadType.RandomSpread)
+                            {
+                                float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
+                                dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                            }
+                            else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                            {
+                                float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
+                                float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
+                                dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                            }
+                            float damage = c.damagePerBullet;
+                            float speed = c.bulletSpeed;
+                            float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
+                            CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
+                            if (rb != null)
+                            {
+                                float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
+                                rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                            }
                         }
-                        float damage = c.damagePerBullet;
-                        float speed = c.bulletSpeed;
-                        float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
-                        CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
-                        if (rb != null)
-                        {
-                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
-                        }
+
+                        firedInGroup = true;
+                        nextStart = ((start + step + 1) % group.Count + group.Count) % group.Count;
+                    }
+
+                    if (firedInGroup)
+                    {
+                        bulletRoundRobinStartByEnergy[energyKey] = nextStart;
                     }
                 }
             }
