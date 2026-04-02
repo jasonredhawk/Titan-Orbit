@@ -289,7 +289,7 @@ namespace TitanOrbit.Generation
                         Vector3 center = clusterCenters[c];
                         for (int i = 0; i < perCluster && spawned < numberOfAsteroidsThisMap; i++)
                         {
-                            Vector3 position = GetPositionInCluster(center);
+                            Vector3 position = GetPositionInCluster(center, perCluster);
                             if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
                             if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
 
@@ -516,7 +516,7 @@ namespace TitanOrbit.Generation
                 Vector3 center = clusterCenters[c];
                 for (int i = 0; i < perCluster && asteroidPositions.Count < numberOfAsteroidsThisMap; i++)
                 {
-                    Vector3 position = GetPositionInCluster(center);
+                    Vector3 position = GetPositionInCluster(center, perCluster);
                     if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
                     if (IsTooCloseToAny(position, 20f, planetPositions)) continue; // Keep asteroids away from larger planets
 
@@ -537,9 +537,15 @@ namespace TitanOrbit.Generation
             }
         }
 
-        private Vector3 GetPositionInCluster(Vector3 center)
+        private Vector3 GetPositionInCluster(Vector3 center, int targetClusterCount)
         {
-            float radius = 12f + (float)random.NextDouble() * 8f;
+            // Sublinear growth still scales spread with cluster size, but allows larger overall footprints.
+            float coreRadius = Mathf.Clamp(8f + Mathf.Sqrt(Mathf.Max(1, targetClusterCount)) * 2.8f, 9f, 28f);
+            // Keep center bias for organic clusters, but lighten it so points spread out more.
+            float radius = coreRadius * Mathf.Pow((float)random.NextDouble(), 1.15f);
+            // Occasional outskirts points add natural irregularity without creating hollow rings.
+            if (random.NextDouble() < 0.25)
+                radius += coreRadius * GetRandomFloat(0.4f, 1.1f);
             float angle = (float)random.NextDouble() * Mathf.PI * 2f;
             return center + new Vector3(Mathf.Cos(angle) * radius, 0, Mathf.Sin(angle) * radius);
         }
