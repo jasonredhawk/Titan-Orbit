@@ -45,11 +45,19 @@ namespace TitanOrbit.Networking
             if (string.IsNullOrWhiteSpace(name)) name = "Player " + clientId;
             if (name.Length > 32) name = name.Substring(0, 32);
             serverNames[clientId] = name;
+            // Everyone sees this client's chosen name.
             SyncDisplayNameClientRpc(clientId, name);
+            // Late joiners never received earlier SyncDisplayNameClientRpc calls; send the full roster to this client only.
+            var toJoinerOnly = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } }
+            };
+            foreach (var kvp in serverNames)
+                SyncDisplayNameClientRpc(kvp.Key, kvp.Value, toJoinerOnly);
         }
 
         [ClientRpc]
-        private void SyncDisplayNameClientRpc(ulong clientId, string name)
+        private void SyncDisplayNameClientRpc(ulong clientId, string name, ClientRpcParams clientRpcParams = default)
         {
             clientNames[clientId] = name ?? ("Player " + clientId);
         }

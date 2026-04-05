@@ -49,19 +49,49 @@ if not exist "%SOURCE_DIR%\index.html" (
   echo ERROR: index.html missing - build WebGL first ^(TitanOrbit -^> Build -^> WebGL Production^).
   exit /b 1
 )
+if not exist "%SOURCE_DIR%\Build" (
+  echo ERROR: Build\ folder missing under:
+  echo   %SOURCE_DIR%
+  echo A complete WebGL build must include Build\ ^(*.unityweb / loader / wasm^). Point SOURCE_DIR at the
+  echo Unity output folder ^(same folder as index.html^), not a parent directory.
+  exit /b 1
+)
 
 echo.
 echo [3/3] Syncing to gs://%BUCKET%/
 echo Project: %PROJECT_ID%
 echo Source:  %SOURCE_DIR%
 echo.
-call gcloud --project "%PROJECT_ID%" storage rsync "%SOURCE_DIR%" "gs://%BUCKET%/" --recursive --delete-unmatched-destination-objects
+
+REM 1) Try gsutil first (fast). It can fail with "Permission denied" reading VERSION if Cloud SDK
+REM    lives under Program Files and UAC/antivirus blocks reads — then we fall back.
+REM 2) Set TITAN_ORBIT_USE_GCLOUD_RSYNC=1 to skip gsutil and use gcloud only.
+REM 3) gcloud storage rsync: use forward slashes in the local path to reduce Windows "**" glob bugs.
+
+if defined TITAN_ORBIT_USE_GCLOUD_RSYNC goto :GcloudStorageRsync
+
+where gsutil >nul 2>&1
+if errorlevel 1 goto :GcloudStorageRsync
+
+set "CLOUDSDK_CORE_PROJECT=%PROJECT_ID%"
+call gsutil -m rsync -r -d "%SOURCE_DIR%" "gs://%BUCKET%/"
+if not errorlevel 1 goto :RsyncDone
+
+echo.
+echo WARNING: gsutil failed ^(e.g. Errno 13 on VERSION under Program Files^). Retrying with gcloud storage rsync...
+
+:GcloudStorageRsync
+set "SRCFWD=%SOURCE_DIR:\=/%"
+call gcloud --project "%PROJECT_ID%" storage rsync "%SRCFWD%" "gs://%BUCKET%/" --recursive --delete-unmatched-destination-objects
 if errorlevel 1 (
   echo.
   echo ERROR: gcloud storage rsync failed.
-  echo If your SDK is old, try: gsutil -m rsync -r -d "%SOURCE_DIR%" "gs://%BUCKET%/"
+  echo If gsutil permission errors persist, repair Cloud SDK or set TITAN_ORBIT_USE_GCLOUD_RSYNC=1 before running.
   exit /b 1
 )
+goto :RsyncDone
+
+:RsyncDone
 
 echo.
 echo Upload sync complete.

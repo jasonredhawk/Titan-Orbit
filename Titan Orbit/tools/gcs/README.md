@@ -79,6 +79,16 @@ Then run `set_webgl_gcs_metadata.bat` so Brotli objects get the right headers.
 
 After upload, configure public access (e.g. IAM **allUsers** as **Storage Object Viewer** on the bucket for a simple static site), **bucket website** settings or an **HTTPS load balancer** with a managed certificate, and point your **Cloudflare** DNS records at the Google endpoint. Replicate any security headers you need (your Cloudflare Pages `_headers` file is not applied by GCS automatically).
 
+### Root URL (`https://titanorbit.io/` without `index.html`)
+
+GCS behind a load balancer does **not** automatically map `/` to `index.html`. Fix it in **Cloudflare** (easiest):
+
+1. **Rules** → **Redirect Rules** → **Create rule**.
+2. Example: **If** *Custom filter expression* → `(http.request.uri.path eq "/")` **Then** *Static* → **301** to `https://titanorbit.io/index.html` (adjust host to match your site).
+3. Or use a **Rewrite** (Transform Rules) on paid plans to rewrite the path to `/index.html` without changing the address bar—optional.
+
+After this, opening `https://titanorbit.io` loads the same game as `/index.html`.
+
 ## Related repo files
 
 - WebGL output path: `Assets/Editor/Build/TitanOrbitBuildAutomation.cs`

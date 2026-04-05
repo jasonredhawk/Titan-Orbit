@@ -168,7 +168,7 @@ namespace TitanOrbit.Systems
             {
                 float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
                 gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                float sizeMult = Mathf.Lerp(0.4f, 1.2f, Mathf.Clamp01(gemValue / 25f));
+                float sizeMult = Mathf.Lerp(0.58f, 1.2f, Mathf.Clamp01(gemValue / 25f));
                 SpawnGemFromShip(prefab, shipPosition, gemValue, sizeMult, expelledByShipId);
                 remaining -= gemValue;
             }
@@ -219,9 +219,9 @@ namespace TitanOrbit.Systems
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
             {
+                netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.InitializeForDeposit(amount, sizeMult, planetNetworkObjectId, depositingTeam, depositingClientId);
-                netObj.Spawn();
             }
         }
 
@@ -262,9 +262,9 @@ namespace TitanOrbit.Systems
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
             {
+                netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.InitializeFromShip(gemValue, sizeMultiplier, expelledByShipId);
-                netObj.Spawn();
             }
         }
 
@@ -307,9 +307,9 @@ namespace TitanOrbit.Systems
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
             {
+                netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, isBonusGem);
-                netObj.Spawn();
             }
         }
     }

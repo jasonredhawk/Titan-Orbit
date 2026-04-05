@@ -1322,7 +1322,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f71a525a34347f40a0543af807359b8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.ScrollingSpaceBackground
-  targetCamera: {fileID: 0}
+  targetCamera: {fileID: 711795281}
   spaceTexture: {fileID: 2800000, guid: ddcac1fac1f5c8943a30c2ef6b724062, type: 3}
   scrollScale: 0.03
   textureTiling: 2
@@ -5294,8 +5294,8 @@ MonoBehaviour:
   loadingCameraHeight: 200
   mainMenu: {fileID: 1536533385}
   minLoadingDisplayTime: 1
-  teamSelectCameraTransitionSeconds: 1.25
-  teamSelectEndOrthoSize: 18
+  maxJoinWorldSyncSeconds: 45
+  joinReplicationEnoughFraction: 0.62
 --- !u!4 &867079294
 Transform:
   m_ObjectHideFlags: 0
@@ -7852,8 +7852,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  minMapSize: 300
-  maxMapSize: 500
+  minMapSize: 100
+  maxMapSize: 100
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 120
@@ -7861,13 +7861,13 @@ MonoBehaviour:
   minTeamsPerMatch: 3
   maxTeamsPerMatch: 3
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  minNeutralPlanets: 9
-  maxNeutralPlanets: 18
+  minNeutralPlanets: 3
+  maxNeutralPlanets: 3
   minPlanetSize: 9
   maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 500
-  asteroidsAtMaxMapSize: 1000
+  asteroidsAtMinMapSize: 100
+  asteroidsAtMaxMapSize: 100
   minAsteroidClusters: 3
   maxAsteroidClusters: 50
   minAsteroidSize: 1
@@ -8181,8 +8181,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7fdf44b7b5308e24cb7ffbade6166319, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.GemSpawner
-  gemPrefab: {fileID: 0}
-  peopleTransportPrefab: {fileID: 0}
+  gemPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
+  peopleTransportPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   useGemPool: 0
   explosionSpeed: 2.2
   explosionRadius: 1.4

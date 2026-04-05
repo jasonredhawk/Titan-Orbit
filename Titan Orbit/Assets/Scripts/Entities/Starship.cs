@@ -981,6 +981,22 @@ namespace TitanOrbit.Entities
             StartInOrbitAroundHomePlanet();
         }
 
+        /// <summary>Called from team selection UI. Server validates the sender matches this ship's owner (works even if <see cref="IsOwner"/> is briefly false before NGO sync).</summary>
+        public void RequestJoinTeamFromClient(TeamManager.Team preferredTeam)
+        {
+            RequestJoinTeamServerRpc(preferredTeam);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void RequestJoinTeamServerRpc(TeamManager.Team preferredTeam, ServerRpcParams rpcParams = default)
+        {
+            if (TeamManager.Instance == null) return;
+            // Use RPC sender as the player id. Do not compare to OwnerClientId — on connect/Relay, ownership
+            // can lag the sender id for a frame and the old check dropped the RPC with no client feedback.
+            ulong sender = rpcParams.Receive.SenderClientId;
+            TeamManager.Instance.ApplyTeamChoiceFromServer(sender, preferredTeam);
+        }
+
         /// <summary>Server only: set team without repositioning (for AI ships that are already placed).</summary>
         public void AssignTeamOnly(TeamManager.Team team)
         {
@@ -1043,8 +1059,9 @@ namespace TitanOrbit.Entities
                     _lastAppliedChassisIndex = 0;
                 }
             }
-            // Owner: when chassis index is set (or synced), apply that ship visual so client sees the correct model
-            if (IsOwner && currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
+            // When chassis index/id is set or synced from the server, every peer must build the mesh (not just the owner).
+            // Otherwise other players see an empty BankPivot: invisible ship while bullets/weapons still spawn from the server.
+            if (currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
             {
                 string cid = currentChassisId.Value.ToString();
                 GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : null;

@@ -65,6 +65,23 @@ for /r "%SRCBASE%" %%F in (*.br) do (
   call :RunUpdate "!GS!" br "!CT!"
 )
 
+REM Unity 6+ Brotli-compressed assets use extension .unityweb (not .br). Without Content-Encoding: br
+REM the browser executes compressed bytes as JavaScript -> "Unable to parse ... framework.js.unityweb"
+REM and SyntaxError: Invalid or unexpected token.
+for /r "%SRCBASE%" %%F in (*.unityweb) do (
+  set "FULL=%%~fF"
+  set "REL=!FULL:%SRCBASE%\=!"
+  set "GS=gs://%BUCKET%/!REL:\=/!"
+  set "NAME=%%~nxF"
+  set "CT=application/octet-stream"
+  REM Suffix lengths: .wasm/.data/.json.unityweb = 14 chars; .js.unityweb = 12 chars
+  if /i "!NAME:~-14!"==".wasm.unityweb" set "CT=application/wasm"
+  if /i "!NAME:~-14!"==".data.unityweb" set "CT=application/octet-stream"
+  if /i "!NAME:~-14!"==".json.unityweb" set "CT=application/json"
+  if /i "!NAME:~-12!"==".js.unityweb" set "CT=application/javascript"
+  call :RunUpdate "!GS!" br "!CT!"
+)
+
 REM Uncompressed WebGL files (if present)
 for /r "%SRCBASE%" %%F in (*.wasm) do (
   set "FULL=%%~fF"

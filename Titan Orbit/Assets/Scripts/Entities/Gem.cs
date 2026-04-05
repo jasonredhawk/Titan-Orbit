@@ -200,7 +200,7 @@ namespace TitanOrbit.Entities
             {
                 // Slightly above 0.85× mesh so gems read clearly; still bounded by asteroid scale.
                 float maxScale = asteroidPhysicalSize.Value * 1.05f;
-                float minScale = maxScale * 0.38f;
+                float minScale = maxScale * 0.52f;
                 scale = Mathf.Lerp(minScale, maxScale, tValue);
                 scale *= Mathf.Lerp(0.96f, 1.04f, Mathf.InverseLerp(0.25f, 2.2f, gemSizeMult));
                 scale = Mathf.Min(scale, maxScale);
@@ -208,7 +208,7 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                float baseLinear = Mathf.Lerp(0.55f, 2.2f, tValue);
+                float baseLinear = Mathf.Lerp(0.74f, 2.2f, tValue);
                 scale = baseScale * baseLinear * gemSizeMult * lifetimeRemaining * visualScaleMultiplier;
             }
 

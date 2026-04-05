@@ -542,22 +542,8 @@ namespace TitanOrbit.Entities
             cachedVisualShapeIndex = shapeIndex;
             cachedVisualNoTrail = noTrailVisual;
             cachedVisualPrefabBankIndex = visualPrefabBankIndexArg;
-            if (IsServer)
-            {
-                if (bulletOwnerTeamByte != null)
-                    bulletOwnerTeamByte.Value = (byte)team;
-                syncedBulletSpeed.Value = Mathf.Max(0f, bulletSpeed);
-                syncedBulletDamage.Value = Mathf.Max(0f, bulletDamage);
-                // Set scale/visual NetworkVariables before Spawn() so clients receive correct scale in spawn payload
-                if (bulletVisualScaleMultiplier != null)
-                    bulletVisualScaleMultiplier.Value = cachedVisualScaleMultiplier;
-                if (bulletVisualShapeIndex != null)
-                    bulletVisualShapeIndex.Value = cachedVisualShapeIndex;
-                if (bulletVisualNoTrail != null)
-                    bulletVisualNoTrail.Value = cachedVisualNoTrail;
-                if (visualPrefabBankIndex != null)
-                    visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
-            }
+            // Do not write NetworkVariables here — CombatSystem calls Initialize before NetworkObject.Spawn(),
+            // which triggers "doesn't know its NetworkBehaviour yet". OnNetworkSpawn applies cached fields to NVs.
         }
 
         private void UpdateVisual()

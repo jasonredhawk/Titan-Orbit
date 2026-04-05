@@ -190,18 +190,40 @@ namespace TitanOrbit.Core
         [ServerRpc(RequireOwnership = false)]
         public void RequestTeamServerRpc(Team preferredTeam, ServerRpcParams rpcParams = default)
         {
-            ulong clientId = rpcParams.Receive.SenderClientId;
+            ApplyTeamChoiceFromServer(rpcParams.Receive.SenderClientId, preferredTeam);
+        }
+
+        /// <summary>Server-only: apply team pick from UI. Prefer <see cref="TitanOrbit.Entities.Starship.RequestJoinTeamFromClient"/> so the RPC runs on the player-owned ship (more reliable than scene-object RPCs for late joiners).</summary>
+        public void ApplyTeamChoiceFromServer(ulong clientId, Team preferredTeam)
+        {
+            if (!IsServer) return;
             bool ok;
             Team actualTeam;
+            string failMessage = "";
             if (GetPlayerTeam(clientId) == Team.None)
             {
                 ok = AddPlayerToTeam(clientId, preferredTeam);
                 actualTeam = ok ? preferredTeam : Team.None;
+                if (!ok)
+                {
+                    if (preferredTeam == Team.None || !IsTeamInCurrentMatch(preferredTeam))
+                        failMessage = "That team is not part of this match.";
+                    else if (!IsTeamOpen(preferredTeam))
+                        failMessage = "That team is full.";
+                    else
+                        failMessage = "Could not join that team.";
+                    Debug.LogWarning($"[TeamManager] Denied join for client {clientId} → {preferredTeam}: {failMessage} (activeTeams={activeTeamCount.Value})");
+                }
             }
             else
             {
                 ok = TryReassignPlayer(clientId, preferredTeam);
                 actualTeam = GetPlayerTeam(clientId);
+                if (!ok)
+                {
+                    failMessage = "Cannot switch to that team (it may be full or not in this match).";
+                    Debug.LogWarning($"[TeamManager] Denied team switch for client {clientId} → {preferredTeam}.");
+                }
             }
             if (ok && actualTeam != Team.None)
             {
@@ -213,16 +235,12 @@ namespace TitanOrbit.Core
                         ship.AssignTeamAndStartInOrbit(actualTeam);
                 }
             }
-            ResponseTeamClientRpc(clientId, actualTeam, ok);
-        }
-
-        [ClientRpc]
-        public void ResponseTeamClientRpc(ulong clientId, Team assignedTeam, bool requestGranted)
-        {
-            if (NetworkManager.Singleton.LocalClientId == clientId && NetworkGameManager.Instance != null)
-            {
-                NetworkGameManager.Instance.OnTeamAssignmentResult(assignedTeam, requestGranted);
-            }
+            // Notify via NetworkGameManager (same NetworkObject as us) so clients reliably receive the ClientRpc.
+            var ngm = NetworkGameManager.Instance;
+            if (ngm != null)
+                ngm.SendTeamAssignmentResultToClient(clientId, actualTeam, ok, failMessage);
+            else
+                Debug.LogError("[TeamManager] ApplyTeamChoiceFromServer: NetworkGameManager missing; client will not get team UI update.");
         }
 
         private Team GetTeamWithLeastPlayers()
@@ -254,11 +272,25 @@ namespace TitanOrbit.Core
 
         public Team GetPlayerTeam(ulong clientId)
         {
-            if (playerTeams.ContainsKey(clientId))
+            if (IsServer)
             {
-                return playerTeams[clientId];
+                if (playerTeams.ContainsKey(clientId))
+                    return playerTeams[clientId];
+                return Team.None;
             }
-            return Team.None;
+            // Clients: dictionary is not replicated; local player’s team comes from the starship NetworkVariable.
+            var nm = NetworkManager.Singleton;
+            if (nm == null || clientId != nm.LocalClientId)
+                return Team.None;
+            if (nm.SpawnManager == null)
+                return Team.None;
+            var po = nm.SpawnManager.GetLocalPlayerObject();
+            if (po == null)
+                return Team.None;
+            var ship = po.GetComponent<Starship>();
+            if (ship == null)
+                ship = po.GetComponentInChildren<Starship>(true);
+            return ship != null ? ship.ShipTeam : Team.None;
         }
 
         public List<ulong> GetTeamPlayers(Team team)
@@ -272,11 +304,21 @@ namespace TitanOrbit.Core
 
         public int GetTeamPlayerCount(Team team)
         {
-            if (teamPlayers.ContainsKey(team))
+            if (IsServer)
             {
-                return teamPlayers[team].Count;
+                if (teamPlayers.ContainsKey(team))
+                    return teamPlayers[team].Count;
+                return 0;
             }
-            return 0;
+            switch (team)
+            {
+                case Team.TeamA: return networkTeamACount.Value;
+                case Team.TeamB: return networkTeamBCount.Value;
+                case Team.TeamC: return networkTeamCCount.Value;
+                case Team.TeamD: return networkTeamDCount.Value;
+                case Team.TeamE: return networkTeamECount.Value;
+                default: return 0;
+            }
         }
 
         public void RemovePlayer(ulong clientId)
