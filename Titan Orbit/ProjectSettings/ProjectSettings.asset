@@ -807,13 +807,13 @@ PlayerSettings:
   splashScreenBackgroundSourcePortrait: {fileID: 0}
   blurSplashScreenBackground: 1
   spritePackerPolicy: 
-  webGLMemorySize: 768
+  webGLMemorySize: 1024
   webGLExceptionSupport: 1
   webGLNameFilesAsHashes: 0
   webGLShowDiagnostics: 0
   webGLDataCaching: 1
   webGLDebugSymbols: 0
-  webGLEmscriptenArgs: -sSTACK_SIZE=16777216
+  webGLEmscriptenArgs: -sSTACK_SIZE=33554432
   webGLModulesDirectory: 
   webGLTemplate: PROJECT:FullscreenViewport
   webGLAnalyzeBuildSize: 0
@@ -823,8 +823,8 @@ PlayerSettings:
   webGLLinkerTarget: 1
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 1
-  webGLInitialMemorySize: 768
-  webGLMaximumMemorySize: 2048
+  webGLInitialMemorySize: 1024
+  webGLMaximumMemorySize: 4096
   webGLMemoryGrowthMode: 2
   webGLMemoryLinearGrowthStep: 32
   webGLMemoryGeometricGrowthStep: 0.2

@@ -12,6 +12,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Audio;
+using TitanOrbit.Networking;
 using SciFiArsenal;
 
 namespace TitanOrbit.Entities
@@ -2570,6 +2571,13 @@ namespace TitanOrbit.Entities
         [ClientRpc]
         private void FireClientRpc(byte[] bulletIndicesFired, int[] bulletPrefabIndices)
         {
+            #region agent log e695ff
+            if (IsOwner && bulletIndicesFired != null && bulletIndicesFired.Length > 0)
+            {
+                NetworkGameManager.DebugSessionE695ffLog("B5", "Starship.FireClientRpc", "owner_muzzle_rpc",
+                    "{\"shots\":" + bulletIndicesFired.Length + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + "}");
+            }
+            #endregion
             if (bulletIndicesFired != null)
             {
                 for (int j = 0; j < bulletIndicesFired.Length; j++)

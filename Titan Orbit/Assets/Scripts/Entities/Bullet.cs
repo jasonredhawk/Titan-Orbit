@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
 using TitanOrbit.Systems;
+using TitanOrbit.Networking;
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
@@ -84,6 +85,7 @@ namespace TitanOrbit.Entities
         private Material proceduralMaterialInstance; // Instance we create for color; destroyed with bullet
         private TrailRenderer cachedTrail;
         private bool serverCounted;
+        private bool _e695ffLoggedDelayedVisual;
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
@@ -196,6 +198,15 @@ namespace TitanOrbit.Entities
 
             // Update visual immediately (uses cached values; NetworkVariable sync will update clients)
             UpdateVisual();
+
+            #region agent log e695ff
+            {
+                var nm = NetworkManager.Singleton;
+                bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
+                NetworkGameManager.DebugSessionE695ffLog("B1", "Bullet.OnNetworkSpawn", "after_UpdateVisual",
+                    "{\"runId\":\"post-kinematic-revert\",\"isServer\":" + (IsServer ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false") + ",\"pureClient\":" + (pureClient ? "true" : "false") + ",\"rbKinematic\":" + (rb != null && rb.isKinematic ? "true" : "false") + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + ",\"camMain\":" + (UnityEngine.Camera.main != null ? "true" : "false") + ",\"parent\":\"" + (transform.parent != null ? transform.parent.name : "null") + "\",\"activeHierarchy\":" + (gameObject.activeInHierarchy ? "true" : "false") + "}");
+            }
+            #endregion
             
             // Also schedule a delayed update in case NetworkVariable sync is delayed
             StartCoroutine(DelayedVisualUpdate());
@@ -221,6 +232,16 @@ namespace TitanOrbit.Entities
         {
             yield return null; // Wait one frame for NetworkVariable to sync
             UpdateVisual();
+            #region agent log e695ff
+            if (!_e695ffLoggedDelayedVisual)
+            {
+                _e695ffLoggedDelayedVisual = true;
+                var nm = NetworkManager.Singleton;
+                bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
+                NetworkGameManager.DebugSessionE695ffLog("B1", "Bullet.DelayedVisualUpdate", "after_frame2",
+                    "{\"pureClient\":" + (pureClient ? "true" : "false") + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + "}");
+            }
+            #endregion
         }
 
         private void FixedUpdate()

@@ -1,5 +1,6 @@
 using UnityEngine;
 using TitanOrbit.Generation;
+using TitanOrbit.Networking;
 
 namespace TitanOrbit.Entities
 {
@@ -24,6 +25,7 @@ namespace TitanOrbit.Entities
         /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
         private bool _isShip;
         private Starship _starship;
+        private static int s_e695ffCamNullLogs;
 
         private void Start()
         {
@@ -33,9 +35,10 @@ namespace TitanOrbit.Entities
             // Local player: no wrap on BankPivot. Non-local ships: LateUpdate positions BankPivot toroidally.
             if (_isShip)
                 return;
-            // Only use Visual child for non-kinematic Rigidbodies (gems, bullets). Kinematic (e.g. asteroids)
-            // use procedural/SGT mesh on root and must have root moved like planets.
-            if (rb != null && !rb.isKinematic)
+            // Visual child for non-kinematic movers (gems, server bullets) and for bullets on clients:
+            // NetworkRigidbody keeps client bullet RBs kinematic while NetworkTransform drives the root.
+            bool isBullet = GetComponent<Bullet>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet))
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null)
@@ -57,7 +60,8 @@ namespace TitanOrbit.Entities
             }
             if (_isShip)
                 return;
-            if (rb != null && !rb.isKinematic && visualChild == null)
+            bool isBullet = GetComponent<Bullet>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet) && visualChild == null)
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null) visualChild = v;
@@ -125,7 +129,18 @@ namespace TitanOrbit.Entities
                 s_cachedMainCamera = UnityEngine.Camera.main;
             }
             UnityEngine.Camera cam = s_cachedMainCamera;
-            if (cam == null) return;
+            if (cam == null)
+            {
+                #region agent log e695ff
+                if (!_isShip && rb != null && !rb.isKinematic && s_e695ffCamNullLogs < 12)
+                {
+                    s_e695ffCamNullLogs++;
+                    NetworkGameManager.DebugSessionE695ffLog("B2", "ToroidalRenderer.LateUpdate", "cam_null_skip",
+                        "{\"go\":\"" + gameObject.name + "\"}");
+                }
+                #endregion
+                return;
+            }
 
             if (_isShip && _starship != null)
             {
@@ -155,9 +170,8 @@ namespace TitanOrbit.Entities
 
             Vector3 displayPos = ToroidalMap.GetDisplayPosition(logicalPosition, cam.transform.position);
 
-            // Use visual child only for non-kinematic moving entities (gems, bullets). Kinematic (asteroids)
-            // and no-Rigidbody (planets) move root so procedural/SGT visuals follow.
-            if (rb != null && !rb.isKinematic && visualChild != null)
+            // Bullets may be kinematic on clients (NetworkRigidbody); still offset visuals only, not root.
+            if (rb != null && visualChild != null)
             {
                 // Reparent any siblings that were added at runtime (e.g. Bullet's spawnedVisual) under our Visual
                 for (int i = transform.childCount - 1; i >= 0; i--)
