@@ -409,8 +409,22 @@ namespace TitanOrbit.Entities
             float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
             float omega = r > 0.001f ? speed / r : 0f;
 
-            // Counter to ship orbit direction
-            orbitAngle -= omega * Time.fixedDeltaTime;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening)
+            {
+                // Offline / not in a net session: same as original local integration.
+                orbitAngle -= omega * Time.fixedDeltaTime;
+            }
+            else if (nm.IsServer)
+            {
+                // Counter to ship orbit direction — authoritative integration only on server.
+                orbitAngle -= omega * Time.fixedDeltaTime;
+                planet.ServerSetGemMoonOrbitAngle(orbitAngle);
+            }
+            else
+            {
+                orbitAngle = planet.GemMoonOrbitAngleSynced;
+            }
 
             Vector3 offset = new Vector3(Mathf.Cos(orbitAngle), 0f, Mathf.Sin(orbitAngle)) * r;
             Vector3 pos = center + offset;
