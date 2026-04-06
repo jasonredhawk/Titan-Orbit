@@ -237,6 +237,10 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.0025f;
         [Tooltip("Asteroid collision damage = impact force * this value. Tune separately from ship damage.")]
         [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.0015f;
+        [Tooltip("Minimum impact force (N) on asteroid hits before spawning weapon-style collision impact VFX.")]
+        [SerializeField, Min(0f)] private float collisionWeaponVfxMinImpactForceN = 25f;
+        [Tooltip("Minimum relative speed (m/s) for ship–ship collision impact VFX (toroidal overlap uses the same threshold).")]
+        [SerializeField, Min(0f)] private float collisionWeaponVfxMinRelativeSpeed = 2f;
 
         private bool _hasPendingAsteroidBounce;
         private Vector3 _pendingAsteroidBounceVelocity;
@@ -3606,6 +3610,17 @@ namespace TitanOrbit.Entities
             {
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
+                if (relativeSpeed >= collisionWeaponVfxMinRelativeSpeed)
+                {
+                    ContactPoint cp = collision.GetContact(0);
+                    Vector3 impactPos = cp.point;
+                    Vector3 outward = impactPos - transform.position;
+                    outward.y = 0f;
+                    if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
+                    outward.Normalize();
+                    float sev = Mathf.InverseLerp(collisionWeaponVfxMinRelativeSpeed, 35f, relativeSpeed);
+                    TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, collisionSoundPitch);
+                }
                 return;
             }
 
@@ -3649,10 +3664,14 @@ namespace TitanOrbit.Entities
             float impactImpulse = rb.mass * deltaNormalSpeed;
             float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
 
+            float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
             if (AudioManager.Instance != null)
-            {
-                float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
                 AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
+
+            if (impactForceNewtons >= collisionWeaponVfxMinImpactForceN)
+            {
+                float sev = Mathf.InverseLerp(collisionWeaponVfxMinImpactForceN, 1200f, impactForceNewtons);
+                TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch);
             }
 
             // Visual nose-up kick (local X on visual root); stronger on harder hits.
@@ -3743,6 +3762,32 @@ namespace TitanOrbit.Entities
             return Mathf.Max(0.05f, Mathf.Max(b.extents.x, b.extents.z) * 0.6f);
         }
 
+        /// <summary>Bank index for Sci-Fi impact prefab (same as bullets). Returns -1 if no bank.</summary>
+        private int GetCollisionImpactBulletBankIndex()
+        {
+            if (CombatSystem.Instance == null) return -1;
+            int bankCount = CombatSystem.Instance.BulletPrefabBankCount;
+            if (bankCount <= 0) return -1;
+            int runtime = runtimeBulletPrefabIndex.Value;
+            if (runtime >= 0) return runtime % bankCount;
+            return 0;
+        }
+
+        /// <summary>Weapon-style impact burst (SciFi impact particle), scaled by severity01 (0..1).</summary>
+        private void TrySpawnWeaponCollisionImpactVfx(Vector3 impactWorldPos, Vector3 outwardXZNormal, float severity01, float audioPitch)
+        {
+            if (VisualEffectsManager.Instance == null) return;
+            impactWorldPos.y = Mathf.Max(impactWorldPos.y, 0f);
+            Vector3 n = outwardXZNormal;
+            n.y = 0f;
+            if (n.sqrMagnitude < 1e-6f) n = transform.forward;
+            n.Normalize();
+            float scaleMul = Mathf.Lerp(0.35f, 1.85f, Mathf.Clamp01(severity01));
+            int bank = GetCollisionImpactBulletBankIndex();
+            VisualEffectsManager.Instance.SpawnWeaponCollisionImpactServerRpc(
+                impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value);
+        }
+
         /// <summary>
         /// Ships keep unwrapped world positions; Unity colliders only see raw separation, so hulls can overlap
         /// on the torus without <see cref="OnCollisionEnter"/>. Resolve overlap using shortest toroidal offset
@@ -3794,7 +3839,9 @@ namespace TitanOrbit.Entities
                 Vector3 vO = otherRb.linearVelocity;
                 vO.y = 0f;
                 float relSpeed = (vMe - vO).magnitude;
-                if (relSpeed >= 2f && AudioManager.Instance != null)
+                bool playSound = relSpeed >= 2f && AudioManager.Instance != null;
+                bool playVfx = relSpeed >= collisionWeaponVfxMinRelativeSpeed && VisualEffectsManager.Instance != null;
+                if (playSound || playVfx)
                 {
                     ulong pairKey = ToroidalShipPairKey(GetInstanceID(), other.GetInstanceID());
                     float now = Time.time;
@@ -3802,7 +3849,19 @@ namespace TitanOrbit.Entities
                     {
                         _toroidalShipPairLastSoundTime[pairKey] = now;
                         float pitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relSpeed));
-                        AudioManager.Instance.PlayShipCollisionSound(pitch);
+                        if (playSound)
+                            AudioManager.Instance.PlayShipCollisionSound(pitch);
+                        if (playVfx)
+                        {
+                            Vector3 impactPos = myPos + (-n) * myR;
+                            impactPos.y = 0f;
+                            Vector3 outward = -n;
+                            outward.y = 0f;
+                            if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
+                            outward.Normalize();
+                            float sev = Mathf.InverseLerp(collisionWeaponVfxMinRelativeSpeed, 35f, relSpeed);
+                            TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, pitch);
+                        }
                     }
                 }
             }

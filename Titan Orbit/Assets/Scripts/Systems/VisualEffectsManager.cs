@@ -25,6 +25,10 @@ namespace TitanOrbit.Systems
         [Tooltip("Particles spawned where ships collide with asteroids (e.g. sparks).")]
         [SerializeField] private GameObject asteroidCollisionEffect;
         [SerializeField] private float asteroidCollisionEffectDuration = 2f;
+        [Header("Ship collision — weapon-style impact")]
+        [Tooltip("Base scale for hull/asteroid collision bursts (matches Bullet impactEffectScale; final scale is this × severity from Starship).")]
+        [SerializeField] private float weaponCollisionImpactBaseScale = 0.5f;
+        [SerializeField] private float weaponCollisionImpactDuration = 3f;
         [Header("Gem Pickup Text")]
         [SerializeField] private GameObject gemPickupTextPrefab;
         [SerializeField] private float gemPickupTextDuration = 1f;
@@ -380,6 +384,55 @@ namespace TitanOrbit.Systems
             GameObject effect = Instantiate(asteroidCollisionEffect, position, rotation);
             FixAllIn1VfxForUrp(effect);
             Destroy(effect, asteroidCollisionEffectDuration);
+        }
+
+        /// <summary>
+        /// Sparks/impact burst using the same prefab as bullet hits (<see cref="CombatSystem.GetImpactPrefabFromBank"/>),
+        /// scaled by collision severity. Falls back to <see cref="asteroidCollisionEffect"/> when the bank has no impact VFX.
+        /// </summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnWeaponCollisionImpactServerRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
+        {
+            SpawnWeaponCollisionImpactClientRpc(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
+        }
+
+        [ClientRpc]
+        private void SpawnWeaponCollisionImpactClientRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
+        {
+            TeamManager.Team team = (TeamManager.Team)teamInt;
+            GameObject prefab = null;
+            if (impactPrefabBankIndex >= 0 && CombatSystem.Instance != null)
+                prefab = CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex, team);
+            if (prefab == null)
+                prefab = asteroidCollisionEffect;
+            if (prefab == null) return;
+
+            Vector3 n = normal;
+            n.y = 0f;
+            if (n.sqrMagnitude < 0.0001f)
+                n = Vector3.forward;
+            else
+                n.Normalize();
+
+            Quaternion rot = Quaternion.LookRotation(n, Vector3.up);
+            GameObject go = Instantiate(prefab, position, rot);
+            float mul = Mathf.Max(0.12f, scaleMultiplier);
+            go.transform.localScale = Vector3.one * (weaponCollisionImpactBaseScale * mul);
+            FixAllIn1VfxForUrp(go);
+            SetAudioPitchInHierarchy(go, audioPitch);
+            Destroy(go, weaponCollisionImpactDuration);
+        }
+
+        private static void SetAudioPitchInHierarchy(GameObject root, float pitch)
+        {
+            if (root == null) return;
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            if (sources == null || sources.Length == 0) return;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] != null)
+                    sources[i].pitch = pitch;
+            }
         }
 
         /// <summary>Play level-up burst. Uses prefab VFX only (same URP fix as bullet impact), scaled by planet size.</summary>

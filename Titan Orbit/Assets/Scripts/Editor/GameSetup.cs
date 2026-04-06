@@ -246,14 +246,6 @@ namespace TitanOrbit.Editor
             Sprite uiSprite = CreateWhiteSprite();
             if (shiftButtonSprite == null) shiftButtonSprite = uiSprite;
 
-            GameObject playBtn = so.FindProperty("playButton").objectReferenceValue as GameObject;
-            if (playBtn == null)
-            {
-                playBtn = CreateShiftButton(mainMenuPanel.transform, "PlayButton", "PLAY", shiftButtonSprite);
-                SetRect(playBtn, 0.5f, 0.5f, 0.5f, 0.5f, 0, 116, 280, 64);
-                so.FindProperty("playButton").objectReferenceValue = playBtn.GetComponent<Button>();
-            }
-
             GameObject teamPanel = so.FindProperty("teamSelectionPanel").objectReferenceValue as GameObject;
             if (teamPanel == null)
             {
@@ -322,7 +314,7 @@ namespace TitanOrbit.Editor
             }
 
             so.ApplyModifiedPropertiesWithoutUndo();
-            Debug.Log("Play button and Team Selection panel added. Save the scene.");
+            Debug.Log("Team Selection panel updated. Save the scene.");
         }
 
         [MenuItem("Titan Orbit/Ensure Team Selection Panels (D–E for 2–5 teams)")]
@@ -439,7 +431,7 @@ namespace TitanOrbit.Editor
 
             so.ApplyModifiedPropertiesWithoutUndo();
             lso.ApplyModifiedPropertiesWithoutUndo();
-            Debug.Log("Loading screen added. MainMenu will show it after Play. Save the scene.");
+            Debug.Log("Loading screen added. MainMenu will show it after you create or join a match. Save the scene.");
         }
 
         [MenuItem("Titan Orbit/Fix Space Background Textures (Enable Tiling)")]
@@ -811,10 +803,6 @@ namespace TitanOrbit.Editor
             phRect.offsetMax = new Vector2(-12, -6);
             playerNameInput.placeholder = placeholderTmp;
 
-            // Play button (centered below player name)
-            GameObject playBtn = CreateShiftButton(mainMenuPanel.transform, "PlayButton", "PLAY", shiftButtonSprite);
-            SetRect(playBtn, 0.5f, 0.35f, 0.5f, 0.35f, 0, 0, 280, 64);
-
             // Lobby Panel (hidden initially, Shift style)
             GameObject lobbyPanel = CreateShiftPanel(canvasObj.transform, "LobbyPanel", new Color(0.06f, 0.08f, 0.14f, 0.95f), shiftPanelSprite);
             RectTransform lobbyRect = lobbyPanel.GetComponent<RectTransform>();
@@ -896,14 +884,13 @@ namespace TitanOrbit.Editor
             SerializedObject mainMenuSO = new SerializedObject(mainMenu);
             mainMenuSO.FindProperty("mainMenuPanel").objectReferenceValue = mainMenuPanel;
             mainMenuSO.FindProperty("lobbyPanel").objectReferenceValue = lobbyPanel;
-            mainMenuSO.FindProperty("playButton").objectReferenceValue = playBtn.GetComponent<Button>();
             mainMenuSO.FindProperty("teamSelectionPanel").objectReferenceValue = teamPanel;
             mainMenuSO.FindProperty("playerCountText").objectReferenceValue = playerCountText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("teamStatusText").objectReferenceValue = teamStatusText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("roomNameText").objectReferenceValue = roomNameText.GetComponent<TextMeshProUGUI>();
             mainMenuSO.FindProperty("playerNameInputField").objectReferenceValue = playerNameInput;
 
-            // Loading screen (shown after Play, before team selection)
+            // Loading screen (shown after joining/creating a match, before team selection)
             GameObject loadingScreenObj = new GameObject("LoadingScreenController");
             loadingScreenObj.transform.SetParent(canvasObj.transform, false);
             LoadingScreenController loadingCtrl = loadingScreenObj.AddComponent<LoadingScreenController>();

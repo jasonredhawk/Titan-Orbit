@@ -263,7 +263,7 @@ namespace TitanOrbit.UI
                 if (elapsed < minLoadingDisplayTime + maxWaitNetcodeSeconds)
                     return;
                 Debug.LogError("[LoadingScreenController] Timed out waiting for Netcode (transport listening and client approved). The world reported ready but multiplayer session was not ready.");
-                NetworkGameManager.OnTeamChoiceFailed?.Invoke("Multiplayer session did not start in time. Return to the main menu and use Play, Host Online, or Join with a relay code.");
+                NetworkGameManager.OnTeamChoiceFailed?.Invoke("Multiplayer session did not start in time. Return to the main menu, create or join a match from the list, or join with a relay code.");
                 teamMenuShownAfterLoad = true;
                 HideLoadingAndShowTeamMenu();
                 return;

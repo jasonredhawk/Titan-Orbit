@@ -2498,7 +2498,7 @@ MonoBehaviour:
   buttonSpacing: 10
   bottomPadding: 12
   titleFromTop: -7
-  ticksCenterYOffset: -3
+  ticksCenterYOffset: -1
   buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
   buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
   buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
@@ -2508,8 +2508,8 @@ MonoBehaviour:
   energyColor: {r: 0.95, g: 0.8, b: 0.2, a: 0.9}
   shipColor: {r: 0.2, g: 0.7, b: 0.95, a: 0.9}
   cargoColor: {r: 0.65, g: 0.4, b: 0.9, a: 0.9}
-  gemCostIconSprite: {fileID: 0}
-  gemIconSize: 14
+  gemCostIconSprite: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
+  gemIconSize: 9
 --- !u!114 &505988332
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7857,22 +7857,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  minMapSize: 111
-  maxMapSize: 111
+  minMapSize: 333
+  maxMapSize: 333
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 99
   minHomePlanetPairSeparation: 120
-  clearanceRadiusAroundHomePlanet: 80
+  clearanceRadiusAroundHomePlanet: 40
   minTeamsPerMatch: 3
   maxTeamsPerMatch: 3
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  minNeutralPlanets: 3
-  maxNeutralPlanets: 3
+  minNeutralPlanets: 9
+  maxNeutralPlanets: 12
   minPlanetSize: 9
   maxPlanetSize: 16
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 111
-  asteroidsAtMaxMapSize: 111
+  asteroidsAtMinMapSize: 555
+  asteroidsAtMaxMapSize: 555
   minAsteroidClusters: 3
   maxAsteroidClusters: 50
   minAsteroidSize: 1
@@ -8050,8 +8050,10 @@ MonoBehaviour:
   bulletTrailEffect: {fileID: 0}
   levelUpEffect: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   levelUpEffectScale: 4
-  asteroidCollisionEffect: {fileID: 0}
+  asteroidCollisionEffect: {fileID: 106912, guid: 36bbe64b8ec4ca9499a68747230cbe17, type: 3}
   asteroidCollisionEffectDuration: 2
+  weaponCollisionImpactBaseScale: 0.5
+  weaponCollisionImpactDuration: 3
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
   floatingCountFeedbackSettings: {fileID: 0}
@@ -9738,7 +9740,7 @@ MonoBehaviour:
   lobbyPanel: {fileID: 1345699743}
   teamSelectionPanel: {fileID: 376194405}
   loadingScreenController: {fileID: 867079293}
-  playButton: {fileID: 1631842815}
+  playButton: {fileID: 0}
   hostOnlineButton: {fileID: 0}
   joinOnlineButton: {fileID: 0}
   teamAButton: {fileID: 0}
@@ -9761,12 +9763,10 @@ MonoBehaviour:
   browseLobbiesButton: {fileID: 0}
   refreshLobbiesButton: {fileID: 0}
   joinSelectedLobbyButton: {fileID: 0}
-  backToMainMenuButton: {fileID: 0}
   lobbyListContainer: {fileID: 0}
   lobbyListRowPrefab: {fileID: 0}
   lobbyBrowserStatusText: {fileID: 0}
   latestOnlyFilter: 0
-  paidPlaceholder: 0
 --- !u!114 &1536533386
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10259,7 +10259,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1631842812
 RectTransform:
   m_ObjectHideFlags: 0
@@ -13096,21 +13096,21 @@ MonoBehaviour:
   sfxVolume: 1
   shootVolume: 1
   impactVolume: 1
-  asteroidCollisionVolume: 0.4
-  shipCollisionVolume: 0.3
-  gemVolume: 0.3
-  peopleVolume: 0.5
+  asteroidCollisionVolume: 0.3
+  shipCollisionVolume: 0.2
+  gemVolume: 0.2
+  peopleVolume: 0.4
   miningVolume: 1
   captureVolume: 1
   explosionVolume: 1
   shipDeathVolume: 1
   upgradeVolume: 1
   playMusicOnStart: 1
-  weaponPitchMin: 0.01
-  weaponPitchMax: 1
+  weaponPitchMin: 0.1
+  weaponPitchMax: 2
   gemPitchMin: 0.1
   gemPitchMax: 2
-  peoplePitchMin: 0.01
+  peoplePitchMin: 0.1
   peoplePitchMax: 2
 --- !u!4 &1959116599
 Transform:

@@ -1121,7 +1121,7 @@ namespace TitanOrbit.Networking
             if (nm0 == null || !IsNetcodeTransportReadyForGameplay(nm0))
             {
                 pendingTeamRequestCoroutine = null;
-                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu and use Play, Host Online, or Join with a relay code, then enter the match again.");
+                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, create or join a match from the list, or join with a relay code, then enter the match again.");
                 yield break;
             }
             while (Time.realtimeSinceStartup < deadline)
@@ -1184,7 +1184,7 @@ namespace TitanOrbit.Networking
                 DebugSessionE695ffLog("H4", "NetworkGameManager.RequestTeamFromLocalPlayer", "reject — Netcode not ready",
                     "{\"reason\":\"transport_not_ready\",\"isListening\":" + (nm.IsListening ? "true" : "false") + ",\"isConnectedClient\":" + (nm.IsConnectedClient ? "true" : "false") + "}");
                 #endregion
-                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu and use Play, Host Online, or Join with a relay code, then enter the match again.");
+                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, create or join a match from the list, or join with a relay code, then enter the match again.");
                 return;
             }
             var ship = TryGetLocalStarship();

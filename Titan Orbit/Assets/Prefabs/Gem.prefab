@@ -157,7 +157,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3457072792
+  GlobalObjectIdHash: 2685444911
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 0
@@ -178,6 +178,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e96cb6065543e43c4a752faaa1468eb1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Components::Unity.Netcode.Components.NetworkTransform
+  UseUnreliableDeltas: 1
   SyncPositionX: 1
   SyncPositionY: 1
   SyncPositionZ: 1
@@ -196,8 +197,6 @@ MonoBehaviour:
   InLocalSpace: 0
   Interpolate: 1
   SlerpPosition: 0
-  UseUnreliableDeltas: 1
-  FixedSendsPerSecond: 30
 --- !u!114 &8844082102695423002
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -226,12 +225,17 @@ MonoBehaviour:
   pickupRadius: 2
   stopSpeedThreshold: 0.05
   slowdownDrag: 0.5
-  baseScale: 0.48
-  visualScaleMultiplier: 2.2
+  baseScale: 1
+  visualScaleMultiplier: 1
   lifetimeSeconds: 20
-  shrinkDuration: 3
+  shrinkDuration: 5
   magnetSpeed: 8
   collectRadius: 0.6
+  shipProximitySlop: 0.35
+  shipProximityRadiusMultiplier: 0.45
+  selfPickupDelaySeconds: 1
+  gemTintColor: {r: 1, g: 0, b: 0, a: 0.45}
+  bonusGemTintColor: {r: 1, g: 0.9, b: 0.15, a: 0.55}
 --- !u!114 &1238730556394064687
 MonoBehaviour:
   m_ObjectHideFlags: 0

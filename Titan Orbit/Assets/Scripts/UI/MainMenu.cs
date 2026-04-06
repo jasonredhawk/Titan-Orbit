@@ -43,15 +43,10 @@ namespace TitanOrbit.UI
         [SerializeField] private Button browseLobbiesButton;
         [SerializeField] private Button refreshLobbiesButton;
         [SerializeField] private Button joinSelectedLobbyButton;
-        [SerializeField] private Button backToMainMenuButton;
         [SerializeField] private Transform lobbyListContainer;
         [SerializeField] private GameObject lobbyListRowPrefab;
         [SerializeField] private TextMeshProUGUI lobbyBrowserStatusText;
         [SerializeField] private bool latestOnlyFilter = false;
-
-        [Header("WebGL Match Selection (Placeholder)")]
-        [Tooltip("When true, WebGL Play shows open lobbies and joins based on the joinCode input (index or lobby id).")]
-        [SerializeField] private bool paidPlaceholder = false;
 
         private readonly List<NetworkGameManager.LobbySummary> cachedLobbySummaries = new List<NetworkGameManager.LobbySummary>();
         private readonly List<Button> lobbyRowButtons = new List<Button>();
@@ -59,6 +54,7 @@ namespace TitanOrbit.UI
         private string selectedLobbyId;
         private int selectedLobbyRowIndex = -1;
         private GameObject lobbyBrowserRoot;
+        private Vector2 _lastMainMenuPanelSize = Vector2.negativeInfinity;
         private string pendingTeamJoinError;
         /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
         private bool deferTeamPanelUntilNetworkReady;
@@ -66,7 +62,7 @@ namespace TitanOrbit.UI
         private void Start()
         {
             EnsureRuntimeLobbyBrowserUI();
-            DeemphasizeLocalPlayButton();
+            HideMainMenuPlayButton();
 
             if (hostOnlineButton != null)
                 hostOnlineButton.onClick.AddListener(OnHostOnlineClicked);
@@ -74,11 +70,6 @@ namespace TitanOrbit.UI
             if (joinOnlineButton != null)
             {
                 joinOnlineButton.onClick.AddListener(OnJoinOnlineClicked);
-            }
-
-            if (playButton != null)
-            {
-                playButton.onClick.AddListener(OnPlayClicked);
             }
 
             WireLobbyBrowserListeners();
@@ -111,6 +102,13 @@ namespace TitanOrbit.UI
             SetLobbyBrowserStatus("Select a lobby to join.");
 
             LayoutMainMenuActionStack();
+            if (mainMenuPanel != null)
+            {
+                var pr = mainMenuPanel.GetComponent<RectTransform>();
+                if (pr != null)
+                    _lastMainMenuPanelSize = pr.rect.size;
+            }
+            _ = RefreshLobbyListAsync();
         }
 
         private void OnDestroy()
@@ -131,6 +129,21 @@ namespace TitanOrbit.UI
             deferTeamPanelUntilNetworkReady = false;
             if (lobbyPanel != null) lobbyPanel.SetActive(false);
             if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
+        }
+
+        private void LateUpdate()
+        {
+            if (mainMenuPanel == null || !mainMenuPanel.activeSelf || lobbyBrowserRoot == null)
+                return;
+            var pr = mainMenuPanel.GetComponent<RectTransform>();
+            if (pr == null)
+                return;
+            Vector2 sz = pr.rect.size;
+            if (sz.x > 1f && sz.y > 1f && (sz - _lastMainMenuPanelSize).sqrMagnitude > 4f)
+            {
+                _lastMainMenuPanelSize = sz;
+                LayoutMainMenuActionStack();
+            }
         }
 
         private void Update()
@@ -202,130 +215,6 @@ namespace TitanOrbit.UI
             NetworkGameManager.RequestTeamFromLocalPlayer(team);
         }
 
-        private async void OnPlayClicked()
-        {
-            if (NetworkGameManager.Instance == null) return;
-            if (playButton != null) playButton.interactable = false;
-            try
-            {
-                string playerName = (playerNameInputField != null ? playerNameInputField.text : null) ?? "";
-                playerName = playerName.Trim();
-                if (!string.IsNullOrEmpty(playerName))
-                {
-                    PlayerPrefs.SetString("TitanOrbit_PlayerName", playerName);
-                    PlayerPrefs.Save();
-                }
-                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(playerName)
-                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
-                    : playerName;
-
-                bool ok;
-#if UNITY_WEBGL && !UNITY_EDITOR
-                bool isPaid = PlayerPrefs.GetInt("TitanOrbit_WebPaid", paidPlaceholder ? 1 : 0) != 0;
-
-                if (!isPaid)
-                {
-                    // WebGL cannot start a local host. Try Quick Join (any open lobby), then fall back to a "latest" lobby.
-                    ok = await NetworkGameManager.Instance.PlayWebGLJoinAsync();
-                    if (!ok)
-                    {
-                        var latest = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: true, count: 10);
-                        if (latest == null || latest.Count == 0)
-                        {
-                            Debug.LogWarning("No open lobbies found (Quick Join and latest). Run a headless/server build with Lobby+Relay, or use Host Online / join code from another client.");
-                            ok = false;
-                        }
-                        else
-                        {
-                            ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(latest[0].Id);
-                        }
-                    }
-                }
-                else
-                {
-                    // Paid users can pick any open lobby (placeholder selection via joinCodeInputField).
-                    var openLobbies = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: false, count: 20);
-                    if (openLobbies == null || openLobbies.Count == 0)
-                    {
-                        Debug.LogWarning("No open lobbies found for paid users.");
-                        ok = false;
-                    }
-                    else
-                    {
-                        // Show a small list in the existing display text so you can choose an index/lobby id.
-                        if (joinCodeDisplayText != null)
-                        {
-                            joinCodeDisplayText.gameObject.SetActive(true);
-                            int maxDisplay = Mathf.Min(8, openLobbies.Count);
-                            string listText = "Open lobbies (paid):\n";
-                            for (int i = 0; i < maxDisplay; i++)
-                            {
-                                var lob = openLobbies[i];
-                                int playerCount = lob.Players != null ? lob.Players.Count : 0;
-                                listText += $"{i}: {lob.Name} ({playerCount}/{lob.MaxPlayers}) id={lob.Id}\n";
-                            }
-                            listText += "Enter joinCodeInput as index (0..N) or lobby id.\n";
-                            joinCodeDisplayText.text = listText;
-                        }
-
-                        string selection = joinCodeInputField != null ? joinCodeInputField.text : null;
-                        string trimmed = string.IsNullOrWhiteSpace(selection) ? null : selection.Trim();
-
-                        string lobbyIdToJoin = null;
-                        if (string.IsNullOrWhiteSpace(trimmed))
-                        {
-                            lobbyIdToJoin = openLobbies[0].Id;
-                        }
-                        else if (int.TryParse(trimmed, out int index))
-                        {
-                            if (index >= 0 && index < openLobbies.Count)
-                                lobbyIdToJoin = openLobbies[index].Id;
-                        }
-                        else
-                        {
-                            // Treat as a lobby id.
-                            lobbyIdToJoin = trimmed;
-                        }
-
-                        if (string.IsNullOrWhiteSpace(lobbyIdToJoin))
-                        {
-                            Debug.LogWarning("Paid selection was invalid. Join failed.");
-                            ok = false;
-                        }
-                        else
-                        {
-                            ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(lobbyIdToJoin);
-                        }
-                    }
-                }
-#else
-                ok = await NetworkGameManager.Instance.PlayQuickJoinOrCreateAsync();
-#endif
-                if (ok)
-                {
-                    if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
-                    if (loadingScreenController != null)
-                        loadingScreenController.ShowLoading();
-                    else
-                        ShowLobby();
-                }
-                else
-                {
-#if UNITY_WEBGL && !UNITY_EDITOR
-                    SetLobbyBrowserStatus("Join failed: no open match, or Unity Services blocked. Host a game from desktop/server, then try again.");
-                    Debug.LogError("WebGL Play failed: need an open Lobby+Relay match (headless host or another player). Check Unity Dashboard and browser console.");
-#else
-                    SetLobbyBrowserStatus("Local Test failed. Check console and Unity Services.");
-                    Debug.LogError("Play failed. Check console and Unity Services.");
-#endif
-                }
-            }
-            finally
-            {
-                if (playButton != null) playButton.interactable = true;
-            }
-        }
-
         private async void OnHostOnlineClicked()
         {
             if (NetworkGameManager.Instance == null) return;
@@ -350,7 +239,7 @@ namespace TitanOrbit.UI
                     if (joinCodeDisplayText != null)
                     {
                         joinCodeDisplayText.gameObject.SetActive(true);
-                        joinCodeDisplayText.text = "Match is listed under Browse Open Matches.\nRelay code: " + joinCode;
+                        joinCodeDisplayText.text = "Your match appears in Open matches below.\nRelay code: " + joinCode;
                     }
                     else
                     {
@@ -393,13 +282,6 @@ namespace TitanOrbit.UI
             }
         }
 
-        private async void OnBrowseLobbiesClicked()
-        {
-            WireLobbyBrowserListeners();
-            SetLobbyBrowserVisible(true);
-            await RefreshLobbyListAsync();
-        }
-
         private async void OnRefreshLobbiesClicked()
         {
             await RefreshLobbyListAsync();
@@ -437,17 +319,6 @@ namespace TitanOrbit.UI
                 if (joinSelectedLobbyButton != null)
                     joinSelectedLobbyButton.interactable = !string.IsNullOrWhiteSpace(selectedLobbyId);
             }
-        }
-
-        private void OnBackToMainMenuClicked()
-        {
-            ClearLobbyListRows();
-            selectedLobbyId = null;
-            selectedLobbyRowIndex = -1;
-            if (joinSelectedLobbyButton != null)
-                joinSelectedLobbyButton.interactable = false;
-            SetLobbyBrowserStatus("Select a lobby to join.");
-            SetLobbyBrowserVisible(false);
         }
 
         private async Task RefreshLobbyListAsync()
@@ -555,34 +426,13 @@ namespace TitanOrbit.UI
         private void SetLobbyBrowserStatus(string text)
         {
             if (lobbyBrowserStatusText != null)
-            {
                 lobbyBrowserStatusText.text = text;
-                lobbyBrowserStatusText.transform.SetAsLastSibling();
-            }
         }
 
-        private void DeemphasizeLocalPlayButton()
+        private void HideMainMenuPlayButton()
         {
-            if (playButton == null)
-                return;
-
-            var playRect = playButton.GetComponent<RectTransform>();
-            if (playRect != null)
-                playRect.sizeDelta = new Vector2(190f, 46f);
-
-            var playImage = playButton.GetComponent<Image>();
-            if (playImage != null)
-                playImage.color = new Color(0.22f, 0.33f, 0.42f, 0.75f);
-
-            var playLabel = playButton.GetComponentInChildren<TextMeshProUGUI>();
-            if (playLabel != null)
-            {
-#if UNITY_WEBGL && !UNITY_EDITOR
-                playLabel.text = "Play";
-#else
-                playLabel.text = "Local Test";
-#endif
-            }
+            if (playButton != null)
+                playButton.gameObject.SetActive(false);
         }
 
         private void EnsureRuntimeLobbyBrowserUI()
@@ -604,62 +454,116 @@ namespace TitanOrbit.UI
                     hostOnlineButton.transform.SetSiblingIndex(playerNameInputField.transform.GetSiblingIndex() + 1);
             }
 
-            if (browseLobbiesButton == null)
-            {
-                // Below Create match, or player name if host button is assigned in the scene
-                browseLobbiesButton = CreateMenuButton("BrowseLobbiesButton", "Browse Open Matches", new Vector2(0f, -112f), new Vector2(320f, 52f), mainRect);
-                if (hostOnlineButton != null)
-                    browseLobbiesButton.transform.SetSiblingIndex(hostOnlineButton.transform.GetSiblingIndex() + 1);
-                else if (playerNameInputField != null)
-                    browseLobbiesButton.transform.SetSiblingIndex(playerNameInputField.transform.GetSiblingIndex() + 1);
-            }
+            if (browseLobbiesButton != null)
+                browseLobbiesButton.gameObject.SetActive(false);
 
             if (lobbyBrowserRoot == null)
                 BuildLobbyBrowserPanel(mainRect);
 
-            SetLobbyBrowserVisible(false);
+            if (lobbyBrowserRoot != null)
+                lobbyBrowserRoot.SetActive(true);
         }
 
         /// <summary>
-        /// Places Create match, Browse, and Play below the player name field with consistent gaps so controls never overlap.
+        /// Top-justifies title (if present), player name label, input, and Create match; Open matches fills space below (fixed max width, centered).
         /// </summary>
         private void LayoutMainMenuActionStack()
         {
             if (mainMenuPanel == null)
                 return;
 
-            const float paddingBelowName = 16f;
-            const float gapBetweenButtons = 12f;
+            var mainRect = mainMenuPanel.GetComponent<RectTransform>();
+            float panelW = mainRect != null && mainRect.rect.width > 1f ? mainRect.rect.width : 1920f;
+            float contentW = Mathf.Max(280f, panelW - 64f);
 
-            float nameCenterY = 0f;
-            float nameHalfH = 36f;
+            const float topPadding = 24f;
+            const float bottomPadding = 28f;
+            const float gapAfterTitle = 18f;
+            const float gapLabelToInput = 14f;
+            const float gapInputToCreate = 16f;
+            const float gapBeforeLobby = 22f;
+
+            float y = topPadding;
+
+            void PlaceTopDown(RectTransform rt, float height, float width)
+            {
+                if (rt == null)
+                    return;
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.sizeDelta = new Vector2(width, height);
+                rt.anchoredPosition = new Vector2(0f, -y);
+                y += height;
+            }
+
+            Transform titleTf = mainMenuPanel.transform.Find("Title");
+            var titleRt = titleTf != null ? titleTf.GetComponent<RectTransform>() : null;
+            if (titleRt != null)
+            {
+                float th = titleRt.sizeDelta.y > 1f ? titleRt.sizeDelta.y : 88f;
+                float tw = Mathf.Min(800f, contentW);
+                PlaceTopDown(titleRt, th, tw);
+                y += gapAfterTitle;
+            }
+
+            Transform labelTf = mainMenuPanel.transform.Find("PlayerNameLabel");
+            var labelRt = labelTf != null ? labelTf.GetComponent<RectTransform>() : null;
+            if (labelRt != null)
+            {
+                float lh = labelRt.sizeDelta.y > 1f ? labelRt.sizeDelta.y : 28f;
+                PlaceTopDown(labelRt, lh, Mathf.Min(400f, contentW));
+                y += gapLabelToInput;
+            }
+
             if (playerNameInputField != null)
             {
-                var nameRt = playerNameInputField.GetComponent<RectTransform>();
-                if (nameRt != null)
+                var inputRt = playerNameInputField.GetComponent<RectTransform>();
+                if (inputRt != null)
                 {
-                    nameCenterY = nameRt.anchoredPosition.y;
-                    nameHalfH = nameRt.rect.height * 0.5f;
+                    float ih = inputRt.sizeDelta.y > 1f ? inputRt.sizeDelta.y : 72f;
+                    float iw = inputRt.sizeDelta.x > 1f ? inputRt.sizeDelta.x : Mathf.Min(440f, contentW);
+                    PlaceTopDown(inputRt, ih, iw);
+                    y += gapInputToCreate;
                 }
             }
 
-            float rowTopY = nameCenterY - nameHalfH - paddingBelowName;
-
-            void PlaceButton(Button btn)
+            if (hostOnlineButton != null)
             {
-                if (btn == null)
-                    return;
-                var r = btn.GetComponent<RectTransform>();
-                if (r == null)
-                    return;
-                float half = r.sizeDelta.y * 0.5f;
-                r.anchoredPosition = new Vector2(r.anchoredPosition.x, rowTopY - half);
-                rowTopY -= r.sizeDelta.y + gapBetweenButtons;
+                var hostRt = hostOnlineButton.GetComponent<RectTransform>();
+                if (hostRt != null)
+                {
+                    float ch = hostRt.sizeDelta.y > 1f ? hostRt.sizeDelta.y : 52f;
+                    float cw = hostRt.sizeDelta.x > 1f ? hostRt.sizeDelta.x : Mathf.Min(360f, contentW);
+                    PlaceTopDown(hostRt, ch, cw);
+                }
             }
 
-            PlaceButton(hostOnlineButton);
-            PlaceButton(browseLobbiesButton);
-            PlaceButton(playButton);
+            y += gapBeforeLobby;
+            ApplyLobbyBrowserStretch(mainRect, y, bottomPadding);
+            if (lobbyBrowserRoot != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(lobbyBrowserRoot.GetComponent<RectTransform>());
+        }
+
+        /// <summary>
+        /// Vertically stretches the Open matches card between the header and bottom inset; horizontally uses a fixed max width (centered), like the earlier layout.
+        /// </summary>
+        private void ApplyLobbyBrowserStretch(RectTransform mainMenuRect, float topInsetPixels, float bottomPadding)
+        {
+            if (lobbyBrowserRoot == null || mainMenuRect == null)
+                return;
+
+            float panelW = mainMenuRect.rect.width > 1f ? mainMenuRect.rect.width : 1920f;
+            const float maxLobbyWidth = 960f;
+            const float minHorizontalPad = 48f;
+            float fixedW = Mathf.Min(maxLobbyWidth, Mathf.Max(280f, panelW - minHorizontalPad));
+            float sideMargin = Mathf.Max(0f, (panelW - fixedW) * 0.5f);
+
+            var rt = lobbyBrowserRoot.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = new Vector2(sideMargin, bottomPadding);
+            rt.offsetMax = new Vector2(-sideMargin, -topInsetPixels);
         }
 
         /// <summary>
@@ -667,11 +571,6 @@ namespace TitanOrbit.UI
         /// </summary>
         private void WireLobbyBrowserListeners()
         {
-            if (browseLobbiesButton != null)
-            {
-                browseLobbiesButton.onClick.RemoveListener(OnBrowseLobbiesClicked);
-                browseLobbiesButton.onClick.AddListener(OnBrowseLobbiesClicked);
-            }
             if (refreshLobbiesButton != null)
             {
                 refreshLobbiesButton.onClick.RemoveListener(OnRefreshLobbiesClicked);
@@ -682,11 +581,6 @@ namespace TitanOrbit.UI
                 joinSelectedLobbyButton.onClick.RemoveListener(OnJoinSelectedLobbyClicked);
                 joinSelectedLobbyButton.onClick.AddListener(OnJoinSelectedLobbyClicked);
             }
-            if (backToMainMenuButton != null)
-            {
-                backToMainMenuButton.onClick.RemoveListener(OnBackToMainMenuClicked);
-                backToMainMenuButton.onClick.AddListener(OnBackToMainMenuClicked);
-            }
         }
 
         private void BuildLobbyBrowserPanel(RectTransform parent)
@@ -694,63 +588,70 @@ namespace TitanOrbit.UI
             lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image));
             lobbyBrowserRoot.transform.SetParent(parent, false);
             var rootRect = lobbyBrowserRoot.GetComponent<RectTransform>();
-            rootRect.anchorMin = new Vector2(0.5f, 0.5f);
-            rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
             rootRect.pivot = new Vector2(0.5f, 0.5f);
-            rootRect.sizeDelta = new Vector2(1040f, 640f);
-            rootRect.anchoredPosition = new Vector2(0f, -12f);
+
             var rootImage = lobbyBrowserRoot.GetComponent<Image>();
             rootImage.color = new Color(0.035f, 0.065f, 0.11f, 0.98f);
-            // Root must not steal hits from child controls (footer/scroll). Blocker handles modal background.
             rootImage.raycastTarget = false;
 
-            var blocker = new GameObject("LobbyBrowserBlocker", typeof(RectTransform), typeof(Image));
-            blocker.transform.SetParent(lobbyBrowserRoot.transform, false);
-            var blockerRt = blocker.GetComponent<RectTransform>();
-            blockerRt.anchorMin = Vector2.zero;
-            blockerRt.anchorMax = Vector2.one;
-            blockerRt.offsetMin = Vector2.zero;
-            blockerRt.offsetMax = Vector2.zero;
-            blockerRt.SetAsFirstSibling();
-            var blockerImg = blocker.GetComponent<Image>();
-            blockerImg.color = new Color(0.02f, 0.04f, 0.08f, 0.55f);
-            blockerImg.raycastTarget = true;
+            var rootVlg = lobbyBrowserRoot.AddComponent<VerticalLayoutGroup>();
+            rootVlg.spacing = 12f;
+            rootVlg.padding = new RectOffset(16, 16, 14, 16);
+            rootVlg.childAlignment = TextAnchor.UpperCenter;
+            rootVlg.childControlWidth = true;
+            rootVlg.childControlHeight = true;
+            rootVlg.childForceExpandWidth = true;
+            rootVlg.childForceExpandHeight = false;
 
-            var titleObj = CreateLabel("LobbyBrowserTitle", "Orbital Matches", Vector2.zero, 40f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var titleObj = CreateLabel("LobbyBrowserTitle", "Open matches", Vector2.zero, 32f, lobbyBrowserRoot.transform, raycastTarget: false);
             var titleRect = titleObj.GetComponent<RectTransform>();
-            titleRect.anchorMin = new Vector2(0.5f, 1f);
-            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -28f);
-            titleRect.sizeDelta = new Vector2(900f, 56f);
+            titleRect.sizeDelta = Vector2.zero;
+            titleRect.anchoredPosition = Vector2.zero;
             var titleTmp = titleObj.GetComponent<TextMeshProUGUI>();
             titleTmp.enableWordWrapping = false;
             titleTmp.fontStyle = FontStyles.Bold;
             titleTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
             titleTmp.outlineWidth = 0.15f;
             titleTmp.outlineColor = new Color32(20, 40, 70, 200);
+            var titleLe = titleObj.AddComponent<LayoutElement>();
+            titleLe.minHeight = 36f;
+            titleLe.preferredHeight = 40f;
 
-            var statusObj = CreateLabel("LobbyBrowserStatusText", "Select a lobby to join.", Vector2.zero, 22f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var statusObj = CreateLabel("LobbyBrowserStatusText", "Select a lobby to join.", Vector2.zero, 20f, lobbyBrowserRoot.transform, raycastTarget: false);
             var statusRect = statusObj.GetComponent<RectTransform>();
-            statusRect.anchorMin = new Vector2(0.5f, 1f);
-            statusRect.anchorMax = new Vector2(0.5f, 1f);
+            statusRect.anchorMin = new Vector2(0f, 1f);
+            statusRect.anchorMax = new Vector2(1f, 1f);
             statusRect.pivot = new Vector2(0.5f, 1f);
-            statusRect.anchoredPosition = new Vector2(0f, -88f);
-            statusRect.sizeDelta = new Vector2(900f, 56f);
+            statusRect.sizeDelta = Vector2.zero;
+            statusRect.anchoredPosition = Vector2.zero;
             lobbyBrowserStatusText = statusObj.GetComponent<TextMeshProUGUI>();
             lobbyBrowserStatusText.enableWordWrapping = true;
             lobbyBrowserStatusText.color = new Color(0.75f, 0.86f, 0.98f, 0.95f);
             lobbyBrowserStatusText.overflowMode = TextOverflowModes.Ellipsis;
+            var statusLe = statusObj.AddComponent<LayoutElement>();
+            statusLe.minHeight = 32f;
+            statusLe.preferredHeight = 40f;
 
-            // ScrollRect must own the viewport as a child so scrolling and raycasts work reliably.
             var scrollRootObj = new GameObject("LobbyListScrollRect", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
             scrollRootObj.transform.SetParent(lobbyBrowserRoot.transform, false);
             var scrollRootRect = scrollRootObj.GetComponent<RectTransform>();
-            scrollRootRect.anchorMin = new Vector2(0.5f, 0.5f);
-            scrollRootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            scrollRootRect.anchorMin = Vector2.zero;
+            scrollRootRect.anchorMax = Vector2.one;
+            scrollRootRect.offsetMin = Vector2.zero;
+            scrollRootRect.offsetMax = Vector2.zero;
             scrollRootRect.pivot = new Vector2(0.5f, 0.5f);
-            scrollRootRect.anchoredPosition = new Vector2(0f, -28f);
-            scrollRootRect.sizeDelta = new Vector2(900f, 300f);
+            var scrollLe = scrollRootObj.AddComponent<LayoutElement>();
+            scrollLe.minHeight = 120f;
+            scrollLe.preferredHeight = 200f;
+            scrollLe.flexibleHeight = 1f;
+
             var scrollBg = scrollRootObj.GetComponent<Image>();
             scrollBg.color = new Color(0.055f, 0.09f, 0.145f, 0.98f);
             scrollBg.raycastTarget = true;
@@ -780,8 +681,8 @@ namespace TitanOrbit.UI
             lobbyListContainer = contentObj.transform;
 
             var vlg = contentObj.GetComponent<VerticalLayoutGroup>();
-            vlg.spacing = 12f;
-            vlg.padding = new RectOffset(14, 14, 14, 14);
+            vlg.spacing = 14f;
+            vlg.padding = new RectOffset(16, 16, 16, 16);
             vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlHeight = true;
             vlg.childControlWidth = true;
@@ -802,41 +703,33 @@ namespace TitanOrbit.UI
             scrollRect.inertia = true;
             scrollRect.decelerationRate = 0.12f;
 
-            var footerObj = new GameObject("LobbyBrowserFooter", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(Canvas), typeof(GraphicRaycaster));
+            var footerObj = new GameObject("LobbyBrowserFooter", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             footerObj.transform.SetParent(lobbyBrowserRoot.transform, false);
             var footerRect = footerObj.GetComponent<RectTransform>();
-            footerRect.anchorMin = new Vector2(0.5f, 0f);
-            footerRect.anchorMax = new Vector2(0.5f, 0f);
-            footerRect.pivot = new Vector2(0.5f, 0f);
-            footerRect.anchoredPosition = new Vector2(0f, 28f);
-            footerRect.sizeDelta = new Vector2(900f, 76f);
-
-            var footerCanvas = footerObj.GetComponent<Canvas>();
-            footerCanvas.overrideSorting = true;
-            footerCanvas.sortingOrder = 50;
-            footerObj.GetComponent<GraphicRaycaster>().blockingObjects = GraphicRaycaster.BlockingObjects.None;
+            footerRect.anchorMin = new Vector2(0f, 1f);
+            footerRect.anchorMax = new Vector2(1f, 1f);
+            footerRect.pivot = new Vector2(0.5f, 1f);
+            footerRect.sizeDelta = new Vector2(0f, 56f);
+            footerRect.anchoredPosition = Vector2.zero;
+            var footerLe = footerObj.AddComponent<LayoutElement>();
+            footerLe.minHeight = 52f;
+            footerLe.preferredHeight = 56f;
 
             var hlg = footerObj.GetComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 14f;
-            hlg.padding = new RectOffset(8, 8, 0, 0);
+            hlg.spacing = 16f;
+            hlg.padding = new RectOffset(8, 8, 6, 8);
             hlg.childAlignment = TextAnchor.MiddleCenter;
             hlg.childControlHeight = true;
             hlg.childControlWidth = true;
             hlg.childForceExpandHeight = false;
             hlg.childForceExpandWidth = true;
 
-            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh List", Vector2.zero, new Vector2(268f, 56f), footerRect, isPrimary: false);
-            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join Selected", Vector2.zero, new Vector2(268f, 56f), footerRect, isPrimary: true);
-            backToMainMenuButton = CreateMenuButton("BackToMainMenuButton", "Back", Vector2.zero, new Vector2(200f, 56f), footerRect, isPrimary: false);
+            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh list", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: false);
+            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join selected", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: true);
 
             lobbyListRowPrefab = CreateLobbyRowPrefab();
             if (lobbyListRowPrefab != null)
                 lobbyListRowPrefab.SetActive(false);
-
-            // Footer must draw and raycast above list/scroll; title/status on top for readability.
-            titleObj.transform.SetAsLastSibling();
-            statusObj.transform.SetAsLastSibling();
-            footerObj.transform.SetAsLastSibling();
         }
 
         private Button CreateMenuButton(string name, string label, Vector2 anchoredPosition, Vector2 size, RectTransform parent, bool isPrimary = true)
@@ -964,14 +857,6 @@ namespace TitanOrbit.UI
             }
 
             return rowObj;
-        }
-
-        private void SetLobbyBrowserVisible(bool visible)
-        {
-            if (lobbyBrowserRoot != null)
-                lobbyBrowserRoot.SetActive(visible);
-            if (browseLobbiesButton != null)
-                browseLobbiesButton.gameObject.SetActive(!visible);
         }
 
         private static void EnsureEventSystemExists()

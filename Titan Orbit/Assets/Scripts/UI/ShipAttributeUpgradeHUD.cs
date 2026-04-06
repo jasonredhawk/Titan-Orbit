@@ -226,7 +226,7 @@ namespace TitanOrbit.UI
 
             HorizontalLayoutGroup costRowLayout = costRow.AddComponent<HorizontalLayoutGroup>();
             costRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            costRowLayout.spacing = 3f;
+            costRowLayout.spacing = 1f;
             costRowLayout.padding = new RectOffset(0, 0, 0, 0);
             costRowLayout.childForceExpandWidth = false;
             costRowLayout.childForceExpandHeight = false;
@@ -242,10 +242,12 @@ namespace TitanOrbit.UI
             costLabel.fontSize = 11f;
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
-            costLabel.alignment = TextAlignmentOptions.Center;
+            costLabel.alignment = TextAlignmentOptions.MidlineRight;
             costLabel.overflowMode = TextOverflowModes.Overflow;
+            ContentSizeFitter costCsf = costObj.AddComponent<ContentSizeFitter>();
+            costCsf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            costCsf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             LayoutElement costLe = costObj.AddComponent<LayoutElement>();
-            costLe.preferredWidth = 36f;
             costLe.flexibleWidth = 0f;
 
             GameObject gemObj = new GameObject("GemIcon");

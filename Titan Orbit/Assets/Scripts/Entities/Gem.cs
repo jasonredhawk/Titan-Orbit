@@ -34,6 +34,9 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shipProximitySlop = 0.35f;
         [Tooltip("Scales ship collider radius contribution for proximity collection (lower = tighter pickup).")]
         [SerializeField] private float shipProximityRadiusMultiplier = 0.45f;
+        [Header("Ship-expelled pickup")]
+        [Tooltip("Seconds before the ship that dropped these gems (e.g. hull breakup) can collect them again. Other ships are unaffected.")]
+        [SerializeField] private float selfPickupDelaySeconds = 2f;
         [Header("Visuals")]
         [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
         [SerializeField] private Color bonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
@@ -47,7 +50,6 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> depositTeam = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> depositClientId = new NetworkVariable<ulong>(0);
         private NetworkVariable<ulong> magnetPriorityShipId = new NetworkVariable<ulong>(0); // Ship that dealt most damage to source asteroid
-        private const float EXPELLED_UNCOLLECTABLE_DURATION = 2f;
         /// <summary>Server-only pickup gate: used only for hull-expelled gems so the victim ship cannot instantly re-collect.</summary>
         private ulong serverNoImmediatePickupShipId;
         private float serverNoImmediatePickupUntilTime;
@@ -240,7 +242,7 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect for 2 sec; enemies can collect immediately.</summary>
+        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect until <see cref="selfPickupDelaySeconds"/> elapses; enemies can collect immediately.</summary>
         public void InitializeFromShip(float gemValue, float sizeMultiplier, ulong expelledByShipNetworkId)
         {
             if (HasServerAuthority)
@@ -257,7 +259,7 @@ namespace TitanOrbit.Entities
                 if (expelledByShipNetworkId != 0)
                 {
                     serverNoImmediatePickupShipId = expelledByShipNetworkId;
-                    serverNoImmediatePickupUntilTime = t + EXPELLED_UNCOLLECTABLE_DURATION;
+                    serverNoImmediatePickupUntilTime = t + Mathf.Max(0f, selfPickupDelaySeconds);
                 }
                 else
                     ClearServerPickupGate();
