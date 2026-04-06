@@ -29,11 +29,11 @@ namespace TitanOrbit.Audio
         private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
-        private const float WEAPON_PITCH_MIN = 0.3f;
-        private const float WEAPON_PITCH_MAX = 3.2f;
+        private const float WEAPON_PITCH_MIN = 0.01f;
+        private const float WEAPON_PITCH_MAX = 1.0f;
         private const int GEM_SOUND_POOL_SIZE = 6;
-        private const float GEM_PITCH_MIN = 0.35f;
-        private const float GEM_PITCH_MAX = 2.6f;
+        private const float GEM_PITCH_MIN = 0.01f;
+        private const float GEM_PITCH_MAX = 1.0f;
         private const float GEM_AMOUNT_MIN = 1f;
         private const float GEM_AMOUNT_MAX = 120f;
         private const int IMPACT_SOUND_POOL_SIZE = 6;
@@ -46,18 +46,37 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioClip shootSound;
         [Tooltip("Collision and impact (ship-asteroid, bullet hit). Assign cannon_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip impactSound;
+        [Tooltip("Asteroid collision impact. Falls back to Impact Sound when unassigned.")]
+        [SerializeField] private AudioClip asteroidCollisionSound;
+        [Tooltip("Ship-to-ship collision impact. Falls back to Impact Sound when unassigned.")]
+        [SerializeField] private AudioClip shipCollisionSound;
         [Tooltip("Gem pickup. Assign magic_03 from ShootingSound folder.")]
         [SerializeField] private AudioClip gemCollectSound;
         [Tooltip("People transfer SFX used for both loading and unloading.")]
         [SerializeField] private AudioClip peopleTransferSound;
         [SerializeField] private AudioClip miningSound;
         [SerializeField] private AudioClip captureSound;
+        [Tooltip("Large boom when the ship (or other) explosion VFX spawns.")]
         [SerializeField] private AudioClip explosionSound;
+        [Tooltip("Hull break / death sting when a ship is destroyed (plays with breakup VFX).")]
+        [SerializeField] private AudioClip shipDeathSound;
         [SerializeField] private AudioClip upgradeSound;
 
         [Header("Settings")]
         [SerializeField] private float musicVolume = 0.7f;
         [SerializeField] private float sfxVolume = 1f;
+        [Header("SFX Mix")]
+        [SerializeField] private float shootVolume = 1f;
+        [SerializeField] private float impactVolume = 1f;
+        [SerializeField] private float asteroidCollisionVolume = 1f;
+        [SerializeField] private float shipCollisionVolume = 1f;
+        [SerializeField] private float gemVolume = 1f;
+        [SerializeField] private float peopleVolume = 1f;
+        [SerializeField] private float miningVolume = 1f;
+        [SerializeField] private float captureVolume = 1f;
+        [SerializeField] private float explosionVolume = 1f;
+        [SerializeField] private float shipDeathVolume = 1f;
+        [SerializeField] private float upgradeVolume = 1f;
         [SerializeField] private bool playMusicOnStart = true;
 
         private void Awake()
@@ -110,7 +129,7 @@ namespace TitanOrbit.Audio
 
         public void PlayShootSound()
         {
-            PlaySFX(shootSound);
+            PlaySFX(shootSound, shootVolume);
         }
 
         /// <summary>
@@ -130,7 +149,7 @@ namespace TitanOrbit.Audio
             if (src != null)
             {
                 src.pitch = p;
-                src.PlayOneShot(shootSound, sfxVolume);
+                src.PlayOneShot(shootSound, GetSFXVolume(shootVolume));
             }
         }
 
@@ -154,11 +173,38 @@ namespace TitanOrbit.Audio
 
         public void PlayImpactSound(float pitch)
         {
-            if (impactSound == null) return;
+            PlayPooledImpactSound(impactSound, impactVolume, pitch);
+        }
+
+        public void PlayAsteroidCollisionSound()
+        {
+            PlayAsteroidCollisionSound(1f);
+        }
+
+        public void PlayAsteroidCollisionSound(float pitch)
+        {
+            AudioClip clip = asteroidCollisionSound != null ? asteroidCollisionSound : impactSound;
+            PlayPooledImpactSound(clip, asteroidCollisionVolume, pitch);
+        }
+
+        public void PlayShipCollisionSound()
+        {
+            PlayShipCollisionSound(1f);
+        }
+
+        public void PlayShipCollisionSound(float pitch)
+        {
+            AudioClip clip = shipCollisionSound != null ? shipCollisionSound : impactSound;
+            PlayPooledImpactSound(clip, shipCollisionVolume, pitch);
+        }
+
+        private void PlayPooledImpactSound(AudioClip clip, float clipVolumeMultiplier, float pitch)
+        {
+            if (clip == null) return;
             EnsureImpactSoundPool();
             if (impactSoundSources == null || impactSoundSources.Length == 0)
             {
-                PlaySFX(impactSound);
+                PlaySFX(clip, clipVolumeMultiplier);
                 return;
             }
 
@@ -168,23 +214,23 @@ namespace TitanOrbit.Audio
             if (src != null)
             {
                 src.pitch = p;
-                src.PlayOneShot(impactSound, sfxVolume);
+                src.PlayOneShot(clip, GetSFXVolume(clipVolumeMultiplier));
             }
         }
 
         public void PlayGemCollectSound()
         {
-            PlaySFX(gemCollectSound);
+            PlaySFX(gemCollectSound, gemVolume);
         }
 
         public void PlayGemCollectSound(float amount)
         {
-            PlayGemValueScaledSFX(gemCollectSound, amount);
+            PlayGemValueScaledSFX(gemCollectSound, amount, gemVolume);
         }
 
         public void PlayMiningSound()
         {
-            PlaySFX(miningSound);
+            PlaySFX(miningSound, miningVolume);
         }
 
         public void PlayPeopleLoadSound(float amount)
@@ -199,39 +245,49 @@ namespace TitanOrbit.Audio
 
         public void PlayCaptureSound()
         {
-            PlaySFX(captureSound);
+            PlaySFX(captureSound, captureVolume);
         }
 
         public void PlayGemDepositSound(float amount)
         {
-            PlayGemValueScaledSFX(gemCollectSound, amount);
+            PlayGemValueScaledSFX(gemCollectSound, amount, gemVolume);
         }
 
         public void PlayExplosionSound()
         {
-            PlaySFX(explosionSound);
+            PlaySFX(explosionSound, explosionVolume);
+        }
+
+        public void PlayShipDeathSound()
+        {
+            PlaySFX(shipDeathSound, shipDeathVolume);
         }
 
         public void PlayUpgradeSound()
         {
-            PlaySFX(upgradeSound);
+            PlaySFX(upgradeSound, upgradeVolume);
         }
 
         private void PlaySFX(AudioClip clip)
         {
+            PlaySFX(clip, 1f);
+        }
+
+        private void PlaySFX(AudioClip clip, float clipVolumeMultiplier)
+        {
             if (sfxSource != null && clip != null)
             {
-                sfxSource.PlayOneShot(clip, sfxVolume);
+                sfxSource.PlayOneShot(clip, GetSFXVolume(clipVolumeMultiplier));
             }
         }
 
-        private void PlayGemValueScaledSFX(AudioClip clip, float amount)
+        private void PlayGemValueScaledSFX(AudioClip clip, float amount, float clipVolumeMultiplier)
         {
             if (clip == null) return;
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
             {
-                PlaySFX(clip);
+                PlaySFX(clip, clipVolumeMultiplier);
                 return;
             }
 
@@ -249,7 +305,7 @@ namespace TitanOrbit.Audio
             if (src != null)
             {
                 src.pitch = pitch;
-                src.PlayOneShot(clip, sfxVolume);
+                src.PlayOneShot(clip, GetSFXVolume(clipVolumeMultiplier));
             }
         }
 
@@ -259,22 +315,27 @@ namespace TitanOrbit.Audio
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
             {
-                PlaySFX(peopleTransferSound);
+                PlaySFX(peopleTransferSound, peopleVolume);
                 return;
             }
 
             float normalized = Mathf.InverseLerp(1f, 10f, Mathf.Max(0f, amount));
             float basePitch = isLoad ? 1.12f : 0.92f;
             float amountPitchOffset = Mathf.Lerp(0.16f, -0.12f, normalized);
-            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, 0.65f, 1.5f);
+            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, GEM_PITCH_MIN, GEM_PITCH_MAX);
 
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src != null)
             {
                 src.pitch = pitch;
-                src.PlayOneShot(peopleTransferSound, sfxVolume);
+                src.PlayOneShot(peopleTransferSound, GetSFXVolume(peopleVolume));
             }
+        }
+
+        private float GetSFXVolume(float clipVolumeMultiplier)
+        {
+            return Mathf.Max(0f, sfxVolume * clipVolumeMultiplier);
         }
 
         private void EnsureGemSoundPool()

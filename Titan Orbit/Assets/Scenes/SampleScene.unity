@@ -1322,7 +1322,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f71a525a34347f40a0543af807359b8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.ScrollingSpaceBackground
-  targetCamera: {fileID: 0}
+  targetCamera: {fileID: 711795281}
   spaceTexture: {fileID: 2800000, guid: ddcac1fac1f5c8943a30c2ef6b724062, type: 3}
   scrollScale: 0.03
   textureTiling: 2
@@ -2452,6 +2452,7 @@ GameObject:
   - component: {fileID: 505988330}
   - component: {fileID: 505988332}
   - component: {fileID: 505988331}
+  - component: {fileID: 505988333}
   m_Layer: 0
   m_Name: HUD
   m_TagString: Untagged
@@ -2536,6 +2537,28 @@ MonoBehaviour:
   leaderboardTitleText: {fileID: 0}
   leaderboardToggleTeamKey: 3
   leaderboardRefreshInterval: 0.25
+--- !u!114 &505988333
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 505988329}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4e8a91b2f6d4e4a9b1c3d5e7f901234, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipSpeedometerHUD
+  speedometerEnabled: 1
+  placement: 0
+  panelWidth: 240
+  panelHeight: 40
+  horizontalMargin: 20
+  verticalMargin: 24
+  backgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
+  fillColor: {r: 0.35, g: 0.85, b: 1, a: 0.9}
+  trackColor: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
+  textColor: {r: 0.92, g: 0.95, b: 1, a: 1}
 --- !u!1 &526755990
 GameObject:
   m_ObjectHideFlags: 0
@@ -3717,6 +3740,15 @@ MonoBehaviour:
   galacticZoomOutDuration: 4
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 0}
+  collisionCameraShakeEnabled: 1
+  collisionShakeMaxTranslation: {x: 0.45, y: 0.45, z: 0.45}
+  collisionShakeFrequency: 25
+  collisionShakeRecoverPerSecond: 1.2
+  collisionShakeSmoothingExponent: 1
+  mouseZoomEnabled: 0
+  maxManualZoomOutOrthoSize: 80
+  mouseWheelZoomSensitivity: 0.12
+  ignoreMouseZoomOverUi: 1
 --- !u!20 &711795281
 Camera:
   m_ObjectHideFlags: 0
@@ -5262,8 +5294,8 @@ MonoBehaviour:
   loadingCameraHeight: 200
   mainMenu: {fileID: 1536533385}
   minLoadingDisplayTime: 1
-  teamSelectCameraTransitionSeconds: 1.25
-  teamSelectEndOrthoSize: 18
+  maxJoinWorldSyncSeconds: 45
+  joinReplicationEnoughFraction: 0.62
 --- !u!4 &867079294
 Transform:
   m_ObjectHideFlags: 0
@@ -7820,26 +7852,26 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  minMapSize: 300
-  maxMapSize: 500
+  minMapSize: 100
+  maxMapSize: 100
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 120
   clearanceRadiusAroundHomePlanet: 80
-  minTeamsPerMatch: 2
-  maxTeamsPerMatch: 5
+  minTeamsPerMatch: 3
+  maxTeamsPerMatch: 3
   planetPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  minNeutralPlanets: 9
-  maxNeutralPlanets: 18
+  minNeutralPlanets: 3
+  maxNeutralPlanets: 3
   minPlanetSize: 9
   maxPlanetSize: 18
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 400
-  asteroidsAtMaxMapSize: 700
-  minAsteroidClusters: 8
-  maxAsteroidClusters: 100
+  asteroidsAtMinMapSize: 100
+  asteroidsAtMaxMapSize: 100
+  minAsteroidClusters: 3
+  maxAsteroidClusters: 50
   minAsteroidSize: 1
-  maxAsteroidSize: 70
+  maxAsteroidSize: 100
   minAsteroidSpacing: 1.5
   planetsParent: {fileID: 0}
   asteroidsParent: {fileID: 0}
@@ -7949,8 +7981,8 @@ MonoBehaviour:
   aiShipsEnabled: 0
   starshipPrefab: {fileID: 0}
   aiShipData: {fileID: 0}
-  minAIShipsPerTeam: 10
-  maxAIShipsPerTeam: 0
+  minAIShipsPerTeam: 5
+  maxAIShipsPerTeam: 10
   minerPercentage: 0.6
 --- !u!114 &1207700302
 MonoBehaviour:
@@ -8018,6 +8050,19 @@ MonoBehaviour:
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
   floatingCountFeedbackSettings: {fileID: 0}
+  floatingCountVisibility:
+    gemPickup: 1
+    gemDeposit: 1
+    damageAsteroid: 0
+    damageShipOrDrone: 0
+    damageMoon: 1
+    healthChange: 0
+    peopleLoad: 1
+    peopleUnload: 1
+    healing: 0
+    healthRegen: 0
+    energy: 0
+    upgrades: 1
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}
@@ -8026,15 +8071,19 @@ MonoBehaviour:
   floatingCountPeopleColor: {r: 1, g: 0.9, b: 0.25, a: 1}
   floatingCountDuration: 1.7
   floatingCountRiseSpeed: 3
-  floatingCountFontSize: 10
+  floatingCountFontSize: 5
   floatingCountIconScale: 0.14
   floatingCountIconLocalOffset: {x: -0.45, y: 0, z: 0}
   floatingCountVerticalOffset: 0.65
-  floatingCountSpawnJitterRadius: 0.45
+  floatingCountSpawnJitterRadius: 2.45
   floatingCountSpawnRingStep: 0.12
+  floatingCountMaxSpreadRadius: 5.75
+  floatingCountSpiralPeriod: 40
+  floatingCountLateralDriftMax: 0
   floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
+  floatingCountImpactForceColor: {r: 1, g: 0.75, b: 0.2, a: 1}
 --- !u!114 &1207700306
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8132,11 +8181,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7fdf44b7b5308e24cb7ffbade6166319, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.GemSpawner
-  gemPrefab: {fileID: 0}
-  peopleTransportPrefab: {fileID: 0}
+  gemPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
+  peopleTransportPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   useGemPool: 0
-  explosionSpeed: 2
-  explosionRadius: 1
+  explosionSpeed: 2.2
+  explosionRadius: 1.4
   asteroidExplosionSpeed: 2.2
   asteroidExplosionRadius: 1.4
 --- !u!114 &1207700313
@@ -8280,6 +8329,22 @@ MonoBehaviour:
   maxBullets: 200
   bulletSpeedMultiplier: 1
   spawnOffset: 1.3
+  deathDebrisMaxPieces: 64
+  deathDebrisMinImpulse: 0.1
+  deathDebrisMaxImpulse: 0.3
+  deathDebrisPieceSpeedMulMin: 0.05
+  deathDebrisPieceSpeedMulMax: 0.1
+  deathDebrisUpImpulseMin: 0
+  deathDebrisUpImpulseMax: 0.1
+  deathDebrisAngularVelMin: 0.3
+  deathDebrisAngularVelMax: 0.5
+  deathDebrisLinearDamping: 0.5
+  deathDebrisLifetime: 20
+  deathDebrisAsteroidBounceMultiplier: 0.9
+  deathDebrisAsteroidBounceMinSpeed: 0.15
+  deathDebrisBlocksEnemyBullets: 1
+  deathDebrisBulletHitsToBreak: 3
+  deathDebrisBulletShieldDuration: 5
 --- !u!1 &1229198908
 GameObject:
   m_ObjectHideFlags: 0
@@ -13013,14 +13078,28 @@ MonoBehaviour:
   backgroundMusic: {fileID: 8300000, guid: 7ac1670904bb1624b87dc52bc71f00bc, type: 3}
   shootSound: {fileID: 0}
   impactSound: {fileID: 0}
-  gemCollectSound: {fileID: 8300000, guid: b1b9c1f0ea1fcae439ed1a4d44ff05fd, type: 3}
-  peopleTransferSound: {fileID: 8300000, guid: a6473f5264a14804e992a7a4a29cd744, type: 3}
+  asteroidCollisionSound: {fileID: 8300000, guid: b90e191ec1b51184f99070a4b053621c, type: 3}
+  shipCollisionSound: {fileID: 8300000, guid: c56364e54264bce449307e70e6fcde40, type: 3}
+  gemCollectSound: {fileID: 8300000, guid: 9c9f51bc443168e49a9eb3d3268a6182, type: 3}
+  peopleTransferSound: {fileID: 8300000, guid: 433b7f09d5743a64595c8742ecfb252b, type: 3}
   miningSound: {fileID: 8300000, guid: 15ec042c5330b894397fe2b560e22a98, type: 3}
   captureSound: {fileID: 8300000, guid: 468f662ba85278c419ef967f7c33907b, type: 3}
-  explosionSound: {fileID: 0}
+  explosionSound: {fileID: 8300000, guid: fdc616161abe92e4f911164effc34bfb, type: 3}
+  shipDeathSound: {fileID: 8300000, guid: 8e9fd8d802b2ef144a125970278e3b9d, type: 3}
   upgradeSound: {fileID: 8300000, guid: 78419f98379502c4dbfb2774bc94e7c1, type: 3}
   musicVolume: 0.7
   sfxVolume: 1
+  shootVolume: 1
+  impactVolume: 1
+  asteroidCollisionVolume: 0.3
+  shipCollisionVolume: 0.3
+  gemVolume: 0.3
+  peopleVolume: 0.5
+  miningVolume: 1
+  captureVolume: 1
+  explosionVolume: 1
+  shipDeathVolume: 1
+  upgradeVolume: 1
   playMusicOnStart: 1
 --- !u!4 &1959116599
 Transform:
@@ -13459,7 +13538,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 508c65a3615e2d847a581125ad331751, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.MinimapController
-  minimapRadius: 80
+  minimapRadius: 111
   displaySize: 384
   minimapContent: {fileID: 0}
   sizeScaleFactor: 1.2

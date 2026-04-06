@@ -100,55 +100,25 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Simple card section at home and captured planets.
+            // Loadout cards use the gem moon → Cards spin flow (OrbitStationUI). Legacy list buttons are hidden.
             if (cardButtons != null && currentShip != null && currentHomePlanet != null && currentStorePlanet != null && CardShopSystem.Instance != null)
             {
-                int homeLevel = currentHomePlanet.HomePlanetLevel;
-                bool isHomeStore = currentStorePlanet is HomePlanet;
-                System.Collections.Generic.List<CardData> availableCards;
-                if (isHomeStore)
-                {
-                    // Home planet: show global cards plus cards from any captured planets owned by this team.
-                    var team = currentShip.ShipTeam;
-                    availableCards = CardShopSystem.Instance.GetAvailableCardsForHomeStore(homeLevel, team);
-                }
-                else
-                {
-                    // Captured planet: only that planet's own family cards.
-                    int originFilter = currentStorePlanet.PlanetId;
-                    availableCards = CardShopSystem.Instance.GetAvailableCardsForPlanet(homeLevel, originFilter);
-                }
-
-                // Cache up to cardButtons.Length entries.
                 if (cardEntries == null || cardEntries.Length != cardButtons.Length)
                     cardEntries = new CardData[cardButtons.Length];
-
                 for (int i = 0; i < cardButtons.Length; i++)
                 {
-                    CardData card = (i < availableCards.Count) ? availableCards[i] : null;
-                    cardEntries[i] = card;
-                    bool show = card != null;
+                    cardEntries[i] = null;
                     if (cardButtons[i] != null)
                     {
-                        cardButtons[i].gameObject.SetActive(show);
-                        if (show)
-                        {
-                            float price = Mathf.Max(card.gemCost, 1f);
-                            bool canAfford = contributedGems >= price;
-                            cardButtons[i].interactable = canAfford;
-                        }
+                        cardButtons[i].gameObject.SetActive(i == 0);
+                        cardButtons[i].interactable = false;
                     }
                     if (cardLabels != null && i < cardLabels.Length && cardLabels[i] != null)
                     {
-                        if (show)
-                        {
-                            float price = Mathf.Max(card.gemCost, 1f);
-                            cardLabels[i].text = $"{card.displayName} — {price:F0} gems";
-                        }
+                        if (i == 0)
+                            cardLabels[i].text = "Loadout cards: at the gem moon, open Cards — pay one spin, pick one of three cards.";
                         else
-                        {
                             cardLabels[i].text = string.Empty;
-                        }
                     }
                 }
             }

@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: CosmicSharkShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: CosmicShark
+  bulletPrefabIndex: 0
   components:
   - componentId: Body
     displayName: Body 1
@@ -39,6 +40,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Engine1
     displayName: Engine1 1
     stats:
@@ -56,14 +58,15 @@ MonoBehaviour:
       energyCapPerLevel: 0.5
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 20
-      moveSpeedPerLevel: 5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 3
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Engine2
     displayName: Engine2 1
     stats:
@@ -81,14 +84,15 @@ MonoBehaviour:
       energyCapPerLevel: 0.5
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 30
-      moveSpeedPerLevel: 5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 3
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Hull
     displayName: Hull 1
     stats:
@@ -114,6 +118,7 @@ MonoBehaviour:
       maxGemsPerLevel: 1.5
       maxPeople: 2
       maxPeoplePerLevel: 0.5
+    bulletPrefabIndex: -1
   - componentId: Knob
     displayName: Knob 1
     stats:
@@ -139,6 +144,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Thruster
     displayName: Thruster 1
     stats:
@@ -164,6 +170,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Weapon
     displayName: Weapon 1
     stats:
@@ -189,6 +196,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Wing1
     displayName: Wing1 1
     stats:
@@ -214,6 +222,7 @@ MonoBehaviour:
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Wing2
     displayName: Wing2 1
     stats:
@@ -239,84 +248,247 @@ MonoBehaviour:
       maxGemsPerLevel: 0.5
       maxPeople: 0
       maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   upgradeTree:
   - chassisId: CosmicShark_01
-    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
-    minHomePlanetLevel: 1
-    powerScore: 59.405
-  - chassisId: CosmicShark_02
+    upgradeTreeShipName: Mouse
     prefab: {fileID: 8939703252465728748, guid: 5760bc85eded69246bb370773ff9dcfa, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 53bca109c9be3c940b362b77d9d606e6, type: 3}
+    minHomePlanetLevel: 1
+    powerScore: 51.62139
+    powerScoreBreakdown:
+      offense: 12.980977
+      defense: 7.529298
+      energy: 0.7402556
+      mobility: 28
+      capacity: 2.3708596
+  - chassisId: CosmicShark_02
+    upgradeTreeShipName: Sly
+    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 953ea75cbb6a56d4f84514cd23193adc, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 72.47
+    powerScore: 78.682236
+    powerScoreBreakdown:
+      offense: 52.06734
+      defense: 8.90193
+      energy: 1.0675757
+      mobility: 14
+      capacity: 2.645386
   - chassisId: CosmicShark_03
+    upgradeTreeShipName: Goldie
     prefab: {fileID: 8127381702121887465, guid: 70c972c17dfe8be4ea1f86fca85962b7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b40ff47747604f247bb2c5f70a99c7af, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 74.16
+    powerScore: 71.04715
+    powerScoreBreakdown:
+      offense: 31.75
+      defense: 8.63324
+      energy: 0.9321276
+      mobility: 27.2
+      capacity: 2.5317843
   - chassisId: CosmicShark_04
+    upgradeTreeShipName: Donkey
     prefab: {fileID: 4248129671686592391, guid: 00601cc56292fb64b8923144a32fffed, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 11dec7b9c8afd8f408ea1d851ce3ff08, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 93.915
+    powerScore: 91.96221
+    powerScoreBreakdown:
+      offense: 31.75
+      defense: 10.807445
+      energy: 1.2262753
+      mobility: 45.4
+      capacity: 2.7784889
   - chassisId: CosmicShark_05
+    upgradeTreeShipName: Booster
     prefab: {fileID: 2962000161116380558, guid: c52adf8e5ff812e4ea913c537c916ffc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5ea3772d30ce5a8499f66c71a6ca21ba, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 96.29
+    powerScore: 83.859406
+    powerScoreBreakdown:
+      offense: 20.25528
+      defense: 8.907583
+      energy: 0.94987285
+      mobility: 51.2
+      capacity: 2.5466676
   - chassisId: CosmicShark_06
-    prefab: {fileID: 6827438406329532865, guid: 4910f2c6a6aa2c749b8eca296aa784b9, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 100.03
-  - chassisId: CosmicShark_07
-    prefab: {fileID: 6191370362722568651, guid: 8e39aefaaac759d448aaea88720955fc, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 104.21
-  - chassisId: CosmicShark_08
-    prefab: {fileID: 1803513627421462803, guid: 04d98f6db36f1c445b93e627b9579c84, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 104.31
-  - chassisId: CosmicShark_09
+    upgradeTreeShipName: CEO
     prefab: {fileID: 7044036826161720626, guid: 8cb7abab960298542b0a2cb0c790a400, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ad0df03227a82794686fa8f5327e9878, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 88.26182
+    powerScoreBreakdown:
+      offense: 14.331711
+      defense: 9.866198
+      energy: 1.1496704
+      mobility: 60.2
+      capacity: 2.7142396
+  - chassisId: CosmicShark_07
+    upgradeTreeShipName: Lander
+    prefab: {fileID: 6827438406329532865, guid: 4910f2c6a6aa2c749b8eca296aa784b9, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 32eb5d0a938db0248ac1be20bd320195, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 109.03
-  - chassisId: CosmicShark_10
-    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
+    powerScore: 93.12579
+    powerScoreBreakdown:
+      offense: 28.863554
+      defense: 9.37851
+      energy: 1.2591658
+      mobility: 51.2
+      capacity: 2.4245608
+  - chassisId: CosmicShark_08
+    upgradeTreeShipName: October
+    prefab: {fileID: 6191370362722568651, guid: 8e39aefaaac759d448aaea88720955fc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 21cf6d16e87fe8f4a90032d2387952f3, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 118.03
-  - chassisId: CosmicShark_11
-    prefab: {fileID: 7692812396446286679, guid: 3df48395fe1c42c4e9d6780802a15b9e, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 131.77
-  - chassisId: CosmicShark_12
-    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 132.05
-  - chassisId: CosmicShark_13
-    prefab: {fileID: 7068115759950371645, guid: 1459d8c1d03411844aacbd5442209d57, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 134.145
-  - chassisId: CosmicShark_14
-    prefab: {fileID: 4827229434723998829, guid: 472e64f6ffd0d764db400a50e67744ed, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 138.19
-  - chassisId: CosmicShark_15
+    powerScore: 97.81317
+    powerScoreBreakdown:
+      offense: 28.859388
+      defense: 9.137525
+      energy: 1.1237559
+      mobility: 56
+      capacity: 2.692505
+  - chassisId: CosmicShark_09
+    upgradeTreeShipName: Sprinter
     prefab: {fileID: 4973863194807664528, guid: 53353cc725457a245a2790b48438ae1e, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 145.455
-  - chassisId: CosmicShark_16
-    prefab: {fileID: 3846000040908533939, guid: a8a9f43784a2cb4478a4ec9abc0fe84e, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 162.955
-  - chassisId: CosmicShark_17
-    prefab: {fileID: 976768739071175037, guid: 4fcb88c1580ffc4469ee5fca67620759, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 198.075
-  - chassisId: CosmicShark_18
-    prefab: {fileID: 1071969896123045279, guid: 062b5f68b11a06f4188cff1a634ac457, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 203.685
-  - chassisId: CosmicShark_19
+    menuPreviewSprite: {fileID: 21300000, guid: 9171424391431ce4d8087c517990a6b7, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 101.972176
+    powerScoreBreakdown:
+      offense: 27.428967
+      defense: 10.22063
+      energy: 1.4932207
+      mobility: 60.2
+      capacity: 2.629356
+  - chassisId: CosmicShark_10
+    upgradeTreeShipName: Blitzer
+    prefab: {fileID: 1803513627421462803, guid: 04d98f6db36f1c445b93e627b9579c84, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 798f4a4d6dead1c43ab95a5c632d7ebb, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 96.4925
+    powerScoreBreakdown:
+      offense: 8.1672125
+      defense: 11.158729
+      energy: 1.5318123
+      mobility: 72.6
+      capacity: 3.0347457
+  - chassisId: CosmicShark_11
+    upgradeTreeShipName: Skater
     prefab: {fileID: 4291439152663336169, guid: 4bf0bfbece78b1f46904895ee14b64ef, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 60110697ed6072c48acf3cddb626ff7a, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 143.93826
+    powerScoreBreakdown:
+      offense: 50.668327
+      defense: 10.088148
+      energy: 1.2659984
+      mobility: 79.2
+      capacity: 2.7157912
+  - chassisId: CosmicShark_12
+    upgradeTreeShipName: G6
+    prefab: {fileID: 7068115759950371645, guid: 1459d8c1d03411844aacbd5442209d57, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8cb3d782fc1b13f47a5f36e5a8076147, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 134.47386
+    powerScoreBreakdown:
+      offense: 31.75
+      defense: 12.453621
+      energy: 1.9145173
+      mobility: 85
+      capacity: 3.3557243
+  - chassisId: CosmicShark_13
+    upgradeTreeShipName: Zam
+    prefab: {fileID: 3846000040908533939, guid: a8a9f43784a2cb4478a4ec9abc0fe84e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1634354abc54d2f48a9355e71469a111, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 117.63816
+    powerScoreBreakdown:
+      offense: 26.252281
+      defense: 8.665975
+      energy: 1.9143366
+      mobility: 79.2
+      capacity: 1.6055726
+  - chassisId: CosmicShark_14
+    upgradeTreeShipName: Falcon
+    prefab: {fileID: 7692812396446286679, guid: 3df48395fe1c42c4e9d6780802a15b9e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fe9f400da1253c1449721806800e8c42, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 108.423454
+    powerScoreBreakdown:
+      offense: 12.980165
+      defense: 11.645014
+      energy: 1.3473375
+      mobility: 79.2
+      capacity: 3.2509427
+  - chassisId: CosmicShark_15
+    upgradeTreeShipName: Pony
+    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e744ba3fdf19ec54c9943fba14fff6b4, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 131.21164
+    powerScoreBreakdown:
+      offense: 0
+      defense: 11.552185
+      energy: 1.2560213
+      mobility: 115.6
+      capacity: 2.803437
+  - chassisId: CosmicShark_16
+    upgradeTreeShipName: Tubby
+    prefab: {fileID: 4827229434723998829, guid: 472e64f6ffd0d764db400a50e67744ed, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 57ac0cfaf2e278844a21824ab63e797a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 223.28
+    powerScore: 219.52193
+    powerScoreBreakdown:
+      offense: 182.94841
+      defense: 12.349107
+      energy: 1.8895949
+      mobility: 19
+      capacity: 3.3348215
+  - chassisId: CosmicShark_17
+    upgradeTreeShipName: Bruiser
+    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0bfab8f687daa8642943a0c996c2f110, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 155.70824
+    powerScoreBreakdown:
+      offense: 72.39247
+      defense: 10.134306
+      energy: 1.2136037
+      mobility: 69.2
+      capacity: 2.7678611
+  - chassisId: CosmicShark_18
+    upgradeTreeShipName: Cruiser
+    prefab: {fileID: 976768739071175037, guid: 4fcb88c1580ffc4469ee5fca67620759, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a0755ee9ed9e29b4a832d9c14bae6228, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 145.0149
+    powerScoreBreakdown:
+      offense: 48.239685
+      defense: 12.53926
+      energy: 1.7870924
+      mobility: 79.2
+      capacity: 3.2488518
+  - chassisId: CosmicShark_19
+    upgradeTreeShipName: Scout
+    prefab: {fileID: 1071969896123045279, guid: 062b5f68b11a06f4188cff1a634ac457, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f6803c8d0214e804ca238ca6935b0319, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 147.50772
+    powerScoreBreakdown:
+      offense: 47.659676
+      defense: 14.675458
+      energy: 2.2964938
+      mobility: 79.2
+      capacity: 3.6760917
   - chassisId: CosmicShark_20
+    upgradeTreeShipName: Duet
     prefab: {fileID: 2423951057801621472, guid: cd680702b77a3104eb4fe66792739532, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 48dd239b31e71e944a1ece9206c23901, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 236.915
+    powerScore: 195.5744
+    powerScoreBreakdown:
+      offense: 35.000065
+      defense: 18.057114
+      energy: 2.3759272
+      mobility: 135.2
+      capacity: 4.9413056
+  menuPreviewBackgroundColor: {r: 0.06, g: 0.09, b: 0.14, a: 1}
+  menuPreviewBoundsPadding: 1.22

@@ -7,6 +7,7 @@ namespace TitanOrbit.Camera
     /// Uses the DinV Dynamic Space Background Lite textures - assign any of the nebula/star
     /// textures for a seamless parallax effect.
     /// </summary>
+    [DefaultExecutionOrder(50)]
     public class ScrollingSpaceBackground : MonoBehaviour
     {
         [Header("References")]
@@ -34,12 +35,12 @@ namespace TitanOrbit.Camera
         private Material bgMaterial;
         private static readonly int BaseMap = Shader.PropertyToID("_BaseMap");
         private static readonly int BaseMapSt = Shader.PropertyToID("_BaseMap_ST");
+        private static readonly int MainTex = Shader.PropertyToID("_MainTex");
+        private static readonly int MainTexSt = Shader.PropertyToID("_MainTex_ST");
 
         private void Awake()
         {
-            if (targetCamera == null)
-                targetCamera = UnityEngine.Camera.main;
-
+            ResolveTargetCamera();
             if (targetCamera == null)
             {
                 Debug.LogWarning("ScrollingSpaceBackground: No camera assigned and Main Camera not found.");
@@ -47,6 +48,21 @@ namespace TitanOrbit.Camera
             }
 
             EnsureBackgroundQuad();
+        }
+
+        private void OnEnable()
+        {
+            // WebGL / late network init: Main Camera may not exist when Awake runs.
+            if (targetCamera == null)
+                ResolveTargetCamera();
+            if (meshRenderer == null && targetCamera != null)
+                EnsureBackgroundQuad();
+        }
+
+        private void ResolveTargetCamera()
+        {
+            if (targetCamera != null) return;
+            targetCamera = UnityEngine.Camera.main;
         }
 
         private void EnsureBackgroundQuad()
@@ -87,8 +103,8 @@ namespace TitanOrbit.Camera
             }
 
             bgMaterial = new Material(unlitShader);
-            bgMaterial.SetTexture(BaseMap, spaceTexture);
-            bgMaterial.SetVector(BaseMapSt, new Vector4(textureTiling, textureTiling, 0f, 0f));
+            ApplyTextureToMaterial(bgMaterial, spaceTexture);
+            ApplyTextureScaleOffset(bgMaterial, new Vector4(textureTiling, textureTiling, 0f, 0f));
             bgMaterial.renderQueue = 1000; // Render behind most objects
 
             // Create quad as child - will follow camera XZ in LateUpdate
@@ -115,6 +131,7 @@ namespace TitanOrbit.Camera
 
         private void LateUpdate()
         {
+            ResolveTargetCamera();
             if (targetCamera == null || bgMaterial == null) return;
 
             // Follow camera XZ so background stays centered, place below game (Y negative)
@@ -124,7 +141,41 @@ namespace TitanOrbit.Camera
             // Scroll texture based on world position - creates parallax as ship flies
             float offsetX = camPos.x * scrollScale;
             float offsetZ = camPos.z * scrollScale;
-            bgMaterial.SetVector(BaseMapSt, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
+            ApplyTextureScaleOffset(bgMaterial, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
+        }
+
+        /// <summary>
+        /// Sets tiling and offset on the material. Uses SetTextureScale/Offset so URP/SRP batching and WebGL
+        /// apply UV scrolling reliably; raw _ST vectors alone can appear static in some player builds.
+        /// </summary>
+        private static void ApplyTextureToMaterial(Material m, Texture2D tex)
+        {
+            if (m == null || tex == null) return;
+            m.mainTexture = tex;
+            if (m.HasProperty(BaseMap)) m.SetTexture(BaseMap, tex);
+            if (m.HasProperty(MainTex)) m.SetTexture(MainTex, tex);
+        }
+
+        private static void ApplyTextureScaleOffset(Material m, Vector4 tilingOffsetXy)
+        {
+            if (m == null) return;
+            var scale = new Vector2(tilingOffsetXy.x, tilingOffsetXy.y);
+            var offset = new Vector2(tilingOffsetXy.z, tilingOffsetXy.w);
+
+            if (m.HasProperty(BaseMap))
+            {
+                m.SetTextureScale("_BaseMap", scale);
+                m.SetTextureOffset("_BaseMap", offset);
+            }
+
+            if (m.HasProperty(MainTex))
+            {
+                m.SetTextureScale("_MainTex", scale);
+                m.SetTextureOffset("_MainTex", offset);
+            }
+
+            if (m.HasProperty(BaseMapSt)) m.SetVector(BaseMapSt, tilingOffsetXy);
+            if (m.HasProperty(MainTexSt)) m.SetVector(MainTexSt, tilingOffsetXy);
         }
 
         private void OnDestroy()

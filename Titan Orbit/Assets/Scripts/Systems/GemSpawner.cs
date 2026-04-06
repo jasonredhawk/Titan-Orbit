@@ -116,27 +116,13 @@ namespace TitanOrbit.Systems
             bonusValue = Mathf.Max(0f, bonusValue);
             if (regularValue <= 0f && bonusValue <= 0f) return;
 
-            // asteroidSize is 1-70; asteroidPhysicalSize is world scale for gem cap
-            float normalizedSize = Mathf.Clamp01((asteroidSize - 1f) / (70f - 1f));
-
-            // Regular (red) gems: keep their values exactly as if there was no triangle bonus.
-            // Bonus (yellow) gems: same per-gem worth as regular, just a different tint.
-            int redGemCount;
-            if (normalizedSize < 0.3f)
-                redGemCount = Random.Range(1, 3); // 1-2
-            else if (normalizedSize < 0.7f)
-                redGemCount = Random.Range(2, 4); // 2-3
-            else if (normalizedSize >= 0.9f)
-                redGemCount = Random.Range(1, 3); // 1-2
-            else
-                redGemCount = Random.Range(2, 4); // 2-3
-
-            // Ensure per-gem worth stays >= 1 so sizing/collection feels consistent.
-            int maxByWorth = Mathf.Clamp(Mathf.FloorToInt(regularValue), 1, 3);
-            redGemCount = Mathf.Clamp(redGemCount, 1, maxByWorth);
-            // Reserve space for at least one yellow gem when a triangle bonus is present.
+            // 1–3 red gems whose values sum exactly to regularValue (asteroid's remaining gem worth).
+            // Cannot split into more physical gems than floor(value) when value < 3 (each gem keeps positive share).
+            int maxRedByValue = Mathf.Max(1, Mathf.Min(3, Mathf.FloorToInt(regularValue)));
+            int redGemCount = Random.Range(1, maxRedByValue + 1);
+            // Reserve room for at least one yellow gem when a triangle bonus applies (still ≤ 3 gems total burst).
             if (bonusValue > 0f && redGemCount >= 3)
-                redGemCount = Mathf.Min(redGemCount, 2);
+                redGemCount = 2;
 
             float gemWorth = regularValue / redGemCount; // Red gems sum to regularValue exactly.
             if (gemWorth <= 0.001f) return;
@@ -153,34 +139,21 @@ namespace TitanOrbit.Systems
                     bonusGemCount = 1;
             }
 
-            float redSizeMultiplierBase = GetSizeMultiplierFromGemValue(gemWorth);
-
+            // Visual size comes from Gem (linear in value); tiny jitter only.
             for (int i = 0; i < redGemCount; i++)
             {
-                float sizeMultiplier = redSizeMultiplierBase * Random.Range(0.9f, 1.1f);
+                float sizeMultiplier = Random.Range(0.96f, 1.04f);
                 SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, false);
             }
 
             for (int i = 0; i < bonusGemCount; i++)
             {
-                float sizeMultiplier = redSizeMultiplierBase * Random.Range(0.9f, 1.1f);
+                float sizeMultiplier = Random.Range(0.96f, 1.04f);
                 SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, true);
             }
         }
-
-        private float GetSizeMultiplierFromGemValue(float gemValue)
-        {
-            // Value 1-70: size multipliers scaled up from 1-50
-            if (gemValue <= 10f)
-                return Mathf.Lerp(0.3f, 0.6f, gemValue / 10f);
-            if (gemValue <= 25f)
-                return Mathf.Lerp(0.6f, 1.0f, (gemValue - 10f) / 15f);
-            if (gemValue <= 45f)
-                return Mathf.Lerp(1.0f, 1.5f, (gemValue - 25f) / 20f);
-            return Mathf.Lerp(1.5f, 2.2f, (gemValue - 45f) / 25f);
-        }
         
-        /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot collect for 3 sec.</summary>
+        /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
         {
@@ -195,13 +168,13 @@ namespace TitanOrbit.Systems
             {
                 float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
                 gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                float sizeMult = Mathf.Lerp(0.4f, 1.2f, Mathf.Clamp01(gemValue / 25f));
+                float sizeMult = Mathf.Lerp(0.58f, 1.2f, Mathf.Clamp01(gemValue / 25f));
                 SpawnGemFromShip(prefab, shipPosition, gemValue, sizeMult, expelledByShipId);
                 remaining -= gemValue;
             }
         }
 
-        /// <summary>Spawns a gem expelled from ship toward planet for deposit. 1 gem/sec. Value = shipLevel×5; size shows value.</summary>
+        /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value = amount passed in; size shows value.</summary>
         public void SpawnDepositGem(Vector3 shipPosition, Vector3 planetPosition, float amount, int shipLevel, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team depositingTeam, ulong depositingClientId)
         {
             GameObject prefab = GetGemPrefab();
@@ -301,8 +274,8 @@ namespace TitanOrbit.Systems
             if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
             Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
             Vector3 pos = asteroidCenter + dir * asteroidExplosionRadius * Random.Range(0.3f, 1f);
-            // Vary more than before: from 0 up to asteroidExplosionSpeed.
-            Vector3 vel = dir * asteroidExplosionSpeed * Random.Range(0f, 1f);
+            // Always push outward (never zero); keep variation so burst feels lively.
+            Vector3 vel = dir * asteroidExplosionSpeed * Random.Range(0.45f, 1f);
             Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
 
             // Use pool only when explicitly enabled and available; otherwise use original spawn path so magnetism/collection work.

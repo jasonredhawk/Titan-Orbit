@@ -38,6 +38,14 @@ namespace TitanOrbit.AI
         [Tooltip("When off-screen, how often AI updates (seconds).")]
         [SerializeField] private float offScreenUpdateInterval = 2.5f; // Slower when far from players to reduce lag
 
+        [Header("AI capabilities (all off: ship idles in place)")]
+        [SerializeField] private bool engageEnemyShipsInRange = true;
+        [SerializeField] private bool mineAsteroidsAndDepositGems = true;
+        [SerializeField] private bool transportPeopleBetweenPlanets = true;
+        [SerializeField] private bool levelUpAndBuyUpgrades = true;
+        [Tooltip("When transport is enabled: load/unload people at planets (orbit transfer).")]
+        [SerializeField] private bool loadAndUnloadPeopleAtPlanets = true;
+
         private Starship starship;
         private Rigidbody rb;
         private TeamManager.Team assignedTeam;
@@ -187,6 +195,70 @@ namespace TitanOrbit.AI
             }
         }
 
+        private bool HasAnyAiCapabilityEnabled()
+        {
+            return engageEnemyShipsInRange || mineAsteroidsAndDepositGems || transportPeopleBetweenPlanets
+                || levelUpAndBuyUpgrades;
+        }
+
+        private void ClearAiTargetsAndIdle()
+        {
+            targetAsteroid = null;
+            targetPlanet = null;
+            targetGem = null;
+            targetEnemyShip = null;
+            previousState = AIState.Idle;
+            currentState = AIState.Idle;
+            moveDirection = Vector3.zero;
+            if (starship != null)
+            {
+                AiSetWantLoadPeople(false);
+                AiSetWantUnloadPeople(false);
+                AiSetWantDepositGems(false);
+            }
+        }
+
+        private void ClearNonCombatPrimaryState()
+        {
+            if (currentState == AIState.AttackingEnemy) return;
+            targetAsteroid = null;
+            targetPlanet = null;
+            targetGem = null;
+            currentState = AIState.Idle;
+            moveDirection = Vector3.zero;
+            if (starship != null)
+            {
+                AiSetWantLoadPeople(false);
+                AiSetWantUnloadPeople(false);
+                if (!mineAsteroidsAndDepositGems)
+                    AiSetWantDepositGems(false);
+            }
+        }
+
+        private void AiSetWantDepositGems(bool value)
+        {
+            if (starship == null) return;
+            if (value && !mineAsteroidsAndDepositGems && !levelUpAndBuyUpgrades)
+                value = false;
+            starship.SetWantToDepositGemsFromServer(value);
+        }
+
+        private void AiSetWantLoadPeople(bool value)
+        {
+            if (starship == null) return;
+            if (value && !loadAndUnloadPeopleAtPlanets)
+                value = false;
+            starship.SetWantToLoadPeopleFromServer(value);
+        }
+
+        private void AiSetWantUnloadPeople(bool value)
+        {
+            if (starship == null) return;
+            if (value && !loadAndUnloadPeopleAtPlanets)
+                value = false;
+            starship.SetWantToUnloadPeopleFromServer(value);
+        }
+
         private void UpdateAI()
         {
             if (homePlanet == null)
@@ -195,44 +267,59 @@ namespace TitanOrbit.AI
                 if (homePlanet == null) return;
             }
 
+            if (!HasAnyAiCapabilityEnabled())
+            {
+                ClearAiTargetsAndIdle();
+                return;
+            }
+
             // --- PRIMARY BEHAVIOR FIRST ---
-            // Run leveling/upgrade/primary action BEFORE combat check.
-            // Combat only overrides when enemy is in range - don't let combat prevent primary actions.
-            // Hierarchy: level up -> upgrade abilities -> primary action (mine/transport)
-            if (CanLevelUpPotential())
+            if (levelUpAndBuyUpgrades && CanLevelUpPotential())
             {
                 UpdateLevelingBehavior();
             }
-            else if (CanUpgradeAnyAttributePotential())
+            else if (levelUpAndBuyUpgrades && CanUpgradeAnyAttributePotential())
             {
                 UpdateLevelingBehavior();
             }
             else if (IsFullyMaxedOut())
             {
-                // Fully maxed: do primary action (mine for home, or transport people)
                 if (currentState == AIState.ReturningToHome && targetAsteroid == null && targetGem == null)
                 {
                     currentState = AIState.Idle;
                     targetAsteroid = null;
                     targetGem = null;
                 }
-                switch (behaviorType)
-                {
-                    case AIBehaviorType.Mining:
-                        UpdateMiningBehavior();
-                        break;
-                    case AIBehaviorType.Transport:
-                        UpdateTransportBehavior();
-                        break;
-                }
+                bool canMine = behaviorType == AIBehaviorType.Mining && mineAsteroidsAndDepositGems;
+                bool canTransport = behaviorType == AIBehaviorType.Transport && transportPeopleBetweenPlanets;
+                if (canMine)
+                    UpdateMiningBehavior();
+                else if (canTransport)
+                    UpdateTransportBehavior();
+                else if (currentState != AIState.AttackingEnemy)
+                    ClearNonCombatPrimaryState();
             }
-            else
+            else if (levelUpAndBuyUpgrades)
             {
                 UpdateLevelingBehavior();
             }
+            else if (currentState != AIState.AttackingEnemy)
+            {
+                ClearNonCombatPrimaryState();
+            }
 
-            // --- COMBAT OVERRIDE (only when enemy in range) ---
-            // If already in combat, verify target is still in range - exit if not (don't chase)
+            if (!engageEnemyShipsInRange)
+            {
+                if (currentState == AIState.AttackingEnemy)
+                {
+                    combatCooldownUntil = Time.time + 1f;
+                    targetEnemyShip = null;
+                    currentState = previousState;
+                    ExitOrbitIfInOrbit();
+                }
+                return;
+            }
+
             if (currentState == AIState.AttackingEnemy && targetEnemyShip != null && !targetEnemyShip.IsDead)
             {
                 float distToTarget = ToroidalMap.ToroidalDistance(rb.position, targetEnemyShip.transform.position);
@@ -240,21 +327,19 @@ namespace TitanOrbit.AI
                 {
                     combatCooldownUntil = Time.time + 3f;
                     targetEnemyShip = null;
-                    currentState = previousState; // Resume primary task - don't clear targets
+                    currentState = previousState;
                     ExitOrbitIfInOrbit();
                 }
             }
             else if (currentState == AIState.AttackingEnemy)
             {
-                // Target dead or invalid - exit combat and resume primary task
                 combatCooldownUntil = Time.time + 4f;
                 targetEnemyShip = null;
-                currentState = previousState; // Resume primary task - don't clear targets
+                currentState = previousState;
                 ExitOrbitIfInOrbit();
             }
             else
             {
-                // Not in combat - check if enemy entered range (override primary action only when enemy is close)
                 bool inCombatCooldown = Time.time < combatCooldownUntil;
                 Starship nearestEnemy = inCombatCooldown ? null : FindNearestEnemyShip();
                 if (nearestEnemy != null)
@@ -315,7 +400,7 @@ namespace TitanOrbit.AI
                         if (currentDepositPlanet != null)
                         {
                             // Already at a friendly planet - deposit gems
-                            starship.SetWantToDepositGemsFromServer(true);
+                            AiSetWantDepositGems(true);
                             currentState = AIState.Idle; // Will check again next update
                         }
                         else
@@ -461,7 +546,7 @@ namespace TitanOrbit.AI
                     
                     if (distToDepositTarget <= depositOrbitRadius)
                     {
-                        starship.SetWantToDepositGemsFromServer(true);
+                        AiSetWantDepositGems(true);
                         // After depositing, transition to Idle so ship can continue mining
                         // The Idle state will check if gems are full and either return home again or go mine
                         currentState = AIState.Idle;
@@ -490,7 +575,7 @@ namespace TitanOrbit.AI
                             
                             if (distToLoadPlanet <= orbitRadius)
                             {
-                                starship.SetWantToLoadPeopleFromServer(true);
+                                AiSetWantLoadPeople(true);
                                 currentState = AIState.LoadingPeople;
                             }
                             else
@@ -556,7 +641,7 @@ namespace TitanOrbit.AI
                         float loadOrbitRadius = Mathf.Max(loadTargetPlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
                         if (distanceToLoadPlanet <= loadOrbitRadius)
                         {
-                            starship.SetWantToLoadPeopleFromServer(true);
+                            AiSetWantLoadPeople(true);
                             currentState = AIState.LoadingPeople;
                         }
                     }
@@ -580,7 +665,7 @@ namespace TitanOrbit.AI
                     
                     if (distanceToPlanet <= planetOrbitRadius)
                     {
-                        starship.SetWantToUnloadPeopleFromServer(true);
+                        AiSetWantUnloadPeople(true);
                         currentState = AIState.UnloadingPeople;
                     }
                     break;
@@ -589,7 +674,7 @@ namespace TitanOrbit.AI
                     // Done unloading - ship empty
                     if (starship.CurrentPeople <= 0.1f)
                     {
-                        starship.SetWantToUnloadPeopleFromServer(false);
+                        AiSetWantUnloadPeople(false);
                         targetPlanet = null;
                         currentState = AIState.Idle;
                         ExitOrbitIfInOrbit(); // Leave target planet orbit, go back to home
@@ -597,7 +682,7 @@ namespace TitanOrbit.AI
                     // Planet captured - we now own it; leave even if ship has people left (planet may be full)
                     else if (targetPlanet != null && targetPlanet.TeamOwnership == assignedTeam)
                     {
-                        starship.SetWantToUnloadPeopleFromServer(false);
+                        AiSetWantUnloadPeople(false);
                         targetPlanet = null;
                         currentState = AIState.Idle;
                         ExitOrbitIfInOrbit();
@@ -632,6 +717,16 @@ namespace TitanOrbit.AI
 
             if (starship.GemMoonDocked)
                 return;
+
+            if (!HasAnyAiCapabilityEnabled())
+            {
+                moveDirection = Vector3.zero;
+                Vector3 vStop = rb.linearVelocity;
+                vStop.y = 0f;
+                vStop = Vector3.MoveTowards(vStop, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                rb.linearVelocity = vStop;
+                return;
+            }
 
             // When in orbit zone and idle/loading/unloading/depositing, orbit slowly
             // Don't orbit when attacking enemies
@@ -683,7 +778,7 @@ namespace TitanOrbit.AI
                         float orbitRadius = Mathf.Max(homePlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
                         if (distToHome <= orbitRadius)
                         {
-                            starship.SetWantToLoadPeopleFromServer(true);
+                            AiSetWantLoadPeople(true);
                             currentState = AIState.LoadingPeople;
                             moveDirection = Vector3.zero;
                             Vector3 vel = rb.linearVelocity;
@@ -699,7 +794,7 @@ namespace TitanOrbit.AI
                         float orbitRadius = Mathf.Max(targetPlanet.PlanetSize * 1.1f, 6f); // Extend past orbit zone; min 6 for small planets
                         if (distToPlanet <= orbitRadius)
                         {
-                            starship.SetWantToUnloadPeopleFromServer(true);
+                            AiSetWantUnloadPeople(true);
                             currentState = AIState.UnloadingPeople;
                             moveDirection = Vector3.zero;
                             Vector3 vel = rb.linearVelocity;

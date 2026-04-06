@@ -29,6 +29,7 @@ namespace TitanOrbit.UI
         private Sprite shieldIconSprite;
         private const float RefreshInterval = 0.2f;
         private float lastRefresh;
+        private GameObject moonDockButtonsRoot;
 
         public void Init(PlanetGemMoon m, Sprite gemIcon, Sprite shieldIcon)
         {
@@ -54,13 +55,14 @@ namespace TitanOrbit.UI
             if (canvas == null) return;
             canvas.renderMode = RenderMode.WorldSpace;
             canvas.worldCamera = UnityEngine.Camera.main;
+            go.AddComponent<GraphicRaycaster>();
 
             var rt = go.transform as RectTransform;
             if (rt == null)
                 rt = go.AddComponent<RectTransform>();
             if (rt == null) return;
 
-            rt.sizeDelta = new Vector2(280f, 165f);
+            rt.sizeDelta = new Vector2(430f, 165f);
             // Make the rect anchor/pivot the true center so our number stays centered.
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -134,8 +136,66 @@ namespace TitanOrbit.UI
             if (shieldIconSprite != null)
                 AddStatIcon(rt, "GemMoonShieldIcon", shieldIconSprite, new Vector2(StatIconCenterX, ShieldIconCenterY), shieldColor);
 
+            BuildMoonDockActionButtons(rt);
+
             rootRect = rt;
             UpdatePanelPlacement();
+        }
+
+        /// <summary>World-space chips to the right of the main gem count — opens orbit station Cards / Ships panels.</summary>
+        private void BuildMoonDockActionButtons(RectTransform panel)
+        {
+            moonDockButtonsRoot = new GameObject("MoonDockActions");
+            moonDockButtonsRoot.transform.SetParent(panel, false);
+            var rowRt = moonDockButtonsRoot.AddComponent<RectTransform>();
+            rowRt.anchorMin = new Vector2(0.5f, 0.5f);
+            rowRt.anchorMax = new Vector2(0.5f, 0.5f);
+            rowRt.pivot = new Vector2(0f, 0.5f);
+            // Tighter to stats column and slightly lower so the stack sits nearer the moon in view.
+            rowRt.anchoredPosition = new Vector2(62f, 8f);
+            rowRt.sizeDelta = new Vector2(50f, 46f);
+            var vlg = moonDockButtonsRoot.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 2f;
+            vlg.childAlignment = TextAnchor.MiddleCenter;
+            vlg.childControlWidth = false;
+            vlg.childControlHeight = false;
+            vlg.childForceExpandWidth = false;
+            vlg.childForceExpandHeight = false;
+
+            CreateMoonDockChipButton(moonDockButtonsRoot.transform, "Cards", shipsPanel: false);
+            CreateMoonDockChipButton(moonDockButtonsRoot.transform, "Ships", shipsPanel: true);
+            moonDockButtonsRoot.SetActive(false);
+        }
+
+        private static void CreateMoonDockChipButton(Transform parent, string label, bool shipsPanel)
+        {
+            var go = new GameObject("MoonBtn_" + label);
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(46f, 20f);
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.14f, 0.2f, 0.34f, 0.94f);
+            img.raycastTarget = true;
+            var btn = go.AddComponent<Button>();
+            btn.onClick.AddListener(() =>
+            {
+                var ui = OrbitStationUI.GetOrCreate();
+                ui.OpenGemMoonDockPanelFromWorld(shipsPanel);
+            });
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(go.transform, false);
+            var tr = textGo.AddComponent<RectTransform>();
+            tr.anchorMin = Vector2.zero;
+            tr.anchorMax = Vector2.one;
+            tr.offsetMin = new Vector2(2f, 1f);
+            tr.offsetMax = new Vector2(-2f, -1f);
+            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 10;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
         }
 
         private static void AddStatIcon(Transform parent, string name, Sprite sprite, Vector2 anchoredPosition, Color tintColor)
@@ -204,9 +264,33 @@ namespace TitanOrbit.UI
                 BuildCanvas();
                 return;
             }
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+            {
+                if (canvas != null && canvas.gameObject.activeSelf)
+                    canvas.gameObject.SetActive(false);
+                return;
+            }
+            if (canvas != null && !canvas.gameObject.activeSelf)
+                canvas.gameObject.SetActive(true);
             UpdatePanelPlacement();
             if (rootRect != null)
                 rootRect.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+            if (moonDockButtonsRoot != null && moon.Planet != null)
+            {
+                bool showDock = false;
+                foreach (var s in Starship.AllStarships)
+                {
+                    if (s != null && s.IsOwner && s.IsGemMoonDockedAtPlanet(moon.Planet))
+                    {
+                        showDock = true;
+                        break;
+                    }
+                }
+                if (moonDockButtonsRoot.activeSelf != showDock)
+                    moonDockButtonsRoot.SetActive(showDock);
+            }
+
             if (Time.time - lastRefresh < RefreshInterval) return;
             lastRefresh = Time.time;
 

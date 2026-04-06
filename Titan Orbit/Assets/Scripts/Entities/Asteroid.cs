@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
@@ -28,6 +29,8 @@ namespace TitanOrbit.Entities
 
         [Header("Visual")]
         [SerializeField] private Renderer asteroidRenderer;
+        [SerializeField] private float respawnScaleAnimDuration = 0.45f;
+        [SerializeField, Range(0.01f, 1f)] private float respawnScaleAnimStartMultiplier = 0.08f;
 
         private Vector3 spawnPosition;
         private Vector3 spawnScale;
@@ -36,14 +39,33 @@ namespace TitanOrbit.Entities
         private Collider col;
         private Vector3 rotationAxis;
         private float rotationSpeed;
+        private Coroutine respawnScaleAnimRoutine;
 
         private Color? originalColor;
-        private bool hasAppliedTextureTiling;
+        private bool hasAppliedSurfaceVariation;
 
         /// <summary>Base tiling for asteroid texture (material default). Smaller asteroids get this; larger scale up.</summary>
         private const float BASE_TEXTURE_TILING = 8f;
 
+        /// <summary>Extra UV scale randomness on top of size-based tiling (same albedo/height textures, very different apparent grain).</summary>
+        private const float TEXTURE_SCALE_RANDOM_MIN = 0.12f;
+        private const float TEXTURE_SCALE_RANDOM_MAX = 7f;
+
+        /// <summary>Normal map strength (Planet shader Range 0–5).</summary>
+        private const float BUMP_SCALE_MIN = 0.15f;
+        private const float BUMP_SCALE_MAX = 5f;
+
+        /// <summary>Heightmap vertex displacement (SgtPlanet); geometric lumpiness independent of normals.</summary>
+        private const float DISPLACEMENT_MIN = 0.025f;
+        private const float DISPLACEMENT_MAX = 0.32f;
+
+        /// <summary>Optional detail-layer tiling spread when material exposes _DetailTiling (Barren5).</summary>
+        private const float DETAIL_TILING_MIN = 12f;
+        private const float DETAIL_TILING_MAX = 140f;
+
         private static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
+        private static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
+        private static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
 
         public float RemainingGems => remainingGems.Value;
         public float MaxGems => maxGems.Value;
@@ -110,11 +132,6 @@ namespace TitanOrbit.Entities
                 {
                     sphereCol.isTrigger = false;
                 }
-                // High-friction material so ships can ram and sustain pressure without slipping off
-                if (col.sharedMaterial == null)
-                {
-                    col.sharedMaterial = GetOrCreateAsteroidRammingMaterial();
-                }
             }
         }
 
@@ -129,21 +146,6 @@ namespace TitanOrbit.Entities
                 originalColor = mat.GetColor("_Color");
             else if (mat.HasProperty("_BaseColor"))
                 originalColor = mat.GetColor("_BaseColor");
-        }
-
-        private static PhysicsMaterial asteroidRammingMaterial;
-        private static PhysicsMaterial GetOrCreateAsteroidRammingMaterial()
-        {
-            if (asteroidRammingMaterial != null) return asteroidRammingMaterial;
-            asteroidRammingMaterial = new PhysicsMaterial("AsteroidRamming")
-            {
-                dynamicFriction = 0.9f,
-                staticFriction = 0.9f,
-                frictionCombine = PhysicsMaterialCombine.Maximum,
-                bounceCombine = PhysicsMaterialCombine.Minimum,
-                bounciness = 0f
-            };
-            return asteroidRammingMaterial;
         }
 
         public override void OnNetworkSpawn()
@@ -192,21 +194,47 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
-            ApplyTextureTilingByScale();
+            ApplyAsteroidSurfaceVariation();
         }
 
-        private void ApplyTextureTilingByScale()
+        /// <summary>
+        /// Same Barren/planet textures per asteroid, but strong per-instance variation: UV scale, normal strength,
+        /// displacement, and optional detail tiling. Seeded from world position so all clients match.
+        /// </summary>
+        private void ApplyAsteroidSurfaceVariation()
         {
-            if (hasAppliedTextureTiling || isDestroyed.Value) return;
+            if (hasAppliedSurfaceVariation || isDestroyed.Value) return;
             var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
             if (sgt == null || sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling)) return;
             Vector3 scale = transform.localScale;
             float rawSize = (scale.x + scale.y + scale.z) / 3f;
             if (rawSize < 0.01f) return;
-            // Scale tiling by asteroid size: small asteroids stay soft (low tiling), large get more detail (higher tiling)
-            float tiling = BASE_TEXTURE_TILING * (rawSize / MIN_ASTEROID_RADIUS);
-            sgt.Properties.SetFloat(ShaderIdTiling, tiling);
-            hasAppliedTextureTiling = true;
+
+            Vector3 p = transform.position;
+            int seed = unchecked((int)((long)(p.x * 1000) * 73856093 ^ (long)(p.z * 1000) * 19349663 ^ (long)(p.y * 100) * 83492791));
+            var rng = new System.Random(seed);
+
+            float sizeTiling = BASE_TEXTURE_TILING * (rawSize / MIN_ASTEROID_RADIUS);
+            float scaleMul = Mathf.Lerp(TEXTURE_SCALE_RANDOM_MIN, TEXTURE_SCALE_RANDOM_MAX, (float)rng.NextDouble());
+            sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
+
+            if (sgt.Material.HasProperty(ShaderIdBumpScale))
+            {
+                float bump = Mathf.Lerp(BUMP_SCALE_MIN, BUMP_SCALE_MAX, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
+            }
+
+            if (sgt.Material.HasProperty(ShaderIdDetailTiling))
+            {
+                float detailTiling = Mathf.Lerp(DETAIL_TILING_MIN, DETAIL_TILING_MAX, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
+            }
+
+            float displacement = Mathf.Lerp(DISPLACEMENT_MIN, DISPLACEMENT_MAX, (float)rng.NextDouble());
+            sgt.Displacement = displacement;
+            sgt.DirtyMesh();
+
+            hasAppliedSurfaceVariation = true;
         }
 
         private void FixedUpdate()
@@ -240,6 +268,52 @@ namespace TitanOrbit.Entities
         private void OnDestroy()
         {
             AllAsteroids.Remove(this);
+        }
+
+        public void TriggerRespawnScaleAnimation()
+        {
+            if (!IsServer || !IsSpawned) return;
+            PlayRespawnScaleAnimationClientRpc(transform.localScale);
+        }
+
+        [ClientRpc]
+        private void PlayRespawnScaleAnimationClientRpc(Vector3 targetScale)
+        {
+            StartRespawnScaleAnimation(targetScale);
+        }
+
+        private void StartRespawnScaleAnimation(Vector3 targetScale)
+        {
+            if (respawnScaleAnimRoutine != null)
+                StopCoroutine(respawnScaleAnimRoutine);
+
+            if (respawnScaleAnimDuration <= 0f || respawnScaleAnimStartMultiplier >= 1f)
+            {
+                transform.localScale = targetScale;
+                return;
+            }
+
+            respawnScaleAnimRoutine = StartCoroutine(AnimateRespawnScale(targetScale));
+        }
+
+        private IEnumerator AnimateRespawnScale(Vector3 targetScale)
+        {
+            Vector3 startScale = targetScale * Mathf.Max(0.001f, respawnScaleAnimStartMultiplier);
+            transform.localScale = startScale;
+
+            float elapsed = 0f;
+            while (elapsed < respawnScaleAnimDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / respawnScaleAnimDuration);
+                // Smooth out the first/last few frames so scale-in feels less mechanical.
+                t = t * t * (3f - 2f * t);
+                transform.localScale = Vector3.LerpUnclamped(startScale, targetScale, t);
+                yield return null;
+            }
+
+            transform.localScale = targetScale;
+            respawnScaleAnimRoutine = null;
         }
 
         /// <summary>

@@ -337,7 +337,9 @@ namespace TitanOrbit.Networking
                     TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
                     "RelayService.GetJoinCodeAsync");
 
+                transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
                 transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProtocol));
+                NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
                 // Create the UGS Lobby before starting server so clients can discover it immediately.
                 long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

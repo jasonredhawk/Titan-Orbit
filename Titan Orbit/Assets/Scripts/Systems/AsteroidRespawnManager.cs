@@ -69,10 +69,12 @@ namespace TitanOrbit.Systems
             var obj = Instantiate(asteroidPrefab, position, Quaternion.identity);
             if (obj == null) return;
             obj.transform.localScale = scale;
+            var asteroid = obj.GetComponent<Asteroid>();
             var no = obj.GetComponent<NetworkObject>();
             if (no != null)
             {
                 no.Spawn();
+                asteroid?.TriggerRespawnScaleAnimation();
             }
             else
             {

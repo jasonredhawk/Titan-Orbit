@@ -210,6 +210,7 @@ namespace TitanOrbit.AI
             }
             if (dataToApply != null)
                 starship.SetShipData(dataToApply);
+            starship.EnsureSyncedChassisForAiVisual();
 
             // Assign team only
             starship.AssignTeamOnly(team);
@@ -229,6 +230,8 @@ namespace TitanOrbit.AI
             {
                 aiController = shipObj.AddComponent<AIStarshipController>();
             }
+
+            starship.RefreshAIControlledFlag();
 
             // Set behavior type and init (OnNetworkSpawn is not called when AddComponent happens after Spawn)
             aiController.SetBehaviorType(behaviorType);

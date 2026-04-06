@@ -43,6 +43,39 @@ namespace TitanOrbit.Systems
         [Tooltip("Spawn offset in front of fire position (Sci-Fi Arsenal style). Bullet spawns at position + direction * this value.")]
         [SerializeField] private float spawnOffset = 0.3f;
 
+        [Header("Ship Death Breakup")]
+        [Tooltip("Cap for detached physics pieces so huge modular ships stay affordable.")]
+        [SerializeField, Range(8, 256)] private int deathDebrisMaxPieces = 64;
+        [Tooltip("Minimum horizontal speed for detached ship debris.")]
+        [SerializeField, Range(0f, 10f)] private float deathDebrisMinImpulse = 1f;
+        [Tooltip("Maximum horizontal speed for detached ship debris.")]
+        [SerializeField, Range(0f, 20f)] private float deathDebrisMaxImpulse = 3f;
+        [Tooltip("Each shard multiplies its sampled horizontal speed by a value in this range.")]
+        [SerializeField, Range(0.05f, 3f)] private float deathDebrisPieceSpeedMulMin = 0.2f;
+        [SerializeField, Range(0.05f, 4f)] private float deathDebrisPieceSpeedMulMax = 1.1f;
+        [Tooltip("Minimum upward launch speed for detached debris.")]
+        [SerializeField, Range(0f, 10f)] private float deathDebrisUpImpulseMin = 0f;
+        [Tooltip("Maximum upward launch speed for detached debris.")]
+        [SerializeField, Range(0f, 20f)] private float deathDebrisUpImpulseMax = 1.5f;
+        [Tooltip("Minimum angular speed for detached debris.")]
+        [SerializeField, Range(0f, 40f)] private float deathDebrisAngularVelMin = 2.5f;
+        [Tooltip("Maximum angular speed for detached debris.")]
+        [SerializeField, Range(0f, 80f)] private float deathDebrisAngularVelMax = 12f;
+        [Tooltip("Linear damping applied to detached debris pieces. Higher values settle faster.")]
+        [SerializeField, Range(0f, 10f)] private float deathDebrisLinearDamping = 0f;
+        [Tooltip("How long detached debris objects live before being destroyed.")]
+        [SerializeField, Range(0.25f, 20f)] private float deathDebrisLifetime = 5f;
+        [Tooltip("Velocity retained when debris bounces off asteroids. 1 = full reflection, lower = softer bounce.")]
+        [SerializeField, Range(0f, 1.5f)] private float deathDebrisAsteroidBounceMultiplier = 0.9f;
+        [Tooltip("Minimum debris speed required before asteroid bounce assist applies.")]
+        [SerializeField, Range(0f, 5f)] private float deathDebrisAsteroidBounceMinSpeed = 0.15f;
+        [Tooltip("When enabled, death debris can absorb and block enemy bullets.")]
+        [SerializeField] private bool deathDebrisBlocksEnemyBullets = true;
+        [Tooltip("How many enemy bullet hits each debris piece can absorb before breaking.")]
+        [SerializeField, Range(1, 20)] private int deathDebrisBulletHitsToBreak = 3;
+        [Tooltip("How long debris acts as a bullet shield after death.")]
+        [SerializeField, Range(0.1f, 20f)] private float deathDebrisBulletShieldDuration = 5f;
+
         private static bool loggedBulletPrefabNull;
 
         private void Awake()
@@ -61,6 +94,23 @@ namespace TitanOrbit.Systems
         public int BulletPrefabBankCount => UseCategories ? (bulletBankCategories != null ? bulletBankCategories.Count : 0) : (bulletPrefabBank != null ? bulletPrefabBank.Count : 0);
 
         private bool UseCategories => bulletBankCategories != null && bulletBankCategories.Count > 0;
+
+        public int DeathDebrisMaxPieces => Mathf.Max(1, deathDebrisMaxPieces);
+        public float DeathDebrisMinImpulse => Mathf.Max(0f, deathDebrisMinImpulse);
+        public float DeathDebrisMaxImpulse => Mathf.Max(DeathDebrisMinImpulse, deathDebrisMaxImpulse);
+        public float DeathDebrisPieceSpeedMulMin => Mathf.Max(0.01f, deathDebrisPieceSpeedMulMin);
+        public float DeathDebrisPieceSpeedMulMax => Mathf.Max(DeathDebrisPieceSpeedMulMin, deathDebrisPieceSpeedMulMax);
+        public float DeathDebrisUpImpulseMin => Mathf.Max(0f, deathDebrisUpImpulseMin);
+        public float DeathDebrisUpImpulseMax => Mathf.Max(DeathDebrisUpImpulseMin, deathDebrisUpImpulseMax);
+        public float DeathDebrisAngularVelMin => Mathf.Max(0f, deathDebrisAngularVelMin);
+        public float DeathDebrisAngularVelMax => Mathf.Max(DeathDebrisAngularVelMin, deathDebrisAngularVelMax);
+        public float DeathDebrisLinearDamping => Mathf.Max(0f, deathDebrisLinearDamping);
+        public float DeathDebrisLifetime => Mathf.Max(0.1f, deathDebrisLifetime);
+        public float DeathDebrisAsteroidBounceMultiplier => Mathf.Clamp(deathDebrisAsteroidBounceMultiplier, 0f, 2f);
+        public float DeathDebrisAsteroidBounceMinSpeed => Mathf.Max(0f, deathDebrisAsteroidBounceMinSpeed);
+        public bool DeathDebrisBlocksEnemyBullets => deathDebrisBlocksEnemyBullets;
+        public int DeathDebrisBulletHitsToBreak => Mathf.Max(1, deathDebrisBulletHitsToBreak);
+        public float DeathDebrisBulletShieldDuration => Mathf.Max(0.1f, deathDebrisBulletShieldDuration);
 
         /// <summary>Team A=Red, B=Blue, C=Green. Used to pick the matching prefab in each category (e.g. Red Bullets for red team).</summary>
         public static string GetColorNameForTeam(TeamManager.Team team)

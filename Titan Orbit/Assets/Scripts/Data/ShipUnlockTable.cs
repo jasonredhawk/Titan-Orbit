@@ -15,7 +15,7 @@ namespace TitanOrbit.Data
         [Tooltip("Minimum home planet level required to purchase this chassis.")]
         public int minHomePlanetLevel = 1;
 
-        [Tooltip("Gem cost to purchase this chassis at its tier. Uses formula 20 * Level^2 by default.")]
+        [Tooltip("Gem cost to purchase this chassis at its tier. Default formula: 20 * (Level - 1)^2 (tier 1 = 0).")]
         public float gemCost = 20f;
     }
 
@@ -181,12 +181,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Utility to compute the gem cost for a tier level using the agreed formula: 20 * Level^2.
+        /// Gem cost to purchase a ship at this tier from the upgrade tree: 20 * (Level - 1)^2 (tier 1 = 0).
         /// </summary>
         public static float GetTierCost(int level)
         {
-            if (level <= 0) level = 1;
-            return 20f * level * level;
+            float n = Mathf.Max(0f, level - 1f);
+            return 20f * n * n;
         }
 
         /// <summary>First chassis index for a given tier (0-based). Tier 1=0, 2=1, 3=3, 4=6, 5=10, 6=15.</summary>

@@ -45,6 +45,15 @@ namespace TitanOrbit.UI
         private float nextLeaderboardRefreshTime;
         private float lastPlayerShipLookupTime = -999f;
         private const float PlayerShipLookupInterval = 0.3f;
+        /// <summary>When true, ship stats and leaderboard stay hidden (e.g. gem moon fullscreen ship upgrade tree).</summary>
+        private static bool s_shipUpgradeTreeObscuresHud;
+
+        public static void SetShipUpgradeTreeObscuresHud(bool obscures)
+        {
+            s_shipUpgradeTreeObscuresHud = obscures;
+        }
+
+        public static bool ShipUpgradeTreeObscuresHud => s_shipUpgradeTreeObscuresHud;
         private ScrollRect leaderboardScrollRect;
         private RectTransform leaderboardViewportRect;
         private RectTransform leaderboardContentRect;
@@ -127,21 +136,25 @@ namespace TitanOrbit.UI
 
             // Hide entire HUD until we have a local ship that has chosen a team (don't disable this GameObject so Update keeps running)
             bool showInGamePanels = playerShip != null && playerShip.ShipTeam != TeamManager.Team.None;
+            bool showHudChrome = showInGamePanels && !s_shipUpgradeTreeObscuresHud;
             if (shipStatsPanel != null)
-                shipStatsPanel.SetActive(showInGamePanels);
+                shipStatsPanel.SetActive(showHudChrome);
             else
             {
                 Transform root = transform.root;
                 if (root != null)
                 {
                     Transform t = root.Find("ShipStatsPanel");
-                    if (t != null) t.gameObject.SetActive(showInGamePanels);
+                    if (t != null) t.gameObject.SetActive(showHudChrome);
                 }
             }
             if (leaderboardPanel != null)
-                leaderboardPanel.SetActive(showInGamePanels);
+                leaderboardPanel.SetActive(showHudChrome);
 
             if (!showInGamePanels)
+                return;
+
+            if (s_shipUpgradeTreeObscuresHud)
                 return;
 
             if (playerShip.IsDead)

@@ -59,6 +59,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float moonVsAsteroidBaseDamage = 8f;
         [SerializeField] private float moonVsAsteroidDamagePerSpeed = 1.75f;
         [SerializeField] private float moonVsAsteroidMaxDamage = 35f;
+        [SerializeField] private float moonToAsteroidDamageMultiplier = 4f;
+        [SerializeField] private float asteroidToMoonDamageMultiplier = 0.25f;
         [SerializeField] private float moonVsMoonBaseDamage = 12f;
         [SerializeField] private float moonVsMoonDamagePerSpeed = 2.25f;
         [SerializeField] private float moonVsMoonMaxDamage = 45f;
@@ -407,8 +409,22 @@ namespace TitanOrbit.Entities
             float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
             float omega = r > 0.001f ? speed / r : 0f;
 
-            // Counter to ship orbit direction
-            orbitAngle -= omega * Time.fixedDeltaTime;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening)
+            {
+                // Offline / not in a net session: same as original local integration.
+                orbitAngle -= omega * Time.fixedDeltaTime;
+            }
+            else if (nm.IsServer)
+            {
+                // Counter to ship orbit direction — authoritative integration only on server.
+                orbitAngle -= omega * Time.fixedDeltaTime;
+                planet.ServerSetGemMoonOrbitAngle(orbitAngle);
+            }
+            else
+            {
+                orbitAngle = planet.GemMoonOrbitAngleSynced;
+            }
 
             Vector3 offset = new Vector3(Mathf.Cos(orbitAngle), 0f, Mathf.Sin(orbitAngle)) * r;
             Vector3 pos = center + offset;
@@ -482,13 +498,18 @@ namespace TitanOrbit.Entities
                 Vector3 relativeVelocity = cachedWorldVelocity - asteroid.WorldVelocity;
                 relativeVelocity.y = 0f;
                 float impactSpeed = relativeVelocity.magnitude;
-                float damage = moonVsAsteroidBaseDamage + moonVsAsteroidDamagePerSpeed * impactSpeed;
-                damage = Mathf.Clamp(damage, 0f, moonVsAsteroidMaxDamage);
-                if (damage <= 0.0001f) continue;
+                float baseDamage = moonVsAsteroidBaseDamage + moonVsAsteroidDamagePerSpeed * impactSpeed;
+                baseDamage = Mathf.Clamp(baseDamage, 0f, moonVsAsteroidMaxDamage);
+                if (baseDamage <= 0.0001f) continue;
+
+                float moonDamage = baseDamage * Mathf.Max(0f, asteroidToMoonDamageMultiplier);
+                float asteroidDamage = baseDamage * Mathf.Max(0f, moonToAsteroidDamageMultiplier);
 
                 _lastAsteroidImpactTimeByInstanceId[id] = now;
-                TakeDamageServer(damage);
-                asteroid.TakeDamageServerRpc(damage, 0ul);
+                if (moonDamage > 0.0001f)
+                    TakeDamageServer(moonDamage);
+                if (asteroidDamage > 0.0001f)
+                    asteroid.TakeDamageServerRpc(asteroidDamage, 0ul);
             }
         }
 

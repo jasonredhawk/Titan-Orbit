@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using TitanOrbit.Entities;
 
 namespace TitanOrbit.Camera
@@ -41,6 +43,26 @@ namespace TitanOrbit.Camera
         [Tooltip("Optional: space background that can be hidden while zoomed out.")]
         [SerializeField] private ScrollingSpaceBackground spaceBackground;
 
+        [Header("Impact Feedback")]
+        [Tooltip("When enabled, asteroid and ship collisions shake the camera. Impact sounds are unchanged.")]
+        [SerializeField] private bool collisionCameraShakeEnabled = true;
+        [Tooltip("Max position jitter in camera-local space (applied after follow, so it is visible).")]
+        [SerializeField] private Vector3 collisionShakeMaxTranslation = new Vector3(0.45f, 0.45f, 0.45f);
+        [SerializeField] private float collisionShakeFrequency = 25f;
+        [Tooltip("How fast shake intensity decays per second.")]
+        [SerializeField] private float collisionShakeRecoverPerSecond = 1.2f;
+        [SerializeField] private float collisionShakeSmoothingExponent = 1f;
+
+        [Header("Mouse Zoom")]
+        [Tooltip("Allow mouse wheel to zoom out from the default ship zoom up to max zoom out size.")]
+        [SerializeField] private bool mouseZoomEnabled = true;
+        [Tooltip("Largest orthographic size when fully zoomed out with the wheel (larger = see more of the map).")]
+        [SerializeField] private float maxManualZoomOutOrthoSize = 80f;
+        [Tooltip("How much the zoom slider moves per scroll wheel unit (Unity uses ~±120 per notch on Windows).")]
+        [SerializeField] private float mouseWheelZoomSensitivity = 0.12f;
+        [Tooltip("If true, wheel does not zoom while the pointer is over UI.")]
+        [SerializeField] private bool ignoreMouseZoomOverUi = true;
+
         private UnityEngine.Camera cam;
         private float currentScale = 1f;
         private float scaleVelocity;
@@ -50,6 +72,24 @@ namespace TitanOrbit.Camera
         private bool galacticZoomReturning;
         private float galacticZoomElapsed;
         private float galacticZoomStartSize;
+
+        /// <summary>0 = default ship zoom; 1 = max manual zoom out.</summary>
+        private float manualZoomT;
+
+        /// <summary>Decaying hit impulse (single collisions).</summary>
+        private float collisionShakeIntensity;
+        /// <summary>Sustained level while grinding (0..1); cleared by Starship when contacts end.</summary>
+        private float rammingShakeDrive;
+        private float collisionShakeSeed;
+
+        private float GetManualZoomedOrthoSize(float defaultOrthoSize)
+        {
+            float maxSize = Mathf.Max(maxManualZoomOutOrthoSize, defaultOrthoSize);
+            return Mathf.Lerp(defaultOrthoSize, maxSize, manualZoomT);
+        }
+
+        /// <summary>Inspector toggle: whether collision feedback may apply camera shake.</summary>
+        public bool IsCollisionCameraShakeEnabled => collisionCameraShakeEnabled;
 
         private void Awake()
         {
@@ -63,6 +103,8 @@ namespace TitanOrbit.Camera
             {
                 spaceBackground = FindFirstObjectByType<ScrollingSpaceBackground>();
             }
+
+            collisionShakeSeed = Random.value * 100f;
 
             // Set up camera for top-down view
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
@@ -92,14 +134,37 @@ namespace TitanOrbit.Camera
             {
                 if (!galacticZoomActive)
                 {
-                    cam.orthographicSize = defaultOrthoSize;
+                    if (mouseZoomEnabled && target != null)
+                    {
+                        bool allowWheel = !ignoreMouseZoomOverUi
+                            || EventSystem.current == null
+                            || !EventSystem.current.IsPointerOverGameObject();
+                        if (allowWheel)
+                        {
+                            float scroll;
+#if ENABLE_INPUT_SYSTEM
+                            scroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y : 0f;
+#else
+                            scroll = UnityEngine.Input.mouseScrollDelta.y;
+#endif
+                            if (Mathf.Abs(scroll) > 0.0001f)
+                            {
+                                // Scroll up (positive) = zoom in toward default; scroll down = zoom out toward max.
+                                manualZoomT = Mathf.Clamp01(
+                                    manualZoomT - (scroll / 120f) * mouseWheelZoomSensitivity);
+                            }
+                        }
+                    }
+
+                    cam.orthographicSize = GetManualZoomedOrthoSize(defaultOrthoSize);
                 }
                 else
                 {
                     galacticZoomElapsed += Time.deltaTime;
 
-                    // Target zoomed-out size is halfway between current default zoom and the far-map size.
-                    float halfwayOutSize = Mathf.Lerp(defaultOrthoSize, galacticZoomOrthoSize, 0.5f);
+                    float gameplayOrthoSize = GetManualZoomedOrthoSize(defaultOrthoSize);
+                    // Target zoomed-out size is halfway between gameplay zoom (including manual wheel) and the far-map size.
+                    float halfwayOutSize = Mathf.Lerp(gameplayOrthoSize, galacticZoomOrthoSize, 0.5f);
 
                     if (!galacticZoomReturning)
                     {
@@ -114,7 +179,7 @@ namespace TitanOrbit.Camera
                         float tIn = galacticZoomInDuration > 0.0001f
                             ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomInDuration)
                             : 1f;
-                        float size = Mathf.Lerp(galacticZoomStartSize, defaultOrthoSize, tIn);
+                        float size = Mathf.Lerp(galacticZoomStartSize, gameplayOrthoSize, tIn);
                         cam.orthographicSize = size;
 
                         if (tIn >= 1f - 0.0001f)
@@ -135,7 +200,42 @@ namespace TitanOrbit.Camera
 
             // Lock camera to ship - ship is always in wrapped coordinates, so just follow directly
             Vector3 targetPosition = target.position + offset;
+
+            float impulsePow = collisionShakeIntensity > 0.0001f
+                ? Mathf.Pow(collisionShakeIntensity, collisionShakeSmoothingExponent)
+                : 0f;
+            float combinedShake = Mathf.Max(impulsePow, rammingShakeDrive);
+            if (combinedShake > 0.0001f)
+            {
+                float ft = Time.time * collisionShakeFrequency;
+                Vector3 localJitter = new Vector3(
+                    collisionShakeMaxTranslation.x * (Mathf.PerlinNoise(collisionShakeSeed, ft) * 2f - 1f),
+                    collisionShakeMaxTranslation.y * (Mathf.PerlinNoise(collisionShakeSeed + 1f, ft) * 2f - 1f),
+                    collisionShakeMaxTranslation.z * (Mathf.PerlinNoise(collisionShakeSeed + 2f, ft) * 2f - 1f)
+                ) * combinedShake;
+                targetPosition += transform.rotation * localJitter;
+                if (collisionShakeIntensity > 0.0001f)
+                {
+                    collisionShakeIntensity = Mathf.Clamp01(
+                        collisionShakeIntensity - collisionShakeRecoverPerSecond * Time.deltaTime);
+                }
+            }
+
             transform.position = targetPosition;
+        }
+
+        /// <summary>Impulse shake for the local player (typ. 0.05–0.35). Stacks with sustained ramming via max.</summary>
+        public void ApplyCollisionShake(float amount01)
+        {
+            if (!collisionCameraShakeEnabled) return;
+            collisionShakeIntensity = Mathf.Max(collisionShakeIntensity, Mathf.Clamp01(amount01));
+        }
+
+        /// <summary>Sustained shake while grinding; set every physics step from server, or 0 when ramming stops.</summary>
+        public void SetRammingShakeDrive(float amount01)
+        {
+            if (!collisionCameraShakeEnabled) return;
+            rammingShakeDrive = Mathf.Clamp01(amount01);
         }
 
         public void SetTarget(Transform newTarget)

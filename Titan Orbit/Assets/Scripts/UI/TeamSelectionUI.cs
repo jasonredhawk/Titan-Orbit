@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Entities;
@@ -33,6 +34,28 @@ namespace TitanOrbit.UI
         [Header("Refresh")]
         [SerializeField] private float refreshInterval = 0.5f;
         private float nextRefreshTime;
+
+        private void Start()
+        {
+            WireJoinOnce(TeamManager.Team.TeamA, teamAPanel);
+            WireJoinOnce(TeamManager.Team.TeamB, teamBPanel);
+            WireJoinOnce(TeamManager.Team.TeamC, teamCPanel);
+            WireJoinOnce(TeamManager.Team.TeamD, teamDPanel);
+            WireJoinOnce(TeamManager.Team.TeamE, teamEPanel);
+        }
+
+        private static void WireJoinOnce(TeamManager.Team team, TeamPanelRefs refs)
+        {
+            if (refs == null || refs.joinButton == null) return;
+            refs.joinButton.onClick.RemoveAllListeners();
+            TeamManager.Team capture = team;
+            refs.joinButton.onClick.AddListener(() => OnJoinTeamStatic(capture));
+        }
+
+        private static void OnJoinTeamStatic(TeamManager.Team team)
+        {
+            NetworkGameManager.RequestTeamFromLocalPlayer(team);
+        }
 
         private void Update()
         {
@@ -99,13 +122,16 @@ namespace TitanOrbit.UI
             }
             if (refs.statsText != null)
                 refs.statsText.text = GetTeamStatsString(team);
-            bool canJoin = count < max && count <= minCount + 1;
+            // Until the local player has a team, any non-full team is joinable. Balance rule applies only when switching teams.
+            // (Client roster counts use replicated NetworkVariables; playerTeams lists are server-only.)
+            bool localHasNoTeam = true;
+            if (NetworkManager.Singleton != null && TeamManager.Instance != null)
+                localHasNoTeam = TeamManager.Instance.GetPlayerTeam(NetworkManager.Singleton.LocalClientId) == TeamManager.Team.None;
+            bool canJoin = localHasNoTeam
+                ? count < max
+                : count < max && count <= minCount + 1;
             if (refs.joinButton != null)
-            {
                 refs.joinButton.interactable = canJoin;
-                refs.joinButton.onClick.RemoveAllListeners();
-                refs.joinButton.onClick.AddListener(() => OnJoinTeam(team));
-            }
         }
 
         private static string TeamLabel(TeamManager.Team team)
@@ -163,10 +189,5 @@ namespace TitanOrbit.UI
             return "Home Lv." + homeLevel + " | Gems " + homeGems.ToString("F0") + "/" + homeMaxGems.ToString("F0") + " | Planets " + planetsOwned;
         }
 
-        private void OnJoinTeam(TeamManager.Team team)
-        {
-            if (TeamManager.Instance != null)
-                TeamManager.Instance.RequestTeamServerRpc(team);
-        }
     }
 }

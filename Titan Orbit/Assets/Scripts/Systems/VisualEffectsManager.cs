@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TMPro;
 
@@ -29,8 +30,11 @@ namespace TitanOrbit.Systems
         [SerializeField] private float gemPickupTextDuration = 1f;
 
         [Header("Floating Count Popups")]
-        [Tooltip("Per-action toggles, people color/icon, etc. Create: Assets → Create → Titan Orbit → Floating Count Feedback Settings. If null, all channels show.")]
+        [Tooltip("Optional: overrides for People load/unload icon and color. Per-channel on/off is in Floating Count Visibility below.")]
         [SerializeField] private FloatingCountFeedbackSettings floatingCountFeedbackSettings;
+        [Header("Floating count — show per channel")]
+        [Tooltip("World-space +N popups for each gameplay source.")]
+        [SerializeField] private FloatingCountChannelVisibility floatingCountVisibility = new FloatingCountChannelVisibility();
         [Tooltip("World-space font used to render the floating (+N) popup text.")]
         [SerializeField] private TMP_FontAsset floatingCountFont;
         [SerializeField] private Sprite floatingCountGemIcon;
@@ -47,14 +51,21 @@ namespace TitanOrbit.Systems
         [SerializeField] private Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0.0f, 0f);
         [SerializeField] private float floatingCountVerticalOffset = 3.5f;
         [Header("Floating Count Spread")]
-        [Tooltip("Randomized spawn radius around the point of interest to reduce overlap.")]
-        [SerializeField] private float floatingCountSpawnJitterRadius = 0.45f;
-        [Tooltip("Small deterministic ring offset so bursts stack less directly on top of each other.")]
-        [SerializeField] private float floatingCountSpawnRingStep = 0.12f;
+        [Tooltip("Extra random XZ offset around the anchor so simultaneous popups do not share one spot.")]
+        [SerializeField] private float floatingCountSpawnJitterRadius = 1.05f;
+        [Tooltip("Scales the golden-spiral ring radius (√n * step), capped by Max Spread Radius.")]
+        [SerializeField] private float floatingCountSpawnRingStep = 0.32f;
+        [Tooltip("Upper bound for spiral radius from the anchor (world units on XZ).")]
+        [SerializeField] private float floatingCountMaxSpreadRadius = 3.75f;
+        [Tooltip("How many spiral steps before radius wraps (angle still advances, so overlap stays low).")]
+        [SerializeField] private int floatingCountSpiralPeriod = 40;
+        [Tooltip("Perpendicular drift speed on the play plane so popups fan out instead of stacking in one line.")]
+        [SerializeField] private float floatingCountLateralDriftMax = 0.55f;
 
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
+        [SerializeField] private Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
         private int floatingPopupSequence;
 
         private void Awake()
@@ -83,6 +94,8 @@ namespace TitanOrbit.Systems
                 GameObject effect = Instantiate(explosionEffect, position, Quaternion.identity);
                 Destroy(effect, 5f);
             }
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayExplosionSound();
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -127,6 +140,8 @@ namespace TitanOrbit.Systems
         private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.GemPickup))
+                return;
 
             // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
             // there is no usable TMP font (assigned or default).
@@ -166,6 +181,9 @@ namespace TitanOrbit.Systems
         private void SpawnAsteroidStatsFloatingTextClientRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+                return;
+
             Color hpColor = floatingCountHealthPositiveColor;
             Color gemsColor = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
             string hpMessage = $"HP Left: {Mathf.Max(0, Mathf.RoundToInt(remainingHealth))}";
@@ -175,9 +193,29 @@ namespace TitanOrbit.Systems
             SpawnCustomFloatingCountPopupLocal(position, gemsMessage, floatingCountGemIcon, gemsColor);
         }
 
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnImpactForceFloatingTextServerRpc(Vector3 position, float impactForceNewtons)
+        {
+            SpawnImpactForceFloatingTextClientRpc(position, impactForceNewtons);
+        }
+
+        [ClientRpc]
+        private void SpawnImpactForceFloatingTextClientRpc(Vector3 position, float impactForceNewtons)
+        {
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+                return;
+
+            float clampedForce = Mathf.Max(0f, impactForceNewtons);
+            if (clampedForce < 1f)
+                return;
+
+            string message = $"{Mathf.RoundToInt(clampedForce):N0}";
+            SpawnCustomFloatingCountPopupLocal(position, message, floatingCountDamageIcon, floatingCountImpactForceColor);
+        }
+
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
-            if (floatingCountFeedbackSettings != null && !floatingCountFeedbackSettings.IsEnabled(channel))
+            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(channel))
                 return;
 
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
@@ -271,15 +309,25 @@ namespace TitanOrbit.Systems
             SpawnPopup(message, icon, color, "FloatingCountPopup_AsteroidStats", position, fontToUse);
         }
 
+        /// <summary>
+        /// Picks a spawn point using a golden-angle spiral plus anchor-based phase and jitter.
+        /// Sequential popups at the same world spot spread on XZ instead of stacking in one column.
+        /// </summary>
         private Vector3 GetSpreadSpawnPosition(Vector3 position)
         {
-            float ringRadius = floatingCountSpawnRingStep * (floatingPopupSequence % 6);
-            floatingPopupSequence++;
+            int n = floatingPopupSequence++;
+            // Golden angle (~137.5°): well-distributed angles; irrational step avoids periodic clumping.
+            const float goldenAngle = 2.39996323f;
+            // Phase from anchor so different locations do not share identical spiral alignment.
+            float phase = (position.x * 12.9898f + position.z * 78.233f) * 0.215f;
+            float angle = phase + goldenAngle * n;
+            int period = Mathf.Max(8, floatingCountSpiralPeriod);
+            float ringR = Mathf.Sqrt((n % period) + 1) * Mathf.Max(0.01f, floatingCountSpawnRingStep);
+            ringR = Mathf.Min(ringR, Mathf.Max(0.5f, floatingCountMaxSpreadRadius));
 
-            Vector2 random = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
-            float angle = (floatingPopupSequence * 57f) * Mathf.Deg2Rad;
-            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringRadius;
-            Vector3 spawnPos = position + ring + new Vector3(random.x, floatingCountVerticalOffset, random.y);
+            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringR;
+            Vector2 jitter = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
+            Vector3 spawnPos = position + ring + new Vector3(jitter.x, floatingCountVerticalOffset, jitter.y);
 
             // Hard floor so stale serialized inspector values cannot pin popups to ground.
             if (spawnPos.y < 4f)
@@ -306,7 +354,8 @@ namespace TitanOrbit.Systems
                 floatingCountDuration,
                 floatingCountRiseSpeed,
                 floatingCountIconScale,
-                floatingCountIconLocalOffset
+                floatingCountIconLocalOffset,
+                Mathf.Max(0f, floatingCountLateralDriftMax)
             );
         }
 

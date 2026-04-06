@@ -1,9 +1,11 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Networking;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using System.Collections;
+using System.Collections.Generic;
 
 namespace TitanOrbit.Generation
 {
@@ -86,7 +88,7 @@ namespace TitanOrbit.Generation
         [Tooltip("When enabled, world objects spawn progressively for loading-screen visualization even if batch delay is zero.")]
         [SerializeField] private bool alwaysUseProgressiveGeneration = true;
         [Tooltip("If progressive generation is enabled and batch delay is zero, auto-compute a small delay so generation remains visible.")]
-        [SerializeField] private float targetProgressiveDurationSeconds = 4.5f;
+        [SerializeField] private float targetProgressiveDurationSeconds = 2.5f;
         [Tooltip("Shortens asteroid pacing during progressive generation so loading remains visually active without feeling too slow.")]
         [SerializeField] private bool accelerateAsteroidProgressive = true;
         [Tooltip("Maximum number of asteroid delay points during progressive generation when acceleration is enabled.")]
@@ -96,6 +98,11 @@ namespace TitanOrbit.Generation
         private NetworkVariable<float> loadingProgress = new NetworkVariable<float>(0f);
         /// <summary>True when map generation is complete.</summary>
         private NetworkVariable<bool> loadingComplete = new NetworkVariable<bool>(false);
+        /// <summary>Server-only rolled size; replicated so clients frame the camera and <see cref="ToroidalMap"/> matches the match.</summary>
+        private readonly NetworkVariable<float> syncedMapWidth = new NetworkVariable<float>(1000f);
+        private readonly NetworkVariable<float> syncedMapHeight = new NetworkVariable<float>(1000f);
+        /// <summary>Home + neutral planets + asteroids spawned for this match; used by joining clients to gauge replication.</summary>
+        private readonly NetworkVariable<int> syncedWorldObjectCount = new NetworkVariable<int>(0);
 
         public float LoadingProgress => loadingProgress.Value;
         public bool LoadingComplete => loadingComplete.Value;
@@ -114,6 +121,12 @@ namespace TitanOrbit.Generation
         /// <summary>Rolled per map (2–5). Drives home planet count and <see cref="TeamManager"/> active teams.</summary>
         private int homePlanetCountThisMap = 3;
 
+        /// <summary>Server: spawn order + transforms for late joiners to replay loading visuals.</summary>
+        private readonly List<MapLayoutEntry> serverLayoutSnapshot = new List<MapLayoutEntry>();
+
+        private MapLayoutEntry[] clientJoinLayoutBuffer;
+        private bool clientJoinLayoutReady;
+
         private static readonly TeamManager.Team[] HomeTeamsOrdered =
         {
             TeamManager.Team.TeamA,
@@ -123,40 +136,258 @@ namespace TitanOrbit.Generation
             TeamManager.Team.TeamE
         };
 
-        private void Start()
-        {
-            if (NetworkManager.Singleton != null)
-            {
-                NetworkManager.Singleton.OnServerStarted += OnServerStarted;
-                if (NetworkManager.Singleton.IsServer)
-                    OnServerStarted();
-            }
-        }
-
-        private void OnDestroy()
-        {
-            if (NetworkManager.Singleton != null)
-                NetworkManager.Singleton.OnServerStarted -= OnServerStarted;
-        }
-
-        private void OnServerStarted()
-        {
-            // Generate immediately; map generator is a scene object so it exists when server starts
-            EnsureMapGenerated();
-        }
-
         public override void OnNetworkSpawn()
         {
+            base.OnNetworkSpawn();
             if (IsServer)
             {
+                if (NetworkManager.Singleton != null)
+                    NetworkManager.Singleton.OnClientConnectedCallback += OnServerClientConnected;
                 EnsureMapGenerated();
+                PushSyncedMapDimensionsToNetworkIfReady();
             }
+            else
+            {
+                ApplySyncedToroidalMapFromNetwork();
+                syncedMapWidth.OnValueChanged += OnSyncedMapDimensionsChanged;
+                syncedMapHeight.OnValueChanged += OnSyncedMapDimensionsChanged;
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (IsServer && NetworkManager.Singleton != null)
+                NetworkManager.Singleton.OnClientConnectedCallback -= OnServerClientConnected;
+            if (!IsServer)
+            {
+                syncedMapWidth.OnValueChanged -= OnSyncedMapDimensionsChanged;
+                syncedMapHeight.OnValueChanged -= OnSyncedMapDimensionsChanged;
+                clientJoinLayoutBuffer = null;
+                clientJoinLayoutReady = false;
+            }
+            base.OnNetworkDespawn();
+        }
+
+        private void OnServerClientConnected(ulong clientId)
+        {
+            if (!IsServer || NetworkManager.Singleton == null)
+                return;
+            if (clientId == NetworkManager.Singleton.LocalClientId)
+                return;
+            StartCoroutine(SendJoinLayoutToClientWhenReady(clientId));
+        }
+
+        private IEnumerator SendJoinLayoutToClientWhenReady(ulong clientId)
+        {
+            float wait = 0f;
+            while (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer && !loadingComplete.Value && wait < 120f)
+            {
+                wait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (!IsServer || serverLayoutSnapshot == null || serverLayoutSnapshot.Count == 0)
+            {
+                if (IsServer && (serverLayoutSnapshot == null || serverLayoutSnapshot.Count == 0))
+                    Debug.LogWarning("[MapGenerator] Join layout not sent: server snapshot is empty (late joiners will skip loading replay).");
+                yield break;
+            }
+
+            // Larger chunks + fewer yields so joiners finish "Receiving map layout..." faster over Relay.
+            const int chunkSize = 160;
+            var rpcParams = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            };
+            int total = serverLayoutSnapshot.Count;
+            int chunkIndex = 0;
+            for (int start = 0; start < total; start += chunkSize)
+            {
+                int len = Mathf.Min(chunkSize, total - start);
+                var chunk = new MapLayoutEntry[len];
+                for (int i = 0; i < len; i++)
+                    chunk[i] = serverLayoutSnapshot[start + i];
+                bool isLast = start + len >= total;
+                ReceiveJoinLayoutChunkClientRpc(total, start, chunk, isLast, rpcParams);
+                chunkIndex++;
+                if (!isLast && (chunkIndex % 3) == 0)
+                    yield return null;
+            }
+        }
+
+        [ClientRpc]
+        private void ReceiveJoinLayoutChunkClientRpc(int totalCount, int startIndex, MapLayoutEntry[] chunk, bool isLastChunk, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsClient || chunk == null || chunk.Length == 0)
+                return;
+            if (clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length != totalCount)
+            {
+                clientJoinLayoutBuffer = new MapLayoutEntry[totalCount];
+                clientJoinLayoutReady = false;
+            }
+            for (int i = 0; i < chunk.Length; i++)
+            {
+                int idx = startIndex + i;
+                if (idx >= 0 && idx < totalCount)
+                    clientJoinLayoutBuffer[idx] = chunk[i];
+            }
+            if (isLastChunk)
+                clientJoinLayoutReady = true;
+        }
+
+        /// <summary>Joining clients: layout metadata received and ready for <see cref="CoPlayJoinLayout"/>.</summary>
+        public bool HasClientJoinLayoutReady() => IsClient && !IsServer && clientJoinLayoutReady && clientJoinLayoutBuffer != null && clientJoinLayoutBuffer.Length > 0;
+
+        /// <summary>
+        /// Joining clients: progress at end of home phase and end of neutral phase (0–1), matching spawn order in the layout buffer.
+        /// Used by the loading UI so "Placing planets..." / "Scattering asteroids..." align with the replay.
+        /// </summary>
+        public void GetJoinReplayPhaseEndProgress(out float endHomesProgress, out float endNeutralsProgress)
+        {
+            endHomesProgress = 0.33f;
+            endNeutralsProgress = 0.66f;
+            if (!IsClient || IsServer || clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length == 0)
+                return;
+            int n = clientJoinLayoutBuffer.Length;
+            int homes = 0, neutrals = 0;
+            for (int i = 0; i < n; i++)
+            {
+                MapLayoutKind k = clientJoinLayoutBuffer[i].Kind;
+                if (k == MapLayoutKind.Home) homes++;
+                else if (k == MapLayoutKind.Neutral) neutrals++;
+            }
+            float inv = 1f / n;
+            endHomesProgress = homes * inv;
+            endNeutralsProgress = (homes + neutrals) * inv;
+        }
+
+        /// <summary>Client-only: progressive instantiate preview copies (network components stripped) in original spawn order.</summary>
+        public IEnumerator CoPlayJoinLayout(Transform previewParent, System.Action<float> onProgress)
+        {
+            if (!IsClient || IsServer || clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length == 0)
+                yield break;
+
+            var entries = clientJoinLayoutBuffer;
+            int totalSteps = Mathf.Max(1, entries.Length);
+            float stepDelay = ComputeEffectiveProgressiveDelay(totalSteps);
+            float asteroidDelay = ComputeEffectiveAsteroidDelay(stepDelay);
+            int neutralTemplateId = 0;
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                MapLayoutEntry e = entries[i];
+                GameObject prefab = e.Kind switch
+                {
+                    MapLayoutKind.Home => homePlanetPrefab,
+                    MapLayoutKind.Neutral => planetPrefab,
+                    MapLayoutKind.Asteroid => asteroidPrefab,
+                    _ => null
+                };
+                if (prefab != null)
+                {
+                    GameObject go = UnityEngine.Object.Instantiate(prefab, e.Position, e.Rotation, previewParent);
+                    go.transform.localScale = e.Scale;
+                    if (e.Kind == MapLayoutKind.Neutral)
+                    {
+                        var pl = go.GetComponent<Planet>();
+                        if (pl != null)
+                            pl.SetTemplatePlanetId(++neutralTemplateId);
+                    }
+                    StripNetworkForLocalPreview(go);
+                }
+
+                onProgress?.Invoke((float)(i + 1) / totalSteps);
+
+                bool isAst = e.Kind == MapLayoutKind.Asteroid;
+                float w = isAst ? asteroidDelay : stepDelay;
+                if (w > 0f)
+                    yield return new WaitForSeconds(w);
+                else if (isAst && (i + 1) % 12 == 0)
+                    yield return null;
+                else
+                    yield return null;
+            }
+
+            onProgress?.Invoke(1f);
+        }
+
+        private static void StripNetworkForLocalPreview(GameObject go)
+        {
+            if (go == null) return;
+            foreach (var nb in go.GetComponentsInChildren<NetworkBehaviour>(true))
+                nb.enabled = false;
+            var net = go.GetComponent<NetworkObject>();
+            if (net != null)
+                UnityEngine.Object.Destroy(net);
+        }
+
+        private void RecordLayoutEntry(in MapLayoutEntry entry)
+        {
+            if (!IsServer) return;
+            serverLayoutSnapshot.Add(entry);
+        }
+
+
+        private void OnSyncedMapDimensionsChanged(float previous, float current) => ApplySyncedToroidalMapFromNetwork();
+
+        private void ApplySyncedToroidalMapFromNetwork()
+        {
+            float w = syncedMapWidth.Value;
+            float h = syncedMapHeight.Value;
+            if (w > 1f && h > 1f)
+                ToroidalMap.SetMapSize(w, h);
+        }
+
+        /// <summary>Ensures joiners receive map bounds even if <see cref="RollAndApplyMapSize"/> ran before <see cref="NetworkObject"/> was spawned.</summary>
+        private void PushSyncedMapDimensionsToNetworkIfReady()
+        {
+            if (!IsServer || !IsSpawned || mapWidth <= 1f || mapHeight <= 1f)
+                return;
+            syncedMapWidth.Value = mapWidth;
+            syncedMapHeight.Value = mapHeight;
+        }
+
+        /// <summary>For clients joining an in-progress match: fraction of planets/asteroids that have spawned in locally.</summary>
+        public float GetClientWorldReplicationProgress()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
+                return 1f;
+            int expected = syncedWorldObjectCount.Value;
+            if (expected <= 0)
+                return LoadingComplete ? 1f : 0f;
+            int current = CountSpawnedMapContentFromSpawnManager();
+            return Mathf.Clamp01(current / (float)expected);
+        }
+
+        private static int CountSpawnedMapContentFromSpawnManager()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || nm.SpawnManager == null)
+                return 0;
+            int c = 0;
+            foreach (var netObj in nm.SpawnManager.SpawnedObjects.Values)
+            {
+                if (netObj == null || !netObj.IsSpawned)
+                    continue;
+                if (netObj.GetComponentInChildren<Asteroid>(true) != null)
+                {
+                    c++;
+                    continue;
+                }
+                if (netObj.GetComponentInChildren<Planet>(true) != null)
+                    c++;
+            }
+            return c;
         }
 
         /// <summary>Called by NetworkGameManager when server starts so map is generated even if this object's OnNetworkSpawn didn't run (e.g. scene management disabled).</summary>
         public void EnsureMapGenerated()
         {
             BootTrace.Mark("MapGenerator.EnsureMapGenerated - enter");
+            #region agent log
+            bool srv = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+            NetworkGameManager.AgentDebugLog("H5", "MapGenerator.EnsureMapGenerated", "entry",
+                "{\"isServer\":" + (srv ? "true" : "false") + ",\"hasGenerated\":" + (hasGenerated ? "true" : "false") + "}");
+            #endregion
             if (hasGenerated)
             {
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - already generated, skipping");
@@ -168,6 +399,7 @@ namespace TitanOrbit.Generation
                 return;
             }
             hasGenerated = true;
+            serverLayoutSnapshot.Clear();
             EnsureParents();
             bool useProgressiveGeneration = (alwaysUseProgressiveGeneration || batchDelaySeconds > 0f) && gameObject.activeInHierarchy;
             if (useProgressiveGeneration)
@@ -181,11 +413,15 @@ namespace TitanOrbit.Generation
                 GenerateMapImmediate();
                 loadingProgress.Value = 1f;
                 loadingComplete.Value = true;
-                BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
                 int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-                int total = homeN + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
-                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
+                int plannedAsteroids = asteroidPrefab != null ? numberOfAsteroidsThisMap : 0;
+                if (IsSpawned)
+                    syncedWorldObjectCount.Value = serverLayoutSnapshot.Count;
+                BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Snapshot entries (spawned): {serverLayoutSnapshot.Count}");
             }
+
+            PushSyncedMapDimensionsToNetworkIfReady();
         }
 
         private void EnsureParents()
@@ -243,6 +479,7 @@ namespace TitanOrbit.Generation
             {
                 int n = Mathf.Clamp(homePlanetCountThisMap, 2, 5);
                 BuildRandomHomePositionsOrFallback(n);
+                yield return null;
                 if (TeamManager.Instance != null)
                     TeamManager.Instance.SetActiveTeamCountFromServer(n);
 
@@ -289,7 +526,7 @@ namespace TitanOrbit.Generation
                         Vector3 center = clusterCenters[c];
                         for (int i = 0; i < perCluster && spawned < numberOfAsteroidsThisMap; i++)
                         {
-                            Vector3 position = GetPositionInCluster(center);
+                            Vector3 position = GetPositionInCluster(center, perCluster);
                             if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
                             if (IsTooCloseToAny(position, 20f, planetPositions)) continue;
 
@@ -306,9 +543,21 @@ namespace TitanOrbit.Generation
                             asteroidObj.transform.localScale = scale;
                             NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
                             if (netObj != null) netObj.Spawn();
+                            RecordLayoutEntry(new MapLayoutEntry
+                            {
+                                Kind = MapLayoutKind.Asteroid,
+                                Position = asteroidObj.transform.position,
+                                Rotation = asteroidObj.transform.rotation,
+                                Scale = asteroidObj.transform.localScale,
+                                HomeTeamIndex = 0,
+                                ExtraFloat = size
+                            });
                             spawned++;
                             completed++;
                             loadingProgress.Value = (float)completed / totalSteps;
+
+                            if ((spawned % 12) == 0)
+                                yield return null;
 
                             if (effectiveAsteroidDelay > 0f && spawned % effectiveAsteroidsPerBatch == 0)
                                 yield return new WaitForSeconds(effectiveAsteroidDelay);
@@ -320,8 +569,10 @@ namespace TitanOrbit.Generation
             loadingProgress.Value = 1f;
             loadingComplete.Value = true;
             int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
-            int total = homeN + (planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0) + (asteroidPrefab != null ? numberOfAsteroidsThisMap : 0);
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids: {(asteroidPrefab != null ? numberOfAsteroidsThisMap : 0)}. Total objects: {total}");
+            int plannedAsteroids = asteroidPrefab != null ? numberOfAsteroidsThisMap : 0;
+            if (IsSpawned)
+                syncedWorldObjectCount.Value = serverLayoutSnapshot.Count;
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Snapshot entries (spawned): {serverLayoutSnapshot.Count}");
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
@@ -383,6 +634,16 @@ namespace TitanOrbit.Generation
             if (netObj != null) netObj.Spawn();
 
             planetPositions.Add(position);
+
+            RecordLayoutEntry(new MapLayoutEntry
+            {
+                Kind = MapLayoutKind.Home,
+                Position = homePlanetObj.transform.position,
+                Rotation = homePlanetObj.transform.rotation,
+                Scale = homePlanetObj.transform.localScale,
+                HomeTeamIndex = (byte)Mathf.Clamp(index, 0, HomeTeamsOrdered.Length - 1),
+                ExtraFloat = 0f
+            });
         }
 
         /// <summary>
@@ -483,6 +744,16 @@ namespace TitanOrbit.Generation
 
             NetworkObject netObj = planetObj.GetComponent<NetworkObject>();
             if (netObj != null) netObj.Spawn();
+
+            RecordLayoutEntry(new MapLayoutEntry
+            {
+                Kind = MapLayoutKind.Neutral,
+                Position = planetObj.transform.position,
+                Rotation = planetObj.transform.rotation,
+                Scale = planetObj.transform.localScale,
+                HomeTeamIndex = 0,
+                ExtraFloat = size
+            });
         }
 
         private void GenerateNeutralPlanets()
@@ -516,7 +787,7 @@ namespace TitanOrbit.Generation
                 Vector3 center = clusterCenters[c];
                 for (int i = 0; i < perCluster && asteroidPositions.Count < numberOfAsteroidsThisMap; i++)
                 {
-                    Vector3 position = GetPositionInCluster(center);
+                    Vector3 position = GetPositionInCluster(center, perCluster);
                     if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
                     if (IsTooCloseToAny(position, 20f, planetPositions)) continue; // Keep asteroids away from larger planets
 
@@ -533,13 +804,28 @@ namespace TitanOrbit.Generation
                     asteroidObj.transform.localScale = scale;
                     NetworkObject netObj = asteroidObj.GetComponent<NetworkObject>();
                     if (netObj != null) netObj.Spawn();
+                    RecordLayoutEntry(new MapLayoutEntry
+                    {
+                        Kind = MapLayoutKind.Asteroid,
+                        Position = asteroidObj.transform.position,
+                        Rotation = asteroidObj.transform.rotation,
+                        Scale = asteroidObj.transform.localScale,
+                        HomeTeamIndex = 0,
+                        ExtraFloat = size
+                    });
                 }
             }
         }
 
-        private Vector3 GetPositionInCluster(Vector3 center)
+        private Vector3 GetPositionInCluster(Vector3 center, int targetClusterCount)
         {
-            float radius = 12f + (float)random.NextDouble() * 8f;
+            // Sublinear growth still scales spread with cluster size, but allows larger overall footprints.
+            float coreRadius = Mathf.Clamp(8f + Mathf.Sqrt(Mathf.Max(1, targetClusterCount)) * 2.8f, 9f, 28f);
+            // Keep center bias for organic clusters, but lighten it so points spread out more.
+            float radius = coreRadius * Mathf.Pow((float)random.NextDouble(), 1.15f);
+            // Occasional outskirts points add natural irregularity without creating hollow rings.
+            if (random.NextDouble() < 0.25)
+                radius += coreRadius * GetRandomFloat(0.4f, 1.1f);
             float angle = (float)random.NextDouble() * Mathf.PI * 2f;
             return center + new Vector3(Mathf.Cos(angle) * radius, 0, Mathf.Sin(angle) * radius);
         }
@@ -659,6 +945,11 @@ namespace TitanOrbit.Generation
             mapWidth = size;
             mapHeight = size;
             ToroidalMap.SetMapSize(mapWidth, mapHeight);
+            if (IsServer && IsSpawned)
+            {
+                syncedMapWidth.Value = mapWidth;
+                syncedMapHeight.Value = mapHeight;
+            }
             Debug.Log($"[MapGenerator] Map size (random square): {mapWidth:F0} x {mapHeight:F0}");
         }
     }

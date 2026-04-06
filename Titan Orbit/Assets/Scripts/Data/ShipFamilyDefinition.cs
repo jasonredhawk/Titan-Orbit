@@ -32,10 +32,13 @@ namespace TitanOrbit.Data
         public float energyRegenPerLevel;  // Energy Regen gained per ship level
 
         [Header("Movement")]
-        public float moveSpeed;            // Move Speed (engine thrust / max speed contribution)
-        public float moveSpeedPerLevel;    // Move Speed gained per ship level
+        [Tooltip("Engine/thruster: authoritative game units for thrust (sum) and max speed (best engine). Not multiplied by part scale—matches speedometer and physics cap.")]
+        public float moveSpeed;
+        [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
+        public float moveSpeedPerLevel;
         public float turnSpeed;            // Turn Speed (rotation speed)
-        public float turnSpeedPerLevel;    // Turn Speed gained per ship level
+        [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
+        public float turnSpeedPerLevel;
 
         [Header("Capacity")]
         public float maxGems;              // Gem Capacity
@@ -98,7 +101,7 @@ namespace TitanOrbit.Data
             maxPeoplePerLevel += other.maxPeoplePerLevel;
         }
 
-        /// <summary>Multiply all ability values by a factor (e.g. normalized scale: scale.x * scale.y * scale.z). Used so stretched components contribute proportionally.</summary>
+        /// <summary>Multiply all ability values by a factor (e.g. average of localScale x,y,z). Used so stretched components contribute proportionally.</summary>
         public static ShipComponentAbilityStats operator *(ShipComponentAbilityStats s, float factor)
         {
             return new ShipComponentAbilityStats
@@ -128,12 +131,12 @@ namespace TitanOrbit.Data
             };
         }
 
-        /// <summary>Normalized scale factor from transform: product of x*y*z. (1,1,1)=1; (4,0.5,1)=2. Use to scale component abilities by physical size.</summary>
+        /// <summary>Scale factor from transform: arithmetic mean of localScale x, y, z (same idea as <see cref="ChassisComponentStats.GetScaleFactor"/>). (1,1,1)=1.</summary>
         public static float GetNormalizedScaleFromTransform(Transform t)
         {
             if (t == null) return 1f;
             Vector3 s = t.localScale;
-            return s.x * s.y * s.z;
+            return (s.x + s.y + s.z) / 3f;
         }
 
         /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Weapons use x*y for fire power and 1/z for fire rate.</summary>
@@ -148,11 +151,18 @@ namespace TitanOrbit.Data
             return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Engine", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>True if the component is a thruster (componentId starts with "Thruster"). Thrust stacks with engines; max speed cap uses best engine first, else best thruster.</summary>
+        public static bool IsThrusterComponent(string componentId)
+        {
+            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Thruster", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Scale stats by transform.
         /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
         ///          Other weapon properties (health, energy, etc.) are NOT scaled by transform.
-        /// Non-weapons: all stats scale by x*y*z.
+        /// Non-weapons: stats scale by average(x,y,z) except turn speed and engine/thruster move speed (authored as-is).
+        /// <c>Starship</c> converts turn definition units to degrees per second when applying rotation.
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(ShipComponentAbilityStats stats, Transform t, string componentId)
         {
@@ -193,8 +203,17 @@ namespace TitanOrbit.Data
                 };
             }
 
-            float scale = x * y * z;
-            return stats * scale;
+            float scale = (x + y + z) / 3f;
+            ShipComponentAbilityStats scaled = stats * scale;
+            scaled.turnSpeed = stats.turnSpeed;
+            scaled.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+            // Do not scale engine/thruster move speed by part volume—designers tune these to match gameplay speeds.
+            if (IsEngineComponent(componentId) || IsThrusterComponent(componentId))
+            {
+                scaled.moveSpeed = stats.moveSpeed;
+                scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
+            }
+            return scaled;
         }
     }
 
@@ -218,6 +237,27 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
+    /// Heuristic breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity).
+    /// Populated when building the upgrade tree from folder in the editor.
+    /// </summary>
+    [Serializable]
+    public struct ShipFamilyPowerScoreBreakdown
+    {
+        [Tooltip("Weighted offense contribution (fire power, bullet speed, fire rate, per-level terms).")]
+        public float offense;
+        [Tooltip("Weighted defense contribution (health cap/regen, per-level terms).")]
+        public float defense;
+        [Tooltip("Weighted energy contribution (energy cap/regen, per-level terms).")]
+        public float energy;
+        [Tooltip("Weighted mobility contribution (move speed, turn speed, per-level terms).")]
+        public float mobility;
+        [Tooltip("Weighted capacity contribution (gems, people, per-level terms).")]
+        public float capacity;
+
+        public float Total => offense + defense + energy + mobility + capacity;
+    }
+
+    /// <summary>
     /// One chassis/variant in the family upgrade tree.
     /// </summary>
     [Serializable]
@@ -226,14 +266,23 @@ namespace TitanOrbit.Data
         [Tooltip("Chassis identifier, e.g. AstroEagle_01.")]
         public string chassisId;
 
+        [Tooltip("Player-facing name in the orbit upgrade tree only. Not the chassis ID; leave empty to fall back to Upgrade Tree node / ShipData names.")]
+        public string upgradeTreeShipName;
+
         [Tooltip("Prefab representing this chassis variant (from the family folder).")]
         public GameObject prefab;
+
+        [Tooltip("Orbit store / upgrade tree thumbnail. Assign manually or generate in editor (Ship Family inspector: Generate Menu Preview Images).")]
+        public Sprite menuPreviewSprite;
 
         [Tooltip("Minimum home planet level required to unlock this chassis in the upgrade tree.")]
         public int minHomePlanetLevel = 1;
 
-        [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger).")]
+        [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger). Sum of power score breakdown categories.")]
         public float powerScore;
+
+        [Tooltip("Editor: heuristic parts of powerScore (offense + defense + energy + mobility + capacity).")]
+        public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
     }
 
     /// <summary>
@@ -258,6 +307,13 @@ namespace TitanOrbit.Data
         [Header("Upgrade Tree (auto-generated, editable)")]
         [Tooltip("Chassis variants for this family, ordered by power and annotated with minimum planet level.")]
         public List<ShipFamilyChassisTierEntry> upgradeTree = new List<ShipFamilyChassisTierEntry>();
+
+        [Header("Menu preview generation (editor)")]
+        [Tooltip("Clear color when rendering top-down PNGs into MenuPreviews/.")]
+        public Color menuPreviewBackgroundColor = new Color(0.06f, 0.09f, 0.14f, 1f);
+        [Tooltip("Framing margin around combined renderer bounds (larger = more padding).")]
+        [Range(1f, 2.2f)]
+        public float menuPreviewBoundsPadding = 1.22f;
 
         private readonly Dictionary<string, ShipComponentAbilityStats> _lookup =
             new Dictionary<string, ShipComponentAbilityStats>(StringComparer.OrdinalIgnoreCase);

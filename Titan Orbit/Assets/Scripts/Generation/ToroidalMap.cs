@@ -54,54 +54,37 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
-        /// Gets the shortest distance between two points on a toroidal map
+        /// Shortest XZ offset from <paramref name="worldA"/> to <paramref name="worldB"/> on the torus.
+        /// Ships and other objects can sit many map tiles from each other in raw world space; this uses
+        /// periodic wrapping so distance/direction match gameplay (same as <see cref="GetDisplayPosition"/>).
         /// </summary>
-        public static float ToroidalDistance(Vector3 a, Vector3 b)
+        public static Vector3 ShortestWorldOffsetXZ(Vector3 worldA, Vector3 worldB)
         {
-            float dx = Mathf.Abs(b.x - a.x);
-            float dz = Mathf.Abs(b.z - a.z);
-
-            // Wrap distances
-            if (dx > mapWidth / 2f)
-            {
-                dx = mapWidth - dx;
-            }
-
-            if (dz > mapHeight / 2f)
-            {
-                dz = mapHeight - dz;
-            }
-
-            return Mathf.Sqrt(dx * dx + dz * dz);
+            float dx = worldB.x - worldA.x;
+            float dz = worldB.z - worldA.z;
+            dx -= Mathf.Round(dx / mapWidth) * mapWidth;
+            dz -= Mathf.Round(dz / mapHeight) * mapHeight;
+            return new Vector3(dx, 0f, dz);
         }
 
         /// <summary>
-        /// Gets the shortest direction vector between two points on a toroidal map
+        /// Gets the shortest distance between two points on a toroidal map (works for arbitrary world coordinates).
+        /// </summary>
+        public static float ToroidalDistance(Vector3 a, Vector3 b)
+        {
+            Vector3 d = ShortestWorldOffsetXZ(a, b);
+            return Mathf.Sqrt(d.x * d.x + d.z * d.z);
+        }
+
+        /// <summary>
+        /// Gets the shortest direction vector from <paramref name="from"/> toward <paramref name="to"/> on a toroidal map.
         /// </summary>
         public static Vector3 ToroidalDirection(Vector3 from, Vector3 to)
         {
-            Vector3 direction = to - from;
-
-            // Wrap direction
-            if (direction.x > mapWidth / 2f)
-            {
-                direction.x -= mapWidth;
-            }
-            else if (direction.x < -mapWidth / 2f)
-            {
-                direction.x += mapWidth;
-            }
-
-            if (direction.z > mapHeight / 2f)
-            {
-                direction.z -= mapHeight;
-            }
-            else if (direction.z < -mapHeight / 2f)
-            {
-                direction.z += mapHeight;
-            }
-
-            return direction.normalized;
+            Vector3 d = ShortestWorldOffsetXZ(from, to);
+            if (d.sqrMagnitude < 0.0001f)
+                return Vector3.forward;
+            return d.normalized;
         }
 
         /// <summary>

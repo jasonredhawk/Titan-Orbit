@@ -59,6 +59,9 @@ namespace TitanOrbit.UI
         private string selectedLobbyId;
         private int selectedLobbyRowIndex = -1;
         private GameObject lobbyBrowserRoot;
+        private string pendingTeamJoinError;
+        /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
+        private bool deferTeamPanelUntilNetworkReady;
 
         private void Start()
         {
@@ -81,6 +84,7 @@ namespace TitanOrbit.UI
             WireLobbyBrowserListeners();
 
             NetworkGameManager.OnTeamChosen += OnTeamChosen;
+            NetworkGameManager.OnTeamChoiceFailed += OnTeamChoiceFailed;
 
             if (teamAButton != null) teamAButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamA));
             if (teamBButton != null) teamBButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamB));
@@ -105,15 +109,26 @@ namespace TitanOrbit.UI
             if (joinSelectedLobbyButton != null)
                 joinSelectedLobbyButton.interactable = false;
             SetLobbyBrowserStatus("Select a lobby to join.");
+
+            LayoutMainMenuActionStack();
         }
 
         private void OnDestroy()
         {
             NetworkGameManager.OnTeamChosen -= OnTeamChosen;
+            NetworkGameManager.OnTeamChoiceFailed -= OnTeamChoiceFailed;
+        }
+
+        private void OnTeamChoiceFailed(string message)
+        {
+            pendingTeamJoinError = message ?? "";
+            Debug.LogWarning("[MainMenu] " + message);
         }
 
         private void OnTeamChosen(Core.TeamManager.Team team)
         {
+            pendingTeamJoinError = null;
+            deferTeamPanelUntilNetworkReady = false;
             if (lobbyPanel != null) lobbyPanel.SetActive(false);
             if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
         }
@@ -122,6 +137,15 @@ namespace TitanOrbit.UI
         {
             if (lobbyPanel != null && lobbyPanel.activeSelf)
             {
+                if (deferTeamPanelUntilNetworkReady && teamSelectionPanel != null)
+                {
+                    var nm = NetworkManager.Singleton;
+                    if (nm != null && (nm.IsClient || nm.IsServer))
+                    {
+                        teamSelectionPanel.SetActive(true);
+                        deferTeamPanelUntilNetworkReady = false;
+                    }
+                }
                 UpdateLobbyInfo();
                 if (teamSelectionPanel != null && teamSelectionPanel.GetComponent<TeamSelectionUI>() != null)
                     ; // TeamSelectionUI refreshes itself
@@ -148,6 +172,9 @@ namespace TitanOrbit.UI
                 minCount = Mathf.Min(minCount, Core.TeamManager.Instance.GetTeamPlayerCount(t));
             }
 
+            ulong localId = NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0;
+            bool localHasNoTeam = Core.TeamManager.Instance.GetPlayerTeam(localId) == Core.TeamManager.Team.None;
+
             void Row(int ord, TextMeshProUGUI label, Button btn, int count)
             {
                 bool inMatch = ord <= active;
@@ -159,7 +186,7 @@ namespace TitanOrbit.UI
                 if (btn != null)
                 {
                     btn.gameObject.SetActive(inMatch);
-                    if (inMatch) btn.interactable = count < max && count <= minCount + 1;
+                    if (inMatch) btn.interactable = count < max && (localHasNoTeam || count <= minCount + 1);
                 }
             }
 
@@ -172,8 +199,7 @@ namespace TitanOrbit.UI
 
         private void OnTeamClicked(Core.TeamManager.Team team)
         {
-            if (Core.TeamManager.Instance == null) return;
-            Core.TeamManager.Instance.RequestTeamServerRpc(team);
+            NetworkGameManager.RequestTeamFromLocalPlayer(team);
         }
 
         private async void OnPlayClicked()
@@ -199,16 +225,20 @@ namespace TitanOrbit.UI
 
                 if (!isPaid)
                 {
-                    // Free players are forced into the latest lobby that is open.
-                    var latest = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: true, count: 10);
-                    if (latest == null || latest.Count == 0)
+                    // WebGL cannot start a local host. Try Quick Join (any open lobby), then fall back to a "latest" lobby.
+                    ok = await NetworkGameManager.Instance.PlayWebGLJoinAsync();
+                    if (!ok)
                     {
-                        Debug.LogWarning("No open latest lobbies found for free users.");
-                        ok = false;
-                    }
-                    else
-                    {
-                        ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(latest[0].Id);
+                        var latest = await NetworkGameManager.Instance.QueryWebGLOpenLobbiesAsync(latestOnly: true, count: 10);
+                        if (latest == null || latest.Count == 0)
+                        {
+                            Debug.LogWarning("No open lobbies found (Quick Join and latest). Run a headless/server build with Lobby+Relay, or use Host Online / join code from another client.");
+                            ok = false;
+                        }
+                        else
+                        {
+                            ok = await NetworkGameManager.Instance.PlayWebGLJoinByLobbyIdAsync(latest[0].Id);
+                        }
                     }
                 }
                 else
@@ -281,8 +311,13 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    SetLobbyBrowserStatus("Join failed: no open match, or Unity Services blocked. Host a game from desktop/server, then try again.");
+                    Debug.LogError("WebGL Play failed: need an open Lobby+Relay match (headless host or another player). Check Unity Dashboard and browser console.");
+#else
                     SetLobbyBrowserStatus("Local Test failed. Check console and Unity Services.");
                     Debug.LogError("Play failed. Check console and Unity Services.");
+#endif
                 }
             }
             finally
@@ -297,17 +332,19 @@ namespace TitanOrbit.UI
             if (hostOnlineButton != null) hostOnlineButton.interactable = false;
             try
             {
-                string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync();
+                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
+                string lobbyName = string.IsNullOrEmpty(pname) ? null : pname + "'s game";
+                string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync(lobbyName);
                 if (!string.IsNullOrEmpty(joinCode))
                 {
                     if (joinCodeDisplayText != null)
                     {
                         joinCodeDisplayText.gameObject.SetActive(true);
-                        joinCodeDisplayText.text = "Join code: " + joinCode;
+                        joinCodeDisplayText.text = "Match is listed under Browse Open Matches.\nRelay code: " + joinCode;
                     }
                     else
                     {
-                        Debug.Log("Host (Online) started. Share this join code: " + joinCode);
+                        Debug.Log("Host started. Listed in lobby browser. Relay code: " + joinCode);
                     }
                     ShowLobby();
                 }
@@ -521,11 +558,7 @@ namespace TitanOrbit.UI
 
             var playRect = playButton.GetComponent<RectTransform>();
             if (playRect != null)
-            {
                 playRect.sizeDelta = new Vector2(190f, 46f);
-                // Below "Browse Open Matches" (browse is centered ~-92 with ~52px height).
-                playRect.anchoredPosition = new Vector2(0f, -158f);
-            }
 
             var playImage = playButton.GetComponent<Image>();
             if (playImage != null)
@@ -533,7 +566,13 @@ namespace TitanOrbit.UI
 
             var playLabel = playButton.GetComponentInChildren<TextMeshProUGUI>();
             if (playLabel != null)
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                playLabel.text = "Play";
+#else
                 playLabel.text = "Local Test";
+#endif
+            }
         }
 
         private void EnsureRuntimeLobbyBrowserUI()
@@ -547,20 +586,70 @@ namespace TitanOrbit.UI
 
             EnsureEventSystemExists();
 
+            // Relay + Unity Lobby listing; WebGL uses WSS (see NetworkGameManager.ConfigureUnityTransportRelay).
+            if (hostOnlineButton == null)
+            {
+                hostOnlineButton = CreateMenuButton("CreateMatchButton", "Create match", new Vector2(0f, -48f), new Vector2(320f, 52f), mainRect, isPrimary: true);
+                if (playerNameInputField != null)
+                    hostOnlineButton.transform.SetSiblingIndex(playerNameInputField.transform.GetSiblingIndex() + 1);
+            }
+
             if (browseLobbiesButton == null)
             {
-                // Below player name field (input is ~72px tall, centered) — avoid overlap with label/input.
-                browseLobbiesButton = CreateMenuButton("BrowseLobbiesButton", "Browse Open Matches", new Vector2(0f, -92f), new Vector2(320f, 52f), mainRect);
-                if (playerNameInputField != null)
-                {
+                // Below Create match, or player name if host button is assigned in the scene
+                browseLobbiesButton = CreateMenuButton("BrowseLobbiesButton", "Browse Open Matches", new Vector2(0f, -112f), new Vector2(320f, 52f), mainRect);
+                if (hostOnlineButton != null)
+                    browseLobbiesButton.transform.SetSiblingIndex(hostOnlineButton.transform.GetSiblingIndex() + 1);
+                else if (playerNameInputField != null)
                     browseLobbiesButton.transform.SetSiblingIndex(playerNameInputField.transform.GetSiblingIndex() + 1);
-                }
             }
 
             if (lobbyBrowserRoot == null)
                 BuildLobbyBrowserPanel(mainRect);
 
             SetLobbyBrowserVisible(false);
+        }
+
+        /// <summary>
+        /// Places Create match, Browse, and Play below the player name field with consistent gaps so controls never overlap.
+        /// </summary>
+        private void LayoutMainMenuActionStack()
+        {
+            if (mainMenuPanel == null)
+                return;
+
+            const float paddingBelowName = 16f;
+            const float gapBetweenButtons = 12f;
+
+            float nameCenterY = 0f;
+            float nameHalfH = 36f;
+            if (playerNameInputField != null)
+            {
+                var nameRt = playerNameInputField.GetComponent<RectTransform>();
+                if (nameRt != null)
+                {
+                    nameCenterY = nameRt.anchoredPosition.y;
+                    nameHalfH = nameRt.rect.height * 0.5f;
+                }
+            }
+
+            float rowTopY = nameCenterY - nameHalfH - paddingBelowName;
+
+            void PlaceButton(Button btn)
+            {
+                if (btn == null)
+                    return;
+                var r = btn.GetComponent<RectTransform>();
+                if (r == null)
+                    return;
+                float half = r.sizeDelta.y * 0.5f;
+                r.anchoredPosition = new Vector2(r.anchoredPosition.x, rowTopY - half);
+                rowTopY -= r.sizeDelta.y + gapBetweenButtons;
+            }
+
+            PlaceButton(hostOnlineButton);
+            PlaceButton(browseLobbiesButton);
+            PlaceButton(playButton);
         }
 
         /// <summary>
@@ -895,16 +984,29 @@ namespace TitanOrbit.UI
                 ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                 : playerName;
 
+            if (loadingScreenController != null)
+            {
+                deferTeamPanelUntilNetworkReady = false;
+                if (lobbyPanel != null)
+                    lobbyPanel.SetActive(false);
+                if (teamSelectionPanel != null)
+                    teamSelectionPanel.SetActive(false);
+                loadingScreenController.ShowLoading();
+                return;
+            }
+
+            deferTeamPanelUntilNetworkReady = true;
             if (lobbyPanel != null)
                 lobbyPanel.SetActive(true);
 
             if (teamSelectionPanel != null)
-                teamSelectionPanel.SetActive(true);
+                teamSelectionPanel.SetActive(false);
         }
 
         /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
         public void ShowLobbyAndTeamSelection()
         {
+            deferTeamPanelUntilNetworkReady = false;
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(false);
 
@@ -948,7 +1050,10 @@ namespace TitanOrbit.UI
                     int n = Core.TeamManager.Instance.GetTeamPlayerCount(t);
                     parts.Add($"Team {(char)('A' + i)}: {n}/20");
                 }
-                teamStatusText.text = string.Join(" | ", parts);
+                string countsLine = string.Join(" | ", parts);
+                teamStatusText.text = string.IsNullOrEmpty(pendingTeamJoinError)
+                    ? countsLine
+                    : pendingTeamJoinError + "\n" + countsLine;
             }
         }
     }

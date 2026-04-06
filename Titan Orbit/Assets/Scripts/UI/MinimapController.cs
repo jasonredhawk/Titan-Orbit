@@ -2,11 +2,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
 using TMPro;
 using System.Collections.Generic;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.AI;
 using Shapes;
 
 namespace TitanOrbit.UI
@@ -1188,13 +1190,53 @@ namespace TitanOrbit.UI
                 playerTransform = null;
             }
             
-            if (playerShip == null || !playerShip.IsOwner)
+            NetworkObject localPlayerObject = null;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
+                localPlayerObject = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
+
+            bool needResolvePlayer = playerShip == null || playerTransform == null;
+            if (!needResolvePlayer && localPlayerObject != null)
+            {
+                var pno = playerShip.GetComponent<NetworkObject>();
+                needResolvePlayer = pno == null || pno != localPlayerObject;
+            }
+            else if (!needResolvePlayer && localPlayerObject == null && playerShip != null && playerShip.GetComponent<AIShipMarker>() != null)
+            {
+                needResolvePlayer = true;
+            }
+
+            if (needResolvePlayer)
             {
                 RefreshEntityCache();
-                foreach (var ship in cachedShips)
+                playerShip = null;
+                playerTransform = null;
+                if (localPlayerObject != null)
                 {
-                    if (ship == null || !ship) continue;
-                    if (ship.IsOwner) { playerShip = ship; playerTransform = ship.transform; break; }
+                    foreach (var ship in cachedShips)
+                    {
+                        if (ship == null || !ship) continue;
+                        var no = ship.GetComponent<NetworkObject>();
+                        if (no != null && no == localPlayerObject)
+                        {
+                            playerShip = ship;
+                            playerTransform = ship.transform;
+                            break;
+                        }
+                    }
+                }
+                if (playerShip == null)
+                {
+                    foreach (var ship in cachedShips)
+                    {
+                        if (ship == null || !ship) continue;
+                        if (ship.GetComponent<AIShipMarker>() != null) continue;
+                        if (ship.IsOwner)
+                        {
+                            playerShip = ship;
+                            playerTransform = ship.transform;
+                            break;
+                        }
+                    }
                 }
                 if (playerShip == null)
                 {
@@ -1203,11 +1245,22 @@ namespace TitanOrbit.UI
                 }
             }
 
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+            {
+                SetMinimapVisible(false);
+                return;
+            }
+
+            if (playerShip.ShipTeam == TeamManager.Team.None)
+            {
+                SetMinimapVisible(false);
+                return;
+            }
+
             // Toggle minimap expanded/minimized with M key
             if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
                 ToggleExpand();
 
-            // Show minimap whenever we have a local player ship (even if team not yet set, so it's visible in single-player or before team sync).
             SetMinimapVisible(true);
 
             // Run every frame so blip motion stays smooth; heavy work inside UpdateBlips is throttled separately.

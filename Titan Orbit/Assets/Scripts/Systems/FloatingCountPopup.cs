@@ -17,6 +17,8 @@ namespace TitanOrbit.Systems
         private float lifetime;
         private float riseSpeed;
         private float lockedY;
+        /// <summary>Horizontal drift on the play plane (XZ), perpendicular to screen-up rise.</summary>
+        private Vector3 lateralVelocity;
 
         private void EnsureTextAndIcon()
         {
@@ -45,7 +47,8 @@ namespace TitanOrbit.Systems
             float duration,
             float riseSpeed,
             float iconScale,
-            Vector3 iconLocalOffset
+            Vector3 iconLocalOffset,
+            float lateralDriftSpeedMax = 0f
         )
         {
             EnsureTextAndIcon();
@@ -60,6 +63,18 @@ namespace TitanOrbit.Systems
             lifetime = Mathf.Max(0.1f, duration);
             // Minimum drift so a zero/missing inspector value never looks "stuck".
             this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
+            lateralVelocity = Vector3.zero;
+            if (lateralDriftSpeedMax > 0.0001f)
+            {
+                var cam = UnityEngine.Camera.main;
+                Vector3 rise = GetRiseDirectionOnPlayPlane(cam);
+                Vector3 lateral = Vector3.Cross(Vector3.up, rise);
+                if (lateral.sqrMagnitude < 1e-8f)
+                    lateral = Vector3.right;
+                lateral.Normalize();
+                float mag = Random.Range(lateralDriftSpeedMax * 0.35f, lateralDriftSpeedMax);
+                lateralVelocity = lateral * mag * (Random.value < 0.5f ? -1f : 1f);
+            }
             elapsed = 0f;
             lockedY = Mathf.Max(transform.position.y, MIN_POPUP_WORLD_Y);
             Vector3 initPos = transform.position;
@@ -133,8 +148,10 @@ namespace TitanOrbit.Systems
             float t = Mathf.Clamp01(elapsed / lifetime);
 
             var cam = UnityEngine.Camera.main;
-            // Drift along screen-up on the ground plane (not world Y).
+            // Drift along screen-up on the ground plane (not world Y), plus optional lateral spread.
             transform.position += GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
+            if (lateralVelocity.sqrMagnitude > 0f)
+                transform.position += lateralVelocity * Time.deltaTime;
             Vector3 pos = transform.position;
             pos.y = lockedY; // Keep elevated height so popup renders above planets/ships.
             transform.position = pos;

@@ -3,7 +3,7 @@ using UnityEngine;
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Identifies which gameplay action spawned a floating count popup. Used for per-action toggles in <see cref="FloatingCountFeedbackSettings"/>.
+    /// Identifies which gameplay action spawned a floating count popup. Visibility is configured on <see cref="FloatingCountChannelVisibility"/> (VisualEffectsManager).
     /// </summary>
     public enum FloatingCountChannel
     {
@@ -22,7 +22,66 @@ namespace TitanOrbit.Systems
     }
 
     /// <summary>
-    /// Assign on <see cref="VisualEffectsManager"/> to enable/disable floating counts per action and tune people color/icon.
+    /// Per-channel visibility for world floating count popups. Serialized on <see cref="VisualEffectsManager"/> so each scene lists every toggle in the Inspector.
+    /// </summary>
+    [System.Serializable]
+    public class FloatingCountChannelVisibility
+    {
+        [InspectorName("Gem pickup")]
+        [Tooltip("Picking up loose gems in space.")]
+        public bool gemPickup = true;
+        [InspectorName("Gem deposit")]
+        [Tooltip("Crediting gems to a planet (moon dock, flying gem, etc.).")]
+        public bool gemDeposit = true;
+        [InspectorName("Damage — asteroid")]
+        [Tooltip("Damage dealt to asteroids (including HP/gems left overlay).")]
+        public bool damageAsteroid = true;
+        [InspectorName("Damage — ship / drone")]
+        public bool damageShipOrDrone = true;
+        [InspectorName("Damage — moon")]
+        public bool damageMoon = true;
+        [InspectorName("Health change")]
+        [Tooltip("Positive/negative health deltas on your ship (not regen/healing sources).")]
+        public bool healthChange = true;
+        [InspectorName("People — load")]
+        [Tooltip("People beaming from a friendly planet to your ship.")]
+        public bool peopleLoad = true;
+        [InspectorName("People — unload")]
+        [Tooltip("People beaming from your ship to a planet.")]
+        public bool peopleUnload = true;
+        [InspectorName("Healing")]
+        public bool healing = true;
+        [InspectorName("Health regen")]
+        public bool healthRegen = true;
+        [InspectorName("Energy")]
+        public bool energy = true;
+        [InspectorName("Upgrades")]
+        public bool upgrades = true;
+
+        public bool IsEnabled(FloatingCountChannel channel)
+        {
+            switch (channel)
+            {
+                case FloatingCountChannel.GemPickup: return gemPickup;
+                case FloatingCountChannel.GemDeposit: return gemDeposit;
+                case FloatingCountChannel.DamageAsteroid: return damageAsteroid;
+                case FloatingCountChannel.DamageShipOrDrone: return damageShipOrDrone;
+                case FloatingCountChannel.DamageMoon: return damageMoon;
+                case FloatingCountChannel.HealthChange: return healthChange;
+                case FloatingCountChannel.PeopleLoad: return peopleLoad;
+                case FloatingCountChannel.PeopleUnload: return peopleUnload;
+                case FloatingCountChannel.Healing: return healing;
+                case FloatingCountChannel.HealthRegen: return healthRegen;
+                case FloatingCountChannel.Energy: return energy;
+                case FloatingCountChannel.Upgrades: return upgrades;
+                default: return true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Optional asset for people load/unload icon and color on <see cref="VisualEffectsManager"/>.
+    /// Per-channel visibility is set on the Visual Effects Manager (Floating Count Visibility).
     /// Create via Assets → Create → Titan Orbit → Floating Count Feedback Settings.
     /// </summary>
     [CreateAssetMenu(menuName = "Titan Orbit/Floating Count Feedback Settings", fileName = "FloatingCountFeedbackSettings")]
@@ -30,8 +89,8 @@ namespace TitanOrbit.Systems
     {
         public const int MaxChannelIndex = (int)FloatingCountChannel.Upgrades;
 
-        [Header("Show floating text for…")]
-        [Tooltip("Picking up loose gems in space.")]
+        [Header("Channel toggles (not used at runtime)")]
+        [Tooltip("Runtime visibility is set on VisualEffectsManager → Floating Count Visibility. These remain for older assets / reference.")]
         public bool showGemPickup = true;
         [Tooltip("Crediting gems to a planet (moon dock, flying gem, etc.).")]
         public bool showGemDeposit = true;

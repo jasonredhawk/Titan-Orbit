@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using TitanOrbit.Data;
 using TitanOrbit.Entities;
 
 namespace TitanOrbit.Editor
@@ -46,7 +47,8 @@ namespace TitanOrbit.Editor
             {
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
-                    "Non-weapons: stats scale by x×y×z. Weapons: fire power & bullet scale by x×y (size); fire rate scales by 1/z (smaller z = faster).",
+                    "Non-weapons: most stats scale by average scale (x+y+z)/3. Engine/thruster Move Speed and turn speed use authored values only (not scaled by part size). " +
+                    "Weapons: fire power & bullet scale by x×y (size); fire rate scales by 1/z (smaller z = faster).",
                     MessageType.Info);
             }
 
@@ -85,10 +87,33 @@ namespace TitanOrbit.Editor
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
-                EditorGUILayout.FloatField("Move Speed", total.moveSpeed);
-                EditorGUILayout.FloatField("Move Speed / Level", total.moveSpeedPerLevel);
-                EditorGUILayout.FloatField("Turn Speed", total.turnSpeed);
-                EditorGUILayout.FloatField("Turn Speed / Level", total.turnSpeedPerLevel);
+                EditorGUILayout.FloatField(
+                    new GUIContent("Move Speed (sum, all parts)", "Sum of every matched part’s Move Speed. For engines, this is thrust (stacked); it is not the top speed."),
+                    total.moveSpeed);
+                EditorGUILayout.FloatField("Move Speed / Level (sum)", total.moveSpeedPerLevel);
+                if (preview != null)
+                {
+                    EditorGUILayout.FloatField(
+                        new GUIContent(
+                            "Propulsion sum (engines + thrusters)",
+                            "Sum of Move Speed on Engine/* and Thruster/* only — matches thrust / acceleration."),
+                        preview.PreviewSumPropulsionMoveSpeed);
+                    EditorGUILayout.FloatField(
+                        new GUIContent(
+                            "Top speed (best engine or thruster)",
+                            "Matches the in-game max speed cap and speedometer (best single engine; thrusters only if no engine)."),
+                        preview.PreviewTopSpeedMoveSpeed);
+                }
+                EditorGUILayout.FloatField(
+                    new GUIContent(
+                        "Turn Speed",
+                        "Definition units (same as Ship Family component entry). Starship converts to °/s only when rotating."),
+                    total.turnSpeed);
+                EditorGUILayout.FloatField(
+                    new GUIContent(
+                        "Turn Speed / Level",
+                        "Definition units per ship level. Starship converts to °/s only when rotating."),
+                    total.turnSpeedPerLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
@@ -113,10 +138,14 @@ namespace TitanOrbit.Editor
                 {
                     string label = ids[i];
                     bool isWeapon = TitanOrbit.Data.ShipComponentAbilityStats.IsWeaponComponent(label);
+                    bool isEngine = TitanOrbit.Data.ShipComponentAbilityStats.IsEngineComponent(label);
+                    bool isThruster = TitanOrbit.Data.ShipComponentAbilityStats.IsThrusterComponent(label);
                     if (scales != null && i < scales.Count && scales[i] != 1f)
                         label += " (scale " + scales[i].ToString("F2") + "×)";
                     if (isWeapon)
                         label += " [weapon: xy=power, 1/z=rate]";
+                    if (isEngine || isThruster)
+                        label += " [engine/thruster move speed not scaled by size]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)
@@ -146,10 +175,26 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerLevel);
 
                             EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
-                            EditorGUILayout.FloatField("  Move Speed", s.moveSpeed);
-                            EditorGUILayout.FloatField("  Move Speed / Level", s.moveSpeedPerLevel);
-                            EditorGUILayout.FloatField("  Turn Speed", s.turnSpeed);
-                            EditorGUILayout.FloatField("  Turn Speed / Level", s.turnSpeedPerLevel);
+                            EditorGUILayout.FloatField(
+                                isEngine || isThruster
+                                    ? new GUIContent("  Move Speed", "Authoritative; not multiplied by transform scale.")
+                                    : new GUIContent("  Move Speed"),
+                                s.moveSpeed);
+                            EditorGUILayout.FloatField(
+                                isEngine || isThruster
+                                    ? new GUIContent("  Move Speed / Level", "Authoritative; not multiplied by transform scale.")
+                                    : new GUIContent("  Move Speed / Level"),
+                                s.moveSpeedPerLevel);
+                            EditorGUILayout.FloatField(
+                                new GUIContent(
+                                    "  Turn Speed",
+                                    "Definition units. Starship converts to °/s only when rotating."),
+                                s.turnSpeed);
+                            EditorGUILayout.FloatField(
+                                new GUIContent(
+                                    "  Turn Speed / Level",
+                                    "Definition units per ship level. Starship converts to °/s only when rotating."),
+                                s.turnSpeedPerLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Max Gems", s.maxGems);

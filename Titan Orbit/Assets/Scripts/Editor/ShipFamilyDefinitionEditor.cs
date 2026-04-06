@@ -52,7 +52,17 @@ namespace TitanOrbit.Editor
                 {
                     AddShipFamilyStatsPreviewToUpgradeTreePrefabs(def);
                 }
+
+                if (GUILayout.Button("Generate Menu Preview Images (Top-Down)"))
+                {
+                    ShipFamilyMenuPreviewGenerator.GenerateForFamily(def);
+                }
             }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox(
+                "Menu Preview Images: writes PNGs to a MenuPreviews folder next to this asset, imports them as Sprites, and assigns each tier's menuPreviewSprite. Re-run anytime after prefab changes.",
+                MessageType.None);
         }
 
         /// <summary>Adds ShipFamilyStatsPreview to each prefab in the upgrade tree if missing; assigns this definition as Ship Family.</summary>
@@ -245,8 +255,8 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Collect prefab + power score
-            var list = new List<(GameObject prefab, float power)>();
+            // Collect prefab + power score (+ breakdown for inspector)
+            var list = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
             foreach (var guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -254,8 +264,9 @@ namespace TitanOrbit.Editor
                 if (prefab == null) continue;
 
                 ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
-                float power = ComputePowerScore(stats);
-                list.Add((prefab, power));
+                ShipFamilyPowerScoreBreakdown breakdown = ComputePowerScoreBreakdown(stats);
+                float power = breakdown.Total;
+                list.Add((prefab, power, breakdown));
             }
 
             if (list.Count == 0)
@@ -266,8 +277,21 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Sort by power ascending so weaker ships unlock earlier
+            // Weaker ships unlock earlier (global order by power). Within each planet tier row, order left→right
+            // on the O–D–E–M–C spectrum (offense-heavy left, capacity-heavy right) to match the orbit tree layout.
             list.Sort((a, b) => a.power.CompareTo(b.power));
+            var orderedForTree = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+            int listIdx = 0;
+            int chunkSize = 1;
+            while (listIdx < list.Count)
+            {
+                var chunk = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+                for (int c = 0; c < chunkSize && listIdx < list.Count; c++)
+                    chunk.Add(list[listIdx++]);
+                chunk.Sort(CompareOdEmcSpectrumInTier);
+                orderedForTree.AddRange(chunk);
+                chunkSize++;
+            }
 
             Undo.RecordObject(def, "Build Ship Family Upgrade Tree");
 
@@ -276,7 +300,7 @@ namespace TitanOrbit.Editor
             else
                 def.upgradeTree.Clear();
 
-            int count = list.Count;
+            int count = orderedForTree.Count;
             int index = 0;
             int currentLevel = 1;
             int shipsAtCurrentLevel = 1;
@@ -284,7 +308,7 @@ namespace TitanOrbit.Editor
 
             for (int i = 0; i < count; i++)
             {
-                var (prefab, power) = list[i];
+                var (prefab, power, breakdown) = orderedForTree[i];
                 if (prefab == null) continue;
 
                 if (assignedAtThisLevel >= shipsAtCurrentLevel)
@@ -300,9 +324,11 @@ namespace TitanOrbit.Editor
                 var entry = new ShipFamilyChassisTierEntry
                 {
                     chassisId = chassisId,
+                    upgradeTreeShipName = GetUpgradeTreeShipNameFromPrefabName(prefab.name),
                     prefab = prefab,
                     minHomePlanetLevel = currentLevel,
-                    powerScore = power
+                    powerScore = power,
+                    powerScoreBreakdown = breakdown
                 };
                 def.upgradeTree.Add(entry);
                 assignedAtThisLevel++;
@@ -313,7 +339,7 @@ namespace TitanOrbit.Editor
             AssetDatabase.Refresh();
         }
 
-        /// <summary>Sum component stats for prefab. Non-weapons: scale by x*y*z. Weapons: fire power/bullet by x*y, fire rate by 1/z.</summary>
+        /// <summary>Sum component stats for prefab. Non-weapons: scale by average(x,y,z). Weapons: fire power/bullet by x*y, fire rate by 1/z.</summary>
         private static ShipComponentAbilityStats SumStatsForPrefab(GameObject prefab, ShipFamilyDefinition def, string familyId)
         {
             var total = new ShipComponentAbilityStats();
@@ -342,42 +368,72 @@ namespace TitanOrbit.Editor
             return total;
         }
 
-        private static float ComputePowerScore(ShipComponentAbilityStats s)
+        /// <summary>Second segment after splitting prefab root name on '_' (e.g. AstroEagle_Thumper → Thumper).</summary>
+        private static string GetUpgradeTreeShipNameFromPrefabName(string prefabRootName)
+        {
+            if (string.IsNullOrEmpty(prefabRootName))
+                return string.Empty;
+            string[] parts = prefabRootName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                return string.Empty;
+            return parts[1];
+        }
+
+        /// <summary>0 = offense-heavy, 4 = capacity-heavy; weighted mean of category indices O/D/E/M/C.</summary>
+        private static float OdEmcAxisPosition(ShipFamilyPowerScoreBreakdown x)
+        {
+            float s = x.offense + x.defense + x.energy + x.mobility + x.capacity;
+            if (s <= 0.0001f) return 2f;
+            return (0f * x.offense + 1f * x.defense + 2f * x.energy + 3f * x.mobility + 4f * x.capacity) / s;
+        }
+
+        /// <summary>Left branch = lower axis (more O); right = higher (more C). Tie-break: offense desc, capacity asc.</summary>
+        private static int CompareOdEmcSpectrumInTier(
+            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) a,
+            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) b)
+        {
+            float pa = OdEmcAxisPosition(a.breakdown);
+            float pb = OdEmcAxisPosition(b.breakdown);
+            int cmp = pa.CompareTo(pb);
+            if (cmp != 0) return cmp;
+            cmp = b.breakdown.offense.CompareTo(a.breakdown.offense);
+            if (cmp != 0) return cmp;
+            return a.breakdown.capacity.CompareTo(b.breakdown.capacity);
+        }
+
+        private static ShipFamilyPowerScoreBreakdown ComputePowerScoreBreakdown(ShipComponentAbilityStats s)
         {
             // Heuristic overall power metric: weighted sum of offense, defense, energy, mobility, capacity.
-            float offense =
-                s.firePower * 2.0f +
-                s.firePowerPerLevel * 1.0f +
-                s.bulletSpeed * 0.5f +
-                s.bulletSpeedPerLevel * 0.25f +
-                s.fireRate * 1.0f +
-                s.fireRatePerLevel * 0.5f;
-
-            float defense =
-                s.healthCap * 0.03f +
-                s.healthCapPerLevel * 0.5f +
-                s.healthRegen * 1.0f +
-                s.healthRegenPerLevel * 1.5f;
-
-            float energy =
-                s.energyCap * 0.01f +
-                s.energyCapPerLevel * 0.25f +
-                s.energyRegen * 0.8f +
-                s.energyRegenPerLevel * 1.0f;
-
-            float mobility =
-                s.moveSpeed * 0.5f +
-                s.moveSpeedPerLevel * 0.8f +
-                s.turnSpeed * 0.6f +
-                s.turnSpeedPerLevel * 0.9f;
-
-            float capacity =
-                s.maxGems * 0.01f +
-                s.maxGemsPerLevel * 0.2f +
-                s.maxPeople * 0.5f +
-                s.maxPeoplePerLevel * 0.8f;
-
-            return offense + defense + energy + mobility + capacity;
+            return new ShipFamilyPowerScoreBreakdown
+            {
+                offense =
+                    s.firePower * 2.0f +
+                    s.firePowerPerLevel * 1.0f +
+                    s.bulletSpeed * 0.5f +
+                    s.bulletSpeedPerLevel * 0.25f +
+                    s.fireRate * 1.0f +
+                    s.fireRatePerLevel * 0.5f,
+                defense =
+                    s.healthCap * 0.03f +
+                    s.healthCapPerLevel * 0.5f +
+                    s.healthRegen * 1.0f +
+                    s.healthRegenPerLevel * 1.5f,
+                energy =
+                    s.energyCap * 0.01f +
+                    s.energyCapPerLevel * 0.25f +
+                    s.energyRegen * 0.8f +
+                    s.energyRegenPerLevel * 1.0f,
+                mobility =
+                    s.moveSpeed * 0.5f +
+                    s.moveSpeedPerLevel * 0.8f +
+                    s.turnSpeed * 0.6f +
+                    s.turnSpeedPerLevel * 0.9f,
+                capacity =
+                    s.maxGems * 0.01f +
+                    s.maxGemsPerLevel * 0.2f +
+                    s.maxPeople * 0.5f +
+                    s.maxPeoplePerLevel * 0.8f
+            };
         }
 
         private static ShipComponentAbilityStats SuggestStatsForComponent(string type, int version)

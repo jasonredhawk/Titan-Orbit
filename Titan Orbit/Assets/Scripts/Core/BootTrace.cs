@@ -36,7 +36,7 @@ namespace TitanOrbit.Core
         public static void Mark(string message)
         {
             string line = System.DateTime.Now.ToString("HH:mm:ss.fff") + " | " + message;
-            Debug.Log("[BootTrace] " + message);
+            //Debug.Log("[BootTrace] " + message);
             try
             {
                 string? dir = Path.GetDirectoryName(FilePath);

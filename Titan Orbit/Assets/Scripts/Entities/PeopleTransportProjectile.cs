@@ -20,10 +20,22 @@ namespace TitanOrbit.Entities
         private NetworkVariable<ulong> spawningShipId = new NetworkVariable<ulong>(0);
         private Rigidbody rb;
         private const float magnetSpeed = 8f;
+        private const float PeopleAmountScaleMin = 1f;
+        private const float PeopleAmountScaleMax = 12f;
+        private const float VisualScaleMinMultiplier = 0.9f;
+        private const float VisualScaleMaxMultiplier = 2.1f;
+        private Vector3 baseVisualScale = Vector3.one;
 
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
+            baseVisualScale = transform.localScale.sqrMagnitude > 0.0001f ? transform.localScale : Vector3.one;
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            amount.OnValueChanged += OnAmountChanged;
+            ApplyVisualScaleFromAmount(amount.Value);
         }
 
         private void FixedUpdate()
@@ -64,11 +76,13 @@ namespace TitanOrbit.Entities
                 team.Value = (int)sourceTeam;
                 spawningShipId.Value = shipNetworkObjectId;
                 if (rb != null) rb.linearDamping = 0f;
+                ApplyVisualScaleFromAmount(peopleAmount);
             }
         }
 
         public override void OnNetworkDespawn()
         {
+            amount.OnValueChanged -= OnAmountChanged;
             if (IsServer && isLoad.Value && amount.Value > 0f && targetId.Value != 0)
             {
                 var nm = NetworkManager.Singleton;
@@ -80,6 +94,19 @@ namespace TitanOrbit.Entities
                 }
             }
             base.OnNetworkDespawn();
+        }
+
+        private void OnAmountChanged(float previousValue, float newValue)
+        {
+            ApplyVisualScaleFromAmount(newValue);
+        }
+
+        private void ApplyVisualScaleFromAmount(float peopleAmount)
+        {
+            float clampedAmount = Mathf.Clamp(Mathf.Max(0.001f, peopleAmount), PeopleAmountScaleMin, PeopleAmountScaleMax);
+            float normalized = Mathf.InverseLerp(PeopleAmountScaleMin, PeopleAmountScaleMax, clampedAmount);
+            float scaleMultiplier = Mathf.Lerp(VisualScaleMinMultiplier, VisualScaleMaxMultiplier, normalized);
+            transform.localScale = baseVisualScale * scaleMultiplier;
         }
 
         private void OnTriggerEnter(Collider other)
