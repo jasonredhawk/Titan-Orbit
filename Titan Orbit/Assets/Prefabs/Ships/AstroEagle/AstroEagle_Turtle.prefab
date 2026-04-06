@@ -64,28 +64,28 @@ MonoBehaviour:
   shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
   familyIdOverride: 
   totalStats:
-    firePower: 10.050062
-    firePowerPerLevel: 3.0150185
-    bulletSpeed: 10.050062
-    bulletSpeedPerLevel: 2.0100124
-    fireRate: 2.992519
-    fireRatePerLevel: 0.49875316
-    healthCap: 224.42203
-    healthCapPerLevel: 47.516815
-    healthRegen: 49.32219
-    healthRegenPerLevel: 15.6350765
-    energyCap: 48.144108
-    energyCapPerLevel: 15.050751
-    energyRegen: 20.996239
-    energyRegenPerLevel: 5.506892
-    moveSpeed: 33.728455
-    moveSpeedPerLevel: 8.432114
-    turnSpeed: 47.864227
-    turnSpeedPerLevel: 11.216057
-    maxGems: 128.92766
-    maxGemsPerLevel: 32.786446
-    maxPeople: 43.32219
-    maxPeoplePerLevel: 10.08462
+    firePower: 6.030037
+    firePowerPerLevel: 6.030037
+    bulletSpeed: 20.100124
+    bulletSpeedPerLevel: 10.050062
+    fireRate: 3.9900253
+    fireRatePerLevel: 0
+    healthCap: 177.5675
+    healthCapPerLevel: 38.12411
+    healthRegen: 3.0060124
+    healthRegenPerLevel: 1.4130484
+    energyCap: 30
+    energyCapPerLevel: 6
+    energyRegen: 6
+    energyRegenPerLevel: 6
+    moveSpeed: 20
+    moveSpeedPerLevel: 2
+    turnSpeed: 22
+    turnSpeedPerLevel: 6
+    maxGems: 87.71855
+    maxGemsPerLevel: 22.315567
+    maxPeople: 29.032822
+    maxPeoplePerLevel: 6.760936
   matchedComponentIds:
   - Cockpit
   - Cockpit_Base_1
@@ -105,23 +105,400 @@ MonoBehaviour:
   - Weapon
   - Wing_4
   matchedScaleFactors:
-  - 0.9837092
+  - 0.99454
   - 1
   - 1
-  - 1.0540142
-  - 1.0540142
-  - 1.1439843
-  - 1.143983
-  - 1.1439867
-  - 1.1439892
-  - 2.4064581
-  - 2.406481
+  - 1.01769
+  - 1.01769
+  - 1.0458596
+  - 1.0458591
+  - 1.0458603
+  - 1.045861
+  - 1.3400657
+  - 1.34007
   - 1
-  - 1.0540142
-  - 1.0540142
-  - 1.0075185
-  - 1.0075188
+  - 1.01769
+  - 1.01769
+  - 1.0024999
+  - 1.0025
   - 1
+  perComponentStats:
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 14.918099
+    healthCapPerLevel: 2.98362
+    healthRegen: 0.49727
+    healthRegenPerLevel: 0.49727
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 9.9454
+    maxPeoplePerLevel: 1.98908
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 15
+    healthCapPerLevel: 3
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 15
+    healthCapPerLevel: 3
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.07076
+    healthCapPerLevel: 1.01769
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 10
+    moveSpeedPerLevel: 1
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.07076
+    healthCapPerLevel: 1.01769
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 10
+    moveSpeedPerLevel: 1
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 10.458595
+    healthCapPerLevel: 2.0917192
+    healthRegen: 0.20917192
+    healthRegenPerLevel: 0.078439474
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.2292976
+    maxGemsPerLevel: 1.5687894
+    maxPeople: 2.0917192
+    maxPeoplePerLevel: 0.5229298
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 10.458591
+    healthCapPerLevel: 2.0917182
+    healthRegen: 0.20917182
+    healthRegenPerLevel: 0.07843944
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.2292957
+    maxGemsPerLevel: 1.5687886
+    maxPeople: 2.0917182
+    maxPeoplePerLevel: 0.52292955
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 10.458603
+    healthCapPerLevel: 2.0917206
+    healthRegen: 0.20917206
+    healthRegenPerLevel: 0.078439526
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.2293015
+    maxGemsPerLevel: 1.5687904
+    maxPeople: 2.0917206
+    maxPeoplePerLevel: 0.52293015
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 10.458611
+    healthCapPerLevel: 2.091722
+    healthRegen: 0.2091722
+    healthRegenPerLevel: 0.07843958
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.2293053
+    maxGemsPerLevel: 1.5687915
+    maxPeople: 2.091722
+    maxPeoplePerLevel: 0.5229305
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 26.801315
+    healthCapPerLevel: 5.360263
+    healthRegen: 0.5360263
+    healthRegenPerLevel: 0.20100987
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 13.400658
+    maxGemsPerLevel: 4.020197
+    maxPeople: 5.360263
+    maxPeoplePerLevel: 1.3400657
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 26.8014
+    healthCapPerLevel: 5.36028
+    healthRegen: 0.536028
+    healthRegenPerLevel: 0.20101051
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 13.4007
+    maxGemsPerLevel: 4.0202103
+    maxPeople: 5.36028
+    maxPeoplePerLevel: 1.34007
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 9
+    turnSpeedPerLevel: 2
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.03538
+    healthCapPerLevel: 0.508845
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 4
+    turnSpeedPerLevel: 1
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.03538
+    healthCapPerLevel: 0.508845
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 4
+    turnSpeedPerLevel: 1
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 3.0150182
+    firePowerPerLevel: 3.0150182
+    bulletSpeed: 10.05006
+    bulletSpeedPerLevel: 5.02503
+    fireRate: 1.9950126
+    fireRatePerLevel: 0
+    healthCap: 0
+    healthCapPerLevel: 0
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 15
+    energyCapPerLevel: 3
+    energyRegen: 3
+    energyRegenPerLevel: 3
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 3.015019
+    firePowerPerLevel: 3.015019
+    bulletSpeed: 10.050063
+    bulletSpeedPerLevel: 5.0250316
+    fireRate: 1.9950126
+    fireRatePerLevel: 0
+    healthCap: 0
+    healthCapPerLevel: 0
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 15
+    energyCapPerLevel: 3
+    energyRegen: 3
+    energyRegenPerLevel: 3
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 20
+    healthCapPerLevel: 6
+    healthRegen: 0.6
+    healthRegenPerLevel: 0.2
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 5
+    turnSpeedPerLevel: 2
+    maxGems: 40
+    maxGemsPerLevel: 8
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  previewSumPropulsionMoveSpeed: 20
+  previewTopSpeedMoveSpeed: 10
 --- !u!1001 &211383208010589157
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -476,19 +853,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 1
+      value: 0.9961947
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0.000000021855694
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0
+      value: -0.08715578
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -496,7 +873,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
+      value: -10
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -710,19 +1087,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 1
+      value: 0.9961947
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0.000000021855694
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0
+      value: 0.08715578
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -730,7 +1107,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z

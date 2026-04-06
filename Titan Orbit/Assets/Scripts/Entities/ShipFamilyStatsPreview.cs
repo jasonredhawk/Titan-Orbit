@@ -82,7 +82,7 @@ namespace TitanOrbit.Entities
         /// Scan all child transforms, parse names of the form Family_ComponentId, and sum their stats.
         /// Each component's contribution is scaled by transform: non-weapons use average scale (x+y+z)/3 for most stats;
         /// turn speed and engine/thruster move speed use authored values only (see <see cref="ShipComponentAbilityStats.ScaleStatsByTransform"/>).
-        /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
+        /// Weapons: fire power scales by average(x,y); fire rate scales by 1/z (smaller z = faster); bullet speed is not scaled by transform.
         /// </summary>
         public void RecalculateFromChildren()
         {

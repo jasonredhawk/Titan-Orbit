@@ -60,16 +60,16 @@ MonoBehaviour:
   shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
   familyIdOverride: 
   totalStats:
-    firePower: 3
-    firePowerPerLevel: 3
+    firePower: 2.25
+    firePowerPerLevel: 2.25
     bulletSpeed: 10
     bulletSpeedPerLevel: 5
-    fireRate: 2
+    fireRate: 4
     fireRatePerLevel: 0
     healthCap: 87.71715
     healthCapPerLevel: 19.943428
-    healthRegen: 1.2563429
-    healthRegenPerLevel: 0.57737863
+    healthRegen: 1.5563431
+    healthRegenPerLevel: 0.8773786
     energyCap: 15
     energyCapPerLevel: 3
     energyRegen: 3
@@ -109,7 +109,7 @@ MonoBehaviour:
   - 1
   - 1
   - 1
-  - 1
+  - 0.6666667
   perComponentStats:
   - firePower: 0
     firePowerPerLevel: 0
@@ -119,8 +119,8 @@ MonoBehaviour:
     fireRatePerLevel: 0
     healthCap: 15
     healthCapPerLevel: 3
-    healthRegen: 0.2
-    healthRegenPerLevel: 0.2
+    healthRegen: 0.5
+    healthRegenPerLevel: 0.5
     energyCap: 0
     energyCapPerLevel: 0
     energyRegen: 0
@@ -375,11 +375,11 @@ MonoBehaviour:
     maxGemsPerLevel: 6
     maxPeople: 0
     maxPeoplePerLevel: 0
-  - firePower: 3
-    firePowerPerLevel: 3
+  - firePower: 2.25
+    firePowerPerLevel: 2.25
     bulletSpeed: 10
     bulletSpeedPerLevel: 5
-    fireRate: 2
+    fireRate: 4
     fireRatePerLevel: 0
     healthCap: 0
     healthCapPerLevel: 0
@@ -1349,15 +1349,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalPosition.x

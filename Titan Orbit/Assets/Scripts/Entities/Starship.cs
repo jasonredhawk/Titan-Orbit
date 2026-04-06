@@ -315,7 +315,7 @@ namespace TitanOrbit.Entities
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
         [SerializeField] private Rigidbody rb;
-        [Tooltip("Optional: child transform whose visuals are replaced when upgrading to a new ship prefab. If null, direct children of this transform are replaced. Also the transform we tilt for banking; if null at Start, a pivot is created so banking works.")]
+        [Tooltip("Runtime: BankPivot under this ship (created in Awake). Do not assign the Starship root here — if this is missing or wrong, we try to find a child named BankPivot.")]
         [SerializeField] private Transform visualRoot;
         /// <summary>Banking pivot (Starship → BankPivot → Prefab). ToroidalRenderer repositions this for non-local ships.</summary>
         public Transform BankPivotTransform => visualRoot;
@@ -511,7 +511,7 @@ namespace TitanOrbit.Entities
         /// <summary>Same factor that makes fire rate faster (1 + attrFirePower * 0.1). Used so bullet size always scales when fire power upgrades.</summary>
         private float FirePowerScaleFactor => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
 
-        /// <summary>Bullet projectile scale: base size × damage term × fire-power factor (same as fire rate) × weapon/card scale × exaggeration. Ensures upgrading fire power visibly increases bullet size.</summary>
+        /// <summary>Bullet projectile scale: cannon bulletScale × fire-power factor (same as fire rate) × weapon/card scale × exaggeration. Ensures upgrading fire power visibly increases bullet size.</summary>
         private float BulletScaleMultiplier => FirePowerScaleFactor * WeaponComponentScaleMultiplier * Mathf.Max(0.5f, bulletScaleExaggeration);
 
 #if UNITY_EDITOR
@@ -568,14 +568,31 @@ namespace TitanOrbit.Entities
         private Vector3 previousForward;
         private bool bankingInitialized;
         
-        // Pitch from asteroid impacts (visual only, up/down tilt on visualRoot)
-        [Header("Collision Pitch")]
-        [Tooltip("Maximum pitch angle (degrees) the ship can visually tilt from asteroid impacts.")]
-        [SerializeField] private float maxCollisionPitchAngle = 20f;
-        [Tooltip("Pitch smoothing speed. Higher = snappier response to new pitch (approximate lerp speed).")]
-        [SerializeField] private float collisionPitchSpeed = 1f;
+        // Visual pitch: prefer local X on the Prefab mesh container; roll (bank) on BankPivot. See ApplyVisualBanking.
+        [Header("Visual pitch & banking")]
+        [Tooltip("If off, BankPivot / Prefab get no tilt (debug or style). On by default.")]
+        [SerializeField] private bool enableVisualBankingPitch = true;
+        [Tooltip("Set to -1 if the nose pitches the wrong way for your mesh import.")]
+        [SerializeField] private float visualPitchSign = 1f;
+        [Header("Visual pitch tuning (local X)")]
+        [Tooltip("Max nose-down pitch while accelerating (strongest from rest, eases off toward max speed).")]
+        [SerializeField] private float maxAccelerationPitchAngle = 28f;
+        [Tooltip("Max nose-up pitch when Space Brakes slow the ship (no thrust).")]
+        [SerializeField] private float maxBrakePitchAngle = 24f;
+        [Tooltip("Max nose-up pitch from asteroid hits (scaled by impact force).")]
+        [SerializeField] private float maxCollisionPitchAngle = 36f;
+        [Tooltip("How fast asteroid/brake nose-up impulse decays back toward neutral (degrees per second).")]
+        [SerializeField] private float asteroidVisualPitchDecay = 150f;
+        [Tooltip("Pitch smoothing speed. Higher = snappier response to new pitch (approximate lerp speed). Values below 6 are treated as 6 so motion stays visible.")]
+        [SerializeField] private float collisionPitchSpeed = 10f;
         private float currentCollisionPitchAngle;
         private float targetCollisionPitchAngle;
+        private float asteroidVisualPitchImpulse;
+        /// <summary>Forward speed along ship facing (XZ), from previous FixedUpdate — used to derive forward acceleration for visual pitch.</summary>
+        private float _visualPitchPrevFwdSpeed;
+        private bool _visualPitchFwdSpeedInitialized;
+        /// <summary>Forward acceleration along facing (m/s²), updated every FixedUpdate. Used for pitch when network/ownership would hide raw input.</summary>
+        private float _cachedForwardAccelAlongFwd;
 
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth
@@ -828,6 +845,16 @@ namespace TitanOrbit.Entities
             gemMoonPrefabBaselineLocalScale = prefabTransformCache.localScale;
 
             visualRoot = pivot.transform;
+        }
+
+        /// <summary>Ensures <see cref="visualRoot"/> points at the runtime BankPivot. Fixes inspector mis-assignments (e.g. to the Starship root), which would skip all banking/pitch.</summary>
+        private void ResolveBankPivotFromHierarchy()
+        {
+            if (visualRoot != null && visualRoot != transform && visualRoot.parent == transform)
+                return;
+            Transform bp = transform.Find("BankPivot");
+            if (bp != null)
+                visualRoot = bp;
         }
 
         private void RefreshGemMoonPrefabBaseline()
@@ -1177,6 +1204,8 @@ namespace TitanOrbit.Entities
             }
             ApplyComponentAttributeScaling();
             UpdateEngineAndThrusterVFX();
+            ResolveBankPivotFromHierarchy();
+            if (!enableVisualBankingPitch) return;
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             ApplyVisualBanking(Time.deltaTime);
 
@@ -1447,18 +1476,124 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Updates banking (roll) from turn rate and blends in collision pitch.
+        /// Sets <see cref="targetCollisionPitchAngle"/> from thrust/brake/asteroid impulses (visual only).
+        /// Uses <see cref="_cachedForwardAccelAlongFwd"/> from FixedUpdate plus local input when available.
+        /// </summary>
+        private void UpdateVisualPitchTarget()
+        {
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float speed = vel.magnitude;
+            float maxSp = EffectiveMaxSpeed;
+
+            if (asteroidVisualPitchImpulse != 0f)
+                asteroidVisualPitchImpulse = Mathf.MoveTowards(asteroidVisualPitchImpulse, 0f, asteroidVisualPitchDecay * Time.deltaTime);
+
+            float accelPitch = 0f;
+            float brakePitch = 0f;
+
+            // Physics-driven pitch (all ships): works for remotes, host, and cases where IsOwner/input timing is wrong.
+            float fwdA = _cachedForwardAccelAlongFwd;
+            // Lower refs = reach near-max tilt at moderate forward accel/decel (m/s²).
+            const float fwdAccelRef = 14f;
+            const float fwdDecelRef = 10f;
+            if (maxSp > 0.01f)
+            {
+                if (fwdA > 0.25f)
+                {
+                    float t = Mathf.Clamp01((fwdA - 0.25f) / fwdAccelRef);
+                    accelPitch = maxAccelerationPitchAngle * t * Mathf.Max(0f, 1f - speed / maxSp);
+                }
+                if (fwdA < -0.22f && speed > 0.2f)
+                {
+                    float t = Mathf.Clamp01((-fwdA - 0.22f) / fwdDecelRef);
+                    brakePitch = -maxBrakePitchAngle * t * Mathf.Clamp01(speed / Mathf.Max(2f, maxSp * 0.45f));
+                }
+            }
+
+            // Local human: input-driven pitch. When NGO is listening and spawned, require owner/local player; otherwise allow input (offline / not yet spawned).
+            bool nmOk = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+            bool useInputPitch = !_isAIControlled && inputHandler != null;
+            if (useInputPitch && nmOk && IsSpawned)
+                useInputPitch = IsOwner || IsLocalPlayerShip();
+            if (useInputPitch)
+            {
+                bool thrusting = inputHandler.MoveForwardPressed;
+                bool brakesOn = (inputHandler as PlayerInputHandler)?.SpaceBrakesEnabled ?? true;
+
+                if (thrusting && maxSp > 0.01f)
+                {
+                    float ramp = Mathf.Max(0f, 1f - speed / maxSp);
+                    accelPitch = Mathf.Max(accelPitch, maxAccelerationPitchAngle * ramp);
+                }
+                if (!thrusting && brakesOn && speed > 0.15f)
+                {
+                    float denom = Mathf.Max(3f, maxSp * 0.5f);
+                    float b = -maxBrakePitchAngle * Mathf.Clamp01(speed / denom);
+                    brakePitch = Mathf.Min(brakePitch, b);
+                }
+            }
+
+            float pitchClamp = Mathf.Max(maxCollisionPitchAngle, maxAccelerationPitchAngle, maxBrakePitchAngle);
+            float combined = accelPitch + brakePitch + asteroidVisualPitchImpulse;
+            targetCollisionPitchAngle = Mathf.Clamp(combined, -pitchClamp, pitchClamp);
+        }
+
+        /// <summary>Called from FixedUpdate finally so every ship (owner, proxy, AI) gets consistent forward acceleration for visuals.</summary>
+        private void CacheVisualForwardAccelForPitch()
+        {
+            if (rb == null || isDead.Value)
+            {
+                _cachedForwardAccelAlongFwd = 0f;
+                if (isDead.Value)
+                    _visualPitchFwdSpeedInitialized = false;
+                return;
+            }
+
+            Vector3 v = rb.linearVelocity;
+            v.y = 0f;
+            Vector3 ff = rb.rotation * Vector3.forward;
+            ff.y = 0f;
+            if (ff.sqrMagnitude < 1e-8f)
+            {
+                _cachedForwardAccelAlongFwd = 0f;
+                return;
+            }
+            ff.Normalize();
+            float fwdSp = Vector3.Dot(v, ff);
+            float dt = Time.fixedDeltaTime;
+            if (_visualPitchFwdSpeedInitialized)
+                _cachedForwardAccelAlongFwd = (fwdSp - _visualPitchPrevFwdSpeed) / Mathf.Max(1e-5f, dt);
+            else
+                _cachedForwardAccelAlongFwd = 0f;
+            _visualPitchFwdSpeedInitialized = true;
+            _visualPitchPrevFwdSpeed = fwdSp;
+        }
+
+        /// <summary>
+        /// Updates banking (roll) from turn rate and blends in visual pitch (acceleration / brakes / asteroid).
         /// Must run on a child of the root—never on the root itself (physics/NetworkTransform would overwrite).
         /// </summary>
         private void ApplyVisualBanking(float dt)
         {
-            if (visualRoot == null || visualRoot == transform || rb == null) return;
-            if (gemMoonDocked.Value) return;
+            if (!enableVisualBankingPitch || visualRoot == null || visualRoot == transform || rb == null) return;
+            if (gemMoonDocked.Value)
+            {
+                if (asteroidVisualPitchImpulse != 0f)
+                    asteroidVisualPitchImpulse = Mathf.MoveTowards(asteroidVisualPitchImpulse, 0f, asteroidVisualPitchDecay * dt);
+                return;
+            }
 
             Vector3 fwd = rb.rotation * Vector3.forward;
             fwd.y = 0f;
             if (fwd.sqrMagnitude < 0.01f) return;
             fwd.Normalize();
+
+            dt = Mathf.Max(dt, 0.0001f);
+            UpdateVisualPitchTarget();
+
+            Transform prefabNode = GetPrefabTransform();
+            bool pitchOnPrefabChild = prefabNode != null && prefabNode.parent == visualRoot;
 
             if (!bankingInitialized)
             {
@@ -1466,10 +1601,10 @@ namespace TitanOrbit.Entities
                 currentBankAngle = 0f;
                 bankingInitialized = true;
                 visualRoot.localRotation = Quaternion.identity;
+                if (pitchOnPrefabChild)
+                    prefabNode.localRotation = Quaternion.identity;
                 return;
             }
-
-            dt = Mathf.Max(dt, 0.0001f);
 
             float maxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
@@ -1481,15 +1616,26 @@ namespace TitanOrbit.Entities
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
-            // Smooth collision pitch toward target
-            float pitchT = 1f - Mathf.Exp(-Mathf.Max(collisionPitchSpeed, 0.01f) * dt);
+            // Smooth visual pitch toward target (floor speed so low inspector values still read as motion)
+            float pitchT = 1f - Mathf.Exp(-Mathf.Max(collisionPitchSpeed, 6f) * dt);
             currentCollisionPitchAngle = Mathf.Lerp(currentCollisionPitchAngle, targetCollisionPitchAngle, pitchT);
 
-            // Clamp pitch to configured max
-            currentCollisionPitchAngle = Mathf.Clamp(currentCollisionPitchAngle, -maxCollisionPitchAngle, maxCollisionPitchAngle);
+            float pitchClamp = Mathf.Max(maxCollisionPitchAngle, maxAccelerationPitchAngle, maxBrakePitchAngle);
+            currentCollisionPitchAngle = Mathf.Clamp(currentCollisionPitchAngle, -pitchClamp, pitchClamp);
 
-            // Combine pitch (X) and bank (Z)
-            visualRoot.localRotation = Quaternion.Euler(currentCollisionPitchAngle, 0f, -currentBankAngle);
+            float pitchDeg = currentCollisionPitchAngle * visualPitchSign;
+            float rollDeg = -currentBankAngle;
+
+            // Roll on BankPivot; pitch on Prefab child so the imported hull actually tilts (mesh lives under Prefab).
+            if (pitchOnPrefabChild)
+            {
+                visualRoot.localRotation = Quaternion.Euler(0f, 0f, rollDeg);
+                prefabNode.localRotation = Quaternion.Euler(pitchDeg, 0f, 0f);
+            }
+            else
+            {
+                visualRoot.localRotation = Quaternion.Euler(pitchDeg, 0f, rollDeg);
+            }
 
             previousForward = fwd;
         }
@@ -1805,6 +1951,7 @@ namespace TitanOrbit.Entities
                     Vector3 lv = rb.linearVelocity;
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
+                CacheVisualForwardAccelForPitch();
             }
         }
 
@@ -2548,7 +2695,7 @@ namespace TitanOrbit.Entities
                             }
                             float damage = c.damagePerBullet;
                             float speed = c.bulletSpeed;
-                            float scale = c.bulletScale * (0.65f + damage / 50f) * BulletScaleMultiplier;
+                            float scale = c.bulletScale * BulletScaleMultiplier;
                             CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                             if (rb != null)
                             {
@@ -3506,6 +3653,12 @@ namespace TitanOrbit.Entities
             {
                 float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
                 AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
+            }
+
+            // Visual nose-up kick (local X on visual root); stronger on harder hits.
+            {
+                float t = Mathf.Clamp01(Mathf.InverseLerp(35f, 900f, impactForceNewtons));
+                asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
             }
 
             float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);

@@ -334,6 +334,16 @@ namespace TitanOrbit.UI
             {
                 string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
                 string lobbyName = string.IsNullOrEmpty(pname) ? null : pname + "'s game";
+                // Must run before StartHost — PlayerDisplayNames reads LocalPlayerDisplayName on network spawn (same frame as StartHost).
+                if (!string.IsNullOrEmpty(pname))
+                {
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
+                    PlayerPrefs.Save();
+                }
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : pname;
+
                 string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync(lobbyName);
                 if (!string.IsNullOrEmpty(joinCode))
                 {

@@ -48,6 +48,19 @@ namespace TitanOrbit.Systems
 #endif
         }
 
+        /// <summary>
+        /// Must run after <see cref="NetworkObject.Spawn"/> (and Gem Initialize*) so <see cref="Unity.Netcode.Components.NetworkRigidbody"/>
+        /// has applied server authority; velocity set before spawn does not reliably persist.
+        /// </summary>
+        private static void ApplyGemLaunchVelocityAfterSpawn(Rigidbody r, Vector3 linearVelocity, Vector3 angularVelocity)
+        {
+            if (r == null) return;
+            r.isKinematic = false;
+            r.linearVelocity = linearVelocity;
+            r.angularVelocity = angularVelocity;
+            r.WakeUp();
+        }
+
         private GameObject GetPeopleTransportPrefab()
         {
             if (peopleTransportPrefab != null) return peopleTransportPrefab;
@@ -198,23 +211,12 @@ namespace TitanOrbit.Systems
             {
                 gem.InitializeForDeposit(amount, sizeMult, planetNetworkObjectId, depositingTeam, depositingClientId);
                 gem.ServerActivateFromPool();
-                gem.transform.position = pos;
-                if (gem.GetComponent<Rigidbody>() is Rigidbody rb)
-                {
-                    rb.position = pos;
-                    rb.linearVelocity = vel;
-                    rb.angularVelocity = angVel;
-                }
+                gem.ServerFinishPooledSpawn(pos, vel, angVel, 0f);
                 return;
             }
 
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody r = gemObj.GetComponent<Rigidbody>();
-            if (r != null)
-            {
-                r.linearVelocity = vel;
-                r.angularVelocity = angVel;
-            }
 
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
@@ -222,6 +224,7 @@ namespace TitanOrbit.Systems
                 netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.InitializeForDeposit(amount, sizeMult, planetNetworkObjectId, depositingTeam, depositingClientId);
+                ApplyGemLaunchVelocityAfterSpawn(r, vel, angVel);
             }
         }
 
@@ -234,30 +237,10 @@ namespace TitanOrbit.Systems
             Vector3 vel = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
             Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
 
-            Gem gem = null;
-            if (GemPool.Instance != null)
-                gem = GemPool.Instance.GetNext();
-            if (gem != null)
-            {
-                gem.InitializeFromShip(gemValue, sizeMultiplier, expelledByShipId);
-                gem.ServerActivateFromPool();
-                gem.transform.position = pos;
-                if (gem.GetComponent<Rigidbody>() is Rigidbody rb)
-                {
-                    rb.position = pos;
-                    rb.linearVelocity = vel;
-                    rb.angularVelocity = angVel;
-                }
-                return;
-            }
-
+            // Do not use GemPool here: recycling + NetworkTransform/physics ordering was leaving hull-expelled gems at zero velocity.
+            // New instance matches original pre-pool behavior (explosionSpeed / explosionRadius apply to a fresh spawned gem).
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody r = gemObj.GetComponent<Rigidbody>();
-            if (r != null)
-            {
-                r.linearVelocity = vel;
-                r.angularVelocity = angVel;
-            }
 
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
@@ -265,6 +248,7 @@ namespace TitanOrbit.Systems
                 netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.InitializeFromShip(gemValue, sizeMultiplier, expelledByShipId);
+                ApplyGemLaunchVelocityAfterSpawn(r, vel, angVel);
             }
         }
 
@@ -286,23 +270,12 @@ namespace TitanOrbit.Systems
             {
                 gem.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, isBonusGem);
                 gem.ServerActivateFromPool();
-                gem.transform.position = pos;
-                if (gem.GetComponent<Rigidbody>() is Rigidbody rb)
-                {
-                    rb.position = pos;
-                    rb.linearVelocity = vel;
-                    rb.angularVelocity = angVel;
-                }
+                gem.ServerFinishPooledSpawn(pos, vel, angVel);
                 return;
             }
 
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody r = gemObj.GetComponent<Rigidbody>();
-            if (r != null)
-            {
-                r.linearVelocity = vel;
-                r.angularVelocity = angVel;
-            }
 
             NetworkObject netObj = gemObj.GetComponent<NetworkObject>();
             if (netObj != null)
@@ -310,6 +283,7 @@ namespace TitanOrbit.Systems
                 netObj.Spawn();
                 Gem g = gemObj.GetComponent<Gem>();
                 if (g != null) g.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, isBonusGem);
+                ApplyGemLaunchVelocityAfterSpawn(r, vel, angVel);
             }
         }
     }

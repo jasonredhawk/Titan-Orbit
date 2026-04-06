@@ -139,7 +139,7 @@ namespace TitanOrbit.Data
             return (s.x + s.y + s.z) / 3f;
         }
 
-        /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Weapons use x*y for fire power and 1/z for fire rate.</summary>
+        /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Fire power uses average(x,y); fire rate uses 1/z; bullet speed is not scaled by part size.</summary>
         public static bool IsWeaponComponent(string componentId)
         {
             return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Weapon", StringComparison.OrdinalIgnoreCase);
@@ -159,7 +159,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Scale stats by transform.
-        /// Weapons: fire power and bullet speed scale by x*y (size); fire rate scales by 1/z (smaller z = faster).
+        /// Weapons: fire power scales by average(x,y); fire rate scales by 1/z (smaller z = faster).
+        ///          Bullet speed uses authored values only (not scaled by weapon transform).
         ///          Other weapon properties (health, energy, etc.) are NOT scaled by transform.
         /// Non-weapons: stats scale by average(x,y,z) except turn speed and engine/thruster move speed (authored as-is).
         /// <c>Starship</c> converts turn definition units to degrees per second when applying rotation.
@@ -173,17 +174,17 @@ namespace TitanOrbit.Data
 
             if (IsWeaponComponent(componentId))
             {
-                float firePowerScale = x * y;       // size of bullet, damage
+                float firePowerScale = (x + y) * 0.5f; // average of x and y for damage / fire power
                 float fireRateScale = 1f / z;       // smaller z = faster rate of fire
                 return new ShipComponentAbilityStats
                 {
                     firePower = stats.firePower * firePowerScale,
                     firePowerPerLevel = stats.firePowerPerLevel * firePowerScale,
-                    bulletSpeed = stats.bulletSpeed * firePowerScale,
-                    bulletSpeedPerLevel = stats.bulletSpeedPerLevel * firePowerScale,
+                    bulletSpeed = stats.bulletSpeed,
+                    bulletSpeedPerLevel = stats.bulletSpeedPerLevel,
                     fireRate = stats.fireRate * fireRateScale,
                     fireRatePerLevel = stats.fireRatePerLevel * fireRateScale,
-                    // All other properties are left unscaled for weapons so z-scale only affects fire rate and xy-scale only affects fire power/bullet.
+                    // z-scale only affects fire rate; average(x,y) scales fire power. Bullet speed is not scaled by weapon part size.
                     healthCap = stats.healthCap,
                     healthCapPerLevel = stats.healthCapPerLevel,
                     healthRegen = stats.healthRegen,

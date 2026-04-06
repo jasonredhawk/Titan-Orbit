@@ -29,11 +29,7 @@ namespace TitanOrbit.Audio
         private int nextImpactSoundIndex;
 
         private const int WEAPON_SOUND_POOL_SIZE = 6;
-        private const float WEAPON_PITCH_MIN = 0.01f;
-        private const float WEAPON_PITCH_MAX = 1.0f;
         private const int GEM_SOUND_POOL_SIZE = 6;
-        private const float GEM_PITCH_MIN = 0.01f;
-        private const float GEM_PITCH_MAX = 1.0f;
         private const float GEM_AMOUNT_MIN = 1f;
         private const float GEM_AMOUNT_MAX = 120f;
         private const int IMPACT_SOUND_POOL_SIZE = 6;
@@ -78,6 +74,17 @@ namespace TitanOrbit.Audio
         [SerializeField] private float shipDeathVolume = 1f;
         [SerializeField] private float upgradeVolume = 1f;
         [SerializeField] private bool playMusicOnStart = true;
+
+        [Header("Pitch ranges (SFX)")]
+        [Tooltip("Weapon fire pitch clamp. Bigger bullet / faster shot uses values in this range.")]
+        [SerializeField] private float weaponPitchMin = 0.01f;
+        [SerializeField] private float weaponPitchMax = 1f;
+        [Tooltip("Gem pickup/deposit pitch range (low amount → high pitch end; high amount → low pitch end).")]
+        [SerializeField] private float gemPitchMin = 0.01f;
+        [SerializeField] private float gemPitchMax = 1f;
+        [Tooltip("People load/unload pitch clamp after base pitch and amount offset.")]
+        [SerializeField] private float peoplePitchMin = 0.01f;
+        [SerializeField] private float peoplePitchMax = 1f;
 
         private void Awake()
         {
@@ -143,7 +150,7 @@ namespace TitanOrbit.Audio
             if (shootSound == null) return;
             EnsureWeaponSoundPool();
             if (weaponSoundSources == null || weaponSoundSources.Length == 0) { PlaySFX(shootSound); return; }
-            float p = Mathf.Clamp(pitch, WEAPON_PITCH_MIN, WEAPON_PITCH_MAX);
+            float p = Mathf.Clamp(pitch, weaponPitchMin, weaponPitchMax);
             AudioSource src = weaponSoundSources[nextWeaponSoundIndex % weaponSoundSources.Length];
             nextWeaponSoundIndex = (nextWeaponSoundIndex + 1) % weaponSoundSources.Length;
             if (src != null)
@@ -299,7 +306,7 @@ namespace TitanOrbit.Audio
             float normalized = Mathf.InverseLerp(minLog, maxLog, amountLog);
             // Emphasize contrast: keep more time near the extremes (tiny gems very high, large gems very low).
             float emphasized = Mathf.Pow(normalized, 1.35f);
-            float pitch = Mathf.Lerp(GEM_PITCH_MAX, GEM_PITCH_MIN, emphasized);
+            float pitch = Mathf.Lerp(gemPitchMax, gemPitchMin, emphasized);
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src != null)
@@ -322,7 +329,7 @@ namespace TitanOrbit.Audio
             float normalized = Mathf.InverseLerp(1f, 10f, Mathf.Max(0f, amount));
             float basePitch = isLoad ? 1.12f : 0.92f;
             float amountPitchOffset = Mathf.Lerp(0.16f, -0.12f, normalized);
-            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, GEM_PITCH_MIN, GEM_PITCH_MAX);
+            float pitch = Mathf.Clamp(basePitch + amountPitchOffset, peoplePitchMin, peoplePitchMax);
 
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;

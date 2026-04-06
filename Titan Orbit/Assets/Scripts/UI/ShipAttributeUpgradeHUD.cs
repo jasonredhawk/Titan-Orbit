@@ -22,6 +22,10 @@ namespace TitanOrbit.UI
         [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
         [SerializeField] private float bottomPadding = 8f;
+        [Tooltip("Vertical position of the ability title (negative = down from top edge). Increase to move title up.")]
+        [SerializeField] private float titleFromTop = -7f;
+        [Tooltip("Vertical offset of the upgrade tick squares (center anchor). Increase to move ticks up.")]
+        [SerializeField] private float ticksCenterYOffset = -3f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
@@ -35,6 +39,11 @@ namespace TitanOrbit.UI
         [SerializeField] private Color energyColor = ShipAbilityCategoryColors.EnergyForHud;
         [SerializeField] private Color shipColor = ShipAbilityCategoryColors.ShipForHud;
         [SerializeField] private Color cargoColor = ShipAbilityCategoryColors.CargoForHud;
+
+        [Header("Cost icon (assign in Inspector)")]
+        [Tooltip("Shown next to the gem cost number on each upgrade slot. Leave empty until you have a sprite.")]
+        [SerializeField] private Sprite gemCostIconSprite;
+        [SerializeField] private float gemIconSize = 14f;
 
         private static readonly string[] Titles = new[]
         {
@@ -58,6 +67,7 @@ namespace TitanOrbit.UI
         private Image[] buttonImages = new Image[10];
         private TextMeshProUGUI[] keyLabels = new TextMeshProUGUI[10];
         private TextMeshProUGUI[] costLabels = new TextMeshProUGUI[10];
+        private Image[] costGemIcons = new Image[10];
 
         private void Start()
         {
@@ -98,10 +108,11 @@ namespace TitanOrbit.UI
                 buttonImages[i] = btn.bgImage;
                 keyLabels[i] = btn.keyLabel;
                 costLabels[i] = btn.costLabel;
+                costGemIcons[i] = btn.costGemIcon;
             }
         }
 
-        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel) CreateUpgradeButton(Transform parent, float x, int index, Color categoryColor, string keyStr)
+        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color categoryColor, string keyStr)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -174,13 +185,14 @@ namespace TitanOrbit.UI
             titleRect.anchorMin = new Vector2(0.5f, 1f);
             titleRect.anchorMax = new Vector2(0.5f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -10f);
+            titleRect.anchoredPosition = new Vector2(0f, titleFromTop);
             titleRect.sizeDelta = new Vector2(buttonWidth - 10f, 12f);
             TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
             titleText.text = Titles[index];
             titleText.fontSize = 8.5f;
             if (TMP_Settings.defaultFontAsset != null) titleText.font = TMP_Settings.defaultFontAsset;
             titleText.color = Color.white;
+            titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.enableWordWrapping = true;
 
@@ -191,7 +203,7 @@ namespace TitanOrbit.UI
             tickRect.anchorMin = new Vector2(0.5f, 0.5f);
             tickRect.anchorMax = new Vector2(0.5f, 0.5f);
             tickRect.pivot = new Vector2(0.5f, 0.5f);
-            tickRect.anchoredPosition = new Vector2(0f, -6f);
+            tickRect.anchoredPosition = new Vector2(0f, ticksCenterYOffset);
             tickRect.sizeDelta = new Vector2(Mathf.Min(buttonWidth - 16f, 78f), 10f);
 
             HorizontalLayoutGroup tickLayout = tickContainer.AddComponent<HorizontalLayoutGroup>();
@@ -202,23 +214,55 @@ namespace TitanOrbit.UI
             tickLayout.childForceExpandWidth = false;
             tickLayout.childForceExpandHeight = false;
 
-            // Cost label (bottom)
+            // Cost row: number + gem icon (assign gem sprite on ShipAttributeUpgradeHUD in Inspector)
+            GameObject costRow = new GameObject("CostRow");
+            costRow.transform.SetParent(btnObj.transform, false);
+            RectTransform costRowRect = costRow.AddComponent<RectTransform>();
+            costRowRect.anchorMin = new Vector2(0.5f, 0f);
+            costRowRect.anchorMax = new Vector2(0.5f, 0f);
+            costRowRect.pivot = new Vector2(0.5f, 0f);
+            costRowRect.anchoredPosition = new Vector2(0f, 3f);
+            costRowRect.sizeDelta = new Vector2(buttonWidth - 6f, Mathf.Max(14f, gemIconSize + 2f));
+
+            HorizontalLayoutGroup costRowLayout = costRow.AddComponent<HorizontalLayoutGroup>();
+            costRowLayout.childAlignment = TextAnchor.MiddleCenter;
+            costRowLayout.spacing = 3f;
+            costRowLayout.padding = new RectOffset(0, 0, 0, 0);
+            costRowLayout.childForceExpandWidth = false;
+            costRowLayout.childForceExpandHeight = false;
+            costRowLayout.childControlWidth = true;
+            costRowLayout.childControlHeight = true;
+
             GameObject costObj = new GameObject("CostLabel");
-            costObj.transform.SetParent(btnObj.transform, false);
+            costObj.transform.SetParent(costRow.transform, false);
             RectTransform costRect = costObj.AddComponent<RectTransform>();
-            costRect.anchorMin = new Vector2(0.5f, 0f);
-            costRect.anchorMax = new Vector2(0.5f, 0f);
-            costRect.pivot = new Vector2(0.5f, 0f);
-            costRect.anchoredPosition = new Vector2(0f, 3f);
-            costRect.sizeDelta = new Vector2(buttonWidth - 6f, 14f);
+            costRect.sizeDelta = Vector2.zero;
             TextMeshProUGUI costLabel = costObj.AddComponent<TextMeshProUGUI>();
             costLabel.text = "";
             costLabel.fontSize = 11f;
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
             costLabel.alignment = TextAlignmentOptions.Center;
+            costLabel.overflowMode = TextOverflowModes.Overflow;
+            LayoutElement costLe = costObj.AddComponent<LayoutElement>();
+            costLe.preferredWidth = 36f;
+            costLe.flexibleWidth = 0f;
 
-            return (button, titleText, tickContainer, bgImage, keyLabel, costLabel);
+            GameObject gemObj = new GameObject("GemIcon");
+            gemObj.transform.SetParent(costRow.transform, false);
+            RectTransform gemRect = gemObj.AddComponent<RectTransform>();
+            gemRect.sizeDelta = new Vector2(gemIconSize, gemIconSize);
+            Image costGemIcon = gemObj.AddComponent<Image>();
+            costGemIcon.raycastTarget = false;
+            costGemIcon.preserveAspect = true;
+            costGemIcon.enabled = gemCostIconSprite != null;
+            if (gemCostIconSprite != null) costGemIcon.sprite = gemCostIconSprite;
+            LayoutElement gemLe = gemObj.AddComponent<LayoutElement>();
+            gemLe.preferredWidth = gemIconSize;
+            gemLe.preferredHeight = gemIconSize;
+            gemLe.flexibleWidth = 0f;
+
+            return (button, titleText, tickContainer, bgImage, keyLabel, costLabel, costGemIcon);
         }
 
         private void CreateTickMarks(GameObject container, int maxCount)
@@ -301,9 +345,16 @@ namespace TitanOrbit.UI
                 if (costLabels[i] != null)
                 {
                     if (current >= maxUpgrades)
+                    {
                         costLabels[i].text = "MAX";
+                        if (costGemIcons[i] != null) costGemIcons[i].enabled = false;
+                    }
                     else
+                    {
                         costLabels[i].text = $"{cost}";
+                        if (costGemIcons[i] != null)
+                            costGemIcons[i].enabled = gemCostIconSprite != null;
+                    }
                 }
             }
         }

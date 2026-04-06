@@ -339,7 +339,7 @@ namespace TitanOrbit.Editor
             AssetDatabase.Refresh();
         }
 
-        /// <summary>Sum component stats for prefab. Non-weapons: scale by average(x,y,z). Weapons: fire power/bullet by x*y, fire rate by 1/z.</summary>
+        /// <summary>Sum component stats for prefab. Non-weapons: scale by average(x,y,z). Weapons: fire power by average(x,y), fire rate by 1/z; bullet speed not scaled by part size.</summary>
         private static ShipComponentAbilityStats SumStatsForPrefab(GameObject prefab, ShipFamilyDefinition def, string familyId)
         {
             var total = new ShipComponentAbilityStats();

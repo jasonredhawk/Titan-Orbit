@@ -161,7 +161,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 35928897
+  GlobalObjectIdHash: 2177445015
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -182,6 +182,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a7e8f9c04b2d4e1f9a8b7c6d5e4f3a2b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Networking.OwnerAuthoritativeNetworkTransform
+  UseUnreliableDeltas: 0
   SyncPositionX: 1
   SyncPositionY: 1
   SyncPositionZ: 1
@@ -200,8 +201,6 @@ MonoBehaviour:
   InLocalSpace: 0
   Interpolate: 1
   SlerpPosition: 0
-  UseUnreliableDeltas: 0
-  FixedSendsPerSecond: 30
 --- !u!114 &7711223344556677881
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -249,29 +248,29 @@ MonoBehaviour:
   gemMoonCenterSnapSpeed: 6
   gemMoonVisualDockBlendSeconds: 1
   gemMoonDockIgnoreSeconds: 0.75
+  gemMoonUndockOutwardSpeed: 2.75
+  gemMoonUndockOrbitCaptureEase: 0.22
   firePoint: {fileID: 0}
   recoilStrength: 1.2
   engineVfxPrefab: {fileID: 0}
   thrusterVfxPrefab: {fileID: 0}
   attributeScaleExaggeration: 0.15
-  componentScaleVisibility: 0.6
+  componentScaleVisibility: 1
+  wingGemScaleBoost: 1.67
   bulletScaleExaggeration: 1.5
   bulletNameTextPrefab: {fileID: 4983387932602081380, guid: f0e3e4f0e4bdb9a43a7adc4ba0a6d71b, type: 3}
-  baseRammingDamage: 5
-  rammingDamagePerSpeedUnit: 3
-  rammingMomentumDamageScale: 0.4
-  minerRammingToAsteroidMultiplier: 1.4
-  minerRammingSelfDamageMultiplier: 0.35
-  ramDamagePerSecond: 30
-  ramTickInterval: 0.25
-  overlapEscapeSpeed: 4
-  asteroidCollisionPushbackSpeed: 1
+  asteroidCollisionNormalSpeedRetention: 0.9
+  asteroidImpactForcePopupMin: 80
+  asteroidImpactForceToShipDamageScale: 0.0025
+  asteroidImpactForceToAsteroidDamageScale: 0.0015
   maxHealth: 100
   healthRegenRate: 6
+  healthRegenDelayAfterDamage: 0.35
   gemCapacity: 100
   peopleCapacity: 10
   baseMass: 1
   massPerGem: 0.01
+  hullMassScale: 0.7
   energyCapacity: 50
   energyRegenRate: 5
   inputHandler: {fileID: 0}
@@ -281,9 +280,15 @@ MonoBehaviour:
   defaultMaxBankAngle: 111
   defaultBankSmoothing: 2
   equippedCards: []
-  maxCollisionPitchAngle: 20
-  collisionPitchSpeed: 1
+  enableVisualBankingPitch: 1
+  visualPitchSign: 1
+  maxAccelerationPitchAngle: 28
+  maxBrakePitchAngle: 24
+  maxCollisionPitchAngle: 50
+  asteroidVisualPitchDecay: 150
+  collisionPitchSpeed: 20
   respawnDelay: 5
+  useCombatSystemDeathBreakupTuning: 1
 --- !u!114 &5045969774804743468
 MonoBehaviour:
   m_ObjectHideFlags: 0

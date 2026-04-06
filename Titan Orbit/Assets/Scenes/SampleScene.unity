@@ -2497,6 +2497,8 @@ MonoBehaviour:
   buttonWidth: 112
   buttonSpacing: 10
   bottomPadding: 12
+  titleFromTop: -7
+  ticksCenterYOffset: -3
   buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
   buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
   buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
@@ -2506,6 +2508,8 @@ MonoBehaviour:
   energyColor: {r: 0.95, g: 0.8, b: 0.2, a: 0.9}
   shipColor: {r: 0.2, g: 0.7, b: 0.95, a: 0.9}
   cargoColor: {r: 0.65, g: 0.4, b: 0.9, a: 0.9}
+  gemCostIconSprite: {fileID: 0}
+  gemIconSize: 14
 --- !u!114 &505988332
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5294,6 +5298,7 @@ MonoBehaviour:
   loadingCameraHeight: 200
   mainMenu: {fileID: 1536533385}
   minLoadingDisplayTime: 1
+  maxWaitNetcodeSeconds: 45
   maxJoinWorldSyncSeconds: 45
   joinReplicationEnoughFraction: 0.62
 --- !u!4 &867079294
@@ -7852,10 +7857,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
   seed: 0
-  minMapSize: 100
-  maxMapSize: 100
+  minMapSize: 111
+  maxMapSize: 111
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
-  homePlanetDistance: 80
+  homePlanetDistance: 99
   minHomePlanetPairSeparation: 120
   clearanceRadiusAroundHomePlanet: 80
   minTeamsPerMatch: 3
@@ -7864,10 +7869,10 @@ MonoBehaviour:
   minNeutralPlanets: 3
   maxNeutralPlanets: 3
   minPlanetSize: 9
-  maxPlanetSize: 18
+  maxPlanetSize: 16
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 100
-  asteroidsAtMaxMapSize: 100
+  asteroidsAtMinMapSize: 111
+  asteroidsAtMaxMapSize: 111
   minAsteroidClusters: 3
   maxAsteroidClusters: 50
   minAsteroidSize: 1
@@ -8183,7 +8188,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.GemSpawner
   gemPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
   peopleTransportPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
-  useGemPool: 0
+  useGemPool: 1
   explosionSpeed: 2.2
   explosionRadius: 1.4
   asteroidExplosionSpeed: 2.2
@@ -8344,7 +8349,7 @@ MonoBehaviour:
   deathDebrisAsteroidBounceMinSpeed: 0.15
   deathDebrisBlocksEnemyBullets: 1
   deathDebrisBulletHitsToBreak: 3
-  deathDebrisBulletShieldDuration: 5
+  deathDebrisBulletShieldDuration: 0.1
 --- !u!1 &1229198908
 GameObject:
   m_ObjectHideFlags: 0
@@ -13091,7 +13096,7 @@ MonoBehaviour:
   sfxVolume: 1
   shootVolume: 1
   impactVolume: 1
-  asteroidCollisionVolume: 0.3
+  asteroidCollisionVolume: 0.4
   shipCollisionVolume: 0.3
   gemVolume: 0.3
   peopleVolume: 0.5
@@ -13101,6 +13106,12 @@ MonoBehaviour:
   shipDeathVolume: 1
   upgradeVolume: 1
   playMusicOnStart: 1
+  weaponPitchMin: 0.01
+  weaponPitchMax: 1
+  gemPitchMin: 0.1
+  gemPitchMax: 2
+  peoplePitchMin: 0.01
+  peoplePitchMax: 2
 --- !u!4 &1959116599
 Transform:
   m_ObjectHideFlags: 0

@@ -7,7 +7,7 @@ using TitanOrbit.Systems;
 using TitanOrbit.Networking;
 namespace TitanOrbit.Entities
 {
-    /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by damage/scale.</summary>
+    /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by ship visual scale multiplier.</summary>
     public enum BulletShape
     {
         Round,
@@ -18,7 +18,7 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Bullet - hits asteroids and ships, despawns on hit or max distance/lifetime.
     /// Uses path raycast to prevent tunneling when close.
-    /// Simple visual shapes (round, square, zigzag); size reflects damage.
+    /// Simple visual shapes (round, square, zigzag); size reflects cannon bulletScale and ship upgrades.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class Bullet : NetworkBehaviour
@@ -41,7 +41,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private GameObject[] bulletVisualPrefabOptions;
         [Tooltip("Bullet color (core and tail). Fully applied in built-in VFX style.")]
         [SerializeField] private Color proceduralBulletColor = new Color(0.75f, 0.88f, 1f); // Bluish white energy
-        [Tooltip("Overall scale. Final = this × scale from cannon damage.")]
+        [Tooltip("Overall scale. Final = this × multiplier from ship (cannon bulletScale × fire power / weapon scaling).")]
         [SerializeField] private float bulletVisualScale = 1.2f;
         [Header("Core (front of bullet)")]
         [Tooltip("Core shape: Round (sphere) or Square (cube).")]

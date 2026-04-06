@@ -1,8 +1,10 @@
 using UnityEngine;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace TitanOrbit.Entities
@@ -51,6 +53,7 @@ namespace TitanOrbit.Entities
         private float serverNoImmediatePickupUntilTime;
         private bool serverInitializedBeforeSpawn;
         private Rigidbody rb;
+        private NetworkTransform networkTransform;
         private Renderer gemRenderer;
         private float effectivePickupRadius; // Scaled pickup radius based on gem size
         /// <summary>When true, gem is in pool (disabled); skip logic and do not run attraction.</summary>
@@ -68,6 +71,7 @@ namespace TitanOrbit.Entities
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
+            networkTransform = GetComponent<NetworkTransform>();
             effectivePickupRadius = pickupRadius;
             var renderer = GetComponent<Renderer>();
             if (renderer != null)
@@ -286,6 +290,7 @@ namespace TitanOrbit.Entities
         public void ServerReturnToPool()
         {
             if (!IsServer) return;
+            StopCoroutineSafe_ServerReapplyExplosionVelocity();
             value.Value = 0f;
             depositTargetPlanetId.Value = 0;
             magnetPriorityShipId.Value = 0;
@@ -306,6 +311,75 @@ namespace TitanOrbit.Entities
         public void ServerActivateFromPool()
         {
             if (IsServer) isInPool.Value = false;
+        }
+
+        /// <summary>
+        /// Server only. After <see cref="ServerActivateFromPool"/>, snap <see cref="NetworkTransform"/> internal state
+        /// (pooled gems were at origin) and apply explosion velocity.
+        /// Order matters: moving the transform via Netcode can sync after physics and clear rigidbody velocity in the same frame,
+        /// so we re-apply velocity and once more after the next physics step.
+        /// </summary>
+        /// <param name="linearDamping">Pass null for default slowdown drag; deposit gems use 0.</param>
+        public void ServerFinishPooledSpawn(Vector3 worldPosition, Vector3 linearVelocity, Vector3 angularVelocity, float? linearDamping = null)
+        {
+            if (!IsServer) return;
+
+            Quaternion rot = transform.rotation;
+            Vector3 scale = transform.localScale;
+            float damp = linearDamping ?? slowdownDrag;
+
+            if (rb != null)
+            {
+                // Server must simulate; proxies stay kinematic via NetworkRigidbody.
+                rb.isKinematic = false;
+                rb.position = worldPosition;
+                rb.linearVelocity = linearVelocity;
+                rb.angularVelocity = angularVelocity;
+                rb.linearDamping = damp;
+                rb.WakeUp();
+            }
+            else
+            {
+                transform.SetPositionAndRotation(worldPosition, rot);
+            }
+
+            if (networkTransform != null)
+                networkTransform.SetState(worldPosition, rot, scale, teleportDisabled: false);
+
+            if (rb != null)
+            {
+                rb.position = worldPosition;
+                rb.linearVelocity = linearVelocity;
+                rb.angularVelocity = angularVelocity;
+                rb.linearDamping = damp;
+                rb.WakeUp();
+            }
+
+            StopCoroutineSafe_ServerReapplyExplosionVelocity();
+            _serverReapplyExplosionVelocityRoutine = StartCoroutine(ServerReapplyExplosionVelocityAfterPhysicsSync(linearVelocity, angularVelocity, damp));
+        }
+
+        private Coroutine _serverReapplyExplosionVelocityRoutine;
+
+        private void StopCoroutineSafe_ServerReapplyExplosionVelocity()
+        {
+            if (_serverReapplyExplosionVelocityRoutine != null)
+            {
+                StopCoroutine(_serverReapplyExplosionVelocityRoutine);
+                _serverReapplyExplosionVelocityRoutine = null;
+            }
+        }
+
+        private IEnumerator ServerReapplyExplosionVelocityAfterPhysicsSync(Vector3 linearVelocity, Vector3 angularVelocity, float damp)
+        {
+            yield return new WaitForFixedUpdate();
+            _serverReapplyExplosionVelocityRoutine = null;
+            if (!IsServer || rb == null || isInPool.Value) yield break;
+            rb.isKinematic = false;
+            rb.linearVelocity = linearVelocity;
+            rb.angularVelocity = angularVelocity;
+            rb.linearDamping = damp;
+            rb.WakeUp();
         }
 
         private void ClearServerPickupGate()

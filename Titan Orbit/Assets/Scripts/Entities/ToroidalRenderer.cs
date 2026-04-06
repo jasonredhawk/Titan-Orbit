@@ -35,10 +35,11 @@ namespace TitanOrbit.Entities
             // Local player: no wrap on BankPivot. Non-local ships: LateUpdate positions BankPivot toroidally.
             if (_isShip)
                 return;
-            // Visual child for non-kinematic movers (gems, server bullets) and for bullets on clients:
-            // NetworkRigidbody keeps client bullet RBs kinematic while NetworkTransform drives the root.
+            // Visual child for non-kinematic movers and for networked movers that are kinematic on clients:
+            // NetworkRigidbody keeps client RBs kinematic while NetworkTransform drives the root.
             bool isBullet = GetComponent<Bullet>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet))
+            bool isGem = GetComponent<Gem>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem))
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null)
@@ -61,7 +62,8 @@ namespace TitanOrbit.Entities
             if (_isShip)
                 return;
             bool isBullet = GetComponent<Bullet>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet) && visualChild == null)
+            bool isGem = GetComponent<Gem>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem) && visualChild == null)
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null) visualChild = v;
@@ -160,7 +162,10 @@ namespace TitanOrbit.Entities
 
             if (rb != null)
             {
-                logicalPosition = ToroidalMap.WrapPosition(rb.position);
+                // On non-authority peers, NetworkRigidbody is often kinematic and NetworkTransform drives transform.
+                // Use transform position in that case so we don't sample stale rb.position and freeze visuals.
+                Vector3 sourcePos = rb.isKinematic ? transform.position : rb.position;
+                logicalPosition = ToroidalMap.WrapPosition(sourcePos);
                 logicalPositionStored = true;
             }
             else if (!logicalPositionStored)
