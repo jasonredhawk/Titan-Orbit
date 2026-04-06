@@ -242,6 +242,8 @@ namespace TitanOrbit.Entities
         private Vector3 _pendingAsteroidBounceVelocity;
         /// <summary>XZ velocity at end of last FixedUpdate (pre-collision reference when relativeVelocity is ambiguous).</summary>
         private Vector3 _lastFixedPlayPlaneVelocity;
+        /// <summary>Cooldown for ship–ship scrape sounds from toroidal overlap (pair key → last Time.time).</summary>
+        private readonly Dictionary<ulong, float> _toroidalShipPairLastSoundTime = new Dictionary<ulong, float>();
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
 
@@ -1745,7 +1747,10 @@ namespace TitanOrbit.Entities
                 }
                 return;
             }
-            
+
+            if (!gemMoonDocked.Value)
+                TickToroidalShipVsShipCollision();
+
             // AI-controlled ships have their own movement; don't apply player/orbit movement
             if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
             if (!IsOwner) return;
@@ -3568,6 +3573,86 @@ namespace TitanOrbit.Entities
         private void OnCollisionStay(Collision collision)
         {
             // Clean slate collision behavior: let Unity physics handle response.
+        }
+
+        private static ulong ToroidalShipPairKey(int instanceIdA, int instanceIdB)
+        {
+            uint ua = (uint)instanceIdA;
+            uint ub = (uint)instanceIdB;
+            return ua <= ub ? ((ulong)ua << 32) | ub : ((ulong)ub << 32) | ua;
+        }
+
+        private float GetShipCollisionRadiusXZ()
+        {
+            Collider c = rootCollider != null ? rootCollider : GetComponent<Collider>();
+            if (c == null) return 0.05f;
+            Bounds b = c.bounds;
+            return Mathf.Max(0.05f, Mathf.Max(b.extents.x, b.extents.z) * 0.6f);
+        }
+
+        /// <summary>
+        /// Ships keep unwrapped world positions; Unity colliders only see raw separation, so hulls can overlap
+        /// on the torus without <see cref="OnCollisionEnter"/>. Resolve overlap using shortest toroidal offset
+        /// (each authoritative body corrects itself, matching owner physics + server AI).
+        /// </summary>
+        private void TickToroidalShipVsShipCollision()
+        {
+            bool auth = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+            if (!auth || rb == null) return;
+
+            Vector3 myPos = rb.position;
+            myPos.y = 0f;
+            float myR = GetShipCollisionRadiusXZ();
+
+            for (int i = 0; i < AllStarships.Count; i++)
+            {
+                Starship other = AllStarships[i];
+                if (other == null || other == this) continue;
+                if (other.IsDead || other.GemMoonDocked) continue;
+
+                Rigidbody otherRb = other.GetComponent<Rigidbody>();
+                if (otherRb == null) continue;
+
+                Vector3 otherPos = otherRb.position;
+                otherPos.y = 0f;
+
+                float dist = ToroidalMap.ToroidalDistance(myPos, otherPos);
+                float otherR = other.GetShipCollisionRadiusXZ();
+                float combined = myR + otherR;
+                if (dist >= combined - 0.0001f) continue;
+
+                Vector3 toOther = ToroidalMap.ShortestWorldOffsetXZ(myPos, otherPos);
+                if (toOther.sqrMagnitude < 1e-10f)
+                {
+                    toOther = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+                    if (toOther.sqrMagnitude < 1e-10f)
+                        toOther = transform.forward;
+                    toOther.y = 0f;
+                }
+                Vector3 n = toOther.normalized;
+
+                float penetration = combined - Mathf.Max(dist, 0.0001f);
+                float half = penetration * 0.5f;
+                Vector3 newPos = rb.position + (-n) * half;
+                rb.MovePosition(newPos);
+
+                Vector3 vMe = rb.linearVelocity;
+                vMe.y = 0f;
+                Vector3 vO = otherRb.linearVelocity;
+                vO.y = 0f;
+                float relSpeed = (vMe - vO).magnitude;
+                if (relSpeed >= 2f && AudioManager.Instance != null)
+                {
+                    ulong pairKey = ToroidalShipPairKey(GetInstanceID(), other.GetInstanceID());
+                    float now = Time.time;
+                    if (!_toroidalShipPairLastSoundTime.TryGetValue(pairKey, out float last) || now - last >= 0.22f)
+                    {
+                        _toroidalShipPairLastSoundTime[pairKey] = now;
+                        float pitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relSpeed));
+                        AudioManager.Instance.PlayShipCollisionSound(pitch);
+                    }
+                }
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]
