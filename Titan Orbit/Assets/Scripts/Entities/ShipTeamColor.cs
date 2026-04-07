@@ -18,6 +18,8 @@ namespace TitanOrbit.Entities
 
         [Tooltip("If set, only these renderers get team color (two-tone: body stays dark grey). Leave empty to color entire ship.")]
         [SerializeField] private Renderer[] accentRenderers;
+        [Tooltip("Legacy mode: apply runtime _BaseColor tint each frame. Disable when using team-specific materials from ShipFamilyDefinition.")]
+        [SerializeField] private bool enableLegacyTint = false;
 
         private Starship starship;
         private MaterialPropertyBlock propBlock;
@@ -44,6 +46,7 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            if (!enableLegacyTint) return;
             float t0 = Time.realtimeSinceStartup;
             Color c = GetTeamColor(starship.ShipTeam);
             var targetRenderers = GetAccentRenderers();

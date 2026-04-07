@@ -362,6 +362,7 @@ namespace TitanOrbit.Entities
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
         private GameObject lastVisualApplyPrefab;
+        private ShipFamilyDefinition currentVisualFamilyDefinition;
         /// <summary>Last chassis index we applied (so we re-apply when buying a new ship). -2 = never applied; server uses this to apply default AstroEagle_01 once.</summary>
         private int _lastAppliedChassisIndex = -2;
 
@@ -947,6 +948,10 @@ namespace TitanOrbit.Entities
 
         private void ApplyHullIdentityColor()
         {
+            // Prefer authored per-team materials from ShipFamilyDefinition over runtime color tinting.
+            if (ApplyTeamMaterialsFromShipFamily())
+                return;
+
             if (shipData == null || shipData.shipColor == Color.white) return;
             Renderer mr = visualRoot != null ? visualRoot.GetComponentInChildren<Renderer>() : null;
             if (mr == null) mr = GetComponent<Renderer>();
@@ -955,6 +960,49 @@ namespace TitanOrbit.Entities
             mr.GetPropertyBlock(hullColorBlock);
             hullColorBlock.SetColor("_BaseColor", shipData.shipColor);
             mr.SetPropertyBlock(hullColorBlock);
+        }
+
+        private bool ApplyTeamMaterialsFromShipFamily()
+        {
+            if (currentVisualFamilyDefinition == null)
+                return false;
+
+            List<Material> teamMats = currentVisualFamilyDefinition.GetMaterialsForTeam(shipTeam.Value);
+            if (teamMats == null || teamMats.Count == 0)
+                return false;
+
+            Transform root = GetPrefabTransform();
+            if (root == null)
+                return false;
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0)
+                return false;
+
+            bool appliedAny = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+                if (r == null) continue;
+                if (r is ParticleSystemRenderer) continue; // Never recolor VFX/jet flames via ship team materials.
+                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
+
+                Material[] current = r.sharedMaterials;
+                if (current == null || current.Length == 0)
+                    continue;
+
+                Material[] replaced = new Material[current.Length];
+                for (int s = 0; s < current.Length; s++)
+                {
+                    Material chosen = teamMats[s % teamMats.Count];
+                    replaced[s] = chosen != null ? chosen : current[s];
+                }
+
+                r.sharedMaterials = replaced;
+                appliedAny = true;
+            }
+
+            return appliedAny;
         }
 
         public override void OnNetworkSpawn()
@@ -1047,6 +1095,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             shipTeam.Value = team;
+            ApplyHullIdentityColor();
             StartInOrbitAroundHomePlanet();
         }
 
@@ -1071,6 +1120,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             shipTeam.Value = team;
+            ApplyHullIdentityColor();
         }
 
         /// <summary>Server: position ship in orbit around its team's home planet at spawn.</summary>
@@ -4648,6 +4698,7 @@ namespace TitanOrbit.Entities
             {
                 WarnOnceMissingShipFamilyStatsPreview(shipPrefab, preview != null);
             }
+            currentVisualFamilyDefinition = previewFamilyDef;
 
             // Remove our current visual children, then adopt prefab root's children
             for (int i = root.childCount - 1; i >= 0; i--)
@@ -4720,6 +4771,7 @@ namespace TitanOrbit.Entities
             // Parse chassis component names (e.g. AstroEagle_Weapon, CraizanStar_Engine_2). Derive family from prefab name.
             string familyPrefix = DeriveFamilyPrefixFromPrefab(shipPrefab);
             ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef, matchedComponentIds, perComponentStatsList);
+            ApplyHullIdentityColor();
         }
 
         /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>

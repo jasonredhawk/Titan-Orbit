@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Data
 {
@@ -286,6 +287,15 @@ namespace TitanOrbit.Data
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
     }
 
+    [Serializable]
+    public class ShipFamilyTeamMaterialSet
+    {
+        [Tooltip("Team this material list applies to.")]
+        public TeamManager.Team team = TeamManager.Team.TeamA;
+        [Tooltip("Materials used for this team. They are assigned to ship component renderers in slot order (cycled if needed).")]
+        public List<Material> materials = new List<Material>();
+    }
+
     /// <summary>
     /// ScriptableObject describing all component stats for a single ship family (e.g. AstroEagle).
     /// Child GameObjects named "Family_ComponentId" can be mapped to entries here.
@@ -308,6 +318,10 @@ namespace TitanOrbit.Data
         [Header("Upgrade Tree (auto-generated, editable)")]
         [Tooltip("Chassis variants for this family, ordered by power and annotated with minimum planet level.")]
         public List<ShipFamilyChassisTierEntry> upgradeTree = new List<ShipFamilyChassisTierEntry>();
+
+        [Header("Team Materials")]
+        [Tooltip("Per-team material lists applied to ship component renderers at runtime. Use this instead of per-renderer tinting.")]
+        public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
 
         [Header("Menu preview generation (editor)")]
         [Tooltip("Clear color when rendering top-down PNGs into MenuPreviews/.")]
@@ -377,6 +391,22 @@ namespace TitanOrbit.Data
                 }
             }
             return false;
+        }
+
+        /// <summary>Returns the configured material list for the given team, or null when not configured.</summary>
+        public List<Material> GetMaterialsForTeam(TeamManager.Team team)
+        {
+            if (teamMaterials == null || teamMaterials.Count == 0)
+                return null;
+            for (int i = 0; i < teamMaterials.Count; i++)
+            {
+                var set = teamMaterials[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == team)
+                    return set.materials;
+            }
+            return null;
         }
     }
 }

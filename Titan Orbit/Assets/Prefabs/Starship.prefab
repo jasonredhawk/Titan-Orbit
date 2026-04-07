@@ -257,16 +257,19 @@ MonoBehaviour:
   useThrusterVfxForAcceleration: 1
   thrusterJetFlameBank:
   - colorName: Blue
-    prefab: {fileID: 186012, guid: 76669db9a2fd1f54cb72f1683b19daf7, type: 3}
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
   - colorName: Green
-    prefab: {fileID: 127778, guid: 02b9f508da441f8488afe035bd5b660f, type: 3}
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
   - colorName: Purple
-    prefab: {fileID: 116864, guid: ecf8688379cd96f4d828079c0b84798f, type: 3}
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
   - colorName: Red
-    prefab: {fileID: 161394, guid: 8834f1c7fd93cde4b8adb8a52eb0cc04, type: 3}
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
   - colorName: Yellow
-    prefab: {fileID: 143470, guid: 43c25e70f07456d46a553d462f530c0a, type: 3}
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+  thrusterVfxLocalOffset: {x: 0, y: 0, z: -0.2}
   thrusterVfxLocalEuler: {x: 0, y: 180, z: 0}
+  thrusterVfxIdleScale: 0.1
+  thrusterVfxTransitionSpeed: 3
   attributeScaleExaggeration: 0.15
   componentScaleVisibility: 1
   wingGemScaleBoost: 1.67
