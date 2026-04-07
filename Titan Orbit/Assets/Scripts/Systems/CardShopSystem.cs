@@ -202,10 +202,10 @@ namespace TitanOrbit.Systems
             return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetChassisByChassisId(chassisId) : null;
         }
 
-        /// <summary>2D menu thumbnail from <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/> (editor-generated or hand-assigned).</summary>
-        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId)
+        /// <summary>2D menu thumbnail for a chassis. Prefers team-specific previews when available.</summary>
+        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
         {
-            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetMenuPreviewSpriteForChassisId(chassisId) : null;
+            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetMenuPreviewSpriteForChassisId(chassisId, team) : null;
         }
 
         /// <summary>Player-facing upgrade tree name from <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/>, or null if unset.</summary>
@@ -236,12 +236,12 @@ namespace TitanOrbit.Systems
             return GetUpgradeTreeShipNameForChassisId(cid);
         }
 
-        /// <summary>Menu thumbnail for an upgrade-tree slot (resolves chassis from ladder, then sprite).</summary>
-        public Sprite GetMenuPreviewSpriteForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        /// <summary>Menu thumbnail for an upgrade-tree slot (resolves chassis from ladder, then sprite). Prefers team-specific previews when available.</summary>
+        public Sprite GetMenuPreviewSpriteForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex, TeamManager.Team team = TeamManager.Team.None)
         {
             string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
             if (string.IsNullOrEmpty(cid)) return null;
-            return GetMenuPreviewSpriteForChassisId(cid);
+            return GetMenuPreviewSpriteForChassisId(cid, team);
         }
 
         /// <summary>Returns true if the ship can purchase a level upgrade via UpgradeTree and/or family upgrade tree chassis entries.</summary>

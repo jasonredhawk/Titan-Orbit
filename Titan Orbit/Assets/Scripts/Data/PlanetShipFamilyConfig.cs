@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Data
 {
@@ -139,8 +140,8 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Menu thumbnail from <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/> for this chassis, searching families by chassisId prefix.</summary>
-        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId)
+        /// <summary>Menu thumbnail for this chassis. Prefers team-specific <see cref="ShipFamilyChassisTierEntry.teamMenuPreviewSprites"/>, then falls back to <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/>.</summary>
+        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
         {
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
@@ -156,7 +157,21 @@ namespace TitanOrbit.Data
 
                 foreach (var tier in f.shipFamilyDefinition.upgradeTree)
                 {
-                    if (tier != null && tier.chassisId == chassisId && tier.menuPreviewSprite != null)
+                    if (tier == null || tier.chassisId != chassisId)
+                        continue;
+
+                    if (tier.teamMenuPreviewSprites != null && tier.teamMenuPreviewSprites.Count > 0)
+                    {
+                        for (int i = 0; i < tier.teamMenuPreviewSprites.Count; i++)
+                        {
+                            var v = tier.teamMenuPreviewSprites[i];
+                            if (v == null || v.sprite == null) continue;
+                            if (team != TeamManager.Team.None && v.team == team)
+                                return v.sprite;
+                        }
+                    }
+
+                    if (tier.menuPreviewSprite != null)
                         return tier.menuPreviewSprite;
                 }
                 return null;

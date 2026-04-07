@@ -276,6 +276,8 @@ namespace TitanOrbit.Data
 
         [Tooltip("Orbit store / upgrade tree thumbnail. Assign manually or generate in editor (Ship Family inspector: Generate Menu Preview Images).")]
         public Sprite menuPreviewSprite;
+        [Tooltip("Per-team/material-variant menu preview sprites generated from this family's team material sets.")]
+        public List<ShipFamilyMenuPreviewSprite> teamMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
 
         [Tooltip("Minimum home planet level required to unlock this chassis in the upgrade tree.")]
         public int minHomePlanetLevel = 1;
@@ -288,8 +290,20 @@ namespace TitanOrbit.Data
     }
 
     [Serializable]
+    public class ShipFamilyMenuPreviewSprite
+    {
+        [Tooltip("Variant label used in file names and lookup (e.g. TeamA, Red, Blue).")]
+        public string variantName;
+        [Tooltip("Optional team this preview corresponds to.")]
+        public TeamManager.Team team = TeamManager.Team.None;
+        public Sprite sprite;
+    }
+
+    [Serializable]
     public class ShipFamilyTeamMaterialSet
     {
+        [Tooltip("Optional label for this material set (e.g. Red, Blue, Orange). Used for menu preview variant names.")]
+        public string variantName;
         [Tooltip("Team this material list applies to.")]
         public TeamManager.Team team = TeamManager.Team.TeamA;
         [Tooltip("Materials used for this team. They are assigned to ship component renderers in slot order (cycled if needed).")]

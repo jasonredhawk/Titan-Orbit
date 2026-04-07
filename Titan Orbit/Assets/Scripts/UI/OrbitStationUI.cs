@@ -1376,12 +1376,17 @@ namespace TitanOrbit.UI
             if (shipTreeCenterRow == null) return;
             var hlg = shipTreeCenterRow.GetComponent<HorizontalLayoutGroup>();
             if (hlg == null) return;
-            // UpperLeft: single child (tree canvas) aligns to the row's left. UpperCenter + stale
-            // LayoutElement width caused the canvas to sit wrong and look shifted/right-heavy.
-            hlg.childAlignment = TextAnchor.UpperLeft;
-            hlg.padding = _moonDockLayoutActive && _moonDockShipTreeHorizontal
-                ? new RectOffset(12, 12, 0, 0)
-                : new RectOffset(8, 12, 0, 0);
+            if (_moonDockLayoutActive && _moonDockShipTreeHorizontal)
+            {
+                // Moon dock horizontal tree is intentionally left-aligned.
+                hlg.childAlignment = TextAnchor.UpperLeft;
+                hlg.padding = new RectOffset(12, 12, 0, 0);
+                return;
+            }
+
+            // Orbit menu tree should stay centered in the parent panel regardless of aspect ratio.
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.padding = new RectOffset(0, 0, 0, 0);
         }
 
         private string GetShipDisplayName(ShipUpgradeNode node, int level, int branchIndex)
@@ -1405,9 +1410,10 @@ namespace TitanOrbit.UI
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return null;
+            TeamManager.Team team = currentShip.ShipTeam;
             if (level <= 1)
-                return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
+                return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, team);
+            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex, team);
         }
 
         private string GetStarterShipDisplayName()

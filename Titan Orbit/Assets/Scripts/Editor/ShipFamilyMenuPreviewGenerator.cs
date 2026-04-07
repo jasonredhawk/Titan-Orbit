@@ -4,6 +4,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using TitanOrbit.Data;
+using TitanOrbit.Core;
 
 namespace TitanOrbit.Editor
 {
@@ -16,6 +17,13 @@ namespace TitanOrbit.Editor
     {
         private const int PreviewLayer = 30;
         private const int RenderSize = 512;
+
+        private struct PreviewVariant
+        {
+            public string name;
+            public TeamManager.Team team;
+            public Material[] materials;
+        }
 
         [MenuItem("Titan Orbit/Generate Menu Previews For Selected Ship Family")]
         public static void MenuGenerateSelected()
@@ -54,6 +62,7 @@ namespace TitanOrbit.Editor
             string outFolder = $"{defDir}/MenuPreviews";
             EnsureAssetFolder(outFolder);
 
+            PreviewVariant[] variants = BuildPreviewVariants(def);
             int done = 0;
             int skipped = 0;
 
@@ -68,47 +77,100 @@ namespace TitanOrbit.Editor
 
                 string chassis = string.IsNullOrEmpty(tier.chassisId) ? $"tier_{i}" : tier.chassisId;
                 string fileBase = SanitizeFileName(chassis);
-                string pngPath = $"{outFolder}/{fileBase}.png";
+                if (tier.teamMenuPreviewSprites == null)
+                    tier.teamMenuPreviewSprites = new System.Collections.Generic.List<ShipFamilyMenuPreviewSprite>();
+                else
+                    tier.teamMenuPreviewSprites.Clear();
 
-                if (!RenderTopDownToPng(tier.prefab, def, pngPath))
+                for (int v = 0; v < variants.Length; v++)
                 {
-                    Debug.LogWarning($"Menu preview: skip (no renderers?) {chassis}");
-                    skipped++;
-                    continue;
-                }
+                    PreviewVariant variant = variants[v];
+                    string variantFolder = $"{outFolder}/{SanitizeFileName(variant.name)}";
+                    EnsureAssetFolder(variantFolder);
+                    string pngPath = $"{variantFolder}/{fileBase}.png";
 
-                AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
-                ConfigureSpriteImporter(pngPath);
-
-                var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
-                if (sprite == null)
-                {
-                    var objs = AssetDatabase.LoadAllAssetsAtPath(pngPath);
-                    foreach (var a in objs)
+                    if (!RenderTopDownToPng(tier.prefab, def, pngPath, variant.materials))
                     {
-                        if (a is Sprite s)
+                        Debug.LogWarning($"Menu preview: skip (no renderers?) {chassis} [{variant.name}]");
+                        skipped++;
+                        continue;
+                    }
+
+                    AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
+                    ConfigureSpriteImporter(pngPath);
+
+                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
+                    if (sprite == null)
+                    {
+                        var objs = AssetDatabase.LoadAllAssetsAtPath(pngPath);
+                        foreach (var a in objs)
                         {
-                            sprite = s;
-                            break;
+                            if (a is Sprite s)
+                            {
+                                sprite = s;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (sprite != null)
-                {
-                    tier.menuPreviewSprite = sprite;
-                    done++;
+                    if (sprite != null)
+                    {
+                        tier.teamMenuPreviewSprites.Add(new ShipFamilyMenuPreviewSprite
+                        {
+                            variantName = variant.name,
+                            team = variant.team,
+                            sprite = sprite
+                        });
+                        if (v == 0 || tier.menuPreviewSprite == null)
+                            tier.menuPreviewSprite = sprite; // Backward compatibility for existing UI.
+                        done++;
+                    }
+                    else
+                        Debug.LogWarning($"Menu preview: imported but no Sprite at {pngPath}");
                 }
-                else
-                    Debug.LogWarning($"Menu preview: imported but no Sprite at {pngPath}");
             }
 
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
-            EditorUtility.DisplayDialog("Menu Previews", $"Generated {done} image(s). Skipped {skipped} (no prefab or no mesh). Output: {outFolder}", "OK");
+            EditorUtility.DisplayDialog("Menu Previews", $"Generated {done} image(s) across {variants.Length} variant(s). Skipped {skipped} (no prefab or no mesh). Output: {outFolder}", "OK");
         }
 
-        private static bool RenderTopDownToPng(GameObject prefab, ShipFamilyDefinition def, string assetPathFull)
+        private static PreviewVariant[] BuildPreviewVariants(ShipFamilyDefinition def)
+        {
+            var list = new System.Collections.Generic.List<PreviewVariant>();
+            if (def != null && def.teamMaterials != null)
+            {
+                for (int i = 0; i < def.teamMaterials.Count; i++)
+                {
+                    var set = def.teamMaterials[i];
+                    if (set == null || set.materials == null || set.materials.Count == 0)
+                        continue;
+                    string label = !string.IsNullOrWhiteSpace(set.variantName)
+                        ? set.variantName.Trim()
+                        : set.team.ToString();
+                    list.Add(new PreviewVariant
+                    {
+                        name = string.IsNullOrEmpty(label) ? $"Variant_{i + 1}" : label,
+                        team = set.team,
+                        materials = set.materials.ToArray()
+                    });
+                }
+            }
+
+            if (list.Count == 0)
+            {
+                list.Add(new PreviewVariant
+                {
+                    name = "Base",
+                    team = TeamManager.Team.None,
+                    materials = null
+                });
+            }
+
+            return list.ToArray();
+        }
+
+        private static bool RenderTopDownToPng(GameObject prefab, ShipFamilyDefinition def, string assetPathFull, Material[] overrideMaterials)
         {
             string prefabPath = AssetDatabase.GetAssetPath(prefab);
             GameObject instance = !string.IsNullOrEmpty(prefabPath)
@@ -122,6 +184,9 @@ namespace TitanOrbit.Editor
             instance.transform.SetParent(root.transform, false);
             instance.transform.localPosition = Vector3.zero;
             instance.transform.localRotation = Quaternion.identity;
+
+            if (overrideMaterials != null && overrideMaterials.Length > 0)
+                ApplyMaterialOverride(instance, overrideMaterials);
 
             ApplyLayerRecursive(instance, PreviewLayer);
 
@@ -188,6 +253,29 @@ namespace TitanOrbit.Editor
 
             UnityEngine.Object.DestroyImmediate(root);
             return true;
+        }
+
+        private static void ApplyMaterialOverride(GameObject root, Material[] overrideMaterials)
+        {
+            if (root == null || overrideMaterials == null || overrideMaterials.Length == 0)
+                return;
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null) return;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+                if (r == null) continue;
+                if (r is ParticleSystemRenderer) continue;
+                Material[] current = r.sharedMaterials;
+                if (current == null || current.Length == 0) continue;
+                var replaced = new Material[current.Length];
+                for (int s = 0; s < current.Length; s++)
+                {
+                    Material chosen = overrideMaterials[s % overrideMaterials.Length];
+                    replaced[s] = chosen != null ? chosen : current[s];
+                }
+                r.sharedMaterials = replaced;
+            }
         }
 
         private static void ConfigureSpriteImporter(string assetPath)

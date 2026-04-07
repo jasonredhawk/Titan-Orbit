@@ -61,7 +61,7 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Menu Preview Images: writes PNGs to a MenuPreviews folder next to this asset, imports them as Sprites, and assigns each tier's menuPreviewSprite. Re-run anytime after prefab changes.",
+                "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
                 MessageType.None);
         }
 
