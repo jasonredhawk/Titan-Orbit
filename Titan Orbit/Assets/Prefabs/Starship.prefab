@@ -263,8 +263,13 @@ MonoBehaviour:
   asteroidImpactForcePopupMin: 80
   asteroidImpactForceToShipDamageScale: 0.0025
   asteroidImpactForceToAsteroidDamageScale: 0.0015
-  collisionWeaponVfxMinImpactForceN: 25
-  collisionWeaponVfxMinRelativeSpeed: 2
+  useGlobalCollisionVfxTuning: 1
+  collisionWeaponVfxMinImpactForceN: 1000
+  collisionWeaponVfxMaxImpactForceN: 20000
+  collisionWeaponVfxMinRelativeSpeed: 1
+  collisionWeaponVfxMaxRelativeSpeed: 10
+  collisionWeaponVfxMinScaleMultiplier: 0.1
+  collisionWeaponVfxMaxScaleMultiplier: 2
   maxHealth: 100
   healthRegenRate: 6
   healthRegenDelayAfterDamage: 0.35

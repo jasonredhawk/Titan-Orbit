@@ -2556,14 +2556,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipSpeedometerHUD
   speedometerEnabled: 1
   placement: 0
-  panelWidth: 240
-  panelHeight: 40
+  panelWidth: 340
+  panelHeight: 100
+  accelerationBarSmoothing: 5
   horizontalMargin: 20
   verticalMargin: 24
   backgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
   fillColor: {r: 0.35, g: 0.85, b: 1, a: 0.9}
   trackColor: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
   textColor: {r: 0.92, g: 0.95, b: 1, a: 1}
+  accelPositiveColor: {r: 0.25, g: 0.92, b: 0.45, a: 0.92}
+  accelNegativeColor: {r: 0.95, g: 0.28, b: 0.28, a: 0.92}
 --- !u!1 &526755990
 GameObject:
   m_ObjectHideFlags: 0
@@ -8055,6 +8058,12 @@ MonoBehaviour:
   asteroidCollisionEffectDuration: 2
   weaponCollisionImpactBaseScale: 0.5
   weaponCollisionImpactDuration: 3
+  collisionVfxShipMinRelativeSpeed: 1
+  collisionVfxShipMaxRelativeSpeed: 10
+  collisionVfxAsteroidMinImpactForce: 1000
+  collisionVfxAsteroidMaxImpactForce: 20000
+  collisionVfxMinScaleMultiplier: 0.3
+  collisionVfxMaxScaleMultiplier: 4
   gemPickupTextPrefab: {fileID: 0}
   gemPickupTextDuration: 1
   floatingCountFeedbackSettings: {fileID: 0}

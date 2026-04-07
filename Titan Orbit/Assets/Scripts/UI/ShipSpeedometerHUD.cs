@@ -18,7 +18,7 @@ namespace TitanOrbit.UI
     }
 
     /// <summary>
-    /// Speed readout: current horizontal speed vs effective max. Default placement is bottom-left so it does not cover the minimap.
+    /// Speed and mass HUD: horizontal speed bar, bidirectional accelerometer (green accel / red decel), and time-to-max-speed estimate (uses thrust/mass, so it changes with gem load).
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
@@ -28,8 +28,10 @@ namespace TitanOrbit.UI
 
         [Header("Layout")]
         [SerializeField] private SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
-        [SerializeField] private float panelWidth = 240f;
-        [SerializeField] private float panelHeight = 40f;
+        [SerializeField] private float panelWidth = 340f;
+        [SerializeField] private float panelHeight = 100f;
+        [Tooltip("How quickly the accelerometer value catches up to measured acceleration (lower = smoother bar and ACC text).")]
+        [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")] private float accelerationBarSmoothing = 5f;
         [Tooltip("Inset from the left or right screen edge, depending on placement.")]
         [SerializeField, FormerlySerializedAs("rightMargin")] private float horizontalMargin = 20f;
         [Tooltip("Inset from the bottom or top screen edge, depending on placement.")]
@@ -40,11 +42,19 @@ namespace TitanOrbit.UI
         [SerializeField] private Color fillColor = new Color(0.35f, 0.85f, 1f, 0.9f);
         [SerializeField] private Color trackColor = new Color(0.15f, 0.15f, 0.18f, 0.85f);
         [SerializeField] private Color textColor = new Color(0.92f, 0.95f, 1f, 1f);
+        [SerializeField] private Color accelPositiveColor = new Color(0.25f, 0.92f, 0.45f, 0.92f);
+        [SerializeField] private Color accelNegativeColor = new Color(0.95f, 0.28f, 0.28f, 0.92f);
 
         private GameObject rootPanel;
         private Slider speedSlider;
+        private RectTransform accelGreenFill;
+        private RectTransform accelRedFill;
         private TextMeshProUGUI speedLabel;
         private Starship playerShip;
+        private Starship accelSampleShip;
+        private float lastHorizontalSpeed;
+        private float smoothedHorizontalAccel;
+        private bool hasLastHorizontalSpeed;
         private bool uiBuilt;
 
         private void Start()
@@ -84,13 +94,20 @@ namespace TitanOrbit.UI
             bg.color = backgroundColor;
             bg.raycastTarget = false;
 
+            const float pad = 8f;
+            const float labelNormH = 0.34f;
+            const float speedNormTop = 1f;
+            const float speedNormBottom = 0.62f;
+            const float accelNormTop = 0.56f;
+            const float accelNormBottom = 0.38f;
+
             GameObject sliderGo = new GameObject("SpeedBar");
             sliderGo.transform.SetParent(rootPanel.transform, false);
             RectTransform sliderRect = sliderGo.AddComponent<RectTransform>();
-            sliderRect.anchorMin = new Vector2(0f, 0.5f);
-            sliderRect.anchorMax = new Vector2(1f, 1f);
-            sliderRect.offsetMin = new Vector2(8f, 4f);
-            sliderRect.offsetMax = new Vector2(-8f, -4f);
+            sliderRect.anchorMin = new Vector2(0f, speedNormBottom);
+            sliderRect.anchorMax = new Vector2(1f, speedNormTop);
+            sliderRect.offsetMin = new Vector2(pad, 2f);
+            sliderRect.offsetMax = new Vector2(-pad, -4f);
 
             speedSlider = sliderGo.AddComponent<Slider>();
             speedSlider.minValue = 0f;
@@ -131,20 +148,74 @@ namespace TitanOrbit.UI
             fillImg.raycastTarget = false;
             speedSlider.fillRect = fr;
 
-            GameObject labelGo = new GameObject("SpeedText");
+            GameObject accelRoot = new GameObject("AccelBar");
+            accelRoot.transform.SetParent(rootPanel.transform, false);
+            RectTransform accelRootRect = accelRoot.AddComponent<RectTransform>();
+            accelRootRect.anchorMin = new Vector2(0f, accelNormBottom);
+            accelRootRect.anchorMax = new Vector2(1f, accelNormTop);
+            accelRootRect.offsetMin = new Vector2(pad, 0f);
+            accelRootRect.offsetMax = new Vector2(-pad, 0f);
+
+            GameObject accelTrack = new GameObject("Track");
+            accelTrack.transform.SetParent(accelRoot.transform, false);
+            RectTransform accelTrackRt = accelTrack.AddComponent<RectTransform>();
+            accelTrackRt.anchorMin = Vector2.zero;
+            accelTrackRt.anchorMax = Vector2.one;
+            accelTrackRt.offsetMin = Vector2.zero;
+            accelTrackRt.offsetMax = Vector2.zero;
+            Image accelTrackImg = accelTrack.AddComponent<Image>();
+            accelTrackImg.color = trackColor;
+            accelTrackImg.raycastTarget = false;
+
+            GameObject redGo = new GameObject("DecelFill");
+            redGo.transform.SetParent(accelRoot.transform, false);
+            accelRedFill = redGo.AddComponent<RectTransform>();
+            accelRedFill.anchorMin = new Vector2(0.5f, 0f);
+            accelRedFill.anchorMax = new Vector2(0.5f, 1f);
+            accelRedFill.offsetMin = Vector2.zero;
+            accelRedFill.offsetMax = Vector2.zero;
+            Image redImg = redGo.AddComponent<Image>();
+            redImg.color = accelNegativeColor;
+            redImg.raycastTarget = false;
+
+            GameObject greenGo = new GameObject("AccelFill");
+            greenGo.transform.SetParent(accelRoot.transform, false);
+            accelGreenFill = greenGo.AddComponent<RectTransform>();
+            accelGreenFill.anchorMin = new Vector2(0.5f, 0f);
+            accelGreenFill.anchorMax = new Vector2(0.5f, 1f);
+            accelGreenFill.offsetMin = Vector2.zero;
+            accelGreenFill.offsetMax = Vector2.zero;
+            Image greenImg = greenGo.AddComponent<Image>();
+            greenImg.color = accelPositiveColor;
+            greenImg.raycastTarget = false;
+
+            GameObject centerLine = new GameObject("CenterLine");
+            centerLine.transform.SetParent(accelRoot.transform, false);
+            RectTransform cl = centerLine.AddComponent<RectTransform>();
+            cl.anchorMin = new Vector2(0.5f, 0.1f);
+            cl.anchorMax = new Vector2(0.5f, 0.9f);
+            cl.pivot = new Vector2(0.5f, 0.5f);
+            cl.sizeDelta = new Vector2(1.5f, 0f);
+            Image cli = centerLine.AddComponent<Image>();
+            cli.color = new Color(1f, 1f, 1f, 0.28f);
+            cli.raycastTarget = false;
+
+            GameObject labelGo = new GameObject("HudText");
             labelGo.transform.SetParent(rootPanel.transform, false);
             RectTransform lr = labelGo.AddComponent<RectTransform>();
             lr.anchorMin = new Vector2(0f, 0f);
-            lr.anchorMax = new Vector2(1f, 0.5f);
-            lr.offsetMin = new Vector2(10f, 2f);
+            lr.anchorMax = new Vector2(1f, labelNormH);
+            lr.offsetMin = new Vector2(10f, 4f);
             lr.offsetMax = new Vector2(-10f, -2f);
             speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
-            speedLabel.text = "— / —";
-            speedLabel.fontSize = 16f;
+            speedLabel.text = "—";
+            speedLabel.fontSize = 13f;
+            speedLabel.lineSpacing = -2f;
+            speedLabel.richText = true;
             if (TMP_Settings.defaultFontAsset != null) speedLabel.font = TMP_Settings.defaultFontAsset;
             speedLabel.color = textColor;
             bool alignLeft = placement == SpeedometerPlacement.BottomLeft || placement == SpeedometerPlacement.TopLeft;
-            speedLabel.alignment = alignLeft ? TextAlignmentOptions.MidlineLeft : TextAlignmentOptions.MidlineRight;
+            speedLabel.alignment = alignLeft ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.TopRight;
 
             uiBuilt = true;
         }
@@ -224,7 +295,7 @@ namespace TitanOrbit.UI
 
             if (!uiBuilt)
                 BuildUIIfNeeded();
-            if (rootPanel == null || speedSlider == null || speedLabel == null)
+            if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null)
                 return;
 
             Starship ship = GetPlayerShip();
@@ -233,13 +304,67 @@ namespace TitanOrbit.UI
                 show = false;
             rootPanel.SetActive(show);
             if (!show || ship == null)
+            {
+                hasLastHorizontalSpeed = false;
+                accelSampleShip = null;
+                smoothedHorizontalAccel = 0f;
                 return;
+            }
+
+            if (accelSampleShip != ship)
+            {
+                accelSampleShip = ship;
+                hasLastHorizontalSpeed = false;
+                smoothedHorizontalAccel = 0f;
+            }
 
             float cur = ship.CurrentHorizontalSpeed;
-            float max = Mathf.Max(0.01f, ship.MaxMoveSpeed);
-            speedSlider.value = Mathf.Clamp01(cur / max);
+            float maxSpd = Mathf.Max(0.01f, ship.MaxMoveSpeed);
+            speedSlider.value = Mathf.Clamp01(cur / maxSpd);
+
+            float maxFwd = Mathf.Max(0.01f, ship.MaxHorizontalAcceleration);
+            float maxBrake = Mathf.Max(0.01f, ship.MaxBrakingDeceleration);
             float mass = ship.CurrentMass;
-            speedLabel.text = $"SPD {cur:0.0}/{max:0.0}   MASS {mass:0.0}";
+
+            float dt = Mathf.Max(Time.deltaTime, 1e-5f);
+            float rawAccel = hasLastHorizontalSpeed ? (cur - lastHorizontalSpeed) / dt : 0f;
+            lastHorizontalSpeed = cur;
+            hasLastHorizontalSpeed = true;
+            float k = Mathf.Clamp01(dt * accelerationBarSmoothing);
+            smoothedHorizontalAccel = Mathf.Lerp(smoothedHorizontalAccel, rawAccel, k);
+
+            float scale = Mathf.Max(maxFwd, maxBrake, Mathf.Abs(smoothedHorizontalAccel), 0.01f);
+            float posFrac = smoothedHorizontalAccel > 0f ? Mathf.Clamp01(smoothedHorizontalAccel / scale) : 0f;
+            float negFrac = smoothedHorizontalAccel < 0f ? Mathf.Clamp01(-smoothedHorizontalAccel / scale) : 0f;
+
+            accelGreenFill.anchorMin = new Vector2(0.5f, 0f);
+            accelGreenFill.anchorMax = new Vector2(0.5f + 0.5f * posFrac, 1f);
+            accelGreenFill.offsetMin = Vector2.zero;
+            accelGreenFill.offsetMax = Vector2.zero;
+
+            accelRedFill.anchorMin = new Vector2(0.5f - 0.5f * negFrac, 0f);
+            accelRedFill.anchorMax = new Vector2(0.5f, 1f);
+            accelRedFill.offsetMin = Vector2.zero;
+            accelRedFill.offsetMax = Vector2.zero;
+
+            string spdLine;
+            if (cur >= maxSpd - 0.02f)
+                spdLine = $"SPD {cur:0.0}/{maxSpd:0.0}  ·  <color=#AAAAAA>at max spd</color>";
+            else
+            {
+                float tMax = (maxSpd - cur) / maxFwd;
+                tMax = Mathf.Clamp(tMax, 0f, 999f);
+                spdLine = $"SPD {cur:0.0}/{maxSpd:0.0}  ·  max spd in <color=#AAEEDD>{tMax:0.0}s</color>";
+            }
+
+            string stopPart = cur > 0.35f
+                ? $"  ·  stop in {cur / maxBrake:0.0}s"
+                : string.Empty;
+
+            string accSign = smoothedHorizontalAccel >= 0f ? "+" : "";
+            string line2 = $"ACC {accSign}{smoothedHorizontalAccel:0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
+
+            speedLabel.text = spdLine + stopPart + "\n" + line2;
         }
     }
 }

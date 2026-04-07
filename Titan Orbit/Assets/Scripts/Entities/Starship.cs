@@ -237,10 +237,20 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.0025f;
         [Tooltip("Asteroid collision damage = impact force * this value. Tune separately from ship damage.")]
         [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.0015f;
+        [Tooltip("Use global collision VFX tuning from VisualEffectsManager instead of local values below.")]
+        [SerializeField] private bool useGlobalCollisionVfxTuning = true;
         [Tooltip("Minimum impact force (N) on asteroid hits before spawning weapon-style collision impact VFX.")]
         [SerializeField, Min(0f)] private float collisionWeaponVfxMinImpactForceN = 25f;
+        [Tooltip("Impact force (N) that maps asteroid collision VFX to max severity when using local tuning.")]
+        [SerializeField, Min(0f)] private float collisionWeaponVfxMaxImpactForceN = 1200f;
         [Tooltip("Minimum relative speed (m/s) for ship–ship collision impact VFX (toroidal overlap uses the same threshold).")]
         [SerializeField, Min(0f)] private float collisionWeaponVfxMinRelativeSpeed = 2f;
+        [Tooltip("Relative speed (m/s) that maps ship collision VFX to max severity when using local tuning.")]
+        [SerializeField, Min(0f)] private float collisionWeaponVfxMaxRelativeSpeed = 35f;
+        [Tooltip("Severity 0 maps to this collision VFX scale multiplier when using local tuning.")]
+        [SerializeField, Min(0.01f)] private float collisionWeaponVfxMinScaleMultiplier = 0.35f;
+        [Tooltip("Severity 1 maps to this collision VFX scale multiplier when using local tuning.")]
+        [SerializeField, Min(0.01f)] private float collisionWeaponVfxMaxScaleMultiplier = 1.85f;
 
         private bool _hasPendingAsteroidBounce;
         private Vector3 _pendingAsteroidBounceVelocity;
@@ -640,6 +650,12 @@ namespace TitanOrbit.Entities
         public float MaxMoveSpeed => EffectiveMaxSpeed;
         /// <summary>Current rigidbody mass used by movement, momentum, and collisions.</summary>
         public float CurrentMass => rb != null ? rb.mass : EffectiveMass;
+
+        /// <summary>Approximate max rate of increase of horizontal speed (engine thrust / mass). Decreases when mass rises (e.g. gems). HUD baseline for accelerometer max.</summary>
+        public float MaxHorizontalAcceleration => EffectiveEngineThrust / Mathf.Max(0.5f, CurrentMass);
+
+        /// <summary>Braking deceleration magnitude when space brakes slow the ship (matches applied brake force / mass).</summary>
+        public float MaxBrakingDeceleration => brakeDeceleration;
 
         /// <summary>Raw chassis/base stat with no attribute upgrades and no card bonuses. Used to scale components by percentage increase (current/base).</summary>
         private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth);
@@ -3705,7 +3721,8 @@ namespace TitanOrbit.Entities
             {
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
-                if (relativeSpeed >= collisionWeaponVfxMinRelativeSpeed)
+                float shipVfxMinSpeed = GetCollisionVfxShipMinRelativeSpeed();
+                if (relativeSpeed >= shipVfxMinSpeed)
                 {
                     ContactPoint cp = collision.GetContact(0);
                     Vector3 impactPos = cp.point;
@@ -3713,7 +3730,7 @@ namespace TitanOrbit.Entities
                     outward.y = 0f;
                     if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
                     outward.Normalize();
-                    float sev = Mathf.InverseLerp(collisionWeaponVfxMinRelativeSpeed, 35f, relativeSpeed);
+                    float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(relativeSpeed);
                     TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, collisionSoundPitch);
                 }
                 return;
@@ -3763,9 +3780,9 @@ namespace TitanOrbit.Entities
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
 
-            if (impactForceNewtons >= collisionWeaponVfxMinImpactForceN)
+            if (impactForceNewtons >= GetCollisionVfxAsteroidMinImpactForce())
             {
-                float sev = Mathf.InverseLerp(collisionWeaponVfxMinImpactForceN, 1200f, impactForceNewtons);
+                float sev = ComputeCollisionVfxSeverityFromImpactForce(impactForceNewtons);
                 TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch);
             }
 
@@ -3857,6 +3874,65 @@ namespace TitanOrbit.Entities
             return Mathf.Max(0.05f, Mathf.Max(b.extents.x, b.extents.z) * 0.6f);
         }
 
+        private float GetCollisionVfxShipMinRelativeSpeed()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxShipMinRelativeSpeed;
+            return Mathf.Max(0f, collisionWeaponVfxMinRelativeSpeed);
+        }
+
+        private float GetCollisionVfxShipMaxRelativeSpeed()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxShipMaxRelativeSpeed;
+            float min = GetCollisionVfxShipMinRelativeSpeed();
+            return Mathf.Max(min + 0.01f, collisionWeaponVfxMaxRelativeSpeed);
+        }
+
+        private float GetCollisionVfxAsteroidMinImpactForce()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxAsteroidMinImpactForce;
+            return Mathf.Max(0f, collisionWeaponVfxMinImpactForceN);
+        }
+
+        private float GetCollisionVfxAsteroidMaxImpactForce()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxAsteroidMaxImpactForce;
+            float min = GetCollisionVfxAsteroidMinImpactForce();
+            return Mathf.Max(min + 0.01f, collisionWeaponVfxMaxImpactForceN);
+        }
+
+        private float GetCollisionVfxScaleMinMultiplier()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxMinScaleMultiplier;
+            return Mathf.Max(0.01f, collisionWeaponVfxMinScaleMultiplier);
+        }
+
+        private float GetCollisionVfxScaleMaxMultiplier()
+        {
+            if (VisualEffectsManager.Instance != null)
+                return VisualEffectsManager.Instance.CollisionVfxMaxScaleMultiplier;
+            float min = GetCollisionVfxScaleMinMultiplier();
+            return Mathf.Max(min + 0.01f, collisionWeaponVfxMaxScaleMultiplier);
+        }
+
+        private float ComputeCollisionVfxSeverityFromRelativeSpeed(float relativeSpeed)
+        {
+            float min = GetCollisionVfxShipMinRelativeSpeed();
+            float max = GetCollisionVfxShipMaxRelativeSpeed();
+            return Mathf.InverseLerp(min, max, relativeSpeed);
+        }
+
+        private float ComputeCollisionVfxSeverityFromImpactForce(float impactForceNewtons)
+        {
+            float min = GetCollisionVfxAsteroidMinImpactForce();
+            float max = GetCollisionVfxAsteroidMaxImpactForce();
+            return Mathf.InverseLerp(min, max, impactForceNewtons);
+        }
+
         /// <summary>Bank index for Sci-Fi impact prefab (same as bullets). Returns -1 if no bank.</summary>
         private int GetCollisionImpactBulletBankIndex()
         {
@@ -3877,7 +3953,7 @@ namespace TitanOrbit.Entities
             n.y = 0f;
             if (n.sqrMagnitude < 1e-6f) n = transform.forward;
             n.Normalize();
-            float scaleMul = Mathf.Lerp(0.35f, 1.85f, Mathf.Clamp01(severity01));
+            float scaleMul = Mathf.Lerp(GetCollisionVfxScaleMinMultiplier(), GetCollisionVfxScaleMaxMultiplier(), Mathf.Clamp01(severity01));
             int bank = GetCollisionImpactBulletBankIndex();
             VisualEffectsManager.Instance.SpawnWeaponCollisionImpactServerRpc(
                 impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value);
@@ -3935,7 +4011,7 @@ namespace TitanOrbit.Entities
                 vO.y = 0f;
                 float relSpeed = (vMe - vO).magnitude;
                 bool playSound = relSpeed >= 2f && AudioManager.Instance != null;
-                bool playVfx = relSpeed >= collisionWeaponVfxMinRelativeSpeed && VisualEffectsManager.Instance != null;
+                bool playVfx = relSpeed >= GetCollisionVfxShipMinRelativeSpeed() && VisualEffectsManager.Instance != null;
                 if (playSound || playVfx)
                 {
                     ulong pairKey = ToroidalShipPairKey(GetInstanceID(), other.GetInstanceID());
@@ -3954,7 +4030,7 @@ namespace TitanOrbit.Entities
                             outward.y = 0f;
                             if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
                             outward.Normalize();
-                            float sev = Mathf.InverseLerp(collisionWeaponVfxMinRelativeSpeed, 35f, relSpeed);
+                            float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(relSpeed);
                             TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, pitch);
                         }
                     }

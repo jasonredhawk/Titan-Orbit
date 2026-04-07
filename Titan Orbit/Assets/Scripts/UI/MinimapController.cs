@@ -1552,6 +1552,8 @@ namespace TitanOrbit.UI
             }
             // #endregion
             Vector3 playerPos = playerTransform.position;
+            // 1 world unit → minimap pixels (used for blip sizing and asteroid scale updates every frame)
+            float worldToMinimapScale = displaySize / (minimapRadius * 2f);
             blipsToRemove.Clear();
 
             BuildCurrentAsteroidInstanceIdsFromBlips();
@@ -1586,9 +1588,14 @@ namespace TitanOrbit.UI
 
                 if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
                 {
+                    // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
+                    float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
+                    float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
+                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
+
                     int instanceId = kv.Key.GetInstanceID();
                     asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
-                    asteroidBlipPixelSizeByInstanceId[instanceId] = kv.Value.sizeDelta.x;
+                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
                 }
             }
 
@@ -1695,10 +1702,6 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Calculate consistent scale factor
-            // The minimap shows minimapRadius * 2 world units across displaySize pixels
-            // So 1 world unit = displaySize / (minimapRadius * 2) pixels
-            float worldToMinimapScale = displaySize / (minimapRadius * 2f);
             // Asteroid blip creation scans cached asteroids; throttle so huge asteroid counts don't cost every frame.
             if ((Time.frameCount & 7) == 0)
                 EnsureAsteroidBlips(worldToMinimapScale);
@@ -2243,8 +2246,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Ensure asteroid blips exist and have their static visual state.
-        /// Once created, they are only repositioned by the generic blip loop using toroidal math.
+        /// Ensure asteroid blips exist. Size is updated every frame in the main blip loop when scale changes (respawn, etc.).
         /// </summary>
         private void EnsureAsteroidBlips(float worldToMinimapScale)
         {
@@ -2259,17 +2261,16 @@ namespace TitanOrbit.UI
                 if (a == null || a.IsDestroyed)
                     continue;
 
+                if (blips.ContainsKey(a.transform))
+                    continue;
+
                 // Respect the same cap as before, but only when initially creating blips.
                 if (created >= maxAsteroids)
                     break;
 
-                if (blips.ContainsKey(a.transform))
-                    continue;
-
                 created++;
 
-                // Match blip size to world size: same mapping as planets/home (world units → pixels),
-                // but computed once per asteroid instead of every blip update.
+                // Match blip size to world size: same mapping as planets/home (world units → pixels).
                 float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
                 float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
 

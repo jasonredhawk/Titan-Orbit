@@ -29,6 +29,19 @@ namespace TitanOrbit.Systems
         [Tooltip("Base scale for hull/asteroid collision bursts (matches Bullet impactEffectScale; final scale is this × severity from Starship).")]
         [SerializeField] private float weaponCollisionImpactBaseScale = 0.5f;
         [SerializeField] private float weaponCollisionImpactDuration = 3f;
+        [Header("Collision VFX Tuning")]
+        [Tooltip("Ship-ship: minimum relative speed required before weapon-style collision VFX can spawn.")]
+        [SerializeField, Min(0f)] private float collisionVfxShipMinRelativeSpeed = 2f;
+        [Tooltip("Ship-ship: relative speed that maps to maximum collision VFX severity.")]
+        [SerializeField, Min(0f)] private float collisionVfxShipMaxRelativeSpeed = 35f;
+        [Tooltip("Ship-asteroid: minimum impact force (N) required before weapon-style collision VFX can spawn.")]
+        [SerializeField, Min(0f)] private float collisionVfxAsteroidMinImpactForce = 25f;
+        [Tooltip("Ship-asteroid: impact force (N) that maps to maximum collision VFX severity.")]
+        [SerializeField, Min(0f)] private float collisionVfxAsteroidMaxImpactForce = 1200f;
+        [Tooltip("Severity 0 maps to this scale multiplier before base impact scale is applied.")]
+        [SerializeField, Min(0.01f)] private float collisionVfxMinScaleMultiplier = 0.35f;
+        [Tooltip("Severity 1 maps to this scale multiplier before base impact scale is applied.")]
+        [SerializeField, Min(0.01f)] private float collisionVfxMaxScaleMultiplier = 1.85f;
         [Header("Gem Pickup Text")]
         [SerializeField] private GameObject gemPickupTextPrefab;
         [SerializeField] private float gemPickupTextDuration = 1f;
@@ -71,6 +84,13 @@ namespace TitanOrbit.Systems
         [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
         [SerializeField] private Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
         private int floatingPopupSequence;
+
+        public float CollisionVfxShipMinRelativeSpeed => Mathf.Max(0f, collisionVfxShipMinRelativeSpeed);
+        public float CollisionVfxShipMaxRelativeSpeed => Mathf.Max(CollisionVfxShipMinRelativeSpeed + 0.01f, collisionVfxShipMaxRelativeSpeed);
+        public float CollisionVfxAsteroidMinImpactForce => Mathf.Max(0f, collisionVfxAsteroidMinImpactForce);
+        public float CollisionVfxAsteroidMaxImpactForce => Mathf.Max(CollisionVfxAsteroidMinImpactForce + 0.01f, collisionVfxAsteroidMaxImpactForce);
+        public float CollisionVfxMinScaleMultiplier => Mathf.Max(0.01f, collisionVfxMinScaleMultiplier);
+        public float CollisionVfxMaxScaleMultiplier => Mathf.Max(CollisionVfxMinScaleMultiplier + 0.01f, collisionVfxMaxScaleMultiplier);
 
         private void Awake()
         {
@@ -417,7 +437,8 @@ namespace TitanOrbit.Systems
             Quaternion rot = Quaternion.LookRotation(n, Vector3.up);
             GameObject go = Instantiate(prefab, position, rot);
             float mul = Mathf.Max(0.12f, scaleMultiplier);
-            go.transform.localScale = Vector3.one * (weaponCollisionImpactBaseScale * mul);
+            float finalScale = weaponCollisionImpactBaseScale * mul;
+            ApplyCollisionImpactVisualScale(go, finalScale);
             FixAllIn1VfxForUrp(go);
             SetAudioPitchInHierarchy(go, audioPitch);
             Destroy(go, weaponCollisionImpactDuration);
@@ -432,6 +453,50 @@ namespace TitanOrbit.Systems
             {
                 if (sources[i] != null)
                     sources[i].pitch = pitch;
+            }
+        }
+
+        /// <summary>
+        /// Uniformly scales impact VFX so collisions visibly differ at low/high severity.
+        /// Some particle prefabs use world space or constant modules and ignore transform scale alone.
+        /// </summary>
+        private static void ApplyCollisionImpactVisualScale(GameObject root, float scale)
+        {
+            if (root == null) return;
+            float s = Mathf.Max(0.05f, scale);
+            root.transform.localScale = Vector3.one * s;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null) continue;
+
+                var main = ps.main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                main.startSizeMultiplier *= s;
+                main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
+                main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
+
+                var shape = ps.shape;
+                if (shape.enabled)
+                {
+                    shape.radius *= s;
+                    shape.scale *= s;
+                }
+
+                var sizeOverLifetime = ps.sizeOverLifetime;
+                if (sizeOverLifetime.enabled)
+                    sizeOverLifetime.sizeMultiplier *= s;
+
+            }
+
+            Light[] lights = root.GetComponentsInChildren<Light>(true);
+            for (int i = 0; i < lights.Length; i++)
+            {
+                if (lights[i] == null) continue;
+                lights[i].range *= s;
+                lights[i].intensity *= Mathf.Lerp(0.7f, 1.35f, Mathf.InverseLerp(0.2f, 2.2f, s));
             }
         }
 
