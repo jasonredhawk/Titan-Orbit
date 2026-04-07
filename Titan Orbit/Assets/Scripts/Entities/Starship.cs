@@ -17,6 +17,13 @@ using SciFiArsenal;
 
 namespace TitanOrbit.Entities
 {
+    [System.Serializable]
+    public class ThrusterVfxColorPrefab
+    {
+        public string colorName = "Blue";
+        public GameObject prefab;
+    }
+
     /// <summary>Serializable card ID for syncing equipped loadout to clients. Uses FixedString64Bytes for NetworkList compatibility (non-nullable value type).</summary>
     public struct EquippedCardId : INetworkSerializable, System.IEquatable<EquippedCardId>
     {
@@ -156,8 +163,20 @@ namespace TitanOrbit.Entities
         [Header("Chassis VFX (Engine/Thruster)")]
         [Tooltip("Optional: VFX prefab for engine components (movement). e.g. AllIn1VfxToolkit Blue Fire or Real Fire.")]
         [SerializeField] private GameObject engineVfxPrefab;
-        [Tooltip("Optional: VFX prefab for thruster components (rotation). e.g. AllIn1VfxToolkit Fire Trail.")]
+        [Tooltip("Optional: fallback VFX prefab for thruster components when no color match is found in Thruster Jet Flame Bank.")]
         [SerializeField] private GameObject thrusterVfxPrefab;
+        [Tooltip("When enabled, thruster VFX are shown while accelerating (forward thrust) instead of while turning.")]
+        [SerializeField] private bool useThrusterVfxForAcceleration = true;
+        [Tooltip("Color-based JetFlame prefabs (name contains color, e.g. Blue/Red/Green). One prefab is chosen per thruster by matching the thruster object name color.")]
+        [SerializeField] private List<ThrusterVfxColorPrefab> thrusterJetFlameBank = new List<ThrusterVfxColorPrefab>();
+        [Tooltip("Local position offset for spawned thruster flames (use negative Z to push flame further behind the thruster).")]
+        [SerializeField] private Vector3 thrusterVfxLocalOffset = new Vector3(0f, 0f, -0.2f);
+        [Tooltip("Local rotation offset for spawned thruster flames. Default rotates flame to point backward.")]
+        [SerializeField] private Vector3 thrusterVfxLocalEuler = new Vector3(0f, 180f, 0f);
+        [Tooltip("Scale multiplier when thruster flame is idle/off. Keep > 0 to avoid harsh popping.")]
+        [SerializeField, Range(0f, 1f)] private float thrusterVfxIdleScale = 0.1f;
+        [Tooltip("How quickly thruster flame transitions between idle and full scale/emission. Lower is slower and more visible.")]
+        [SerializeField, Min(0.01f)] private float thrusterVfxTransitionSpeed = 3f;
         private List<GameObject> engineVfxInstances = new List<GameObject>();
         private List<GameObject> thrusterVfxInstances = new List<GameObject>();
         private List<ParticleSystem> engineParticleSystems = new List<ParticleSystem>();
@@ -1443,8 +1462,10 @@ namespace TitanOrbit.Entities
         private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_RAD = 0.15f;
         private static readonly float ENGINE_VFX_EMISSION_RATE = 18f;
         private static readonly float THRUSTER_VFX_EMISSION_RATE = 15f;
+        private static readonly string[] VfxColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "Yellow" };
         private bool lastEngineVfxMoving = false;
         private bool lastThrusterVfxTurning = false;
+        private float thrusterVfxBlend = 0f;
 
         private void UpdateEngineAndThrusterVFX()
         {
@@ -1457,10 +1478,16 @@ namespace TitanOrbit.Entities
             float angularRad = rb.angularVelocity.magnitude;
             bool moving = speed >= ENGINE_VFX_SPEED_THRESHOLD;
             bool turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD;
-            if (moving == lastEngineVfxMoving && turning == lastThrusterVfxTurning)
+            bool accelerating = moving && IsActivelyAccelerating();
+            bool showThrusters = useThrusterVfxForAcceleration ? accelerating : turning;
+            float targetThrusterBlend = showThrusters ? 1f : 0f;
+            float transitionSpeed = Mathf.Max(0.01f, thrusterVfxTransitionSpeed);
+            thrusterVfxBlend = Mathf.MoveTowards(thrusterVfxBlend, targetThrusterBlend, transitionSpeed * Time.deltaTime);
+            bool thrusterTransitionActive = Mathf.Abs(thrusterVfxBlend - targetThrusterBlend) > 0.0001f;
+            if (moving == lastEngineVfxMoving && showThrusters == lastThrusterVfxTurning && !thrusterTransitionActive)
                 return;
             lastEngineVfxMoving = moving;
-            lastThrusterVfxTurning = turning;
+            lastThrusterVfxTurning = showThrusters;
 
             for (int i = 0; i < engineVfxInstances.Count; i++)
             {
@@ -1470,7 +1497,14 @@ namespace TitanOrbit.Entities
             for (int i = 0; i < thrusterVfxInstances.Count; i++)
             {
                 GameObject go = thrusterVfxInstances[i];
-                if (go != null) go.SetActive(turning);
+                if (go != null)
+                {
+                    float scaleLerp = Mathf.Lerp(Mathf.Clamp01(thrusterVfxIdleScale), 1f, thrusterVfxBlend);
+                    go.transform.localScale = Vector3.one * scaleLerp;
+                    bool visible = scaleLerp > 0.0005f;
+                    if (go.activeSelf != visible)
+                        go.SetActive(visible);
+                }
             }
             for (int i = 0; i < engineParticleSystems.Count; i++)
             {
@@ -1487,9 +1521,74 @@ namespace TitanOrbit.Entities
                 if (ps == null) continue;
                 var emission = ps.emission;
                 emission.enabled = true;
-                emission.rateOverTime = turning ? THRUSTER_VFX_EMISSION_RATE : 0f;
-                if (turning && !ps.isPlaying) ps.Play();
+                emission.rateOverTime = THRUSTER_VFX_EMISSION_RATE * thrusterVfxBlend;
+                if (thrusterVfxBlend > 0.001f && !ps.isPlaying) ps.Play();
             }
+        }
+
+        private bool IsActivelyAccelerating()
+        {
+            if (_isAIControlled)
+            {
+                if (rb == null) return false;
+                Vector3 v = rb.linearVelocity;
+                v.y = 0f;
+                if (v.sqrMagnitude < 0.01f) return false;
+                v.Normalize();
+                Vector3 fwd = transform.forward;
+                fwd.y = 0f;
+                if (fwd.sqrMagnitude < 0.01f) return false;
+                fwd.Normalize();
+                return Vector3.Dot(v, fwd) > 0.1f;
+            }
+
+            if (inputHandler == null)
+                return false;
+
+            return inputHandler.MoveForwardPressed;
+        }
+
+        private GameObject ResolveThrusterVfxPrefabForTransform(Transform thrusterTransform)
+        {
+            if (thrusterJetFlameBank != null && thrusterJetFlameBank.Count > 0)
+            {
+                string color = ExtractColorNameFromText(thrusterTransform != null ? thrusterTransform.name : null);
+                if (!string.IsNullOrEmpty(color))
+                {
+                    for (int i = 0; i < thrusterJetFlameBank.Count; i++)
+                    {
+                        var entry = thrusterJetFlameBank[i];
+                        if (entry == null || entry.prefab == null || string.IsNullOrEmpty(entry.colorName)) continue;
+                        if (string.Equals(entry.colorName, color, System.StringComparison.OrdinalIgnoreCase))
+                            return entry.prefab;
+                    }
+                }
+
+                // Fallback: use first configured JetFlame so a ship still gets thruster VFX even if names don't encode color.
+                for (int i = 0; i < thrusterJetFlameBank.Count; i++)
+                {
+                    var entry = thrusterJetFlameBank[i];
+                    if (entry != null && entry.prefab != null)
+                        return entry.prefab;
+                }
+            }
+
+            return thrusterVfxPrefab;
+        }
+
+        private static string ExtractColorNameFromText(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return null;
+
+            for (int i = 0; i < VfxColorNames.Length; i++)
+            {
+                string color = VfxColorNames[i];
+                if (value.IndexOf(color, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return color;
+            }
+
+            return null;
         }
 
         /// <summary>Maps linear dock depth (0 outer ring → 1 surface) to an ease-in-out curve for approach/scale/orientation.</summary>
@@ -4814,6 +4913,7 @@ namespace TitanOrbit.Entities
             thrusterParticleSystems.Clear();
             lastEngineVfxMoving = false;
             lastThrusterVfxTurning = false;
+            thrusterVfxBlend = 0f;
 
             // Destroy previous runtime-created WeaponConfig to avoid ScriptableObject leak when transforming ship
             if (bulletConfig != null)
@@ -5022,15 +5122,17 @@ namespace TitanOrbit.Entities
                     }
                 }
             }
-            if (thrusterVfxPrefab != null && stats.thrusterTransforms != null)
+            if ((thrusterVfxPrefab != null || (thrusterJetFlameBank != null && thrusterJetFlameBank.Count > 0)) && stats.thrusterTransforms != null)
             {
                 foreach (Transform t in stats.thrusterTransforms)
                 {
                     if (t == null) continue;
-                    GameObject go = Instantiate(thrusterVfxPrefab, t);
-                    go.transform.localPosition = Vector3.zero;
-                    go.transform.localRotation = Quaternion.identity;
-                    go.transform.localScale = Vector3.one;
+                    GameObject thrusterPrefab = ResolveThrusterVfxPrefabForTransform(t);
+                    if (thrusterPrefab == null) continue;
+                    GameObject go = Instantiate(thrusterPrefab, t);
+                    go.transform.localPosition = thrusterVfxLocalOffset;
+                    go.transform.localRotation = Quaternion.Euler(thrusterVfxLocalEuler);
+                    go.transform.localScale = Vector3.one * Mathf.Clamp01(thrusterVfxIdleScale);
                     thrusterVfxInstances.Add(go);
                     var psList = go.GetComponentsInChildren<ParticleSystem>(true);
                     foreach (var ps in psList)
