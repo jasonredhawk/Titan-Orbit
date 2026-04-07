@@ -145,6 +145,10 @@ namespace TitanOrbit.Entities
         private Collider rootCollider;
         private bool rootColliderEnabledBeforeDock = true;
         private bool rootColliderDockOverrideActive = false;
+        /// <summary>Authored root BoxCollider (Starship) before runtime attribute-based scaling; Rigidbody uses this collider for shape.</summary>
+        private Vector3 rootColliderBaselineSize = Vector3.one;
+        private Vector3 rootColliderBaselineCenter;
+        private bool rootColliderBaselineCaptured;
 
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
@@ -266,6 +270,8 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0f)] private float collisionWeaponVfxMinRelativeSpeed = 2f;
         [Tooltip("Relative speed (m/s) that maps ship collision VFX to max severity when using local tuning.")]
         [SerializeField, Min(0f)] private float collisionWeaponVfxMaxRelativeSpeed = 35f;
+        [Tooltip("Applied to the root BoxCollider size/center when component meshes scale with attribute upgrades. Slight margin reduces mesh edges passing through colliders.")]
+        [SerializeField, Min(1f)] private float rootColliderAttributeScalePadding = 1.03f;
         [Tooltip("Severity 0 maps to this collision VFX scale multiplier when using local tuning.")]
         [SerializeField, Min(0.01f)] private float collisionWeaponVfxMinScaleMultiplier = 0.35f;
         [Tooltip("Severity 1 maps to this collision VFX scale multiplier when using local tuning.")]
@@ -715,8 +721,9 @@ namespace TitanOrbit.Entities
         {
             get
             {
+                float baseWithCards = peopleCapacity + GetCardPeopleCapacityAdd();
                 float attrScale = 1f + attrPeopleCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return peopleCapacity * attrScale;
+                return Mathf.Max(0f, baseWithCards * attrScale);
             }
         }
         public float CurrentEnergy => currentEnergy.Value;
@@ -829,6 +836,7 @@ namespace TitanOrbit.Entities
 
             if (rb == null) rb = GetComponent<Rigidbody>();
             rootCollider = GetComponent<Collider>();
+            TryCaptureRootBoxColliderBaseline();
             if (inputHandler == null) inputHandler = GetComponent<PlayerInputHandler>();
             if (energyCapacity <= 0f) energyCapacity = 50f;
             if (energyRegenRate <= 0f) energyRegenRate = 5f;
@@ -1361,44 +1369,32 @@ namespace TitanOrbit.Entities
             foreach (var card in equippedCards)
             {
                 if (card == null) continue;
-                float scale = CardLevelScale(Mathf.Max(1, card.cardLevel)) * CardRarityScale(Mathf.Max(1, card.rarity));
-                _cachedCardMovementSpeedAdd += card.movementSpeedAdd * scale;
-                _cachedCardRotationSpeedAdd += card.rotationSpeedAdd * scale;
-                _cachedCardMaxHealthAdd += card.maxHealthAdd * scale;
-                _cachedCardHealthRegenAdd += card.healthRegenAdd * scale;
-                _cachedCardEnergyCapacityAdd += card.energyCapacityAdd * scale;
-                _cachedCardEnergyRegenAdd += card.energyRegenAdd * scale;
-                _cachedCardGemCapacityAdd += card.gemCapacityAdd * scale;
-                _cachedCardPeopleCapacityAdd += card.peopleCapacityAdd * scale;
+                // Card stats use authored values only; level gates equipping, rarity affects shop drop weights — not combat math.
+                _cachedCardMovementSpeedAdd += card.movementSpeedAdd;
+                _cachedCardRotationSpeedAdd += card.rotationSpeedAdd;
+                _cachedCardMaxHealthAdd += card.maxHealthAdd;
+                _cachedCardHealthRegenAdd += card.healthRegenAdd;
+                _cachedCardEnergyCapacityAdd += card.energyCapacityAdd;
+                _cachedCardEnergyRegenAdd += card.energyRegenAdd;
+                _cachedCardGemCapacityAdd += card.gemCapacityAdd;
+                _cachedCardPeopleCapacityAdd += card.peopleCapacityAdd;
                 if (card.damageMultiplier > 0f)
-                {
-                    float bonus = (card.damageMultiplier - 1f) * scale + 1f;
-                    _cachedCardDamageMultiplier *= bonus;
-                }
+                    _cachedCardDamageMultiplier *= card.damageMultiplier;
                 if (card.bulletSpeedMultiplier > 0f)
-                {
-                    float bonus = (card.bulletSpeedMultiplier - 1f) * scale + 1f;
-                    _cachedCardBulletSpeedMultiplier *= bonus;
-                }
+                    _cachedCardBulletSpeedMultiplier *= card.bulletSpeedMultiplier;
                 if (card.gemDepositSpeedMultiplier > 0f)
-                {
-                    float bonus = (card.gemDepositSpeedMultiplier - 1f) * scale + 1f;
-                    _cachedCardGemDepositSpeedMultiplier *= bonus;
-                }
+                    _cachedCardGemDepositSpeedMultiplier *= card.gemDepositSpeedMultiplier;
                 if (card.peopleTransferSpeedMultiplier > 0f)
-                {
-                    float bonus = (card.peopleTransferSpeedMultiplier - 1f) * scale + 1f;
-                    _cachedCardPeopleTransferSpeedMultiplier *= bonus;
-                }
+                    _cachedCardPeopleTransferSpeedMultiplier *= card.peopleTransferSpeedMultiplier;
             }
         }
 
-        /// <summary>Scale ship components by the percentage increase in their associated stats (current value / base value at 0 upgrades). E.g. wings scale with max gems and turn speed.</summary>
+        /// <summary>Scale ship components by effective stat vs chassis baseline (no cards, no ability upgrades). E.g. +40 gems on 40 base → ratio 2 → larger wings; ability levels scale the same way.</summary>
         private void ApplyComponentAttributeScaling()
         {
             float vis = Mathf.Max(0.2f, componentScaleVisibility);
 
-            // Stat ratios: current / base (base = value at 0 attribute upgrades). Ratio = 1 at no upgrades, >1 when upgraded.
+            // Stat ratios: current (chassis + cards, then × ability multiplier) / raw chassis. Ratio = 1 with no cards and no ability upgrades.
             float ratioHealth = MaxHealth / BaseMaxHealthNoAttr;
             float ratioGem = GemCapacity / BaseGemCapacityNoAttr;
             float ratioPeople = PeopleCapacity / BasePeopleCapacityNoAttr;
@@ -1506,6 +1502,35 @@ namespace TitanOrbit.Entities
                     main.startSpeed = muzzleBaseSpeeds[i] * muzzleSpeedScale;
                 }
             }
+
+            // Root Rigidbody has no "size" — physics uses the Starship BoxCollider. Child meshes scale here; match collider so hull/wings do not tunnel.
+            float maxAttrVisualScale = Mathf.Max(1f, wingScale, cockpitScale, weaponScale, engineScale, thrusterScale, partScale);
+            ApplyRootColliderForAttributeScale(maxAttrVisualScale);
+        }
+
+        private void TryCaptureRootBoxColliderBaseline()
+        {
+            if (rootColliderBaselineCaptured) return;
+            if (rootCollider == null) rootCollider = GetComponent<Collider>();
+            if (rootCollider is BoxCollider box)
+            {
+                rootColliderBaselineSize = box.size;
+                rootColliderBaselineCenter = box.center;
+                rootColliderBaselineCaptured = true;
+            }
+        }
+
+        /// <summary>Scales the authored root BoxCollider so it stays aligned with attribute-driven component mesh scaling.</summary>
+        private void ApplyRootColliderForAttributeScale(float maxComponentScaleFactor)
+        {
+            TryCaptureRootBoxColliderBaseline();
+            if (!rootColliderBaselineCaptured) return;
+            if (rootCollider == null) rootCollider = GetComponent<Collider>();
+            if (!(rootCollider is BoxCollider box)) return;
+
+            float m = Mathf.Max(0.01f, maxComponentScaleFactor) * Mathf.Max(1f, rootColliderAttributeScalePadding);
+            box.size = rootColliderBaselineSize * m;
+            box.center = rootColliderBaselineCenter * m;
         }
 
         private static readonly float ENGINE_VFX_SPEED_THRESHOLD = 0.5f;
@@ -5354,20 +5379,6 @@ namespace TitanOrbit.Entities
         }
 
         #region Card stat helpers
-
-        private static float CardLevelScale(int level)
-        {
-            return level <= 1 ? 1f : 1f + (level - 1) * 0.35f; // L1=1, L2=1.35, L3=1.7, L4=2.05
-        }
-
-        private static float CardRarityScale(int rarity)
-        {
-            if (rarity <= 1) return 1f;
-            if (rarity == 2) return 1.25f;
-            if (rarity == 3) return 1.5f;
-            if (rarity == 4) return 2f;
-            return 2.35f; // 5+ Legendary
-        }
 
         private float GetCardMovementSpeedAdd()
         {

@@ -34,10 +34,10 @@ namespace TitanOrbit.Data
         public ulong shapeMask;
 
         [Header("Availability")]
-        [Tooltip("Card level (1–n). A ship can only equip cards with level <= ship level. Higher level = stronger stat buffs.")]
+        [Tooltip("Card level (1–n). A ship can only equip cards with level <= ship level. Does not change stat numbers — tune stats on the asset.")]
         public int cardLevel = 1;
 
-        [Tooltip("Rarity 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary. Higher rarity multiplies the card's stat bonuses.")]
+        [Tooltip("Rarity 1=Common … 5=Legendary. Affects how often this card is picked in shop draws — not stat strength. Tune power on the asset.")]
         public int rarity = 1;
 
         [Tooltip("Minimum home planet level required before this card can appear in any store.")]
