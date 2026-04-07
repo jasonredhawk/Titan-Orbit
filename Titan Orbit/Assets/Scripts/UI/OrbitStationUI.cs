@@ -826,10 +826,10 @@ namespace TitanOrbit.UI
             var rowGo = new GameObject("ShipTreeCenterRow");
             rowGo.transform.SetParent(shipsTabContent.transform, false);
             shipTreeCenterRow = rowGo.AddComponent<RectTransform>();
-            shipTreeCenterRow.anchorMin = new Vector2(0f, 1f);
-            shipTreeCenterRow.anchorMax = new Vector2(1f, 1f);
-            shipTreeCenterRow.pivot = new Vector2(0.5f, 1f);
-            shipTreeCenterRow.anchoredPosition = new Vector2(0f, shipY);
+            shipTreeCenterRow.anchorMin = new Vector2(0f, 0.5f);
+            shipTreeCenterRow.anchorMax = new Vector2(1f, 0.5f);
+            shipTreeCenterRow.pivot = new Vector2(0.5f, 0.5f);
+            shipTreeCenterRow.anchoredPosition = Vector2.zero;
             shipTreeCenterRow.sizeDelta = new Vector2(0f, 560f);
             var rowLe = rowGo.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 560f;
@@ -847,9 +847,9 @@ namespace TitanOrbit.UI
             var treeGo = new GameObject("ShipUpgradeTreeCanvas");
             treeGo.transform.SetParent(rowGo.transform, false);
             shipTreeCanvas = treeGo.AddComponent<RectTransform>();
-            shipTreeCanvas.anchorMin = new Vector2(0.5f, 1f);
-            shipTreeCanvas.anchorMax = new Vector2(0.5f, 1f);
-            shipTreeCanvas.pivot = new Vector2(0.5f, 1f);
+            shipTreeCanvas.anchorMin = new Vector2(0.5f, 0.5f);
+            shipTreeCanvas.anchorMax = new Vector2(0.5f, 0.5f);
+            shipTreeCanvas.pivot = new Vector2(0.5f, 0.5f);
             shipTreeCanvas.anchoredPosition = Vector2.zero;
             float treeInitW = Mathf.Max(200f, Mathf.Max(PanelWidth, SlotPanelWidthConst) - 56f);
             shipTreeCanvas.sizeDelta = new Vector2(treeInitW, 560f);
@@ -1379,12 +1379,20 @@ namespace TitanOrbit.UI
             if (_moonDockLayoutActive && _moonDockShipTreeHorizontal)
             {
                 // Moon dock horizontal tree is intentionally left-aligned.
+                shipTreeCenterRow.anchorMin = new Vector2(0f, 1f);
+                shipTreeCenterRow.anchorMax = new Vector2(1f, 1f);
+                shipTreeCenterRow.pivot = new Vector2(0.5f, 1f);
+                shipTreeCenterRow.anchoredPosition = Vector2.zero;
                 hlg.childAlignment = TextAnchor.UpperLeft;
                 hlg.padding = new RectOffset(12, 12, 0, 0);
                 return;
             }
 
             // Orbit menu tree should stay centered in the parent panel regardless of aspect ratio.
+            shipTreeCenterRow.anchorMin = new Vector2(0f, 0.5f);
+            shipTreeCenterRow.anchorMax = new Vector2(1f, 0.5f);
+            shipTreeCenterRow.pivot = new Vector2(0.5f, 0.5f);
+            shipTreeCenterRow.anchoredPosition = Vector2.zero;
             hlg.childAlignment = TextAnchor.MiddleCenter;
             hlg.padding = new RectOffset(0, 0, 0, 0);
         }
@@ -1559,9 +1567,9 @@ namespace TitanOrbit.UI
             // Vertical tree: center the canvas in the row (moon horizontal sets left/top anchors instead).
             if (shipTreeCanvas != null)
             {
-                shipTreeCanvas.anchorMin = new Vector2(0.5f, 1f);
-                shipTreeCanvas.anchorMax = new Vector2(0.5f, 1f);
-                shipTreeCanvas.pivot = new Vector2(0.5f, 1f);
+                shipTreeCanvas.anchorMin = new Vector2(0.5f, 0.5f);
+                shipTreeCanvas.anchorMax = new Vector2(0.5f, 0.5f);
+                shipTreeCanvas.pivot = new Vector2(0.5f, 0.5f);
                 shipTreeCanvas.anchoredPosition = Vector2.zero;
             }
 
