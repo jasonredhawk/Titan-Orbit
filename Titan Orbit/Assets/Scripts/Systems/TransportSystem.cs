@@ -55,12 +55,13 @@ namespace TitanOrbit.Systems
             if (planet.TeamOwnership != TeamManager.Team.None && 
                 planet.TeamOwnership != ship.ShipTeam) return;
 
-            // Calculate how much can be loaded
+            // Planet only gives people above 50% of max capacity (reserve floor); same rule as Starship orbit transfer.
             float effectiveAmount = amount * Time.deltaTime;
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) effectiveAmount *= 100f;
+            float surplusAboveHalf = Mathf.Max(0f, planet.CurrentPopulation - 0.5f * planet.MaxPopulation);
             float peopleToLoad = Mathf.Min(
                 effectiveAmount,
-                planet.CurrentPopulation,
+                surplusAboveHalf,
                 ship.PeopleCapacity - ship.CurrentPeople
             );
 
@@ -85,13 +86,16 @@ namespace TitanOrbit.Systems
             if (planet == null || ship == null) return;
             if (!IsInOrbit(ship, planet)) return;
 
-            // Calculate how much can be dropped off
             float effectiveAmount = amount * Time.deltaTime;
             if (GameManager.Instance != null && GameManager.Instance.DebugMode) effectiveAmount *= 100f;
-            float peopleToDrop = Mathf.Min(
-                effectiveAmount,
-                ship.CurrentPeople
-            );
+            float peopleToDrop = Mathf.Min(effectiveAmount, ship.CurrentPeople);
+            // Same-team planets below 50% pull crew from ships until half full; at/above half they do not take reinforcements (ships load surplus instead).
+            if (planet.TeamOwnership == ship.ShipTeam && ship.ShipTeam != TeamManager.Team.None)
+            {
+                float halfCap = 0.5f * planet.MaxPopulation;
+                float roomToHalf = Mathf.Max(0f, halfCap - planet.CurrentPopulation);
+                peopleToDrop = Mathf.Min(peopleToDrop, roomToHalf);
+            }
 
             if (peopleToDrop > 0)
             {

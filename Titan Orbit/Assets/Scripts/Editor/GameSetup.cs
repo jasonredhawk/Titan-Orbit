@@ -677,15 +677,15 @@ namespace TitanOrbit.Editor
             }
             GameObject obj = new GameObject("SpaceBackground");
             var bg = obj.AddComponent<ScrollingSpaceBackground>();
-            // Try to assign Nebula Blue as default texture
+            var camCtrl = Object.FindObjectOfType<TitanOrbit.Camera.CameraController>();
             Texture2D defaultTex = AssetDatabase.LoadAssetAtPath<Texture2D>(
                 "Assets/DinV/Dynamic Space Background/Sprites/Nebula Blue.png");
+            var so = new SerializedObject(bg);
+            if (camCtrl != null)
+                so.FindProperty("cameraController").objectReferenceValue = camCtrl;
             if (defaultTex != null)
-            {
-                var so = new SerializedObject(bg);
                 so.FindProperty("spaceTexture").objectReferenceValue = defaultTex;
-                so.ApplyModifiedPropertiesWithoutUndo();
-            }
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static GameObject CreateLighting()

@@ -263,6 +263,8 @@ MonoBehaviour:
   asteroidImpactForcePopupMin: 80
   asteroidImpactForceToShipDamageScale: 0.0025
   asteroidImpactForceToAsteroidDamageScale: 0.0015
+  collisionWeaponVfxMinImpactForceN: 25
+  collisionWeaponVfxMinRelativeSpeed: 2
   maxHealth: 100
   healthRegenRate: 6
   healthRegenDelayAfterDamage: 0.35
@@ -277,8 +279,8 @@ MonoBehaviour:
   rb: {fileID: 0}
   visualRoot: {fileID: 0}
   shipVisualScaleMultiplier: 0.175
-  defaultMaxBankAngle: 111
-  defaultBankSmoothing: 2
+  defaultMaxBankAngle: 66
+  defaultBankSmoothing: 1
   equippedCards: []
   enableVisualBankingPitch: 1
   visualPitchSign: 1
