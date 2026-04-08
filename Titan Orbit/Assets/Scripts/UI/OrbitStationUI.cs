@@ -2972,7 +2972,7 @@ namespace TitanOrbit.UI
             int shipLevel = currentShip.ShipLevel;
             int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, homeLevel);
             float spinCost = CardShopSystem.Instance.GetCardSpinCost(spinTier);
-            int poolCount = CardShopSystem.Instance.GetCardPoolCountForSpin(spinTier, homeLevel, isHomeStore, currentPlanet.PlanetId, currentShip.ShipTeam);
+            int poolCount = CardShopSystem.Instance.GetCardPoolCountForSpin(currentShip, spinTier, homeLevel, isHomeStore, currentPlanet.PlanetId, currentShip.ShipTeam);
 
             if (cardSpinButton != null)
             {
@@ -2991,7 +2991,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < cardRoots.Length; i++)
             {
                 string offerId = CardShopSystem.Instance.GetClientSpinOfferCardId(i);
-                CardData card = !string.IsNullOrEmpty(offerId) ? CardShopSystem.Instance.GetCardById(offerId) : null;
+                CardData card = !string.IsNullOrEmpty(offerId) ? CardShopSystem.Instance.GetCardByIdForShip(currentShip, offerId) : null;
                 cardEntries[i] = card;
                 if (cardRoots[i] != null)
                     cardRoots[i].SetActive(true);

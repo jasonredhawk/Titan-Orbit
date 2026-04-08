@@ -2567,6 +2567,7 @@ MonoBehaviour:
   textColor: {r: 0.92, g: 0.95, b: 1, a: 1}
   accelPositiveColor: {r: 0.25, g: 0.92, b: 0.45, a: 0.92}
   accelNegativeColor: {r: 0.95, g: 0.28, b: 0.28, a: 0.92}
+  tickLabelColor: {r: 0.78, g: 0.82, b: 0.9, a: 0.72}
 --- !u!1 &526755990
 GameObject:
   m_ObjectHideFlags: 0
@@ -8006,8 +8007,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.CardShopSystem
   planetShipFamilyConfig: {fileID: 11400000, guid: 5feac2562027f1c4b985388fe704de15, type: 2}
-  cardDeck: {fileID: 11400000, guid: 84149c4703e05914e813dc5f8af4c55e, type: 2}
-  allCards: []
 --- !u!114 &1207700303
 MonoBehaviour:
   m_ObjectHideFlags: 0

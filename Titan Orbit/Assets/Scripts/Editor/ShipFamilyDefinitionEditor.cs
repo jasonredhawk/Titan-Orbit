@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Entities;
 
@@ -56,6 +58,11 @@ namespace TitanOrbit.Editor
                 if (GUILayout.Button("Generate Menu Preview Images (Top-Down)"))
                 {
                     ShipFamilyMenuPreviewGenerator.GenerateForFamily(def);
+                }
+
+                if (GUILayout.Button("Auto-Detect Team Materials From Upgrade Tree (5 Teams)"))
+                {
+                    AutoDetectTeamMaterialsFromUpgradeTree(def);
                 }
             }
 
@@ -544,6 +551,194 @@ namespace TitanOrbit.Editor
             }
 
             return stats;
+        }
+
+        private static void AutoDetectTeamMaterialsFromUpgradeTree(ShipFamilyDefinition def)
+        {
+            if (def == null || def.upgradeTree == null || def.upgradeTree.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Upgrade Tree", "Upgrade tree is empty. Build the upgrade tree first.", "OK");
+                return;
+            }
+
+            // Team order and color keyword mapping are kept explicit and deterministic.
+            var teamSpecs = new[]
+            {
+                new TeamMaterialSpec(TeamManager.Team.TeamA, "Red",    new[] { "red", "teama", "team_a", "team a" }),
+                new TeamMaterialSpec(TeamManager.Team.TeamB, "Blue",   new[] { "blue", "teamb", "team_b", "team b" }),
+                new TeamMaterialSpec(TeamManager.Team.TeamC, "Green",  new[] { "green", "teamc", "team_c", "team c" }),
+                new TeamMaterialSpec(TeamManager.Team.TeamD, "Orange", new[] { "orange", "teamd", "team_d", "team d" }),
+                new TeamMaterialSpec(TeamManager.Team.TeamE, "Purple", new[] { "purple", "violet", "teame", "team_e", "team e" }),
+            };
+
+            var detectedByTeam = new Dictionary<TeamManager.Team, Material>();
+            var detectedLocationByTeam = new Dictionary<TeamManager.Team, string>();
+            var seenMaterialPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int scannedPrefabs = 0;
+            int scannedSlots = 0;
+
+            foreach (var entry in def.upgradeTree)
+            {
+                if (entry?.prefab == null)
+                    continue;
+
+                string prefabPath = AssetDatabase.GetAssetPath(entry.prefab);
+                if (string.IsNullOrEmpty(prefabPath))
+                    continue;
+
+                GameObject root = PrefabUtility.LoadPrefabContents(prefabPath);
+                if (root == null)
+                    continue;
+
+                scannedPrefabs++;
+                try
+                {
+                    Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+                    foreach (Renderer renderer in renderers)
+                    {
+                        if (renderer == null) continue;
+                        if (renderer is ParticleSystemRenderer) continue;
+
+                        Material[] mats = renderer.sharedMaterials;
+                        if (mats == null || mats.Length == 0) continue;
+
+                        for (int slot = 0; slot < mats.Length; slot++)
+                        {
+                            Material mat = mats[slot];
+                            if (mat == null) continue;
+                            scannedSlots++;
+
+                            string matPath = AssetDatabase.GetAssetPath(mat);
+                            string uniqueKey = string.IsNullOrEmpty(matPath) ? mat.name : matPath;
+                            if (seenMaterialPaths.Contains(uniqueKey))
+                                continue;
+                            seenMaterialPaths.Add(uniqueKey);
+
+                            string token = BuildMaterialSearchToken(mat, matPath);
+                            if (string.IsNullOrEmpty(token))
+                                continue;
+
+                            for (int i = 0; i < teamSpecs.Length; i++)
+                            {
+                                TeamMaterialSpec spec = teamSpecs[i];
+                                if (detectedByTeam.ContainsKey(spec.team))
+                                    continue;
+                                if (!ContainsAnyKeyword(token, spec.keywords))
+                                    continue;
+
+                                detectedByTeam[spec.team] = mat;
+                                detectedLocationByTeam[spec.team] = $"{entry.prefab.name}/{GetTransformPath(renderer.transform, root.transform)} [slot {slot}]";
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(root);
+                }
+            }
+
+            Undo.RecordObject(def, "Auto-Detect Team Materials From Upgrade Tree");
+            def.teamMaterials ??= new List<ShipFamilyTeamMaterialSet>();
+            def.teamMaterials.Clear();
+
+            for (int i = 0; i < teamSpecs.Length; i++)
+            {
+                TeamMaterialSpec spec = teamSpecs[i];
+                var set = new ShipFamilyTeamMaterialSet
+                {
+                    team = spec.team,
+                    variantName = spec.variantName,
+                    materials = new List<Material>()
+                };
+
+                if (detectedByTeam.TryGetValue(spec.team, out Material found) && found != null)
+                    set.materials.Add(found);
+
+                def.teamMaterials.Add(set);
+            }
+
+            EditorUtility.SetDirty(def);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            var report = new StringBuilder();
+            report.AppendLine($"Scanned {scannedPrefabs} upgrade-tree prefab(s), {scannedSlots} material slot(s).");
+            report.AppendLine("Team material assignment:");
+            for (int i = 0; i < teamSpecs.Length; i++)
+            {
+                TeamMaterialSpec spec = teamSpecs[i];
+                if (detectedByTeam.TryGetValue(spec.team, out Material found) && found != null)
+                {
+                    string location = detectedLocationByTeam.TryGetValue(spec.team, out string loc) ? loc : "(location unknown)";
+                    report.AppendLine($"- {spec.team} ({spec.variantName}): {found.name} @ {location}");
+                }
+                else
+                {
+                    report.AppendLine($"- {spec.team} ({spec.variantName}): no material name match found");
+                }
+            }
+
+            EditorUtility.DisplayDialog("Auto-Detect Team Materials", report.ToString(), "OK");
+        }
+
+        private static string BuildMaterialSearchToken(Material material, string assetPath)
+        {
+            if (material == null)
+                return string.Empty;
+
+            string matName = material.name ?? string.Empty;
+            string fileName = string.IsNullOrEmpty(assetPath) ? string.Empty : Path.GetFileNameWithoutExtension(assetPath);
+            return (matName + " " + fileName).ToLowerInvariant();
+        }
+
+        private static bool ContainsAnyKeyword(string text, IReadOnlyList<string> keywords)
+        {
+            if (string.IsNullOrEmpty(text) || keywords == null)
+                return false;
+            for (int i = 0; i < keywords.Count; i++)
+            {
+                string k = keywords[i];
+                if (string.IsNullOrEmpty(k)) continue;
+                if (text.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+
+        private static string GetTransformPath(Transform current, Transform root)
+        {
+            if (current == null)
+                return "(null)";
+            if (root == null || current == root)
+                return current.name;
+
+            var names = new Stack<string>();
+            Transform t = current;
+            while (t != null && t != root)
+            {
+                names.Push(t.name);
+                t = t.parent;
+            }
+
+            if (t == root)
+                names.Push(root.name);
+
+            return string.Join("/", names);
+        }
+
+        private readonly struct TeamMaterialSpec
+        {
+            public readonly TeamManager.Team team;
+            public readonly string variantName;
+            public readonly string[] keywords;
+
+            public TeamMaterialSpec(TeamManager.Team team, string variantName, string[] keywords)
+            {
+                this.team = team;
+                this.variantName = variantName;
+                this.keywords = keywords;
+            }
         }
     }
 }

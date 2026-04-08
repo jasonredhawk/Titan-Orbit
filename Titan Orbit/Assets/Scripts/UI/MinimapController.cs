@@ -53,6 +53,8 @@ namespace TitanOrbit.UI
         private Vector2 originalSizeDelta;
         private Vector2 originalAnchorMin;
         private Vector2 originalAnchorMax;
+        /// <summary>World radius shown when minimap is collapsed; restored after fullscreen so zoom matches pre-expand.</summary>
+        private float originalMinimapRadius;
 
         /// <summary>When expanded, other UI roots are faded via CanvasGroup; we restore previous values on collapse.</summary>
         private struct NonMinimapUiRestoreState
@@ -508,6 +510,8 @@ namespace TitanOrbit.UI
                 originalAnchorMin = minimapRect.anchorMin;
                 originalAnchorMax = minimapRect.anchorMax;
             }
+
+            originalMinimapRadius = minimapRadius;
         }
 
         /// <summary>Show or hide minimap using CanvasGroup so Update() keeps running and we can show again after team is chosen.</summary>
@@ -721,6 +725,8 @@ namespace TitanOrbit.UI
         private void ExpandMinimap()
         {
             if (minimapRect == null) return;
+
+            originalMinimapRadius = minimapRadius;
             
             // Same minimap: only change zoom (visible radius) and circle size. Content and coordinate system unchanged.
             Canvas canvas = GetComponentInParent<Canvas>();
@@ -916,8 +922,8 @@ namespace TitanOrbit.UI
             // Restore display size
             displaySize = originalSizeDelta.x;
             
-            // Restore minimap radius
-            minimapRadius = 40f;
+            // Restore minimap radius (must match pre-expand; was incorrectly hardcoded to 40f)
+            minimapRadius = originalMinimapRadius;
             
             // Update mask and background
             SetupCircularBackground();

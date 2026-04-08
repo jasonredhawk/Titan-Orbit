@@ -73,18 +73,18 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>Spawns people beaming from planet to ship (load).</summary>
-        public void SpawnPeopleLoad(Vector3 planetPosition, Vector3 shipPosition, float amount, ulong shipNetworkObjectId, TitanOrbit.Core.TeamManager.Team team)
+        public void SpawnPeopleLoad(Vector3 planetPosition, Vector3 shipPosition, float amount, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team)
         {
-            SpawnPeopleTransport(planetPosition, shipPosition, amount, shipNetworkObjectId, true, team, 0);
+            SpawnPeopleTransport(planetPosition, shipPosition, amount, shipNetworkObjectId, true, team, 0, sourcePlanetNetworkObjectId);
         }
 
         /// <summary>Spawns people beaming from ship to planet (unload).</summary>
         public void SpawnPeopleUnload(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
         {
-            SpawnPeopleTransport(shipPosition, planetPosition, amount, planetNetworkObjectId, false, team, shipNetworkObjectId);
+            SpawnPeopleTransport(shipPosition, planetPosition, amount, planetNetworkObjectId, false, team, shipNetworkObjectId, 0);
         }
 
-        private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
+        private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId)
         {
             GameObject prefab = GetPeopleTransportPrefab();
             if (prefab == null || amount <= 0f) return;
@@ -110,7 +110,7 @@ namespace TitanOrbit.Systems
             {
                 netObj.Spawn();
                 var p = obj.GetComponent<PeopleTransportProjectile>();
-                if (p != null) p.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId);
+                if (p != null) p.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId, sourcePlanetNetworkObjectId);
             }
         }
 

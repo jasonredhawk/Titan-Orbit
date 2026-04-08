@@ -18,6 +18,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<bool> isLoad = new NetworkVariable<bool>(true); // true = planet->ship, false = ship->planet
         private NetworkVariable<int> team = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> spawningShipId = new NetworkVariable<ulong>(0);
+        private NetworkVariable<ulong> sourcePlanetId = new NetworkVariable<ulong>(0);
         private Rigidbody rb;
         private const float magnetSpeed = 8f;
         private const float PeopleAmountScaleMin = 1f;
@@ -51,6 +52,12 @@ namespace TitanOrbit.Entities
                     Starship ship = targetObj.GetComponent<Starship>();
                     if (ship != null && !ship.IsDead)
                     {
+                        if (!ship.IsInOrbit)
+                        {
+                            ReturnToSourcePlanet(ship);
+                            return;
+                        }
+
                         Vector3 myPos = rb.position;
                         Vector3 shipPos = ship.transform.position;
                         Vector3 toShip = ToroidalMap.ToroidalDirection(myPos, shipPos);
@@ -66,7 +73,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        public void Initialize(float peopleAmount, ulong targetNetworkObjectId, bool loadingFromPlanet, TeamManager.Team sourceTeam, ulong shipNetworkObjectId = 0)
+        public void Initialize(float peopleAmount, ulong targetNetworkObjectId, bool loadingFromPlanet, TeamManager.Team sourceTeam, ulong shipNetworkObjectId = 0, ulong sourcePlanetNetworkObjectId = 0)
         {
             if (IsServer)
             {
@@ -75,9 +82,56 @@ namespace TitanOrbit.Entities
                 isLoad.Value = loadingFromPlanet;
                 team.Value = (int)sourceTeam;
                 spawningShipId.Value = shipNetworkObjectId;
+                sourcePlanetId.Value = sourcePlanetNetworkObjectId;
                 if (rb != null) rb.linearDamping = 0f;
                 ApplyVisualScaleFromAmount(peopleAmount);
             }
+        }
+
+        private void ReturnToSourcePlanet(Starship targetShip)
+        {
+            if (!IsServer || !isLoad.Value || amount.Value <= 0f) return;
+
+            if (targetShip != null)
+                targetShip.ReleasePeopleInTransit(amount.Value);
+
+            if (sourcePlanetId.Value == 0)
+            {
+                amount.Value = 0f;
+                var no = GetComponent<NetworkObject>();
+                if (no != null) no.Despawn();
+                return;
+            }
+
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(sourcePlanetId.Value, out NetworkObject sourceObj))
+            {
+                amount.Value = 0f;
+                var no = GetComponent<NetworkObject>();
+                if (no != null) no.Despawn();
+                return;
+            }
+
+            Planet sourcePlanet = sourceObj.GetComponent<Planet>();
+            if (sourcePlanet == null)
+            {
+                amount.Value = 0f;
+                var no = GetComponent<NetworkObject>();
+                if (no != null) no.Despawn();
+                return;
+            }
+
+            isLoad.Value = false;
+            targetId.Value = sourcePlanetId.Value;
+
+            Vector3 myPos = rb.position;
+            Vector3 planetPos = sourcePlanet.transform.position;
+            Vector3 toPlanet = ToroidalMap.ToroidalDirection(myPos, planetPos);
+            toPlanet.y = 0f;
+            if (toPlanet.sqrMagnitude < 0.0001f) toPlanet = Vector3.back;
+            else toPlanet.Normalize();
+            rb.linearVelocity = toPlanet * magnetSpeed;
+            rb.linearDamping = 0f;
         }
 
         public override void OnNetworkDespawn()

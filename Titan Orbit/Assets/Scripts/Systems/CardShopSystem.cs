@@ -18,14 +18,8 @@ namespace TitanOrbit.Systems
         public static CardShopSystem Instance { get; private set; }
 
         [Header("Data")]
-        [Tooltip("Planet-to-ship-family mapping. Prefabs and unlock tiers come from each entry's ShipFamilyDefinition upgradeTree.")]
+        [Tooltip("Planet-to-ship-family mapping. Prefabs, unlock tiers, and upgrade card decks come from each entry's ShipFamilyDefinition.")]
         [SerializeField] private PlanetShipFamilyConfig planetShipFamilyConfig;
-        [Tooltip("When set, replaces empty inspector card lists with this deck at runtime (authored CardData assets + icons).")]
-        [SerializeField] private CardDeckDefinition cardDeck;
-        [SerializeField] private List<CardData> allCards = new List<CardData>();
-
-        /// <summary>All cards registered for shops and spins (inspector, <see cref="CardDeckDefinition"/>, or runtime defaults). Populated after <see cref="Awake"/>.</summary>
-        public IReadOnlyList<CardData> RegisteredCards => allCards;
 
         /// <summary>Server-only: last spin offer per ship (NetworkObject id). Client uses <see cref="ClientSpinOfferCardIds"/>.</summary>
         private readonly Dictionary<ulong, PendingCardSpin> _pendingCardSpins = new Dictionary<ulong, PendingCardSpin>();
@@ -51,85 +45,16 @@ namespace TitanOrbit.Systems
             {
                 Destroy(gameObject);
             }
-            if (allCards == null || allCards.Count == 0)
-            {
-                if (cardDeck != null && cardDeck.cards != null && cardDeck.cards.Count > 0)
-                    allCards = new List<CardData>(cardDeck.cards);
-                else
-                    allCards = GetDefaultCards();
-            }
         }
 
-        /// <summary>Creates a large runtime card pool when no assets are assigned in the inspector.</summary>
-        private static List<CardData> GetDefaultCards()
+        /// <summary>Ship family for upgrade cards: from <see cref="Starship.CurrentChassisId"/> prefix, else starter chassis.</summary>
+        private ShipFamilyDefinition TryResolveFamilyForShip(Starship ship)
         {
-            var list = new List<CardData>();
-            int id = 0;
-
-            CardData Add(string name, string desc, int level, int rar, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f, float miningAdd = 0f, float peopleAdd = 0f, float gemDepositSpeedMul = 1f, float peopleTransferSpeedMul = 1f)
-            {
-                var c = ScriptableObject.CreateInstance<CardData>();
-                c.cardId = "card_" + (id++);
-                c.displayName = name;
-                c.description = desc;
-                c.cardLevel = level;
-                c.rarity = (CardRarity)Mathf.Clamp(rar, 1, 5);
-                c.slotType = slotType;
-                c.minHomePlanetLevel = 1;
-                c.originPlanetId = 0;
-                c.gemCost = 0f;
-                c.damageMultiplier = dmgMul;
-                c.gemCapacityAdd = gemAdd;
-                c.energyRegenAdd = energyRegenAdd;
-                c.energyCapacityAdd = energyCapAdd;
-                c.maxHealthAdd = healthAdd;
-                c.healthRegenAdd = healthRegenAdd;
-                c.movementSpeedAdd = moveAdd;
-                c.rotationSpeedAdd = rotAdd;
-                c.bulletSpeedMultiplier = bulletSpeedMul;
-                c.miningRateAdd = miningAdd;
-                c.peopleCapacityAdd = peopleAdd;
-                c.gemDepositSpeedMultiplier = gemDepositSpeedMul;
-                c.peopleTransferSpeedMultiplier = peopleTransferSpeedMul;
-                list.Add(c);
-                return c;
-            }
-
-            string[] rn = { "", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
-
-            for (int L = 1; L <= 7; L++)
-            {
-                for (int r = 1; r <= 4; r++)
-                {
-                    float dmgMul = CardDeckBalance.KineticDamageMultiplier(L, r);
-                    float hull = CardDeckBalance.AegisHullAdd(L, r);
-                    float gems = CardDeckBalance.CargoGemAdd(L, r);
-                    float bulletMul = CardDeckBalance.ShardBulletSpeedMultiplier(L, r);
-                    float eReg = CardDeckBalance.ArcEnergyRegenAdd(L, r);
-                    float eCap = CardDeckBalance.CapacitorEnergyCapAdd(L, r);
-                    float qolMul = CardDeckBalance.QualityOfLifeMultiplier(L, r);
-                    Add($"Kinetic Focus {L} ({rn[r]})", $"+{(dmgMul - 1f) * 100f:F1}% weapon damage multiplier.", L, r, SlotType.Weapon, dmgMul: dmgMul);
-                    Add($"Aegis Plating {L} ({rn[r]})", $"+{hull:F0} max hull.", L, r, SlotType.Ship, healthAdd: hull);
-                    Add($"Cargo Bay {L} ({rn[r]})", $"+{gems:F0} gem capacity.", L, r, SlotType.Cargo, gemAdd: gems);
-                    Add($"Shard Projector {L} ({rn[r]})", $"+{(bulletMul - 1f) * 100f:F1}% projectile speed.", L, r, SlotType.Weapon, bulletSpeedMul: bulletMul);
-                    Add($"Arc Reactor {L} ({rn[r]})", $"+{eReg:F2} energy/sec.", L, r, SlotType.Ship, energyRegenAdd: eReg);
-                    Add($"Capacitor Bank {L} ({rn[r]})", $"+{eCap:F0} energy capacity.", L, r, SlotType.Ship, energyCapAdd: eCap);
-                    Add($"Refinery Drones {L} ({rn[r]})", $"+{(qolMul - 1f) * 100f:F1}% gem deposit speed.", L, r, SlotType.Cargo, gemDepositSpeedMul: qolMul);
-                    Add($"Transit Uplink {L} ({rn[r]})", $"+{(qolMul - 1f) * 100f:F1}% people transfer speed.", L, r, SlotType.Cargo, peopleTransferSpeedMul: qolMul);
-                }
-
-                Add($"Afterburner {L}", $"+{CardDeckBalance.AfterburnerMoveAdd(L):F2} thrust.", L, 3, SlotType.Ship, moveAdd: CardDeckBalance.AfterburnerMoveAdd(L));
-                Add($"Gyro Stabilizer {L}", $"+{CardDeckBalance.GyroRotationAdd(L):F0} turn rate.", L, 2, SlotType.Ship, rotAdd: CardDeckBalance.GyroRotationAdd(L));
-                Add($"Regen Gel {L}", $"+{CardDeckBalance.RegenGelHealthRegenAdd(L):F3} hull/sec.", L, 2, SlotType.Ship, healthRegenAdd: CardDeckBalance.RegenGelHealthRegenAdd(L));
-                Add($"Mining Laser {L}", $"+{CardDeckBalance.MiningRateAdd(L):F2} mining rate.", L, 2, SlotType.Cargo, miningAdd: CardDeckBalance.MiningRateAdd(L));
-                Add($"Colony Pod {L}", $"+{CardDeckBalance.ColonyPeopleAdd(L):F1} people capacity.", L, 1, SlotType.Cargo, peopleAdd: CardDeckBalance.ColonyPeopleAdd(L));
-
-                float tfDmg = CardDeckBalance.TitanforgeDamageMul(L);
-                float tfHull = CardDeckBalance.TitanforgeHullAdd(L);
-                Add($"Titanforge {L} ({rn[5]})", $"+{(tfDmg - 1f) * 100f:F0}% damage and +{tfHull:F0} hull.", L, 5, SlotType.Weapon, dmgMul: tfDmg, healthAdd: tfHull);
-            }
-
-            return list;
+            if (planetShipFamilyConfig == null) return null;
+            string cid = ship != null ? ship.CurrentChassisId : null;
+            if (string.IsNullOrEmpty(cid))
+                cid = GetStarterChassisId();
+            return planetShipFamilyConfig.GetShipFamilyDefinitionForChassisId(cid);
         }
 
         #region Query helpers (server-side)
@@ -310,13 +235,15 @@ namespace TitanOrbit.Systems
         /// <summary>
         /// Returns all cards that are allowed at the given home planet level and that match the origin planet filter.
         /// If originPlanetId is 0, returns global/home cards; if positive, returns cards bound to that planet.
+        /// Pool comes from the <paramref name="ship"/>'s <see cref="ShipFamilyDefinition"/> upgrade card deck.
         /// </summary>
-        public List<CardData> GetAvailableCardsForPlanet(int homePlanetLevel, int originPlanetIdFilter)
+        public List<CardData> GetAvailableCardsForPlanet(Starship ship, int homePlanetLevel, int originPlanetIdFilter)
         {
             var result = new List<CardData>();
-            if (allCards == null) return result;
+            var family = TryResolveFamilyForShip(ship);
+            if (family == null) return result;
 
-            foreach (var card in allCards)
+            foreach (var card in family.GetUpgradeCards())
             {
                 if (card == null) continue;
                 if (homePlanetLevel < card.minHomePlanetLevel) continue;
@@ -347,11 +274,13 @@ namespace TitanOrbit.Systems
         /// Returns all cards that should appear in the home planet store for the given team:
         /// - Global/home cards (originPlanetId &lt;= 0)
         /// - Plus cards whose originPlanetId matches any planet currently owned by that team.
+        /// Pool comes from the <paramref name="ship"/>'s ship family deck.
         /// </summary>
-        public List<CardData> GetAvailableCardsForHomeStore(int homePlanetLevel, TeamManager.Team team)
+        public List<CardData> GetAvailableCardsForHomeStore(Starship ship, int homePlanetLevel, TeamManager.Team team)
         {
             var result = new List<CardData>();
-            if (allCards == null) return result;
+            var family = TryResolveFamilyForShip(ship);
+            if (family == null) return result;
 
             if (team != TeamManager.Team.None && (team != _cachedOwnedPlanetTeam || Time.time - _lastOwnedPlanetsRefresh >= OwnedPlanetsCacheInterval))
             {
@@ -367,7 +296,7 @@ namespace TitanOrbit.Systems
             }
             var ownedPlanetIds = team != TeamManager.Team.None ? _cachedOwnedPlanetIds : new HashSet<int>();
 
-            foreach (var card in allCards)
+            foreach (var card in family.GetUpgradeCards())
             {
                 if (card == null) continue;
                 if (homePlanetLevel < card.minHomePlanetLevel) continue;
@@ -402,16 +331,16 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Cards for a spin: store availability uses <paramref name="homePlanetLevel"/>; drawn cards match <paramref name="spinCardTier"/>.
+        /// Deck is the <paramref name="ship"/>'s family deck.
         /// </summary>
-        public List<CardData> GetCardPoolForSpin(int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        public List<CardData> GetCardPoolForSpin(Starship ship, int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
         {
             var pool = new List<CardData>();
-            if (allCards == null) return pool;
             int tier = Mathf.Max(1, spinCardTier);
             int home = Mathf.Max(1, homePlanetLevel);
             List<CardData> baseList = isHomeStore
-                ? GetAvailableCardsForHomeStore(home, team)
-                : GetAvailableCardsForPlanet(home, storePlanetId);
+                ? GetAvailableCardsForHomeStore(ship, home, team)
+                : GetAvailableCardsForPlanet(ship, home, storePlanetId);
             for (int i = 0; i < baseList.Count; i++)
             {
                 CardData c = baseList[i];
@@ -423,14 +352,13 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>Count of cards in the spin pool without allocating a new list.</summary>
-        public int GetCardPoolCountForSpin(int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        public int GetCardPoolCountForSpin(Starship ship, int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
         {
-            if (allCards == null) return 0;
             int tier = Mathf.Max(1, spinCardTier);
             int home = Mathf.Max(1, homePlanetLevel);
             List<CardData> baseList = isHomeStore
-                ? GetAvailableCardsForHomeStore(home, team)
-                : GetAvailableCardsForPlanet(home, storePlanetId);
+                ? GetAvailableCardsForHomeStore(ship, home, team)
+                : GetAvailableCardsForPlanet(ship, home, storePlanetId);
             int n = 0;
             for (int i = 0; i < baseList.Count; i++)
             {
@@ -528,7 +456,7 @@ namespace TitanOrbit.Systems
             if (!isHome && !isCapturedPlanet) return;
 
             int storePlanetId = planet.PlanetId;
-            List<CardData> pool = GetCardPoolForSpin(spinTier, homeLevel, isHome, storePlanetId, ship.ShipTeam);
+            List<CardData> pool = GetCardPoolForSpin(ship, spinTier, homeLevel, isHome, storePlanetId, ship.ShipTeam);
             if (pool == null || pool.Count == 0)
             {
                 NotifyCardSpinResultClientRpc(string.Empty, string.Empty, string.Empty, shipNetworkId, new ClientRpcParams
@@ -596,7 +524,7 @@ namespace TitanOrbit.Systems
             if (homePlanet == null) return;
             int homeLevel = homePlanet.HomePlanetLevel;
 
-            CardData card = FindCardById(cardId);
+            CardData card = GetCardByIdForShip(ship, cardId);
             if (card == null) return;
             if (homeLevel < card.minHomePlanetLevel) return;
 
@@ -836,19 +764,32 @@ namespace TitanOrbit.Systems
 
         #region Helpers
 
-        private CardData FindCardById(string cardId)
+        /// <summary>Resolves a card on the given ship's family deck first, then searches all configured families.</summary>
+        public CardData GetCardByIdForShip(Starship ship, string cardId)
         {
+            if (string.IsNullOrEmpty(cardId)) return null;
+            var family = TryResolveFamilyForShip(ship);
+            if (family != null)
+            {
+                foreach (var card in family.GetUpgradeCards())
+                {
+                    if (card != null && card.cardId == cardId) return card;
+                }
+            }
             return GetCardById(cardId);
         }
 
-        /// <summary>Public lookup for resolving card IDs to CardData (e.g. for client-side equipped card display).</summary>
+        /// <summary>Public lookup across every <see cref="ShipFamilyDefinition"/> in <see cref="planetShipFamilyConfig"/> (e.g. client UI when ship context is unclear).</summary>
         public CardData GetCardById(string cardId)
         {
-            if (allCards == null || string.IsNullOrEmpty(cardId)) return null;
-            foreach (var card in allCards)
+            if (string.IsNullOrEmpty(cardId) || planetShipFamilyConfig?.families == null) return null;
+            foreach (var entry in planetShipFamilyConfig.families)
             {
-                if (card == null) continue;
-                if (card.cardId == cardId) return card;
+                if (entry?.shipFamilyDefinition == null) continue;
+                foreach (var card in entry.shipFamilyDefinition.GetUpgradeCards())
+                {
+                    if (card != null && card.cardId == cardId) return card;
+                }
             }
             return null;
         }

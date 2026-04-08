@@ -1,0 +1,2214 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbdb7142b5756eb4ea63ff0b0a32041c, type: 3}
+  m_Name: StarForceShipFamily
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
+  familyId: StarForce
+  bulletPrefabIndex: 0
+  components:
+  - componentId: Body1
+    displayName: Body1 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2
+    displayName: Body2 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Cockpit
+    displayName: Cockpit 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 15
+      healthCapPerLevel: 3
+      healthRegen: 5
+      healthRegenPerLevel: 1
+      energyCap: 5
+      energyCapPerLevel: 1.5
+      energyRegen: 3
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 5
+      maxGemsPerLevel: 1
+      maxPeople: 5
+      maxPeoplePerLevel: 1
+    bulletPrefabIndex: -1
+  - componentId: Engine
+    displayName: Engine 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 2
+      healthCapPerLevel: 0.5
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 8
+      moveSpeedPerLevel: 2
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp1
+    displayName: EngineComp1 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine (1)
+    displayName: Engine (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Thruster (1)
+    displayName: Thruster (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (1)
+    displayName: Flap (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (2)
+    displayName: Flap (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (3)
+    displayName: Flap (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (4)
+    displayName: Flap (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Thruster
+    displayName: Thruster 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 2
+      healthCapPerLevel: 0.5
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 8
+      turnSpeedPerLevel: 2
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon
+    displayName: Weapon 1
+    stats:
+      firePower: 5
+      firePowerPerLevel: 1.5
+      bulletSpeed: 5
+      bulletSpeedPerLevel: 1
+      fireRate: 1.5
+      fireRatePerLevel: 0.25
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing
+    displayName: Wing 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.5
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 4
+      turnSpeedPerLevel: 1
+      maxGems: 10
+      maxGemsPerLevel: 2
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Cockpit (1)
+    displayName: Cockpit (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body1 (1)
+    displayName: Body1 (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp2 (1)
+    displayName: EngineComp2 (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Thruster (2)
+    displayName: Thruster (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (5)
+    displayName: Flap (5) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (6)
+    displayName: Flap (6) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (7)
+    displayName: Flap (7) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Flap (8)
+    displayName: Flap (8) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp2 (2)
+    displayName: EngineComp2 (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp2 (3)
+    displayName: EngineComp2 (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp2 (4)
+    displayName: EngineComp2 (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (1)
+    displayName: Body2 (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (1)
+    displayName: Wing (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (2)
+    displayName: Wing (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (3)
+    displayName: Wing (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (4)
+    displayName: Wing (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (1)
+    displayName: Weapon (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (2)
+    displayName: Weapon (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (3)
+    displayName: Weapon (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (4)
+    displayName: Weapon (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (5)
+    displayName: Weapon (5) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (6)
+    displayName: Weapon (6) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (7)
+    displayName: Weapon (7) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon (8)
+    displayName: Weapon (8) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Thruster (3)
+    displayName: Thruster (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Thruster (4)
+    displayName: Thruster (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine (2)
+    displayName: Engine (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (5)
+    displayName: Wing (5) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (6)
+    displayName: Wing (6) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (2)
+    displayName: Body2 (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (3)
+    displayName: Body2 (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (4)
+    displayName: Body2 (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp2
+    displayName: EngineComp2 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine (3)
+    displayName: Engine (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp1 (1)
+    displayName: EngineComp1 (1) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (5)
+    displayName: Body2 (5) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (6)
+    displayName: Body2 (6) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (7)
+    displayName: Body2 (7) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body2 (8)
+    displayName: Body2 (8) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (7)
+    displayName: Wing (7) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing (8)
+    displayName: Wing (8) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body1 (2)
+    displayName: Body1 (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Body1 (3)
+    displayName: Body1 (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine (4)
+    displayName: Engine (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp1 (2)
+    displayName: EngineComp1 (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp1 (3)
+    displayName: EngineComp1 (3) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: EngineComp1 (4)
+    displayName: EngineComp1 (4) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Cockpit (2)
+    displayName: Cockpit (2) 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      healthCap: 5
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 3
+      maxGemsPerLevel: 0.5
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  upgradeTree:
+  - chassisId: StarForce_01
+    upgradeTreeShipName: 
+    prefab: {fileID: 1845889154025737743, guid: cef9f84da4e843c42b63fd28a4ca2ad1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 54d36c3bb0f00cd479f1df1f8c3efcdd, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 54d36c3bb0f00cd479f1df1f8c3efcdd, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 469330fcdc3d6234ca17ef0f8a0a28ca, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 28bb0f260a01ea34c9df919052032aa7, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 19b4e25ae9ccee34088ce7353fa20999, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 4e10b450f6abb8d47af4384a0e86a7fc, type: 3}
+    minHomePlanetLevel: 1
+    powerScore: 10.028472
+    powerScoreBreakdown:
+      offense: 0
+      defense: 6.971665
+      energy: 1.6624739
+      mobility: 0
+      capacity: 1.394333
+  - chassisId: StarForce_02
+    upgradeTreeShipName: 
+    prefab: {fileID: 8944230688874302685, guid: 9b2cdf3b8dd8364488170bd5be326e38, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8877f2baf02821f439511e6f60082410, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 10.542899
+    powerScoreBreakdown:
+      offense: 0
+      defense: 7.329288
+      energy: 1.7477533
+      mobility: 0
+      capacity: 1.4658575
+  - chassisId: StarForce_03
+    upgradeTreeShipName: 
+    prefab: {fileID: 1605869618707233800, guid: 31827804ad114de4abcc915ff2ad260f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: cdce9fc2e587f4249ae40021221cca73, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: cdce9fc2e587f4249ae40021221cca73, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: f49b65ffbb84dba489e5bcea8c0ac293, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: f7e08054f81c62341a18128ddf698c34, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 2ba9132d7b5f1e343997711d70760ff2, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: dbb84e5d500870a4f89d32fc82ede2b7, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 11.877371
+    powerScoreBreakdown:
+      offense: 0
+      defense: 8.256995
+      energy: 1.968976
+      mobility: 0
+      capacity: 1.6513993
+  - chassisId: StarForce_04
+    upgradeTreeShipName: 
+    prefab: {fileID: 6054296683574211029, guid: fe6a219d160abad458be214870d3d90b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f70312d906ad97543bd446276abe725b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 13.34054
+    powerScoreBreakdown:
+      offense: 0
+      defense: 9.274172
+      energy: 2.2115333
+      mobility: 0
+      capacity: 1.8548344
+  - chassisId: StarForce_05
+    upgradeTreeShipName: 
+    prefab: {fileID: 3550640062790148241, guid: 4abd3e259599d2a429e477d8e089b86b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a1aa827364e8cc54b993b96a7bef753b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a1aa827364e8cc54b993b96a7bef753b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: cd3e68ec3ebb254428c911326bc7c63a, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 4e122ab4bbff9ef4d88a4f45f242498b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: c41f3ddda634ae9438d256877a745d32, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: e3faa86b5ad8fc1469281f21a1b5bb5a, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 14.65166
+    powerScoreBreakdown:
+      offense: 0
+      defense: 10.185646
+      energy: 2.4288847
+      mobility: 0
+      capacity: 2.0371292
+  - chassisId: StarForce_06
+    upgradeTreeShipName: 
+    prefab: {fileID: 6474311602645508097, guid: 394fe5697f27a594b810f9a02647161c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: dc8d109eb60bc494485d6f72abddaebc, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 14.812164
+    powerScoreBreakdown:
+      offense: 0
+      defense: 10.297227
+      energy: 2.4554925
+      mobility: 0
+      capacity: 2.0594454
+  - chassisId: StarForce_07
+    upgradeTreeShipName: 
+    prefab: {fileID: 1513925704109281903, guid: 6cef86234debb2c479eb2358c05e8611, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 9e0f480804e4b934eb2052c1bcdfa4c3, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 17.193352
+    powerScoreBreakdown:
+      offense: 0
+      defense: 11.952597
+      energy: 2.8502347
+      mobility: 0
+      capacity: 2.3905194
+  - chassisId: StarForce_08
+    upgradeTreeShipName: 
+    prefab: {fileID: 8767561897813782063, guid: 09c56edee860ff14bbcc397976d1987c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ccd0ced02015a094c875d679d4cda6ce, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ccd0ced02015a094c875d679d4cda6ce, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 96a98e39178969c49949003ab035423b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3dfd542789325f94ebf3ca64c9b3e0f3, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 522a6e669dfb5f14ebeb46a8d93abbad, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 855d5d0a2669dc741aa56882a778c450, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 14.897772
+    powerScoreBreakdown:
+      offense: 0
+      defense: 10.35674
+      energy: 2.4696841
+      mobility: 0
+      capacity: 2.0713482
+  - chassisId: StarForce_09
+    upgradeTreeShipName: 
+    prefab: {fileID: 3051297257712118882, guid: a91963ce6578c9848be1a973713660f9, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: bcad63a428e8b1c42b40cc54b7e67ece, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 16.414696
+    powerScoreBreakdown:
+      offense: 0
+      defense: 11.411286
+      energy: 2.7211528
+      mobility: 0
+      capacity: 2.2822573
+  - chassisId: StarForce_10
+    upgradeTreeShipName: 
+    prefab: {fileID: 7276422960931814866, guid: eddaa3272700ea04580b04c96a2df74c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e26fb8be5f70023438beead45f96b74b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e26fb8be5f70023438beead45f96b74b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 958395697211e654f95d0be857e1e3ce, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 5ad256d96b40cfe41aa67514ee610144, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8bb17f96391ad384fa067194e428cb2f, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 267ecdc8006170c44a0287679041e410, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 17.220083
+    powerScoreBreakdown:
+      offense: 0
+      defense: 11.971181
+      energy: 2.8546662
+      mobility: 0
+      capacity: 2.3942363
+  - chassisId: StarForce_11
+    upgradeTreeShipName: 
+    prefab: {fileID: 4709615200273077077, guid: 1ac057b59d97e31448ccf5343fdc5f4a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b2467179c42d2984285948ff4a8bbce7, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b2467179c42d2984285948ff4a8bbce7, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: ac47fb01216fe94429ec709abb2df2a6, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 4fd4531a835e8ab44b9dbfbb51fbaaa2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 95e0abaacad1aa143bdef3b620ef4632, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 9447607cba7ed5041b53991dd1adf073, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 22.221104
+    powerScoreBreakdown:
+      offense: 0
+      defense: 15.447826
+      energy: 3.6837122
+      mobility: 0
+      capacity: 3.089565
+  - chassisId: StarForce_12
+    upgradeTreeShipName: 
+    prefab: {fileID: 2570618785341778727, guid: a6bf04d28a94f1e4cb787ba1af11a9e4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b762a83b7ded71a44b5f55cb611d4820, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b762a83b7ded71a44b5f55cb611d4820, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 6d4dba0bf1a5e62479fa1467683a3708, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 52309632f7407944d9b182c5481d231a, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: d0956ef3190fbc1408c8e24040ce2750, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: b23cd4388510f034ea6cca28ad75f419, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 19.514101
+    powerScoreBreakdown:
+      offense: 0
+      defense: 13.565953
+      energy: 3.234958
+      mobility: 0
+      capacity: 2.7131906
+  - chassisId: StarForce_13
+    upgradeTreeShipName: 
+    prefab: {fileID: 962425790486801610, guid: 21d22a9aefb51c44b974dcc41a54ba94, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2c063f46520a8dd499a0c2096cfabc12, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 2c063f46520a8dd499a0c2096cfabc12, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 496b9a46005e30e4297717d0ff7d27a7, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: dfa0d0b5e6deba24e8d15d42eb2fe8b0, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: b1c86494b9337ce49969239b902f0088, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: a0677317087b6c842b5e57c90fb6a6bb, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 20.006678
+    powerScoreBreakdown:
+      offense: 0
+      defense: 13.908385
+      energy: 3.316615
+      mobility: 0
+      capacity: 2.7816772
+  - chassisId: StarForce_14
+    upgradeTreeShipName: 
+    prefab: {fileID: 4182920390229914433, guid: 05d56b71a79e6104b8ca1cd4b18d5e2a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: c17372d0cc35df74983f9d3975a8627b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 20.734352
+    powerScoreBreakdown:
+      offense: 0
+      defense: 14.414256
+      energy: 3.4372454
+      mobility: 0
+      capacity: 2.8828511
+  - chassisId: StarForce_15
+    upgradeTreeShipName: 
+    prefab: {fileID: 8091371689836674947, guid: 495fd28f29aa755479ebd2d134dc8cdd, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 6aa1e49b34964f84ab383dc8ca6100f9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 21.377445
+    powerScoreBreakdown:
+      offense: 0
+      defense: 14.861326
+      energy: 3.5438547
+      mobility: 0
+      capacity: 2.9722652
+  - chassisId: StarForce_16
+    upgradeTreeShipName: 
+    prefab: {fileID: 8365838326503892194, guid: e1379034dd2eeb742ada6c38bfff7e2b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c3c48824d6d453c4e86451420078c124, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: c3c48824d6d453c4e86451420078c124, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 883e26c0a75c59c428fa123cf2f29227, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ea56cad4dabf6024ca76a2e64cba16cd, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: df21cd5de0bacfd4a8a867d66c6056d3, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: d34db99de7811e247ab34a4008b95d8a, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 87.461716
+    powerScoreBreakdown:
+      offense: 29.787952
+      defense: 21.629972
+      energy: 8.172149
+      mobility: 22.1
+      capacity: 5.7716417
+  - chassisId: StarForce_17
+    upgradeTreeShipName: 
+    prefab: {fileID: 7396013242878462073, guid: e7036ad35b811684a9b53e098eda6231, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: eb473c7b3378656418d800e78a65422d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: eb473c7b3378656418d800e78a65422d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 03b4ce9d82f2a644bb04d1a7ca2fc87e, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 44e1708919f9dc043a36c0eabcbb99e2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 03600c85cbffd5b48830038a55608a94, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 8557b5dbff333e14f8cd5cb85c760ea7, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 36.542133
+    powerScoreBreakdown:
+      offense: 0
+      defense: 25.403624
+      energy: 6.0577865
+      mobility: 0
+      capacity: 5.080724
+  - chassisId: StarForce_18
+    upgradeTreeShipName: 
+    prefab: {fileID: 85410636861698820, guid: 8e09d86ab2a12f343ac4291a87779b04, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 23488241bc4bcf645abf8cc325d9c414, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 23488241bc4bcf645abf8cc325d9c414, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: eab6854215251cb4a8c3c38ff352d04b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 22f6bfb4e2bb06242a3e792dfb43976e, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: e0e1c380ff1304042beaa01b97b69c38, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 37.025173
+    powerScoreBreakdown:
+      offense: 0
+      defense: 25.739426
+      energy: 6.1378627
+      mobility: 0
+      capacity: 5.147885
+  - chassisId: StarForce_19
+    upgradeTreeShipName: 
+    prefab: {fileID: 7512536714276762012, guid: a91c4984fb77da1428c8c29888a2e10d, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fe4a603f5de43574fadba8eca725581a, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: fe4a603f5de43574fadba8eca725581a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: f5894220aae1dae4b9ca49cc6171089b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 5302139ae6ea5af48ac06dede510912c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 1ab4549a1c50f34438a82be3c122ab03, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 45c84d9b7da99d6459927df0166d45ad, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 41.564198
+    powerScoreBreakdown:
+      offense: 0
+      defense: 28.894897
+      energy: 6.890321
+      mobility: 0
+      capacity: 5.778979
+  - chassisId: StarForce_20
+    upgradeTreeShipName: 
+    prefab: {fileID: 693128400785146492, guid: c026fd206de9ecf42ad1a77604a4adb3, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5ed46eaf536155b429e8d1dd2365de8b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 47.837086
+    powerScoreBreakdown:
+      offense: 0
+      defense: 25.575066
+      energy: 8.889954
+      mobility: 6.6000004
+      capacity: 6.7720647
+  upgradeCardDeck: {fileID: 0}
+  teamMaterials:
+  - variantName: Red
+    team: 1
+    materials:
+    - {fileID: 2100000, guid: 93f10301c1424ff40a6a36579f4086a9, type: 2}
+  - variantName: Blue
+    team: 2
+    materials:
+    - {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+  - variantName: Green
+    team: 3
+    materials:
+    - {fileID: 2100000, guid: 2aab766abd9e7684ca8bae0a50fed481, type: 2}
+  - variantName: Orange
+    team: 4
+    materials:
+    - {fileID: 2100000, guid: a34ae887fcf3e94459e70a2a22848844, type: 2}
+  - variantName: Purple
+    team: 5
+    materials:
+    - {fileID: 2100000, guid: 2411d56b25b63834fb057f7f4c0c08cc, type: 2}
+  menuPreviewBackgroundColor: {r: 0.06, g: 0.09, b: 0.14, a: 1}
+  menuPreviewBoundsPadding: 1.22

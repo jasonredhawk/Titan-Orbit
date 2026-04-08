@@ -129,7 +129,7 @@ namespace TitanOrbit.Editor
 
                 deckCards.Add(WriteCard($"ae_L{L}_colony",
                     $"Colony Pod {L}",
-                    $"+{CardDeckBalance.ColonyPeopleAdd(L):F1} people capacity.",
+                    $"+{CardDeckBalance.ColonyPeopleAdd(L):F0} people capacity.",
                     L, CardRarity.Common, SlotType.Cargo, iconFeeling, CardDeckBalance.SuggestedGemCost(L, 1),
                     c => c.peopleCapacityAdd = CardDeckBalance.ColonyPeopleAdd(L)));
 
@@ -166,7 +166,7 @@ namespace TitanOrbit.Editor
                 EditorUtility.DisplayDialog(
                     "Card deck built",
                     $"Wrote {deckCards.Count} CardData assets and {DeckPath}.\n\n" +
-                    "On your CardShopSystem: assign AstroEagleScaledDeck to Card Deck and leave All Cards empty (or assign the same list) so the shop uses these assets.",
+                    "Assign AstroEagleScaledDeck to the matching ShipFamilyDefinition → Upgrade Card Deck (e.g. AstroEagleShipFamily). CardShopSystem reads decks from there per ship.",
                     "OK");
             }
             else

@@ -100,6 +100,28 @@ namespace TitanOrbit.Data
             return families[index];
         }
 
+        /// <summary>
+        /// Resolves <see cref="ShipFamilyDefinition"/> from a chassis id prefix (e.g. <c>AstroEagle_01</c> → AstroEagle family).
+        /// </summary>
+        public ShipFamilyDefinition GetShipFamilyDefinitionForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId) || families == null) return null;
+            int underscoreIdx = chassisId.IndexOf('_');
+            if (underscoreIdx <= 0) return null;
+            string familyNamePrefix = chassisId.Substring(0, underscoreIdx);
+
+            foreach (var f in families)
+            {
+                if (f?.shipFamilyDefinition == null) continue;
+                string entryFamilyName = f.shipFamilyDefinition.familyId;
+                if (string.IsNullOrEmpty(entryFamilyName) || !entryFamilyName.Equals(familyNamePrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return f.shipFamilyDefinition;
+            }
+
+            return null;
+        }
+
         /// <summary>Gets the ship prefab for chassisId and planet. Resolves from the entry's ShipFamilyDefinition upgradeTree.</summary>
         public GameObject GetPrefabForChassisAndPlanet(string chassisId, int planetId)
         {

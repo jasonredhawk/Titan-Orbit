@@ -595,6 +595,9 @@ namespace TitanOrbit.Entities
         private float lastDepositSpawnTime = -999f;
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
+        [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
+        [SerializeField, Min(0f)] private float peopleTransferStationarySpeedThreshold = 0.2f;
+        private float peopleTransferStationaryTimer;
         private float lastPeopleSpawnTime = -999f;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
 
@@ -683,6 +686,57 @@ namespace TitanOrbit.Entities
         /// <summary>Braking deceleration magnitude when space brakes slow the ship (matches applied brake force / mass).</summary>
         public float MaxBrakingDeceleration => brakeDeceleration;
 
+        /// <summary>
+        /// HUD: asteroid ram outcome using the same impulse → force → damage path as asteroid <see cref="OnCollisionEnter"/>,
+        /// assuming <paramref name="inboundNormalSpeed"/> is your speed component into the surface (head-on: use <see cref="CurrentHorizontalSpeed"/>).
+        /// </summary>
+        public void GetHudAsteroidRamDamageEstimate(float inboundNormalSpeed, out float asteroidDamage, out float selfDamage)
+        {
+            float e = Mathf.Clamp01(asteroidCollisionNormalSpeedRetention);
+            float deltaNormalSpeed = (1f + e) * Mathf.Max(0f, inboundNormalSpeed);
+            float mass = Mathf.Max(0.01f, CurrentMass);
+            float impactImpulse = mass * deltaNormalSpeed;
+            float dt = Time.fixedDeltaTime > 1e-6f ? Time.fixedDeltaTime : 0.02f;
+            float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, dt);
+            asteroidDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToAsteroidDamageScale);
+            selfDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);
+        }
+
+        /// <summary>
+        /// HUD: stats for the highest-DPS cannon (same damage and fire-rate basis as firing). <paramref name="damagePerBullet"/> is one projectile;
+        /// <paramref name="damagePerSecond"/> includes fixed multi-projectile spreads per trigger pull.
+        /// </summary>
+        public bool TryGetHudPrimaryBulletStats(out float damagePerBullet, out float shotsPerSecond, out float damagePerSecond)
+        {
+            damagePerBullet = 0f;
+            shotsPerSecond = 0f;
+            damagePerSecond = 0f;
+            var wc = bulletConfig ?? EffectiveWeaponConfig;
+            if (wc == null || wc.cannons == null || wc.cannons.Count == 0) return false;
+
+            bool any = false;
+            float bestDps = 0f;
+            foreach (var c in wc.cannons)
+            {
+                if (c == null) continue;
+                float rate = Mathf.Max(0f, c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL));
+                int pellets = 1;
+                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                    pellets = Mathf.Max(1, c.spreadProjectileCount);
+                float d = Mathf.Max(0f, c.damagePerBullet);
+                float dps = d * pellets * rate;
+                if (!any || dps > bestDps)
+                {
+                    any = true;
+                    bestDps = dps;
+                    damagePerBullet = d;
+                    shotsPerSecond = rate;
+                    damagePerSecond = dps;
+                }
+            }
+            return any;
+        }
+
         /// <summary>Raw chassis/base stat with no attribute upgrades and no card bonuses. Used to scale components by percentage increase (current/base).</summary>
         private float BaseMaxHealthNoAttr => Mathf.Max(1f, maxHealth);
         private float BaseGemCapacityNoAttr => Mathf.Max(0.1f, gemCapacity);
@@ -741,7 +795,7 @@ namespace TitanOrbit.Entities
             {
                 for (int i = 0; i < equippedCardIds.Count; i++)
                 {
-                    var card = Systems.CardShopSystem.Instance.GetCardById(equippedCardIds[i].cardId.ToString());
+                    var card = Systems.CardShopSystem.Instance.GetCardByIdForShip(this, equippedCardIds[i].cardId.ToString());
                     if (card != null)
                         _clientEquippedCardsCache.Add(card);
                 }
@@ -1376,8 +1430,9 @@ namespace TitanOrbit.Entities
                 _cachedCardHealthRegenAdd += card.healthRegenAdd;
                 _cachedCardEnergyCapacityAdd += card.energyCapacityAdd;
                 _cachedCardEnergyRegenAdd += card.energyRegenAdd;
-                _cachedCardGemCapacityAdd += card.gemCapacityAdd;
-                _cachedCardPeopleCapacityAdd += card.peopleCapacityAdd;
+                // Gem and people capacity are discrete in gameplay; round so fractional card data still applies cleanly.
+                _cachedCardGemCapacityAdd += Mathf.Round(card.gemCapacityAdd);
+                _cachedCardPeopleCapacityAdd += Mathf.Round(card.peopleCapacityAdd);
                 if (card.damageMultiplier > 0f)
                     _cachedCardDamageMultiplier *= card.damageMultiplier;
                 if (card.bulletSpeedMultiplier > 0f)
@@ -3177,8 +3232,21 @@ namespace TitanOrbit.Entities
             {
                 peopleLoadAccumulator = 0f;
                 peopleUnloadAccumulator = 0f;
+                peopleTransferStationaryTimer = 0f;
                 return;
             }
+
+            Vector3 horizontalVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            horizontalVel.y = 0f;
+            bool isStationaryInOrbit = horizontalVel.magnitude <= peopleTransferStationarySpeedThreshold;
+            if (isStationaryInOrbit)
+                peopleTransferStationaryTimer += Time.fixedDeltaTime;
+            else
+                peopleTransferStationaryTimer = 0f;
+
+            if (peopleTransferStationaryTimer < peopleTransferStationaryHoldSeconds)
+                return;
+
             float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
             bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
 
@@ -3309,9 +3377,10 @@ namespace TitanOrbit.Entities
 
                     Vector3 planetPos = orbitPlanet.transform.position;
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                     var shipNo = GetComponent<NetworkObject>();
-                    if (shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, peopleDropValue, shipNo.NetworkObjectId, shipTeam.Value);
+                    if (shipNo != null && planetNo != null)
+                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, peopleDropValue, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
 
                 }
                 else if (shouldSpawnPeople
@@ -3330,9 +3399,10 @@ namespace TitanOrbit.Entities
 
                         Vector3 planetPos = orbitPlanet.transform.position;
                         Vector3 shipPos = rb != null ? rb.position : transform.position;
+                        var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                         var shipNo = GetComponent<NetworkObject>();
-                        if (shipNo != null)
-                            GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, remainder, shipNo.NetworkObjectId, shipTeam.Value);
+                        if (shipNo != null && planetNo != null)
+                            GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, remainder, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
                     }
                 }
             }

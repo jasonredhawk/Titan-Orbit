@@ -18,7 +18,7 @@ namespace TitanOrbit.UI
     }
 
     /// <summary>
-    /// Speed and mass HUD: horizontal speed bar, bidirectional accelerometer (green accel / red decel), and time-to-max-speed estimate (uses thrust/mass, so it changes with gem load).
+    /// Speed and mass HUD: speed/accel bars with tick labels, time-to-max-speed, asteroid ram estimate (speed × mass, head-on), and primary weapon damage/DPS.
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
@@ -28,8 +28,8 @@ namespace TitanOrbit.UI
 
         [Header("Layout")]
         [SerializeField] private SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
-        [SerializeField] private float panelWidth = 340f;
-        [SerializeField] private float panelHeight = 100f;
+        [SerializeField] private float panelWidth = 380f;
+        [SerializeField] private float panelHeight = 138f;
         [Tooltip("How quickly the accelerometer value catches up to measured acceleration (lower = smoother bar and ACC text).")]
         [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")] private float accelerationBarSmoothing = 5f;
         [Tooltip("Inset from the left or right screen edge, depending on placement.")]
@@ -44,12 +44,15 @@ namespace TitanOrbit.UI
         [SerializeField] private Color textColor = new Color(0.92f, 0.95f, 1f, 1f);
         [SerializeField] private Color accelPositiveColor = new Color(0.25f, 0.92f, 0.45f, 0.92f);
         [SerializeField] private Color accelNegativeColor = new Color(0.95f, 0.28f, 0.28f, 0.92f);
+        [SerializeField] private Color tickLabelColor = new Color(0.78f, 0.82f, 0.9f, 0.72f);
 
         private GameObject rootPanel;
         private Slider speedSlider;
         private RectTransform accelGreenFill;
         private RectTransform accelRedFill;
         private TextMeshProUGUI speedLabel;
+        private TextMeshProUGUI[] speedTickLabels;
+        private TextMeshProUGUI[] accelTickLabels;
         private Starship playerShip;
         private Starship accelSampleShip;
         private float lastHorizontalSpeed;
@@ -95,11 +98,15 @@ namespace TitanOrbit.UI
             bg.raycastTarget = false;
 
             const float pad = 8f;
-            const float labelNormH = 0.34f;
+            const float labelNormH = 0.44f;
             const float speedNormTop = 1f;
-            const float speedNormBottom = 0.62f;
-            const float accelNormTop = 0.56f;
-            const float accelNormBottom = 0.38f;
+            const float speedNormBottom = 0.73f;
+            const float speedTickNormBottom = 0.635f;
+            const float speedTickNormTop = 0.71f;
+            const float accelNormTop = 0.60f;
+            const float accelNormBottom = 0.455f;
+            const float accelTickNormBottom = 0.37f;
+            const float accelTickNormTop = 0.435f;
 
             GameObject sliderGo = new GameObject("SpeedBar");
             sliderGo.transform.SetParent(rootPanel.transform, false);
@@ -148,6 +155,15 @@ namespace TitanOrbit.UI
             fillImg.raycastTarget = false;
             speedSlider.fillRect = fr;
 
+            GameObject speedTickStrip = new GameObject("SpeedTicks");
+            speedTickStrip.transform.SetParent(rootPanel.transform, false);
+            RectTransform speedTickRect = speedTickStrip.AddComponent<RectTransform>();
+            speedTickRect.anchorMin = new Vector2(0f, speedTickNormBottom);
+            speedTickRect.anchorMax = new Vector2(1f, speedTickNormTop);
+            speedTickRect.offsetMin = new Vector2(pad, 0f);
+            speedTickRect.offsetMax = new Vector2(-pad, 0f);
+            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 9f);
+
             GameObject accelRoot = new GameObject("AccelBar");
             accelRoot.transform.SetParent(rootPanel.transform, false);
             RectTransform accelRootRect = accelRoot.AddComponent<RectTransform>();
@@ -155,6 +171,15 @@ namespace TitanOrbit.UI
             accelRootRect.anchorMax = new Vector2(1f, accelNormTop);
             accelRootRect.offsetMin = new Vector2(pad, 0f);
             accelRootRect.offsetMax = new Vector2(-pad, 0f);
+
+            GameObject accelTickStrip = new GameObject("AccelTicks");
+            accelTickStrip.transform.SetParent(rootPanel.transform, false);
+            RectTransform accelTickRect = accelTickStrip.AddComponent<RectTransform>();
+            accelTickRect.anchorMin = new Vector2(0f, accelTickNormBottom);
+            accelTickRect.anchorMax = new Vector2(1f, accelTickNormTop);
+            accelTickRect.offsetMin = new Vector2(pad, 0f);
+            accelTickRect.offsetMax = new Vector2(-pad, 0f);
+            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 9f);
 
             GameObject accelTrack = new GameObject("Track");
             accelTrack.transform.SetParent(accelRoot.transform, false);
@@ -209,8 +234,8 @@ namespace TitanOrbit.UI
             lr.offsetMax = new Vector2(-10f, -2f);
             speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
             speedLabel.text = "—";
-            speedLabel.fontSize = 13f;
-            speedLabel.lineSpacing = -2f;
+            speedLabel.fontSize = 12f;
+            speedLabel.lineSpacing = -3f;
             speedLabel.richText = true;
             if (TMP_Settings.defaultFontAsset != null) speedLabel.font = TMP_Settings.defaultFontAsset;
             speedLabel.color = textColor;
@@ -218,6 +243,41 @@ namespace TitanOrbit.UI
             speedLabel.alignment = alignLeft ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.TopRight;
 
             uiBuilt = true;
+        }
+
+        private TextMeshProUGUI[] CreateTickLabelRow(Transform parent, int count, float fontSize)
+        {
+            var labels = new TextMeshProUGUI[count];
+            for (int i = 0; i < count; i++)
+            {
+                GameObject go = new GameObject($"Tick{i}");
+                go.transform.SetParent(parent, false);
+                RectTransform rt = go.AddComponent<RectTransform>();
+                float x = count <= 1 ? 0.5f : (float)i / (count - 1);
+                rt.anchorMin = new Vector2(x, 0f);
+                rt.anchorMax = new Vector2(x, 1f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(52f, 0f);
+                rt.anchoredPosition = Vector2.zero;
+                var tmp = go.AddComponent<TextMeshProUGUI>();
+                tmp.text = "—";
+                tmp.fontSize = fontSize;
+                tmp.enableAutoSizing = false;
+                tmp.richText = false;
+                tmp.alignment = TextAlignmentOptions.Midline;
+                if (TMP_Settings.defaultFontAsset != null) tmp.font = TMP_Settings.defaultFontAsset;
+                tmp.color = tickLabelColor;
+                tmp.raycastTarget = false;
+                labels[i] = tmp;
+            }
+            return labels;
+        }
+
+        private static string FormatHudNumber(float v, bool preferInteger)
+        {
+            if (preferInteger && v >= 10f) return v.ToString("0");
+            if (preferInteger && v < 10f && Mathf.Abs(v - Mathf.Round(v)) < 0.05f) return Mathf.Round(v).ToString("0");
+            return v.ToString("0.#");
         }
 
         private void ApplyPlacement(RectTransform rootRect)
@@ -295,7 +355,8 @@ namespace TitanOrbit.UI
 
             if (!uiBuilt)
                 BuildUIIfNeeded();
-            if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null)
+            if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null
+                || speedTickLabels == null || accelTickLabels == null)
                 return;
 
             Starship ship = GetPlayerShip();
@@ -347,6 +408,30 @@ namespace TitanOrbit.UI
             accelRedFill.offsetMin = Vector2.zero;
             accelRedFill.offsetMax = Vector2.zero;
 
+            bool preferIntSpeed = maxSpd >= 12f;
+            for (int i = 0; i < speedTickLabels.Length; i++)
+            {
+                float t = speedTickLabels.Length <= 1 ? 0f : (float)i / (speedTickLabels.Length - 1);
+                float tickSpd = t * maxSpd;
+                speedTickLabels[i].text = FormatHudNumber(tickSpd, preferIntSpeed);
+                speedTickLabels[i].alignment = i == 0
+                    ? TextAlignmentOptions.MidlineLeft
+                    : (i == speedTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+            }
+
+            float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
+            bool preferIntAccel = skew >= 12f;
+            for (int i = 0; i < accelTickLabels.Length; i++)
+            {
+                float t = accelTickLabels.Length <= 1 ? 0.5f : (float)i / (accelTickLabels.Length - 1);
+                float v = Mathf.Lerp(-skew, skew, t);
+                string sign = v > 0.001f ? "+" : string.Empty;
+                accelTickLabels[i].text = sign + FormatHudNumber(v, preferIntAccel);
+                accelTickLabels[i].alignment = i == 0
+                    ? TextAlignmentOptions.MidlineLeft
+                    : (i == accelTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+            }
+
             string spdLine;
             if (cur >= maxSpd - 0.02f)
                 spdLine = $"SPD {cur:0.0}/{maxSpd:0.0}  ·  <color=#AAAAAA>at max spd</color>";
@@ -364,7 +449,16 @@ namespace TitanOrbit.UI
             string accSign = smoothedHorizontalAccel >= 0f ? "+" : "";
             string line2 = $"ACC {accSign}{smoothedHorizontalAccel:0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
 
-            speedLabel.text = spdLine + stopPart + "\n" + line2;
+            ship.GetHudAsteroidRamDamageEstimate(cur, out float ramAst, out float ramSelf);
+            string line3 = $"RAM →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(head-on @ spd)</color>";
+
+            string line4;
+            if (ship.TryGetHudPrimaryBulletStats(out float dmgPerHit, out float sps, out float dps))
+                line4 = $"BUL {dmgPerHit:0.#}/hit  ·  {dps:0.#}/s  <color=#888888>({sps:0.#}/s)</color>";
+            else
+                line4 = "BUL —";
+
+            speedLabel.text = spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4;
         }
     }
 }

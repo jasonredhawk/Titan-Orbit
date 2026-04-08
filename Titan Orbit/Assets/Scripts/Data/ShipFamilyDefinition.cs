@@ -333,6 +333,10 @@ namespace TitanOrbit.Data
         [Tooltip("Chassis variants for this family, ordered by power and annotated with minimum planet level.")]
         public List<ShipFamilyChassisTierEntry> upgradeTree = new List<ShipFamilyChassisTierEntry>();
 
+        [Header("Upgrade cards")]
+        [Tooltip("Card pool for this ship family (orbit spins / card shop). When unset or empty, a procedural deck is built at runtime from CardDeckBalance.")]
+        public CardDeckDefinition upgradeCardDeck;
+
         [Header("Team Materials")]
         [Tooltip("Per-team material lists applied to ship component renderers at runtime. Use this instead of per-renderer tinting.")]
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
@@ -349,9 +353,24 @@ namespace TitanOrbit.Data
 
         private bool _lookupBuilt;
 
+        [NonSerialized] private List<CardData> _runtimeProceduralCards;
+
+        /// <summary>
+        /// Cards for this family: <see cref="upgradeCardDeck"/> when assigned, otherwise a one-time procedural list per family asset.
+        /// </summary>
+        public IReadOnlyList<CardData> GetUpgradeCards()
+        {
+            if (upgradeCardDeck != null && upgradeCardDeck.cards != null && upgradeCardDeck.cards.Count > 0)
+                return upgradeCardDeck.cards;
+            if (_runtimeProceduralCards == null)
+                _runtimeProceduralCards = CardDeckRuntimeDefaults.CreateProceduralDeck(familyId);
+            return _runtimeProceduralCards;
+        }
+
         private void OnValidate()
         {
             _lookupBuilt = false;
+            _runtimeProceduralCards = null;
         }
 
         private void EnsureLookup()
