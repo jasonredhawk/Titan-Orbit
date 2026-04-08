@@ -3068,7 +3068,7 @@ namespace TitanOrbit.UI
                     cardTitleTexts[i].text = card.displayName;
                     ApplySpaceCardOutline(cardTitleTexts[i], 0.22f);
                 }
-                int rar = Mathf.Clamp(card.rarity, 1, 5);
+                int rar = Mathf.Clamp((int)card.rarity, 1, 5);
                 int cl = Mathf.Max(1, card.cardLevel);
                 SpinCardShiftVisuals shCard = GetSpinCardShiftVisuals();
                 bool shiftCard = shCard != null && shCard.outerFrameSliced != null;

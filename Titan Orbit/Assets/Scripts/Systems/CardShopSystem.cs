@@ -20,7 +20,12 @@ namespace TitanOrbit.Systems
         [Header("Data")]
         [Tooltip("Planet-to-ship-family mapping. Prefabs and unlock tiers come from each entry's ShipFamilyDefinition upgradeTree.")]
         [SerializeField] private PlanetShipFamilyConfig planetShipFamilyConfig;
+        [Tooltip("When set, replaces empty inspector card lists with this deck at runtime (authored CardData assets + icons).")]
+        [SerializeField] private CardDeckDefinition cardDeck;
         [SerializeField] private List<CardData> allCards = new List<CardData>();
+
+        /// <summary>All cards registered for shops and spins (inspector, <see cref="CardDeckDefinition"/>, or runtime defaults). Populated after <see cref="Awake"/>.</summary>
+        public IReadOnlyList<CardData> RegisteredCards => allCards;
 
         /// <summary>Server-only: last spin offer per ship (NetworkObject id). Client uses <see cref="ClientSpinOfferCardIds"/>.</summary>
         private readonly Dictionary<ulong, PendingCardSpin> _pendingCardSpins = new Dictionary<ulong, PendingCardSpin>();
@@ -47,7 +52,12 @@ namespace TitanOrbit.Systems
                 Destroy(gameObject);
             }
             if (allCards == null || allCards.Count == 0)
-                allCards = GetDefaultCards();
+            {
+                if (cardDeck != null && cardDeck.cards != null && cardDeck.cards.Count > 0)
+                    allCards = new List<CardData>(cardDeck.cards);
+                else
+                    allCards = GetDefaultCards();
+            }
         }
 
         /// <summary>Creates a large runtime card pool when no assets are assigned in the inspector.</summary>
@@ -63,7 +73,7 @@ namespace TitanOrbit.Systems
                 c.displayName = name;
                 c.description = desc;
                 c.cardLevel = level;
-                c.rarity = Mathf.Clamp(rar, 1, 5);
+                c.rarity = (CardRarity)Mathf.Clamp(rar, 1, 5);
                 c.slotType = slotType;
                 c.minHomePlanetLevel = 1;
                 c.originPlanetId = 0;
@@ -89,27 +99,34 @@ namespace TitanOrbit.Systems
 
             for (int L = 1; L <= 7; L++)
             {
-                float f = L;
                 for (int r = 1; r <= 4; r++)
                 {
-                    float rs = 1f + (r - 1) * 0.08f;
-                    Add($"Kinetic Focus {L} ({rn[r]})", $"+{(4 + r * 2 + L):F0}% effective weapon output.", L, r, SlotType.Weapon, dmgMul: 1f + (0.028f * f + 0.015f * r) * rs);
-                    Add($"Aegis Plating {L} ({rn[r]})", $"+{10f + L * 6f + r * 4f:F0} max hull.", L, r, SlotType.Ship, healthAdd: (10f + L * 6f + r * 4f) * rs);
-                    Add($"Cargo Bay {L} ({rn[r]})", $"+{12f + L * 10f + r * 6f:F0} gem capacity.", L, r, SlotType.Cargo, gemAdd: (12f + L * 10f + r * 6f) * rs);
-                    Add($"Shard Projector {L} ({rn[r]})", $"+{(6 + L + r):F0}% projectile velocity.", L, r, SlotType.Weapon, bulletSpeedMul: 1f + (0.04f * f + 0.02f * r) * rs);
-                    Add($"Arc Reactor {L} ({rn[r]})", $"+{1.2f + L * 0.45f + r * 0.25f:F1} energy/sec.", L, r, SlotType.Ship, energyRegenAdd: (1.2f + L * 0.45f + r * 0.25f) * rs);
-                    Add($"Capacitor Bank {L} ({rn[r]})", $"+{8f + L * 5f + r * 3f:F0} energy capacity.", L, r, SlotType.Ship, energyCapAdd: (8f + L * 5f + r * 3f) * rs);
-                    Add($"Refinery Drones {L} ({rn[r]})", $"+{(6 + L + r * 2):F0}% gem deposit speed.", L, r, SlotType.Cargo, gemDepositSpeedMul: 1f + (0.02f * f + 0.015f * r) * rs);
-                    Add($"Transit Uplink {L} ({rn[r]})", $"+{(6 + L + r * 2):F0}% people load/unload speed.", L, r, SlotType.Cargo, peopleTransferSpeedMul: 1f + (0.02f * f + 0.015f * r) * rs);
+                    float dmgMul = CardDeckBalance.KineticDamageMultiplier(L, r);
+                    float hull = CardDeckBalance.AegisHullAdd(L, r);
+                    float gems = CardDeckBalance.CargoGemAdd(L, r);
+                    float bulletMul = CardDeckBalance.ShardBulletSpeedMultiplier(L, r);
+                    float eReg = CardDeckBalance.ArcEnergyRegenAdd(L, r);
+                    float eCap = CardDeckBalance.CapacitorEnergyCapAdd(L, r);
+                    float qolMul = CardDeckBalance.QualityOfLifeMultiplier(L, r);
+                    Add($"Kinetic Focus {L} ({rn[r]})", $"+{(dmgMul - 1f) * 100f:F1}% weapon damage multiplier.", L, r, SlotType.Weapon, dmgMul: dmgMul);
+                    Add($"Aegis Plating {L} ({rn[r]})", $"+{hull:F0} max hull.", L, r, SlotType.Ship, healthAdd: hull);
+                    Add($"Cargo Bay {L} ({rn[r]})", $"+{gems:F0} gem capacity.", L, r, SlotType.Cargo, gemAdd: gems);
+                    Add($"Shard Projector {L} ({rn[r]})", $"+{(bulletMul - 1f) * 100f:F1}% projectile speed.", L, r, SlotType.Weapon, bulletSpeedMul: bulletMul);
+                    Add($"Arc Reactor {L} ({rn[r]})", $"+{eReg:F2} energy/sec.", L, r, SlotType.Ship, energyRegenAdd: eReg);
+                    Add($"Capacitor Bank {L} ({rn[r]})", $"+{eCap:F0} energy capacity.", L, r, SlotType.Ship, energyCapAdd: eCap);
+                    Add($"Refinery Drones {L} ({rn[r]})", $"+{(qolMul - 1f) * 100f:F1}% gem deposit speed.", L, r, SlotType.Cargo, gemDepositSpeedMul: qolMul);
+                    Add($"Transit Uplink {L} ({rn[r]})", $"+{(qolMul - 1f) * 100f:F1}% people transfer speed.", L, r, SlotType.Cargo, peopleTransferSpeedMul: qolMul);
                 }
 
-                Add($"Afterburner {L}", $"+{0.25f + L * 0.12f:F2} thrust.", L, 3, SlotType.Ship, moveAdd: 0.25f + L * 0.12f);
-                Add($"Gyro Stabilizer {L}", $"+{12f + L * 6f:F0} turn rate.", L, 2, SlotType.Ship, rotAdd: 12f + L * 6f);
-                Add($"Regen Gel {L}", $"+{0.15f + L * 0.05f:F2} hull/sec.", L, 2, SlotType.Ship, healthRegenAdd: 0.15f + L * 0.05f);
-                Add($"Mining Laser {L}", $"+{0.4f + L * 0.15f:F2} mining rate.", L, 2, SlotType.Cargo, miningAdd: 0.4f + L * 0.15f);
-                Add($"Colony Pod {L}", $"+{2f + L:F0} people capacity.", L, 1, SlotType.Cargo, peopleAdd: 2f + L);
+                Add($"Afterburner {L}", $"+{CardDeckBalance.AfterburnerMoveAdd(L):F2} thrust.", L, 3, SlotType.Ship, moveAdd: CardDeckBalance.AfterburnerMoveAdd(L));
+                Add($"Gyro Stabilizer {L}", $"+{CardDeckBalance.GyroRotationAdd(L):F0} turn rate.", L, 2, SlotType.Ship, rotAdd: CardDeckBalance.GyroRotationAdd(L));
+                Add($"Regen Gel {L}", $"+{CardDeckBalance.RegenGelHealthRegenAdd(L):F3} hull/sec.", L, 2, SlotType.Ship, healthRegenAdd: CardDeckBalance.RegenGelHealthRegenAdd(L));
+                Add($"Mining Laser {L}", $"+{CardDeckBalance.MiningRateAdd(L):F2} mining rate.", L, 2, SlotType.Cargo, miningAdd: CardDeckBalance.MiningRateAdd(L));
+                Add($"Colony Pod {L}", $"+{CardDeckBalance.ColonyPeopleAdd(L):F1} people capacity.", L, 1, SlotType.Cargo, peopleAdd: CardDeckBalance.ColonyPeopleAdd(L));
 
-                Add($"Titanforge {L} ({rn[5]})", $"Elite damage + hull.", L, 5, SlotType.Weapon, dmgMul: 1f + 0.06f * f, healthAdd: 8f + L * 4f);
+                float tfDmg = CardDeckBalance.TitanforgeDamageMul(L);
+                float tfHull = CardDeckBalance.TitanforgeHullAdd(L);
+                Add($"Titanforge {L} ({rn[5]})", $"+{(tfDmg - 1f) * 100f:F0}% damage and +{tfHull:F0} hull.", L, 5, SlotType.Weapon, dmgMul: tfDmg, healthAdd: tfHull);
             }
 
             return list;
@@ -468,7 +485,7 @@ namespace TitanOrbit.Systems
             int matches = 0;
             for (int i = 0; i < pool.Count; i++)
             {
-                if (Mathf.Max(1, pool[i].rarity) == selectedRarity)
+                if ((int)pool[i].rarity == selectedRarity)
                     matches++;
             }
             if (matches > 0)
@@ -477,7 +494,7 @@ namespace TitanOrbit.Systems
                 int seen = 0;
                 for (int i = 0; i < pool.Count; i++)
                 {
-                    if (Mathf.Max(1, pool[i].rarity) != selectedRarity) continue;
+                    if ((int)pool[i].rarity != selectedRarity) continue;
                     if (seen == pick) return pool[i];
                     seen++;
                 }
