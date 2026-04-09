@@ -596,7 +596,6 @@ namespace TitanOrbit.Entities
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
         [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
-        [SerializeField, Min(0f)] private float peopleTransferStationarySpeedThreshold = 0.2f;
         private float peopleTransferStationaryTimer;
         private float lastPeopleSpawnTime = -999f;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
@@ -2736,6 +2735,37 @@ namespace TitanOrbit.Entities
             return alignment >= 0.92f && speedRatio >= 0.7f && speedRatio <= 1.35f;
         }
 
+        /// <summary>
+        /// Population transfer should run while genuinely orbiting (tangential motion), not when nearly stationary.
+        /// The old near-zero velocity gate never fired during normal orbit, so people never loaded/unloaded.
+        /// </summary>
+        private bool IsOrbitStableForPeopleTransfer()
+        {
+            if (IsInStableOrbit())
+                return true;
+            // AI uses a fixed tangent speed that may not match GetOrbitTargetSpeed ratios; accept looser alignment in-band.
+            if (!_isAIControlled || currentOrbitPlanet == null || rb == null)
+                return false;
+            Vector3 planetPos = currentOrbitPlanet.transform.position;
+            Vector3 toShip = rb.position - planetPos;
+            toShip.y = 0f;
+            float dist = toShip.magnitude;
+            if (dist < 0.01f)
+                return false;
+            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
+            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
+            if (dist < innerWorld || dist > outerWorld)
+                return false;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            if (vel.sqrMagnitude < 0.0001f)
+                return false;
+            Vector3 radial = toShip / dist;
+            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
+            float alignment = Vector3.Dot(vel.normalized, tangent);
+            return alignment >= 0.82f;
+        }
+
         private void HandleRotation()
         {
             // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
@@ -3236,10 +3266,8 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 horizontalVel = rb != null ? rb.linearVelocity : Vector3.zero;
-            horizontalVel.y = 0f;
-            bool isStationaryInOrbit = horizontalVel.magnitude <= peopleTransferStationarySpeedThreshold;
-            if (isStationaryInOrbit)
+            bool orbitStableForTransfer = IsOrbitStableForPeopleTransfer();
+            if (orbitStableForTransfer)
                 peopleTransferStationaryTimer += Time.fixedDeltaTime;
             else
                 peopleTransferStationaryTimer = 0f;

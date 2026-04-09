@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7105357516269600144}
+  - component: {fileID: 1121003636800150228}
   m_Layer: 0
   m_Name: GalaxyRaptor02
   m_TagString: Untagged
@@ -23,6 +24,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7624767546194323242}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -62,13 +64,847 @@ Transform:
   - {fileID: 8462636423967600298}
   - {fileID: 8462636424451673098}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1121003636800150228
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7624767546194323242}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ced7d950b299c1943bcdaca377dec97b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ShipFamilyStatsPreview
+  shipFamily: {fileID: 11400000, guid: 95d97dd31153ea94e9f7ab5b33da4898, type: 2}
+  familyIdOverride: 
+  totalStats:
+    firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 204.11389
+    healthCapPerLevel: 41.066086
+    healthRegen: 4.279335
+    healthRegenPerLevel: 0.855867
+    energyCap: 116.12507
+    energyCapPerLevel: 19.924746
+    energyRegen: 2.5676012
+    energyRegenPerLevel: 0.4279335
+    moveSpeed: 16
+    moveSpeedPerLevel: 4
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 116.12507
+    maxGemsPerLevel: 19.496815
+    maxPeople: 4.279335
+    maxPeoplePerLevel: 0.855867
+  matchedComponentIds:
+  - Acc
+  - Acc
+  - Acc_Mirrored
+  - Acc_Mirrored
+  - Cockpit
+  - Engine
+  - Engine
+  - Gun
+  - Gun
+  - Gun
+  - Gun
+  - Gun
+  - Gun
+  - MainBody1
+  - MainBody2
+  - MainBody2
+  - MainBody3
+  - MainBody3
+  - MainBody4
+  - MainBody4
+  - MainBody4
+  - ThrustCover
+  - ThrustCover
+  - Wing2
+  - Wing2
+  - Wing1
+  - Wing1
+  - Wing1
+  - Wing1
+  - WingHolder
+  - WingHolder
+  - WingHolder
+  - WingHolder
+  matchedScaleFactors:
+  - 1.6060283
+  - 1
+  - 1
+  - 1.6060303
+  - 0.855867
+  - 1.216594
+  - 1.216594
+  - 1.9288
+  - 1.9288
+  - 1.9288
+  - 1.9288
+  - 1.9288
+  - 1.9288
+  - 1.029025
+  - 1.029025
+  - 1.029025
+  - 1.029025
+  - 1.029025
+  - 1
+  - 1
+  - 1
+  - 0.918273
+  - 0.918273
+  - 1
+  - 1
+  - 0.954694
+  - 0.9546933
+  - 0.954694
+  - 0.9546937
+  - 1.17415
+  - 1.17415
+  - 1.17415
+  - 1.17415
+  perComponentStats:
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 8.030142
+    healthCapPerLevel: 1.6060283
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.8180847
+    energyCapPerLevel: 0.80301416
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.8180847
+    maxGemsPerLevel: 0.80301416
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 8.030151
+    healthCapPerLevel: 1.6060303
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.818091
+    energyCapPerLevel: 0.8030152
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.818091
+    maxGemsPerLevel: 0.8030152
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 12.838005
+    healthCapPerLevel: 2.5676012
+    healthRegen: 4.279335
+    healthRegenPerLevel: 0.855867
+    energyCap: 4.279335
+    energyCapPerLevel: 1.2838006
+    energyRegen: 2.5676012
+    energyRegenPerLevel: 0.4279335
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.279335
+    maxGemsPerLevel: 0.855867
+    maxPeople: 4.279335
+    maxPeoplePerLevel: 0.855867
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.433188
+    healthCapPerLevel: 0.608297
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 8
+    moveSpeedPerLevel: 2
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.433188
+    healthCapPerLevel: 0.608297
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 8
+    moveSpeedPerLevel: 2
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 0
+    maxGemsPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 9.644
+    healthCapPerLevel: 1.9288
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 5.7864
+    energyCapPerLevel: 0.9644
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 5.7864
+    maxGemsPerLevel: 0.9644
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.145125
+    healthCapPerLevel: 1.029025
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.0870748
+    energyCapPerLevel: 0.5145125
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.0870748
+    maxGemsPerLevel: 0.5145125
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.145125
+    healthCapPerLevel: 1.029025
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.0870748
+    energyCapPerLevel: 0.5145125
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.0870748
+    maxGemsPerLevel: 0.5145125
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.145125
+    healthCapPerLevel: 1.029025
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.0870748
+    energyCapPerLevel: 0.5145125
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.0870748
+    maxGemsPerLevel: 0.5145125
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.145125
+    healthCapPerLevel: 1.029025
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.0870748
+    energyCapPerLevel: 0.5145125
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.0870748
+    maxGemsPerLevel: 0.5145125
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.145125
+    healthCapPerLevel: 1.029025
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.0870748
+    energyCapPerLevel: 0.5145125
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.0870748
+    maxGemsPerLevel: 0.5145125
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.591365
+    healthCapPerLevel: 0.918273
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.754819
+    energyCapPerLevel: 0.4591365
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.754819
+    maxGemsPerLevel: 0.4591365
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.591365
+    healthCapPerLevel: 0.918273
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.754819
+    energyCapPerLevel: 0.4591365
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.754819
+    maxGemsPerLevel: 0.4591365
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.77347
+    healthCapPerLevel: 0.954694
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.8640819
+    energyCapPerLevel: 0.477347
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.8640819
+    maxGemsPerLevel: 0.477347
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.7734666
+    healthCapPerLevel: 0.9546933
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.86408
+    energyCapPerLevel: 0.47734666
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.86408
+    maxGemsPerLevel: 0.47734666
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.77347
+    healthCapPerLevel: 0.954694
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.8640819
+    energyCapPerLevel: 0.477347
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.8640819
+    maxGemsPerLevel: 0.477347
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.7734685
+    healthCapPerLevel: 0.9546937
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.864081
+    energyCapPerLevel: 0.47734684
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.864081
+    maxGemsPerLevel: 0.47734684
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.87075
+    healthCapPerLevel: 1.17415
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.52245
+    energyCapPerLevel: 0.587075
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.52245
+    maxGemsPerLevel: 0.587075
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.87075
+    healthCapPerLevel: 1.17415
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.52245
+    energyCapPerLevel: 0.587075
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.52245
+    maxGemsPerLevel: 0.587075
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.87075
+    healthCapPerLevel: 1.17415
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.52245
+    energyCapPerLevel: 0.587075
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.52245
+    maxGemsPerLevel: 0.587075
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.87075
+    healthCapPerLevel: 1.17415
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.52245
+    energyCapPerLevel: 0.587075
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.52245
+    maxGemsPerLevel: 0.587075
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  previewSumPropulsionMoveSpeed: 16
+  previewTopSpeedMoveSpeed: 8
 --- !u!1001 &3956099654923356777
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 2207229824515148529, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
@@ -132,10 +968,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8725326302258291677, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
 --- !u!4 &1750774616803794639 stripped
 Transform:
@@ -147,6 +986,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 3594138852716116327, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
@@ -210,10 +1050,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3594138852718045095, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
 --- !u!4 &506111333089024493 stripped
 Transform:
@@ -225,10 +1068,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 1664380561674007578, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3682323158034624761, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
@@ -292,6 +1136,9 @@ PrefabInstance:
       value: GalaxyRaptor_Engine
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
 --- !u!4 &431464623491909092 stripped
 Transform:
@@ -303,6 +1150,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 3594138852716116327, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
@@ -366,10 +1214,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3594138852718045095, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9197e16fa7df4844da22e05ddd592abe, type: 3}
 --- !u!4 &506111333315023222 stripped
 Transform:
@@ -381,10 +1232,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 8149611993263695285, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 8872931615806978700, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
@@ -448,6 +1300,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
 --- !u!4 &5432276120985827308 stripped
 Transform:
@@ -459,6 +1314,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -522,10 +1378,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723873022504488 stripped
 Transform:
@@ -537,10 +1396,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 90856291553264406, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3761946328136536004, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
@@ -604,6 +1464,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
 --- !u!4 &8462636423967600298 stripped
 Transform:
@@ -615,6 +1478,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -678,10 +1542,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723873147069855 stripped
 Transform:
@@ -693,6 +1560,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -756,10 +1624,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &293538427202536514 stripped
 Transform:
@@ -771,6 +1642,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 238953828353941189, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -830,7 +1702,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7215084606212593389, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 7271990657755722442, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -838,6 +1710,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
 --- !u!4 &3870294745396868173 stripped
 Transform:
@@ -849,6 +1724,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -912,10 +1788,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723872763484156 stripped
 Transform:
@@ -927,6 +1806,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -990,10 +1870,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &293538426560888717 stripped
 Transform:
@@ -1005,6 +1888,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 238953828353941189, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -1064,7 +1948,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7215084606212593389, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 7271990657755722442, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -1072,6 +1956,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
 --- !u!4 &3870294744801683735 stripped
 Transform:
@@ -1083,6 +1970,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 238953828353941189, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -1142,7 +2030,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7215084606212593389, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 7271990657755722442, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -1150,6 +2038,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
 --- !u!4 &3870294744608429432 stripped
 Transform:
@@ -1161,6 +2052,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1168,7 +2060,7 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody3
       objectReference: {fileID: 0}
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1228,6 +2120,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &1124956816463859441 stripped
 Transform:
@@ -1239,10 +2134,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4148793663688989133, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 6505369190145888873, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
@@ -1306,6 +2202,9 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody2
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
 --- !u!4 &7827631509169966518 stripped
 Transform:
@@ -1317,10 +2216,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 90856291553264406, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3761946328136536004, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
@@ -1384,6 +2284,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
 --- !u!4 &8462636424480147477 stripped
 Transform:
@@ -1395,6 +2298,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1402,7 +2306,7 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody3
       objectReference: {fileID: 0}
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1462,6 +2366,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &1124956816625015366 stripped
 Transform:
@@ -1473,10 +2380,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 90856291553264406, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3761946328136536004, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
@@ -1540,6 +2448,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
 --- !u!4 &8462636424451673098 stripped
 Transform:
@@ -1551,10 +2462,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 6576428935213529344, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 6576428935215720384, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
@@ -1618,6 +2530,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
 --- !u!4 &7900097598047788966 stripped
 Transform:
@@ -1629,10 +2544,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 1664380561674007578, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3682323158034624761, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
@@ -1696,6 +2612,9 @@ PrefabInstance:
       value: GalaxyRaptor_Engine
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
 --- !u!4 &431464624580503664 stripped
 Transform:
@@ -1707,10 +2626,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 8149611993263695285, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 8872931615806978700, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
@@ -1774,6 +2694,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
 --- !u!4 &5432276119987936949 stripped
 Transform:
@@ -1785,10 +2708,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 90856291553264406, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 3761946328136536004, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
@@ -1852,6 +2776,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d3de0701939cbc4fbfe0b6698340e09, type: 3}
 --- !u!4 &8462636424658448069 stripped
 Transform:
@@ -1863,6 +2790,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -1926,10 +2854,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723874411407913 stripped
 Transform:
@@ -1941,10 +2872,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 6576428935213529344, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 6576428935215720384, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
@@ -2008,6 +2940,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
 --- !u!4 &7900097597805544747 stripped
 Transform:
@@ -2019,6 +2954,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 2207229824515148529, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
@@ -2082,10 +3018,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8725326302258291677, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
 --- !u!4 &1750774616037119835 stripped
 Transform:
@@ -2097,6 +3036,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -2160,10 +3100,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723873985298775 stripped
 Transform:
@@ -2175,6 +3118,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 238953828353941189, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -2234,7 +3178,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7215084606212593389, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 7271990657755722442, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
@@ -2242,6 +3186,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f76033bc7f3cf874ea2f3ebe32f237a7, type: 3}
 --- !u!4 &3870294746460634115 stripped
 Transform:
@@ -2253,6 +3200,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 2207229824515148529, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
@@ -2316,10 +3264,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8725326302258291677, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3957ff5ca35edf048848a32194256dc7, type: 3}
 --- !u!4 &1750774615799826553 stripped
 Transform:
@@ -2331,6 +3282,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 250802045755079468, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
@@ -2390,7 +3342,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5791784521810920577, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 8090804397381696149, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
@@ -2398,6 +3350,9 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
 --- !u!4 &3863495348902769056 stripped
 Transform:
@@ -2409,6 +3364,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -2472,10 +3428,13 @@ PrefabInstance:
       value: GalaxyRaptor_Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &775723873911281799 stripped
 Transform:
@@ -2487,10 +3446,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 6307053476394042074, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 6307053476395941946, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
@@ -2554,6 +3514,9 @@ PrefabInstance:
       value: GalaxyRaptor_Cockpit
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
 --- !u!4 &7017105289015809653 stripped
 Transform:
@@ -2565,10 +3528,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7105357516269600144}
     m_Modifications:
     - target: {fileID: 4148793663688989133, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 14fa2776342709d46843e9331afd7bbb, type: 2}
     - target: {fileID: 6505369190145888873, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
@@ -2632,6 +3596,9 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody2
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
 --- !u!4 &7827631510107470650 stripped
 Transform:

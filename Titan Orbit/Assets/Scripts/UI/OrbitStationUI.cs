@@ -1495,12 +1495,10 @@ namespace TitanOrbit.UI
                     isNextChoice = _shipTreeNextTargets.Contains(view.BranchIndex);
                 }
 
-                bool canApplyPurchase = view.Node != null && view.Node.shipData != null;
-                if (!canApplyPurchase && CardShopSystem.Instance != null)
-                {
-                    string ladderCid = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex);
-                    canApplyPurchase = !string.IsNullOrEmpty(ladderCid);
-                }
+                // Purchasable if this store's family defines a hull at this ladder slot and/or legacy UpgradeTree has ShipData (server prefers ladder when both exist).
+                bool ladderOk = CardShopSystem.Instance != null
+                    && !string.IsNullOrEmpty(CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex));
+                bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
                 view.Button.interactable = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlockedByPlanet && canApplyPurchase;
                 var img = view.Button.GetComponent<Image>();
                 if (img != null)

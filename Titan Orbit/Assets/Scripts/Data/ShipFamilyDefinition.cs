@@ -140,22 +140,85 @@ namespace TitanOrbit.Data
             return (s.x + s.y + s.z) / 3f;
         }
 
-        /// <summary>True if the component is a weapon (componentId starts with "Weapon"). Fire power uses average(x,y); fire rate uses 1/z; bullet speed is not scaled by part size.</summary>
+        /// <summary>
+        /// True if <paramref name="componentId"/> is a weapon for scaling rules: isolated "weapon" in the id (e.g. Weapon1, weapon(1), Main_Weapon_L),
+        /// or legacy prefix "Weapon". Fire power uses average(x,y); fire rate uses 1/z; bullet speed is not scaled by part size.
+        /// </summary>
         public static bool IsWeaponComponent(string componentId)
         {
-            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Weapon", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(componentId)) return false;
+            string id = componentId.TrimStart();
+            if (id.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase)) return true;
+            return ContainsIsolatedKeyword(id, "weapon");
         }
 
-        /// <summary>True if the component is an engine (componentId starts with "Engine"). Max speed uses largest engine only; thrust sums all engines.</summary>
+        /// <summary>
+        /// True if engine for mobility rules: isolated "engine" or "thrust", but not when id is a thruster (thruster contains "thrust" as substring).
+        /// Legacy prefix "Engine" still matches.
+        /// </summary>
         public static bool IsEngineComponent(string componentId)
         {
-            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Engine", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(componentId)) return false;
+            string id = componentId.TrimStart();
+            if (IsThrusterComponent(id)) return false;
+            if (id.StartsWith("Engine", StringComparison.OrdinalIgnoreCase)) return true;
+            return ContainsIsolatedKeyword(id, "engine") || ContainsIsolatedKeyword(id, "thrust");
         }
 
-        /// <summary>True if the component is a thruster (componentId starts with "Thruster"). Thrust stacks with engines; max speed cap uses best engine first, else best thruster.</summary>
+        /// <summary>
+        /// True if thruster for mobility rules: isolated "thruster", or legacy prefix "Thruster". Checked before engine/thrust so names like Thruster_1 are not engines.
+        /// </summary>
         public static bool IsThrusterComponent(string componentId)
         {
-            return !string.IsNullOrEmpty(componentId) && componentId.TrimStart().StartsWith("Thruster", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(componentId)) return false;
+            string id = componentId.TrimStart();
+            if (id.StartsWith("Thruster", StringComparison.OrdinalIgnoreCase)) return true;
+            return ContainsIsolatedKeyword(id, "thruster");
+        }
+
+        /// <summary>
+        /// Keyword appears as its own token: not glued to letters on either side (digits, underscores, parens OK).
+        /// Avoids false positives like "engineer" for "engine" or "finger" for "fin".
+        /// </summary>
+        private static bool ContainsIsolatedKeyword(string s, string keyword)
+        {
+            if (string.IsNullOrEmpty(s) || string.IsNullOrEmpty(keyword)) return false;
+            int idx = 0;
+            while ((idx = s.IndexOf(keyword, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                int end = idx + keyword.Length;
+                bool okBefore = idx == 0 || !char.IsLetter(s[idx - 1]);
+                bool okAfter = end >= s.Length || !char.IsLetter(s[end]);
+                if (okBefore && okAfter)
+                    return true;
+                idx++;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Maps a component id suffix (after FamilyId_) to the part type string used by editor auto-populate stats heuristics.
+        /// Uses isolated keywords (weapon, engine, wing, …) then falls back to the first underscore segment for exact switch matches.
+        /// </summary>
+        public static string ResolvePartTypeForSuggestedStats(string componentIdRest)
+        {
+            if (string.IsNullOrWhiteSpace(componentIdRest)) return string.Empty;
+            string s = componentIdRest.Trim();
+            if (ContainsIsolatedKeyword(s, "cockpit")) return "Cockpit";
+            if (ContainsIsolatedKeyword(s, "thruster")) return "Thruster";
+            if (ContainsIsolatedKeyword(s, "weapon")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "engine")) return "Engine";
+            if (ContainsIsolatedKeyword(s, "thrust")) return "Engine";
+            if (ContainsIsolatedKeyword(s, "wing")) return "Wing";
+            if (ContainsIsolatedKeyword(s, "fin")) return "Fin";
+            if (ContainsIsolatedKeyword(s, "tail")) return "Fin";
+            if (ContainsIsolatedKeyword(s, "hull")) return "Hull";
+            if (ContainsIsolatedKeyword(s, "part")) return "Part";
+
+            string[] parts = s.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
+                return parts[0];
+            return string.Empty;
         }
 
         /// <summary>
@@ -257,6 +320,44 @@ namespace TitanOrbit.Data
         public float capacity;
 
         public float Total => offense + defense + energy + mobility + capacity;
+
+        /// <summary>
+        /// Heuristic category weights from summed ship stats (same formula as the upgrade-tree editor power breakdown).
+        /// Used to bias generated upgrade cards toward what the family's prefabs are strong in.
+        /// </summary>
+        public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
+        {
+            return new ShipFamilyPowerScoreBreakdown
+            {
+                offense =
+                    s.firePower * 2.0f +
+                    s.firePowerPerLevel * 1.0f +
+                    s.bulletSpeed * 0.5f +
+                    s.bulletSpeedPerLevel * 0.25f +
+                    s.fireRate * 1.0f +
+                    s.fireRatePerLevel * 0.5f,
+                defense =
+                    s.healthCap * 0.03f +
+                    s.healthCapPerLevel * 0.5f +
+                    s.healthRegen * 1.0f +
+                    s.healthRegenPerLevel * 1.5f,
+                energy =
+                    s.energyCap * 0.01f +
+                    s.energyCapPerLevel * 0.25f +
+                    s.energyRegen * 0.8f +
+                    s.energyRegenPerLevel * 1.0f,
+                mobility =
+                    s.moveSpeed * 0.5f +
+                    s.moveSpeedPerLevel * 0.8f +
+                    s.turnSpeed * 0.6f +
+                    s.turnSpeedPerLevel * 0.9f,
+                capacity =
+                    s.maxGems * 0.01f +
+                    s.maxGemsPerLevel * 0.2f +
+                    s.maxPeople * 0.5f +
+                    s.maxPeoplePerLevel * 0.8f
+            };
+        }
     }
 
     /// <summary>

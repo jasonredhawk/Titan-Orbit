@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 using TitanOrbit.Core;
@@ -12,17 +13,42 @@ namespace TitanOrbit.Editor
 {
     /// <summary>
     /// Custom inspector for ShipFamilyDefinition.
-    /// Adds a button to scan a prefab folder, detect components by name (Family_Type_Version),
-    /// and auto-populate entries with heuristic stats.
+    /// Adds a button to scan a prefab folder, detect components by name (FamilyId_ComponentSuffix),
+    /// and auto-populate entries with heuristic stats (part type inferred from keywords in the suffix, e.g. Weapon1, weapon(1)).
     /// </summary>
     [CustomEditor(typeof(ShipFamilyDefinition))]
     public class ShipFamilyDefinitionEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
+            serializedObject.Update();
+            var def = target as ShipFamilyDefinition;
 
-            var def = (ShipFamilyDefinition)target;
+            EditorGUILayout.Space(2);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Create New Card Deck", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "Same as Titan Orbit → Cards → Build Scaled Astro Eagle Deck: writes CardData assets, builds the scaled deck for this Family Id, and assigns Upgrade Card Deck.",
+                new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
+            using (new EditorGUI.DisabledScope(def == null || string.IsNullOrWhiteSpace(def.familyId)))
+            {
+                var prev = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.55f, 0.82f, 1f, 1f);
+                if (GUILayout.Button("Create New Card Deck", GUILayout.Height(34)))
+                {
+                    if (def != null)
+                        CardDeckScaledAssetGenerator.BuildScaledDeckForFamily(def, interactiveDialogs: true);
+                }
+                GUI.backgroundColor = prev;
+            }
+            if (def != null && string.IsNullOrWhiteSpace(def.familyId))
+                EditorGUILayout.HelpBox("Set Family Id on this asset to enable Create New Card Deck.", MessageType.Warning);
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(6);
+
+            DrawDefaultInspector();
+            serializedObject.ApplyModifiedProperties();
+
             if (def == null)
                 return;
 
@@ -70,6 +96,57 @@ namespace TitanOrbit.Editor
             EditorGUILayout.HelpBox(
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
                 MessageType.None);
+
+            EditorGUILayout.Space(10);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Upgrade Card Deck", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "Optional: empty deck asset next to this file for hand-authored cards, or prefab-scanned pool (different folder than Create New Card Deck above).",
+                new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
+
+            if (GUILayout.Button("Create empty Card Deck Definition & assign", GUILayout.MinHeight(26)))
+                CreateEmptyCardDeckAndAssign(def);
+
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
+            {
+                var prevBg = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.78f, 0.98f, 0.82f, 1f);
+                if (GUILayout.Button("Generate card pool — from upgrade tree prefabs", GUILayout.MinHeight(26)))
+                    CardDeckFromPrefabStatsGenerator.BuildPrefabDerivedDeckForFamily(def, interactiveDialogs: true);
+                GUI.backgroundColor = prevBg;
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private static void CreateEmptyCardDeckAndAssign(ShipFamilyDefinition def)
+        {
+            if (def == null)
+                return;
+
+            string familyAssetPath = AssetDatabase.GetAssetPath(def);
+            if (string.IsNullOrEmpty(familyAssetPath))
+            {
+                EditorUtility.DisplayDialog("Upgrade Card Deck", "Save the Ship Family Definition asset to disk first.", "OK");
+                return;
+            }
+
+            string dir = Path.GetDirectoryName(familyAssetPath)?.Replace('\\', '/') ?? "Assets";
+            string baseName = Path.GetFileNameWithoutExtension(familyAssetPath);
+            string deckPath = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{baseName}_CardDeck.asset");
+
+            var deck = ScriptableObject.CreateInstance<CardDeckDefinition>();
+            deck.deckId = string.IsNullOrWhiteSpace(def.familyId) ? baseName + "Deck" : def.familyId.Trim() + "Deck";
+            deck.cards = new List<CardData>();
+
+            AssetDatabase.CreateAsset(deck, deckPath);
+            Undo.RecordObject(def, "Create Card Deck Definition");
+            def.upgradeCardDeck = deck;
+            EditorUtility.SetDirty(def);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorGUIUtility.PingObject(deck);
+            EditorUtility.DisplayDialog("Upgrade Card Deck", $"Created {deckPath} and assigned Upgrade Card Deck.", "OK");
         }
 
         /// <summary>Adds ShipFamilyStatsPreview to each prefab in the upgrade tree if missing; assigns this definition as Ship Family.</summary>
@@ -168,25 +245,10 @@ namespace TitanOrbit.Editor
                     if (string.IsNullOrWhiteSpace(rest))
                         continue;
 
-                    // Example rest: "Engine_2", "Cockpit", "Wing_3_L"
-                    string[] parts = rest.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length == 0) continue;
-
-                    string type = parts[0];
-                    int version = 1;
-
-                    // Try to find an integer in the remaining segments to use as version
-                    for (int i = 1; i < parts.Length; i++)
-                    {
-                        if (int.TryParse(parts[i], out int v))
-                        {
-                            version = Mathf.Max(1, v);
-                            break;
-                        }
-                    }
-
-                    // Use full "rest" as componentId so it matches the substring used in ShipFamilyStatsPreview
+                    // Example rest: "Engine_2", "Weapon1", "weapon(1)", "Wing_3_L"
                     string componentId = rest;
+                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(rest);
+                    int version = ExtractFirstVersionNumberFromComponentRest(rest);
 
                     if (!componentMap.ContainsKey(componentId))
                     {
@@ -231,6 +293,15 @@ namespace TitanOrbit.Editor
             AssetDatabase.Refresh();
         }
 
+        /// <summary>First integer in the suffix (e.g. Wing_3_L → 3, Weapon1 → 1); 1 if none.</summary>
+        private static int ExtractFirstVersionNumberFromComponentRest(string rest)
+        {
+            if (string.IsNullOrEmpty(rest)) return 1;
+            Match m = Regex.Match(rest, @"\d+");
+            if (!m.Success) return 1;
+            return int.TryParse(m.Value, out int v) ? Mathf.Max(1, v) : 1;
+        }
+
         private static void BuildUpgradeTreeFromFolder(ShipFamilyDefinition def)
         {
             string startPath = Path.Combine(Application.dataPath, "Prefabs/Ships/" + def.familyId);
@@ -271,7 +342,7 @@ namespace TitanOrbit.Editor
                 if (prefab == null) continue;
 
                 ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
-                ShipFamilyPowerScoreBreakdown breakdown = ComputePowerScoreBreakdown(stats);
+                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
                 float power = breakdown.Total;
                 list.Add((prefab, power, breakdown));
             }
@@ -349,30 +420,7 @@ namespace TitanOrbit.Editor
         /// <summary>Sum component stats for prefab. Non-weapons: scale by average(x,y,z). Weapons: fire power by average(x,y), fire rate by 1/z; bullet speed not scaled by part size.</summary>
         private static ShipComponentAbilityStats SumStatsForPrefab(GameObject prefab, ShipFamilyDefinition def, string familyId)
         {
-            var total = new ShipComponentAbilityStats();
-            if (prefab == null || def == null) return total;
-
-            var transforms = prefab.GetComponentsInChildren<Transform>(true);
-            foreach (var t in transforms)
-            {
-                if (t == null) continue;
-                string name = t.name;
-                if (string.IsNullOrEmpty(name)) continue;
-                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string componentId = name.Substring(familyId.Length + 1);
-                if (string.IsNullOrWhiteSpace(componentId))
-                    continue;
-
-                if (def.TryGetStatsForComponent(componentId, out var stats))
-                {
-                    ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
-                    total.AddInPlace(scaled);
-                }
-            }
-
-            return total;
+            return ShipFamilyUpgradeTreeStatScanner.SumStatsUnderRoot(prefab, def, familyId);
         }
 
         /// <summary>Second segment after splitting prefab root name on '_' (e.g. AstroEagle_Thumper → Thumper).</summary>
@@ -406,41 +454,6 @@ namespace TitanOrbit.Editor
             cmp = b.breakdown.offense.CompareTo(a.breakdown.offense);
             if (cmp != 0) return cmp;
             return a.breakdown.capacity.CompareTo(b.breakdown.capacity);
-        }
-
-        private static ShipFamilyPowerScoreBreakdown ComputePowerScoreBreakdown(ShipComponentAbilityStats s)
-        {
-            // Heuristic overall power metric: weighted sum of offense, defense, energy, mobility, capacity.
-            return new ShipFamilyPowerScoreBreakdown
-            {
-                offense =
-                    s.firePower * 2.0f +
-                    s.firePowerPerLevel * 1.0f +
-                    s.bulletSpeed * 0.5f +
-                    s.bulletSpeedPerLevel * 0.25f +
-                    s.fireRate * 1.0f +
-                    s.fireRatePerLevel * 0.5f,
-                defense =
-                    s.healthCap * 0.03f +
-                    s.healthCapPerLevel * 0.5f +
-                    s.healthRegen * 1.0f +
-                    s.healthRegenPerLevel * 1.5f,
-                energy =
-                    s.energyCap * 0.01f +
-                    s.energyCapPerLevel * 0.25f +
-                    s.energyRegen * 0.8f +
-                    s.energyRegenPerLevel * 1.0f,
-                mobility =
-                    s.moveSpeed * 0.5f +
-                    s.moveSpeedPerLevel * 0.8f +
-                    s.turnSpeed * 0.6f +
-                    s.turnSpeedPerLevel * 0.9f,
-                capacity =
-                    s.maxGems * 0.01f +
-                    s.maxGemsPerLevel * 0.2f +
-                    s.maxPeople * 0.5f +
-                    s.maxPeoplePerLevel * 0.8f
-            };
         }
 
         private static ShipComponentAbilityStats SuggestStatsForComponent(string type, int version)

@@ -9,6 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3308320108262187516}
+  - component: {fileID: 2473486308200756979}
   m_Layer: 0
   m_Name: StarForce2
   m_TagString: Untagged
@@ -23,6 +24,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7512536714276762012}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -48,13 +50,1567 @@ Transform:
   - {fileID: 4098290819301800946}
   - {fileID: 5860942911025612123}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2473486308200756979
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7512536714276762012}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ced7d950b299c1943bcdaca377dec97b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ShipFamilyStatsPreview
+  shipFamily: {fileID: 11400000, guid: 1205a86a830414242a537b3e472c01a0, type: 2}
+  familyIdOverride: 
+  totalStats:
+    firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 222.26852
+    healthCapPerLevel: 44.453682
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 133.36105
+    energyCapPerLevel: 22.226841
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 133.36105
+    maxGemsPerLevel: 22.226841
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  matchedComponentIds:
+  - Cockpit (1)
+  - Body1 (1)
+  - EngineComp2 (1)
+  - Engine (1)
+  - Thruster (1)
+  - Flap (1)
+  - Flap (2)
+  - Flap (3)
+  - Flap (4)
+  - Thruster (2)
+  - Flap (5)
+  - Flap (6)
+  - Flap (7)
+  - Flap (8)
+  - EngineComp2 (2)
+  - Engine (1)
+  - Thruster (1)
+  - Flap (1)
+  - Flap (2)
+  - Flap (3)
+  - Flap (4)
+  - Thruster (2)
+  - Flap (5)
+  - Flap (6)
+  - Flap (7)
+  - Flap (8)
+  - EngineComp2 (3)
+  - Engine (1)
+  - Thruster (1)
+  - Flap (1)
+  - Flap (2)
+  - Flap (3)
+  - Flap (4)
+  - Thruster (2)
+  - Flap (5)
+  - Flap (6)
+  - Flap (7)
+  - Flap (8)
+  - EngineComp2 (4)
+  - Engine (1)
+  - Thruster (1)
+  - Flap (1)
+  - Flap (2)
+  - Flap (3)
+  - Flap (4)
+  - Thruster (2)
+  - Flap (5)
+  - Flap (6)
+  - Flap (7)
+  - Flap (8)
+  - Body2 (1)
+  - Wing (1)
+  - Wing (2)
+  - Wing (3)
+  - Wing (4)
+  - Weapon (1)
+  - Weapon (2)
+  - Weapon (3)
+  - Weapon (4)
+  - Weapon (5)
+  - Weapon (6)
+  - Weapon (7)
+  - Weapon (8)
+  matchedScaleFactors:
+  - 1
+  - 0.97
+  - 1.01
+  - 1
+  - 0.76343
+  - 0.45708853
+  - 0.4570885
+  - 0.45708847
+  - 0.4570885
+  - 0.6064349
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 1.01
+  - 1
+  - 0.76343
+  - 0.45708853
+  - 0.4570885
+  - 0.45708847
+  - 0.4570885
+  - 0.6064349
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 1.01
+  - 1
+  - 0.76343
+  - 0.45708853
+  - 0.4570885
+  - 0.45708847
+  - 0.4570885
+  - 0.6064349
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 1.01
+  - 1
+  - 0.76343
+  - 0.45708853
+  - 0.4570885
+  - 0.45708847
+  - 0.4570885
+  - 0.6064349
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 0.45708847
+  - 0.8381058
+  - 1.3748214
+  - 1.3748215
+  - 1.3748218
+  - 1.3748218
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  perComponentStats:
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.8500004
+    healthCapPerLevel: 0.97
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.91
+    energyCapPerLevel: 0.485
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.91
+    maxGemsPerLevel: 0.485
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.05
+    healthCapPerLevel: 1.01
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.03
+    energyCapPerLevel: 0.505
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.03
+    maxGemsPerLevel: 0.505
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.81715
+    healthCapPerLevel: 0.76343
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.2902899
+    energyCapPerLevel: 0.381715
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.2902899
+    maxGemsPerLevel: 0.381715
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.45708853
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712656
+    energyCapPerLevel: 0.22854427
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712656
+    maxGemsPerLevel: 0.22854427
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.0321743
+    healthCapPerLevel: 0.6064349
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.8193047
+    energyCapPerLevel: 0.30321744
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.8193047
+    maxGemsPerLevel: 0.30321744
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.05
+    healthCapPerLevel: 1.01
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.03
+    energyCapPerLevel: 0.505
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.03
+    maxGemsPerLevel: 0.505
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.81715
+    healthCapPerLevel: 0.76343
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.2902899
+    energyCapPerLevel: 0.381715
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.2902899
+    maxGemsPerLevel: 0.381715
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.45708853
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712656
+    energyCapPerLevel: 0.22854427
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712656
+    maxGemsPerLevel: 0.22854427
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.0321743
+    healthCapPerLevel: 0.6064349
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.8193047
+    energyCapPerLevel: 0.30321744
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.8193047
+    maxGemsPerLevel: 0.30321744
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.05
+    healthCapPerLevel: 1.01
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.03
+    energyCapPerLevel: 0.505
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.03
+    maxGemsPerLevel: 0.505
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.81715
+    healthCapPerLevel: 0.76343
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.2902899
+    energyCapPerLevel: 0.381715
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.2902899
+    maxGemsPerLevel: 0.381715
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.45708853
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712656
+    energyCapPerLevel: 0.22854427
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712656
+    maxGemsPerLevel: 0.22854427
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.0321743
+    healthCapPerLevel: 0.6064349
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.8193047
+    energyCapPerLevel: 0.30321744
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.8193047
+    maxGemsPerLevel: 0.30321744
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5.05
+    healthCapPerLevel: 1.01
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3.03
+    energyCapPerLevel: 0.505
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3.03
+    maxGemsPerLevel: 0.505
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.81715
+    healthCapPerLevel: 0.76343
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.2902899
+    energyCapPerLevel: 0.381715
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.2902899
+    maxGemsPerLevel: 0.381715
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.45708853
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712656
+    energyCapPerLevel: 0.22854427
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712656
+    maxGemsPerLevel: 0.22854427
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854426
+    healthCapPerLevel: 0.4570885
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712655
+    energyCapPerLevel: 0.22854425
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712655
+    maxGemsPerLevel: 0.22854425
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 3.0321743
+    healthCapPerLevel: 0.6064349
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.8193047
+    energyCapPerLevel: 0.30321744
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.8193047
+    maxGemsPerLevel: 0.30321744
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 2.2854424
+    healthCapPerLevel: 0.45708847
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 1.3712654
+    energyCapPerLevel: 0.22854424
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 1.3712654
+    maxGemsPerLevel: 0.22854424
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 4.190529
+    healthCapPerLevel: 0.8381058
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 2.5143175
+    energyCapPerLevel: 0.4190529
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 2.5143175
+    maxGemsPerLevel: 0.4190529
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 6.8741074
+    healthCapPerLevel: 1.3748214
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.124464
+    energyCapPerLevel: 0.6874107
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.124464
+    maxGemsPerLevel: 0.6874107
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 6.874108
+    healthCapPerLevel: 1.3748215
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.1244645
+    energyCapPerLevel: 0.6874108
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.1244645
+    maxGemsPerLevel: 0.6874108
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 6.874109
+    healthCapPerLevel: 1.3748218
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.1244655
+    energyCapPerLevel: 0.6874109
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.1244655
+    maxGemsPerLevel: 0.6874109
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 6.874109
+    healthCapPerLevel: 1.3748218
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 4.1244655
+    energyCapPerLevel: 0.6874109
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 4.1244655
+    maxGemsPerLevel: 0.6874109
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    healthCap: 5
+    healthCapPerLevel: 1
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 3
+    energyCapPerLevel: 0.5
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 0
+    moveSpeedPerLevel: 0
+    turnSpeed: 0
+    turnSpeedPerLevel: 0
+    maxGems: 3
+    maxGemsPerLevel: 0.5
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  previewSumPropulsionMoveSpeed: 0
+  previewTopSpeedMoveSpeed: 0
 --- !u!1001 &73381105952745410
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -62,7 +1618,7 @@ PrefabInstance:
       value: StarForce_Weapon (3)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -110,6 +1666,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &7599115383549402736 stripped
 Transform:
@@ -121,6 +1680,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 946996845024269181, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
@@ -180,7 +1740,7 @@ PrefabInstance:
       value: -180
       objectReference: {fileID: 0}
     - target: {fileID: 4274505793388576443, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 8547088207555201517, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
@@ -188,6 +1748,9 @@ PrefabInstance:
       value: StarForce_Body2 (1)
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
 --- !u!4 &2121851188152945711 stripped
 Transform:
@@ -199,6 +1762,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -206,7 +1770,7 @@ PrefabInstance:
       value: StarForce_Wing (4)
       objectReference: {fileID: 0}
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -266,6 +1830,9 @@ PrefabInstance:
       value: -115
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &9045510675645946795 stripped
 Transform:
@@ -277,6 +1844,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -284,7 +1852,7 @@ PrefabInstance:
       value: StarForce_Weapon (1)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -332,6 +1900,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &9060148940137437315 stripped
 Transform:
@@ -343,6 +1914,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -350,7 +1922,7 @@ PrefabInstance:
       value: StarForce_Weapon (6)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -398,6 +1970,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &8301541822901460625 stripped
 Transform:
@@ -409,6 +1984,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -416,7 +1992,7 @@ PrefabInstance:
       value: StarForce_Wing (2)
       objectReference: {fileID: 0}
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -476,6 +2052,9 @@ PrefabInstance:
       value: 65
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &8526391920549422345 stripped
 Transform:
@@ -487,14 +2066,15 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4386519785252314938, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785512433435, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785872562766, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
@@ -558,42 +2138,45 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4386519786016174424, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786093141592, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786495313071, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786781814046, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786804319461, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786994466233, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787002999794, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787244614168, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787340654927, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
 --- !u!4 &1171146714563150927 stripped
 Transform:
@@ -605,6 +2188,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -612,7 +2196,7 @@ PrefabInstance:
       value: StarForce_Wing (3)
       objectReference: {fileID: 0}
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -672,6 +2256,9 @@ PrefabInstance:
       value: 115
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &6714045795490806535 stripped
 Transform:
@@ -683,6 +2270,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -690,7 +2278,7 @@ PrefabInstance:
       value: StarForce_Weapon (8)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -738,6 +2326,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &5860942911025612123 stripped
 Transform:
@@ -749,6 +2340,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 854546670060476649, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
@@ -808,7 +2400,7 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6601104939363626194, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 8493360586339286139, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
@@ -816,6 +2408,9 @@ PrefabInstance:
       value: StarForce_Body1 (1)
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
 --- !u!4 &3651430707424340157 stripped
 Transform:
@@ -827,6 +2422,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -834,7 +2430,7 @@ PrefabInstance:
       value: StarForce_Wing (1)
       objectReference: {fileID: 0}
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -894,6 +2490,9 @@ PrefabInstance:
       value: -65
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &6304001739764547335 stripped
 Transform:
@@ -905,6 +2504,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -912,7 +2512,7 @@ PrefabInstance:
       value: StarForce_Weapon (2)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -960,6 +2560,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &3396248916155429484 stripped
 Transform:
@@ -971,6 +2574,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -978,7 +2582,7 @@ PrefabInstance:
       value: StarForce_Weapon (7)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1026,6 +2630,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &4098290819301800946 stripped
 Transform:
@@ -1037,6 +2644,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1044,7 +2652,7 @@ PrefabInstance:
       value: StarForce_Weapon (5)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1092,6 +2700,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &4176510991711836606 stripped
 Transform:
@@ -1103,10 +2714,11 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4859527713866142441, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 5253912861064769547, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
@@ -1158,6 +2770,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
 --- !u!4 &707734236942479349 stripped
 Transform:
@@ -1169,6 +2784,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1176,7 +2792,7 @@ PrefabInstance:
       value: StarForce_Weapon (4)
       objectReference: {fileID: 0}
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1224,6 +2840,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &1124125469686052821 stripped
 Transform:
@@ -1235,14 +2854,15 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4386519785252314938, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785512433435, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785872562766, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
@@ -1306,42 +2926,45 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4386519786016174424, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786093141592, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786495313071, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786781814046, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786804319461, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786994466233, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787002999794, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787244614168, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787340654927, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
 --- !u!4 &6314452950983569762 stripped
 Transform:
@@ -1353,14 +2976,15 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4386519785252314938, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785512433435, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785872562766, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
@@ -1424,42 +3048,45 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4386519786016174424, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786093141592, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786495313071, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786781814046, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786804319461, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786994466233, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787002999794, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787244614168, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787340654927, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
 --- !u!4 &5976506099342339212 stripped
 Transform:
@@ -1471,14 +3098,15 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 3308320108262187516}
     m_Modifications:
     - target: {fileID: 4386519785252314938, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785512433435, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519785872562766, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
@@ -1542,42 +3170,45 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4386519786016174424, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786093141592, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786495313071, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786781814046, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786804319461, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519786994466233, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787002999794, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787244614168, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     - target: {fileID: 4386519787340654927, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 23b041f20060b5348a8b48ae5f3a0e66, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: efdf5f3b78b7d3d4a91eb58e3c954cf0, type: 3}
 --- !u!4 &5403039791292976658 stripped
 Transform:

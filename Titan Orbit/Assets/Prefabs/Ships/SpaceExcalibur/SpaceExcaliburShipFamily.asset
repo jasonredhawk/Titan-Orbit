@@ -354,7 +354,7 @@ MonoBehaviour:
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Small_Wing
-    displayName: Small 1
+    displayName: Wing 1
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -363,19 +363,19 @@ MonoBehaviour:
       fireRate: 0
       fireRatePerLevel: 0
       healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      healthCapPerLevel: 1.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.5
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      turnSpeed: 4
+      turnSpeedPerLevel: 1
+      maxGems: 10
+      maxGemsPerLevel: 2
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -536,7 +536,7 @@ MonoBehaviour:
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Tiny_Wing
-    displayName: Tiny 1
+    displayName: Wing 1
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -545,19 +545,19 @@ MonoBehaviour:
       fireRate: 0
       fireRatePerLevel: 0
       healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      healthCapPerLevel: 1.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.5
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      turnSpeed: 4
+      turnSpeedPerLevel: 1
+      maxGems: 10
+      maxGemsPerLevel: 2
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -1278,7 +1278,7 @@ MonoBehaviour:
       energy: 39.558067
       mobility: 79.200005
       capacity: 17.211088
-  upgradeCardDeck: {fileID: 0}
+  upgradeCardDeck: {fileID: 11400000, guid: 99d389e6944b9334f815feb97dba8c91, type: 2}
   teamMaterials:
   - variantName: Red
     team: 1

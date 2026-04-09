@@ -128,13 +128,13 @@ namespace TitanOrbit.Systems
             return "AstroEagle_01";
         }
 
-        /// <summary>Chassis ID at (level, branch) from the ship family's <c>upgradeTree</c> ladder (matches orbit upgrade tree layout).</summary>
+        /// <summary>
+        /// Chassis ID at (level, branch) from the <em>store planet's</em> ship family ladder (same layout as <see cref="UpgradeTree"/>).
+        /// Players keep their tree position (level + branch); a captured planet's family supplies the hull at that slot (e.g. 3.3 → 4.3/4.4 there).
+        /// </summary>
         public string GetChassisIdForUpgradeLadderSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {
             if (planetShipFamilyConfig == null || ship == null) return null;
-            string cid = ship.CurrentChassisId;
-            if (!string.IsNullOrEmpty(cid))
-                return planetShipFamilyConfig.GetChassisIdForLadderSlotForShip(cid, storePlanetId, level, branchIndex);
             return planetShipFamilyConfig.GetChassisIdForLadderSlot(storePlanetId, level, branchIndex);
         }
 
@@ -686,11 +686,8 @@ namespace TitanOrbit.Systems
             if (!homePlanet.TrySpendContributedGems(clientId, cost))
                 return;
 
-            if (targetNode != null && targetNode.shipData != null)
-            {
-                ship.SetShipData(targetNode.shipData);
-            }
-            else if (!string.IsNullOrEmpty(resolvedChassisId))
+            // Prefer the store planet's family hull at this ladder slot so upgrades work across different families at the same tree position.
+            if (!string.IsNullOrEmpty(resolvedChassisId))
             {
                 ShipData baseData = ship.CurrentShipData;
                 ShipData runtime = baseData != null ? Instantiate(baseData) : ScriptableObject.CreateInstance<ShipData>();
@@ -712,12 +709,16 @@ namespace TitanOrbit.Systems
                     ship.ApplyShipVisualFromPrefab(prefab);
                 ship.ResetAttributesOnlyFromServer();
             }
+            else if (targetNode != null && targetNode.shipData != null)
+            {
+                ship.SetShipData(targetNode.shipData);
+            }
             else
                 return;
 
             ship.RefillCombatVitalsToMaxFromServer();
 
-            string chassisIdForClientVisual = (targetNode != null && targetNode.shipData != null) ? null : resolvedChassisId;
+            string chassisIdForClientVisual = string.IsNullOrEmpty(resolvedChassisId) ? null : resolvedChassisId;
             NotifyShipLevelUpgradedClientRpc(shipNetworkId, nextLevel, chassisIdForClientVisual, new ClientRpcParams
             {
                 Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
