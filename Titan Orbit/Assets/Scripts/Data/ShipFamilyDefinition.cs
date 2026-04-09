@@ -37,9 +37,19 @@ namespace TitanOrbit.Data
         public float moveSpeed;
         [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
         public float moveSpeedPerLevel;
+        [Tooltip("Acceleration contribution. This is cumulative across all relevant components and independent from top speed cap.")]
+        public float accelerationCap;
+        [Tooltip("Acceleration gained per ship level.")]
+        public float accelerationCapPerLevel;
         public float turnSpeed;            // Turn Speed (rotation speed)
         [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
         public float turnSpeedPerLevel;
+
+        [Header("Ramming")]
+        [Tooltip("Base ramming power used in collision force/damage calculations.")]
+        public float rammingPower;
+        [Tooltip("Ramming power gained per ship level.")]
+        public float rammingPowerPerLevel;
 
         [Header("Capacity")]
         public float maxGems;              // Gem Capacity
@@ -67,8 +77,12 @@ namespace TitanOrbit.Data
                 energyRegenPerLevel = a.energyRegenPerLevel + b.energyRegenPerLevel,
                 moveSpeed = a.moveSpeed + b.moveSpeed,
                 moveSpeedPerLevel = a.moveSpeedPerLevel + b.moveSpeedPerLevel,
+                accelerationCap = a.accelerationCap + b.accelerationCap,
+                accelerationCapPerLevel = a.accelerationCapPerLevel + b.accelerationCapPerLevel,
                 turnSpeed = a.turnSpeed + b.turnSpeed,
                 turnSpeedPerLevel = a.turnSpeedPerLevel + b.turnSpeedPerLevel,
+                rammingPower = a.rammingPower + b.rammingPower,
+                rammingPowerPerLevel = a.rammingPowerPerLevel + b.rammingPowerPerLevel,
                 maxGems = a.maxGems + b.maxGems,
                 maxGemsPerLevel = a.maxGemsPerLevel + b.maxGemsPerLevel,
                 maxPeople = a.maxPeople + b.maxPeople,
@@ -94,8 +108,12 @@ namespace TitanOrbit.Data
             energyRegenPerLevel += other.energyRegenPerLevel;
             moveSpeed += other.moveSpeed;
             moveSpeedPerLevel += other.moveSpeedPerLevel;
+            accelerationCap += other.accelerationCap;
+            accelerationCapPerLevel += other.accelerationCapPerLevel;
             turnSpeed += other.turnSpeed;
             turnSpeedPerLevel += other.turnSpeedPerLevel;
+            rammingPower += other.rammingPower;
+            rammingPowerPerLevel += other.rammingPowerPerLevel;
             maxGems += other.maxGems;
             maxGemsPerLevel += other.maxGemsPerLevel;
             maxPeople += other.maxPeople;
@@ -123,8 +141,12 @@ namespace TitanOrbit.Data
                 energyRegenPerLevel = s.energyRegenPerLevel * factor,
                 moveSpeed = s.moveSpeed * factor,
                 moveSpeedPerLevel = s.moveSpeedPerLevel * factor,
+                accelerationCap = s.accelerationCap * factor,
+                accelerationCapPerLevel = s.accelerationCapPerLevel * factor,
                 turnSpeed = s.turnSpeed * factor,
                 turnSpeedPerLevel = s.turnSpeedPerLevel * factor,
+                rammingPower = s.rammingPower * factor,
+                rammingPowerPerLevel = s.rammingPowerPerLevel * factor,
                 maxGems = s.maxGems * factor,
                 maxGemsPerLevel = s.maxGemsPerLevel * factor,
                 maxPeople = s.maxPeople * factor,
@@ -259,8 +281,12 @@ namespace TitanOrbit.Data
                     energyRegenPerLevel = stats.energyRegenPerLevel,
                     moveSpeed = stats.moveSpeed,
                     moveSpeedPerLevel = stats.moveSpeedPerLevel,
+                    accelerationCap = stats.accelerationCap,
+                    accelerationCapPerLevel = stats.accelerationCapPerLevel,
                     turnSpeed = stats.turnSpeed,
                     turnSpeedPerLevel = stats.turnSpeedPerLevel,
+                    rammingPower = stats.rammingPower,
+                    rammingPowerPerLevel = stats.rammingPowerPerLevel,
                     maxGems = stats.maxGems,
                     maxGemsPerLevel = stats.maxGemsPerLevel,
                     maxPeople = stats.maxPeople,
@@ -272,11 +298,15 @@ namespace TitanOrbit.Data
             ShipComponentAbilityStats scaled = stats * scale;
             scaled.turnSpeed = stats.turnSpeed;
             scaled.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+            scaled.rammingPower = stats.rammingPower;
+            scaled.rammingPowerPerLevel = stats.rammingPowerPerLevel;
             // Do not scale engine/thruster move speed by part volume—designers tune these to match gameplay speeds.
             if (IsEngineComponent(componentId) || IsThrusterComponent(componentId))
             {
                 scaled.moveSpeed = stats.moveSpeed;
                 scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
+                scaled.accelerationCap = stats.accelerationCap;
+                scaled.accelerationCapPerLevel = stats.accelerationCapPerLevel;
             }
             return scaled;
         }
@@ -335,7 +365,9 @@ namespace TitanOrbit.Data
                     s.bulletSpeed * 0.5f +
                     s.bulletSpeedPerLevel * 0.25f +
                     s.fireRate * 1.0f +
-                    s.fireRatePerLevel * 0.5f,
+                    s.fireRatePerLevel * 0.5f +
+                    s.rammingPower * 0.9f +
+                    s.rammingPowerPerLevel * 1.1f,
                 defense =
                     s.healthCap * 0.03f +
                     s.healthCapPerLevel * 0.5f +
@@ -349,6 +381,8 @@ namespace TitanOrbit.Data
                 mobility =
                     s.moveSpeed * 0.5f +
                     s.moveSpeedPerLevel * 0.8f +
+                    s.accelerationCap * 0.9f +
+                    s.accelerationCapPerLevel * 1.1f +
                     s.turnSpeed * 0.6f +
                     s.turnSpeedPerLevel * 0.9f,
                 capacity =
@@ -426,6 +460,8 @@ namespace TitanOrbit.Data
         public int bulletPrefabIndex = 0;
 
         [Header("Components")]
+        [Tooltip("Per-family balance profile used by editor auto-populate to assign component stats.")]
+        public ShipFamilyComponentBalanceProfile componentBalanceProfile;
 
         [Tooltip("All components (cockpit, wings, engines, weapons, etc.) available for this family.")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
@@ -484,7 +520,11 @@ namespace TitanOrbit.Data
                 {
                     if (entry == null) continue;
                     if (string.IsNullOrWhiteSpace(entry.componentId)) continue;
-                    _lookup[entry.componentId.Trim()] = entry.stats;
+                    string raw = entry.componentId.Trim();
+                    _lookup[raw] = entry.stats;
+                    string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(raw);
+                    if (!string.IsNullOrEmpty(canonical))
+                        _lookup[canonical] = entry.stats;
                 }
             }
 
@@ -503,7 +543,11 @@ namespace TitanOrbit.Data
                 return false;
             }
 
-            return _lookup.TryGetValue(componentId.Trim(), out stats);
+            string raw = componentId.Trim();
+            if (_lookup.TryGetValue(raw, out stats))
+                return true;
+            string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(raw);
+            return !string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats);
         }
 
         /// <summary>
@@ -515,10 +559,18 @@ namespace TitanOrbit.Data
             if (components == null || string.IsNullOrWhiteSpace(componentId))
                 return false;
             string id = componentId.Trim();
+            string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(id);
             for (int i = 0; i < components.Count; i++)
             {
                 if (components[i] == null) continue;
-                if (string.Equals(components[i].componentId?.Trim(), id, StringComparison.OrdinalIgnoreCase))
+                string test = components[i].componentId?.Trim();
+                if (string.Equals(test, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry = components[i];
+                    return true;
+                }
+                if (!string.IsNullOrEmpty(canonical) &&
+                    string.Equals(ShipFamilyComponentBalanceProfile.NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
                 {
                     entry = components[i];
                     return true;

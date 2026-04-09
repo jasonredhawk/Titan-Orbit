@@ -345,11 +345,14 @@ namespace TitanOrbit.Entities
         [SerializeField] private float massPerGem = 0.008f;
         [Tooltip("Multiplies chassis component mass (or baseMass when no chassis). Does not scale gem load.")]
         [SerializeField] private float hullMassScale = 0.7f;
+        [Tooltip("Base collision ramming power before level/component modifiers.")]
+        [SerializeField] private float baseRammingPower = 1f;
 
         [Header("Energy (weapon system)")]
         [SerializeField] private float energyCapacity = 50f;
         [SerializeField] private float energyRegenRate = 5f;
         private const float ENERGY_PER_SHOT = 1f;
+        private float rammingPower = 1f;
 
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
@@ -697,8 +700,14 @@ namespace TitanOrbit.Entities
             float impactImpulse = mass * deltaNormalSpeed;
             float dt = Time.fixedDeltaTime > 1e-6f ? Time.fixedDeltaTime : 0.02f;
             float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, dt);
-            asteroidDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToAsteroidDamageScale);
-            selfDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);
+            float ramMul = GetRammingForceMultiplier();
+            asteroidDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToAsteroidDamageScale);
+            selfDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToShipDamageScale);
+        }
+
+        private float GetRammingForceMultiplier()
+        {
+            return 1f + Mathf.Max(0f, rammingPower) * 0.1f;
         }
 
         /// <summary>
@@ -4064,8 +4073,9 @@ namespace TitanOrbit.Entities
                 asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
             }
 
-            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToShipDamageScale);
-            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * asteroidImpactForceToAsteroidDamageScale);
+            float ramMul = GetRammingForceMultiplier();
+            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToShipDamageScale);
+            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToAsteroidDamageScale);
 
             if (shipCollisionDamage > 0.0001f)
             {
@@ -4957,11 +4967,12 @@ namespace TitanOrbit.Entities
                 rotationSpeedFromShipFamilyDefinition = true;
                 gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
+                rammingPower = Mathf.Max(0f, baseRammingPower + s.rammingPower + s.rammingPowerPerLevel * perLvl);
 
                 // Movement: proportional penalty per level (see ApplyShipLevelMobilityScale).
                 float moveVal = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(s.moveSpeed, perLvl));
-                // Thrust = sum of engine + thruster move speeds; max speed = best engine (or best thruster if no engines). Never use total moveVal as top speed.
-                float sumPropulsionMoveSpeed = 0f;
+                // Top speed is non-cumulative (max movement component). Acceleration is cumulative.
+                float sumAccelerationCap = 0f;
                 float maxEngineMoveSpeed = 0f;
                 float maxThrusterMoveSpeed = 0f;
                 if (matchedComponentIds != null && perComponentStats != null)
@@ -4971,19 +4982,21 @@ namespace TitanOrbit.Entities
                         string cid = matchedComponentIds[k];
                         ShipComponentAbilityStats comp = perComponentStats[k];
                         float partSpeed = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(comp.moveSpeed, perLvl));
+                        float partAcceleration = Mathf.Max(0f, comp.accelerationCap + comp.accelerationCapPerLevel * perLvl);
                         if (ShipComponentAbilityStats.IsEngineComponent(cid))
                         {
-                            sumPropulsionMoveSpeed += partSpeed;
+                            sumAccelerationCap += partAcceleration;
                             if (partSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = partSpeed;
                         }
                         else if (ShipComponentAbilityStats.IsThrusterComponent(cid))
                         {
-                            sumPropulsionMoveSpeed += partSpeed;
+                            sumAccelerationCap += partAcceleration;
                             if (partSpeed > maxThrusterMoveSpeed) maxThrusterMoveSpeed = partSpeed;
                         }
                     }
                 }
-                componentEngineThrust = Mathf.Max(0f, sumPropulsionMoveSpeed > 0f ? sumPropulsionMoveSpeed : moveVal);
+                float accelFallback = Mathf.Max(0f, s.accelerationCap + s.accelerationCapPerLevel * perLvl);
+                componentEngineThrust = Mathf.Max(0f, sumAccelerationCap > 0f ? sumAccelerationCap : (accelFallback > 0f ? accelFallback : moveVal));
                 float capFromParts = maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : maxThrusterMoveSpeed;
                 componentEngineMaxSpeed = Mathf.Max(0.1f, capFromParts > 0f ? capFromParts : engineThrust * 0.5f);
 
@@ -5032,6 +5045,7 @@ namespace TitanOrbit.Entities
                 float peopleVal = stats.cockpitScaleTotal + stats.partScaleTotal;
                 float energyCapVal = stats.cockpitCannonScaleTotal;
                 float energyRegenVal = stats.cockpitCannonScaleTotal;
+                rammingPower = Mathf.Max(0f, baseRammingPower + stats.cockpitScaleTotal);
 
                 rotationSpeed = Mathf.Max(1f, turnVal);
                 rotationSpeedFromShipFamilyDefinition = false;

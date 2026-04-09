@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: ForceBadger
   bulletPrefabIndex: 0
+  componentBalanceProfile: {fileID: 11400000, guid: a263af4a238c78b49b62dc6a58ed8326, type: 2}
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
@@ -24,22 +25,26 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 3
-      healthRegen: 5
-      healthRegenPerLevel: 1
-      energyCap: 5
-      energyCapPerLevel: 1.5
-      energyRegen: 3
-      energyRegenPerLevel: 0.5
+      healthCap: 10
+      healthCapPerLevel: 2
+      healthRegen: 0.35
+      healthRegenPerLevel: 0.08
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 5
-      maxGemsPerLevel: 1
-      maxPeople: 5
-      maxPeoplePerLevel: 1
+      rammingPower: 2
+      rammingPowerPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 8
+      maxPeoplePerLevel: 1.6
     bulletPrefabIndex: -1
   - componentId: Engine
     displayName: Engine 1
@@ -58,10 +63,14 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.9
       turnSpeed: 0
       turnSpeedPerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -77,7 +86,7 @@ MonoBehaviour:
       fireRate: 0
       fireRatePerLevel: 0
       healthCap: 1.5
-      healthCapPerLevel: 0.4
+      healthCapPerLevel: 0.35
       healthRegen: 0
       healthRegenPerLevel: 0
       energyCap: 0
@@ -86,8 +95,12 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 5
-      turnSpeedPerLevel: 1.5
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 3
+      turnSpeedPerLevel: 0.8
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -102,20 +115,24 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
+      healthCap: 2
+      healthCapPerLevel: 0.5
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -128,25 +145,29 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
+      healthCap: 2
+      healthCapPerLevel: 0.5
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Tail
-    displayName: Tail 1
+    displayName: Fin 1
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -154,20 +175,24 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
+      healthCap: 1.5
+      healthCapPerLevel: 0.35
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 3
+      turnSpeedPerLevel: 0.8
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -188,10 +213,14 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 8
-      turnSpeedPerLevel: 2
+      moveSpeed: 5
+      moveSpeedPerLevel: 0.8
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 2
+      turnSpeedPerLevel: 0.6
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -200,24 +229,28 @@ MonoBehaviour:
   - componentId: Weapon
     displayName: Weapon 1
     stats:
-      firePower: 5
-      firePowerPerLevel: 1.5
-      bulletSpeed: 5
-      bulletSpeedPerLevel: 1
-      fireRate: 1.5
-      fireRatePerLevel: 0.25
-      healthCap: 0
+      firePower: 3
+      firePowerPerLevel: 1
+      bulletSpeed: 8
+      bulletSpeedPerLevel: 2
+      fireRate: 1.2
+      fireRatePerLevel: 0.2
+      healthCap: 1
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 6
+      energyCapPerLevel: 1.5
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.35
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -232,20 +265,24 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
+      healthCap: 4
+      healthCapPerLevel: 1.1
+      healthRegen: 0.12
+      healthRegenPerLevel: 0.03
       energyCap: 0
       energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 2.5
+      turnSpeedPerLevel: 0.75
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 1.6
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1

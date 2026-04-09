@@ -71,6 +71,16 @@ namespace TitanOrbit.Editor
                     ScanFolderAndPopulate(def);
                 }
 
+                if (GUILayout.Button("Generate/Sync Balance Profile From Folder"))
+                {
+                    GenerateOrSyncBalanceProfileFromFolder(def);
+                }
+
+                if (GUILayout.Button("Export Canonical Component Inventory (CSV)"))
+                {
+                    ExportCanonicalComponentInventory(def);
+                }
+
                 if (GUILayout.Button("Build Upgrade Tree From Folder"))
                 {
                     BuildUpgradeTreeFromFolder(def);
@@ -222,8 +232,8 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // componentId -> (type, version)
-            var componentMap = new Dictionary<string, (string type, int version)>(StringComparer.OrdinalIgnoreCase);
+            // canonical componentId -> canonical metadata
+            var componentMap = new Dictionary<string, CanonicalComponentScanData>(StringComparer.OrdinalIgnoreCase);
 
             foreach (string guid in guids)
             {
@@ -245,15 +255,18 @@ namespace TitanOrbit.Editor
                     if (string.IsNullOrWhiteSpace(rest))
                         continue;
 
-                    // Example rest: "Engine_2", "Weapon1", "weapon(1)", "Wing_3_L"
-                    string componentId = rest;
-                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(rest);
-                    int version = ExtractFirstVersionNumberFromComponentRest(rest);
+                    string canonicalId = ShipFamilyComponentBalanceProfile.NormalizeComponentId(rest);
+                    if (string.IsNullOrWhiteSpace(canonicalId))
+                        continue;
 
-                    if (!componentMap.ContainsKey(componentId))
+                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
+                    int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
+                    if (!componentMap.TryGetValue(canonicalId, out CanonicalComponentScanData data))
                     {
-                        componentMap[componentId] = (type, version);
+                        data = new CanonicalComponentScanData(canonicalId, type, version);
+                        componentMap[canonicalId] = data;
                     }
+                    data.aliases.Add(rest);
                 }
             }
 
@@ -275,7 +288,7 @@ namespace TitanOrbit.Editor
             foreach (var kvp in componentMap)
             {
                 string componentId = kvp.Key;
-                string type = kvp.Value.type;
+                string type = kvp.Value.partType;
                 int version = kvp.Value.version;
 
                 var entry = new ShipFamilyComponentEntry
@@ -284,7 +297,15 @@ namespace TitanOrbit.Editor
                     displayName = $"{type} {version}".Trim()
                 };
 
-                entry.stats = SuggestStatsForComponent(type, version);
+                if (def.componentBalanceProfile != null &&
+                    def.componentBalanceProfile.TryGetStats(componentId, type, out ShipComponentAbilityStats profileStats))
+                {
+                    entry.stats = profileStats;
+                }
+                else
+                {
+                    entry.stats = SuggestStatsForComponent(componentId, type, version);
+                }
                 def.components.Add(entry);
             }
 
@@ -456,114 +477,325 @@ namespace TitanOrbit.Editor
             return a.breakdown.capacity.CompareTo(b.breakdown.capacity);
         }
 
-        private static ShipComponentAbilityStats SuggestStatsForComponent(string type, int version)
+        private static ShipComponentAbilityStats SuggestStatsForComponent(string componentId, string type, int version)
         {
-            // Simple heuristic: base values per type, scaled by version.
+            // Rebalanced heuristics:
+            // - Weapons own offense + energy.
+            // - Thrusters drive top speed; engines drive acceleration.
+            // - Wings drive gem capacity; cockpits drive people + base ramming.
             float v = Mathf.Max(1, version);
             var stats = new ShipComponentAbilityStats();
 
             switch (type)
             {
                 case "Cockpit":
-                    // Core survivability + crew + energy
-                    stats.healthCap = 15f * v;
-                    stats.healthCapPerLevel = 3f * v;
-                    stats.healthRegen = 5f * v;
-                    stats.healthRegenPerLevel = 1f * v;
-
-                    stats.energyCap = 5f * v;
-                    stats.energyCapPerLevel = 1.5f * v;
-                    stats.energyRegen = 3f * v;
-                    stats.energyRegenPerLevel = 0.5f * v;
-
-                    stats.maxGems = 5f * v;
-                    stats.maxGemsPerLevel = 1f * v;
-                    stats.maxPeople = 5f * v;
-                    stats.maxPeoplePerLevel = 1f * v;
+                    stats.healthCap = 10f * v;
+                    stats.healthCapPerLevel = 2f * v;
+                    stats.healthRegen = 0.35f * v;
+                    stats.healthRegenPerLevel = 0.08f * v;
+                    stats.maxPeople = 8f * v;
+                    stats.maxPeoplePerLevel = 1.6f * v;
+                    stats.rammingPower = 2f * v;
+                    stats.rammingPowerPerLevel = 0.5f * v;
                     break;
 
                 case "Wing":
-                    // Lateral control + cargo + a bit of sustain
-                    stats.maxGems = 10f * v;
-                    stats.maxGemsPerLevel = 2f * v;
-
-                    stats.turnSpeed = 4f * v;
-                    stats.turnSpeedPerLevel = 1f * v;
-
-                    stats.healthCap = 5f * v;
-                    stats.healthCapPerLevel = 1.5f * v;
-                    stats.healthRegen = 1.5f * v;
-                    stats.healthRegenPerLevel = 0.5f * v;
-
-                    stats.energyRegen = 1.5f * v;
-                    stats.energyRegenPerLevel = 0.5f * v;
+                    stats.maxGems = 8f * v;
+                    stats.maxGemsPerLevel = 1.6f * v;
+                    stats.turnSpeed = 2.5f * v;
+                    stats.turnSpeedPerLevel = 0.75f * v;
+                    stats.healthCap = 4f * v;
+                    stats.healthCapPerLevel = 1.1f * v;
+                    stats.healthRegen = 0.12f * v;
+                    stats.healthRegenPerLevel = 0.03f * v;
                     break;
 
                 case "Engine":
-                    // Forward thrust / speed
-                    stats.moveSpeed = 8f * v;
-                    stats.moveSpeedPerLevel = 2f * v;
-
+                    // Engines are acceleration-focused.
+                    stats.accelerationCap = 4f * v;
+                    stats.accelerationCapPerLevel = 0.9f * v;
                     stats.healthCap = 2f * v;
                     stats.healthCapPerLevel = 0.5f * v;
                     break;
 
                 case "Thruster":
-                    // Turning control
-                    stats.turnSpeed = 8f * v;
-                    stats.turnSpeedPerLevel = 2f * v;
-
+                    // Thrusters are top-speed focused. Top speed uses max value, not cumulative sum.
+                    stats.moveSpeed = 5f * v;
+                    stats.moveSpeedPerLevel = 0.8f * v;
+                    stats.turnSpeed = 2f * v;
+                    stats.turnSpeedPerLevel = 0.6f * v;
                     stats.healthCap = 2f * v;
                     stats.healthCapPerLevel = 0.5f * v;
                     break;
 
                 case "Fin":
-                    // Fins: primarily fine-grained turning control, lighter than thrusters
-                    stats.turnSpeed = 5f * v;
-                    stats.turnSpeedPerLevel = 1.5f * v;
-
+                    stats.turnSpeed = 3f * v;
+                    stats.turnSpeedPerLevel = 0.8f * v;
                     stats.healthCap = 1.5f * v;
-                    stats.healthCapPerLevel = 0.4f * v;
+                    stats.healthCapPerLevel = 0.35f * v;
                     break;
 
                 case "Weapon":
-                    // Pure offense
-                    stats.firePower = 5f * v;
-                    stats.firePowerPerLevel = 1.5f * v;
-
-                    stats.bulletSpeed = 5f * v;
-                    stats.bulletSpeedPerLevel = 1f * v;
-
-                    stats.fireRate = 1.5f * v;          // shots per second
-                    stats.fireRatePerLevel = 0.25f * v;
+                    stats.firePower = 3f * v;
+                    stats.firePowerPerLevel = 1f * v;
+                    stats.bulletSpeed = 8f * v;
+                    stats.bulletSpeedPerLevel = 2f * v;
+                    stats.fireRate = 1.2f * v;
+                    stats.fireRatePerLevel = 0.2f * v;
+                    stats.energyCap = 6f * v;
+                    stats.energyCapPerLevel = 1.5f * v;
+                    stats.energyRegen = 1.5f * v;
+                    stats.energyRegenPerLevel = 0.35f * v;
+                    stats.healthCap = 1f * v;
                     break;
 
                 case "Part":
                 case "Hull":
-                    // General survivability + cargo
-                    stats.healthCap = 10f * v;
-                    stats.healthCapPerLevel = 2f * v;
-                    stats.healthRegen = 2f * v;
-                    stats.healthRegenPerLevel = 0.75f * v;
-
-                    stats.maxGems = 5f * v;
-                    stats.maxGemsPerLevel = 1.5f * v;
-                    stats.maxPeople = 2f * v;
-                    stats.maxPeoplePerLevel = 0.5f * v;
+                    stats.healthCap = 7f * v;
+                    stats.healthCapPerLevel = 1.6f * v;
+                    stats.healthRegen = 0.25f * v;
+                    stats.healthRegenPerLevel = 0.06f * v;
+                    stats.maxGems = 2f * v;
+                    stats.maxGemsPerLevel = 0.4f * v;
+                    stats.maxPeople = 1f * v;
+                    stats.maxPeoplePerLevel = 0.2f * v;
                     break;
 
                 default:
-                    // Fallback: small balanced bonus
-                    stats.healthCap = 5f * v;
-                    stats.healthCapPerLevel = 1f * v;
-                    stats.energyCap = 3f * v;
-                    stats.energyCapPerLevel = 0.5f * v;
-                    stats.maxGems = 3f * v;
-                    stats.maxGemsPerLevel = 0.5f * v;
+                    stats.healthCap = 2f * v;
+                    stats.healthCapPerLevel = 0.5f * v;
                     break;
             }
 
             return stats;
+        }
+
+        private static void GenerateOrSyncBalanceProfileFromFolder(ShipFamilyDefinition def)
+        {
+            if (def == null) return;
+            string folder = EditorUtility.OpenFolderPanel("Select Prefab Folder", Application.dataPath, "");
+            if (string.IsNullOrEmpty(folder)) return;
+            if (!folder.StartsWith(Application.dataPath, StringComparison.OrdinalIgnoreCase))
+            {
+                EditorUtility.DisplayDialog("Invalid Folder", "Folder must be inside the project's Assets folder.", "OK");
+                return;
+            }
+            string familyId = string.IsNullOrWhiteSpace(def.familyId) ? string.Empty : def.familyId.Trim();
+            if (string.IsNullOrEmpty(familyId))
+            {
+                EditorUtility.DisplayDialog("Missing Family Id", "Please set familyId before syncing balance profile.", "OK");
+                return;
+            }
+
+            string relativeFolder = "Assets" + folder.Substring(Application.dataPath.Length);
+            var scan = ScanCanonicalComponents(relativeFolder, familyId);
+            if (scan.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Components", "No matching family components found in selected folder.", "OK");
+                return;
+            }
+
+            Undo.RecordObject(def, "Sync Ship Component Balance Profile");
+            if (def.componentBalanceProfile == null)
+            {
+                string defPath = AssetDatabase.GetAssetPath(def);
+                string dir = string.IsNullOrEmpty(defPath) ? "Assets" : Path.GetDirectoryName(defPath)?.Replace('\\', '/') ?? "Assets";
+                string profilePath = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{def.name}_ComponentBalanceProfile.asset");
+                var p = ScriptableObject.CreateInstance<ShipFamilyComponentBalanceProfile>();
+                p.profileId = string.IsNullOrWhiteSpace(def.familyId) ? def.name : def.familyId.Trim();
+                AssetDatabase.CreateAsset(p, profilePath);
+                def.componentBalanceProfile = p;
+            }
+
+            var profile = def.componentBalanceProfile;
+            Undo.RecordObject(profile, "Sync Ship Component Balance Profile");
+            profile.componentRules ??= new List<ShipFamilyComponentBalanceRule>();
+
+            for (int i = 0; i < scan.Count; i++)
+            {
+                var d = scan[i];
+                ShipFamilyComponentBalanceRule existing = null;
+                for (int r = 0; r < profile.componentRules.Count; r++)
+                {
+                    var rule = profile.componentRules[r];
+                    if (rule == null) continue;
+                    if (string.Equals(ShipFamilyComponentBalanceProfile.NormalizeComponentId(rule.componentId), d.canonicalId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existing = rule;
+                        break;
+                    }
+                }
+
+                if (existing == null)
+                {
+                    existing = new ShipFamilyComponentBalanceRule
+                    {
+                        componentId = d.canonicalId,
+                        partType = d.partType,
+                        stats = SuggestStatsForComponent(d.canonicalId, d.partType, d.version),
+                        aliases = new List<string>()
+                    };
+                    profile.componentRules.Add(existing);
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(existing.partType))
+                        existing.partType = d.partType;
+                    if (string.IsNullOrWhiteSpace(existing.componentId))
+                        existing.componentId = d.canonicalId;
+                }
+
+                existing.aliases ??= new List<string>();
+                foreach (string alias in d.aliases)
+                {
+                    if (string.IsNullOrWhiteSpace(alias)) continue;
+                    bool exists = false;
+                    for (int z = 0; z < existing.aliases.Count; z++)
+                    {
+                        if (string.Equals(existing.aliases[z], alias, StringComparison.OrdinalIgnoreCase))
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) existing.aliases.Add(alias);
+                }
+            }
+
+            EnsureDefaultPartTypeRules(profile);
+            EditorUtility.SetDirty(profile);
+            EditorUtility.SetDirty(def);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorGUIUtility.PingObject(profile);
+        }
+
+        private static void ExportCanonicalComponentInventory(ShipFamilyDefinition def)
+        {
+            if (def == null) return;
+            string folder = EditorUtility.OpenFolderPanel("Select Prefab Folder", Application.dataPath, "");
+            if (string.IsNullOrEmpty(folder)) return;
+            if (!folder.StartsWith(Application.dataPath, StringComparison.OrdinalIgnoreCase))
+            {
+                EditorUtility.DisplayDialog("Invalid Folder", "Folder must be inside the project's Assets folder.", "OK");
+                return;
+            }
+            string familyId = string.IsNullOrWhiteSpace(def.familyId) ? string.Empty : def.familyId.Trim();
+            if (string.IsNullOrEmpty(familyId))
+            {
+                EditorUtility.DisplayDialog("Missing Family Id", "Please set familyId before exporting inventory.", "OK");
+                return;
+            }
+
+            string relativeFolder = "Assets" + folder.Substring(Application.dataPath.Length);
+            var scan = ScanCanonicalComponents(relativeFolder, familyId);
+            if (scan.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Components", "No matching family components found in selected folder.", "OK");
+                return;
+            }
+
+            string assetPath = AssetDatabase.GetAssetPath(def);
+            string dir = string.IsNullOrEmpty(assetPath) ? "Assets" : Path.GetDirectoryName(assetPath)?.Replace('\\', '/') ?? "Assets";
+            string file = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{def.familyId}_ComponentInventory.csv");
+            var sb = new StringBuilder();
+            sb.AppendLine("CanonicalId,PartType,Version,Aliases");
+            for (int i = 0; i < scan.Count; i++)
+            {
+                var d = scan[i];
+                string aliases = string.Join("|", d.aliases);
+                sb.AppendLine($"{EscapeCsv(d.canonicalId)},{EscapeCsv(d.partType)},{d.version},{EscapeCsv(aliases)}");
+            }
+            File.WriteAllText(file, sb.ToString(), Encoding.UTF8);
+            AssetDatabase.ImportAsset(file);
+            AssetDatabase.Refresh();
+            var obj = AssetDatabase.LoadAssetAtPath<TextAsset>(file);
+            if (obj != null) EditorGUIUtility.PingObject(obj);
+            EditorUtility.DisplayDialog("Inventory Exported", $"Wrote canonical component inventory:\n{file}", "OK");
+        }
+
+        private static string EscapeCsv(string s)
+        {
+            if (s == null) return "\"\"";
+            string t = s.Replace("\"", "\"\"");
+            return $"\"{t}\"";
+        }
+
+        private static List<CanonicalComponentScanData> ScanCanonicalComponents(string relativeFolder, string familyId)
+        {
+            string[] guids = AssetDatabase.FindAssets("t:GameObject", new[] { relativeFolder });
+            var map = new Dictionary<string, CanonicalComponentScanData>(StringComparer.OrdinalIgnoreCase);
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null) continue;
+                var transforms = prefab.GetComponentsInChildren<Transform>(true);
+                foreach (var t in transforms)
+                {
+                    if (t == null || string.IsNullOrEmpty(t.name)) continue;
+                    if (!t.name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase)) continue;
+                    string rest = t.name.Substring(familyId.Length + 1);
+                    string canonicalId = ShipFamilyComponentBalanceProfile.NormalizeComponentId(rest);
+                    if (string.IsNullOrWhiteSpace(canonicalId)) continue;
+                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
+                    int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
+                    if (!map.TryGetValue(canonicalId, out CanonicalComponentScanData data))
+                    {
+                        data = new CanonicalComponentScanData(canonicalId, type, version);
+                        map[canonicalId] = data;
+                    }
+                    data.aliases.Add(rest);
+                }
+            }
+            var list = new List<CanonicalComponentScanData>(map.Values);
+            list.Sort((a, b) => string.Compare(a.canonicalId, b.canonicalId, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
+        private static void EnsureDefaultPartTypeRules(ShipFamilyComponentBalanceProfile profile)
+        {
+            if (profile == null) return;
+            profile.partTypeRules ??= new List<ShipFamilyPartTypeBalanceRule>();
+            string[] partTypes = { "Cockpit", "Wing", "Engine", "Thruster", "Fin", "Weapon", "Part", "Hull", "Utility", "Other" };
+            for (int i = 0; i < partTypes.Length; i++)
+            {
+                string type = partTypes[i];
+                bool exists = false;
+                for (int j = 0; j < profile.partTypeRules.Count; j++)
+                {
+                    var r = profile.partTypeRules[j];
+                    if (r == null || string.IsNullOrWhiteSpace(r.partType)) continue;
+                    if (string.Equals(r.partType.Trim(), type, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                {
+                    profile.partTypeRules.Add(new ShipFamilyPartTypeBalanceRule
+                    {
+                        partType = type,
+                        stats = SuggestStatsForComponent(type, type, 1)
+                    });
+                }
+            }
+        }
+
+        private sealed class CanonicalComponentScanData
+        {
+            public string canonicalId;
+            public string partType;
+            public int version;
+            public HashSet<string> aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            public CanonicalComponentScanData(string canonicalId, string partType, int version)
+            {
+                this.canonicalId = canonicalId;
+                this.partType = partType;
+                this.version = version;
+            }
         }
 
         private static void AutoDetectTeamMaterialsFromUpgradeTree(ShipFamilyDefinition def)
