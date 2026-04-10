@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using TitanOrbit.Input;
 
 namespace TitanOrbit.UI
@@ -27,10 +28,11 @@ namespace TitanOrbit.UI
         [SerializeField] private float shootButtonSize = 190f;
 
         private MobileInputHandler mobileInputHandler;
+        private static bool s_runtimeBootstrapAttempted;
 
         private void Start()
         {
-            bool isMobile = forceMobileControls || (autoDetectMobile && Application.isMobilePlatform);
+            bool isMobile = forceMobileControls || (autoDetectMobile && IsTouchInputEnvironment());
 
             EnsureEventSystemExists();
             EnsurePanelHierarchy();
@@ -44,6 +46,30 @@ namespace TitanOrbit.UI
             {
                 SetupMobileControls();
             }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureRuntimeMobileControls()
+        {
+            if (s_runtimeBootstrapAttempted)
+                return;
+            s_runtimeBootstrapAttempted = true;
+
+            if (!IsTouchInputEnvironment())
+                return;
+
+            if (FindFirstObjectByType<MobileControls>() != null)
+                return;
+
+            Canvas canvas = FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+                return;
+
+            GameObject mobileControlsObj = new GameObject("MobileControls");
+            mobileControlsObj.transform.SetParent(canvas.transform, false);
+            var controls = mobileControlsObj.AddComponent<MobileControls>();
+            controls.autoDetectMobile = true;
+            controls.forceMobileControls = true;
         }
 
         private void SetupMobileControls()
@@ -129,6 +155,12 @@ namespace TitanOrbit.UI
             GameObject eventSystemObj = new GameObject("EventSystem");
             eventSystemObj.AddComponent<EventSystem>();
             eventSystemObj.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+        }
+
+        private static bool IsTouchInputEnvironment()
+        {
+            // WebGL on mobile may not report Application.isMobilePlatform reliably.
+            return Application.isMobilePlatform || UnityEngine.Input.touchSupported || Touchscreen.current != null;
         }
     }
 }
