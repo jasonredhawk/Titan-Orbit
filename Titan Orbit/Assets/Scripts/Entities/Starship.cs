@@ -4920,6 +4920,7 @@ namespace TitanOrbit.Entities
                     : GetDefaultWeaponConfig();
                 EnsureBulletLastFireTime();
                 for (int i = 0; bulletLastFireTime != null && i < bulletLastFireTime.Length; i++) bulletLastFireTime[i] = -999f;
+                brakeDeceleration = Mathf.Max(0f, data.baseBrakeDeceleration);
 
                 // Stats come solely from chassis components (ApplyChassisComponentStats). Only use ShipData as fallback when no prefab.
                 if (data.shipPrefab == null)
@@ -4928,7 +4929,6 @@ namespace TitanOrbit.Entities
                     componentEngineMaxSpeed = 0f;
                     componentMass = 0f;
                     engineThrust = data.baseMovementSpeed;
-                    brakeDeceleration = Mathf.Max(0f, data.baseBrakeDeceleration);
                     maxHealth = data.baseMaxHealth;
                     healthRegenRate = data.baseHealthRegenRate;
                     rotationSpeed = data.baseRotationSpeed;
