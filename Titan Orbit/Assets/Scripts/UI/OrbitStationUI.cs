@@ -1414,29 +1414,40 @@ namespace TitanOrbit.UI
             return "Unassigned";
         }
 
-        private Sprite ResolveShipTreePreviewSprite(int level, int branchIndex)
+        private string ResolveTreeSlotChassisId(int level, int branchIndex)
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return null;
+            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null)
+                return null;
+            return CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
+        }
+
+        private Sprite ResolveShipTreePreviewSprite(int level, int branchIndex)
+        {
+            if (currentShip == null || CardShopSystem.Instance == null) return null;
             TeamManager.Team team = currentShip.ShipTeam;
-            if (level <= 1)
-                return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, team);
-            return CardShopSystem.Instance.GetMenuPreviewSpriteForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex, team);
+            string slotChassisId = ResolveTreeSlotChassisId(level, branchIndex);
+            if (string.IsNullOrEmpty(slotChassisId))
+                return null;
+            return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(slotChassisId, team);
         }
 
         private string GetStarterShipDisplayName()
         {
-            if (currentShip != null && CardShopSystem.Instance != null && !string.IsNullOrEmpty(currentShip.CurrentChassisId))
+            if (CardShopSystem.Instance != null)
             {
-                string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForChassisId(currentShip.CurrentChassisId);
-                if (!string.IsNullOrEmpty(treeName))
-                    return treeName.Trim();
-                ShipChassisDefinition ch = CardShopSystem.Instance.GetChassisDefinitionByChassisId(currentShip.CurrentChassisId);
-                if (ch != null && !string.IsNullOrEmpty(ch.displayName))
-                    return ch.displayName.Trim();
+                string slotChassisId = ResolveTreeSlotChassisId(1, 0);
+                if (!string.IsNullOrEmpty(slotChassisId))
+                {
+                    string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForChassisId(slotChassisId);
+                    if (!string.IsNullOrEmpty(treeName))
+                        return treeName.Trim();
+
+                    ShipChassisDefinition ch = CardShopSystem.Instance.GetChassisDefinitionByChassisId(slotChassisId);
+                    if (ch != null && !string.IsNullOrEmpty(ch.displayName))
+                        return ch.displayName.Trim();
+                }
             }
-            if (currentShip != null && currentShip.CurrentShipData != null && !string.IsNullOrEmpty(currentShip.CurrentShipData.shipName))
-                return currentShip.CurrentShipData.shipName.Trim();
             return "Starter";
         }
 
@@ -2217,12 +2228,12 @@ namespace TitanOrbit.UI
 
         private ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null)
+            if (CardShopSystem.Instance == null)
                 return default;
-            if (level <= 1)
-                return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
+            string slotChassisId = ResolveTreeSlotChassisId(level, branchIndex);
+            if (string.IsNullOrEmpty(slotChassisId))
+                return default;
+            return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(slotChassisId);
         }
 
         /// <summary>Strongest ship’s total power (O+D+E+M+C) in the visible tree — used as the width scale for stacked segments.</summary>
