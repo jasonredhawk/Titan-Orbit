@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace TitanOrbit.Input
 {
@@ -35,7 +36,8 @@ namespace TitanOrbit.Input
                 return;
             }
 
-            if (UnityEngine.Input.touchCount == 0)
+            Touchscreen touchscreen = Touchscreen.current;
+            if (touchscreen == null)
             {
                 if (joystickFingerId != -1) ReleaseJoystick();
                 if (shootFingerId != -1)
@@ -48,30 +50,44 @@ namespace TitanOrbit.Input
 
             bool joystickFingerTrackedThisFrame = false;
             bool shootFingerTrackedThisFrame = false;
+            bool hasPressedTouch = false;
 
-            for (int i = 0; i < UnityEngine.Input.touchCount; i++)
+            foreach (var touchControl in touchscreen.touches)
             {
-                Touch touch = UnityEngine.Input.GetTouch(i);
+                int fingerId = touchControl.touchId.ReadValue();
+                if (fingerId <= 0) continue;
 
-                if (touch.fingerId == joystickFingerId)
+                Vector2 touchPosition = touchControl.position.ReadValue();
+                bool isPressed = touchControl.press.isPressed;
+                var phase = touchControl.phase.ReadValue();
+                bool isTouchActive = isPressed
+                    || phase == UnityEngine.InputSystem.TouchPhase.Began
+                    || phase == UnityEngine.InputSystem.TouchPhase.Moved
+                    || phase == UnityEngine.InputSystem.TouchPhase.Stationary;
+                bool isTouchEnded = phase == UnityEngine.InputSystem.TouchPhase.Ended
+                    || phase == UnityEngine.InputSystem.TouchPhase.Canceled;
+
+                if (isTouchActive)
+                    hasPressedTouch = true;
+
+                if (fingerId == joystickFingerId)
                 {
                     joystickFingerTrackedThisFrame = true;
-                    if (touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled)
+                    if (!isTouchActive || isTouchEnded)
                     {
                         ReleaseJoystick();
                     }
                     else
                     {
-                        UpdateJoystick(touch.position);
+                        UpdateJoystick(touchPosition);
                     }
                     continue;
                 }
 
-                if (touch.fingerId == shootFingerId)
+                if (fingerId == shootFingerId)
                 {
                     shootFingerTrackedThisFrame = true;
-                    bool active = touch.phase != TouchPhase.Ended && touch.phase != TouchPhase.Canceled;
-                    shootButtonPressed = active && IsInsideRect(shootButton, touch.position);
+                    shootButtonPressed = isTouchActive && !isTouchEnded && IsInsideRect(shootButton, touchPosition);
                     if (!shootButtonPressed)
                     {
                         shootFingerId = -1;
@@ -79,22 +95,22 @@ namespace TitanOrbit.Input
                     continue;
                 }
 
-                if (touch.phase != TouchPhase.Began)
+                if (phase != UnityEngine.InputSystem.TouchPhase.Began)
                 {
                     continue;
                 }
 
-                if (joystickFingerId == -1 && IsInsideRect(joystickBackground, touch.position))
+                if (joystickFingerId == -1 && IsInsideRect(joystickBackground, touchPosition))
                 {
-                    joystickFingerId = touch.fingerId;
+                    joystickFingerId = fingerId;
                     joystickFingerTrackedThisFrame = true;
-                    UpdateJoystick(touch.position);
+                    UpdateJoystick(touchPosition);
                     continue;
                 }
 
-                if (shootFingerId == -1 && IsInsideRect(shootButton, touch.position))
+                if (shootFingerId == -1 && IsInsideRect(shootButton, touchPosition))
                 {
-                    shootFingerId = touch.fingerId;
+                    shootFingerId = fingerId;
                     shootFingerTrackedThisFrame = true;
                     shootButtonPressed = true;
                 }
@@ -108,6 +124,11 @@ namespace TitanOrbit.Input
             if (shootFingerId != -1 && !shootFingerTrackedThisFrame)
             {
                 shootFingerId = -1;
+                shootButtonPressed = false;
+            }
+
+            if (!hasPressedTouch && joystickFingerId == -1 && shootFingerId == -1)
+            {
                 shootButtonPressed = false;
             }
         }

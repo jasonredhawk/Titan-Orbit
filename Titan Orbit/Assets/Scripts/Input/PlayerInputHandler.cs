@@ -56,7 +56,7 @@ namespace TitanOrbit.Input
         /// <summary>True when space brakes are on (ship slows when not holding move). False = float endlessly. Toggle with CTRL.</summary>
         public bool SpaceBrakesEnabled => spaceBrakesEnabled;
         public bool IsMobile => Application.isMobilePlatform;
-        public bool IsUsingMobileControls => mobileInputHandler != null && (Application.isMobilePlatform || UnityEngine.Input.touchSupported);
+        public bool IsUsingMobileControls => mobileInputHandler != null && (Application.isMobilePlatform || Touchscreen.current != null);
         public bool IsShootingFromMobileButton => IsUsingMobileControls && mobileInputHandler.ShootButtonPressed;
 
         private void Awake()
@@ -129,11 +129,6 @@ namespace TitanOrbit.Input
                 {
                     moveInput = joystick;
                     moveForwardPressed = true;
-                }
-                else if (UnityEngine.Input.touchCount > 0)
-                {
-                    moveForwardPressed = false;
-                    moveInput = Vector2.zero;
                 }
 
                 shootPressed = shootPressed || mobileInputHandler.ShootButtonPressed;
