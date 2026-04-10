@@ -280,6 +280,16 @@ namespace TitanOrbit.UI
             return v.ToString("0.#");
         }
 
+        /// <summary>
+        /// Same as <see cref="FormatHudNumber"/> but always prefixes '+' or '-' so label width stays stable (no missing sign for 0 / small values).
+        /// </summary>
+        private static string FormatHudSignedNumber(float v, bool preferInteger)
+        {
+            if (v < 0f)
+                return "-" + FormatHudNumber(-v, preferInteger);
+            return "+" + FormatHudNumber(v, preferInteger);
+        }
+
         private void ApplyPlacement(RectTransform rootRect)
         {
             float h = horizontalMargin;
@@ -425,8 +435,7 @@ namespace TitanOrbit.UI
             {
                 float t = accelTickLabels.Length <= 1 ? 0.5f : (float)i / (accelTickLabels.Length - 1);
                 float v = Mathf.Lerp(-skew, skew, t);
-                string sign = v > 0.001f ? "+" : string.Empty;
-                accelTickLabels[i].text = sign + FormatHudNumber(v, preferIntAccel);
+                accelTickLabels[i].text = FormatHudSignedNumber(v, preferIntAccel);
                 accelTickLabels[i].alignment = i == 0
                     ? TextAlignmentOptions.MidlineLeft
                     : (i == accelTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
@@ -446,8 +455,8 @@ namespace TitanOrbit.UI
                 ? $"  ·  stop in {cur / maxBrake:0.0}s"
                 : string.Empty;
 
-            string accSign = smoothedHorizontalAccel >= 0f ? "+" : "";
-            string line2 = $"ACC {accSign}{smoothedHorizontalAccel:0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
+            char accSign = smoothedHorizontalAccel < 0f ? '-' : '+';
+            string line2 = $"ACC {accSign}{Mathf.Abs(smoothedHorizontalAccel):0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
 
             ship.GetHudAsteroidRamDamageEstimate(cur, out float ramAst, out float ramSelf);
             string line3 = $"RAM →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(head-on @ spd)</color>";

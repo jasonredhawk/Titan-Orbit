@@ -46,8 +46,12 @@ namespace TitanOrbit.Editor
             EditorGUILayout.EndVertical();
             EditorGUILayout.Space(6);
 
+            EditorGUI.BeginChangeCheck();
             DrawDefaultInspector();
+            bool serializedChanged = EditorGUI.EndChangeCheck();
             serializedObject.ApplyModifiedProperties();
+            if (serializedChanged && def != null)
+                ShipFamilyStatsPreviewLiveRefresh.OnShipFamilyDefinitionSerializedChanged(def);
 
             if (def == null)
                 return;
@@ -86,6 +90,11 @@ namespace TitanOrbit.Editor
                     BuildUpgradeTreeFromFolder(def);
                 }
 
+                if (GUILayout.Button("Resort Upgrade Tree & Recalculate Power Scores"))
+                {
+                    ResortUpgradeTreeAndRecalculateStats(def);
+                }
+
                 if (GUILayout.Button("Add Ship Family Stats Preview To All Upgrade Tree Prefabs"))
                 {
                     AddShipFamilyStatsPreviewToUpgradeTreePrefabs(def);
@@ -102,6 +111,10 @@ namespace TitanOrbit.Editor
                 }
             }
 
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox(
+                "Resort Upgrade Tree: recomputes power scores from the current component table and prefab scales, then reorders tiers like Build From Folder (power + orbit layout). Keeps each tier's prefab, chassisId, display name, and menu sprites — use this after stat tweaks instead of rebuilding.",
+                MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
@@ -245,6 +258,7 @@ namespace TitanOrbit.Editor
                 foreach (var t in transforms)
                 {
                     if (t == null) continue;
+                    if (t == prefab.transform) continue; // Exclude prefab root (ship object), scan only child components.
                     string name = t.name;
                     if (string.IsNullOrEmpty(name)) continue;
 
@@ -387,7 +401,7 @@ namespace TitanOrbit.Editor
                 var chunk = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
                 for (int c = 0; c < chunkSize && listIdx < list.Count; c++)
                     chunk.Add(list[listIdx++]);
-                chunk.Sort(CompareOdEmcSpectrumInTier);
+                chunk.Sort((a, b) => CompareOdEmcSpectrumByBreakdown(a.breakdown, b.breakdown));
                 orderedForTree.AddRange(chunk);
                 chunkSize++;
             }
@@ -438,6 +452,112 @@ namespace TitanOrbit.Editor
             AssetDatabase.Refresh();
         }
 
+        /// <summary>
+        /// Reorders existing upgrade-tree entries using the same rules as <see cref="BuildUpgradeTreeFromFolder"/> (global power sort, then O–D–E–M–C within triangular tiers).
+        /// Refreshes <see cref="ShipFamilyChassisTierEntry.powerScore"/> and <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/> from prefabs and <paramref name="def"/>'s component stats.
+        /// Preserves prefab references, chassisId, names, and menu sprites so designers need not rebuild after balance edits.
+        /// </summary>
+        private static void ResortUpgradeTreeAndRecalculateStats(ShipFamilyDefinition def)
+        {
+            if (def == null)
+                return;
+
+            string familyId = def.familyId != null ? def.familyId.Trim() : string.Empty;
+            if (string.IsNullOrEmpty(familyId))
+            {
+                EditorUtility.DisplayDialog("Missing Family Id",
+                    "Please set 'familyId' on the ShipFamilyDefinition before resorting the upgrade tree.", "OK");
+                return;
+            }
+
+            if (def.upgradeTree == null || def.upgradeTree.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Upgrade Tree", "Upgrade tree is empty. Build the upgrade tree from a folder first.", "OK");
+                return;
+            }
+
+            var withPrefab = new List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+            var noPrefab = new List<ShipFamilyChassisTierEntry>();
+
+            foreach (var tier in def.upgradeTree)
+            {
+                if (tier == null)
+                    continue;
+                if (tier.prefab == null)
+                {
+                    noPrefab.Add(tier);
+                    continue;
+                }
+
+                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
+                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                float power = breakdown.Total;
+                withPrefab.Add((tier, power, breakdown));
+            }
+
+            if (withPrefab.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Prefabs",
+                    "No upgrade-tree entries have a prefab assigned; nothing to resort.", "OK");
+                return;
+            }
+
+            withPrefab.Sort((a, b) => a.power.CompareTo(b.power));
+            var orderedForTree = new List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+            int listIdx = 0;
+            int chunkSize = 1;
+            while (listIdx < withPrefab.Count)
+            {
+                var chunk = new List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+                for (int c = 0; c < chunkSize && listIdx < withPrefab.Count; c++)
+                    chunk.Add(withPrefab[listIdx++]);
+                chunk.Sort((a, b) => CompareOdEmcSpectrumByBreakdown(a.breakdown, b.breakdown));
+                orderedForTree.AddRange(chunk);
+                chunkSize++;
+            }
+
+            Undo.RecordObject(def, "Resort Ship Family Upgrade Tree");
+
+            var newTree = new List<ShipFamilyChassisTierEntry>(orderedForTree.Count + noPrefab.Count);
+            int currentLevel = 1;
+            int shipsAtCurrentLevel = 1;
+            int assignedAtThisLevel = 0;
+
+            for (int i = 0; i < orderedForTree.Count; i++)
+            {
+                var (entry, power, breakdown) = orderedForTree[i];
+                if (assignedAtThisLevel >= shipsAtCurrentLevel)
+                {
+                    currentLevel++;
+                    shipsAtCurrentLevel++;
+                    assignedAtThisLevel = 0;
+                }
+
+                entry.powerScore = power;
+                entry.powerScoreBreakdown = breakdown;
+                entry.minHomePlanetLevel = currentLevel;
+                newTree.Add(entry);
+                assignedAtThisLevel++;
+            }
+
+            for (int i = 0; i < noPrefab.Count; i++)
+                newTree.Add(noPrefab[i]);
+
+            def.upgradeTree = newTree;
+
+            EditorUtility.SetDirty(def);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            if (noPrefab.Count > 0)
+            {
+                EditorUtility.DisplayDialog(
+                    "Resort Upgrade Tree",
+                    $"Resorted {orderedForTree.Count} tier(s) with prefabs. {noPrefab.Count} entr(y/ies) with no prefab were left at the end of the list unchanged.",
+                    "OK");
+            }
+        }
+
         /// <summary>Sum component stats for prefab. Non-weapons: scale by average(x,y,z). Weapons: fire power by average(x,y), fire rate by 1/z; bullet speed not scaled by part size.</summary>
         private static ShipComponentAbilityStats SumStatsForPrefab(GameObject prefab, ShipFamilyDefinition def, string familyId)
         {
@@ -464,24 +584,23 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>Left branch = lower axis (more O); right = higher (more C). Tie-break: offense desc, capacity asc.</summary>
-        private static int CompareOdEmcSpectrumInTier(
-            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) a,
-            (GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown) b)
+        private static int CompareOdEmcSpectrumByBreakdown(ShipFamilyPowerScoreBreakdown a, ShipFamilyPowerScoreBreakdown b)
         {
-            float pa = OdEmcAxisPosition(a.breakdown);
-            float pb = OdEmcAxisPosition(b.breakdown);
+            float pa = OdEmcAxisPosition(a);
+            float pb = OdEmcAxisPosition(b);
             int cmp = pa.CompareTo(pb);
             if (cmp != 0) return cmp;
-            cmp = b.breakdown.offense.CompareTo(a.breakdown.offense);
+            cmp = b.offense.CompareTo(a.offense);
             if (cmp != 0) return cmp;
-            return a.breakdown.capacity.CompareTo(b.breakdown.capacity);
+            return a.capacity.CompareTo(b.capacity);
         }
 
         private static ShipComponentAbilityStats SuggestStatsForComponent(string componentId, string type, int version)
         {
             // Rebalanced heuristics:
             // - Weapons own offense + energy.
-            // - Thrusters drive top speed; engines drive acceleration.
+            // - Engines and thrusters both contribute move speed + acceleration (matches runtime: max speed from best part, thrust from sum).
+            //   Thrusters also add turn speed; engines do not.
             // - Wings drive gem capacity; cockpits drive people + base ramming.
             float v = Mathf.Max(1, version);
             var stats = new ShipComponentAbilityStats();
@@ -511,7 +630,8 @@ namespace TitanOrbit.Editor
                     break;
 
                 case "Engine":
-                    // Engines are acceleration-focused.
+                    stats.moveSpeed = 5f * v;
+                    stats.moveSpeedPerLevel = 0.8f * v;
                     stats.accelerationCap = 4f * v;
                     stats.accelerationCapPerLevel = 0.9f * v;
                     stats.healthCap = 2f * v;
@@ -519,9 +639,10 @@ namespace TitanOrbit.Editor
                     break;
 
                 case "Thruster":
-                    // Thrusters are top-speed focused. Top speed uses max value, not cumulative sum.
                     stats.moveSpeed = 5f * v;
                     stats.moveSpeedPerLevel = 0.8f * v;
+                    stats.accelerationCap = 4f * v;
+                    stats.accelerationCapPerLevel = 0.9f * v;
                     stats.turnSpeed = 2f * v;
                     stats.turnSpeedPerLevel = 0.6f * v;
                     stats.healthCap = 2f * v;
@@ -734,6 +855,7 @@ namespace TitanOrbit.Editor
                 foreach (var t in transforms)
                 {
                     if (t == null || string.IsNullOrEmpty(t.name)) continue;
+                    if (t == prefab.transform) continue; // Exclude prefab root (ship object), scan only child components.
                     if (!t.name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase)) continue;
                     string rest = t.name.Substring(familyId.Length + 1);
                     string canonicalId = ShipFamilyComponentBalanceProfile.NormalizeComponentId(rest);

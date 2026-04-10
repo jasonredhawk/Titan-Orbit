@@ -92,7 +92,7 @@ namespace TitanOrbit.Editor
                 if (string.IsNullOrWhiteSpace(componentId))
                     continue;
 
-                if (def.TryGetStatsForComponent(componentId, out var stats))
+                if (def.TryResolveStatsForComponent(componentId, out var stats))
                 {
                     ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
                     total.AddInPlace(scaled);

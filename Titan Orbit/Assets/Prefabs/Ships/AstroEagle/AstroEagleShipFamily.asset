@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: AstroEagle
   bulletPrefabIndex: 0
+  componentBalanceProfile: {fileID: 11400000, guid: f4245a41a435dc24ea43afaa8449f61f, type: 2}
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
@@ -24,22 +25,26 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 3
-      healthRegen: 0.5
-      healthRegenPerLevel: 0.5
+      rammingPower: 2
+      rammingPowerPerLevel: 0.5
+      healthCap: 10
+      healthCapPerLevel: 2
+      healthRegen: 0.35
+      healthRegenPerLevel: 0.08
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
-      maxPeople: 10
-      maxPeoplePerLevel: 2
+      maxPeople: 8
+      maxPeoplePerLevel: 1.6
     bulletPrefabIndex: -1
   - componentId: Cockpit_Base_1
     displayName: Cockpit 1
@@ -50,22 +55,26 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 3
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 2
+      rammingPowerPerLevel: 0.5
+      healthCap: 10
+      healthCapPerLevel: 2
+      healthRegen: 0.35
+      healthRegenPerLevel: 0.08
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeople: 8
+      maxPeoplePerLevel: 1.6
     bulletPrefabIndex: -1
   - componentId: Cockpit_Base_2
     displayName: Cockpit 2
@@ -76,22 +85,26 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 30
-      healthCapPerLevel: 6
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 4
+      rammingPowerPerLevel: 1
+      healthCap: 20
+      healthCapPerLevel: 4
+      healthRegen: 0.7
+      healthRegenPerLevel: 0.16
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeople: 16
+      maxPeoplePerLevel: 3.2
     bulletPrefabIndex: -1
   - componentId: Engine_1
     displayName: Engine 1
@@ -102,6 +115,8 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       healthCap: 2
       healthCapPerLevel: 0.5
       healthRegen: 0
@@ -111,33 +126,9 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 5
-      moveSpeedPerLevel: 0.5
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine_2
-    displayName: Engine 2
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 4
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 10
-      moveSpeedPerLevel: 1
+      moveSpeedPerLevel: 0.8
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.9
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -154,8 +145,10 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       healthCap: 1.5
-      healthCapPerLevel: 0.4
+      healthCapPerLevel: 0.35
       healthRegen: 0
       healthRegenPerLevel: 0
       energyCap: 0
@@ -164,38 +157,14 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 5
-      turnSpeedPerLevel: 1.5
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 3
+      turnSpeedPerLevel: 0.8
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Part_1
-    displayName: Part 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 10
-      healthCapPerLevel: 2
-      healthRegen: 0.2
-      healthRegenPerLevel: 0.075
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 5
-      maxGemsPerLevel: 1.5
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
   - componentId: Part_2
     displayName: Part 2
@@ -206,77 +175,29 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 20
-      healthCapPerLevel: 4
-      healthRegen: 0.4
-      healthRegenPerLevel: 0.15
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 14
+      healthCapPerLevel: 3.2
+      healthRegen: 0.5
+      healthRegenPerLevel: 0.12
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 10
-      maxGemsPerLevel: 3
-      maxPeople: 4
-      maxPeoplePerLevel: 1
-    bulletPrefabIndex: -1
-  - componentId: Part_3
-    displayName: Part 3
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 30
-      healthCapPerLevel: 6
-      healthRegen: 0.6
-      healthRegenPerLevel: 0.225
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 15
-      maxGemsPerLevel: 4.5
-      maxPeople: 6
-      maxPeoplePerLevel: 1.5
-    bulletPrefabIndex: -1
-  - componentId: Part_4
-    displayName: Part 4
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 40
-      healthCapPerLevel: 8
-      healthRegen: 0.8
-      healthRegenPerLevel: 0.3
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 20
-      maxGemsPerLevel: 6
-      maxPeople: 8
-      maxPeoplePerLevel: 2
+      maxGems: 4
+      maxGemsPerLevel: 0.8
+      maxPeople: 2
+      maxPeoplePerLevel: 0.4
     bulletPrefabIndex: -1
   - componentId: Tail
-    displayName: Tail 1
+    displayName: Fin 1
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -284,8 +205,10 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 1.5
+      healthCapPerLevel: 0.35
       healthRegen: 0
       healthRegenPerLevel: 0
       energyCap: 0
@@ -294,8 +217,10 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 9
-      turnSpeedPerLevel: 2
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 3
+      turnSpeedPerLevel: 0.8
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -310,6 +235,8 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       healthCap: 2
       healthCapPerLevel: 0.5
       healthRegen: 0
@@ -318,10 +245,12 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
+      moveSpeed: 5
+      moveSpeedPerLevel: 0.8
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.9
+      turnSpeed: 2
+      turnSpeedPerLevel: 0.6
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -331,77 +260,29 @@ MonoBehaviour:
     displayName: Weapon 1
     stats:
       firePower: 3
-      firePowerPerLevel: 3
-      bulletSpeed: 12
-      bulletSpeedPerLevel: 3
-      fireRate: 2
-      fireRatePerLevel: 0
-      healthCap: 0
+      firePowerPerLevel: 1
+      bulletSpeed: 8
+      bulletSpeedPerLevel: 2
+      fireRate: 1.2
+      fireRatePerLevel: 0.2
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 1
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15
-      energyCapPerLevel: 3
-      energyRegen: 3
-      energyRegenPerLevel: 3
+      energyCap: 6
+      energyCapPerLevel: 1.5
+      energyRegen: 1.5
+      energyRegenPerLevel: 0.35
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: 3
-  - componentId: Wing_1
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 0.15
-      healthRegenPerLevel: 0.05
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 3
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_1_Mirrored
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 0.15
-      healthRegenPerLevel: 0.05
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 3
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -414,20 +295,114 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 10
-      healthCapPerLevel: 3
-      healthRegen: 0.3
-      healthRegenPerLevel: 0.1
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 8
+      healthCapPerLevel: 2.2
+      healthRegen: 0.24
+      healthRegenPerLevel: 0.06
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 4
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 5
       turnSpeedPerLevel: 1.5
-      maxGems: 20
-      maxGemsPerLevel: 4
+      maxGems: 16
+      maxGemsPerLevel: 3.2
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine_2
+    displayName: Engine 2
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 4
+      healthCapPerLevel: 1
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 10
+      moveSpeedPerLevel: 1.6
+      accelerationCap: 8
+      accelerationCapPerLevel: 1.8
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Part_1
+    displayName: Part 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 7
+      healthCapPerLevel: 1.6
+      healthRegen: 0.25
+      healthRegenPerLevel: 0.06
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 2
+      maxGemsPerLevel: 0.4
+      maxPeople: 1
+      maxPeoplePerLevel: 0.2
+    bulletPrefabIndex: -1
+  - componentId: Wing_1
+    displayName: Wing 1
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 4
+      healthCapPerLevel: 1.1
+      healthRegen: 0.12
+      healthRegenPerLevel: 0.03
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 2.5
+      turnSpeedPerLevel: 0.75
+      maxGems: 8
+      maxGemsPerLevel: 1.6
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -440,46 +415,24 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 4.5
-      healthRegen: 0.45
-      healthRegenPerLevel: 0.15
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 12
+      healthCapPerLevel: 3.3000002
+      healthRegen: 0.35999998
+      healthRegenPerLevel: 0.089999996
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 4.5
-      turnSpeedPerLevel: 1.5
-      maxGems: 30
-      maxGemsPerLevel: 6
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4
-    displayName: Wing 4
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 20
-      healthCapPerLevel: 6
-      healthRegen: 0.6
-      healthRegenPerLevel: 0.2
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 5
-      turnSpeedPerLevel: 2
-      maxGems: 40
-      maxGemsPerLevel: 8
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 7.5
+      turnSpeedPerLevel: 2.25
+      maxGems: 24
+      maxGemsPerLevel: 4.8
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -492,20 +445,54 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 25
-      healthCapPerLevel: 7.5
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.25
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 20
+      healthCapPerLevel: 5.5
+      healthRegen: 0.59999996
+      healthRegenPerLevel: 0.14999999
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 7
-      turnSpeedPerLevel: 2.5
-      maxGems: 50
-      maxGemsPerLevel: 10
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 12.5
+      turnSpeedPerLevel: 3.75
+      maxGems: 40
+      maxGemsPerLevel: 8
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing_4
+    displayName: Wing 4
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 16
+      healthCapPerLevel: 4.4
+      healthRegen: 0.48
+      healthRegenPerLevel: 0.12
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 10
+      turnSpeedPerLevel: 3
+      maxGems: 32
+      maxGemsPerLevel: 6.4
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -531,16 +518,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 78c6ec280f2677f47843997367108cd1, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 97.43114
+    powerScore: 95.03052
     powerScoreBreakdown:
-      offense: 17.25
-      defense: 14.725639
-      energy: 6.3
-      mobility: 45.75
-      capacity: 13.405501
+      offense: 16.1
+      defense: 11.601416
+      energy: 4.8
+      mobility: 53.745
+      capacity: 8.784103
   - chassisId: AstroEagle_02
-    upgradeTreeShipName: Stringray
-    prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
+    upgradeTreeShipName: Bat
+    prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 91d111897a0b41245991225fe23521d8, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -559,13 +546,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 111.2089
+    powerScore: 103.61835
     powerScoreBreakdown:
-      offense: 34.740612
-      defense: 16.9902
-      energy: 12.6
-      mobility: 35
-      capacity: 11.878089
+      offense: 36.806152
+      defense: 13.376924
+      energy: 9.6
+      mobility: 28.25
+      capacity: 15.585272
   - chassisId: AstroEagle_03
     upgradeTreeShipName: Sparrow
     prefab: {fileID: 1560147866539248, guid: 8be3f1654a841a349b6718d270d4841e, type: 3}
@@ -587,16 +574,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1d52f0f31724db044b11d3584d1c549e, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 97.95771
+    powerScore: 105.14382
     powerScoreBreakdown:
-      offense: 17.25
-      defense: 21.99087
-      energy: 6.3
-      mobility: 33.5
-      capacity: 18.916838
+      offense: 20.55
+      defense: 18.13434
+      energy: 4.8
+      mobility: 37.51
+      capacity: 24.149483
   - chassisId: AstroEagle_04
-    upgradeTreeShipName: Turkey
-    prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
+    upgradeTreeShipName: Whale
+    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -615,16 +602,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 120.77604
+    powerScore: 124.09395
     powerScoreBreakdown:
-      offense: 41.09058
-      defense: 24.047121
-      energy: 12.6
-      mobility: 29.300001
-      capacity: 13.738335
+      offense: 56.43435
+      defense: 11.9396
+      energy: 19.2
+      mobility: 22.76
+      capacity: 13.76
   - chassisId: AstroEagle_05
-    upgradeTreeShipName: Bat
-    prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
+    upgradeTreeShipName: Stringray
+    prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: f46af7d96524a0943ade2fa31dbed897, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -643,13 +630,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 114.62068
+    powerScore: 109.309555
     powerScoreBreakdown:
-      offense: 36.834953
-      defense: 16.569944
-      energy: 12.6
-      mobility: 36.8
-      capacity: 11.815786
+      offense: 29.392178
+      defense: 12.774904
+      energy: 9.6
+      mobility: 48.04
+      capacity: 9.502471
   - chassisId: AstroEagle_06
     upgradeTreeShipName: Turtle
     prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
@@ -671,16 +658,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 131.47693
+    powerScore: 131.37666
     powerScoreBreakdown:
-      offense: 34.642715
-      defense: 28.76876
-      energy: 12.6
-      mobility: 30.2
-      capacity: 25.26546
+      offense: 34.075024
+      defense: 23.697248
+      energy: 9.6
+      mobility: 39.34
+      capacity: 24.664392
   - chassisId: AstroEagle_07
-    upgradeTreeShipName: Whale
-    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
+    upgradeTreeShipName: Starship
+    prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -699,16 +686,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 141.2808
+    powerScore: 148.0648
     powerScoreBreakdown:
-      offense: 69.48121
-      defense: 15.4996
-      energy: 25.2
-      mobility: 13.900001
-      capacity: 17.2
+      offense: 55.783833
+      defense: 14.369731
+      energy: 19.2
+      mobility: 44.38
+      capacity: 14.331233
   - chassisId: AstroEagle_08
-    upgradeTreeShipName: Feather
-    prefab: {fileID: 5623887138846423697, guid: a727c87f8d9d96a4594c3a0c4ea59819, type: 3}
+    upgradeTreeShipName: Slicer
+    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -727,16 +714,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 139.0931
+    powerScore: 147.62926
     powerScoreBreakdown:
-      offense: 34.5
-      defense: 27.579123
-      energy: 12.6
-      mobility: 45.100002
-      capacity: 19.313965
+      offense: 50.535
+      defense: 16.576883
+      energy: 9.6
+      mobility: 52.87
+      capacity: 18.047373
   - chassisId: AstroEagle_09
-    upgradeTreeShipName: DoubleBarrel
-    prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
+    upgradeTreeShipName: Feather
+    prefab: {fileID: 5623887138846423697, guid: a727c87f8d9d96a4594c3a0c4ea59819, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: d32c391e42f57514f8d13cefb7be2b69, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -755,16 +742,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: bbf6e5d4ff0462744a2e4351d64e9339, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 147.14929
+    powerScore: 132.52151
     powerScoreBreakdown:
-      offense: 34.5
-      defense: 34.629807
-      energy: 12.6
-      mobility: 38.3
-      capacity: 27.119492
+      offense: 36.4
+      defense: 21.930336
+      energy: 9.6
+      mobility: 36.5
+      capacity: 28.091173
   - chassisId: AstroEagle_10
-    upgradeTreeShipName: DoubleDragon
-    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
+    upgradeTreeShipName: Turkey
+    prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 934d1ea0cb4a51048a9f83673f95b6c6, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -783,13 +770,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 132.6998
+    powerScore: 141.84686
     powerScoreBreakdown:
-      offense: 24.87315
-      defense: 27.007734
-      energy: 12.6
-      mobility: 46.15
-      capacity: 22.06892
+      offense: 37.528244
+      defense: 19.749146
+      energy: 9.6
+      mobility: 48.81
+      capacity: 26.159466
   - chassisId: AstroEagle_11
     upgradeTreeShipName: Squid
     prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
@@ -811,16 +798,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 168.89308
+    powerScore: 155.5415
     powerScoreBreakdown:
-      offense: 69
-      defense: 23.079123
-      energy: 25.2
-      mobility: 34.3
-      capacity: 17.313965
+      offense: 63.4
+      defense: 18.650337
+      energy: 19.2
+      mobility: 27.8
+      capacity: 26.491173
   - chassisId: AstroEagle_12
-    upgradeTreeShipName: Hippo
-    prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
+    upgradeTreeShipName: Eagle
+    prefab: {fileID: 8702785273099874958, guid: 5b14bf2ca37c365429274ce322e8859c, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 28b8880114b7dd248adcd91ee395741b, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -839,16 +826,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45f089a901dedbf4c94bffe2d1c1ea38, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 181.55986
+    powerScore: 179.73074
     powerScoreBreakdown:
-      offense: 69.48121
-      defense: 30.378643
-      energy: 25.2
-      mobility: 37.9
-      capacity: 18.6
+      offense: 66.36447
+      defense: 23.220911
+      energy: 19.2
+      mobility: 37.51
+      capacity: 33.435368
   - chassisId: AstroEagle_13
-    upgradeTreeShipName: Starship
-    prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
+    upgradeTreeShipName: Hippo
+    prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: b65a6ed62b073a64ba2b9c2ada0c8821, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -867,16 +854,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 155.10968
+    powerScore: 179.633
     powerScoreBreakdown:
-      offense: 52.304493
-      defense: 18.474741
-      energy: 25.2
-      mobility: 44.600002
-      capacity: 14.530439
+      offense: 56.43435
+      defense: 22.85864
+      energy: 19.2
+      mobility: 66.26
+      capacity: 14.88
   - chassisId: AstroEagle_14
-    upgradeTreeShipName: Eagle
-    prefab: {fileID: 8702785273099874958, guid: 5b14bf2ca37c365429274ce322e8859c, type: 3}
+    upgradeTreeShipName: DoubleBarrel
+    prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -895,16 +882,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 157.66202
+    powerScore: 150.59691
     powerScoreBreakdown:
-      offense: 46.361557
-      defense: 27.879395
-      energy: 25.2
-      mobility: 38
-      capacity: 20.221064
+      offense: 34.05
+      defense: 27.99019
+      energy: 9.6
+      mobility: 52.39
+      capacity: 26.56672
   - chassisId: AstroEagle_15
-    upgradeTreeShipName: Tortoise
-    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
+    upgradeTreeShipName: DoubleDragon
+    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -923,16 +910,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 178.24092
+    powerScore: 156.45816
     powerScoreBreakdown:
-      offense: 34.87244
-      defense: 31.166792
-      energy: 12.6
-      mobility: 77.200005
-      capacity: 22.40169
+      offense: 39.36438
+      defense: 22.295229
+      energy: 9.6
+      mobility: 54.035
+      capacity: 31.163557
   - chassisId: AstroEagle_16
-    upgradeTreeShipName: Slicer
-    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
+    upgradeTreeShipName: Spider
+    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -951,16 +938,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 215.84872
+    powerScore: 211.93927
     powerScoreBreakdown:
-      offense: 128.05301
-      defense: 20.262575
-      energy: 12.6
-      mobility: 39.3
-      capacity: 15.633139
+      offense: 80.58632
+      defense: 21.35569
+      energy: 28.800001
+      mobility: 66.26
+      capacity: 14.937261
   - chassisId: AstroEagle_17
-    upgradeTreeShipName: Spider
-    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
+    upgradeTreeShipName: Thumper
+    prefab: {fileID: 1349471453543982, guid: 503149c1c10fa1943ae9257a4de06608, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 083e80cb1d022ce48a32d03e8dbd1e57, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -979,16 +966,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a18ea5542319bcd4697389d1757019c1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 214.89594
+    powerScore: 179.94128
     powerScoreBreakdown:
-      offense: 88.01634
-      defense: 26.800585
-      energy: 37.8
-      mobility: 37.9
-      capacity: 24.379005
+      offense: 63.484364
+      defense: 17.876158
+      energy: 19.2
+      mobility: 54.3
+      capacity: 25.080765
   - chassisId: AstroEagle_18
-    upgradeTreeShipName: Thumper
-    prefab: {fileID: 1349471453543982, guid: 503149c1c10fa1943ae9257a4de06608, type: 3}
+    upgradeTreeShipName: Pancakes
+    prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: 1b332ee2f9dc1444e80c06413d68c660, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -1007,13 +994,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 193.45444
+    powerScore: 227.58698
     powerScoreBreakdown:
-      offense: 69.481255
-      defense: 22.677893
-      energy: 25.2
-      mobility: 62.15
-      capacity: 13.945294
+      offense: 62.51293
+      defense: 25.853582
+      energy: 19.2
+      mobility: 90.67
+      capacity: 29.350456
   - chassisId: AstroEagle_19
     upgradeTreeShipName: Harvester
     prefab: {fileID: 3509332871556794328, guid: c983ac63827991543b127ba08780d08e, type: 3}
@@ -1035,13 +1022,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 222.84692
+    powerScore: 237.9754
     powerScoreBreakdown:
-      offense: 74.07873
-      defense: 31.974407
-      energy: 25.2
-      mobility: 73.450005
-      capacity: 18.143785
+      offense: 64.27439
+      defense: 25.93353
+      energy: 19.2
+      mobility: 100.085
+      capacity: 28.482481
   - chassisId: AstroEagle_20
     upgradeTreeShipName: Bee
     prefab: {fileID: 2828997707732417688, guid: e7939c8492d27bc46b0e7b2e60d8ea8b, type: 3}
@@ -1063,16 +1050,16 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 210.60677
+    powerScore: 244.36668
     powerScoreBreakdown:
-      offense: 58.598366
-      defense: 31.96335
-      energy: 25.2
-      mobility: 76.700005
-      capacity: 18.145042
+      offense: 66.2233
+      defense: 26.740911
+      energy: 19.2
+      mobility: 97.62
+      capacity: 34.58247
   - chassisId: AstroEagle_21
-    upgradeTreeShipName: Pancakes
-    prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
+    upgradeTreeShipName: Tortoise
+    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
     menuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
@@ -1091,13 +1078,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 192.49857
+    powerScore: 197.99066
     powerScoreBreakdown:
-      offense: 51.028774
-      defense: 31.986412
-      energy: 25.2
-      mobility: 65.65
-      capacity: 18.633385
+      offense: 29.415253
+      defense: 24.410889
+      energy: 9.6
+      mobility: 119.66
+      capacity: 14.904521
   upgradeCardDeck: {fileID: 11400000, guid: 3c3b2eec102a55445a25ade9df76aa70, type: 2}
   teamMaterials:
   - variantName: 

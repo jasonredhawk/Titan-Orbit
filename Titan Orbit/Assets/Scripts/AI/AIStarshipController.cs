@@ -109,6 +109,15 @@ namespace TitanOrbit.AI
         /// <summary>True when we should run AI (server only).</summary>
         private bool IsServerAuthority => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
 
+        /// <summary>Play-plane drive acceleration (m/s²) for ram/grind contact; zero when not actively steering.</summary>
+        internal Vector3 GetDriveAccelerationXZ()
+        {
+            if (moveDirection.magnitude <= 0.1f) return Vector3.zero;
+            Vector3 a = moveDirection * aiAcceleration;
+            a.y = 0f;
+            return a;
+        }
+
         /// <summary>Call after AddComponent when added post-spawn. Must be called from AIStarshipManager.</summary>
         public void InitFromServer(TeamManager.Team team, HomePlanet home)
         {

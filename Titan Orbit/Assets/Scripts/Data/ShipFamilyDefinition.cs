@@ -19,6 +19,10 @@ namespace TitanOrbit.Data
         public float bulletSpeedPerLevel;  // Bullet Speed gained per ship level
         public float fireRate;             // Bullets per second
         public float fireRatePerLevel;     // Fire rate gained per ship level
+        [Tooltip("Ramming / collision offense: base ramming power used in force and damage calculations.")]
+        public float rammingPower;
+        [Tooltip("Ramming power gained per ship level.")]
+        public float rammingPowerPerLevel;
 
         [Header("Health")]
         public float healthCap;            // Max Health
@@ -44,12 +48,6 @@ namespace TitanOrbit.Data
         public float turnSpeed;            // Turn Speed (rotation speed)
         [Tooltip("Not used for ship-level mobility (runtime: stat − (stat × 0.11) × (level − 1) on move/turn). Kept for data/editor aggregation.")]
         public float turnSpeedPerLevel;
-
-        [Header("Ramming")]
-        [Tooltip("Base ramming power used in collision force/damage calculations.")]
-        public float rammingPower;
-        [Tooltip("Ramming power gained per ship level.")]
-        public float rammingPowerPerLevel;
 
         [Header("Capacity")]
         public float maxGems;              // Gem Capacity
@@ -506,8 +504,17 @@ namespace TitanOrbit.Data
 
         private void OnValidate()
         {
-            _lookupBuilt = false;
+            InvalidateComponentStatsLookup();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>
+        /// Clears the cached component-id → stats map so the next lookup reads current <see cref="components"/> entries.
+        /// Call after edits that might not run <c>OnValidate</c> (e.g. some nested list operations in the inspector).
+        /// </summary>
+        public void InvalidateComponentStatsLookup()
+        {
+            _lookupBuilt = false;
         }
 
         private void EnsureLookup()
@@ -548,6 +555,34 @@ namespace TitanOrbit.Data
                 return true;
             string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(raw);
             return !string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats);
+        }
+
+        /// <summary>
+        /// Resolve stats for a transform suffix id: <see cref="components"/> first, then <see cref="componentBalanceProfile"/>
+        /// (exact id and part-type fallbacks). Matches editor scan/sync and keeps previews aligned with authored data.
+        /// </summary>
+        public bool TryResolveStatsForComponent(string componentId, out ShipComponentAbilityStats stats)
+        {
+            if (TryGetStatsForComponent(componentId, out stats))
+                return true;
+
+            if (componentBalanceProfile == null)
+            {
+                stats = default;
+                return false;
+            }
+
+            string trimmed = string.IsNullOrWhiteSpace(componentId) ? string.Empty : componentId.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                stats = default;
+                return false;
+            }
+
+            string normalized = ShipFamilyComponentBalanceProfile.NormalizeComponentId(trimmed);
+            string partTypeKey = string.IsNullOrEmpty(normalized) ? trimmed : normalized;
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(partTypeKey);
+            return componentBalanceProfile.TryGetStats(trimmed, partType, out stats);
         }
 
         /// <summary>

@@ -11,6 +11,7 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.AI;
 using TitanOrbit.Audio;
 using TitanOrbit.Networking;
 using SciFiArsenal;
@@ -251,9 +252,26 @@ namespace TitanOrbit.Entities
         private readonly System.Collections.Generic.Dictionary<int, int> bulletRoundRobinStartByEnergy = new System.Collections.Generic.Dictionary<int, int>();
 
         [Header("Collision")]
-        [Tooltip("How bouncy: fraction of incoming speed along the impact normal kept after bounce (0..1). Higher = bouncier (e.g. 0.95 ⇒ head-on +10 → about −9.5). 1 = full speed reversal along the normal; tangential speed unchanged (no friction).")]
+        [Tooltip("Max bounce (coefficient of restitution along the impact normal) when ramming power is low. Higher = more energy reflected back to the ship. Ramming power reduces this toward the minimum below.")]
         [SerializeField, Range(0f, 1f), FormerlySerializedAs("asteroidCollisionEnergyRetention")]
-        private float asteroidCollisionNormalSpeedRetention = 0.90f;
+        private float asteroidCollisionNormalSpeedRetention = 0.93f;
+        [Tooltip("Restitution at very high ramming power (0 = stick/slide on the normal, no rebound). Clamped vs max above.")]
+        [SerializeField, Range(0f, 1f)] private float asteroidRammingMinRestitution = 0f;
+        [Tooltip("Ramming power at or below this keeps max bounce. Only excess above this pulls restitution toward the minimum (so baseline ship stats stay bouncy).")]
+        [SerializeField, Min(0f)] private float asteroidRammingRestitutionThreshold = 6f;
+        [Tooltip("When excess ramming (above threshold) equals this value, restitution is halfway between max and min. Higher = need more investment before bounce dies off.")]
+        [SerializeField, Min(0.01f), FormerlySerializedAs("asteroidRammingRestitutionReferencePower")]
+        private float asteroidRammingRestitutionReferenceExcess = 14f;
+        [Tooltip("Continuous push into an asteroid: asteroid damage per second per Newton of thrust along the inward normal (no extra impact spike).")]
+        [SerializeField, Min(0f)] private float asteroidGrindPushToAsteroidDpsScale = 0.012f;
+        [Tooltip("Ignore grind below this push (N) to avoid jitter when nearly parallel to the surface.")]
+        [SerializeField, Min(0f)] private float asteroidGrindMinPushNewtons = 8f;
+        [Tooltip("Cap grind DPS to the asteroid so a stuck ship cannot melt a rock instantly.")]
+        [SerializeField, Min(0f)] private float asteroidGrindMaxAsteroidDps = 120f;
+        [Tooltip("Min seconds between grind impact VFX, sounds, and floating damage text per asteroid contact.")]
+        [SerializeField, Min(0.02f)] private float asteroidGrindFeedbackInterval = 0.1f;
+        [Tooltip("Maps grind push (× ram multiplier) to collision-style impact force for VFX/sound intensity.")]
+        [SerializeField, Min(0.01f)] private float asteroidGrindFeedbackForceFromPushScale = 2.75f;
         [Tooltip("Minimum impact force (N) required before showing a floating impact number on asteroid collisions.")]
         [SerializeField, Min(0f)] private float asteroidImpactForcePopupMin = 80f;
         [Tooltip("Ship collision damage = impact force * this value. Lower this to heavily scale down collision damage.")]
@@ -283,6 +301,8 @@ namespace TitanOrbit.Entities
         private Vector3 _lastFixedPlayPlaneVelocity;
         /// <summary>Cooldown for ship–ship scrape sounds from toroidal overlap (pair key → last Time.time).</summary>
         private readonly Dictionary<ulong, float> _toroidalShipPairLastSoundTime = new Dictionary<ulong, float>();
+        /// <summary>Per-asteroid instance: next Time.time allowed for grind VFX/sound/floating damage.</summary>
+        private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
 
@@ -600,7 +620,6 @@ namespace TitanOrbit.Entities
         private float peopleUnloadAccumulator;
         [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
         private float peopleTransferStationaryTimer;
-        private float lastPeopleSpawnTime = -999f;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
 
         // Galactic zoom tracking (server-side)
@@ -694,7 +713,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         public void GetHudAsteroidRamDamageEstimate(float inboundNormalSpeed, out float asteroidDamage, out float selfDamage)
         {
-            float e = Mathf.Clamp01(asteroidCollisionNormalSpeedRetention);
+            float e = GetEffectiveAsteroidRestitution();
             float deltaNormalSpeed = (1f + e) * Mathf.Max(0f, inboundNormalSpeed);
             float mass = Mathf.Max(0.01f, CurrentMass);
             float impactImpulse = mass * deltaNormalSpeed;
@@ -708,6 +727,32 @@ namespace TitanOrbit.Entities
         private float GetRammingForceMultiplier()
         {
             return 1f + Mathf.Max(0f, rammingPower) * 0.1f;
+        }
+
+        private float GetEffectiveAsteroidRestitution()
+        {
+            return AsteroidRammingBehavior.ComputeRestitution(
+                asteroidCollisionNormalSpeedRetention,
+                asteroidRammingMinRestitution,
+                Mathf.Max(0f, rammingPower),
+                asteroidRammingRestitutionThreshold,
+                asteroidRammingRestitutionReferenceExcess);
+        }
+
+        /// <summary>Thrust/drive force in the play plane (N): player engine thrust or AI mass × drive acceleration.</summary>
+        private Vector3 GetDrivePushForceXZ()
+        {
+            if (rb == null) return Vector3.zero;
+            var ai = GetComponent<AIStarshipController>();
+            if (ai != null)
+            {
+                Vector3 a = ai.GetDriveAccelerationXZ();
+                float m = Mathf.Max(0.5f, rb.mass);
+                return a * m;
+            }
+            if (moveDirection.magnitude > 0.1f)
+                return moveDirection * EffectiveEngineThrust;
+            return Vector3.zero;
         }
 
         /// <summary>
@@ -767,7 +812,18 @@ namespace TitanOrbit.Entities
             get
             {
                 float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
-                return Mathf.Max(0.1f, baseSpeed);
+                // Match EffectiveMaxSpeed's chassis floor (Mathf.Max(2f, …)) so thruster visual ratio stays ~1 when authored cap < 2.
+                return Mathf.Max(2f, baseSpeed);
+            }
+        }
+        private float BaseHorizontalAccelerationNoAttr
+        {
+            get
+            {
+                float baseThrust = componentEngineThrust > 0f ? componentEngineThrust : engineThrust;
+                const float ENGINE_THRUST_VISIBILITY = 10f;
+                float baseMassNoGems = Mathf.Max(0.5f, (componentMass > 0f ? componentMass : baseMass) * hullMassScale);
+                return Mathf.Max(0.01f, (baseThrust * ENGINE_THRUST_VISIBILITY) / baseMassNoGems);
             }
         }
         private float BaseDamageMultiplierNoAttr => 1f;
@@ -1466,6 +1522,10 @@ namespace TitanOrbit.Entities
             float ratioTurn = EffectiveRotationSpeed / BaseRotationSpeedNoAttr;
             float ratioRegen = EffectiveHealthRegen / BaseHealthRegenNoAttr;
             float ratioMove = EffectiveMaxSpeed / BaseMaxSpeedNoAttr;
+            // Use EffectiveMass, not rb.mass: mass is applied in FixedUpdate; LateUpdate can run first and leave prefab mass, inflating accel ratio and engine scale for a frame.
+            float massForVisualAccel = Mathf.Max(0.5f, EffectiveMass);
+            float currentAccelForVisualScale = EffectiveEngineThrust / massForVisualAccel;
+            float ratioAcceleration = currentAccelForVisualScale / BaseHorizontalAccelerationNoAttr;
             float ratioDamage = DamageMultiplier / BaseDamageMultiplierNoAttr;
             float ratioBulletSpeed = SpeedMultiplier / BaseSpeedMultiplierNoAttr;
 
@@ -1486,15 +1546,17 @@ namespace TitanOrbit.Entities
             float wingScale = Mathf.Max(wingScaleFromGem, StatScale((ratioGem + ratioTurn) * 0.5f, vis));
             wingScale = Mathf.Max(wingScale, wingScaleFromTurn);
             float weaponScale = Mathf.Max(StatScale(avgWeapon, vis), StatScale(Mathf.Max(ratioDamage, ratioBulletSpeed), vis, 0.9f));
-            float engineScale = StatScale(ratioMove, vis);
-            float thrusterScale = StatScale(ratioTurn, vis);
+            // Engines now represent acceleration; keep their visual scaling tied to acceleration changes, not top speed.
+            float engineScale = Mathf.Max(StatScale(ratioAcceleration, vis), StatScale((ratioAcceleration + ratioHealth) * 0.5f, vis, 0.85f));
+            // Thrusters are movement-speed related; blend move + turn so speed upgrades are visible on thrusters.
+            float thrusterScale = Mathf.Max(StatScale(ratioMove, vis, 0.9f), StatScale(ratioTurn, vis, 0.8f));
             float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(ratioGem, ratioHealth), vis, 0.85f));
 
             wingScale = Mathf.Min(wingScale, 3.5f);
             cockpitScale = Mathf.Min(cockpitScale, 3f);
             weaponScale = Mathf.Min(weaponScale, 3f);
-            engineScale = Mathf.Min(engineScale, 3f);
-            thrusterScale = Mathf.Min(thrusterScale, 3f);
+            engineScale = Mathf.Min(engineScale, 2f);
+            thrusterScale = Mathf.Min(thrusterScale, 2.5f);
             partScale = Mathf.Min(partScale, 3f);
 
             for (int i = 0; i < cockpitScaleTransforms.Count; i++)
@@ -2470,7 +2532,34 @@ namespace TitanOrbit.Entities
                 dir.y = 0f;
                 if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
                 else dir.Normalize();
-                FireServerRpc(transform.position, dir);
+                Vector3 shipVelForFire = rb != null ? rb.linearVelocity : Vector3.zero;
+                shipVelForFire.y = 0f;
+                Vector3[] cannonOrigins = null;
+                Vector3[] cannonForwards = null;
+                if (bulletFirePoints != null && bulletFirePoints.Count > 0)
+                {
+                    int n = bulletFirePoints.Count;
+                    cannonOrigins = new Vector3[n];
+                    cannonForwards = new Vector3[n];
+                    for (int i = 0; i < n; i++)
+                    {
+                        Transform pt = bulletFirePoints[i];
+                        if (pt == null)
+                        {
+                            cannonOrigins[i] = transform.position;
+                            cannonForwards[i] = dir;
+                            continue;
+                        }
+
+                        cannonOrigins[i] = pt.position;
+                        Vector3 fwd = pt.forward;
+                        fwd.y = 0f;
+                        if (fwd.sqrMagnitude < 0.01f) fwd = dir;
+                        else fwd.Normalize();
+                        cannonForwards[i] = fwd;
+                    }
+                }
+                FireServerRpc(transform.position, dir, shipVelForFire, cannonOrigins, cannonForwards);
             }
 
             // Rocket: Q key (or FireRocket if bound). Prefer large if available.
@@ -2884,13 +2973,15 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc]
-        private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward)
+        private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
             if (CombatSystem.Instance == null) return;
             if (currentOrbitPlanet != null) return; // Cannot fire while in orbit zone
             if (gemMoonDocked.Value) return;
             EnsureBulletLastFireTime();
-            Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
+                ? ownerReportedShipVelocity
+                : (rb != null ? rb.linearVelocity : Vector3.zero);
             shipVel.y = 0f;
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
@@ -2951,10 +3042,12 @@ namespace TitanOrbit.Entities
                         bulletPrefabIndicesFired.Add(bulletIdx);
 
                         Transform firePt = bulletFirePoints[i];
-                        Vector3 fireOrigin = firePt.position;
+                        bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
+                        bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
+                        Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
 
                         // Horizontal aim basis from this weapon's facing (not ship forward) so side mounts / turrets shoot correctly.
-                        Vector3 cannonFwd = firePt.forward;
+                        Vector3 cannonFwd = hasOwnerReportedForward ? ownerReportedCannonForwards[i] : firePt.forward;
                         cannonFwd.y = 0f;
                         if (cannonFwd.sqrMagnitude < 0.01f)
                         {
@@ -3106,7 +3199,9 @@ namespace TitanOrbit.Entities
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
             else direction.Normalize();
-            FireServerRpc(transform.position, direction);
+            Vector3 serverVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            serverVel.y = 0f;
+            FireServerRpc(transform.position, direction, serverVel, null, null);
         }
 
         [ServerRpc]
@@ -3264,7 +3359,7 @@ namespace TitanOrbit.Entities
             // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
-        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles.</summary>
+        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload is 1 person/s (not scaled by ship level); load still scales with level (~2 chunks/s).</summary>
         private void TickOrbitPopulationTransfer()
         {
             if (currentOrbitPlanet == null)
@@ -3287,17 +3382,23 @@ namespace TitanOrbit.Entities
             float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
             bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
 
-            float peopleDropValue = Mathf.Max(1f, ShipLevel); // people moved per transfer tick
-            float rate = peopleDropValue * 2f * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier(); // 2 transfer ticks/sec, card-scaled
-            if (debugModeEnabled) rate *= 100f;
-            if (rate <= 0f) return;
+            float peopleDropValue = Mathf.Max(1f, ShipLevel); // people moved per load projectile (ship level)
+            float loadRate = peopleDropValue * 2f * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier(); // ~2 load chunks/sec, card-scaled
+            const float peopleUnloadPerSecondBase = 1f; // unload: always 1 person/s before unload-specific cards
+            const float peopleUnloadChunk = 1f;
+            float unloadAccumStep = peopleUnloadPerSecondBase * Time.fixedDeltaTime * GetPeopleUnloadSpeedMultiplier();
+            if (debugModeEnabled)
+            {
+                loadRate *= 100f;
+                unloadAccumStep *= 100f;
+            }
+
+            if (loadRate <= 0f && unloadAccumStep <= 0f) return;
 
             bool friendly = (currentOrbitPlanet is HomePlanet home && home.AssignedTeam == shipTeam.Value)
                 || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
 
-            float now = (float)NetworkManager.Singleton.ServerTime.Time;
-            const float peopleInterval = 0.5f; // twice per second
-            bool shouldSpawnPeople = (now - lastPeopleSpawnTime) >= peopleInterval;
+            const int maxPeopleProjectilesPerFixedStep = 8;
 
             if (friendly)
             {
@@ -3324,61 +3425,59 @@ namespace TitanOrbit.Entities
                         return;
                     }
 
-                    float unloadAmount = Mathf.Min(rate, currentPeople.Value, roomToHalf);
-                    if (unloadAmount > 0f) peopleUnloadAccumulator += unloadAmount;
+                    if (currentPeople.Value > 0.0001f && roomToHalf > 0.0001f)
+                        peopleUnloadAccumulator += unloadAccumStep;
 
-                    bool canSpawnReinforceChunk = peopleUnloadAccumulator >= peopleDropValue
-                        && currentPeople.Value >= peopleDropValue
-                        && roomToHalf >= peopleDropValue
-                        && GemSpawner.Instance != null;
-                    if (shouldSpawnPeople && canSpawnReinforceChunk)
+                    float roomBudget = roomToHalf;
+                    if (peopleUnloadAccumulator >= peopleUnloadChunk
+                        && currentPeople.Value >= peopleUnloadChunk
+                        && roomBudget >= peopleUnloadChunk
+                        && GemSpawner.Instance != null)
                     {
-                        RemovePeopleServerRpc(peopleDropValue);
-                        peopleUnloadAccumulator -= peopleDropValue;
-                        lastPeopleSpawnTime = now;
+                        RemovePeopleServerRpc(peopleUnloadChunk);
+                        peopleUnloadAccumulator -= peopleUnloadChunk;
+                        roomBudget -= peopleUnloadChunk;
 
                         Vector3 shipPos = rb != null ? rb.position : transform.position;
                         Vector3 planetPos = orbitPlanet.transform.position;
                         var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                         var shipNo = GetComponent<NetworkObject>();
                         if (planetNo != null && shipNo != null)
-                            GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleDropValue, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+                            GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleUnloadChunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
                         if (VisualEffectsManager.Instance != null)
                             VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                                 planetPos,
                                 (int)FloatingCountChannel.PeopleUnload,
-                                peopleDropValue,
+                                peopleUnloadChunk,
                                 (int)shipTeam.Value);
-                        PlayPeopleUnloadSoundClientRpc(peopleDropValue);
+                        PlayPeopleUnloadSoundClientRpc(peopleUnloadChunk);
                     }
-                    else if (shouldSpawnPeople
-                        && currentPeople.Value > 0f
-                        && roomToHalf > 0f
-                        && GemSpawner.Instance != null
-                        && (currentPeople.Value < peopleDropValue || roomToHalf < peopleDropValue))
+                    else
                     {
-                        float remainder = Mathf.Min(currentPeople.Value, roomToHalf);
-                        if (remainder > 0f)
+                        float maxReinforceRem = Mathf.Min(currentPeople.Value, roomBudget);
+                        if (maxReinforceRem > 0.0001f
+                            && maxReinforceRem < peopleUnloadChunk
+                            && peopleUnloadAccumulator >= maxReinforceRem - 0.0001f
+                            && GemSpawner.Instance != null)
                         {
-                            RemovePeopleServerRpc(remainder);
-                            peopleUnloadAccumulator = 0f;
-                            lastPeopleSpawnTime = now;
+                            RemovePeopleServerRpc(maxReinforceRem);
+                            peopleUnloadAccumulator -= maxReinforceRem;
 
                             Vector3 shipPos = rb != null ? rb.position : transform.position;
                             Vector3 planetPos = orbitPlanet.transform.position;
                             var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                             var shipNo = GetComponent<NetworkObject>();
                             if (planetNo != null && shipNo != null)
-                                GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, remainder, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+                                GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, maxReinforceRem, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
                             if (VisualEffectsManager.Instance != null)
                                 VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                                     planetPos,
                                     (int)FloatingCountChannel.PeopleUnload,
-                                    remainder,
+                                    maxReinforceRem,
                                     (int)shipTeam.Value);
-                            PlayPeopleUnloadSoundClientRpc(remainder);
+                            PlayPeopleUnloadSoundClientRpc(maxReinforceRem);
                         }
                     }
                     return;
@@ -3398,19 +3497,23 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
-                float amount = Mathf.Min(rate, peopleSpaceAvailable, available);
+                float amount = Mathf.Min(loadRate, peopleSpaceAvailable, available);
                 if (amount > 0f) peopleLoadAccumulator += amount;
 
-                bool canSpawnLoadChunk = peopleLoadAccumulator >= peopleDropValue
-                    && peopleSpaceAvailable >= peopleDropValue
-                    && available >= peopleDropValue
-                    && GemSpawner.Instance != null;
-                if (shouldSpawnPeople && canSpawnLoadChunk)
+                int loadSpawnCount = 0;
+                while (loadSpawnCount < maxPeopleProjectilesPerFixedStep
+                    && peopleLoadAccumulator >= peopleDropValue
+                    && GemSpawner.Instance != null)
                 {
+                    float spaceLeft = PeopleCapacity - currentPeople.Value - peopleInTransit;
+                    float surplusNow = Mathf.Max(0f, orbitPlanet.CurrentPopulation - halfCap);
+                    if (spaceLeft < peopleDropValue || surplusNow < peopleDropValue)
+                        break;
+
                     orbitPlanet.RemovePopulationServerRpc(peopleDropValue);
                     peopleLoadAccumulator -= peopleDropValue;
                     peopleInTransit += peopleDropValue;
-                    lastPeopleSpawnTime = now;
+                    loadSpawnCount++;
 
                     Vector3 planetPos = orbitPlanet.transform.position;
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
@@ -3418,29 +3521,27 @@ namespace TitanOrbit.Entities
                     var shipNo = GetComponent<NetworkObject>();
                     if (shipNo != null && planetNo != null)
                         GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, peopleDropValue, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
-
                 }
-                else if (shouldSpawnPeople
-                    && (peopleSpaceAvailable < peopleDropValue || available < peopleDropValue)
-                    && peopleSpaceAvailable > 0f
-                    && available > 0f
+
+                float spaceAfter = PeopleCapacity - currentPeople.Value - peopleInTransit;
+                float surplusAfter = Mathf.Max(0f, orbitPlanet.CurrentPopulation - halfCap);
+                float maxLoadRem = Mathf.Min(spaceAfter, surplusAfter);
+                if (loadSpawnCount < maxPeopleProjectilesPerFixedStep
+                    && maxLoadRem > 0.0001f
+                    && maxLoadRem < peopleDropValue
+                    && peopleLoadAccumulator >= maxLoadRem - 0.0001f
                     && GemSpawner.Instance != null)
                 {
-                    float remainder = Mathf.Min(peopleSpaceAvailable, available);
-                    if (remainder > 0f)
-                    {
-                        orbitPlanet.RemovePopulationServerRpc(remainder);
-                        peopleLoadAccumulator = 0f;
-                        peopleInTransit += remainder;
-                        lastPeopleSpawnTime = now;
+                    orbitPlanet.RemovePopulationServerRpc(maxLoadRem);
+                    peopleLoadAccumulator -= maxLoadRem;
+                    peopleInTransit += maxLoadRem;
 
-                        Vector3 planetPos = orbitPlanet.transform.position;
-                        Vector3 shipPos = rb != null ? rb.position : transform.position;
-                        var planetNo = orbitPlanet.GetComponent<NetworkObject>();
-                        var shipNo = GetComponent<NetworkObject>();
-                        if (shipNo != null && planetNo != null)
-                            GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, remainder, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
-                    }
+                    Vector3 planetPos = orbitPlanet.transform.position;
+                    Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    var planetNo = orbitPlanet.GetComponent<NetworkObject>();
+                    var shipNo = GetComponent<NetworkObject>();
+                    if (shipNo != null && planetNo != null)
+                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, maxLoadRem, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
                 }
             }
             else
@@ -3458,42 +3559,39 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
-                float amount = Mathf.Min(rate, currentPeople.Value);
-                if (amount > 0f) peopleUnloadAccumulator += amount;
+                if (currentPeople.Value > 0.0001f)
+                    peopleUnloadAccumulator += unloadAccumStep;
 
-                bool canSpawnChunk = peopleUnloadAccumulator >= peopleDropValue
-                    && currentPeople.Value >= peopleDropValue
-                    && GemSpawner.Instance != null;
-                if (shouldSpawnPeople && canSpawnChunk)
+                if (peopleUnloadAccumulator >= peopleUnloadChunk
+                    && currentPeople.Value >= peopleUnloadChunk
+                    && GemSpawner.Instance != null)
                 {
-                    RemovePeopleServerRpc(peopleDropValue);
-                    peopleUnloadAccumulator -= peopleDropValue;
-                    lastPeopleSpawnTime = now;
+                    RemovePeopleServerRpc(peopleUnloadChunk);
+                    peopleUnloadAccumulator -= peopleUnloadChunk;
 
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
                     Vector3 planetPos = currentOrbitPlanet.transform.position;
                     var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
                     var shipNo = GetComponent<NetworkObject>();
                     if (planetNo != null && shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleDropValue, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleUnloadChunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             planetPos,
                             (int)FloatingCountChannel.PeopleUnload,
-                            peopleDropValue,
+                            peopleUnloadChunk,
                             (int)shipTeam.Value);
-                    PlayPeopleUnloadSoundClientRpc(peopleDropValue);
+                    PlayPeopleUnloadSoundClientRpc(peopleUnloadChunk);
                 }
-                else if (shouldSpawnPeople
-                    && currentPeople.Value > 0f
-                    && currentPeople.Value < peopleDropValue
+                else if (currentPeople.Value > 0f
+                    && currentPeople.Value < peopleUnloadChunk
+                    && peopleUnloadAccumulator >= currentPeople.Value - 0.0001f
                     && GemSpawner.Instance != null)
                 {
                     float remainder = currentPeople.Value;
                     RemovePeopleServerRpc(remainder);
-                    peopleUnloadAccumulator = 0f;
-                    lastPeopleSpawnTime = now;
+                    peopleUnloadAccumulator = Mathf.Max(0f, peopleUnloadAccumulator - remainder);
 
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
                     Vector3 planetPos = currentOrbitPlanet.transform.position;
@@ -4048,7 +4146,7 @@ namespace TitanOrbit.Entities
             }
             if (vn >= 0f) return;
 
-            float e = Mathf.Clamp01(asteroidCollisionNormalSpeedRetention);
+            float e = GetEffectiveAsteroidRestitution();
             Vector3 vOut = vInc - (1f + e) * vn * n;
 
             // Normal impulse approximation from the scripted bounce response:
@@ -4123,7 +4221,11 @@ namespace TitanOrbit.Entities
 
         private void OnCollisionExit(Collision collision)
         {
-            // Clean slate collision behavior: let Unity physics handle response.
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid == null)
+                asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
+            if (asteroid != null)
+                _asteroidGrindFeedbackNextTimeByInstance.Remove(asteroid.GetInstanceID());
         }
 
         [ClientRpc]
@@ -4138,7 +4240,80 @@ namespace TitanOrbit.Entities
 
         private void OnCollisionStay(Collision collision)
         {
-            // Clean slate collision behavior: let Unity physics handle response.
+            if (rb == null || collision.contactCount == 0 || isDead.Value) return;
+
+            bool canRam = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+            if (!canRam) return;
+
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid == null)
+                asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
+            if (asteroid == null || asteroid.IsDestroyed) return;
+
+            if (asteroidGrindPushToAsteroidDpsScale <= 0f) return;
+
+            ContactPoint contact = collision.GetContact(0);
+            Vector3 asteroidCenter = asteroid.transform.position;
+            Vector3 n = contact.point - asteroidCenter;
+            n.y = 0f;
+            if (n.sqrMagnitude < 0.0001f) return;
+            n.Normalize();
+
+            Vector3 driveF = GetDrivePushForceXZ();
+            float pushN = AsteroidRammingBehavior.ComputeNormalPushNewtons(n, driveF);
+            if (pushN < asteroidGrindMinPushNewtons) return;
+
+            float ramMul = GetRammingForceMultiplier();
+            float dps = pushN * ramMul * asteroidGrindPushToAsteroidDpsScale;
+            if (asteroidGrindMaxAsteroidDps > 0f)
+                dps = Mathf.Min(dps, asteroidGrindMaxAsteroidDps);
+            float asteroidGrindDamage = dps * Time.fixedDeltaTime;
+            if (asteroidGrindDamage <= 0.0001f) return;
+
+            ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
+            asteroid.TakeDamageServerRpc(asteroidGrindDamage, attackerShipId);
+
+            TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, ramMul, asteroidGrindDamage);
+        }
+
+        /// <summary>Throttled VFX, sound, and floating numbers while grinding an asteroid (same flavor as collision enter).</summary>
+        private void TryPlayAsteroidGrindFeedback(Asteroid asteroid, Vector3 hitWorldPos, Vector3 asteroidOutwardNormalXZ, float pushNewtons, float ramMul, float damageThisPulse)
+        {
+            if (asteroid == null) return;
+
+            int id = asteroid.GetInstanceID();
+            float now = Time.time;
+            float interval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
+            if (_asteroidGrindFeedbackNextTimeByInstance.TryGetValue(id, out float nextOk) && now < nextOk)
+                return;
+            _asteroidGrindFeedbackNextTimeByInstance[id] = now + interval;
+
+            float equivForce = Mathf.Max(pushNewtons * ramMul * Mathf.Max(0.01f, asteroidGrindFeedbackForceFromPushScale), 30f);
+
+            float pitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, equivForce));
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayAsteroidCollisionSound(pitch);
+
+            if (VisualEffectsManager.Instance == null) return;
+
+            float sev = ComputeCollisionVfxSeverityFromImpactForce(equivForce);
+            sev = Mathf.Max(sev, 0.12f);
+            TrySpawnWeaponCollisionImpactVfx(hitWorldPos, asteroidOutwardNormalXZ, sev, pitch);
+
+            Vector3 asteroidHitPos = hitWorldPos;
+            asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
+            VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                asteroidHitPos,
+                (int)FloatingCountChannel.DamageAsteroid,
+                damageThisPulse,
+                (int)shipTeam.Value
+            );
+            VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
+                asteroidHitPos,
+                asteroid.RemainingHealth,
+                asteroid.RemainingGems,
+                (int)shipTeam.Value
+            );
         }
 
         private static ulong ToroidalShipPairKey(int instanceIdA, int instanceIdB)
@@ -5174,7 +5349,7 @@ namespace TitanOrbit.Entities
                         }
                     }
                     // 2) If no match in preview list, get this weapon's stats from ShipFamilyDefinition and scale by transform (still per-component, not summed).
-                    if (!usedPerComponent && previewFamilyDef != null && wt != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetStatsForComponent(componentId, out var defStats))
+                    if (!usedPerComponent && previewFamilyDef != null && wt != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryResolveStatsForComponent(componentId, out var defStats))
                     {
                         ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(defStats, wt, componentId);
                         float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlFirePower;
@@ -5567,6 +5742,9 @@ namespace TitanOrbit.Entities
             if (_cardStatsCacheFrame != Time.frameCount) RefreshCardStatsCache();
             return _cachedCardPeopleTransferSpeedMultiplier;
         }
+
+        /// <summary>Orbit people unload rate scale (base 1 person/s). Wire card multipliers here when cards define unload speed.</summary>
+        private float GetPeopleUnloadSpeedMultiplier() => 1f;
 
         #endregion
 
