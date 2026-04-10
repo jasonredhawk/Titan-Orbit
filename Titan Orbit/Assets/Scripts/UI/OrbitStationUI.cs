@@ -43,8 +43,13 @@ namespace TitanOrbit.UI
         private const float SlotCardWidth = 110f;
         private const float SlotCardHeight = 82f;
         private const float SlotCellSpacing = 11f;
+        private const float SlotCardMinResponsiveWidth = 64f;
         private const float SlotPanelWidthConst = 12f + 6 * SlotCardWidth + 5 * SlotCellSpacing + 12f; // 6 cards + spacing
         private const float SlotPanelHeaderHeight = 28f;
+        private const float SpinOfferCardMaxHeight = 356f;
+        private const float SpinOfferCardMinHeight = 304f;
+        private const float SpinOfferCardMaxWidth = 220f;
+        private const float SpinOfferCardMinWidth = 96f;
 
         private GameObject rootPanel;
         private GameObject slotPanel;
@@ -76,6 +81,7 @@ namespace TitanOrbit.UI
         private RectTransform slotPanelRect;
         private RectTransform slotGridRect;
         private RectTransform storePanelRect;
+        private GridLayoutGroup slotGridLayout;
         private TextMeshProUGUI loadoutSectionLabel;
         private GameObject[] slotBoxes;
         private Image[] slotBgImages;
@@ -119,6 +125,11 @@ namespace TitanOrbit.UI
         private const string MoonDockShipTreeStructureKey = "moon_hlayout_compact_v1";
         private float _cachedShipTreeBasisWidth = -999f;
         private HorizontalLayoutGroup _cardSpinRowLayout;
+        private RectTransform _cardSpinRowRect;
+        private LayoutElement _cardsTabLayoutElement;
+        private float _cardsBaseHeightWithoutSpinRow;
+        private float _currentSpinRowHeight;
+        private float _lastResponsiveRootWidth = -1f;
         private Button cardSpinButton;
         private TextMeshProUGUI cardSpinButtonLabel;
         private Image[] cardRarityFrameImages;
@@ -284,15 +295,98 @@ namespace TitanOrbit.UI
             }
         }
 
+        private float GetResponsiveSlotCardWidth()
+        {
+            if (slotGridRect == null) return SlotCardWidth;
+            float availableWidth = slotGridRect.rect.width;
+            if (availableWidth <= 1f && slotPanelRect != null)
+                availableWidth = slotPanelRect.rect.width - 24f;
+            if (availableWidth <= 1f) return SlotCardWidth;
+
+            float totalSpacing = (SlotGridColumns - 1) * SlotCellSpacing;
+            float widthPerCard = (availableWidth - totalSpacing) / SlotGridColumns;
+            return Mathf.Clamp(widthPerCard, SlotCardMinResponsiveWidth, SlotCardWidth);
+        }
+
+        private float GetResponsiveSpinOfferCardWidth()
+        {
+            if (_cardSpinRowRect == null) return SpinOfferCardMaxWidth;
+            float rowWidth = _cardSpinRowRect.rect.width;
+            if (rowWidth <= 1f) return SpinOfferCardMaxWidth;
+
+            float spacing = _cardSpinRowLayout != null ? _cardSpinRowLayout.spacing : 18f;
+            float horizontalPadding = 0f;
+            if (_cardSpinRowLayout != null && _cardSpinRowLayout.padding != null)
+                horizontalPadding = _cardSpinRowLayout.padding.left + _cardSpinRowLayout.padding.right;
+
+            float cardWidth = (rowWidth - horizontalPadding - 2f * spacing) / 3f;
+            return Mathf.Clamp(cardWidth, SpinOfferCardMinWidth, SpinOfferCardMaxWidth);
+        }
+
+        private float GetResponsiveSpinOfferCardHeight()
+        {
+            float width = GetResponsiveSpinOfferCardWidth();
+            float t = Mathf.InverseLerp(SpinOfferCardMinWidth, SpinOfferCardMaxWidth, width);
+            return Mathf.Lerp(SpinOfferCardMinHeight, SpinOfferCardMaxHeight, t);
+        }
+
+        private void ApplyResponsiveCardMenuSizing(bool force = false)
+        {
+            var rootRt = transform as RectTransform;
+            if (rootRt == null) return;
+
+            float rootWidth = rootRt.rect.width;
+            if (!force && rootWidth > 1f && Mathf.Abs(rootWidth - _lastResponsiveRootWidth) < 0.5f) return;
+            if (rootWidth > 1f) _lastResponsiveRootWidth = rootWidth;
+
+            float slotCardWidth = GetResponsiveSlotCardWidth();
+            if (slotGridLayout != null)
+                slotGridLayout.cellSize = new Vector2(slotCardWidth, SlotCardHeight);
+
+            _currentSpinRowHeight = GetResponsiveSpinOfferCardHeight();
+            if (_cardSpinRowRect != null)
+                _cardSpinRowRect.sizeDelta = new Vector2(-20f, _currentSpinRowHeight);
+
+            float spinCardWidth = GetResponsiveSpinOfferCardWidth();
+            if (cardRoots != null)
+            {
+                for (int i = 0; i < cardRoots.Length; i++)
+                {
+                    if (cardRoots[i] == null) continue;
+                    var le = cardRoots[i].GetComponent<LayoutElement>();
+                    if (le == null) continue;
+                    le.preferredWidth = spinCardWidth;
+                    le.minWidth = Mathf.Min(spinCardWidth, SpinOfferCardMinWidth);
+                    le.preferredHeight = _currentSpinRowHeight;
+                    le.minHeight = _currentSpinRowHeight;
+                }
+            }
+
+            if (_cardsTabLayoutElement != null && _cardsBaseHeightWithoutSpinRow > 0f)
+            {
+                _cardsContentHeight = _cardsBaseHeightWithoutSpinRow + _currentSpinRowHeight;
+                _cardsTabLayoutElement.preferredHeight = _cardsContentHeight;
+            }
+
+            if (slotGridRect != null)
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(slotGridRect);
+            if (_cardSpinRowRect != null)
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_cardSpinRowRect);
+            if (storeContentRoot != null)
+                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
+        }
+
         private void OnRectTransformDimensionsChange()
         {
             _cachedShipTreeBasisWidth = -999f;
+            ApplyResponsiveCardMenuSizing();
         }
 
         private void Update()
         {
             if (currentShip == null || currentPlanet == null) return;
             if (!_moonDockLayoutActive && (rootPanel == null || !rootPanel.activeSelf)) return;
+            ApplyResponsiveCardMenuSizing();
             storeRefreshAccum += Time.deltaTime;
             contributedGemsRequestAccum += Time.deltaTime;
             if (storeRefreshAccum >= StoreRefreshInterval)
@@ -489,6 +583,7 @@ namespace TitanOrbit.UI
                 }
                 RefreshShipsTab(scrollToActiveShipNode: activeStoreTab == 1);
             }
+            ApplyResponsiveCardMenuSizing(force: true);
         }
 
         public void Hide()
@@ -580,12 +675,12 @@ namespace TitanOrbit.UI
             slotGridRect.pivot = new Vector2(0.5f, 1f);
             slotGridRect.anchoredPosition = new Vector2(0f, slotY);
             slotGridRect.sizeDelta = new Vector2(-24f, slotGridTotalH);
-            var gridLayout = slotGridRoot.AddComponent<GridLayoutGroup>();
-            gridLayout.cellSize = new Vector2(SlotCardWidth, SlotCardHeight);
-            gridLayout.spacing = new Vector2(SlotCellSpacing, SlotCellSpacing);
-            gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            gridLayout.constraintCount = SlotGridColumns;
-            gridLayout.childAlignment = TextAnchor.UpperLeft;
+            slotGridLayout = slotGridRoot.AddComponent<GridLayoutGroup>();
+            slotGridLayout.cellSize = new Vector2(GetResponsiveSlotCardWidth(), SlotCardHeight);
+            slotGridLayout.spacing = new Vector2(SlotCellSpacing, SlotCellSpacing);
+            slotGridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            slotGridLayout.constraintCount = SlotGridColumns;
+            slotGridLayout.childAlignment = TextAnchor.UpperLeft;
             slotBoxes = new GameObject[MaxSlotRows];
             slotBgImages = new Image[MaxSlotRows];
             slotBorderImages = new Image[MaxSlotRows];
@@ -749,13 +844,14 @@ namespace TitanOrbit.UI
             const int maxStoreCards = 3;
             var cardSpinRowGo = new GameObject("CardSpinRow");
             cardSpinRowGo.transform.SetParent(cardsTabContent.transform, false);
-            var cardSpinRowRect = cardSpinRowGo.AddComponent<RectTransform>();
-            cardSpinRowRect.anchorMin = new Vector2(0f, 1f);
-            cardSpinRowRect.anchorMax = new Vector2(1f, 1f);
-            cardSpinRowRect.pivot = new Vector2(0.5f, 1f);
-            cardSpinRowRect.anchoredPosition = new Vector2(0f, y);
-            float spinRowHeight = 356f;
-            cardSpinRowRect.sizeDelta = new Vector2(-20f, spinRowHeight);
+            _cardSpinRowRect = cardSpinRowGo.AddComponent<RectTransform>();
+            _cardSpinRowRect.anchorMin = new Vector2(0f, 1f);
+            _cardSpinRowRect.anchorMax = new Vector2(1f, 1f);
+            _cardSpinRowRect.pivot = new Vector2(0.5f, 1f);
+            _cardSpinRowRect.anchoredPosition = new Vector2(0f, y);
+            float spinRowHeight = GetResponsiveSpinOfferCardHeight();
+            _currentSpinRowHeight = spinRowHeight;
+            _cardSpinRowRect.sizeDelta = new Vector2(-20f, spinRowHeight);
             y -= spinRowHeight + 14f;
             _cardSpinRowLayout = cardSpinRowGo.AddComponent<HorizontalLayoutGroup>();
             _cardSpinRowLayout.spacing = 18f;
@@ -785,9 +881,10 @@ namespace TitanOrbit.UI
             }
             float cardsContentHeight = -y + 24f;
             _cardsContentHeight = cardsContentHeight;
-            var cardsLayoutEl = cardsTabContent.AddComponent<LayoutElement>();
-            cardsLayoutEl.preferredHeight = cardsContentHeight;
-            cardsLayoutEl.flexibleWidth = 1f;
+            _cardsBaseHeightWithoutSpinRow = cardsContentHeight - spinRowHeight;
+            _cardsTabLayoutElement = cardsTabContent.AddComponent<LayoutElement>();
+            _cardsTabLayoutElement.preferredHeight = cardsContentHeight;
+            _cardsTabLayoutElement.flexibleWidth = 1f;
 
             // Ships tab content — fixed list of ship slots (like Cards tab), populated when tab is shown
             shipsTabContent = new GameObject("ShipsTabContent");
@@ -928,6 +1025,7 @@ namespace TitanOrbit.UI
             RefreshShipsTab();
             UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(storeContentRoot);
             if (canvas != null) Canvas.ForceUpdateCanvases();
+            ApplyResponsiveCardMenuSizing(force: true);
 
             EnsureMoonDockChromeExists();
         }
@@ -968,6 +1066,7 @@ namespace TitanOrbit.UI
         private void RefreshStoreTabVisibility()
         {
             if (cardsTabContent == null || shipsTabContent == null || tabCardsButton == null || tabShipsButton == null) return;
+            ApplyResponsiveCardMenuSizing();
 
             if (_moonDockLayoutActive)
             {
@@ -2704,12 +2803,14 @@ namespace TitanOrbit.UI
         {
             SpinCardShiftVisuals shift = GetSpinCardShiftVisuals();
             bool useShift = shift != null && shift.outerFrameSliced != null;
-            const float cardH = 356f;
+            float cardH = _currentSpinRowHeight > 0f ? _currentSpinRowHeight : SpinOfferCardMaxHeight;
             root = new GameObject("SpinOffer_" + (index + 1));
             root.transform.SetParent(parent, false);
             var le = root.AddComponent<LayoutElement>();
+            float cardW = GetResponsiveSpinOfferCardWidth();
+            le.preferredWidth = cardW;
             le.flexibleWidth = 1f;
-            le.minWidth = 128f;
+            le.minWidth = Mathf.Min(cardW, SpinOfferCardMinWidth);
             le.preferredHeight = cardH;
             le.minHeight = cardH;
 
@@ -4121,6 +4222,7 @@ namespace TitanOrbit.UI
                 if (slotRect != null) UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(slotRect);
             }
             Canvas.ForceUpdateCanvases();
+            ApplyResponsiveCardMenuSizing(force: true);
         }
 
         private void ApplyMoonDockCardGridWidth()
@@ -4130,6 +4232,7 @@ namespace TitanOrbit.UI
             Canvas.ForceUpdateCanvases();
             if (_cardSpinRowLayout != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_cardSpinRowLayout.GetComponent<RectTransform>());
+            ApplyResponsiveCardMenuSizing(force: true);
         }
 
         private void BuildShipUpgradeTreeVisualFullHorizontal()
