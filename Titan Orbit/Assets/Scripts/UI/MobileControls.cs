@@ -28,7 +28,6 @@ namespace TitanOrbit.UI
         [SerializeField] private float shootButtonSize = 190f;
 
         private MobileInputHandler mobileInputHandler;
-        private static bool s_runtimeBootstrapAttempted;
 
         private void Start()
         {
@@ -51,10 +50,6 @@ namespace TitanOrbit.UI
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureRuntimeMobileControls()
         {
-            if (s_runtimeBootstrapAttempted)
-                return;
-            s_runtimeBootstrapAttempted = true;
-
             if (!IsTouchInputEnvironment())
                 return;
 
@@ -160,7 +155,7 @@ namespace TitanOrbit.UI
         private static bool IsTouchInputEnvironment()
         {
             // WebGL on mobile may not report Application.isMobilePlatform reliably.
-            return Application.isMobilePlatform || UnityEngine.Input.touchSupported || Touchscreen.current != null;
+            return Application.isMobilePlatform || Touchscreen.current != null;
         }
     }
 }

@@ -130,7 +130,7 @@ namespace TitanOrbit.Input
                     moveInput = joystick;
                     moveForwardPressed = true;
                 }
-                else
+                else if (UnityEngine.Input.touchCount > 0)
                 {
                     moveForwardPressed = false;
                     moveInput = Vector2.zero;
