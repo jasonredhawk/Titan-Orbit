@@ -22,6 +22,8 @@ namespace TitanOrbit.Data
         [Tooltip("Visual scale of ship model. Fighters smaller, transport/mining larger.")]
         public float visualScale = 1f;
         public float baseMovementSpeed = 8f;
+        [Tooltip("Space-brake deceleration in units/sec^2 when not thrusting. Lower values = more drift, higher values = stronger braking.")]
+        public float baseBrakeDeceleration = 5.5f;
         [Tooltip("Weapon config: cannons, rate, energy, damage, spread. Same bullet skin for all ships.")]
         public WeaponConfig weaponConfig;
         public float baseMaxHealth = 100f;

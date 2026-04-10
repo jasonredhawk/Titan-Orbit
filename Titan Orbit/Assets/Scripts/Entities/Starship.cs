@@ -70,7 +70,7 @@ namespace TitanOrbit.Entities
         private const float ShipTurnDefinitionToDegreesPerSecond = 10f;
         [SerializeField] private float acceleration = 32f;
         [Tooltip("When space brakes are on, speed is reduced by this amount per second (higher = more friction, faster stop).")]
-        [SerializeField] private float brakeDeceleration = 7f;
+        [SerializeField] private float brakeDeceleration = 5.5f;
         [Tooltip("When over max speed (e.g. from recoil), speed is reduced back toward max by this amount per second.")]
         [SerializeField] private float recoilDecayPerSecond = 6f;
         [Header("Orbit")]
@@ -4928,6 +4928,7 @@ namespace TitanOrbit.Entities
                     componentEngineMaxSpeed = 0f;
                     componentMass = 0f;
                     engineThrust = data.baseMovementSpeed;
+                    brakeDeceleration = Mathf.Max(0f, data.baseBrakeDeceleration);
                     maxHealth = data.baseMaxHealth;
                     healthRegenRate = data.baseHealthRegenRate;
                     rotationSpeed = data.baseRotationSpeed;
