@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TitanOrbit.Input;
 
@@ -13,18 +14,26 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject mobileControlsPanel;
         [SerializeField] private RectTransform joystickBackground;
         [SerializeField] private RectTransform joystickHandle;
-        [SerializeField] private Button shootButton;
+        [SerializeField] private RectTransform shootButton;
         [SerializeField] private CanvasScaler canvasScaler;
 
         [Header("Settings")]
         [SerializeField] private bool autoDetectMobile = true;
         [SerializeField] private bool forceMobileControls = false;
+        [SerializeField] private float bottomPadding = 48f;
+        [SerializeField] private float sidePadding = 48f;
+        [SerializeField] private float joystickSize = 220f;
+        [SerializeField] private float joystickHandleSize = 110f;
+        [SerializeField] private float shootButtonSize = 190f;
 
         private MobileInputHandler mobileInputHandler;
 
         private void Start()
         {
-            bool isMobile = autoDetectMobile ? Application.isMobilePlatform : forceMobileControls;
+            bool isMobile = forceMobileControls || (autoDetectMobile && Application.isMobilePlatform);
+
+            EnsureEventSystemExists();
+            EnsurePanelHierarchy();
 
             if (mobileControlsPanel != null)
             {
@@ -40,23 +49,11 @@ namespace TitanOrbit.UI
         private void SetupMobileControls()
         {
             // Get or create mobile input handler
-            mobileInputHandler = FindObjectOfType<MobileInputHandler>();
+            mobileInputHandler = FindFirstObjectByType<MobileInputHandler>();
             if (mobileInputHandler == null)
             {
                 GameObject handlerObj = new GameObject("MobileInputHandler");
                 mobileInputHandler = handlerObj.AddComponent<MobileInputHandler>();
-            }
-
-            // Setup joystick
-            if (joystickBackground != null && joystickHandle != null)
-            {
-                // Joystick setup is handled by MobileInputHandler
-            }
-
-            // Setup shoot button
-            if (shootButton != null)
-            {
-                shootButton.onClick.AddListener(OnShootButtonClicked);
             }
 
             // Setup canvas scaler for different screen sizes
@@ -66,41 +63,72 @@ namespace TitanOrbit.UI
                 canvasScaler.referenceResolution = new Vector2(1920, 1080);
                 canvasScaler.matchWidthOrHeight = 0.5f;
             }
+
+            float joystickRadius = Mathf.Max(1f, joystickSize * 0.5f);
+            mobileInputHandler.Configure(joystickBackground, joystickHandle, shootButton, joystickRadius);
         }
 
-        private void OnShootButtonClicked()
+        private void EnsurePanelHierarchy()
         {
-            if (mobileInputHandler != null)
+            if (mobileControlsPanel == null)
             {
-                mobileInputHandler.OnShootButtonPressed();
+                mobileControlsPanel = new GameObject("MobileControlsPanel");
+                mobileControlsPanel.transform.SetParent(transform, false);
+                RectTransform panelRect = mobileControlsPanel.AddComponent<RectTransform>();
+                panelRect.anchorMin = Vector2.zero;
+                panelRect.anchorMax = Vector2.one;
+                panelRect.offsetMin = Vector2.zero;
+                panelRect.offsetMax = Vector2.zero;
+            }
+
+            if (joystickBackground == null)
+            {
+                joystickBackground = CreateCircle("JoystickBackground", mobileControlsPanel.transform, new Color(1f, 1f, 1f, 0.2f), joystickSize);
+                joystickBackground.anchorMin = new Vector2(0f, 0f);
+                joystickBackground.anchorMax = new Vector2(0f, 0f);
+                joystickBackground.pivot = new Vector2(0f, 0f);
+                joystickBackground.anchoredPosition = new Vector2(sidePadding, bottomPadding);
+            }
+
+            if (joystickHandle == null)
+            {
+                joystickHandle = CreateCircle("JoystickHandle", joystickBackground, new Color(1f, 1f, 1f, 0.45f), joystickHandleSize);
+                joystickHandle.anchorMin = new Vector2(0.5f, 0.5f);
+                joystickHandle.anchorMax = new Vector2(0.5f, 0.5f);
+                joystickHandle.pivot = new Vector2(0.5f, 0.5f);
+                joystickHandle.anchoredPosition = Vector2.zero;
+            }
+
+            if (shootButton == null)
+            {
+                shootButton = CreateCircle("ShootButton", mobileControlsPanel.transform, new Color(1f, 0.2f, 0.2f, 0.5f), shootButtonSize);
+                shootButton.anchorMin = new Vector2(1f, 0f);
+                shootButton.anchorMax = new Vector2(1f, 0f);
+                shootButton.pivot = new Vector2(1f, 0f);
+                shootButton.anchoredPosition = new Vector2(-sidePadding, bottomPadding);
             }
         }
 
-        private void Update()
+        private static RectTransform CreateCircle(string name, Transform parent, Color color, float size)
         {
-            // Handle touch-to-move alternative
-            if (Application.isMobilePlatform && UnityEngine.Input.touchCount > 0)
-            {
-                Touch touch = UnityEngine.Input.GetTouch(0);
-                
-                // Check if touch is not on UI
-                if (!IsPointerOverUI(touch.position))
-                {
-                // Handle touch movement
-                UnityEngine.Camera mainCam = UnityEngine.Camera.main;
-                if (mainCam != null)
-                {
-                    Vector3 worldPos = mainCam.ScreenToWorldPoint(new Vector3(touch.position.x, touch.position.y, mainCam.nearClipPlane));
-                }
-                    // Movement would be handled by input system
-                }
-            }
+            GameObject obj = new GameObject(name, typeof(RectTransform), typeof(Image));
+            obj.transform.SetParent(parent, false);
+            RectTransform rect = obj.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(size, size);
+            Image image = obj.GetComponent<Image>();
+            image.color = color;
+            image.raycastTarget = true;
+            return rect;
         }
 
-        private bool IsPointerOverUI(Vector2 screenPosition)
+        private static void EnsureEventSystemExists()
         {
-            // Simple check - in production, use EventSystem
-            return false;
+            if (EventSystem.current != null)
+                return;
+
+            GameObject eventSystemObj = new GameObject("EventSystem");
+            eventSystemObj.AddComponent<EventSystem>();
+            eventSystemObj.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
         }
     }
 }

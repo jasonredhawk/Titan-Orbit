@@ -2510,23 +2510,13 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // Movement: right-click only - move in direction ship is facing
-            if (inputHandler.MoveForwardPressed)
-            {
-                moveDirection = transform.forward;
-                moveDirection.y = 0f;
-                if (moveDirection.sqrMagnitude > 0.01f)
-                {
-                    moveDirection.Normalize();
-                }
-            }
-            else
-            {
-                moveDirection = Vector3.zero;
-            }
+            // Movement: desktop uses right-click; mobile uses joystick direction.
+            moveDirection = inputHandler.GetDesiredMoveDirection(transform);
 
             // Shooting: only from Weapon components (bulletFirePoints). No firePoint fallback.
-            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !IsPointerOverUI())
+            bool isMobileShoot = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.IsShootingFromMobileButton == true;
+            bool shootBlockedByUi = !isMobileShoot && IsPointerOverUI();
+            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !shootBlockedByUi)
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
@@ -2871,13 +2861,9 @@ namespace TitanOrbit.Entities
             UnityEngine.Camera cam = UnityEngine.Camera.main;
             if (cam != null && inputHandler != null)
             {
-                Vector3 mouseWorldPos = inputHandler.GetMouseWorldPosition(cam);
-                Vector3 directionToMouse = (mouseWorldPos - transform.position);
-                directionToMouse.y = 0f;
-                if (directionToMouse.sqrMagnitude > 0.001f)
+                if (inputHandler.TryGetLookDirection(cam, transform, out Vector3 lookDirection) && lookDirection.sqrMagnitude > 0.001f)
                 {
-                    directionToMouse.Normalize();
-                    Quaternion targetRotation = Quaternion.LookRotation(directionToMouse);
+                    Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
                     Quaternion newRotation = Quaternion.RotateTowards(
                         rb.rotation,
                         targetRotation,
