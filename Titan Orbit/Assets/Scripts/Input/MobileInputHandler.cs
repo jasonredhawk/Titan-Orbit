@@ -150,7 +150,7 @@ namespace TitanOrbit.Input
             return RectTransformUtility.RectangleContainsScreenPoint(rectTransform, screenPosition, GetEventCamera());
         }
 
-        private Camera GetEventCamera()
+        private UnityEngine.Camera GetEventCamera()
         {
             if (rootCanvas == null) return null;
             return rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : rootCanvas.worldCamera;
