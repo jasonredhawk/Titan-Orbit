@@ -1239,6 +1239,11 @@ namespace TitanOrbit.Entities
             // can lag the sender id for a frame and the old check dropped the RPC with no client feedback.
             ulong sender = rpcParams.Receive.SenderClientId;
             TeamManager.Instance.ApplyTeamChoiceFromServer(sender, preferredTeam);
+            // If server lookup missed the player object (wrong Singleton / late join), still apply on this RPC target ship.
+            // Only when the request succeeded (assigned team matches pick) so failed team switches do not teleport.
+            Team assigned = TeamManager.Instance.GetPlayerTeam(sender);
+            if (assigned != TeamManager.Team.None && assigned == preferredTeam)
+                AssignTeamAndStartInOrbit(assigned);
         }
 
         /// <summary>Server only: set team without repositioning (for AI ships that are already placed).</summary>

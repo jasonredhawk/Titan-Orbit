@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player ship, friendly ships, enemy ships (different colors), planets, home planets, asteroids.
+    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, asteroids.
     /// Each team has its own color.
     /// </summary>
     public class MinimapController : MonoBehaviour
@@ -48,6 +48,8 @@ namespace TitanOrbit.UI
         private Image borderImage; // Reference to the border image
         private CanvasGroup canvasGroup; // Used to hide minimap until team chosen (keeps Update running so we can show again)
         private Button expandButton;
+        private TextMeshProUGUI expandButtonLabel;
+        private static Sprite _whiteUiSprite;
         private bool isExpanded = false;
         private Vector2 originalAnchoredPosition;
         private Vector2 originalSizeDelta;
@@ -156,8 +158,9 @@ namespace TitanOrbit.UI
         private enum BlipType
         {
             Circle,      // Planets, Gems
-            Capsule,     // Non-player ships
-            Triangle,    // Player ship (directional)
+            Capsule,     // (legacy sprite shape)
+            Triangle,    // (legacy directional blip)
+            Cross,       // Ships (player + others)
             Irregular,   // Asteroids
             Bullseye     // Markers (attack/defend)
         }
@@ -584,6 +587,18 @@ namespace TitanOrbit.UI
                 mapSizeLabel.text = $"{Mathf.RoundToInt(w)} \u00d7 {Mathf.RoundToInt(h)}";
         }
 
+        private static Sprite GetOrCreateWhiteUiSprite()
+        {
+            if (_whiteUiSprite != null)
+                return _whiteUiSprite;
+            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            texture.SetPixel(0, 0, Color.white);
+            texture.Apply();
+            _whiteUiSprite = Sprite.Create(texture, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f), 100f);
+            _whiteUiSprite.name = "MinimapExpandButtonWhite";
+            return _whiteUiSprite;
+        }
+
         private void SetupExpandButton()
         {
             // Create expand button in bottom-right corner of minimap
@@ -595,117 +610,37 @@ namespace TitanOrbit.UI
             buttonRect.anchorMax = new Vector2(1, 0);
             buttonRect.pivot = new Vector2(1, 0);
             buttonRect.anchoredPosition = new Vector2(-8, 8);
-            buttonRect.sizeDelta = new Vector2(36, 36); // Bigger button
+            buttonRect.sizeDelta = new Vector2(46f, 20f);
             
             Image buttonImage = buttonObj.AddComponent<Image>();
-            buttonImage.color = new Color(0.7f, 0.7f, 0.8f, 0.95f); // Brighter
-            buttonImage.sprite = CreateExpandButtonSprite(36);
+            buttonImage.color = new Color(0.7f, 0.7f, 0.8f, 0.95f);
+            buttonImage.sprite = GetOrCreateWhiteUiSprite();
             buttonImage.type = Image.Type.Simple;
             
             expandButton = buttonObj.AddComponent<Button>();
             expandButton.onClick.AddListener(ToggleExpand);
             
-            // Add hover effect
             var colors = expandButton.colors;
-            colors.highlightedColor = new Color(0.9f, 0.9f, 1f, 1f); // Brighter on hover
+            colors.highlightedColor = new Color(0.9f, 0.9f, 1f, 1f);
             colors.pressedColor = new Color(0.8f, 0.8f, 0.9f, 1f);
             expandButton.colors = colors;
-        }
-        
-        private Sprite CreateExpandButtonSprite(int size)
-        {
-            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            texture.filterMode = FilterMode.Bilinear;
-            
-            Color[] pixels = new Color[size * size];
-            
-            // Create a simple expand icon (corner arrows pointing outward)
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool isInside = false;
-                    
-                    // Draw corner arrows in bottom-right
-                    // Horizontal arrow line (pointing right) - thicker
-                    if (y >= size * 0.35f && y <= size * 0.45f && x >= size * 0.25f && x <= size * 0.7f)
-                        isInside = true;
-                    
-                    // Vertical arrow line (pointing down) - thicker
-                    if (x >= size * 0.35f && x <= size * 0.45f && y >= size * 0.05f && y <= size * 0.55f)
-                        isInside = true;
-                    
-                    // Arrow head pointing right - bigger
-                    if (x >= size * 0.65f && x <= size * 0.9f && y >= size * 0.25f && y <= size * 0.55f)
-                    {
-                        float arrowX = (x - size * 0.65f) / (size * 0.25f);
-                        float arrowY = Mathf.Abs((y - size * 0.4f) / (size * 0.15f));
-                        if (arrowX + arrowY <= 1f)
-                            isInside = true;
-                    }
-                    
-                    // Arrow head pointing down - bigger
-                    if (x >= size * 0.25f && x <= size * 0.55f && y >= 0 && y <= size * 0.35f)
-                    {
-                        float arrowX = Mathf.Abs((x - size * 0.4f) / (size * 0.15f));
-                        float arrowY = (size * 0.35f - y) / (size * 0.35f);
-                        if (arrowX + arrowY <= 1f)
-                            isInside = true;
-                    }
-                    
-                    pixels[y * size + x] = isInside ? Color.white : Color.clear;
-                }
-            }
-            
-            texture.SetPixels(pixels);
-            texture.Apply();
-            
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(1, 0), 100f);
-            sprite.name = "ExpandButton";
-            return sprite;
-        }
-        
-        private Sprite CreateCollapseButtonSprite(int size)
-        {
-            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            texture.filterMode = FilterMode.Bilinear;
-            
-            Color[] pixels = new Color[size * size];
-            
-            // Create a collapse icon (X or close icon for top-middle position)
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool isInside = false;
-                    
-                    // Create an X icon (better for top-middle position)
-                    float centerX = size / 2f;
-                    float centerY = size / 2f;
-                    float lineWidth = size * 0.15f;
-                    
-                    // Diagonal line from top-left to bottom-right
-                    float dx1 = (x - centerX) + (y - centerY);
-                    float dy1 = (x - centerX) - (y - centerY);
-                    if (Mathf.Abs(dx1) < lineWidth && Mathf.Abs(dy1) < size * 0.6f)
-                        isInside = true;
-                    
-                    // Diagonal line from top-right to bottom-left
-                    float dx2 = (x - centerX) - (y - centerY);
-                    float dy2 = (x - centerX) + (y - centerY);
-                    if (Mathf.Abs(dx2) < lineWidth && Mathf.Abs(dy2) < size * 0.6f)
-                        isInside = true;
-                    
-                    pixels[y * size + x] = isInside ? Color.white : Color.clear;
-                }
-            }
-            
-            texture.SetPixels(pixels);
-            texture.Apply();
-            
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 1f), 100f);
-            sprite.name = "CollapseButton";
-            return sprite;
+
+            GameObject labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(buttonObj.transform, false);
+            RectTransform labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+
+            expandButtonLabel = labelGo.AddComponent<TextMeshProUGUI>();
+            expandButtonLabel.text = "[M]ap";
+            expandButtonLabel.alignment = TextAlignmentOptions.Center;
+            expandButtonLabel.fontSize = 11f;
+            expandButtonLabel.color = new Color(0.12f, 0.12f, 0.18f, 1f);
+            expandButtonLabel.raycastTarget = false;
+            expandButtonLabel.enableWordWrapping = false;
+            expandButtonLabel.overflowMode = TextOverflowModes.Overflow;
         }
         
         private void ToggleExpand()
@@ -780,13 +715,13 @@ namespace TitanOrbit.UI
                         buttonRect.anchorMax = new Vector2(0.5f, 1f);
                         buttonRect.pivot = new Vector2(0.5f, 1f);
                         buttonRect.anchoredPosition = new Vector2(0, -8);
-                        buttonRect.sizeDelta = new Vector2(36, 36);
+                        buttonRect.sizeDelta = new Vector2(28f, 24f);
                     }
-                    
-                    Image buttonImg = expandButton.GetComponent<Image>();
-                    if (buttonImg != null)
+
+                    if (expandButtonLabel != null)
                     {
-                        buttonImg.sprite = CreateCollapseButtonSprite(36);
+                        expandButtonLabel.text = "\u00d7";
+                        expandButtonLabel.fontSize = 18f;
                     }
                 }
                 
@@ -940,13 +875,13 @@ namespace TitanOrbit.UI
                     buttonRect.anchorMax = new Vector2(1, 0);
                     buttonRect.pivot = new Vector2(1, 0);
                     buttonRect.anchoredPosition = new Vector2(-8, 8);
-                    buttonRect.sizeDelta = new Vector2(36, 36);
+                    buttonRect.sizeDelta = new Vector2(46f, 20f);
                 }
-                
-                Image buttonImg = expandButton.GetComponent<Image>();
-                if (buttonImg != null)
+
+                if (expandButtonLabel != null)
                 {
-                    buttonImg.sprite = CreateExpandButtonSprite(36);
+                    expandButtonLabel.text = "[M]ap";
+                    expandButtonLabel.fontSize = 11f;
                 }
             }
             
@@ -1653,18 +1588,11 @@ namespace TitanOrbit.UI
             }
 
             // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 18f, BlipType.Triangle), true);
-            // Rotate player triangle to point along ship forward direction and tint with team color
+            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 18f, BlipType.Cross), true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
-                Vector3 fwd = playerTransform.forward;
-                Vector2 dir = new Vector2(fwd.x, fwd.z);
-                if (dir.sqrMagnitude < 0.0001f) dir = Vector2.up;
-                else dir.Normalize();
-                float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                playerRt.localEulerAngles = new Vector3(0f, 0f, angle - 90f);
+                playerRt.localEulerAngles = Vector3.zero;
 
-                // Apply team color to player blip
                 TeamManager.Team playerTeam = playerShip.ShipTeam;
                 Color playerColor = playerTeam == TeamManager.Team.None ? Color.white : GetTeamColor(playerTeam);
                 float currentSize = playerRt.sizeDelta.x;
@@ -1693,7 +1621,7 @@ namespace TitanOrbit.UI
                 if (dist <= currentRadius)
                 {
                     // Show blip when within visible area
-                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 12f, BlipType.Capsule));
+                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 12f, BlipType.Cross));
                     // Remove any old ship edge marker (markers only for planets)
                     RemoveShipEdgeMarker(ship.transform);
                 }
@@ -2017,6 +1945,7 @@ namespace TitanOrbit.UI
                     // Store the blip type for reference
                     if (img.sprite != null && img.sprite.name.Contains("Circle")) blipTypes[t] = BlipType.Circle;
                     else if (img.sprite != null && img.sprite.name.Contains("Capsule")) blipTypes[t] = BlipType.Capsule;
+                    else if (img.sprite != null && img.sprite.name.Contains("Cross")) blipTypes[t] = BlipType.Cross;
                     else if (img.sprite != null && img.sprite.name.Contains("Irregular")) blipTypes[t] = BlipType.Irregular;
                     else if (img.sprite != null && img.sprite.name.Contains("Bullseye")) blipTypes[t] = BlipType.Bullseye;
                 }
@@ -2372,6 +2301,25 @@ namespace TitanOrbit.UI
                     }
                     break;
                 }
+
+                case BlipType.Cross:
+                {
+                    float halfStroke = Mathf.Max(1.25f, textureSize * 0.13f);
+                    float invSqrt2 = 0.70710678f;
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float dx = x - centerX;
+                            float dy = y - centerY;
+                            float d1 = Mathf.Abs(dx - dy) * invSqrt2;
+                            float d2 = Mathf.Abs(dx + dy) * invSqrt2;
+                            bool inside = d1 < halfStroke || d2 < halfStroke;
+                            pixels[y * textureSize + x] = inside ? Color.white : Color.clear;
+                        }
+                    }
+                    break;
+                }
                     
                 case BlipType.Irregular:
                 {
@@ -2445,6 +2393,7 @@ namespace TitanOrbit.UI
                 case BlipType.Circle: spriteName = "Circle"; break;
                 case BlipType.Capsule: spriteName = "Capsule"; break;
                 case BlipType.Triangle: spriteName = "Triangle"; break;
+                case BlipType.Cross: spriteName = "Cross"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
             }

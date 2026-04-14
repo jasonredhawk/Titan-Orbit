@@ -1076,7 +1076,7 @@ namespace TitanOrbit.Networking
         /// <see cref="NetworkManager.Singleton"/> can reference an inactive duplicate (e.g. Multiplayer Play Mode / extra scene object) that never started Netcode,
         /// while another <see cref="NetworkManager"/> in the hierarchy is the real host/client. Prefer the instance that is actually running.
         /// </summary>
-        private static NetworkManager ResolveNetworkManagerForGameplay()
+        public static NetworkManager ResolveNetworkManagerForGameplay()
         {
             var s = NetworkManager.Singleton;
             if (s != null && (s.IsClient || s.IsServer))

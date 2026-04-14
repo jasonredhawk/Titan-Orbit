@@ -193,6 +193,41 @@ namespace TitanOrbit.Core
             ApplyTeamChoiceFromServer(rpcParams.Receive.SenderClientId, preferredTeam);
         }
 
+        /// <summary>Server: human player ship for <paramref name="clientId"/> when <see cref="NetworkSpawnManager.GetPlayerNetworkObject"/> is null (e.g. inactive <see cref="NetworkManager.Singleton"/> vs the running instance).</summary>
+        private static Starship TryGetPlayerStarshipForClient(ulong clientId)
+        {
+            var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
+            if (nm == null || nm.SpawnManager == null) return null;
+
+            NetworkObject playerObj = nm.SpawnManager.GetPlayerNetworkObject(clientId);
+            if (playerObj != null)
+            {
+                Starship s = TryStarshipFromNetworkObject(playerObj);
+                if (s != null && s.GetComponent<TitanOrbit.AI.AIShipMarker>() == null)
+                    return s;
+            }
+
+            foreach (var kv in nm.SpawnManager.SpawnedObjects)
+            {
+                NetworkObject no = kv.Value;
+                if (no == null || no.OwnerClientId != clientId) continue;
+                Starship ship = TryStarshipFromNetworkObject(no);
+                if (ship == null) continue;
+                if (ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null) continue;
+                return ship;
+            }
+
+            return null;
+        }
+
+        private static Starship TryStarshipFromNetworkObject(NetworkObject no)
+        {
+            if (no == null) return null;
+            Starship s = no.GetComponent<Starship>();
+            if (s != null) return s;
+            return no.GetComponentInChildren<Starship>(true);
+        }
+
         /// <summary>Server-only: apply team pick from UI. Prefer <see cref="TitanOrbit.Entities.Starship.RequestJoinTeamFromClient"/> so the RPC runs on the player-owned ship (more reliable than scene-object RPCs for late joiners).</summary>
         public void ApplyTeamChoiceFromServer(ulong clientId, Team preferredTeam)
         {
@@ -227,13 +262,9 @@ namespace TitanOrbit.Core
             }
             if (ok && actualTeam != Team.None)
             {
-                var playerObj = NetworkManager.Singleton.SpawnManager.GetPlayerNetworkObject(clientId);
-                if (playerObj != null)
-                {
-                    var ship = playerObj.GetComponent<TitanOrbit.Entities.Starship>();
-                    if (ship != null)
-                        ship.AssignTeamAndStartInOrbit(actualTeam);
-                }
+                var ship = TryGetPlayerStarshipForClient(clientId);
+                if (ship != null)
+                    ship.AssignTeamAndStartInOrbit(actualTeam);
             }
             // Notify via NetworkGameManager (same NetworkObject as us) so clients reliably receive the ClientRpc.
             var ngm = NetworkGameManager.Instance;
