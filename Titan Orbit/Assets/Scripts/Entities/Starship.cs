@@ -1241,7 +1241,7 @@ namespace TitanOrbit.Entities
             TeamManager.Instance.ApplyTeamChoiceFromServer(sender, preferredTeam);
             // If server lookup missed the player object (wrong Singleton / late join), still apply on this RPC target ship.
             // Only when the request succeeded (assigned team matches pick) so failed team switches do not teleport.
-            Team assigned = TeamManager.Instance.GetPlayerTeam(sender);
+            TeamManager.Team assigned = TeamManager.Instance.GetPlayerTeam(sender);
             if (assigned != TeamManager.Team.None && assigned == preferredTeam)
                 AssignTeamAndStartInOrbit(assigned);
         }
