@@ -27,6 +27,9 @@ namespace TitanOrbit.Input
         /// <summary>When true, ship decelerates when not holding move. When false, ship floats (no auto-slow). Toggled by CTRL.</summary>
         private bool spaceBrakesEnabled = true;
 
+        /// <summary>Same as Left Ctrl: toggles whether the ship auto-slows when not thrusting.</summary>
+        public void ToggleSpaceBrakes() => spaceBrakesEnabled = !spaceBrakesEnabled;
+
         public bool ShootPressed => shootPressed;
         public bool RocketPressed => rocketPressed;
         public bool MinePressed => minePressed;
@@ -93,16 +96,39 @@ namespace TitanOrbit.Input
 
         private void Update()
         {
-            // Left-click = shoot (prefer new Input System; no legacy Input when Input System package is active)
-            if (shootAction != null)
-                shootPressed = shootAction.IsPressed();
-            else if (Mouse.current != null)
-                shootPressed = Mouse.current.leftButton.isPressed;
-            else
-                shootPressed = false;
+            MobileInputHandler mobile = MobileInputHandler.Resolve();
+            bool useTouchUi = mobile != null && mobile.TouchUiActive;
 
-            // Right-click = move in facing direction
-            moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
+            if (useTouchUi)
+            {
+                bool actionShoot = shootAction != null && shootAction.IsPressed();
+                bool editorRightHalfMouseShoot = false;
+                if (MobileInputHandler.ForceTouchSteer && Mouse.current != null && Mouse.current.leftButton.isPressed)
+                {
+                    float edge = Screen.width * mobile.RightScreenSplit;
+                    editorRightHalfMouseShoot = Mouse.current.position.ReadValue().x >= edge;
+                }
+                shootPressed = mobile.ShootButtonPressed || actionShoot || editorRightHalfMouseShoot;
+
+                // Phones: thrust only in outer left-drag zone; desktop: legacy on-screen joystick deflection.
+                bool anchorThrust = mobile.LeftThrustFromAnchor;
+                bool legacyJoyThrust = !Application.isMobilePlatform && !MobileInputHandler.ForceTouchSteer
+                    && mobile.JoystickDeflectedBeyondDeadZone();
+                bool joyThrust = anchorThrust || legacyJoyThrust;
+                moveForwardPressed = joyThrust
+                    || (Mouse.current != null && Mouse.current.rightButton.isPressed);
+            }
+            else
+            {
+                if (shootAction != null)
+                    shootPressed = shootAction.IsPressed();
+                else if (Mouse.current != null)
+                    shootPressed = Mouse.current.leftButton.isPressed;
+                else
+                    shootPressed = false;
+
+                moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
+            }
 
             // CTRL toggles space brakes (when on: ship slows when not holding move; when off: ship floats)
             if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
@@ -118,15 +144,60 @@ namespace TitanOrbit.Input
         /// </summary>
         public Vector3 GetMouseWorldPosition(UnityEngine.Camera cam)
         {
-            if (cam == null || Mouse.current == null) return transform.position;
+            if (cam == null) return transform.position;
+
+            MobileInputHandler mobile = MobileInputHandler.Resolve();
+            bool useTouchUi = mobile != null && mobile.TouchUiActive;
+
+            if (useTouchUi)
+            {
+                if (mobile.TryGetLeftDragAimWorldPoint(cam, transform, out Vector3 leftAim))
+                    return leftAim;
+
+                if (mobile.TryGetAimScreenPosition(cam, out Vector2 aimScreen))
+                {
+                    Ray aimRay = cam.ScreenPointToRay(new Vector3(aimScreen.x, aimScreen.y, 0f));
+                    Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
+                    if (groundPlane.Raycast(aimRay, out float aimDist))
+                        return aimRay.GetPoint(aimDist);
+                }
+
+                if (mobile.JoystickDeflectedBeyondDeadZone())
+                {
+                    Vector2 joy = mobile.JoystickInput;
+                    Vector3 f = cam.transform.forward;
+                    f.y = 0f;
+                    if (f.sqrMagnitude < 0.0001f)
+                        f = Vector3.forward;
+                    else
+                        f.Normalize();
+                    Vector3 r = cam.transform.right;
+                    r.y = 0f;
+                    r.Normalize();
+                    Vector3 flat = (r * joy.x + f * joy.y).normalized;
+                    return transform.position + flat * 10f;
+                }
+
+                // Editor / hybrid: keep mouse aim when touch HUD is forced on but pointer is mouse.
+                if (Mouse.current != null)
+                {
+                    Vector2 hybridMouse = Mouse.current.position.ReadValue();
+                    Ray hybridRay = cam.ScreenPointToRay(new Vector3(hybridMouse.x, hybridMouse.y, 0f));
+                    Plane hybridPlane = new Plane(Vector3.up, Vector3.zero);
+                    if (hybridPlane.Raycast(hybridRay, out float hybridDist))
+                        return hybridRay.GetPoint(hybridDist);
+                }
+
+                return transform.position;
+            }
+
+            if (Mouse.current == null) return transform.position;
 
             Vector2 mousePos = Mouse.current.position.ReadValue();
             Ray ray = cam.ScreenPointToRay(new Vector3(mousePos.x, mousePos.y, 0));
-            Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
-            if (groundPlane.Raycast(ray, out float distance))
-            {
+            Plane plane = new Plane(Vector3.up, Vector3.zero);
+            if (plane.Raycast(ray, out float distance))
                 return ray.GetPoint(distance);
-            }
             return transform.position;
         }
 

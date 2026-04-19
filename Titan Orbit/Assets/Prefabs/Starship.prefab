@@ -276,6 +276,14 @@ MonoBehaviour:
   bulletScaleExaggeration: 1.5
   bulletNameTextPrefab: {fileID: 4983387932602081380, guid: f0e3e4f0e4bdb9a43a7adc4ba0a6d71b, type: 3}
   asteroidCollisionNormalSpeedRetention: 0.9
+  asteroidRammingMinRestitution: 0
+  asteroidRammingRestitutionThreshold: 6
+  asteroidRammingRestitutionReferenceExcess: 14
+  asteroidGrindPushToAsteroidDpsScale: 0.012
+  asteroidGrindMinPushNewtons: 8
+  asteroidGrindMaxAsteroidDps: 120
+  asteroidGrindFeedbackInterval: 0.1
+  asteroidGrindFeedbackForceFromPushScale: 2.75
   asteroidImpactForcePopupMin: 80
   asteroidImpactForceToShipDamageScale: 0.0025
   asteroidImpactForceToAsteroidDamageScale: 0.0015
@@ -284,6 +292,7 @@ MonoBehaviour:
   collisionWeaponVfxMaxImpactForceN: 20000
   collisionWeaponVfxMinRelativeSpeed: 1
   collisionWeaponVfxMaxRelativeSpeed: 10
+  rootColliderAttributeScalePadding: 1.03
   collisionWeaponVfxMinScaleMultiplier: 0.1
   collisionWeaponVfxMaxScaleMultiplier: 2
   maxHealth: 100
@@ -294,6 +303,7 @@ MonoBehaviour:
   baseMass: 1
   massPerGem: 0.01
   hullMassScale: 0.7
+  baseRammingPower: 1
   energyCapacity: 50
   energyRegenRate: 5
   inputHandler: {fileID: 0}
@@ -303,6 +313,7 @@ MonoBehaviour:
   defaultMaxBankAngle: 66
   defaultBankSmoothing: 1
   equippedCards: []
+  peopleTransferStationaryHoldSeconds: 1
   enableVisualBankingPitch: 1
   visualPitchSign: 1
   maxAccelerationPitchAngle: 28
@@ -331,6 +342,7 @@ MonoBehaviour:
   - {fileID: 4111849767122892654}
   - {fileID: 1575963960244135717}
   - {fileID: 6785095843576702720}
+  enableLegacyTint: 0
 --- !u!114 &8227196726389491402
 MonoBehaviour:
   m_ObjectHideFlags: 0

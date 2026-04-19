@@ -738,11 +738,8 @@ namespace TitanOrbit.Editor
                 "Assets/Shift - Complete Sci-Fi UI/Textures/Placeholder/Placeholder HUD BG.png");
             Sprite shiftButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
                 "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Cut/Cut Frame Filled.png");
-            Sprite shiftRoundedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(
-                "Assets/Shift - Complete Sci-Fi UI/Textures/Border/Rounded/Rounded Filled (300ppu).png");
             if (shiftPanelSprite == null) shiftPanelSprite = uiSprite;
             if (shiftButtonSprite == null) shiftButtonSprite = uiSprite;
-            if (shiftRoundedSprite == null) shiftRoundedSprite = uiSprite;
 
             // Create Main Menu Panel (Shift Sci-Fi style)
             GameObject mainMenuPanel = CreateShiftPanel(canvasObj.transform, "MainMenuPanel", new Color(0.06f, 0.08f, 0.14f, 0.97f), shiftPanelSprite);
@@ -1025,11 +1022,8 @@ namespace TitanOrbit.Editor
             winLossSO.FindProperty("winLossPanel").objectReferenceValue = winLossObj;
             winLossSO.ApplyModifiedPropertiesWithoutUndo();
 
-            // Mobile Controls (hidden on desktop)
-            GameObject mobileControlsObj = new GameObject("MobileControls");
-            mobileControlsObj.transform.SetParent(canvasObj.transform, false);
-            mobileControlsObj.SetActive(Application.isMobilePlatform);
-            mobileControlsObj.AddComponent<MobileControls>();
+            // Mobile Controls: same hierarchy as Titan Orbit > Add Mobile Controls To Canvas (shared utility).
+            MobileControlsEditorUtility.AddMobileControlsToCanvas(canvasObj.transform, scaler, destroyExistingRoot: false);
 
             // Orbit panel: top-left under ShipStatsPanel; content built by OrbitStationUI at runtime.
             const float orbitPanelWidth = 420f;

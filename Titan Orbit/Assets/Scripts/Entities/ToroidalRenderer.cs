@@ -1,4 +1,5 @@
 using UnityEngine;
+using TitanOrbit.Camera;
 using TitanOrbit.Generation;
 using TitanOrbit.Networking;
 
@@ -22,6 +23,8 @@ namespace TitanOrbit.Entities
         private Transform visualChild; // For Rigidbody entities: we position this, not the root
         private static UnityEngine.Camera s_cachedMainCamera;
         private static int s_cachedCameraFrame = -1;
+        /// <summary>When Camera.main is missing or wrong, follow the gameplay camera on the CameraController (same as LocalPlayerSetup).</summary>
+        private static UnityEngine.Camera s_cachedGameplayCameraFromController;
         /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
         private bool _isShip;
         private Starship _starship;
@@ -129,8 +132,16 @@ namespace TitanOrbit.Entities
             {
                 s_cachedCameraFrame = Time.frameCount;
                 s_cachedMainCamera = UnityEngine.Camera.main;
+                if ((s_cachedMainCamera == null || !s_cachedMainCamera.isActiveAndEnabled) && s_cachedGameplayCameraFromController == null)
+                {
+                    var cc = UnityEngine.Object.FindFirstObjectByType<CameraController>();
+                    if (cc != null)
+                        s_cachedGameplayCameraFromController = cc.GetComponent<UnityEngine.Camera>();
+                }
             }
             UnityEngine.Camera cam = s_cachedMainCamera;
+            if (cam == null || !cam.isActiveAndEnabled)
+                cam = s_cachedGameplayCameraFromController;
             if (cam == null)
             {
                 #region agent log e695ff
@@ -185,8 +196,19 @@ namespace TitanOrbit.Entities
                     if (c != visualChild && c.parent == transform)
                         c.SetParent(visualChild, true);
                 }
-                // Position only the visual child; leave root for physics/network
-                visualChild.position = displayPos;
+                // Mobile: toroidal display offset can place bullet visuals off-screen if Camera.main differs from the gameplay camera.
+                // Keep visuals parented at local origin so they follow the network transform (same as desktop when toroidal is wrong).
+                bool isBullet = GetComponent<Bullet>() != null;
+                if (isBullet && Application.isMobilePlatform)
+                {
+                    visualChild.localPosition = Vector3.zero;
+                    visualChild.localRotation = Quaternion.identity;
+                }
+                else
+                {
+                    // Position only the visual child; leave root for physics/network
+                    visualChild.position = displayPos;
+                }
             }
             else
             {

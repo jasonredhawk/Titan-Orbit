@@ -449,10 +449,14 @@ namespace TitanOrbit.Entities
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
             float impactPitch = GetImpactSoundPitch();
             GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
-            if (impactPrefab != null)
+            // Mobile uses procedural URP particle burst in SpawnImpactAt; still spawn if bank prefab missing.
+            bool spawnImpactFx = impactPrefab != null || Application.isMobilePlatform;
+            if (spawnImpactFx)
             {
                 SpawnImpactEffectClientRpc(impactPos, bankIdx, impactPitch);
-                SpawnImpactAt(impactPos, impactPrefab, impactPitch); // Server spawns too (ClientRpc doesn't run on server)
+                // Mobile impact VFX runs only in ClientRpc (avoids double spawn on host); desktop keeps server-side for listen-server visibility.
+                if (!Application.isMobilePlatform)
+                    SpawnImpactAt(impactPos, impactPrefab, impactPitch);
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
@@ -493,12 +497,21 @@ namespace TitanOrbit.Entities
 
         private void SpawnImpactAt(Vector3 position, GameObject prefab = null, float pitch = 1f)
         {
+            if (Application.isMobilePlatform)
+            {
+                TeamManager.Team t = (TeamManager.Team)bulletOwnerTeamByte.Value;
+                if (t == TeamManager.Team.None) t = ownerTeam;
+                VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(t), impactEffectScale);
+                return;
+            }
+
             GameObject usePrefab = prefab != null ? prefab : impactEffectPrefab;
             if (usePrefab == null) return;
             GameObject go = Instantiate(usePrefab, position, Quaternion.identity);
             go.transform.localScale = Vector3.one * impactEffectScale;
             SetAudioPitchInHierarchy(go, pitch);
-            DisableGrabPassMaterials(go); // Avoid "GrabPass can't be called from job thread" in URP/SRP
+            VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
+            VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
             Destroy(go, impactEffectDuration);
         }
 
@@ -515,29 +528,19 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Prevents GrabPass use in URP/SRP: swap AllIn1VfxGrabPass shader to SRP batch and disable screen-distortion keyword.</summary>
-        private static void DisableGrabPassMaterials(GameObject root)
-        {
-            Shader srpShader = Shader.Find("AllIn1Vfx/AllIn1VfxSRPBatch");
-            foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
-            {
-                if (r.sharedMaterials == null) continue;
-                foreach (Material mat in r.materials)
-                {
-                    if (mat == null) continue;
-                    if (mat.shader.name == "AllIn1Vfx/AllIn1VfxGrabPass" && srpShader != null)
-                        mat.shader = srpShader;
-                    if (mat.IsKeywordEnabled("SCREENDISTORTION_ON"))
-                        mat.DisableKeyword("SCREENDISTORTION_ON");
-                }
-            }
-        }
-
         [ClientRpc]
         private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex, float pitch)
         {
             TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
             if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
+            if (Application.isMobilePlatform)
+            {
+                SpawnImpactAt(position, null, pitch);
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayImpactSound(pitch);
+                return;
+            }
+
             GameObject prefab = impactPrefabBankIndex >= 0 && CombatSystem.Instance != null
                 ? CombatSystem.Instance.GetImpactPrefabFromBank(impactPrefabBankIndex, teamForResolve)
                 : null;
@@ -587,20 +590,28 @@ namespace TitanOrbit.Entities
             foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
                 r.enabled = false;
 
+            // Mobile: Sci-Fi Arsenal / AllIn1 particle prefabs often fail to render or crash when shaders are forced into the build.
+            // Use the built-in URP Lit core + TrailRenderer path only (see CreateCustomizableVfxStyle).
+            bool allowBankOrPrefabVisual = !Application.isMobilePlatform;
+
             GameObject visualPrefab = null;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
-            if (bankIdx >= 0 && CombatSystem.Instance != null)
-                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx, teamForColor);
-            if (visualPrefab == null && bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
-                visualPrefab = bulletVisualPrefabOptions[shapeIdx];
-            if (visualPrefab == null && bulletVisualPrefab != null)
-                visualPrefab = bulletVisualPrefab;
+            if (allowBankOrPrefabVisual)
+            {
+                if (bankIdx >= 0 && CombatSystem.Instance != null)
+                    visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(bankIdx, teamForColor);
+                if (visualPrefab == null && bulletVisualPrefabOptions != null && shapeIdx < bulletVisualPrefabOptions.Length && bulletVisualPrefabOptions[shapeIdx] != null)
+                    visualPrefab = bulletVisualPrefabOptions[shapeIdx];
+                if (visualPrefab == null && bulletVisualPrefab != null)
+                    visualPrefab = bulletVisualPrefab;
+            }
 
             if (visualPrefab != null)
             {
                 spawnedVisual = Instantiate(visualPrefab, transform);
-                FixVfxForUrp(spawnedVisual);
+                VfxUrpCompat.FixAllIn1MaterialsForUrp(spawnedVisual);
                 ApplyColorToVisual(spawnedVisual, bulletColor);
+                VfxUrpCompat.PlayParticleSystemsInHierarchy(spawnedVisual);
                 float spdForAudio = syncedBulletSpeed.Value > 0.001f ? syncedBulletSpeed.Value : speed;
                 SetAudioPitchInHierarchy(spawnedVisual, GetProjectileSoundPitchBySpeed(spdForAudio));
                 if (noTrailVisual)
@@ -677,24 +688,6 @@ namespace TitanOrbit.Entities
             {
                 var main = ps.main;
                 main.startColor = color;
-            }
-        }
-
-        /// <summary>Make AllIn1 VFX prefabs work in URP (GrabPass fix).</summary>
-        private static void FixVfxForUrp(GameObject root)
-        {
-            Shader srpShader = Shader.Find("AllIn1Vfx/AllIn1VfxSRPBatch");
-            foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
-            {
-                if (r.sharedMaterials == null) continue;
-                foreach (Material mat in r.materials)
-                {
-                    if (mat == null) continue;
-                    if (mat.shader.name == "AllIn1Vfx/AllIn1VfxGrabPass" && srpShader != null)
-                        mat.shader = srpShader;
-                    if (mat.IsKeywordEnabled("SCREENDISTORTION_ON"))
-                        mat.DisableKeyword("SCREENDISTORTION_ON");
-                }
             }
         }
 

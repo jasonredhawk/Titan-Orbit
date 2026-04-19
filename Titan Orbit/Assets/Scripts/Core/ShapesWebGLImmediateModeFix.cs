@@ -1,23 +1,33 @@
 using UnityEngine;
 
-#if UNITY_WEBGL && !UNITY_EDITOR
+#if !UNITY_EDITOR
 using Shapes;
 #endif
 
 namespace TitanOrbit.Core
 {
     /// <summary>
-    /// WebGL builds can omit or mishandle Shapes' GPU-instancing shader variants for immediate-mode draws,
-    /// so rings, orbit zones, lines, and UI shapes vanish in the browser while the Editor looks fine.
-    /// Project Settings (Graphics) sets Instancing Variants to Keep All; this disables immediate-mode
-    /// instancing on WebGL only as an extra safeguard (vendor-documented workaround).
+    /// WebGL and many mobile GPUs can omit or mishandle Shapes' GPU-instancing shader variants for
+    /// immediate-mode draws, so orbit zone fills, planet level rings, lines, and other IM shapes vanish
+    /// on device while the Editor looks fine. Project Settings (Graphics) can use Instancing Variants
+    /// Keep All; this disables immediate-mode instancing on those players as a safeguard.
     /// </summary>
-    internal static class ShapesWebGLImmediateModeFix
+    internal static class ShapesImmediateModePlatformFix
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Apply()
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
+#if UNITY_EDITOR
+            return;
+#else
+            bool disableInstancing =
+#if UNITY_WEBGL
+                true ||
+#endif
+                Application.isMobilePlatform;
+            if (!disableInstancing)
+                return;
+
             try
             {
                 var config = ShapesConfig.Instance;

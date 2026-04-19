@@ -2531,7 +2531,12 @@ namespace TitanOrbit.Entities
             }
 
             // Shooting: only from Weapon components (bulletFirePoints). No firePoint fallback.
-            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !IsPointerOverUI())
+            bool uiBlocksShot = IsPointerOverUI();
+            MobileInputHandler mobileHud = MobileInputHandler.Resolve();
+            if (mobileHud != null && (mobileHud.ShootButtonPressed
+                || (Application.isMobilePlatform && inputHandler.ShootPressed)))
+                uiBlocksShot = false;
+            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !uiBlocksShot)
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
@@ -2613,11 +2618,35 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Resolves screen position for UI raycasts (mouse, else first active touch).</summary>
+        private static bool TryGetPrimaryPointerScreenPosition(out Vector2 screenPos)
+        {
+            if (Mouse.current != null)
+            {
+                screenPos = Mouse.current.position.ReadValue();
+                return true;
+            }
+            if (UnityEngine.Input.touchCount > 0)
+            {
+                for (int i = 0; i < UnityEngine.Input.touchCount; i++)
+                {
+                    UnityEngine.Touch t = UnityEngine.Input.GetTouch(i);
+                    if (t.phase == UnityEngine.TouchPhase.Ended || t.phase == UnityEngine.TouchPhase.Canceled)
+                        continue;
+                    screenPos = t.position;
+                    return true;
+                }
+            }
+            screenPos = default;
+            return false;
+        }
+
         /// <summary>True only when the pointer is over a UI element (Canvas/Graphic). Ignores 3D colliders so clicking the ship or world doesn't block shooting.</summary>
         private static bool IsPointerOverUI()
         {
             if (EventSystem.current == null) return false;
-            Vector2 pointerPosition = Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
+            if (!TryGetPrimaryPointerScreenPosition(out Vector2 pointerPosition))
+                return false;
             var eventData = new PointerEventData(EventSystem.current) { position = pointerPosition };
             if (s_raycastResults == null) s_raycastResults = new List<RaycastResult>();
             s_raycastResults.Clear();
@@ -3126,7 +3155,8 @@ namespace TitanOrbit.Entities
                 {
                     int idx = bulletIndicesFired[j];
                     bool usedSciFiMuzzle = false;
-                    if (bulletPrefabIndices != null && j < bulletPrefabIndices.Length && CombatSystem.Instance != null)
+                    // Same as Bullet visuals: avoid instantiating Sci-Fi AllIn1 muzzle prefabs on mobile (shader / stability).
+                    if (!Application.isMobilePlatform && bulletPrefabIndices != null && j < bulletPrefabIndices.Length && CombatSystem.Instance != null)
                     {
                         GameObject bulletPrefab = CombatSystem.Instance.GetBulletPrefabFromBank(bulletPrefabIndices[j], shipTeam.Value);
                         var sciFi = bulletPrefab != null ? bulletPrefab.GetComponent<SciFiProjectileScript>() : null;
@@ -3139,6 +3169,8 @@ namespace TitanOrbit.Entities
                             GameObject muzzle = Instantiate(sciFi.muzzleParticle, pos, Quaternion.LookRotation(-fwd));
                             if (muzzle != null)
                             {
+                                // Same URP/mobile fix as Bullet VFX: muzzle prefabs use AllIn1 GrabPass otherwise invisible on device.
+                                VfxUrpCompat.PrepareVfxInstance(muzzle);
                                 // Pitch any muzzle audio contained in the particle prefab.
                                 SetAudioPitchInHierarchy(muzzle, GetWeaponSoundPitchForCannon(idx));
                                 Destroy(muzzle, 1.5f);
@@ -3151,6 +3183,24 @@ namespace TitanOrbit.Entities
                         // Also pitch any audio embedded in the muzzle particle system hierarchy (fallback path).
                         SetAudioPitchInHierarchy(bulletMuzzleParticleSystems[idx].gameObject, GetWeaponSoundPitchForCannon(idx));
                         bulletMuzzleParticleSystems[idx].Play();
+                    }
+
+                    if (Application.isMobilePlatform && bulletFirePoints != null && idx >= 0 && idx < bulletFirePoints.Count && bulletFirePoints[idx] != null)
+                    {
+                        Transform pt = bulletFirePoints[idx];
+                        Vector3 fwd = pt.forward;
+                        fwd.y = 0f;
+                        if (fwd.sqrMagnitude < 0.01f)
+                        {
+                            fwd = transform.forward;
+                            fwd.y = 0f;
+                        }
+                        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+                        fwd.Normalize();
+                        Color flashColor = TeamManager.Instance != null
+                            ? TeamManager.GetTeamColor(shipTeam.Value)
+                            : new Color(1f, 0.88f, 0.45f);
+                        VfxUrpCompat.SpawnMobileMuzzleFlash(pt.position, fwd, flashColor);
                     }
                 }
             }
