@@ -3,8 +3,7 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
-using Unity.Services.Core;
-using Unity.Services.Authentication;
+using TitanOrbit.Services;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using Unity.Services.Lobbies;
@@ -293,26 +292,12 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Ensures Unity Services are initialized and the player is signed in (anonymous). Call before any Relay calls.
+        /// Ensures Unity Services are initialized and the player is signed in (guest/anonymous or Unity account). Call before any Relay calls.
         /// </summary>
         /// <returns>True if initialized and signed in; false if Services failed (e.g. offline or build not linked).</returns>
         private static async Task<bool> EnsureUnityServicesInitializedAsync()
         {
-            try
-            {
-                if (UnityServices.State == ServicesInitializationState.Initialized && AuthenticationService.Instance.IsSignedIn)
-                    return true;
-                if (UnityServices.State != ServicesInitializationState.Initialized)
-                    await UnityServices.InitializeAsync();
-                if (!AuthenticationService.Instance.IsSignedIn)
-                    await AuthenticationService.Instance.SignInAnonymouslyAsync();
-                return true;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning("[NetworkGameManager] Unity Services failed (offline or build not linked). You can still play as local host. " + e.Message);
-                return false;
-            }
+            return await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync();
         }
 
         /// <summary>

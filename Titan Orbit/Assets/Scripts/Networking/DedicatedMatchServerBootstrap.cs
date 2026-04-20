@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
+using TitanOrbit.Services;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
 using Unity.Services.Lobbies;
@@ -131,7 +132,8 @@ namespace TitanOrbit.Networking
             try
             {
                 if (UnityServices.State == ServicesInitializationState.Initialized &&
-                    AuthenticationService.Instance.IsSignedIn)
+                    AuthenticationService.Instance.IsSignedIn &&
+                    AuthenticationService.Instance.IsAuthorized)
                 {
                     Debug.Log("[DedicatedMatchServerBootstrap] Unity Services already initialized and signed in.");
                     return true;
@@ -140,13 +142,13 @@ namespace TitanOrbit.Networking
                 if (UnityServices.State != ServicesInitializationState.Initialized)
                 {
                     Debug.Log("[DedicatedMatchServerBootstrap] Initializing Unity Services...");
-                    await WithTimeoutAsync(UnityServices.InitializeAsync(), initTimeout, "UnityServices.InitializeAsync");
+                    await WithTimeoutAsync(UnityGameServicesBootstrap.InitializeUnityServicesAsync(), initTimeout, "UnityServices.InitializeAsync");
                 }
 
-                if (!AuthenticationService.Instance.IsSignedIn)
+                if (!AuthenticationService.Instance.IsSignedIn || !AuthenticationService.Instance.IsAuthorized)
                 {
                     Debug.Log("[DedicatedMatchServerBootstrap] Signing in anonymously...");
-                    await WithTimeoutAsync(AuthenticationService.Instance.SignInAnonymouslyAsync(), signInTimeout, "AuthenticationService.SignInAnonymouslyAsync");
+                    await WithTimeoutAsync(UnityGameServicesBootstrap.SignInGuestAsync(), signInTimeout, "AuthenticationService.SignInAnonymouslyAsync");
                 }
 
                 Debug.Log("[DedicatedMatchServerBootstrap] Unity Services ready.");
