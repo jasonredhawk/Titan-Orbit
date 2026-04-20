@@ -22,6 +22,9 @@ namespace TitanOrbit.Services
         /// <summary>Invoked after sign-in, sign-out, or failed Unity Player Account completion.</summary>
         public static event Action AuthStateChanged;
 
+        /// <summary>Used by WebGL OAuth resume path (Player Accounts SDK has no browser binding on WebGL).</summary>
+        public static void NotifyAuthStateChangedFromWebGlOAuthResume() => AuthStateChanged?.Invoke();
+
         /// <remarks>Do not touch <see cref="AuthenticationService.Instance"/> until <see cref="UnityServices"/> has finished initializing.</remarks>
         public static bool IsSignedIn =>
             UnityServices.State == ServicesInitializationState.Initialized && AuthenticationService.Instance.IsSignedIn;
@@ -37,6 +40,22 @@ namespace TitanOrbit.Services
         public static bool IsAuthorizedSession() =>
             UnityServices.State == ServicesInitializationState.Initialized &&
             AuthenticationService.Instance.IsAuthorized;
+
+        /// <summary>
+        /// WebGL browsers only treat <c>window.open</c> as user-initiated if it runs in the same synchronous turn as the
+        /// click. Any <c>await</c> before <c>PlayerAccountService.Instance.StartSignInAsync</c> drops that user gesture and
+        /// the login window is blocked (often with no visible error). Callers should ensure guest init finished first.
+        /// </summary>
+        static bool WebGlUnityPlayerAccountGestureSafePrerequisitesMet()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return UnityServices.State == ServicesInitializationState.Initialized &&
+                   AuthenticationService.Instance.IsSignedIn &&
+                   AuthenticationService.Instance.IsAuthorized;
+#else
+            return true;
+#endif
+        }
 
         /// <summary>Shortened player id for UI (full id is still used by services).</summary>
         public static string GetDisplayPlayerId()
@@ -83,7 +102,12 @@ namespace TitanOrbit.Services
             {
                 await InitializeUnityServicesAsync();
                 await EnsureAuthenticationSessionRestoredAsync();
-                return AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
+                bool ok = AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                if (ok)
+                    await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
+#endif
+                return ok;
             }
             catch (Exception e)
             {
@@ -165,12 +189,34 @@ namespace TitanOrbit.Services
         /// </summary>
         public static async Task<bool> SignInOrLinkUnityPlayerAccountUsingBrowserAsync()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (!WebGlUnityPlayerAccountGestureSafePrerequisitesMet())
+            {
+                await EnsureGuestSessionForOnlineAsync();
+                if (!WebGlUnityPlayerAccountGestureSafePrerequisitesMet())
+                {
+                    Debug.LogWarning(
+                        "[UnityGameServicesBootstrap] WebGL: Unity account sign-in needs an active guest session first. " +
+                        "Wait until you are online, then try again. Also allow popups for this site, and add your exact " +
+                        "game URL under Unity Dashboard → Player Accounts / Authentication redirect settings if required.");
+#if DEVELOPMENT_BUILD
+                    Debug.Log("[UnityGameServicesBootstrap] WebGL current page (redirect context): " + Application.absoluteURL);
+#endif
+                    return false;
+                }
+            }
+#else
             await EnsureGuestSessionForOnlineAsync();
+#endif
             if (IsUnityAccountActiveForUi())
                 return true;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return await WebGlUnityPlayerAccountBrowser.BeginOAuthInBrowserAsync(AuthenticationService.Instance.IsSignedIn);
+#else
             if (AuthenticationService.Instance.IsSignedIn)
                 return await LinkUnityPlayerAccountUsingBrowserAsync();
             return await SignInWithUnityPlayerAccountUsingBrowserAsync();
+#endif
         }
 
         /// <summary>Opens the Unity Player Accounts browser flow, then signs into Authentication with the returned token.</summary>
@@ -278,6 +324,9 @@ namespace TitanOrbit.Services
         /// <summary>Signs out of Unity Authentication and Unity Player Accounts.</summary>
         public static void SignOutAllSessions(bool clearAuthenticationSession = true)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGlUnityPlayerAccountBrowser.ClearPendingOAuthState();
+#endif
             if (UnityServices.State != ServicesInitializationState.Initialized)
                 return;
             if (AuthenticationService.Instance.IsSignedIn)

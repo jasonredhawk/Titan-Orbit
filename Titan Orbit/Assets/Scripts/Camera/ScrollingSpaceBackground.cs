@@ -7,9 +7,20 @@ namespace TitanOrbit.Camera
     /// Uses the DinV Dynamic Space Background Lite textures - assign any of the nebula/star
     /// textures for a seamless parallax effect.
     /// </summary>
-    [DefaultExecutionOrder(50)]
+    /// <remarks>
+    /// WebGL and Android GLES often fail to animate URP Unlit UVs when mixing MaterialPropertyBlock
+    /// with <c>_BaseMap_ST</c> / SRP Batcher. This component uses the project shader
+    /// <c>TitanOrbit/SpaceBackgroundUnlit</c> and drives scrolling only via <c>_UVScroll</c> on the
+    /// instance material (no property block).
+    /// </remarks>
+    [DefaultExecutionOrder(300)]
     public class ScrollingSpaceBackground : MonoBehaviour
     {
+        /// <summary>Resources material that references the scrolling background shader (included in player builds).</summary>
+        private const string ScrollMaterialResourcePath = "Materials/TitanOrbitSpaceBackgroundScroll";
+
+        private const string ScrollShaderName = "TitanOrbit/SpaceBackgroundUnlit";
+
         [Header("References")]
         [Tooltip("Camera to follow (defaults to Main Camera or Camera on CameraController)")]
         [SerializeField] private UnityEngine.Camera targetCamera;
@@ -36,11 +47,8 @@ namespace TitanOrbit.Camera
 
         private MeshRenderer meshRenderer;
         private Material bgMaterial;
-        private MaterialPropertyBlock propertyBlock;
-        private static readonly int BaseMap = Shader.PropertyToID("_BaseMap");
-        private static readonly int BaseMapSt = Shader.PropertyToID("_BaseMap_ST");
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
-        private static readonly int MainTexSt = Shader.PropertyToID("_MainTex_ST");
+        private static readonly int UVScroll = Shader.PropertyToID("_UVScroll");
 
         private void Awake()
         {
@@ -91,7 +99,6 @@ namespace TitanOrbit.Camera
         {
             if (meshRenderer != null) return;
 
-            // Load default texture if none assigned
             if (spaceTexture == null)
             {
                 spaceTexture = Resources.Load<Texture2D>("DinV_SpaceBackground");
@@ -110,30 +117,33 @@ namespace TitanOrbit.Camera
                 return;
             }
 
-            // Force Repeat wrap mode - fixes smearing when DinV textures use Clamp (wrapU: 1)
-            spaceTexture.wrapModeU = TextureWrapMode.Repeat;
-            spaceTexture.wrapModeV = TextureWrapMode.Repeat;
+            TrySetTextureRepeatWrap(spaceTexture);
 
-            Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit")
-                ?? Shader.Find("Unlit/Texture")
-                ?? Shader.Find("Sprites/Default");
-            if (unlitShader == null)
+            Material template = Resources.Load<Material>(ScrollMaterialResourcePath);
+            if (template != null)
+                bgMaterial = new Material(template);
+            else
             {
-                Debug.LogError("ScrollingSpaceBackground: Could not find a suitable shader.");
-                return;
+                Shader scrollShader = Shader.Find(ScrollShaderName);
+                if (scrollShader == null)
+                {
+                    Debug.LogError(
+                        "ScrollingSpaceBackground: Missing Resources/" + ScrollMaterialResourcePath +
+                        " and shader \"" + ScrollShaderName + "\" was not found. Add the Resources material.");
+                    return;
+                }
+
+                bgMaterial = new Material(scrollShader);
             }
 
-            bgMaterial = new Material(unlitShader);
-            ApplyTextureToMaterial(bgMaterial, spaceTexture);
-            ApplyTextureScaleOffsetToMaterial(bgMaterial, new Vector4(textureTiling, textureTiling, 0f, 0f));
-            bgMaterial.renderQueue = 1000; // Render behind most objects
+            ApplyMainTexture(bgMaterial, spaceTexture);
+            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, 0f, 0f));
+            bgMaterial.renderQueue = 1000;
 
-            // Create quad as child - will follow camera XZ in LateUpdate
             GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "SpaceBackgroundQuad";
             quad.transform.SetParent(transform);
 
-            // Horizontal plane (XZ) facing up for top-down camera
             quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             float orthoSize = targetCamera.orthographicSize;
             float aspect = targetCamera.aspect > 0.01f ? targetCamera.aspect : (float)Screen.width / Mathf.Max(1, Screen.height);
@@ -142,15 +152,13 @@ namespace TitanOrbit.Camera
             float quadSize = Mathf.Max(visibleWidth, visibleHeight) * sizeMargin;
             quad.transform.localScale = new Vector3(quadSize, quadSize, 1f);
 
-            Object.Destroy(quad.GetComponent<Collider>()); // No physics needed
+            Object.Destroy(quad.GetComponent<Collider>());
 
             meshRenderer = quad.GetComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = bgMaterial;
+            meshRenderer.SetPropertyBlock(null);
             meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             meshRenderer.receiveShadows = false;
-
-            propertyBlock = new MaterialPropertyBlock();
-            PushScrollToRenderer(new Vector4(textureTiling, textureTiling, 0f, 0f));
         }
 
         private void LateUpdate()
@@ -163,71 +171,42 @@ namespace TitanOrbit.Camera
                 EnsureBackgroundQuad();
             if (bgMaterial == null) return;
 
-            // Follow camera XZ so background stays centered, place below game (Y negative)
             Vector3 camPos = targetCamera.transform.position;
             transform.position = new Vector3(camPos.x, -depthOffset, camPos.z);
 
-            // Scroll texture based on world position - creates parallax as ship flies
             float offsetX = camPos.x * scrollScale;
             float offsetZ = camPos.z * scrollScale;
-            var st = new Vector4(textureTiling, textureTiling, offsetX, offsetZ);
-            ApplyTextureScaleOffsetToMaterial(bgMaterial, st);
-            PushScrollToRenderer(st);
+            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
         }
 
-        private void PushScrollToRenderer(Vector4 tilingOffsetXy)
-        {
-            if (meshRenderer == null || propertyBlock == null || spaceTexture == null) return;
-
-            if (bgMaterial != null && bgMaterial.HasProperty(BaseMap))
-                propertyBlock.SetTexture(BaseMap, spaceTexture);
-            if (bgMaterial != null && bgMaterial.HasProperty(MainTex))
-                propertyBlock.SetTexture(MainTex, spaceTexture);
-            propertyBlock.SetVector(BaseMapSt, tilingOffsetXy);
-            propertyBlock.SetVector(MainTexSt, tilingOffsetXy);
-            meshRenderer.SetPropertyBlock(propertyBlock);
-        }
-
-        private static void ApplyTextureToMaterial(Material m, Texture2D tex)
+        private static void ApplyMainTexture(Material m, Texture2D tex)
         {
             if (m == null || tex == null) return;
             m.mainTexture = tex;
-            if (m.HasProperty(BaseMap)) m.SetTexture(BaseMap, tex);
-            if (m.HasProperty(MainTex)) m.SetTexture(MainTex, tex);
-        }
-
-        private static void ApplyTextureScaleOffsetToMaterial(Material m, Vector4 tilingOffsetXy)
-        {
-            if (m == null) return;
-            var scale = new Vector2(tilingOffsetXy.x, tilingOffsetXy.y);
-            var offset = new Vector2(tilingOffsetXy.z, tilingOffsetXy.w);
-
-            if (m.HasProperty(BaseMap))
-            {
-                m.SetTextureScale("_BaseMap", scale);
-                m.SetTextureOffset("_BaseMap", offset);
-            }
-
             if (m.HasProperty(MainTex))
-            {
-                m.SetTextureScale("_MainTex", scale);
-                m.SetTextureOffset("_MainTex", offset);
-            }
-
-            if (m.HasProperty(BaseMapSt)) m.SetVector(BaseMapSt, tilingOffsetXy);
-            if (m.HasProperty(MainTexSt)) m.SetVector(MainTexSt, tilingOffsetXy);
-
-            if (m.mainTexture != null)
-            {
-                m.mainTextureScale = scale;
-                m.mainTextureOffset = offset;
-            }
+                m.SetTexture(MainTex, tex);
         }
 
         private void OnDestroy()
         {
             if (bgMaterial != null)
                 Object.Destroy(bgMaterial);
+        }
+
+        private static void TrySetTextureRepeatWrap(Texture2D tex)
+        {
+            if (tex == null) return;
+            try
+            {
+                tex.wrapModeU = TextureWrapMode.Repeat;
+                tex.wrapModeV = TextureWrapMode.Repeat;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning(
+                    "ScrollingSpaceBackground: Could not set texture wrap to Repeat at runtime; ensure the texture import uses Repeat wrap. " +
+                    e.Message);
+            }
         }
 
         /// <summary>
