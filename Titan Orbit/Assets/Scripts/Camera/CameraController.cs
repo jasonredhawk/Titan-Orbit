@@ -238,6 +238,16 @@ namespace TitanOrbit.Camera
             rammingShakeDrive = Mathf.Clamp01(amount01);
         }
 
+        /// <summary>
+        /// Hides the starfield while the map loads / team menu uses the zoomed-out camera (avoids a tiny quad at extreme ortho size).
+        /// Call with <c>false</c> when releasing to normal ship follow.
+        /// </summary>
+        public void SetSpaceBackgroundHiddenForLoadingState(bool hidden)
+        {
+            if (spaceBackground != null)
+                spaceBackground.SetTemporarilyHidden(hidden);
+        }
+
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;

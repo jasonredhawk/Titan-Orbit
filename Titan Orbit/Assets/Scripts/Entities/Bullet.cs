@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
@@ -69,6 +70,8 @@ namespace TitanOrbit.Entities
         // Audio tuning inputs for clients (muzzle/projectile/impact particle sound pitch).
         private NetworkVariable<float> syncedBulletSpeed = new NetworkVariable<float>(0f);
         private NetworkVariable<float> syncedBulletDamage = new NetworkVariable<float>(0f);
+        /// <summary>Planar velocity from server physics; used on remote clients to extrapolate visuals past network delay.</summary>
+        private NetworkVariable<Vector3> syncedPlanarVelocity = new NetworkVariable<Vector3>();
         /// <summary>When >= 0, use CombatSystem.GetBulletPrefabFromBank(this) for visual instead of bulletVisualPrefab. Used when spawning via shell.</summary>
         private NetworkVariable<int> visualPrefabBankIndex = new NetworkVariable<int>(-1);
         private float cachedVisualScaleMultiplier = 1f;
@@ -89,6 +92,33 @@ namespace TitanOrbit.Entities
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
+
+        /// <summary>
+        /// World-space offset for bullet visuals on remote clients: compensates for NetworkTransform delay + interpolation.
+        /// Host/server does not apply this (authoritative simulation is already current).
+        /// </summary>
+        public Vector3 GetClientVisualExtrapolationOffset()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
+                return Vector3.zero;
+
+            Vector3 v = syncedPlanarVelocity.Value;
+            v.y = 0f;
+            if (v.sqrMagnitude < 0.0001f)
+                return Vector3.zero;
+
+            var transport = NetworkManager.Singleton.NetworkConfig?.NetworkTransport;
+            float rttSec = 0.1f;
+            if (transport != null)
+            {
+                ulong ms = transport.GetCurrentRtt(NetworkManager.ServerClientId);
+                if (ms > 0)
+                    rttSec = ms * 0.001f;
+            }
+            rttSec = Mathf.Clamp(rttSec, 0.02f, 0.35f);
+            // Displayed transform lags server sim by roughly one-way latency; scale slightly so trails stay aligned.
+            return v * (rttSec * 0.55f);
+        }
 
         private static Color GetTeamBulletColor(TeamManager.Team team)
         {
@@ -185,7 +215,18 @@ namespace TitanOrbit.Entities
                 visualPrefabBankIndex.Value = cachedVisualPrefabBankIndex;
                 syncedBulletSpeed.Value = Mathf.Max(0f, speed);
                 syncedBulletDamage.Value = Mathf.Max(0f, damage);
+                if (rb != null)
+                {
+                    Vector3 pv = rb.linearVelocity;
+                    pv.y = 0f;
+                    syncedPlanarVelocity.Value = pv;
+                }
             }
+
+            // Fast movers: interpolation stacks delay on top of RTT for remote clients — snap to latest state instead.
+            var netTransform = GetComponent<NetworkTransform>();
+            if (netTransform != null)
+                netTransform.Interpolate = false;
 
             // Lock Y position to 0
             Vector3 pos = transform.position;

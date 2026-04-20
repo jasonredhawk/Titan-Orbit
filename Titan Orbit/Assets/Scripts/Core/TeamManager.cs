@@ -82,7 +82,12 @@ namespace TitanOrbit.Core
         {
             if (team == Team.None) return false;
             int ord = (int)team;
-            return ord >= 1 && ord <= activeTeamCount.Value;
+            // activeTeamCount can lag or be unset if SetActiveTeamCountFromServer missed during map gen; home worlds are authoritative.
+            int maxOrd = activeTeamCount.Value;
+            if (HomePlanet.AllHomePlanets != null && HomePlanet.AllHomePlanets.Count > 0)
+                maxOrd = Mathf.Max(maxOrd, HomePlanet.AllHomePlanets.Count);
+            maxOrd = Mathf.Clamp(maxOrd, 2, 5);
+            return ord >= 1 && ord <= maxOrd;
         }
 
         private void Awake()
@@ -200,6 +205,8 @@ namespace TitanOrbit.Core
             if (nm == null || nm.SpawnManager == null) return null;
 
             NetworkObject playerObj = nm.SpawnManager.GetPlayerNetworkObject(clientId);
+            if (playerObj == null && nm.ConnectedClients.TryGetValue(clientId, out var netClient) && netClient != null)
+                playerObj = netClient.PlayerObject;
             if (playerObj != null)
             {
                 Starship s = TryStarshipFromNetworkObject(playerObj);

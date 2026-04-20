@@ -1253,7 +1253,8 @@ namespace TitanOrbit.Networking
         [ClientRpc]
         private void NotifyLocalClientTeamAssignmentClientRpc(ulong clientId, TeamManager.Team assignedTeam, bool requestGranted, string failMessage)
         {
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClientId != clientId)
+            var nm = ResolveNetworkManagerForGameplay();
+            if (nm == null || nm.LocalClientId != clientId)
                 return;
             OnTeamAssignmentResult(assignedTeam, requestGranted, failMessage ?? "");
         }

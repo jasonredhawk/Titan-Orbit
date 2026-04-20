@@ -567,6 +567,7 @@ namespace TitanOrbit.Generation
             }
 
             loadingProgress.Value = 1f;
+            SyncTeamManagerActiveTeamCountFromGeneratedHomes();
             loadingComplete.Value = true;
             int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
             int plannedAsteroids = asteroidPrefab != null ? numberOfAsteroidsThisMap : 0;
@@ -600,10 +601,21 @@ namespace TitanOrbit.Generation
 
             GenerateHomePlanets();
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - after home planets");
+            SyncTeamManagerActiveTeamCountFromGeneratedHomes();
             GenerateNeutralPlanets();
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - after neutral planets");
             GenerateAsteroids();
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - after asteroids");
+        }
+
+        /// <summary>Aligns <see cref="TeamManager"/> active team count with spawned home worlds (fixes missed SetActiveTeamCount when TeamManager.Instance was null during generation).</summary>
+        private void SyncTeamManagerActiveTeamCountFromGeneratedHomes()
+        {
+            if (TeamManager.Instance == null) return;
+            int n = Mathf.Clamp(homePlanetCountThisMap, MinSupportedTeams, MaxSupportedTeams);
+            if (HomePlanet.AllHomePlanets != null && HomePlanet.AllHomePlanets.Count > 0)
+                n = Mathf.Clamp(HomePlanet.AllHomePlanets.Count, MinSupportedTeams, MaxSupportedTeams);
+            TeamManager.Instance.SetActiveTeamCountFromServer(n);
         }
 
         private void GenerateHomePlanets()

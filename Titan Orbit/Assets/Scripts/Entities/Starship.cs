@@ -1213,7 +1213,23 @@ namespace TitanOrbit.Entities
                 }
             }
 
+            // Team is server-authored; hull materials are applied on server in AssignTeamAndStartInOrbit. Owning client must
+            // refresh when shipTeam replicates (otherwise local player stays neutral while remotes see correct team color).
+            shipTeam.OnValueChanged += OnShipTeamValueChanged;
+            ApplyHullIdentityColor();
+
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
+        }
+
+        private void OnShipTeamValueChanged(TeamManager.Team previous, TeamManager.Team current)
+        {
+            ApplyHullIdentityColor();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            shipTeam.OnValueChanged -= OnShipTeamValueChanged;
+            base.OnNetworkDespawn();
         }
 
         /// <summary>Server only: called by NetworkGameManager when team is assigned (after client connect). Sets team and starts in orbit.</summary>

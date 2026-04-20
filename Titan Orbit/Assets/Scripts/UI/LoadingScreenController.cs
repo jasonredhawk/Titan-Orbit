@@ -179,7 +179,7 @@ namespace TitanOrbit.UI
             RefreshLoadingCameraFromToroidalMap();
 
             var mapGen = FindFirstObjectByType<MapGenerator>();
-            var nm = NetworkManager.Singleton;
+            var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
             bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
             bool netcodeListening = NetworkGameManager.IsNetcodeTransportReadyForGameplay(nm);
 
@@ -292,7 +292,7 @@ namespace TitanOrbit.UI
         public void ShowLoading()
         {
             teamMenuShownAfterLoad = false;
-            var nm = NetworkManager.Singleton;
+            var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
             bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
             joinPlaybackProgress = 0f;
             joinPlaybackComplete = !pureClient;
@@ -407,9 +407,10 @@ namespace TitanOrbit.UI
             float waitStart = Time.realtimeSinceStartup;
             while (playerTransform == null && Time.realtimeSinceStartup - waitStart < maxWaitSeconds)
             {
-                if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
+                var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
+                if (nm != null && nm.SpawnManager != null)
                 {
-                    var localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
+                    var localPlayer = nm.SpawnManager.GetLocalPlayerObject();
                     if (localPlayer != null)
                         playerTransform = localPlayer.transform;
                 }
@@ -438,7 +439,10 @@ namespace TitanOrbit.UI
             {
                 cameraOverridden = true;
                 if (cameraController != null)
+                {
                     cameraController.enabled = false;
+                    cameraController.SetSpaceBackgroundHiddenForLoadingState(true);
+                }
 
                 if (cam != null)
                 {
@@ -457,7 +461,10 @@ namespace TitanOrbit.UI
             {
                 cameraOverridden = false;
                 if (cameraController != null)
+                {
                     cameraController.enabled = true;
+                    cameraController.SetSpaceBackgroundHiddenForLoadingState(false);
+                }
             }
         }
 
@@ -466,7 +473,10 @@ namespace TitanOrbit.UI
             if (teamSelectTransitionRoutine != null)
                 StopCoroutine(teamSelectTransitionRoutine);
             if (cameraOverridden && cameraController != null)
+            {
                 cameraController.enabled = true;
+                cameraController.SetSpaceBackgroundHiddenForLoadingState(false);
+            }
         }
     }
 }

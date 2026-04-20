@@ -273,31 +273,20 @@ namespace TitanOrbit.UI
                     _cachedTeamShips.Add(_cachedAllShips[i]);
             }
 
-            // If selected team is empty, fall back to local player's current team so teammates are visible by default.
-            TeamManager.Team myTeam = playerShip != null ? playerShip.ShipTeam : TeamManager.Team.None;
-            if (_cachedTeamShips.Count == 0 && myTeam != TeamManager.Team.None && myTeam != viewedTeam)
+            // Empty roster for the selected team: keep viewedTeamIndex so TAB still cycles every team
+            // (do not snap back to the local player's team or merge into an "all teams" view).
+            if (_cachedTeamShips.Count == 0)
             {
-                viewedTeamIndex = TeamToIndex(myTeam);
-                int ol = ActiveTeamOrderLength;
-                viewedTeam = AllTeamsOrder[Mathf.Clamp(viewedTeamIndex, 0, ol - 1)];
-                _cachedTeamShips.Clear();
-                for (int i = 0; i < _cachedAllShips.Count; i++)
-                {
-                    if (_cachedAllShips[i].ShipTeam == viewedTeam)
-                        _cachedTeamShips.Add(_cachedAllShips[i]);
-                }
+                for (int i = 0; i < leaderboardRows.Count; i++)
+                    leaderboardRows[i].root.SetActive(false);
+                if (leaderboardEmptyText != null)
+                    leaderboardEmptyText.gameObject.SetActive(true);
+                leaderboardTitleText.text = $"{viewedTeam} Leaderboard   [TAB]";
+                LayoutLeaderboardRows(0);
+                return;
             }
 
-            bool showingAllTeams = _cachedTeamShips.Count == 0;
-            if (showingAllTeams)
-            {
-                _cachedTeamShips.AddRange(_cachedAllShips);
-                leaderboardTitleText.text = "All Teams Leaderboard   [TAB]";
-            }
-            else
-            {
-                leaderboardTitleText.text = $"{viewedTeam} Leaderboard   [TAB]";
-            }
+            leaderboardTitleText.text = $"{viewedTeam} Leaderboard   [TAB]";
 
             _cachedRows.Clear();
             for (int i = 0; i < _cachedTeamShips.Count; i++)

@@ -2,6 +2,7 @@ using UnityEngine;
 using TitanOrbit.Camera;
 using TitanOrbit.Generation;
 using TitanOrbit.Networking;
+using Unity.Netcode;
 
 namespace TitanOrbit.Entities
 {
@@ -196,13 +197,21 @@ namespace TitanOrbit.Entities
                     if (c != visualChild && c.parent == transform)
                         c.SetParent(visualChild, true);
                 }
+                var bullet = GetComponent<Bullet>();
+                bool isBullet = bullet != null;
+                Vector3 bulletExtrapolation = Vector3.zero;
+                if (isBullet && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+                    bulletExtrapolation = bullet.GetClientVisualExtrapolationOffset();
+                displayPos += bulletExtrapolation;
                 // Mobile: toroidal display offset can place bullet visuals off-screen if Camera.main differs from the gameplay camera.
                 // Keep visuals parented at local origin so they follow the network transform (same as desktop when toroidal is wrong).
-                bool isBullet = GetComponent<Bullet>() != null;
                 if (isBullet && Application.isMobilePlatform)
                 {
                     visualChild.localPosition = Vector3.zero;
                     visualChild.localRotation = Quaternion.identity;
+                    // Still apply client extrapolation (visual is tied to root; offset slightly along velocity for remote players).
+                    if (bulletExtrapolation.sqrMagnitude > 0.0001f)
+                        visualChild.position = transform.position + bulletExtrapolation;
                 }
                 else
                 {
