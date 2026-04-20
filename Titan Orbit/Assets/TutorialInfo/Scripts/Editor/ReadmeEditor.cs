@@ -18,7 +18,10 @@ public class ReadmeEditor : Editor
 
     static ReadmeEditor()
     {
-        EditorApplication.delayCall += SelectReadmeAutomatically;
+        // Defer past the first EditorApplication.delayCall batch. Competing callbacks (Package Manager UI,
+        // third-party InitializeOnLoad) on the same tick can trigger Unity 6000.x "ScriptableSingleton already exists"
+        // noise when WindowLayout / readme runs alongside internal Package Manager setup.
+        EditorApplication.delayCall += () => EditorApplication.delayCall += SelectReadmeAutomatically;
     }
 
     static void RemoveTutorial()

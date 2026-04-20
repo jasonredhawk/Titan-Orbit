@@ -3669,7 +3669,7 @@ MonoBehaviour:
   disableClassicHudWhileMobileActive: 0
   shootZoneExclusions:
   - {fileID: 393984110}
-  forceMobileControls: 1
+  forceMobileControls: 0
   joystickRadius: 100
 --- !u!114 &651054946
 MonoBehaviour:
@@ -6442,6 +6442,8 @@ MonoBehaviour:
   lineFaintColor: {r: 1, g: 1, b: 1, a: 0.4}
   ringTextureSize: 128
   ringStrokePx: 4
+  anchorVisualSmoothing: 14
+  fingerVisualSmoothing: 22
 --- !u!1 &996062146
 GameObject:
   m_ObjectHideFlags: 0
