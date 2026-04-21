@@ -1,13 +1,11 @@
 using UnityEngine;
-using UnityEngine.Advertisements;
 
 namespace TitanOrbit.Services
 {
     /// <summary>
-    /// Unity Ads initialization and hooks for Grow / User Acquisition workflows.
-    /// Set platform Game IDs from the Unity Ads dashboard (must match UA / MMP configuration). MMP SDKs (AppsFlyer, Adjust, etc.) are integrated separately per partner docs.
+    /// Placeholder for Grow / UA hooks. Unity Ads (<c>com.unity.ads</c>) is not included in this project so Android resolves do not pull the unity-ads AAR.
     /// </summary>
-    public class TitanOrbitGrowIntegration : MonoBehaviour, IUnityAdsInitializationListener
+    public class TitanOrbitGrowIntegration : MonoBehaviour
     {
         [SerializeField] bool initializeOnAwake = true;
         [SerializeField] bool testMode = true;
@@ -22,9 +20,9 @@ namespace TitanOrbit.Services
                 TryInitializeAdvertisement();
         }
 
-        /// <summary>Initializes the Unity Ads SDK when a Game ID is set for the current platform.</summary>
         public void TryInitializeAdvertisement()
         {
+            IsAdvertisementInitialized = false;
             if (!TitanOrbitAdsGate.ShouldShowAds)
             {
                 Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (remove-ads entitlement active).");
@@ -44,22 +42,9 @@ namespace TitanOrbit.Services
                 return;
             }
 
-            Advertisement.Initialize(gameId.Trim(), testMode, this);
+            Debug.Log("[TitanOrbitGrowIntegration] Ads SDK not integrated (Unity Ads package removed); Game ID ignored until package is restored.");
         }
 
-        public void OnInitializationComplete()
-        {
-            IsAdvertisementInitialized = true;
-            Debug.Log("[TitanOrbitGrowIntegration] Unity Ads initialized.");
-        }
-
-        public void OnInitializationFailed(UnityAdsInitializationError error, string message)
-        {
-            IsAdvertisementInitialized = false;
-            Debug.LogWarning("[TitanOrbitGrowIntegration] Unity Ads init failed: " + error + " — " + message);
-        }
-
-        /// <summary>Forward key gameplay events to your MMP or Analytics for UA attribution (configure mapping in partner dashboards).</summary>
         public static void LogUaFunnelEvent(string eventName, string parameterJson = null)
         {
             if (string.IsNullOrEmpty(eventName))

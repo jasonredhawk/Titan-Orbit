@@ -1,20 +1,14 @@
 using UnityEngine;
-using UnityEngine.Advertisements;
 
 namespace TitanOrbit.Services
 {
     /// <summary>
-    /// Single entry point for deciding whether ads may run. All future <see cref="Advertisement.Show"/> calls should go through here.
+    /// Entry point for ad eligibility (remove-ads IAP). Showing interstitials is a no-op while Unity Ads is not in the project.
     /// </summary>
     public static class TitanOrbitAdsGate
     {
-        /// <summary>True when the player has not purchased remove-ads (or local entitlement is unknown).</summary>
         public static bool ShouldShowAds => !TitanOrbitEntitlements.IsRemoveAdsOwned;
 
-        /// <summary>
-        /// Use for interstitial/rewarded placements. Returns false when ads are disabled (remove-ads owned).
-        /// When you add real placements, call <c>Advertisement.Show(placementId, listener)</c> only after this returns true.
-        /// </summary>
         public static bool TryBeginInterstitial(string placementId, out string skipReason)
         {
             skipReason = null;
@@ -33,15 +27,15 @@ namespace TitanOrbit.Services
             return true;
         }
 
-        /// <summary>Optional helper when you already have a listener instance.</summary>
-        public static bool TryShowInterstitial(string placementId, IUnityAdsShowListener listener)
+        public static bool TryShowInterstitial(string placementId)
         {
             if (!TryBeginInterstitial(placementId, out _))
+            {
                 return false;
-            if (listener == null)
-                return false;
-            Advertisement.Show(placementId, listener);
-            return true;
+            }
+
+            Debug.Log("[TitanOrbitAdsGate] Interstitial not shown (Unity Ads package removed).");
+            return false;
         }
     }
 }

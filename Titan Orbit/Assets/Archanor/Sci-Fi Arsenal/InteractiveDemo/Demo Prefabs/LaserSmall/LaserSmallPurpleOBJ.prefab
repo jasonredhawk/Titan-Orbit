@@ -13,8 +13,6 @@ GameObject:
   - component: {fileID: 13516930}
   - component: {fileID: 5409528}
   - component: {fileID: 11449204}
-  - component: {fileID: 5737901547282483039}
-  - component: {fileID: 167577162316471490}
   m_Layer: 0
   m_Name: LaserSmallPurpleOBJ
   m_TagString: Untagged
@@ -73,10 +71,10 @@ Rigidbody:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 128200}
-  serializedVersion: 5
+  serializedVersion: 4
   m_Mass: 1
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
+  m_Drag: 0
+  m_AngularDrag: 0.05
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
@@ -111,55 +109,3 @@ MonoBehaviour:
   trailParticles: []
   colliderRadius: 0.15
   collideOffset: 0.25
---- !u!114 &5737901547282483039
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 128200}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 879857f5d94d45d428cb63592c60512d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Bullet
-  speed: 20
-  damage: 10
-  lifetime: 2
-  maxDistance: 30
-  minTravelBeforeHit: 0.5
-  ownerTeam: 0
-  bulletVisualPrefab: {fileID: 0}
-  bulletVisualPrefabOptions: []
-  proceduralBulletColor: {r: 0.75, g: 0.88, b: 1, a: 1}
-  bulletVisualScale: 1.2
-  defaultShape: 0
-  coreSize: 0.5
-  tailLength: 0.8
-  tailWidth: 0.12
-  tailFade: 0.7
-  proceduralBulletMaterial: {fileID: 0}
-  impactEffectPrefab: {fileID: 0}
-  impactEffectDuration: 3
-  impactEffectScale: 0.5
---- !u!114 &167577162316471490
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 128200}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 0
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 1
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
