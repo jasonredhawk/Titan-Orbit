@@ -1281,7 +1281,7 @@ MonoBehaviour:
   spaceTexture: {fileID: 2800000, guid: ddcac1fac1f5c8943a30c2ef6b724062, type: 3}
   scrollScale: 0.04
   textureTiling: 2
-  depthOffset: 150
+  depthOffset: 4.5
   sizeMargin: 1.15
 --- !u!4 &252336436
 Transform:
@@ -4109,8 +4109,8 @@ Camera:
     height: 1
   near clip plane: 0.3
   far clip plane: 1000
-  field of view: 60
-  orthographic: 1
+  field of view: 45
+  orthographic: 0
   orthographic size: 12
   m_Depth: 0
   m_CullingMask:
