@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.Purchasing;
 using TMPro;
 using Unity.Netcode;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Networking;
 using TitanOrbit.Services;
 using System.Threading.Tasks;
@@ -23,7 +24,7 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject teamSelectionPanel;
         [SerializeField] private LoadingScreenController loadingScreenController;
         [SerializeField] private Button playButton;
-        [SerializeField] private Button hostOnlineButton;
+        [SerializeField] private Button hostOnlineButton; // wired as dedicated quick join (Relay client only)
         [SerializeField] private Button joinOnlineButton;
         [SerializeField] private Button teamAButton;
         [SerializeField] private Button teamBButton;
@@ -66,6 +67,8 @@ namespace TitanOrbit.UI
         private Button storeRestorePurchasesButton;
         private Vector2 _lastMainMenuPanelSize = Vector2.negativeInfinity;
         private string pendingTeamJoinError;
+        /// <summary>Runtime-created control; hosts a Relay+Lobby match in the browser (not on GCE).</summary>
+        private Button _webGlBrowserHostButton;
         /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
         private bool deferTeamPanelUntilNetworkReady;
 
@@ -91,7 +94,7 @@ namespace TitanOrbit.UI
             EnsureStoreScreenUi();
 
             if (hostOnlineButton != null)
-                hostOnlineButton.onClick.AddListener(OnHostOnlineClicked);
+                hostOnlineButton.onClick.AddListener(OnQuickJoinDedicatedClicked);
 
             if (joinOnlineButton != null)
             {
@@ -667,15 +670,13 @@ namespace TitanOrbit.UI
             NetworkGameManager.RequestTeamFromLocalPlayer(team);
         }
 
-        private async void OnHostOnlineClicked()
+        private async void OnQuickJoinDedicatedClicked()
         {
             if (NetworkGameManager.Instance == null) return;
             if (hostOnlineButton != null) hostOnlineButton.interactable = false;
             try
             {
                 string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
-                string lobbyName = string.IsNullOrEmpty(pname) ? null : pname + "'s game";
-                // Must run before StartHost — PlayerDisplayNames reads LocalPlayerDisplayName on network spawn (same frame as StartHost).
                 if (!string.IsNullOrEmpty(pname))
                 {
                     PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
@@ -685,28 +686,77 @@ namespace TitanOrbit.UI
                     ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                     : pname;
 
-                string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync(lobbyName);
-                if (!string.IsNullOrEmpty(joinCode))
+                bool ok = await NetworkGameManager.Instance.PlayWebGLJoinAsync();
+                if (ok)
                 {
                     if (joinCodeDisplayText != null)
                     {
                         joinCodeDisplayText.gameObject.SetActive(true);
-                        joinCodeDisplayText.text = "Your match appears in Open matches below.\nRelay code: " + joinCode;
-                    }
-                    else
-                    {
-                        Debug.Log("Host started. Listed in lobby browser. Relay code: " + joinCode);
+                        joinCodeDisplayText.text = "Joined a dedicated match.\nPick a team when the match screen appears.";
                     }
                     ShowLobby();
                 }
                 else
                 {
-                    Debug.LogError("Failed to start host with Relay. Check console and Unity Services setup.");
+                    if (joinCodeDisplayText != null)
+                    {
+                        joinCodeDisplayText.gameObject.SetActive(true);
+                        joinCodeDisplayText.text = "No open dedicated lobby found. Ensure the headless server is running on Google Cloud, then refresh Open matches.";
+                    }
+                    Debug.LogError(
+                        "Quick join failed: no matching lobby or Relay join failed. " +
+                        "Confirm the Linux headless service is running and Player.log shows a lobby created; " +
+                        "use \"Host match (browser)\" for a temporary player-hosted room, or pick a row under Open matches.");
                 }
             }
             finally
             {
                 if (hostOnlineButton != null) hostOnlineButton.interactable = true;
+            }
+        }
+
+        private async void OnWebGlBrowserHostRelayClicked()
+        {
+            if (NetworkGameManager.Instance == null)
+                return;
+            if (_webGlBrowserHostButton != null)
+                _webGlBrowserHostButton.interactable = false;
+            try
+            {
+                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
+                if (!string.IsNullOrEmpty(pname))
+                {
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
+                    PlayerPrefs.Save();
+                }
+
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : pname;
+
+                bool ok = await NetworkGameManager.Instance.PlayWebGLHostRelayMatchAsync();
+                if (ok)
+                {
+                    if (joinCodeDisplayText != null)
+                    {
+                        joinCodeDisplayText.gameObject.SetActive(true);
+                        joinCodeDisplayText.text =
+                            "Hosting from this browser (Relay). Other players can Quick join or pick this room under Open matches.\n" +
+                            "This does not run on your Google Cloud VM.";
+                    }
+
+                    ShowLobby();
+                }
+                else
+                {
+                    Debug.LogError(
+                        "Browser host failed. Check Unity Services (same project as the build) and the Unity console for Relay/Lobby errors.");
+                }
+            }
+            finally
+            {
+                if (_webGlBrowserHostButton != null)
+                    _webGlBrowserHostButton.interactable = true;
             }
         }
 
@@ -775,6 +825,10 @@ namespace TitanOrbit.UI
 
         private async Task RefreshLobbyListAsync()
         {
+            // #region agent log
+            F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
+                "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
+            // #endregion
             if (NetworkGameManager.Instance == null)
                 return;
 
@@ -790,6 +844,10 @@ namespace TitanOrbit.UI
                 selectedLobbyRowIndex = -1;
                 cachedLobbySummaries.Clear();
                 cachedLobbySummaries.AddRange(await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40));
+                // #region agent log
+                F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "after_query",
+                    "{\"cachedCount\":" + cachedLobbySummaries.Count + ",\"latestOnlyFilter\":" + (latestOnlyFilter ? "true" : "false") + "}");
+                // #endregion
                 RenderLobbyList();
             }
             finally
@@ -983,9 +1041,25 @@ namespace TitanOrbit.UI
             bodyV.childForceExpandHeight = false;
 
             if (hostOnlineButton == null)
-                hostOnlineButton = CreateMenuButton("CreateMatchButton", "Create match", Vector2.zero, new Vector2(360f, 48f), lobbyScreenBodyRect, isPrimary: true);
+                hostOnlineButton = CreateMenuButton("QuickJoinDedicatedButton", "Quick join", Vector2.zero, new Vector2(360f, 48f), lobbyScreenBodyRect, isPrimary: true);
             else
                 hostOnlineButton.transform.SetParent(lobbyScreenBodyRect, false);
+
+            if (_webGlBrowserHostButton == null)
+            {
+                _webGlBrowserHostButton = CreateMenuButton(
+                    "WebGlBrowserHostButton",
+                    "Host match (browser)",
+                    Vector2.zero,
+                    new Vector2(360f, 48f),
+                    lobbyScreenBodyRect,
+                    isPrimary: false);
+                _webGlBrowserHostButton.onClick.AddListener(OnWebGlBrowserHostRelayClicked);
+            }
+            else
+            {
+                _webGlBrowserHostButton.transform.SetParent(lobbyScreenBodyRect, false);
+            }
 
             var joinRow = new GameObject("JoinRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             joinRow.transform.SetParent(lobbyScreenBodyRect, false);

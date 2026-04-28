@@ -4,26 +4,36 @@ setlocal
 REM Upload Unity Linux headless build folder to Google Compute Engine VM.
 REM Usage:
 REM   upload_linux_build_to_gce.bat
+REM   upload_linux_build_to_gce.bat useIap
 REM   upload_linux_build_to_gce.bat "C:\path\to\build-folder"
 REM   upload_linux_build_to_gce.bat "C:\path\to\build-folder" your-gcp-project-id
+REM   upload_linux_build_to_gce.bat "C:\path\to\build-folder" your-gcp-project-id useIap
+REM If SSH times out (home ISP, office firewall, VM without public IP), add useIap as shown or as the only argument.
 
 set "INSTANCE=titan-orbit-compute-engine"
 set "ZONE=us-central1-a"
-set "SOURCE_DIR=C:\Users\jason\Documents\Titan Orbit\Downloads\TitanOrbitLinux1"
+REM Default: same folder as TitanOrbit → Build → Headless Server (Linux — Google Cloud) in TitanOrbitBuildAutomation.cs
+for %%I in ("%~dp0..\..") do set "REPO_ROOT=%%~fI"
+set "SOURCE_DIR=%REPO_ROOT%\BuildOutput\Server\TitanOrbitLinux1"
 set "REMOTE_USER=jason"
 set "TARGET_DIR=/home/jason/titanorbit-server"
-set "PROJECT_ID="
+REM Titan Orbit GCP project (do not rely on gcloud config — may point at another repo).
+set "PROJECT_ID=titan-orbit"
 set "SOURCE_BASENAME="
 set "SOURCE_PARENT="
 set "INSTANCE_TARGET="
 set "ARCHIVE_PATH="
 set "USE_IAP="
 
-if not "%~1"=="" (
-  set "SOURCE_DIR=%~1"
+if /i "%~1"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
+) else (
+  if not "%~1"=="" set "SOURCE_DIR=%~1"
 )
-if not "%~2"=="" (
-  set "PROJECT_ID=%~2"
+if /i "%~2"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
+) else (
+  if not "%~2"=="" set "PROJECT_ID=%~2"
 )
 if /i "%~3"=="useIap" (
   set "USE_IAP=--tunnel-through-iap"
@@ -45,16 +55,6 @@ where tar >nul 2>&1
 if errorlevel 1 (
   echo ERROR: tar was not found in PATH.
   echo Install tar or run from Windows 10/11 shell with built-in tar support.
-  exit /b 1
-)
-
-if "%PROJECT_ID%"=="" (
-  for /f "usebackq delims=" %%P in (`call gcloud config get-value project 2^>nul`) do set "PROJECT_ID=%%P"
-)
-if "%PROJECT_ID%"=="" (
-  echo ERROR: Could not determine GCP project id.
-  echo Pass project id as 2nd arg, e.g.:
-  echo   upload_linux_build_to_gce.bat "%SOURCE_DIR%" your-gcp-project-id
   exit /b 1
 )
 
@@ -94,6 +94,7 @@ echo Preparing remote target directory...
 call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'mkdir -p %TARGET_DIR%'"
 if errorlevel 1 (
   echo ERROR: Failed to create target directory on VM.
+  call :SshUploadFailedHints
   exit /b 1
 )
 
@@ -103,6 +104,7 @@ call gcloud --project "%PROJECT_ID%" compute scp %USE_IAP% "%ARCHIVE_PATH%" "%IN
 if errorlevel 1 (
   echo.
   echo Upload failed while copying archive.
+  call :SshUploadFailedHints
   exit /b 1
 )
 echo Extracting archive on VM...
@@ -110,6 +112,7 @@ call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --z
 if errorlevel 1 (
   echo.
   echo Upload failed while extracting archive on VM.
+  call :SshUploadFailedHints
   exit /b 1
 )
 echo Verifying remote upload...
@@ -120,4 +123,17 @@ echo.
 echo Upload complete.
 echo Next: run prepare_and_start_server_on_gce.bat to chmod and start.
 exit /b 0
+
+:SshUploadFailedHints
+echo.
+echo --- SSH failed ^(often Windows plink timeout^) ---
+echo 0. Bypass PuTTY: upload_linux_build_to_gce_openssh.bat ^(direct then auto-IAP^) or useIap for IAP-only
+echo    ^(Windows ssh.exe/scp.exe — same keys under %USERPROFILE%\.ssh\google_compute_engine^)
+echo 1. In Cloud Console -^> Compute Engine -^> VM -^> SSH button ^(browser^). If that works, use WSL gcloud
+echo    or WinSCP + %USERPROFILE%\.ssh\google_compute_engine until local plink works.
+echo 2. Confirm Linux user exists: scripts use %INSTANCE_TARGET% ^(user must exist on VM^).
+echo 3. Optional IAP:  %~nx0 useIap   or   upload_linux_build_to_gce_iap.bat
+echo    ^(If IAP shows ^"remote closed^", fix VM user / sshd / IAP IAM — see tools/gce/README.md^)
+echo 4. Exclude plink.exe from antivirus; try another network.
+goto :eof
 

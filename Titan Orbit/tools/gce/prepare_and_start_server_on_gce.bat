@@ -11,8 +11,8 @@ set "INSTANCE=titan-orbit-compute-engine"
 set "ZONE=us-central1-a"
 set "REMOTE_BASE=/home/jason/titanorbit-server"
 set "REMOTE_DIR=/home/jason/titanorbit-server/TitanOrbitLinux1"
-set "EXE_NAME=TitanOrbitServer.x86_64"
-set "PROJECT_ID="
+set "EXE_NAME="
+set "PROJECT_ID=titan-orbit"
 set "REMOTE_USER=jason"
 set "INSTANCE_TARGET="
 set "USE_IAP="
@@ -35,16 +35,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%PROJECT_ID%"=="" (
-  for /f "usebackq delims=" %%P in (`call gcloud config get-value project 2^>nul`) do set "PROJECT_ID=%%P"
-)
-if "%PROJECT_ID%"=="" (
-  echo ERROR: Could not determine GCP project id.
-  echo Pass project id as 2nd arg, e.g.:
-  echo   prepare_and_start_server_on_gce.bat %EXE_NAME% your-gcp-project-id
-  exit /b 1
-)
-
 echo Preparing remote files...
 echo Using project: %PROJECT_ID%
 call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'set -e; mkdir -p %REMOTE_BASE%; if [ ! -d %REMOTE_DIR% ]; then CANDIDATE=$(ls -d %REMOTE_BASE%/* 2>/dev/null | head -n1); if [ -n \"$CANDIDATE\" ]; then echo Auto-detected upload folder: $CANDIDATE; ln -sfn \"$CANDIDATE\" %REMOTE_DIR%; fi; fi; cd %REMOTE_DIR%; chmod +x ./*.x86_64 || true; ls -la'"
@@ -57,7 +47,7 @@ echo.
 echo Starting server in foreground (press Ctrl+C to stop)...
 echo Logs also written to %REMOTE_DIR%/Player.log (tail in another SSH session if this looks quiet).
 echo Executable: %EXE_NAME%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'cd %REMOTE_DIR% && if [ ! -f ./%EXE_NAME% ]; then EXE=$(ls *.x86_64 2>/dev/null | head -n1); if [ -z \"$EXE\" ]; then echo No .x86_64 executable found in %REMOTE_DIR%; exit 1; fi; echo Using detected executable: $EXE; else EXE=%EXE_NAME%; fi; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1'"
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --quiet --command "bash -lc 'cd %REMOTE_DIR% && if [ -f ./TitanOrbitServer.x86_64 ]; then EXE=TitanOrbitServer.x86_64; elif [ -f ./TitanOrbitServer ]; then EXE=TitanOrbitServer; elif [ %EXE_NAME%x != x ] && [ -f ./%EXE_NAME% ]; then EXE=%EXE_NAME%; else EXE=$(ls *.x86_64 2>/dev/null | head -n1); fi; if [ -z \"$EXE\" ] || [ ! -f ./$EXE ]; then echo No server binary found in %REMOTE_DIR%; ls -la; exit 1; fi; echo Using executable: $EXE; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --isLatest=1'"
 
 exit /b %errorlevel%
 

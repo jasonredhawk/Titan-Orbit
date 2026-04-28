@@ -14,6 +14,7 @@ using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 
 namespace TitanOrbit.Networking
 {
@@ -55,7 +56,7 @@ namespace TitanOrbit.Networking
                 return;
 
             Debug.Log("[DedicatedMatchServerBootstrap] AfterSceneLoad: scheduling BootAsync...");
-            _ = BootAsync();
+            _ = BootAsyncWithRetriesAsync();
         }
 
         private static int GetArgInt(string name, int defaultValue)
@@ -282,11 +283,61 @@ namespace TitanOrbit.Networking
                 Debug.Log($"[DedicatedMatchServerBootstrap] Sanitized network prefabs. Removed invalid entries: {removed}");
         }
 
-        private static async Task BootAsync()
+        /// <summary>
+        /// Retries initial match creation (UGS + Relay + Lobby + Netcode) so a VM that boots before networking is ready can still publish a lobby.
+        /// </summary>
+        private static async Task BootAsyncWithRetriesAsync()
+        {
+            EnsurePlayerPrefabSet();
+            SanitizeNetworkPrefabs();
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            {
+                Debug.LogError("[DedicatedMatchServerBootstrap] Player Prefab not set on NetworkManager.");
+                Application.Quit(1);
+                return;
+            }
+
+            int maxAttempts = GetArgInt("bootMaxAttempts", 15);
+            int delaySeconds = GetArgInt("bootRetryDelaySeconds", 5);
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    Debug.Log($"[DedicatedMatchServerBootstrap] Boot attempt {attempt}/{maxAttempts}...");
+                    await TryStartInitialMatchAsync();
+                    return;
+                }
+                catch (Exception e)
+                {
+                    // #region agent log
+                    F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.BootAsyncWithRetriesAsync", "boot_attempt_failed",
+                        "{\"attempt\":" + attempt + ",\"maxAttempts\":" + maxAttempts + ",\"exType\":\"" + e.GetType().Name + "\"}");
+                    // #endregion
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] Boot attempt " + attempt + "/" + maxAttempts + " failed: " +
+                        e.GetType().Name + ": " + e.Message);
+                    if (attempt >= maxAttempts)
+                    {
+                        Debug.LogException(e);
+                        Application.Quit(1);
+                        return;
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(1, delaySeconds)));
+                }
+            }
+        }
+
+        /// <summary>
+        /// One attempt: sign in, Relay allocation, UGS lobby, StartServer, background loops.
+        /// Dedicated Linux/Windows/Mac hosts should use <c>udp</c> (or <c>dtls</c>) to Relay; WebGL clients join the same allocation with <c>wss</c>.
+        /// </summary>
+        private static async Task TryStartInitialMatchAsync()
         {
             int maxPlayers = GetArgInt("maxPlayers", 60);
             ushort serverPort = (ushort)GetArgInt("serverPort", 7777);
-            string relayProtocol = GetArgString("relayProtocol", "wss"); // Browsers need wss.
+            string relayProtocol = GetArgString("relayProtocol", "udp");
             bool isLatest = GetArgBool("isLatest", true);
             long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 20 * 60);
             int ugsInitTimeoutMs = GetArgInt("ugsInitTimeoutMs", 120000);
@@ -294,60 +345,45 @@ namespace TitanOrbit.Networking
             int relayAllocTimeoutMs = GetArgInt("relayAllocTimeoutMs", 60000);
             int lobbyCreateTimeoutMs = GetArgInt("lobbyCreateTimeoutMs", 60000);
 
-            Debug.Log($"[DedicatedMatchServerBootstrap] BootAsync start. maxPlayers={maxPlayers} serverPort={serverPort} relayProtocol={relayProtocol} isLatest={isLatest}");
+            Debug.Log(
+                "[DedicatedMatchServerBootstrap] TryStartInitialMatchAsync. maxPlayers=" + maxPlayers +
+                " serverPort=" + serverPort + " relayProtocol=" + relayProtocol + " isLatest=" + isLatest);
 
-            EnsurePlayerPrefabSet();
-            SanitizeNetworkPrefabs();
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            if (!await EnsureUnityServicesInitializedAsync(
+                    TimeSpan.FromMilliseconds(ugsInitTimeoutMs),
+                    TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
             {
-                Debug.LogError("[DedicatedMatchServerBootstrap] Player Prefab not set on NetworkManager.");
-                Application.Quit();
-                return;
+                throw new InvalidOperationException("Cannot initialize Unity Services on server.");
             }
 
-            try
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport == null)
             {
-                if (!await EnsureUnityServicesInitializedAsync(
-                        TimeSpan.FromMilliseconds(ugsInitTimeoutMs),
-                        TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
-                {
-                    Debug.LogError("[DedicatedMatchServerBootstrap] Cannot initialize Unity Services on server.");
-                    Application.Quit();
-                    return;
-                }
+                throw new InvalidOperationException("UnityTransport not found on NetworkManager.");
+            }
 
-                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                if (transport == null)
-                {
-                    Debug.LogError("[DedicatedMatchServerBootstrap] UnityTransport not found on NetworkManager.");
-                    Application.Quit();
-                    return;
-                }
+            transport.SetConnectionData(transport.ConnectionData.Address, serverPort, transport.ConnectionData.ServerListenAddress);
 
-                // Optional: set local listen port (relay allocates its own external connectivity).
-                transport.SetConnectionData(transport.ConnectionData.Address, serverPort, transport.ConnectionData.ServerListenAddress);
+            int maxConnections = Mathf.Max(1, maxPlayers - 1);
+            Debug.Log("[DedicatedMatchServerBootstrap] Creating Relay allocation (maxConnections=" + maxConnections + ")...");
+            Allocation allocation = await WithTimeoutAsync(
+                RelayService.Instance.CreateAllocationAsync(maxConnections),
+                TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                "RelayService.CreateAllocationAsync");
+            Debug.Log("[DedicatedMatchServerBootstrap] Requesting Relay join code...");
+            string joinCode = await WithTimeoutAsync(
+                RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId),
+                TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                "RelayService.GetJoinCodeAsync");
 
-                int maxConnections = Mathf.Max(1, maxPlayers - 1);
-                Debug.Log($"[DedicatedMatchServerBootstrap] Creating Relay allocation (maxConnections={maxConnections})...");
-                Allocation allocation = await WithTimeoutAsync(
-                    RelayService.Instance.CreateAllocationAsync(maxConnections),
-                    TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
-                    "RelayService.CreateAllocationAsync");
-                Debug.Log("[DedicatedMatchServerBootstrap] Requesting Relay join code...");
-                string joinCode = await WithTimeoutAsync(
-                    RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId),
-                    TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
-                    "RelayService.GetJoinCodeAsync");
+            transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProtocol));
+            NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
-                transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
-                transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProtocol));
-                NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
-
-                // Create the UGS Lobby before starting server so clients can discover it immediately.
-                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                Debug.Log("[DedicatedMatchServerBootstrap] Creating UGS Lobby...");
-                var createdLobby = await WithTimeoutAsync(
-                    LobbyService.Instance.CreateLobbyAsync(
+            long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            Debug.Log("[DedicatedMatchServerBootstrap] Creating UGS Lobby...");
+            var createdLobby = await WithTimeoutAsync(
+                LobbyService.Instance.CreateLobbyAsync(
                     GameNames.GetRandomRoomName(),
                     maxPlayers,
                     new CreateLobbyOptions
@@ -369,35 +405,68 @@ namespace TitanOrbit.Networking
                             }
                         }
                     }),
-                    TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
-                    "LobbyService.CreateLobbyAsync");
+                TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
+                "LobbyService.CreateLobbyAsync");
 
-                Debug.Log($"[DedicatedMatchServerBootstrap] Starting server for lobby {createdLobby.Id} (isLatest={isLatest}).");
+            Debug.Log("[DedicatedMatchServerBootstrap] Starting server for lobby " + createdLobby.Id + " (isLatest=" + isLatest + ").");
 
-                // Start server-side Netcode.
-                bool started = NetworkManager.Singleton.StartServer();
-                if (!started)
-                {
-                    Debug.LogError("[DedicatedMatchServerBootstrap] StartServer failed.");
-                    Application.Quit();
-                    return;
-                }
+            // #region agent log
+            F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "lobby_created",
+                "{\"lobbyIdLen\":" + (createdLobby.Id != null ? createdLobby.Id.Length : 0) + ",\"isLatest\":" + (isLatest ? "true" : "false") + "}");
+            // #endregion
 
-                _ = HeartbeatLoopAsync(createdLobby.Id);
-                _ = RotationLoopAsync(
-                    createdLobby.Id,
-                    createdAtEpochSeconds,
-                    maxPlayers,
-                    serverPort,
-                    relayProtocol,
-                    isLatest,
-                    ageThresholdSeconds
-                );
-            }
-            catch (Exception e)
+            bool started = NetworkManager.Singleton.StartServer();
+            if (!started)
             {
-                Debug.LogException(e);
-                Application.Quit();
+                throw new InvalidOperationException("Netcode StartServer returned false.");
+            }
+
+            _ = HeartbeatLoopAsync(createdLobby.Id);
+            _ = LobbyPresenceWatchdogAsync(createdLobby.Id);
+            _ = RotationLoopAsync(
+                createdLobby.Id,
+                createdAtEpochSeconds,
+                maxPlayers,
+                serverPort,
+                relayProtocol,
+                isLatest,
+                ageThresholdSeconds
+            );
+        }
+
+        /// <summary>
+        /// If the lobby disappears (expired, deleted, heartbeat loss), exit so systemd can restart and recreate a match.
+        /// </summary>
+        private static async Task LobbyPresenceWatchdogAsync(string lobbyId)
+        {
+            int consecutiveFailures = 0;
+            const int threshold = 4;
+            var interval = TimeSpan.FromSeconds(45);
+
+            while (true)
+            {
+                await Task.Delay(interval);
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(lobbyId))
+                        continue;
+                    await LobbyService.Instance.GetLobbyAsync(lobbyId);
+                    consecutiveFailures = 0;
+                }
+                catch (Exception e)
+                {
+                    consecutiveFailures++;
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] LobbyPresenceWatchdog GetLobby failed (" + consecutiveFailures + "/" +
+                        threshold + "): " + e.Message);
+                    if (consecutiveFailures >= threshold)
+                    {
+                        Debug.LogError(
+                            "[DedicatedMatchServerBootstrap] Lobby no longer reachable; exiting so the service can restart with a new lobby.");
+                        Application.Quit(1);
+                        return;
+                    }
+                }
             }
         }
 
@@ -438,9 +507,9 @@ namespace TitanOrbit.Networking
             {
                 try
                 {
-                    // Player count on the host server includes the server itself.
                     int connectedClients = NetworkManager.Singleton != null ? NetworkManager.Singleton.ConnectedClients.Count : 0;
-                    int playerCount = connectedClients + 1; // + host itself
+                    // Dedicated server: ConnectedClients are Netcode players only (no listen-host +1).
+                    int playerCount = connectedClients;
 
                     bool isFull = playerCount >= maxPlayers;
                     long nowEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

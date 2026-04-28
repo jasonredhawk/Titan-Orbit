@@ -8,6 +8,8 @@ using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -15,6 +17,7 @@ using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Entities;
 using UnityEngine.Networking;
 
@@ -236,8 +239,8 @@ namespace TitanOrbit.Networking
         #endregion
 
         /// <summary>
-        /// Applies the configured server port to UnityTransport so it's used when starting host/server.
-        /// Call this before StartHost or StartServer so "port already in use" can be avoided by changing serverPort in the inspector.
+        /// Applies the configured server port to UnityTransport so it's used when starting a listen server.
+        /// Call this before StartServer (or LAN StartClient address) so "port already in use" can be avoided by changing serverPort in the inspector.
         /// </summary>
         private void ApplyServerPort()
         {
@@ -251,7 +254,7 @@ namespace TitanOrbit.Networking
 
         /// <summary>
         /// If PlayerPrefab is not set, tries to assign from Resources/Prefabs/Starship so Play doesn't fail.
-        /// Call before StartHost / Play. Use menu Titan Orbit > Fix Player Prefab & Materials to assign in editor.
+        /// Call before joining or starting a listen server. Use menu Titan Orbit > Fix Player Prefab & Materials to assign in editor.
         /// </summary>
         private static void EnsurePlayerPrefabSet()
         {
@@ -270,19 +273,6 @@ namespace TitanOrbit.Networking
             ApplyServerPort();
             NetworkManager.Singleton.StartServer();
             Debug.Log($"Server started on port {serverPort}");
-        }
-
-        public void StartHost()
-        {
-            EnsurePlayerPrefabSet();
-            if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-            {
-                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
-                return;
-            }
-            ApplyServerPort();
-            NetworkManager.Singleton.StartHost();
-            Debug.Log($"Host started on port {serverPort}");
         }
 
         public void StartClient()
@@ -368,121 +358,6 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Start as host using Unity Relay. Creates a Relay allocation and returns the join code for others. Uses UDP or WSS per platform.
-        /// Also registers a Unity Lobby (same metadata as Browse / Quick Join) so other players can find this session without the raw Relay code.
-        /// </summary>
-        /// <param name="lobbyDisplayName">Visible name in the lobby list; if null/empty, a random room name is used.</param>
-        /// <returns>Relay join code to share with clients, or null on failure.</returns>
-        public async Task<string> StartHostWithRelayAsync(string lobbyDisplayName = null)
-        {
-            EnsurePlayerPrefabSet();
-            if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-            {
-                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
-                return null;
-            }
-            try
-            {
-                if (!await EnsureUnityServicesInitializedAsync())
-                    return null;
-                int maxConnections = Mathf.Max(1, maxPlayers - 1);
-                #region agent log
-                RegisterAgentTransportFailureHandler();
-                #endregion
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(maxConnections);
-                #region agent log
-                AgentDebugLog("H4", "StartHostWithRelayAsync", "allocation created",
-                    "{\"allocationId\":\"" + allocation.AllocationId + "\",\"relayConnectionType\":\"" + RelayConnectionTypeForCurrentPlatform() + "\",\"maxConnections\":" + maxConnections + "}");
-                #endregion
-                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                if (transport == null)
-                {
-                    Debug.LogError("UnityTransport not found on NetworkManager.");
-                    return null;
-                }
-                ConfigureUnityTransportRelay(transport, allocation);
-                if (!NetworkManager.Singleton.StartHost())
-                {
-                    Debug.LogError("StartHost failed after Relay setup.");
-                    return null;
-                }
-                #region agent log
-                AgentDebugLog("H4", "StartHostWithRelayAsync", "StartHost returned true",
-                    "{\"relayConnectionType\":\"" + RelayConnectionTypeForCurrentPlatform() + "\",\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false") + "}");
-                #endregion
-                #region agent log
-                AgentDebugLog("H2", "StartHostWithRelayAsync", "join code ready",
-                    "{\"joinCodeLength\":" + (joinCode != null ? joinCode.Length : 0) + "}");
-                #endregion
-                Debug.Log($"Host started with Relay. Join code: {joinCode}");
-
-                bool listed = await TryRegisterLobbyForHostAsync(joinCode, lobbyDisplayName);
-                if (!listed)
-                    Debug.LogWarning("Relay host is running, but Unity Lobby listing failed — others can still join with the Relay code if you share it.");
-
-                return joinCode;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogException(e);
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Creates a Unity Lobby entry pointing at this host's Relay join code so the match appears in <see cref="QueryOpenLobbiesAsync"/>.
-        /// Uses IsLatest=0 so many user-hosted games can coexist; dedicated / quick-create flows may still use IsLatest=1.
-        /// </summary>
-        private async Task<bool> TryRegisterLobbyForHostAsync(string relayJoinCode, string lobbyDisplayName)
-        {
-            if (string.IsNullOrWhiteSpace(relayJoinCode))
-                return false;
-
-            try
-            {
-                if (!await EnsureUnityServicesInitializedAsync())
-                    return false;
-
-                string displayName = string.IsNullOrWhiteSpace(lobbyDisplayName)
-                    ? GameNames.GetRandomRoomName()
-                    : lobbyDisplayName.Trim();
-                if (displayName.Length > 64)
-                    displayName = displayName.Substring(0, 64);
-
-                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var createOptions = new CreateLobbyOptions
-                {
-                    IsPrivate = false,
-                    Data = new Dictionary<string, DataObject>
-                    {
-                        { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, relayJoinCode) },
-                        { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
-                        { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
-                        { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N2) },
-                        {
-                            LobbyCreatedAtEpochKey,
-                            new DataObject(
-                                DataObject.VisibilityOptions.Public,
-                                createdAtEpochSeconds.ToString(CultureInfo.InvariantCulture),
-                                DataObject.IndexOptions.N3)
-                        }
-                    }
-                };
-
-                currentLobby = await LobbyService.Instance.CreateLobbyAsync(displayName, maxPlayers, createOptions);
-                nextLobbyHeartbeatTime = Time.realtimeSinceStartup + 15f;
-                Debug.Log($"Unity Lobby listed: \"{displayName}\" (id {currentLobby.Id}). Others can join from Browse Open Matches or Quick Join.");
-                return true;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning("[NetworkGameManager] TryRegisterLobbyForHostAsync: " + e.Message);
-                return false;
-            }
-        }
-
-        /// <summary>
         /// Start as client using Unity Relay by joining the allocation for the given join code. Uses UDP or WSS per platform.
         /// </summary>
         /// <returns>True if StartClient was called successfully.</returns>
@@ -529,116 +404,191 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Play online: quick-join an existing game or create one if none exists. Uses Lobby + Relay. No manual join code.
-        /// If Unity Services fail (e.g. desktop build offline or not linked), falls back to local host so the game still starts.
-        /// This method is intended for desktop/server builds only (not WebGL).
+        /// Quick-join an open UGS lobby using the same indexed filters as <see cref="QueryWebGLOpenLobbiesAsync"/>, then connect as Relay client only.
+        /// Falls back to <see cref="LobbyService.QueryLobbiesAsync"/> + <see cref="PlayWebGLJoinByLobbyIdAsync"/> when Quick Join errors (common on WebGL).
+        /// Requires a dedicated server (or other lobby host) to have created the lobby; never creates allocations or listen servers here.
         /// </summary>
-        /// <returns>True if we joined or created a game and started successfully.</returns>
+        private async Task<bool> TryQuickJoinOpenLobbyAsClientAsync()
+        {
+            EnsurePlayerPrefabSet();
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            {
+                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
+                return false;
+            }
+
+            try
+            {
+                if (!await EnsureUnityServicesInitializedAsync())
+                {
+                    // #region agent log
+                    F38c7dDebugLog.Write("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "ugs_not_ready", "{}");
+                    // #endregion
+                    return false;
+                }
+
+                #region agent log
+                RegisterAgentTransportFailureHandler();
+                F38c7dDebugLog.Write("H4", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "quickjoin_enter", "{}");
+                #endregion
+
+                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+                if (transport == null)
+                {
+                    Debug.LogError("UnityTransport not found on NetworkManager.");
+                    return false;
+                }
+
+                try
+                {
+                    Lobby joinedLobby = null;
+                    foreach (bool latestOnly in new[] { true, false })
+                    {
+                        try
+                        {
+                            string playerId = AuthenticationService.Instance.PlayerId;
+                            var quickOptions = new QuickJoinLobbyOptions
+                            {
+                                Filter = BuildDedicatedLobbyQueryFilters(latestOnly),
+                            };
+                            if (!string.IsNullOrEmpty(playerId))
+                                quickOptions.Player = new Player(id: playerId);
+
+                            joinedLobby = await LobbyService.Instance.QuickJoinLobbyAsync(quickOptions);
+                            if (joinedLobby != null)
+                                break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning(
+                                "[NetworkGameManager] QuickJoinLobbyAsync (latestOnly=" + latestOnly + "): " +
+                                ex.GetType().Name + " — " + ex.Message);
+                            joinedLobby = null;
+                        }
+                    }
+
+                    if (joinedLobby != null && joinedLobby.Data != null && joinedLobby.Data.ContainsKey(LobbyRelayCodeKey))
+                    {
+                        try
+                        {
+                            string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
+                            if (!string.IsNullOrEmpty(joinCode))
+                            {
+                                JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
+                                ConfigureUnityTransportRelay(transport, joinAllocation);
+                                if (NetworkManager.Singleton.StartClient())
+                                {
+                                    currentLobby = joinedLobby;
+                                    Debug.Log("Joined existing game via Lobby quick join (client only).");
+                                    return true;
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning("[NetworkGameManager] Quick join Relay/StartClient step failed: " + ex.Message);
+                        }
+                    }
+
+                    foreach (bool latestOnly in new[] { true, false })
+                    {
+                        try
+                        {
+                            QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                            {
+                                Count = 15,
+                                Filters = BuildDedicatedLobbyQueryFilters(latestOnly),
+                                Order = new List<QueryOrder>
+                                {
+                                    new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created),
+                                },
+                            });
+                            if (response?.Results == null || response.Results.Count == 0)
+                                continue;
+
+                            foreach (Lobby candidate in response.Results)
+                            {
+                                if (candidate == null || string.IsNullOrWhiteSpace(candidate.Id))
+                                    continue;
+                                try
+                                {
+                                    if (await PlayWebGLJoinByLobbyIdAsync(candidate.Id))
+                                    {
+                                        Debug.Log("[NetworkGameManager] Joined via lobby query fallback (by lobby id).");
+                                        return true;
+                                    }
+                                }
+                                catch (Exception joinEx)
+                                {
+                                    Debug.LogWarning(
+                                        "[NetworkGameManager] Join candidate " + candidate.Id + " failed: " + joinEx.Message);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning(
+                                "[NetworkGameManager] Query join fallback (latestOnly=" + latestOnly + "): " + ex.Message);
+                        }
+                    }
+
+                    Debug.LogWarning(
+                        "[NetworkGameManager] No open dedicated lobby to join. Start the headless server (or use Host match (browser) for a player-hosted test room).");
+                    return false;
+                }
+                catch (Exception inner)
+                {
+                    Debug.LogWarning("[NetworkGameManager] TryQuickJoinOpenLobbyAsClientAsync (inner): " + inner);
+                    return false;
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] TryQuickJoinOpenLobbyAsClientAsync failed. " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Desktop / editor: quick-join an existing dedicated lobby via Relay. Does not create lobbies or start a listen server.
+        /// </summary>
         public async Task<bool> PlayQuickJoinOrCreateAsync()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             Debug.LogWarning("PlayQuickJoinOrCreateAsync is not supported in WebGL builds. Use PlayWebGLJoinAsync instead.");
             return false;
 #else
-            EnsurePlayerPrefabSet();
-            if (NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-            {
-                Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
-                return false;
-            }
-            try
-            {
-                if (!await EnsureUnityServicesInitializedAsync())
-                    return TryStartLocalHost();
-
-                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                if (transport == null)
-                {
-                    Debug.LogError("UnityTransport not found on NetworkManager.");
-                    return TryStartLocalHost();
-                }
-
-                Lobby joinedLobby = null;
-                try
-                {
-                    var quickJoinOptions = new QuickJoinLobbyOptions();
-                    joinedLobby = await LobbyService.Instance.QuickJoinLobbyAsync(quickJoinOptions);
-                }
-                catch (LobbyServiceException)
-                {
-                    joinedLobby = null;
-                }
-
-                if (joinedLobby != null && joinedLobby.Data != null && joinedLobby.Data.ContainsKey(LobbyRelayCodeKey))
-                {
-                    string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
-                    if (!string.IsNullOrEmpty(joinCode))
-                    {
-                        JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
-                        ConfigureUnityTransportRelay(transport, joinAllocation);
-                        if (NetworkManager.Singleton.StartClient())
-                        {
-                            currentLobby = joinedLobby;
-                            Debug.Log("Joined existing game via Lobby.");
-                            return true;
-                        }
-                    }
-                }
-
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(Mathf.Max(1, maxPlayers - 1));
-                string code = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var createOptions = new CreateLobbyOptions
-                {
-                    IsPrivate = false,
-                    Data = new System.Collections.Generic.Dictionary<string, DataObject>
-                    {
-                        { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, code) },
-                        { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
-                        { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
-                        { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N2) },
-                        {
-                            LobbyCreatedAtEpochKey,
-                            new DataObject(
-                                DataObject.VisibilityOptions.Public,
-                                createdAtEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                                DataObject.IndexOptions.N3
-                            )
-                        }
-                    }
-                };
-                currentLobby = await LobbyService.Instance.CreateLobbyAsync(GameNames.GetRandomRoomName(), maxPlayers, createOptions);
-                ConfigureUnityTransportRelay(transport, allocation);
-                if (!NetworkManager.Singleton.StartHost())
-                {
-                    Debug.LogError("StartHost failed after creating Lobby.");
-                    return TryStartLocalHost();
-                }
-                nextLobbyHeartbeatTime = Time.realtimeSinceStartup + 15f;
-                Debug.Log("Created new game. Others can join via Play.");
-                return true;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning("[NetworkGameManager] Play (Lobby/Relay) failed. Starting as local host so you can still play. " + e.Message);
-                return TryStartLocalHost();
-            }
+            return await TryQuickJoinOpenLobbyAsClientAsync();
 #endif
         }
 
         /// <summary>
-        /// WebGL-safe play entry: quick-join an existing lobby and connect as client via Relay.
-        /// Never creates a new host or starts server-side UnityTransport.
-        /// Returns false if no suitable lobby/allocation is available.
+        /// Quick-join an existing lobby and connect as client via Relay. Does not create lobbies or start a listen server.
         /// </summary>
         public async Task<bool> PlayWebGLJoinAsync()
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
+            return await TryQuickJoinOpenLobbyAsClientAsync();
+        }
+
+        /// <summary>
+        /// Creates a Relay allocation + UGS lobby (same indexed lobby data as <see cref="DedicatedMatchServerBootstrap"/>), then starts Netcode as host.
+        /// Runs in the browser/editor — it does not start a process on a GCE VM. Use for testing when no headless lobby exists, or for temporary player-hosted rooms.
+        /// </summary>
+        public async Task<bool> PlayWebGLHostRelayMatchAsync()
+        {
+            EnsurePlayerPrefabSet();
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            {
+                Debug.LogError("Player Prefab not set on NetworkManager.");
+                return false;
+            }
+
             try
             {
                 if (!await EnsureUnityServicesInitializedAsync())
                     return false;
 
+                RegisterAgentTransportFailureHandler();
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
                 if (transport == null)
                 {
@@ -646,45 +596,54 @@ namespace TitanOrbit.Networking
                     return false;
                 }
 
-                Lobby joinedLobby = null;
-                try
-                {
-                    var quickJoinOptions = new QuickJoinLobbyOptions();
-                    joinedLobby = await LobbyService.Instance.QuickJoinLobbyAsync(quickJoinOptions);
-                }
-                catch (LobbyServiceException)
-                {
-                    joinedLobby = null;
-                }
+                ApplyServerPort();
+                int cap = Mathf.Max(2, maxPlayers);
+                int relayMaxConnections = Mathf.Max(1, cap - 1);
+                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(relayMaxConnections);
+                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+                ConfigureUnityTransportRelay(transport, allocation);
 
-                if (joinedLobby != null && joinedLobby.Data != null && joinedLobby.Data.ContainsKey(LobbyRelayCodeKey))
-                {
-                    string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
-                    if (!string.IsNullOrEmpty(joinCode))
+                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                const bool isLatest = true;
+                Lobby createdLobby = await LobbyService.Instance.CreateLobbyAsync(
+                    GameNames.GetRandomRoomName(),
+                    cap,
+                    new CreateLobbyOptions
                     {
-                        JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
-                        ConfigureUnityTransportRelay(transport, joinAllocation);
-                        if (NetworkManager.Singleton.StartClient())
+                        IsPrivate = false,
+                        Data = new Dictionary<string, DataObject>
                         {
-                            currentLobby = joinedLobby;
-                            Debug.Log("Joined existing game via Lobby (WebGL client).");
-                            return true;
-                        }
-                    }
+                            { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
+                            { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
+                            { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
+                            { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
+                            {
+                                LobbyCreatedAtEpochKey,
+                                new DataObject(
+                                    DataObject.VisibilityOptions.Public,
+                                    createdAtEpochSeconds.ToString(CultureInfo.InvariantCulture),
+                                    DataObject.IndexOptions.N3
+                                )
+                            },
+                        },
+                    });
+
+                bool started = NetworkManager.Singleton.StartHost();
+                if (!started)
+                {
+                    Debug.LogError("[NetworkGameManager] StartHost failed for Relay browser host.");
+                    return false;
                 }
 
-                Debug.LogWarning("No suitable lobby found to join from WebGL client.");
-                return false;
+                currentLobby = createdLobby;
+                Debug.Log("[NetworkGameManager] Relay host started; lobby id=" + createdLobby.Id);
+                return true;
             }
-            catch (System.Exception e)
+            catch (Exception e)
             {
-                Debug.LogWarning("[NetworkGameManager] PlayWebGLJoinAsync failed. " + e.Message);
+                Debug.LogWarning("[NetworkGameManager] PlayWebGLHostRelayMatchAsync failed. " + e.Message);
                 return false;
             }
-#else
-            // In non-WebGL builds, reuse the full play flow.
-            return await PlayQuickJoinOrCreateAsync();
-#endif
         }
 
         /// <summary>
@@ -707,6 +666,10 @@ namespace TitanOrbit.Networking
         /// </summary>
         public async Task<bool> PlayWebGLJoinByLobbyIdAsync(string lobbyId)
         {
+            // #region agent log
+            F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "enter",
+                "{\"lobbyIdLen\":" + (lobbyId != null ? lobbyId.Length : 0) + "}");
+            // #endregion
             if (string.IsNullOrWhiteSpace(lobbyId))
             {
                 Debug.LogError("LobbyId is empty.");
@@ -716,7 +679,12 @@ namespace TitanOrbit.Networking
             try
             {
                 if (!await EnsureUnityServicesInitializedAsync())
+                {
+                    // #region agent log
+                    F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "ugs_not_ready", "{}");
+                    // #endregion
                     return false;
+                }
                 #region agent log
                 RegisterAgentTransportFailureHandler();
                 #endregion
@@ -724,6 +692,9 @@ namespace TitanOrbit.Networking
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
                 if (transport == null)
                 {
+                    // #region agent log
+                    F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "no_transport", "{}");
+                    // #endregion
                     Debug.LogError("UnityTransport not found on NetworkManager.");
                     return false;
                 }
@@ -738,6 +709,10 @@ namespace TitanOrbit.Networking
                 {
                     if (!IsLobbyJoinAlreadyMemberFailure(e))
                     {
+                        // #region agent log
+                        F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "join_lobby_failed",
+                            "{\"reason\":" + (int)e.Reason + "}");
+                        // #endregion
                         Debug.LogWarning("[NetworkGameManager] PlayWebGLJoinByLobbyIdAsync failed: " + e.Message);
                         return false;
                     }
@@ -790,40 +765,86 @@ namespace TitanOrbit.Networking
                 if (startedLobby)
                 {
                     currentLobby = joinedLobby;
+                    // #region agent log
+                    F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "join_ok", "{}");
+                    // #endregion
                     Debug.Log("Joined lobby by id via Relay (WebGL client).");
                     return true;
                 }
 
+                // #region agent log
+                F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "start_client_false", "{}");
+                // #endregion
                 return false;
             }
             catch (LobbyServiceException e)
             {
+                // #region agent log
+                F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "lobby_service_ex",
+                    "{\"reason\":" + (int)e.Reason + "}");
+                // #endregion
                 Debug.LogWarning("[NetworkGameManager] PlayWebGLJoinByLobbyIdAsync failed: " + e.Message);
                 return false;
             }
             catch (System.Exception e)
             {
+                // #region agent log
+                F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "general_ex",
+                    "{\"exType\":\"" + e.GetType().Name + "\"}");
+                // #endregion
                 Debug.LogWarning("[NetworkGameManager] PlayWebGLJoinByLobbyIdAsync failed. " + e.Message);
                 return false;
             }
         }
 
+        /// <summary>
+        /// Indexed lobby fields written by <see cref="DedicatedMatchServerBootstrap"/>; shared by query and Quick Join.
+        /// </summary>
+        private static List<QueryFilter> BuildDedicatedLobbyQueryFilters(bool latestOnly)
+        {
+            var filters = new List<QueryFilter>
+            {
+                new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
+                new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
+            };
+            if (latestOnly)
+                filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
+            return filters;
+        }
+
         public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20)
         {
             var results = new List<LobbySummary>();
+            // #region agent log
+            F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "enter",
+                "{\"latestOnly\":" + (latestOnly ? "true" : "false") + ",\"count\":" + count + "}");
+            // #endregion
             try
             {
                 if (!await EnsureUnityServicesInitializedAsync())
-                    return results;
-
-                var filters = new List<QueryFilter>
                 {
-                    new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
-                    new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
-                };
+                    // #region agent log
+                    bool signedIn = false;
+                    bool authorized = false;
+                    try
+                    {
+                        if (UnityServices.State == ServicesInitializationState.Initialized)
+                        {
+                            signedIn = AuthenticationService.Instance.IsSignedIn;
+                            authorized = AuthenticationService.Instance.IsAuthorized;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                    F38c7dDebugLog.Write("H1", "NetworkGameManager.QueryOpenLobbiesAsync", "ugs_not_ready",
+                        "{\"ugsState\":" + (int)UnityServices.State + ",\"signedIn\":" + (signedIn ? "true" : "false") +
+                        ",\"authorized\":" + (authorized ? "true" : "false") + "}");
+                    // #endregion
+                    return results;
+                }
 
-                if (latestOnly)
-                    filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
+                var filters = BuildDedicatedLobbyQueryFilters(latestOnly);
 
                 var options = new QueryLobbiesOptions
                 {
@@ -836,6 +857,11 @@ namespace TitanOrbit.Networking
                 };
 
                 QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                // #region agent log
+                int rawCount = response?.Results != null ? response.Results.Count : -1;
+                F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "query_done",
+                    "{\"responseNull\":" + (response == null ? "true" : "false") + ",\"rawResultCount\":" + rawCount + "}");
+                // #endregion
                 if (response?.Results == null)
                     return results;
 
@@ -848,9 +874,17 @@ namespace TitanOrbit.Networking
             }
             catch (Exception e)
             {
+                // #region agent log
+                F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "query_exception",
+                    "{\"exType\":\"" + e.GetType().Name + "\"}");
+                // #endregion
                 Debug.LogWarning("[NetworkGameManager] QueryOpenLobbiesAsync failed: " + e.Message);
             }
 
+            // #region agent log
+            F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "exit",
+                "{\"summaryCount\":" + results.Count + "}");
+            // #endregion
             return results;
         }
 
@@ -900,13 +934,7 @@ namespace TitanOrbit.Networking
                 if (!await EnsureUnityServicesInitializedAsync())
                     return new System.Collections.Generic.List<Lobby>();
 
-                var filters = new System.Collections.Generic.List<QueryFilter>
-                {
-                    new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
-                    new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
-                };
-                if (latestOnly)
-                    filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
+                var filters = BuildDedicatedLobbyQueryFilters(latestOnly);
 
                 QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
                 {
@@ -924,21 +952,6 @@ namespace TitanOrbit.Networking
                 Debug.LogWarning("[NetworkGameManager] QueryWebGLOpenLobbiesAsync failed: " + e.Message);
                 return new System.Collections.Generic.List<Lobby>();
             }
-        }
-
-        /// <summary>Start as local host (no Relay/Lobby). Used when Unity Services fail so the desktop build still runs.</summary>
-        private bool TryStartLocalHost()
-        {
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-                return false;
-            EnsurePlayerPrefabSet();
-            ApplyServerPort();
-            if (NetworkManager.Singleton.StartHost())
-            {
-                Debug.Log("Started as local host (no online services). Game is playable.");
-                return true;
-            }
-            return false;
         }
 
         private void Update()
@@ -1211,10 +1224,17 @@ namespace TitanOrbit.Networking
             OnTeamChoiceFailed?.Invoke("Cannot join a team yet — connection still loading. Try again.");
         }
 
-        /// <summary>Same-machine / LAN test without Relay. Host listens on <see cref="serverPort"/> (default 7777).</summary>
+        /// <summary>Same-machine / LAN test without Relay: listen server on <see cref="serverPort"/> (default 7777). Use <see cref="StartLocalClientForLanTest"/> from a second instance.</summary>
         public bool StartLocalHostForLanTest()
         {
-            return TryStartLocalHost();
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                return false;
+            EnsurePlayerPrefabSet();
+            ApplyServerPort();
+            if (!NetworkManager.Singleton.StartServer())
+                return false;
+            Debug.Log($"[NetworkGameManager] LAN listen server started on port {serverPort}.");
+            return true;
         }
 
         /// <summary>Join a host on the LAN using direct UDP (no Relay). Use 127.0.0.1 for two instances on one PC.</summary>
@@ -1283,11 +1303,11 @@ namespace TitanOrbit.Networking
         public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
 
 #if UNITY_EDITOR
-        [ContextMenu("Debug/Start LAN Host (no Relay)")]
+        [ContextMenu("Debug/Start LAN listen server (no Relay)")]
         private void Editor_StartLanHost()
         {
-            if (TryStartLocalHost())
-                Debug.Log($"[NetworkGameManager] LAN host started on port {serverPort}. Run a second editor/player and use Debug/Start LAN Client, or call StartLocalClientForLanTest.");
+            if (StartLocalHostForLanTest())
+                Debug.Log($"[NetworkGameManager] LAN listen server on port {serverPort}. Run a second instance and use Debug/Start LAN Client, or call StartLocalClientForLanTest.");
         }
 
         [ContextMenu("Debug/Start LAN Client → 127.0.0.1")]
