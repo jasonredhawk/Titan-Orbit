@@ -26,15 +26,15 @@ REM   restart_titanorbit_server_on_gce.bat your-gcp-project-id useIap
 
 REM   restart_titanorbit_server_on_gce.bat your-gcp-project-id useIap plainFirst
 
-REM IAP path uses start-iap-tunnel + ssh.exe (not gcloud compute ssh --tunnel-through-iap / plink).
+REM IAP path tries gcloud compute ssh --tunnel-through-iap first (same as upload), then start-iap-tunnel + ssh.exe if needed.
 
 REM Or: restart_titanorbit_server_on_gce_iap.bat  (useIap + plainFirst)
 
 
 
-set "INSTANCE=titan-orbit-compute-engine"
+set "INSTANCE=titanorbitcp"
 
-set "ZONE=us-central1-a"
+set "ZONE=us-central1-f"
 
 set "REMOTE_USER=jason"
 

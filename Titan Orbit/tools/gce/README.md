@@ -29,8 +29,8 @@ Paste into **Cloud Shell** (Console top-right terminal icon) after **`upload_lin
 
 ```bash
 export PROJECT_ID=titan-orbit
-export ZONE=us-central1-a
-export VM=jason@titan-orbit-compute-engine
+export ZONE=us-central1-f
+export VM=jason@titanorbitcp
 export BUCKET=titan-orbit-dedicated-server
 export OBJECT=titanorbit-linux-build/TitanOrbitLinux1-latest.tar.gz
 
@@ -82,9 +82,9 @@ In the SSH window, use **any “connect without IAP” / “different connection
 | Piece | Where it runs |
 |--------|----------------|
 | **WebGL game (browser clients)** | **Google Cloud Storage** (and DNS / Cloudflare), via **`tools/gcs/`** — not on the same VM as the headless server. |
-| **Dedicated Linux game server** | **Compute Engine**, e.g. **`titan-orbit-compute-engine`**, via **`tools/gce/`**. |
+| **Dedicated Linux game server** | **Compute Engine**, e.g. **`titanorbitcp`**, via **`tools/gce/`**. |
 
-So **`titan-orbit-compute-engine`** is for the **authoritative headless server**, not for hosting the static WebGL build (unless you deliberately put nginx on that VM too — that would be your own choice, not what these scripts assume).
+So **`titanorbitcp`** is for the **authoritative headless server**, not for hosting the static WebGL build (unless you deliberately put nginx on that VM too — that would be your own choice, not what these scripts assume).
 
 You add a **second** VM only if you want a separate test server, more capacity, or isolation — not because the browser game “needs its own VM” by default.
 
@@ -93,8 +93,8 @@ You add a **second** VM only if you want a separate test server, more capacity, 
 | Setting | Value |
 |--------|--------|
 | GCP project | **`titan-orbit`** (hard-coded default in the `.bat` files; pass an override as the project argument if needed) |
-| Instance | `titan-orbit-compute-engine` |
-| Zone | `us-central1-a` |
+| Instance | `titanorbitcp` |
+| Zone | `us-central1-f` |
 | Remote user | `jason` |
 | Upload target | `/home/jason/titanorbit-server/` (archive extracts to a folder named like your local build folder) |
 | Linux build folder (upload default) | `<repo>\BuildOutput\Server\TitanOrbitLinux1` (from Unity menu **TitanOrbit → Build → Headless Server (Linux — Google Cloud)**) |
@@ -174,7 +174,7 @@ create_local_gce_ssh_key.bat -LinuxUser YOUR_LINUX_NAME
 2. Run (defaults for this repo):
 
    ```text
-   gcloud compute ssh jason@titan-orbit-compute-engine --project=titan-orbit --zone=us-central1-a --tunnel-through-iap
+   gcloud compute ssh jason@titanorbitcp --project=titan-orbit --zone=us-central1-f --tunnel-through-iap
    ```
 
 3. If you get a **Linux prompt**, type **`exit`**. If you only get the **“Remote side unexpectedly closed”** popup, **ignore it for our scripts** and use the **Part B** steps above (check for **`google_compute_engine`**, or run **`create_local_gce_ssh_key.bat`**).
@@ -196,12 +196,12 @@ After Part A and Part B, run **`install_enable_server_service_on_gce_iap.bat`** 
 | `deploy_server_gce.bat` | Runs **upload**, then **restart** (main one-step publish). |
 | `deploy_server_gce_iap.bat` | Same as deploy, always uses IAP (default paths / project only). |
 | `prepare_and_start_server_on_gce.bat` | Manual chmod + foreground run (debug). |
-| `install_enable_server_service_on_gce.bat` | Uses **`install_unit_remote.ps1`**: **`gcloud compute ssh --command`** runs a VM-side **`bash -lc`** that **base64-decodes** an embedded install script then runs **`bash -s`**, so the script is **not** on stdin (plink/gcloud otherwise read stdin for **Y/n** and remote bash can error with **`y: command not found`**). **No `gcloud compute scp` / pscp**. |
+| `install_enable_server_service_on_gce.bat` | Uses **`install_unit_remote.ps1`**: **`gcloud compute ssh --command`** runs a VM-side **`bash -lc`** that **base64-decodes** an embedded install script then runs **`bash -s`**, so the script is **not** on stdin (plink/gcloud otherwise read stdin for **Y/n** and remote bash can error with **`y: command not found`**). **No `gcloud compute scp` / pscp**. **PuTTY `plink`** may prompt to cache the **host key** (type **y** once, or use **`install_enable_server_service_on_gce_iap.bat`**). **Fresh VM:** creates **`/home/jason/titanorbit-server/TitanOrbitLinux1`** and installs the unit **before** the Linux build exists (**`systemctl start`** after you upload). |
 | `add_iap_ssh_firewall_and_tag.bat` | Calls **`add_iap_ssh_firewall_and_tag.ps1`**: reads the VM’s **actual VPC**, creates **`iap-allow-ssh-<vpc>`** (TCP 22 from **`35.235.240.0/20`**) + adds **`allow-iap-ssh`** (fixes IAP **4003** when a rule on **`default`** did not match the VM’s network). |
 | `add_iap_ssh_firewall_and_tag_cloudshell.sh` | Same logic for **Google Cloud Shell** (bash + `gcloud`): upload and run **`bash add_iap_ssh_firewall_and_tag_cloudshell.sh`** when **`cloudshell_install_titanorbit_unit.sh`** or Console SSH returns **4003**. Optional: **`TITANORBIT_IAP_SSH_ALL_VMS=1`** (IAP→22 for all VMs on the VPC). Optional: **`TITANORBIT_IAP_SSH_PRIORITY0=1`** (same as tagged or all‑VMs path, but **`--priority=0`** so it wins over lower‑precedence DENY rules). Source is always **`35.235.240.0/20`**. |
 | `guest_network_recovery_startup.sh` | **Optional** one-time **metadata `startup-script`** when serial is unusable (log flood) and the guest cannot reach **`169.254.169.254`**. Copy to your PC, then: **`gcloud compute instances add-metadata INSTANCE --zone=ZONE --metadata-from-file=startup-script=guest_network_recovery_startup.sh`** and **`gcloud compute instances reset`**. Edit **`GW=`** inside the script if your internal subnet is not **`10.128.0.0/20`**. Remove the metadata key after recovery. |
 | `diagnose_iap_ssh_cloudshell.sh` | In Cloud Shell: prints **v3** marker, **effective firewalls**, **metadata**, **network firewall policies**, and VPC rules. Use when **4003** remains. After upload, confirm **`head -6 diagnose_iap_ssh_cloudshell.sh`** includes **`TITANORBIT_IAP_DIAG_FILE=v3`**; if the run jumps from Tags straight to VPC rules, you are not executing this file (wrong path or stale copy). |
-| `install_unit_remote.ps1` | With **IAP**, uses **`gcloud compute start-iap-tunnel`** + **`ssh.exe`** + stdin to remote `bash -s` (avoids **`gcloud compute ssh`** / **PuTTY `plink`** on Windows). Non-IAP uses **`gcloud compute ssh`** with the **base64-in-`--command`** path above (not stdin). |
+| `install_unit_remote.ps1` | With **IAP**, uses **`gcloud compute start-iap-tunnel`** + **`ssh.exe`** + remote **`bash -lc`** that **base64-decodes** the install script (same pattern as non-IAP; avoids **stdin pipe truncation** to `bash -s` on Windows). Non-IAP uses **`gcloud compute ssh`** with the **base64-in-`--command`** path above (not stdin). |
 | `write_cloudshell_install_unit_script.bat` / `.ps1` | Writes **`cloudshell_install_titanorbit_unit.sh`**: run **that script in Cloud Shell** to install the unit via **`gcloud compute ssh … --tunnel-through-iap`** on **Linux** (use when Windows **`ssh.exe`** fails with **kex / connection reset** through IAP). |
 | `install_enable_server_service_on_gce_iap.bat` | Same, always **`--tunnel-through-iap`** (use if plain install times out on Windows). |
 | `titanorbit-server.service` | **Source** unit file next to the install script (edit `User=` / paths / `ExecStart=` if your VM layout differs). |
@@ -224,7 +224,7 @@ To restart the service **on your Compute Engine instance**, SSH in with **`gclou
 2. Or a one-liner (adjust project / zone / user@instance if yours differ):
 
    ```bash
-   gcloud compute ssh jason@titan-orbit-compute-engine --project=titan-orbit --zone=us-central1-a --tunnel-through-iap --command='sudo systemctl restart titanorbit-server && sudo systemctl is-active titanorbit-server'
+   gcloud compute ssh jason@titanorbitcp --project=titan-orbit --zone=us-central1-f --tunnel-through-iap --command='sudo systemctl restart titanorbit-server && sudo systemctl is-active titanorbit-server'
    ```
 
 Same idea for **status** / **logs**: use **`gcloud compute ssh … --command='…'`**, or **Console → Compute Engine → your VM → SSH** in the browser.
@@ -288,7 +288,7 @@ Then in [Compute Engine → VM instances](https://console.cloud.google.com/compu
 **4003 still after `add_iap_ssh_firewall_and_tag_cloudshell.sh`?**
 
 1. In Cloud Shell run **`bash diagnose_iap_ssh_cloudshell.sh`** (upload from `tools/gce/`). Confirm the VM is **RUNNING**, **`allow-iap-ssh`** appears under tags, and some rule shows **SRC** including **`35.235.240.0/20`** and **ALLOW** including **tcp:22** for that VPC. If the script warns about **Shared VPC** (subnetwork in another project), create the same IAP firewall rule in the **host** project on the shared network — rules only in the service project will not fix 4003.
-2. Run **`gcloud compute ssh titan-orbit-compute-engine --project=titan-orbit --zone=us-central1-a --troubleshoot --tunnel-through-iap`** and read the printed checks (firewall path, IAP API).
+2. Run **`gcloud compute ssh titanorbitcp --project=titan-orbit --zone=us-central1-f --troubleshoot --tunnel-through-iap`** and read the printed checks (firewall path, IAP API).
 3. Broaden allow (still IAP-only): **`TITANORBIT_IAP_SSH_ALL_VMS=1 bash add_iap_ssh_firewall_and_tag_cloudshell.sh`** — adds **`iap-allow-ssh-allvms-<vpc>`** with **no target tags** so tag mismatch cannot block IAP. Source range is unchanged (**Google IAP only**).
 4. **DENY wins over ALLOW** when it has **better (numerically lower) priority**. If **`diagnose_iap_ssh_cloudshell.sh`** shows an ingress **DENY** for port 22 before your IAP **ALLOW**, add an IAP allow at **priority 0**: **`TITANORBIT_IAP_SSH_PRIORITY0=1 bash add_iap_ssh_firewall_and_tag_cloudshell.sh`** (optionally combine with **`TITANORBIT_IAP_SSH_ALL_VMS=1`**). Wait ~60s, retry SSH.
 5. On the VM (**serial console** if needed: enable in VM **EDIT**, then connect): confirm **`sshd`** listens on **`0.0.0.0:22`** (`sudo ss -tlnp | grep :22`). If the OS image has no SSH server, install and enable it.

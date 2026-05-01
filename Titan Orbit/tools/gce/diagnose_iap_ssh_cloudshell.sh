@@ -6,7 +6,7 @@ echo "TITANORBIT_IAP_DIAG_FILE=v3 — wrong output? run: pwd && ls -la diagnose_
 #
 # Usage:
 #   bash diagnose_iap_ssh_cloudshell.sh
-#   bash diagnose_iap_ssh_cloudshell.sh MY_PROJECT us-central1-a MY_INSTANCE
+#   bash diagnose_iap_ssh_cloudshell.sh MY_PROJECT us-central1-f MY_INSTANCE
 
 set -euo pipefail
 
@@ -25,8 +25,8 @@ truncate63() {
 }
 
 PROJECT_ID="${1:-titan-orbit}"
-ZONE="${2:-us-central1-a}"
-INSTANCE="${3:-titan-orbit-compute-engine}"
+ZONE="${2:-us-central1-f}"
+INSTANCE="${3:-titanorbitcp}"
 IAP_RANGE="35.235.240.0/20"
 WANT_TAG="allow-iap-ssh"
 # Bump when sections change — Cloud Shell must use this file from the repo, not an old upload.

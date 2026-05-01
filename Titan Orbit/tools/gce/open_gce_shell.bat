@@ -6,8 +6,8 @@ REM Usage:
 REM   open_gce_shell.bat
 REM   open_gce_shell.bat your-gcp-project-id
 
-set "INSTANCE=titan-orbit-compute-engine"
-set "ZONE=us-central1-a"
+set "INSTANCE=titanorbitcp"
+set "ZONE=us-central1-f"
 set "PROJECT_ID=titan-orbit"
 set "REMOTE_USER=jason"
 set "INSTANCE_TARGET="

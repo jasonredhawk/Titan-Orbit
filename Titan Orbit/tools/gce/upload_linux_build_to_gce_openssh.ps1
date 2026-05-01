@@ -10,8 +10,8 @@
 
 param(
     [string] $ProjectId = "titan-orbit",
-    [string] $Zone = "us-central1-a",
-    [string] $InstanceName = "titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $InstanceName = "titanorbitcp",
     [string] $SshUser = "jason",
     [string] $TargetDir = "/home/jason/titanorbit-server",
     [string] $SourceDir = "",
@@ -281,7 +281,8 @@ finally {
 }
 
 $remotePrepare = "mkdir -p $TargetDir"
-$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote"
+# Windows tar often drops Linux +x; systemd 203/EXEC without chmod on the player binary.
+$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod +x $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod +x $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; exit 0"
 # Avoid `||` inside double quotes (PS 7+ parses it as the pipeline-chain operator).
 $remoteVerify = "ls -la $TargetDir; ls -la $TargetDir/$sourceBase " + '|| true'
 

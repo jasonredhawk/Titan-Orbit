@@ -5,7 +5,7 @@
 #
 # Usage:
 #   bash add_iap_ssh_firewall_and_tag_cloudshell.sh
-#   bash add_iap_ssh_firewall_and_tag_cloudshell.sh MY_PROJECT us-central1-a MY_INSTANCE
+#   bash add_iap_ssh_firewall_and_tag_cloudshell.sh MY_PROJECT us-central1-f MY_INSTANCE
 #
 # If 4003 persists after tag + iap-allow-ssh-<vpc> (e.g. tag mismatch, org policy quirks), also create a
 # VPC-wide IAP rule (no target tags — still only from 35.235.240.0/20):
@@ -18,8 +18,8 @@
 set -euo pipefail
 
 PROJECT_ID="${1:-titan-orbit}"
-ZONE="${2:-us-central1-a}"
-INSTANCE="${3:-titan-orbit-compute-engine}"
+ZONE="${2:-us-central1-f}"
+INSTANCE="${3:-titanorbitcp}"
 TAG="${4:-allow-iap-ssh}"
 IAP_RANGE="35.235.240.0/20"
 

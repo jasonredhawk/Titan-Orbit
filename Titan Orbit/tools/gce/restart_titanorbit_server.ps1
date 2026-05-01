@@ -5,8 +5,8 @@
 #   .\restart_titanorbit_server.ps1 -UseIap -PlainSshFirst   (same order as restart_titanorbit_server_on_gce_iap.bat)
 param(
     [string] $ProjectId = "titan-orbit",
-    [string] $Zone = "us-central1-a",
-    [string] $InstanceTarget = "jason@titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $InstanceTarget = "jason@titanorbitcp",
     [string] $ServiceName = "titanorbit-server",
     [switch] $UseIap,
     [switch] $PlainSshFirst

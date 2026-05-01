@@ -1,12 +1,12 @@
 # Installs titanorbit-server.service on the VM.
-# - Default with -UseIap: IAP TCP tunnel + Windows OpenSSH (ssh.exe) + stdin to bash -s (avoids PuTTY plink used by "gcloud compute ssh" on Windows).
+# - Default with -UseIap: IAP TCP tunnel + Windows OpenSSH (ssh.exe) + bash -lc 'echo <b64> | base64 -d | bash -s' (same as gcloud path; avoids stdin pipe truncation on Windows).
 # - With -UsePlinkWithIap: legacy "gcloud compute ssh" (plink) for IAP.
 # - Without -UseIap: "gcloud compute ssh" + bash -lc 'echo <b64> | base64 -d | bash -s' (no stdin script: plink/gcloud may consume stdin for Y/n and leave "y" as bash line 1).
 
 param(
     [string] $ProjectId = "titan-orbit",
-    [string] $Zone = "us-central1-a",
-    [string] $InstanceTarget = "jason@titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $InstanceTarget = "jason@titanorbitcp",
     [string] $RemoteDir = "/home/jason/titanorbit-server/TitanOrbitLinux1",
     [string] $ExeName = "",
     [switch] $UseIap,
@@ -50,6 +50,7 @@ $servicePath = "/etc/systemd/system/titanorbit-server.service"
 
 $remoteScript = (@"
 set -e
+mkdir -p "$RemoteDir"
 # Prefer Unity Linux .x86_64; fall back to extensionless TitanOrbitServer (some Unity builds).
 EXE_NAME=""
 if [ -n "$ExeName" ] && [ -f "$RemoteDir/$ExeName" ]; then
@@ -59,20 +60,31 @@ elif [ -f "$RemoteDir/TitanOrbitServer.x86_64" ]; then
 elif [ -f "$RemoteDir/TitanOrbitServer" ]; then
   EXE_NAME=TitanOrbitServer
 else
-  echo "No TitanOrbitServer or TitanOrbitServer.x86_64 in $RemoteDir"; ls -la "$RemoteDir" || true; exit 1
+  EXE_NAME=TitanOrbitServer.x86_64
+  echo "NOTE: No server binary in $RemoteDir yet. Installing unit for `$EXE_NAME; upload your Linux build to this folder, then: sudo systemctl restart titanorbit-server"
 fi
-chmod +x "$RemoteDir/`$EXE_NAME"
+if [ -f "$RemoteDir/`$EXE_NAME" ]; then
+  chmod +x "$RemoteDir/`$EXE_NAME"
+fi
 echo '$b64' | base64 -d | sudo tee $servicePath >/dev/null
 # Repo unit uses __TITANORBIT_EXE__; must match Unity output (usually TitanOrbitServer.x86_64) or systemd returns 203/EXEC.
 sudo sed -i "s|__TITANORBIT_EXE__|`$EXE_NAME|g" $servicePath
 sudo chmod 644 $servicePath
 sudo systemctl daemon-reload
-sudo systemctl enable --now titanorbit-server.service
-sudo systemctl status titanorbit-server.service --no-pager -l | sed -n '1,80p'
-echo
-echo Recent log:
-if [ -f "$RemoteDir/Player.log" ]; then tail -n 80 "$RemoteDir/Player.log"; else echo "(no Player.log yet - Unity may create it shortly after startup)"; fi
+if [ -f "$RemoteDir/`$EXE_NAME" ]; then
+  sudo systemctl enable --now titanorbit-server.service
+  sudo systemctl status titanorbit-server.service --no-pager -l | sed -n '1,80p'
+  echo
+  echo Recent log:
+  if [ -f "$RemoteDir/Player.log" ]; then tail -n 80 "$RemoteDir/Player.log"; else echo "(no Player.log yet - Unity may create it shortly after startup)"; fi
+else
+  sudo systemctl enable titanorbit-server.service
+  echo "Service enabled (not started). After upload: sudo systemctl start titanorbit-server"
+fi
 "@) -replace "`r`n", "`n"
+if (-not $remoteScript.EndsWith("`n")) {
+    $remoteScript += "`n"
+}
 
 function Invoke-GcloudComputeSsh {
     # Do NOT pass "bash -s" after "--": on Windows, gcloud uses PuTTY plink, and plink's "-s" means "subsystem" (popup: Unknown option -s).
@@ -172,6 +184,19 @@ function Invoke-IapTunnelPlusOpenSsh {
     $identity = Join-Path $env:USERPROFILE ".ssh\google_compute_engine"
     if (-not (Test-Path $identity)) {
         Write-Error "Missing SSH key for GCE: $identity`nRun once (any path that completes SSH):`n  gcloud --project $ProjectId compute ssh $InstanceTarget --zone $Zone --tunnel-through-iap"
+        exit 1
+    }
+
+    # Same delivery as non-IAP gcloud path: embed script in bash -lc 'echo b64 | base64 -d | bash -s'.
+    # Piping $remoteScript to 'ssh ... bash -s' can truncate on Windows (remote bash: "unexpected end of file" at last line).
+    $iapInstallB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteScript))
+    if ($iapInstallB64.Length -gt 26000) {
+        Write-Error "Install script too long for ssh.exe argv (base64 length $($iapInstallB64.Length)). Shorten titanorbit-server.service or use Cloud Shell install script."
+        exit 1
+    }
+    $iapSshRemoteArg = "bash -lc `"echo $iapInstallB64 | base64 -d | bash -s`""
+    if ($iapSshRemoteArg.Length -gt 31000) {
+        Write-Error "ssh remote argument too long ($($iapSshRemoteArg.Length) chars)."
         exit 1
     }
 
@@ -286,8 +311,8 @@ $iap4003Hint
             Write-Warning "Did not read an SSH- banner on the local tunnel (continuing anyway). Tunnel stderr tail:`n$((Get-Content $tunnelErrLog -Raw -ErrorAction SilentlyContinue).Trim())"
         }
 
-        Write-Host "Running ssh.exe -> bash -s (unit via base64; no plink, no gcloud scp)"
-        # -T: required when piping stdin (avoids TTY / half-open weirdness with some IAP paths).
+        Write-Host "Running ssh.exe -> bash -lc 'echo <b64> | base64 -d | bash -s' (same as gcloud path; avoids Windows stdin pipe truncation)"
+        # -T: no TTY (fine for bash -lc remote command).
         # IPQoS=none: avoids some Windows / router paths that reset SSH through tunnels.
         # IdentitiesOnly=yes: only use -i key (Windows ssh-agent keys can confuse GCE).
         $sshBase = @(
@@ -310,7 +335,7 @@ $iap4003Hint
         $lastCode = 1
         for ($a = 1; $a -le $maxAttempts; $a++) {
             Write-Host "SSH attempt $a / $maxAttempts ..."
-            $remoteScript | & $sshExe @sshBase "bash -s"
+            & $sshExe @sshBase $iapSshRemoteArg
             $lastCode = $LASTEXITCODE
             if ($lastCode -eq 0) {
                 break

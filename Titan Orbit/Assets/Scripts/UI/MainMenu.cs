@@ -71,6 +71,10 @@ namespace TitanOrbit.UI
         private Button _webGlBrowserHostButton;
         /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
         private bool deferTeamPanelUntilNetworkReady;
+        private float _dbgLastLobbyRefreshRealtime = -1f;
+        private int _dbgLobbyRefreshCount;
+        private bool _isLobbyRefreshInFlight;
+        private float _nextAllowedLobbyRefreshRealtime;
 
         private RectTransform _authMainCardRt;
         private Image _authMainCardBg;
@@ -825,6 +829,35 @@ namespace TitanOrbit.UI
 
         private async Task RefreshLobbyListAsync()
         {
+            if (_isLobbyRefreshInFlight)
+            {
+                // #region agent log
+                NetworkGameManager.DebugSessionE2a466Log("post-fix", "H8", "MainMenu.RefreshLobbyListAsync", "refresh_skipped_inflight",
+                    "{\"count\":" + _dbgLobbyRefreshCount + "}");
+                // #endregion
+                return;
+            }
+
+            float gateNow = Time.realtimeSinceStartup;
+            if (gateNow < _nextAllowedLobbyRefreshRealtime)
+            {
+                // #region agent log
+                NetworkGameManager.DebugSessionE2a466Log("post-fix", "H8", "MainMenu.RefreshLobbyListAsync", "refresh_skipped_cooldown",
+                    "{\"remainingMs\":" + ((_nextAllowedLobbyRefreshRealtime - gateNow) * 1000f).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                // #endregion
+                return;
+            }
+
+            _isLobbyRefreshInFlight = true;
+            _nextAllowedLobbyRefreshRealtime = gateNow + 5f;
+            _dbgLobbyRefreshCount++;
+            float now = Time.realtimeSinceStartup;
+            float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
+            _dbgLastLobbyRefreshRealtime = now;
+            // #region agent log
+            NetworkGameManager.DebugSessionE2a466Log("pre-fix", "H7", "MainMenu.RefreshLobbyListAsync", "refresh_requested",
+                "{\"count\":" + _dbgLobbyRefreshCount + ",\"deltaMs\":" + delta.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
+            // #endregion
             // #region agent log
             F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
                 "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
@@ -852,6 +885,7 @@ namespace TitanOrbit.UI
             }
             finally
             {
+                _isLobbyRefreshInFlight = false;
                 if (refreshLobbiesButton != null)
                     refreshLobbiesButton.interactable = true;
             }

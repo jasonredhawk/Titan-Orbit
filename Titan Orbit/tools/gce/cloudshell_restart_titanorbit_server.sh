@@ -8,13 +8,13 @@
 # Usage:
 #   bash cloudshell_restart_titanorbit_server.sh
 # Optional overrides:
-#   PROJECT_ID=my-proj ZONE=us-central1-a INSTANCE_SSH=jason@my-vm bash cloudshell_restart_titanorbit_server.sh
+#   PROJECT_ID=my-proj ZONE=us-central1-f INSTANCE_SSH=jason@my-vm bash cloudshell_restart_titanorbit_server.sh
 
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-titan-orbit}"
-ZONE="${ZONE:-us-central1-a}"
-INSTANCE_SSH="${INSTANCE_SSH:-jason@titan-orbit-compute-engine}"
+ZONE="${ZONE:-us-central1-f}"
+INSTANCE_SSH="${INSTANCE_SSH:-jason@titanorbitcp}"
 
 gcloud config set project "${PROJECT_ID}"
 

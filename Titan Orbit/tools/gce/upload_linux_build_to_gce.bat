@@ -10,8 +10,8 @@ REM   upload_linux_build_to_gce.bat "C:\path\to\build-folder" your-gcp-project-i
 REM   upload_linux_build_to_gce.bat "C:\path\to\build-folder" your-gcp-project-id useIap
 REM If SSH times out (home ISP, office firewall, VM without public IP), add useIap as shown or as the only argument.
 
-set "INSTANCE=titan-orbit-compute-engine"
-set "ZONE=us-central1-a"
+set "INSTANCE=titanorbitcp"
+set "ZONE=us-central1-f"
 REM Default: same folder as TitanOrbit → Build → Headless Server (Linux — Google Cloud) in TitanOrbitBuildAutomation.cs
 for %%I in ("%~dp0..\..") do set "REPO_ROOT=%%~fI"
 set "SOURCE_DIR=%REPO_ROOT%\BuildOutput\Server\TitanOrbitLinux1"
@@ -115,8 +115,16 @@ if errorlevel 1 (
   call :SshUploadFailedHints
   exit /b 1
 )
+REM Windows tar often strips execute bits; systemd reports 203/EXEC without chmod +x on the player.
+echo chmod +x Linux player binaries on VM...
+REM Avoid find / 2>/dev/null here: cmd/plink mangles ^> so bash sees broken tokens (e.g. 2^^).
+call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'if [ -f %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer.x86_64 ]; then chmod +x %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer.x86_64; fi; if [ -f %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer ]; then chmod +x %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer; fi; exit 0'"
+if errorlevel 1 (
+  echo.
+  echo WARNING: chmod step failed; service may still hit 203/EXEC until binaries are executable.
+)
 echo Verifying remote upload...
-call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'ls -la %TARGET_DIR%; ls -la %TARGET_DIR%/%SOURCE_BASENAME% || true'"
+call gcloud --project "%PROJECT_ID%" compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'ls -la %TARGET_DIR%; ls -la %TARGET_DIR%/%SOURCE_BASENAME% || true; if [ -f %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer.x86_64 ]; then ls -l %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer.x86_64; test -x %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer.x86_64 && echo OK_executable || echo WARN_not_executable; fi; if [ -f %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer ]; then ls -l %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer; test -x %TARGET_DIR%/%SOURCE_BASENAME%/TitanOrbitServer && echo OK_executable_extensionless || echo WARN_not_executable_extensionless; fi'"
 if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
 
 echo.

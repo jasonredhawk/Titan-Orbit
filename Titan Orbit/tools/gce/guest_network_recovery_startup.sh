@@ -4,8 +4,8 @@
 #
 # DO NOT run:  bash guest_network_recovery_startup.sh   in Cloud Shell — that fixes nothing (wrong machine).
 # DO run on your PC (paths adjusted):
-#   gcloud compute instances add-metadata titan-orbit-compute-engine --project=titan-orbit --zone=us-central1-a --metadata-from-file=startup-script=guest_network_recovery_startup.sh
-#   gcloud compute instances reset titan-orbit-compute-engine --project=titan-orbit --zone=us-central1-a
+#   gcloud compute instances add-metadata titanorbitcp --project=titan-orbit --zone=us-central1-f --metadata-from-file=startup-script=guest_network_recovery_startup.sh
+#   gcloud compute instances reset titanorbitcp --project=titan-orbit --zone=us-central1-f
 # After recovery: remove the startup-script metadata key so it does not run every boot.
 #
 # Logs (on the VM only): /var/log/titanorbit-network-recovery.log
@@ -14,7 +14,7 @@
 _INAME="$(curl -fsS -H "Metadata-Flavor: Google" --max-time 3 "http://169.254.169.254/computeMetadata/v1/instance/name" 2>/dev/null || true)"
 if echo "${_INAME}" | grep -qi cloudshell; then
   echo "ERROR: This script is running on Cloud Shell (metadata instance name contains cloudshell)." >&2
-  echo "It must be installed as startup-script on Compute Engine VM titan-orbit-compute-engine, then the VM reset — not executed with bash here." >&2
+  echo "It must be installed as startup-script on Compute Engine VM titanorbitcp, then the VM reset — not executed with bash here." >&2
   exit 1
 fi
 

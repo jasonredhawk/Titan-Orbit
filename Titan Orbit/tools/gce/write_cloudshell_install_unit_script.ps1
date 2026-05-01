@@ -3,8 +3,8 @@
 
 param(
     [string] $ProjectId = "titan-orbit",
-    [string] $Zone = "us-central1-a",
-    [string] $InstanceTarget = "jason@titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $InstanceTarget = "jason@titanorbitcp",
     [string] $RemoteDir = "/home/jason/titanorbit-server/TitanOrbitLinux1",
     [string] $ExeName = ""
 )

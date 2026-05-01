@@ -6,8 +6,8 @@ param(
     [string] $ProjectId = "titan-orbit",
     [Parameter(Position = 1)]
     [string] $NetworkOverride = "",
-    [string] $Zone = "us-central1-a",
-    [string] $Instance = "titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $Instance = "titanorbitcp",
     [string] $Tag = "allow-iap-ssh"
 )
 

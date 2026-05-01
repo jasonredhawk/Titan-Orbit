@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=jason
 WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
-ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/__TITANORBIT_EXE__ -batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log
+ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/__TITANORBIT_EXE__ -batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log
 Restart=always
 RestartSec=5
 KillSignal=SIGINT

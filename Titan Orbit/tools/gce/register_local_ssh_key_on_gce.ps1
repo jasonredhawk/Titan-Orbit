@@ -10,8 +10,8 @@
 
 param(
     [string] $ProjectId = "titan-orbit",
-    [string] $Zone = "us-central1-a",
-    [string] $InstanceName = "titan-orbit-compute-engine",
+    [string] $Zone = "us-central1-f",
+    [string] $InstanceName = "titanorbitcp",
     [string] $LinuxUser = "jason",
     [string] $PrivateKeyPath = "",
     [switch] $WhatIf

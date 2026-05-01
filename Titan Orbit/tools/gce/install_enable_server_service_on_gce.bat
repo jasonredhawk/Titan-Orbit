@@ -9,8 +9,8 @@ REM   install_enable_server_service_on_gce.bat your-gcp-project-id
 REM   install_enable_server_service_on_gce.bat your-gcp-project-id useIap
 REM If plink times out on Windows, use useIap or install_enable_server_service_on_gce_iap.bat
 
-set "INSTANCE=titan-orbit-compute-engine"
-set "ZONE=us-central1-a"
+set "INSTANCE=titanorbitcp"
+set "ZONE=us-central1-f"
 set "PROJECT_ID=titan-orbit"
 set "REMOTE_USER=jason"
 set "USE_IAP="
@@ -40,6 +40,11 @@ if errorlevel 1 (
 echo Installing and enabling %SERVICE_NAME%...
 echo Using project: %PROJECT_ID%
 if not "%USE_IAP%"=="" echo Using IAP tunnel for SSH.
+if "%USE_IAP%"=="" (
+  echo.
+  echo TIP: Without IAP, PuTTY may ask to cache the host key ^(type y^). Or use install_enable_server_service_on_gce_iap.bat ^(OpenSSH, no prompt^).
+  echo TIP: Fresh VM with no Linux build yet is OK: unit installs; upload build then restart the service.
+)
 
 set "LOCAL_UNIT=%~dp0titanorbit-server.service"
 if not exist "%LOCAL_UNIT%" (
