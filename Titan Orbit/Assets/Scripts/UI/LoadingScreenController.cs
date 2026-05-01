@@ -6,6 +6,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Networking;
 using Unity.Netcode;
 using System.Collections;
+using System.Globalization;
 
 namespace TitanOrbit.UI
 {
@@ -262,6 +263,11 @@ namespace TitanOrbit.UI
             {
                 if (elapsed < minLoadingDisplayTime + maxWaitNetcodeSeconds)
                     return;
+                // #region agent log
+                string r2Data = "{\"elapsed\":" + elapsed.ToString("F2", CultureInfo.InvariantCulture) + ",\"minLoadingDisplayTime\":" + minLoadingDisplayTime.ToString("F2", CultureInfo.InvariantCulture) + ",\"maxWaitNetcodeSeconds\":" + maxWaitNetcodeSeconds.ToString("F2", CultureInfo.InvariantCulture) + ",\"netcodeListening\":false,\"complete\":" + (complete ? "true" : "false") + ",\"isFocused\":" + (Application.isFocused ? "true" : "false") + "}";
+                NetworkGameManager.DebugSessionE2a466Log("relay-repro", "R2", "LoadingScreenController.Update", "netcode_wait_timeout", r2Data);
+                NetworkGameManager.DebugSessionE695ffLog("R2", "LoadingScreenController.Update", "netcode_wait_timeout", r2Data);
+                // #endregion
                 Debug.LogError("[LoadingScreenController] Timed out waiting for Netcode (transport listening and client approved). The world reported ready but multiplayer session was not ready.");
                 NetworkGameManager.OnTeamChoiceFailed?.Invoke("Multiplayer session did not start in time. Return to the main menu, create or join a match from the list, or join with a relay code.");
                 teamMenuShownAfterLoad = true;

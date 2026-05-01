@@ -65,7 +65,10 @@ namespace TitanOrbit.Networking
         private static DateTime _dbgNextUnfilteredProbeAllowedUtc = DateTime.MinValue;
         private Coroutine _dbgJoinMonitorCoroutine;
         private bool _dbgNetcodeCallbacksHooked;
-        
+        /// <summary>Debug: ordering of disconnect vs OnTransportFailure (session e2a466).</summary>
+        private static float _dbgLastLocalDisconnectRealtime = -1f;
+        private static float _dbgLastTransportFailureRealtime = -1f;
+
         // #region agent log
         private static string EscapeJsonE2a466(string value)
         {
@@ -189,6 +192,27 @@ namespace TitanOrbit.Networking
         }
 #endif
 
+        /// <summary>UTP snapshot for Relay transport-failure logs (session e695ff / R1).</summary>
+        private static string BuildTransportSnapshotJsonForDebug()
+        {
+            try
+            {
+                var nm = ResolveNetworkManagerForGameplay();
+                if (nm == null) return "{\"nmNull\":true}";
+                var t = nm.GetComponent<UnityTransport>();
+                if (t == null) return "{\"transportNull\":true}";
+                return "{\"connectTimeoutMs\":" + t.ConnectTimeoutMS + ",\"heartbeatTimeoutMs\":" + t.HeartbeatTimeoutMS
+                    + ",\"maxPacketQueueSize\":" + t.MaxPacketQueueSize + ",\"useWebSockets\":" + (t.UseWebSockets ? "true" : "false")
+                    + ",\"isListening\":" + (nm.IsListening ? "true" : "false")
+                    + ",\"isConnectedClient\":" + (nm.IsConnectedClient ? "true" : "false")
+                    + ",\"isServer\":" + (nm.IsServer ? "true" : "false") + "}";
+            }
+            catch
+            {
+                return "{\"transportSnapshotError\":true}";
+            }
+        }
+
         /// <summary>NDJSON diagnostics for team-join failures (session e695ff).</summary>
         private static string BuildLocalPlayerShipDiagJson()
         {
@@ -268,12 +292,29 @@ namespace TitanOrbit.Networking
 
         private void AgentOnTransportFailure()
         {
+            _dbgLastTransportFailureRealtime = Time.realtimeSinceStartup;
+            float secSinceLocalDisc = _dbgLastLocalDisconnectRealtime < 0f
+                ? -1f
+                : Time.realtimeSinceStartup - _dbgLastLocalDisconnectRealtime;
             string t = RelayConnectionTypeForCurrentPlatform();
+            string snap = BuildTransportSnapshotJsonForDebug();
+#if UNITY_EDITOR
+            bool editorPaused = UnityEditor.EditorApplication.isPaused;
+#else
+            const bool editorPaused = false;
+#endif
             AgentDebugLog("H1", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure",
                 "{\"relayConnectionType\":\"" + t + "\",\"isHost\":" + (IsHost ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false") + "}");
             // #region agent log
+            string r1Data = "{\"relayConnectionType\":\"" + EscapeJsonE2a466(t) + "\",\"isHost\":" + (IsHost ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false")
+                + ",\"isFocused\":" + (Application.isFocused ? "true" : "false") + ",\"runInBackground\":" + (Application.runInBackground ? "true" : "false")
+                + ",\"editorPaused\":" + (editorPaused ? "true" : "false") + ",\"realtimeSinceStartup\":" + Time.realtimeSinceStartup.ToString("F2", CultureInfo.InvariantCulture)
+                + ",\"secSinceLocalDisconnect\":" + (secSinceLocalDisc < 0f ? "-1" : secSinceLocalDisc.ToString("F3", CultureInfo.InvariantCulture))
+                + ",\"transport\":" + snap + "}";
             DebugSessionE2a466Log("post-fix", "H11", "NetworkGameManager.AgentOnTransportFailure", "transport_failure",
                 "{\"relayConnectionType\":\"" + EscapeJsonE2a466(t) + "\",\"isHost\":" + (IsHost ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false") + "}");
+            DebugSessionE2a466Log("relay-repro", "R1", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure_detail", r1Data);
+            DebugSessionE695ffLog("R1", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure_detail", r1Data);
             // #endregion
         }
 
@@ -289,10 +330,25 @@ namespace TitanOrbit.Networking
         private void DebugOnAnyClientDisconnected(ulong clientId)
         {
             var nm = ResolveNetworkManagerForGameplay();
+            if (nm != null && clientId == nm.LocalClientId)
+                _dbgLastLocalDisconnectRealtime = Time.realtimeSinceStartup;
+            float secSinceTf = _dbgLastTransportFailureRealtime < 0f
+                ? -1f
+                : Time.realtimeSinceStartup - _dbgLastTransportFailureRealtime;
             string reason = nm != null ? nm.DisconnectReason : string.Empty;
             // #region agent log
             DebugSessionE2a466Log("post-fix", "H11", "NetworkGameManager.DebugOnAnyClientDisconnected", "client_disconnected_callback",
                 "{\"clientId\":" + clientId + ",\"localClientId\":" + (nm != null ? nm.LocalClientId : 0UL) + ",\"isConnectedClient\":" + (nm != null && nm.IsConnectedClient ? "true" : "false") + ",\"disconnectReason\":\"" + EscapeJsonE2a466(reason) + "\"}");
+            string r3Data = "{\"clientId\":" + clientId + ",\"disconnectReason\":\"" + EscapeJsonE2a466(reason) + "\",\"secSinceTransportFailure\":" + (secSinceTf < 0f ? "-1" : secSinceTf.ToString("F3", CultureInfo.InvariantCulture)) + ",\"transport\":" + BuildTransportSnapshotJsonForDebug() + "}";
+            DebugSessionE2a466Log("relay-repro", "R3", "NetworkGameManager.DebugOnAnyClientDisconnected", "client_disconnect_detail", r3Data);
+            DebugSessionE695ffLog("R3", "NetworkGameManager.DebugOnAnyClientDisconnected", "client_disconnect_detail", r3Data);
+            try
+            {
+                StartCoroutine(CoDisconnectReasonFollowUp(clientId));
+            }
+            catch
+            {
+            }
             // #endregion
             if (clientId == 0 && currentLobby != null && !string.IsNullOrWhiteSpace(currentLobby.Id))
                 _ = DebugFetchLobbyStateAfterDisconnectAsync(currentLobby.Id);
@@ -1569,6 +1625,29 @@ namespace TitanOrbit.Networking
             _dbgJoinMonitorCoroutine = StartCoroutine(CoDebugJoinMonitor(source, lobbyIdOrTag));
         }
 
+        private void LogJoinMonitorRelayRepro(string messageTag, string source, string lobbyIdOrTag, float t0)
+        {
+#if UNITY_EDITOR
+            bool editorPaused = UnityEditor.EditorApplication.isPaused;
+#else
+            const bool editorPaused = false;
+#endif
+            var nm = ResolveNetworkManagerForGameplay();
+            string data = "{\"source\":\"" + EscapeJsonE2a466(source) + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag) + "\",\"messageTag\":\"" + EscapeJsonE2a466(messageTag) + "\",\"connected\":" + (nm != null && nm.IsConnectedClient ? "true" : "false") + ",\"listening\":" + (nm != null && nm.IsListening ? "true" : "false") + ",\"isFocused\":" + (Application.isFocused ? "true" : "false") + ",\"editorPaused\":" + (editorPaused ? "true" : "false") + ",\"elapsedMs\":" + ((Time.realtimeSinceStartup - t0) * 1000f).ToString("F0", CultureInfo.InvariantCulture) + ",\"lobbyPlayers\":" + (currentLobby != null && currentLobby.Players != null ? currentLobby.Players.Count : -1) + ",\"transport\":" + BuildTransportSnapshotJsonForDebug() + "}";
+            DebugSessionE2a466Log("relay-repro", "R4", "NetworkGameManager.CoDebugJoinMonitor", messageTag, data);
+        }
+
+        private IEnumerator CoDisconnectReasonFollowUp(ulong clientId)
+        {
+            yield return null;
+            yield return null;
+            var nm = ResolveNetworkManagerForGameplay();
+            string reason = nm != null ? nm.DisconnectReason : string.Empty;
+            bool stillClient = nm != null && nm.IsConnectedClient;
+            DebugSessionE2a466Log("relay-repro", "R6", "NetworkGameManager.CoDisconnectReasonFollowUp", "disconnect_followup_2frames",
+                "{\"clientId\":" + clientId + ",\"disconnectReason\":\"" + EscapeJsonE2a466(reason) + "\",\"isConnectedClient\":" + (stillClient ? "true" : "false") + "}");
+        }
+
         private IEnumerator CoDebugJoinMonitor(string source, string lobbyIdOrTag)
         {
             float t0 = Time.realtimeSinceStartup;
@@ -1591,7 +1670,11 @@ namespace TitanOrbit.Networking
                 "{\"source\":\"" + EscapeJsonE2a466(source) + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag) + "\",\"connected\":" + (connectedAt15s ? "true" : "false") + ",\"listening\":" + (listeningAt15s ? "true" : "false") + ",\"lobbyPlayers\":" + playersAt15s + ",\"elapsedMs\":" + ((Time.realtimeSinceStartup - t0) * 1000f).ToString("F0", CultureInfo.InvariantCulture) + "}");
             // #endregion
 
-            yield return new WaitForSeconds(45f);
+            yield return new WaitForSeconds(15f);
+            LogJoinMonitorRelayRepro("join_monitor_30s", source, lobbyIdOrTag, t0);
+            yield return new WaitForSeconds(15f);
+            LogJoinMonitorRelayRepro("join_monitor_45s", source, lobbyIdOrTag, t0);
+            yield return new WaitForSeconds(15f);
             nm = ResolveNetworkManagerForGameplay();
             bool connectedAt60s = nm != null && nm.IsConnectedClient;
             // #region agent log
