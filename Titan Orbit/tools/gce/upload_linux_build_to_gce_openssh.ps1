@@ -4,7 +4,8 @@
 # Usage (from tools\gce):
 #   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1
 #   (Tries direct SSH to the VM external IP first; if that fails, retries via IAP automatically.)
-#   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1 -UseIap
+#   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1 -UseIap   (legacy; upload tries direct SSH first whenever the VM has a public IP, then IAP)
+#   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1 -IapOnly   (skip direct; IAP tunnel only — for testing)
 #   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1 -NoIapFallback
 #   powershell -NoProfile -File .\upload_linux_build_to_gce_openssh.ps1 -SourceDir "D:\Builds\TitanOrbitLinux1" -ProjectId titan-orbit
 
@@ -16,8 +17,14 @@ param(
     [string] $TargetDir = "/home/jason/titanorbit-server",
     [string] $SourceDir = "",
     [switch] $UseIap,
+    [switch] $IapOnly,
     [switch] $NoIapFallback
 )
+
+# Linux username must match a user that can log in (metadata/OS Login). Console often creates e.g. jason_redhawk, not jason.
+if (-not [string]::IsNullOrWhiteSpace($env:TITANORBIT_GCE_SSH_USER)) {
+    $SshUser = $env:TITANORBIT_GCE_SSH_USER.Trim()
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -317,59 +324,67 @@ function Invoke-UploadViaIapTunnel {
     }
 }
 
-$useIapNow = $UseIap.IsPresent
-if (-not $useIapNow) {
-    $nat = Get-InstanceNatIp
-    if (-not $nat) {
-        $useIapNow = $true
-        Write-Host 'No external NAT IP on this VM; using IAP.'
-    }
-    else {
-        Write-Host ('[3/4] Direct upload to ' + $nat + ' (OpenSSH; no plink). If this times out, script will retry via IAP ...')
-        $target = "${SshUser}@${nat}"
-        $directOk = $true
+# Always try direct ssh/scp to the VM external IP first when one exists (even if -UseIap was passed).
+# deploy_server_gce_iap.bat historically set -UseIap, which incorrectly skipped direct and hit IAP 4003 when guest :22 was not reachable via IAP but direct SSH worked.
+$nat = Get-InstanceNatIp
+$directOk = $false
+if (-not $IapOnly.IsPresent -and -not [string]::IsNullOrWhiteSpace($nat)) {
+    Write-Host ('[3/4] Direct upload to ' + $nat + ' (OpenSSH to external IP; avoids IAP 4003 when firewall allows your IP on :22).')
+    $target = "${SshUser}@${nat}"
+    $directOk = $true
 
-        $sshPrep = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remotePrepare'")
-        & $sshExe @sshPrep
+    $sshPrep = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remotePrepare'")
+    & $sshExe @sshPrep
+    if ($LASTEXITCODE -ne 0) {
+        $directOk = $false
+    }
+    if ($directOk) {
+        $scpArgs = @("-4") + $sshCommon + @("$archivePath", "${target}:$bundleRemote")
+        & $scpExe @scpArgs
         if ($LASTEXITCODE -ne 0) {
             $directOk = $false
         }
-        if ($directOk) {
-            $scpArgs = @("-4") + $sshCommon + @("$archivePath", "${target}:$bundleRemote")
-            & $scpExe @scpArgs
-            if ($LASTEXITCODE -ne 0) {
-                $directOk = $false
-            }
-        }
-        if ($directOk) {
-            $sshArgs = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remoteExtract'")
-            & $sshExe @sshArgs
-            if ($LASTEXITCODE -ne 0) {
-                $directOk = $false
-            }
-        }
-        if ($directOk) {
-            $sshArgs2 = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remoteVerify'")
-            & $sshExe @sshArgs2
-            if ($LASTEXITCODE -ne 0) {
-                $directOk = $false
-            }
-        }
-
-        if (-not $directOk) {
-            if ($NoIapFallback) {
-                Write-Error ('Direct upload failed (last exit ' + $LASTEXITCODE + '). Use -UseIap or fix firewall / sshd on :22.')
-                exit 1
-            }
-            Write-Warning 'Direct SSH failed (timeout / port 22 blocked). Retrying once via IAP (if that fails with 4003, run add_iap_ssh_firewall_and_tag.bat).'
-            $useIapNow = $true
+    }
+    if ($directOk) {
+        $sshArgs = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remoteExtract'")
+        & $sshExe @sshArgs
+        if ($LASTEXITCODE -ne 0) {
+            $directOk = $false
         }
     }
+    if ($directOk) {
+        $sshArgs2 = @("-4", "-T") + $sshCommon + @($target, "bash -lc '$remoteVerify'")
+        & $sshExe @sshArgs2
+        if ($LASTEXITCODE -ne 0) {
+            $directOk = $false
+        }
+    }
+
+    if ($directOk) {
+        Write-Host '[4/4] Cleaning local archive'
+        if (Test-Path $archivePath) {
+            Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host ""
+        Write-Host 'Upload complete (direct SSH). Next: prepare_and_start_server_on_gce.bat (or restart scripts).'
+        exit 0
+    }
+
+    if ($NoIapFallback) {
+        Write-Error ('Direct upload failed (last exit ' + $LASTEXITCODE + '). Fix firewall/sshd on :22 or omit -NoIapFallback to try IAP.')
+        exit 1
+    }
+    Write-Warning 'Direct SSH failed. Retrying via IAP tunnel (if you see 4003, fix IAP firewall tag + guest sshd — see tools/gce/README.md).'
 }
 
-if ($useIapNow) {
-    Invoke-UploadViaIapTunnel
+if ([string]::IsNullOrWhiteSpace($nat)) {
+    Write-Host 'No external NAT IP on this VM; using IAP tunnel only.'
 }
+elseif ($IapOnly.IsPresent) {
+    Write-Host '-IapOnly: skipping direct upload; using IAP tunnel.'
+}
+
+Invoke-UploadViaIapTunnel
 
 Write-Host '[4/4] Cleaning local archive'
 if (Test-Path $archivePath) {

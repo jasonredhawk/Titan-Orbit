@@ -1,6 +1,8 @@
 @echo off
 setlocal
 
+REM NOTE: This script still uses "gcloud compute ssh" (PuTTY plink on Windows). For a stable pipeline,
+REM prefer: deploy_server_gce.bat (OpenSSH upload + restart) or Console browser SSH for one-off commands.
 REM Prepares uploaded Linux build folder on GCE VM and starts server once (foreground).
 REM Usage:
 REM   prepare_and_start_server_on_gce.bat

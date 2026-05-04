@@ -1,7 +1,10 @@
 @echo off
 setlocal
 
-REM One-step publish: upload Linux headless build to the GCE VM, then restart the dedicated server service.
+REM One-step publish: upload via OpenSSH (upload_linux_build_to_gce_openssh.ps1), then restart (restart_server_remote.ps1).
+REM Upload does not use gcloud compute scp/ssh (PuTTY plink). Requires ssh.exe, scp.exe, gcloud, tar.
+REM
+REM Upload Linux headless build to the GCE VM, then restart the dedicated server service.
 REM Argument order matches upload_linux_build_to_gce.bat so you can swap paths or project id the same way
 REM as tools/gcs/deploy_webgl_gcs.bat does for WebGL.
 REM

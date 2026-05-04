@@ -1,7 +1,7 @@
 # Installs titanorbit-server.service on the VM.
-# - Default with -UseIap: IAP TCP tunnel + Windows OpenSSH (ssh.exe) + bash -lc 'echo <b64> | base64 -d | bash -s' (same as gcloud path; avoids stdin pipe truncation on Windows).
-# - With -UsePlinkWithIap: legacy "gcloud compute ssh" (plink) for IAP.
-# - Without -UseIap: "gcloud compute ssh" + bash -lc 'echo <b64> | base64 -d | bash -s' (no stdin script: plink/gcloud may consume stdin for Y/n and leave "y" as bash line 1).
+# - With -UseIap (default for IAP .bat): IAP tunnel + ssh.exe (OpenSSH), not plink.
+# - Without -UseIap: try direct ssh.exe to VM external IP first; plink only as last resort.
+# - With -UsePlinkWithIap: force "gcloud compute ssh" (PuTTY plink).
 
 param(
     [string] $ProjectId = "titan-orbit",
@@ -12,6 +12,10 @@ param(
     [switch] $UseIap,
     [switch] $UsePlinkWithIap
 )
+
+if (-not [string]::IsNullOrWhiteSpace($env:TITANORBIT_GCE_INSTANCE_TARGET)) {
+    $InstanceTarget = $env:TITANORBIT_GCE_INSTANCE_TARGET.Trim()
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -134,6 +138,57 @@ function Get-FreeLocalPort {
     finally {
         $listener.Stop()
     }
+}
+
+function Get-InstanceNatIp {
+    $out = & $gcloudExe @(
+        "--quiet",
+        "compute", "instances", "describe", $instanceName,
+        "--project=$ProjectId", "--zone=$Zone",
+        "--format=get(networkInterfaces[0].accessConfigs[0].natIP)"
+    ) 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+    return ($out | Out-String).Trim()
+}
+
+function Invoke-DirectOpenSshInstall {
+    $sshCmd = Get-Command ssh.exe -ErrorAction SilentlyContinue
+    if (-not $sshCmd) {
+        return 99
+    }
+    $identity = Join-Path $env:USERPROFILE ".ssh\google_compute_engine"
+    if (-not (Test-Path $identity)) {
+        return 99
+    }
+    $nat = Get-InstanceNatIp
+    if ([string]::IsNullOrWhiteSpace($nat)) {
+        return 99
+    }
+    $installPackB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteScript))
+    if ($installPackB64.Length -gt 6000) {
+        return 1
+    }
+    $iapSshRemoteArg = "bash -lc `"echo $installPackB64 | base64 -d | bash -s`""
+    $target = "${sshUser}@${nat}"
+    $sshArgs = @(
+        "-4", "-T",
+        "-i", $identity,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=NUL",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "BatchMode=yes",
+        "-o", "IPQoS=none",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=6",
+        "-o", "ConnectTimeout=90",
+        $target
+    )
+    Write-Host "Running: ssh.exe -> $target (direct install; no IAP) ..."
+    & $sshCmd.Source @sshArgs $iapSshRemoteArg
+    return $LASTEXITCODE
 }
 
 # IAP can accept TCP before sshd traffic is forwarded; ssh.exe then fails with "banner exchange" timeout.
@@ -372,6 +427,14 @@ $iap4003Hint
 
 if ($UseIap -and -not $UsePlinkWithIap) {
     Invoke-IapTunnelPlusOpenSsh
+}
+elseif (-not $UsePlinkWithIap) {
+    $dc = Invoke-DirectOpenSshInstall
+    if ($dc -eq 0) {
+        exit 0
+    }
+    Write-Warning "Direct OpenSSH install failed ($dc). Last resort: gcloud compute ssh (plink)."
+    Invoke-GcloudComputeSsh
 }
 else {
     Invoke-GcloudComputeSsh

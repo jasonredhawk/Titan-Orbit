@@ -848,6 +848,16 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // #region agent log
+            F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
+                "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
+            // #endregion
+            if (NetworkGameManager.Instance == null)
+            {
+                SetLobbyBrowserStatus("Network not ready yet. Open this screen again or tap Refresh.");
+                return;
+            }
+
             _isLobbyRefreshInFlight = true;
             _nextAllowedLobbyRefreshRealtime = gateNow + 5f;
             _dbgLobbyRefreshCount++;
@@ -858,12 +868,6 @@ namespace TitanOrbit.UI
             NetworkGameManager.DebugSessionE2a466Log("pre-fix", "H7", "MainMenu.RefreshLobbyListAsync", "refresh_requested",
                 "{\"count\":" + _dbgLobbyRefreshCount + ",\"deltaMs\":" + delta.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
             // #endregion
-            // #region agent log
-            F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
-                "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
-            // #endregion
-            if (NetworkGameManager.Instance == null)
-                return;
 
             SetLobbyBrowserStatus("Loading lobbies...");
             if (refreshLobbiesButton != null)

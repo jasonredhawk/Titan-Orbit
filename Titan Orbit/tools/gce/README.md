@@ -4,7 +4,9 @@ Batch helpers upload the Unity **Linux headless** build to your VM and optionall
 
 This mirrors the idea of `tools/gcs/deploy_webgl_gcs.bat`: one main script for day-to-day publishes.
 
-**Build the binary in Unity:** **TitanOrbit → Build → Headless Server (Linux — Google Cloud)** (requires **Linux Dedicated Server** Hub module). Then run **`deploy_server_gce.bat`** from this folder — **unless** Windows SSH/`scp` keeps failing; in that case use the **GCS + Cloud Shell** path below.
+**Build the binary in Unity:** **TitanOrbit → Build → Headless Server (Linux — Google Cloud)** (requires **Linux Dedicated Server** Hub module).
+
+**Stable Windows pipeline (recommended):** Install **OpenSSH Client** (Windows optional feature). **`upload_linux_build_to_gce.bat`** and **`deploy_server_gce.bat`** call **`upload_linux_build_to_gce_openssh.ps1`**, which uses **`ssh.exe` / `scp.exe` + `gcloud compute start-iap-tunnel`** — **not** `gcloud compute ssh` / `scp` (those use PuTTY **plink** and are flaky). **`restart_titanorbit_server_on_gce.bat`** uses **`restart_server_remote.ps1`**, which prefers **OpenSSH** (direct to external IP when present, then IAP tunnel + ssh.exe; plink only as an explicit last resort). If Windows SSH is still unusable, use the **GCS + Cloud Shell** path below (no PC SSH).
 
 ## Recommended: dedicated server without Windows SSH (GCS + Cloud Shell)
 
@@ -45,6 +47,12 @@ If **`gcloud compute scp`** / **`ssh`** from Cloud Shell times out (VM has no pu
 ### Browser SSH and IAP error 4003
 
 The **SSH** button in **Compute Engine → VM instances** usually connects through **Identity-Aware Proxy (IAP)**. A popup like **Connection via IAP failed**, **Code: 4003**, **failed to connect to backend** means IAP could not open **TCP port 22** on your VM (firewall + tags), or **`sshd`** is not listening on 22.
+
+**Tag ≠ firewall rule:** **`allow-iap-ssh` on the VM only marks which instances a rule applies to.** You still need a **VPC firewall rule** on the **same network as the VM** (e.g. `default`) that allows **`35.235.240.0/20` → `tcp:22`** to **target tags** `allow-iap-ssh`. If the rule is missing, on the wrong VPC, or denied by an org/folder policy, you get **4003** even though the tag is set.
+
+**Linux username vs repo defaults:** New VMs often get **metadata / OS Login** keys for your Google identity, e.g. Linux user **`jason_redhawk`**, while these scripts default to **`jason`**. That mismatch does **not** cause 4003 (that is before SSH auth), but it **will** cause **Permission denied** once TCP works. Set environment variables before deploy: **`TITANORBIT_GCE_SSH_USER`** (e.g. `jason_redhawk`) for upload, and **`TITANORBIT_GCE_INSTANCE_TARGET`** (e.g. `jason_redhawk@titanorbitcp`) for restart/install PowerShell scripts, **or** create a Linux user **`jason`** and add your `google_compute_engine` public key for that user.
+
+**Convenience (PowerShell, from `tools\gce`):** **`deploy_identity_google_user.ps1`** sets those env vars for **`jason_redhawk@titanorbitcp`** (override with `-LinuxUser` / `-InstanceName`) and runs **`deploy_server_gce_iap.bat`**. **`deploy_identity_repo_default.ps1`** clears the overrides and deploys as **`jason`** (create that user on the VM first if needed).
 
 **Fix A — Google Cloud Console (no scripts)**
 
@@ -188,8 +196,8 @@ After Part A and Part B, run **`install_enable_server_service_on_gce_iap.bat`** 
 | Script | Purpose |
 |--------|--------|
 | `upload_linux_build_to_gcs.bat` | Tar local folder → **`gcloud storage cp`** to **`gs://…/titanorbit-linux-build/…-latest.tar.gz`** (no SSH). Pair with **Cloud Shell** commands in README. |
-| `upload_linux_build_to_gce.bat` | Tar local folder → `gcloud compute scp` → extract on VM (needs working SSH from your PC). |
-| `upload_linux_build_to_gce_iap.bat` | Same as upload, always **`--tunnel-through-iap`** (try this on Windows if plink times out). |
+| `upload_linux_build_to_gce.bat` | **OpenSSH only:** `upload_linux_build_to_gce_openssh.ps1` — `tar` → `scp`/`ssh` + optional **`gcloud start-iap-tunnel`** (no `gcloud compute ssh` / PuTTY plink). Requires **ssh.exe**, **scp.exe**, **gcloud**. |
+| `upload_linux_build_to_gce_iap.bat` | Same as upload with **`-UseIap`** (IAP tunnel for VMs without a public IP or when direct SSH is blocked). |
 | `restart_titanorbit_server_on_gce.bat` / `_iap.bat` | **`restart_server_remote.ps1`**: non-IAP uses **base64-in-`gcloud compute ssh --command`**; **`useIap`** / **`_iap.bat`** use **`start-iap-tunnel` + `ssh.exe`**, then **auto-fallback** to plain `gcloud compute ssh` if IAP fails. On Windows, if **`cmd`** shows **Terminate batch job** or **plink** hangs, use **`restart_titanorbit_server.ps1`** from **PowerShell** instead of the `.bat`. |
 | `restart_titanorbit_server.ps1` | Windows **PowerShell** entry point for **`restart_server_remote.ps1`** (same args; avoids **`cmd.exe`** + PuTTY quirks). Example: **`.\restart_titanorbit_server.ps1`** or **`.\restart_titanorbit_server.ps1 -UseIap`**. |
 | `cloudshell_restart_titanorbit_server.sh` | Run **in Cloud Shell**: restarts **`titanorbit-server` on your GCE VM** via **`gcloud compute ssh … --command`**. Do **not** run bare **`sudo systemctl …`** in Cloud Shell — that is **not** your VM (you will see *“not been booted with systemd as init system”*). |
@@ -200,6 +208,7 @@ After Part A and Part B, run **`install_enable_server_service_on_gce_iap.bat`** 
 | `add_iap_ssh_firewall_and_tag.bat` | Calls **`add_iap_ssh_firewall_and_tag.ps1`**: reads the VM’s **actual VPC**, creates **`iap-allow-ssh-<vpc>`** (TCP 22 from **`35.235.240.0/20`**) + adds **`allow-iap-ssh`** (fixes IAP **4003** when a rule on **`default`** did not match the VM’s network). |
 | `add_iap_ssh_firewall_and_tag_cloudshell.sh` | Same logic for **Google Cloud Shell** (bash + `gcloud`): upload and run **`bash add_iap_ssh_firewall_and_tag_cloudshell.sh`** when **`cloudshell_install_titanorbit_unit.sh`** or Console SSH returns **4003**. Optional: **`TITANORBIT_IAP_SSH_ALL_VMS=1`** (IAP→22 for all VMs on the VPC). Optional: **`TITANORBIT_IAP_SSH_PRIORITY0=1`** (same as tagged or all‑VMs path, but **`--priority=0`** so it wins over lower‑precedence DENY rules). Source is always **`35.235.240.0/20`**. |
 | `guest_network_recovery_startup.sh` | **Optional** one-time **metadata `startup-script`** when serial is unusable (log flood) and the guest cannot reach **`169.254.169.254`**. Copy to your PC, then: **`gcloud compute instances add-metadata INSTANCE --zone=ZONE --metadata-from-file=startup-script=guest_network_recovery_startup.sh`** and **`gcloud compute instances reset`**. Edit **`GW=`** inside the script if your internal subnet is not **`10.128.0.0/20`**. Remove the metadata key after recovery. |
+| `reset_gce_vm.bat` | **Hard reboot** via **`gcloud compute instances reset`** (defaults **`titanorbitcp`**, **`titan-orbit`**, **`us-central1-f`**). Optional args: **instance**, **project**, **zone**. Use when SSH/IAP fail from guest-side issues; pair with **`guest_network_recovery_startup.sh`** if metadata recovery is needed first. |
 | `diagnose_iap_ssh_cloudshell.sh` | In Cloud Shell: prints **v3** marker, **effective firewalls**, **metadata**, **network firewall policies**, and VPC rules. Use when **4003** remains. After upload, confirm **`head -6 diagnose_iap_ssh_cloudshell.sh`** includes **`TITANORBIT_IAP_DIAG_FILE=v3`**; if the run jumps from Tags straight to VPC rules, you are not executing this file (wrong path or stale copy). |
 | `install_unit_remote.ps1` | With **IAP**, uses **`gcloud compute start-iap-tunnel`** + **`ssh.exe`** + remote **`bash -lc`** that **base64-decodes** the install script (same pattern as non-IAP; avoids **stdin pipe truncation** to `bash -s` on Windows). Non-IAP uses **`gcloud compute ssh`** with the **base64-in-`--command`** path above (not stdin). |
 | `write_cloudshell_install_unit_script.bat` / `.ps1` | Writes **`cloudshell_install_titanorbit_unit.sh`**: run **that script in Cloud Shell** to install the unit via **`gcloud compute ssh … --tunnel-through-iap`** on **Linux** (use when Windows **`ssh.exe`** fails with **kex / connection reset** through IAP). |
@@ -251,7 +260,7 @@ deploy_server_gce.bat "D:\Builds\TitanOrbitLinux1" my-gcp-project-id useIap
 
 What you are seeing is usually **two separate layers**:
 
-1. **No IAP** (`upload_linux_build_to_gce.bat` as-is): Windows Cloud SDK often uses **PuTTY `plink.exe`**. A **“Connection timed out”** here means your PC never completed that SSH path (network, antivirus, corporate firewall, or plink quirks). Google’s **`--troubleshoot`** can still report **REACHABLE** to the VM IP; that does not guarantee **plink** works the same way.
+1. **Upload script (`upload_linux_build_to_gce.bat`):** uses **OpenSSH** (`ssh.exe`/`scp.exe`), not plink. If upload still fails, use **`gcloud compute ssh … --troubleshoot`** for IAP/firewall diagnosis, or the **GCS + Cloud Shell** path above.
 
 2. **With IAP** (`--tunnel-through-iap`): traffic goes through Google’s tunnel. A **“Remote side unexpectedly closed”** popup usually means the tunnel got further but the **SSH session** then failed (wrong Linux username, `sshd` / OS Login / host key, or IAP IAM not set up). That is **not** the same bug as (1); fixing it means checking **VM login user** and **IAP + IAM**, not “turn off IAP to fix the server.”
 

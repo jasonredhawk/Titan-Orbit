@@ -1,8 +1,8 @@
-# Restarts titanorbit-server on the VM without hanging Windows plink on long gcloud --command lines.
-# - Default: gcloud --quiet compute ssh + bash -lc 'echo <b64> | base64 -d | bash -s' (same idea as install_unit_remote.ps1).
-# - With -UseIap: gcloud compute start-iap-tunnel + ssh.exe + bash -lc 'echo <b64> | base64 -d | bash -s' (avoids stdin truncation to bash -s on Windows).
-# - With -UseIap -PlainSshFirst: try plain gcloud compute ssh first, then IAP tunnel if that fails (avoids hangs when direct SSH works).
-# - With -UsePlinkWithIap: legacy gcloud compute ssh --tunnel-through-iap (plink).
+# Restarts titanorbit-server on the VM using Windows OpenSSH (ssh.exe) first — not PuTTY plink.
+# - Default (no -UseIap): try direct ssh.exe to the VM external IP if present; else gcloud compute ssh (plink last resort).
+# - With -UseIap: gcloud start-iap-tunnel + ssh.exe (primary). Plink only as explicit last resort after OpenSSH attempts fail.
+# - With -UseIap -PlainSshFirst: direct ssh.exe to external IP first, then IAP tunnel + ssh.exe.
+# - With -UsePlinkWithIap: force legacy gcloud compute ssh --tunnel-through-iap (plink) — not recommended on Windows.
 
 param(
     [string] $ProjectId = "titan-orbit",
@@ -14,6 +14,11 @@ param(
     [switch] $PlainSshFirst,
     [switch] $UsePlinkWithIap
 )
+
+# Full "user@instanceName" — must match VM login user (see metadata SSH keys / OS Login), e.g. jason_redhawk@titanorbitcp
+if (-not [string]::IsNullOrWhiteSpace($env:TITANORBIT_GCE_INSTANCE_TARGET)) {
+    $InstanceTarget = $env:TITANORBIT_GCE_INSTANCE_TARGET.Trim()
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -181,6 +186,58 @@ function Get-FreeLocalPort {
     finally {
         $listener.Stop()
     }
+}
+
+function Get-InstanceNatIp {
+    $out = & $gcloudExe @(
+        "--quiet",
+        "compute", "instances", "describe", $instanceName,
+        "--project=$ProjectId", "--zone=$Zone",
+        "--format=get(networkInterfaces[0].accessConfigs[0].natIP)"
+    ) 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+    return ($out | Out-String).Trim()
+}
+
+function Invoke-DirectOpenSshRestart {
+    $sshCmd = Get-Command ssh.exe -ErrorAction SilentlyContinue
+    if (-not $sshCmd) {
+        return 99
+    }
+    $identity = Join-Path $env:USERPROFILE ".ssh\google_compute_engine"
+    if (-not (Test-Path $identity)) {
+        return 99
+    }
+    $nat = Get-InstanceNatIp
+    if ([string]::IsNullOrWhiteSpace($nat)) {
+        return 99
+    }
+    $packB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($restartScript))
+    if ($packB64.Length -gt 32000) {
+        Write-Error "Encoded restart script unexpectedly long ($($packB64.Length) chars)."
+        return 1
+    }
+    $remoteCmd = "bash -lc `"echo $packB64 | base64 -d | bash -s`""
+    $target = "${sshUser}@${nat}"
+    $sshArgs = @(
+        "-4", "-T",
+        "-i", $identity,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=NUL",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "BatchMode=yes",
+        "-o", "IPQoS=none",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=6",
+        "-o", "ConnectTimeout=90",
+        $target
+    )
+    Write-Host "Running: ssh.exe -> $target (direct; no IAP tunnel) ..."
+    & $sshCmd.Source @sshArgs $remoteCmd
+    return $LASTEXITCODE
 }
 
 # IAP can accept TCP before sshd traffic is forwarded; ssh.exe then fails with "banner exchange" timeout.
@@ -359,23 +416,25 @@ function Invoke-IapTunnelPlusOpenSsh {
 
         if ($lastCode -ne 0) {
             Write-Host ""
-            Write-Host "IAP tunnel + ssh.exe failed (exit $lastCode). Retrying with plain gcloud compute ssh (no local IAP tunnel) ..."
-            Write-Host "This matches install_enable_server_service_on_gce.bat when you do NOT pass useIap."
-            Write-Host ""
-            $plainCode = Invoke-RestartViaGcloudSsh -IncludeIapTunnel $false
-            if ($plainCode -eq 0) {
-                Write-Host "Restart succeeded via plain gcloud compute ssh."
+            Write-Host "IAP tunnel + ssh.exe failed (exit $lastCode). Trying direct OpenSSH to VM external IP (if any) ..."
+            $directCode = Invoke-DirectOpenSshRestart
+            if ($directCode -eq 0) {
+                Write-Host "Restart succeeded via direct ssh.exe to external IP."
                 exit 0
             }
-            Write-Host ("Plain gcloud retry exit code: " + $plainCode)
+            Write-Warning "OpenSSH paths failed. Last resort: gcloud compute ssh --tunnel-through-iap (PuTTY plink)."
+            $plinkCode = Invoke-RestartViaGcloudSsh -IncludeIapTunnel $true
+            if ($plinkCode -eq 0) {
+                Write-Host "Restart succeeded via gcloud IAP (plink fallback only)."
+                exit 0
+            }
             Write-Host ""
-            Write-Host 'IAP + plain SSH both failed. Common causes:'
-            Write-Host '  0) Windows key ACL: if you saw UNPROTECTED PRIVATE KEY / OWNER RIGHTS, run: fix_google_compute_engine_key_acl.bat'
-            Write-Host '  1) OS Login / IAM: metadata SSH keys ignored; roles/compute.osLogin, or use Console SSH.'
-            Write-Host '  2) Antivirus / VPN: IAP WebSocket errors (4010, 10053) — exclude gcloud.exe and OpenSSH; or use Cloud Shell.'
-            Write-Host '  3) VM has no public SSH: you need a working IAP path or Console SSH.'
-            Write-Host '  4) Cloud Shell: gcloud compute ssh ... --tunnel-through-iap --command "sudo systemctl restart titanorbit-server"'
-            exit $plainCode
+            Write-Host 'All restart paths failed. Common causes:'
+            Write-Host '  0) Windows key ACL: fix_google_compute_engine_key_acl.bat'
+            Write-Host '  1) OS Login / IAM: metadata SSH keys ignored.'
+            Write-Host '  2) Antivirus / VPN blocking IAP or ssh.exe.'
+            Write-Host '  3) Cloud Shell: gcloud compute ssh ... --tunnel-through-iap --command "sudo systemctl restart titanorbit-server"'
+            exit $plinkCode
         }
 
         exit $lastCode
@@ -393,27 +452,26 @@ function Invoke-IapTunnelPlusOpenSsh {
 }
 
 if ($UseIap -and $PlainSshFirst -and -not $UsePlinkWithIap) {
-    Write-Host "Trying plain gcloud compute ssh first (-PlainSshFirst; skips IAP when direct SSH works)."
-    $plainFirstCode = Invoke-RestartViaGcloudSsh -IncludeIapTunnel $false
-    if ($plainFirstCode -eq 0) {
+    Write-Host "Trying direct ssh.exe to external IP first (-PlainSshFirst) ..."
+    $df = Invoke-DirectOpenSshRestart
+    if ($df -eq 0) {
         exit 0
     }
-    Write-Host "Plain gcloud compute ssh exited $plainFirstCode; trying gcloud compute ssh --tunnel-through-iap (same as upload) ..."
-    $iapGcloudCode = Invoke-RestartViaGcloudSsh -IncludeIapTunnel $true
-    if ($iapGcloudCode -eq 0) {
-        exit 0
-    }
-    Write-Host "gcloud IAP ssh exited $iapGcloudCode; trying local IAP tunnel + ssh.exe ..."
+    Write-Host "Direct ssh exited $df; using IAP tunnel + ssh.exe ..."
     Invoke-IapTunnelPlusOpenSsh
 }
 elseif ($UseIap -and -not $UsePlinkWithIap) {
-    Write-Host "Trying gcloud compute ssh --tunnel-through-iap (same transport as deploy upload; often more reliable than local ssh.exe) ..."
-    $iapGcloudCode2 = Invoke-RestartViaGcloudSsh -IncludeIapTunnel $true
-    if ($iapGcloudCode2 -eq 0) {
+    Write-Host "Using IAP tunnel + ssh.exe (OpenSSH; stable on Windows)."
+    Invoke-IapTunnelPlusOpenSsh
+}
+elseif (-not $UsePlinkWithIap) {
+    Write-Host "Trying direct ssh.exe to external IP (no -UseIap) ..."
+    $df2 = Invoke-DirectOpenSshRestart
+    if ($df2 -eq 0) {
         exit 0
     }
-    Write-Host "gcloud IAP ssh exited $iapGcloudCode2; falling back to local IAP tunnel + ssh.exe ..."
-    Invoke-IapTunnelPlusOpenSsh
+    Write-Warning "Direct OpenSSH failed ($df2). Last resort: gcloud compute ssh (plink)."
+    Invoke-GcloudComputeSsh
 }
 else {
     Invoke-GcloudComputeSsh

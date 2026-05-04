@@ -1,6 +1,8 @@
 @echo off
 setlocal
 
+REM Opens an interactive shell via "gcloud compute ssh" (Windows: PuTTY plink — can be flaky).
+REM Alternative: Cloud Console -> VM -> SSH (browser), or WSL gcloud, or IAP tunnel + ssh.exe (see README).
 REM Opens an interactive SSH shell to your GCE VM.
 REM Usage:
 REM   open_gce_shell.bat

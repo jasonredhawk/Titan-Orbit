@@ -467,6 +467,16 @@ namespace TitanOrbit.Networking
                 transport.ConnectTimeoutMS = 5000;
             if (transport.HeartbeatTimeoutMS <= 0 || transport.HeartbeatTimeoutMS > 9000)
                 transport.HeartbeatTimeoutMS = 3000;
+            // UnityTransport default heartbeat is often 500ms; Relay/NGO needs a longer ping interval or allocations drop with "inactivity" / empty DisconnectReason.
+            if (transport.HeartbeatTimeoutMS > 0 && transport.HeartbeatTimeoutMS < 3000)
+            {
+                int prevHb = transport.HeartbeatTimeoutMS;
+                transport.HeartbeatTimeoutMS = 3000;
+                // #region agent log
+                DebugSessionE2a466Log("post-fix", "R7", "NetworkGameManager.ApplyRelayFriendlyTransportSettings", "heartbeat_min_clamped",
+                    "{\"prev\":" + prevHb + ",\"now\":" + transport.HeartbeatTimeoutMS + "}");
+                // #endregion
+            }
             if (transport.MaxPacketQueueSize < MinRelayPacketQueueSize)
             {
                 #region agent log e695ff
@@ -1115,6 +1125,8 @@ namespace TitanOrbit.Networking
 
                 if (results.Count == 0)
                 {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    // Extra unfiltered query helps debug filter mismatches but counts toward Lobby rate limits ("Too Many Requests") and can make the list look empty while throttled.
                     if (DateTime.UtcNow < _dbgNextUnfilteredProbeAllowedUtc)
                     {
                         // #region agent log
@@ -1170,6 +1182,7 @@ namespace TitanOrbit.Networking
                             "{\"exType\":\"" + EscapeJsonE2a466(probeEx.GetType().Name) + "\",\"message\":\"" + EscapeJsonE2a466(probeEx.Message) + "\"}");
                         // #endregion
                     }
+#endif
                 }
             }
             catch (Exception e)

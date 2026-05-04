@@ -6,7 +6,7 @@ setlocal
 
 REM Restarts the systemd dedicated server on the GCE VM (pick up a newly uploaded Linux build).
 
-REM Uses restart_server_remote.ps1 (same SSH strategy as install_unit_remote.ps1) so Windows plink does not hang.
+REM Uses restart_server_remote.ps1: OpenSSH (ssh.exe) first; PuTTY plink only as last resort.
 
 REM Requires install_enable_server_service_on_gce.bat to have been run once on that VM.
 
@@ -26,7 +26,7 @@ REM   restart_titanorbit_server_on_gce.bat your-gcp-project-id useIap
 
 REM   restart_titanorbit_server_on_gce.bat your-gcp-project-id useIap plainFirst
 
-REM IAP path tries gcloud compute ssh --tunnel-through-iap first (same as upload), then start-iap-tunnel + ssh.exe if needed.
+REM With useIap: IAP tunnel + ssh.exe first (see restart_server_remote.ps1).
 
 REM Or: restart_titanorbit_server_on_gce_iap.bat  (useIap + plainFirst)
 
