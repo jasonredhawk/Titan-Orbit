@@ -234,22 +234,29 @@ namespace TitanOrbit.Systems
             return (sciFi != null && sciFi.impactParticle != null) ? sciFi.impactParticle : null;
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
+        /// <summary>Server-only spawn used by <see cref="FireServerRpc"/> logic. Returns false if no NetworkObject was spawned (cap, prefab, etc.).</summary>
+        public bool TrySpawnBulletOnServer(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
         {
-            // Always spawn the default bullet prefab (fire power = damage, bullet speed = speed, fire rate is applied by caller)
+            if (!IsServer) return false;
+            // #region agent log 065367
+            DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "entry",
+                "{\"activeBullets\":" + Bullet.ActiveServerBullets + ",\"maxBullets\":" + maxBullets + "}");
+            // #endregion agent log 065367
             GameObject prefabToUse = defaultBulletPrefab != null && defaultBulletPrefab.GetComponent<NetworkObject>() != null
                 ? defaultBulletPrefab
                 : Resources.Load<GameObject>("Bullet");
             if (prefabToUse == null) prefabToUse = Resources.Load<GameObject>("Prefabs/Bullet");
             if (prefabToUse == null || prefabToUse.GetComponent<NetworkObject>() == null)
             {
+                // #region agent log 065367
+                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"prefab_missing_or_no_netobj\"}");
+                // #endregion agent log 065367
                 if (!loggedBulletPrefabNull)
                 {
                     loggedBulletPrefabNull = true;
                     Debug.LogWarning("CombatSystem: Default Bullet Prefab is missing or has no NetworkObject. Assign a prefab with Bullet + NetworkObject + Rigidbody + Collider to CombatSystem Default Bullet Prefab, or add one at Resources/Bullet.prefab.");
                 }
-                return;
+                return false;
             }
 
             int bankCount = BulletPrefabBankCount;
@@ -257,19 +264,14 @@ namespace TitanOrbit.Systems
                 ? (bulletPrefabIndex >= 0 && bulletPrefabIndex < bankCount ? bulletPrefabIndex : 0)
                 : -1;
 
-            bool isAIBullet = false;
-            if (ownerShipNetworkId != 0 && NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
-            {
-                var spawned = NetworkManager.Singleton.SpawnManager.SpawnedObjects;
-                if (spawned != null && spawned.TryGetValue(ownerShipNetworkId, out NetworkObject ownerObj) && ownerObj != null)
-                {
-                    isAIBullet = ownerObj.GetComponent<TitanOrbit.AI.AIShipMarker>() != null;
-                }
-            }
             int currentBulletCount = Bullet.ActiveServerBullets;
             if (currentBulletCount >= maxBullets)
             {
-                return;
+                // #region agent log 065367
+                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit",
+                    "{\"reason\":\"max_bullets\",\"active\":" + currentBulletCount + ",\"max\":" + maxBullets + "}");
+                // #endregion agent log 065367
+                return false;
             }
 
             Vector3 dir = direction;
@@ -279,7 +281,6 @@ namespace TitanOrbit.Systems
 
             float finalSpeed = speed * bulletSpeedMultiplier;
 
-            // Sci-Fi Arsenal style: spawn at position + direction * offset, then LookAt along direction (matches SciFiFireProjectile)
             Vector3 spawnPos = position + dir * spawnOffset;
             Vector3 lookAtTarget = spawnPos + dir * 10f;
             lookAtTarget.y = spawnPos.y;
@@ -290,37 +291,49 @@ namespace TitanOrbit.Systems
 
             if (bullet == null || bulletRb == null)
             {
+                // #region agent log 065367
+                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"missing_bullet_or_rb\"}");
+                // #endregion agent log 065367
                 UnityEngine.Object.Destroy(bulletObj);
-                return;
+                return false;
             }
             if (bulletObj.GetComponent<Collider>() == null && bulletObj.GetComponentInChildren<Collider>() == null)
                 Debug.LogWarning($"CombatSystem: Default bullet prefab has no Collider. Bullets will not detect hits.");
 
-            // Visual comes from bank: projectileParticle from SciFiProjectileScript at requestedBankIndex
             bullet.Initialize(finalSpeed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false, requestedBankIndex);
 
-            if (bulletRb != null)
-            {
-                bulletRb.useGravity = false;
-                bulletRb.isKinematic = false;
-                bulletRb.interpolation = RigidbodyInterpolation.Interpolate;
-                bulletRb.collisionDetectionMode = CollisionDetectionMode.Continuous;
-                Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
-                Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
-                // Sci-Fi Arsenal style: apply velocity via AddForce(VelocityChange) so projectiles behave like SciFiFireProjectile
-                bulletRb.AddForce(totalVelocity, ForceMode.VelocityChange);
-            }
+            bulletRb.useGravity = false;
+            bulletRb.isKinematic = false;
+            bulletRb.interpolation = RigidbodyInterpolation.Interpolate;
+            bulletRb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
+            Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
+            bulletRb.AddForce(totalVelocity, ForceMode.VelocityChange);
 
             NetworkObject bulletNetObj = bulletObj.GetComponent<NetworkObject>();
             if (bulletNetObj == null)
             {
+                // #region agent log 065367
+                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"bullet_no_netobj\"}");
+                // #endregion agent log 065367
                 Debug.LogWarning($"CombatSystem: Default bullet prefab has no NetworkObject. Assign Default Bullet Prefab on CombatSystem or run Titan Orbit > Populate Bullet Bank From Folder.");
                 UnityEngine.Object.Destroy(bulletObj);
-                return;
+                return false;
             }
             bulletNetObj.Spawn();
+            // #region agent log 065367
+            DebugNdjson065367.Write("H1", "CombatSystem.TrySpawnBulletOnServer", "spawn_ok",
+                "{\"bulletNetId\":" + bulletNetObj.NetworkObjectId + ",\"ownerShipNetworkId\":" + ownerShipNetworkId + "}");
+            // #endregion agent log 065367
             if (bulletParent != null && bulletParent.GetComponent<NetworkObject>() != null)
                 bulletObj.transform.SetParent(bulletParent);
+            return true;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
+        {
+            TrySpawnBulletOnServer(position, direction, speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, shipVelocity, bulletPrefabIndex);
         }
 
         [ServerRpc(RequireOwnership = false)]

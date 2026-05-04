@@ -1070,7 +1070,7 @@ namespace TitanOrbit.Entities
             AllStarships.Remove(this);
             equippedCardIds?.Dispose();
             // Cancel any pending respawn invokes
-            CancelInvoke(nameof(RespawnServerRpc));
+            CancelInvoke(nameof(DelayedRespawnAfterDeath));
         }
 
         private void ApplyHullIdentityColor()
@@ -2602,13 +2602,15 @@ namespace TitanOrbit.Entities
                 moveDirection = Vector3.zero;
             }
 
-            // Shooting: only from Weapon components (bulletFirePoints). No firePoint fallback.
+            // Shooting: send FireServerRpc whenever CanFire() passes; server uses Mathf.Max(server cannon transforms,
+            // owner-reported origins). Requiring bulletFirePoints.Count > 0 on the client blocked dedicated-client play:
+            // the host/server often builds weapon transforms before (or without) the owning client's BankPivot/weapons matching.
             bool uiBlocksShot = IsPointerOverUI();
             MobileInputHandler mobileHud = MobileInputHandler.Resolve();
             if (mobileHud != null && (mobileHud.ShootButtonPressed
                 || (Application.isMobilePlatform && inputHandler.ShootPressed)))
                 uiBlocksShot = false;
-            if (inputHandler.ShootPressed && CanFire() && bulletFirePoints != null && bulletFirePoints.Count > 0 && !uiBlocksShot)
+            if (inputHandler.ShootPressed && CanFire() && !uiBlocksShot)
             {
                 Vector3 dir = transform.forward;
                 dir.y = 0f;
@@ -2996,11 +2998,14 @@ namespace TitanOrbit.Entities
 
         private void HandleHealthRegen()
         {
-            // Health can regen even when at zero - regen is allowed
-            // Only prevent regen when dead
+            // Health can regen from low values when not dead. While hull is depleted but the ship still carries gems,
+            // do not refill hull — otherwise regen fights the "gems drain at 0 hull" pipeline and lethal death never triggers.
+            const float depletedThreshold = 0.001f;
             if (IsServer && !isDead.Value && currentHealth.Value < MaxHealth)
             {
                 if (Time.time < lastHullDamageServerTime + healthRegenDelayAfterDamage)
+                    return;
+                if (currentHealth.Value <= depletedThreshold && currentGems.Value > depletedThreshold)
                     return;
                 float regen = EffectiveHealthRegen * Time.deltaTime;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
@@ -3028,7 +3033,9 @@ namespace TitanOrbit.Entities
         private bool CanFire()
         {
             if (isDead.Value) return false;
-            if (currentOrbitPlanet != null) return false; // Cannot fire while in orbit zone
+            // Orbit firing rule is enforced on the server via ServerWorldPositionInsideAnyOrbitZone (FireServerRpc).
+            // Local currentOrbitPlanet is not replicated and often disagrees with the server on relay/dedicated clients,
+            // which prevented FireServerRpc from ever being sent while host/editor looked fine.
             if (gemMoonDocked.Value) return false;
             EnsureBulletLastFireTime();
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
@@ -3143,10 +3150,6 @@ namespace TitanOrbit.Entities
                         float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
                         if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
 
-                        currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
-                        bulletLastFireTime[i] = Time.time;
-                        bulletIndicesFired.Add((byte)i);
-
                         int bankCount = combat.BulletPrefabBankCount;
                         // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
                         int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
@@ -3154,7 +3157,6 @@ namespace TitanOrbit.Entities
                             : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
                                 ? c.bulletPrefabIndex
                                 : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
-                        bulletPrefabIndicesFired.Add(bulletIdx);
 
                         Transform firePt = (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
                             ? bulletFirePoints[i]
@@ -3181,6 +3183,7 @@ namespace TitanOrbit.Entities
                         float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
                         if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
                             numShots = Mathf.Max(1, c.spreadProjectileCount);
+                        bool spawnedAnyForThisCannon = false;
                         for (int s = 0; s < numShots; s++)
                         {
                             Vector3 dir = baseDir;
@@ -3198,13 +3201,23 @@ namespace TitanOrbit.Entities
                             float damage = c.damagePerBullet;
                             float speed = c.bulletSpeed;
                             float scale = c.bulletScale * BulletScaleMultiplier;
-                            combat.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
-                            if (rb != null)
+                            if (combat.TrySpawnBulletOnServer(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx))
                             {
-                                float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                                rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                                spawnedAnyForThisCannon = true;
+                                if (rb != null)
+                                {
+                                    float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
+                                    rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                                }
                             }
                         }
+
+                        if (!spawnedAnyForThisCannon) continue;
+
+                        currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - c.energyCostPerShot);
+                        bulletLastFireTime[i] = Time.time;
+                        bulletIndicesFired.Add((byte)i);
+                        bulletPrefabIndicesFired.Add(bulletIdx);
 
                         firedInGroup = true;
                         nextStart = ((start + step + 1) % group.Count + group.Count) % group.Count;
@@ -3915,12 +3928,15 @@ namespace TitanOrbit.Entities
             ShipDeathBreakupClientRpc();
             SpawnDeathExplosion();
 
-            Invoke(nameof(RespawnServerRpc), respawnDelay);
+            // Do not Invoke a Netcode ServerRpc: on a dedicated server, Invoke may not execute the RPC body the same way
+            // as a direct call from host logic. Use a plain MonoBehaviour callback for the delayed respawn.
+            Invoke(nameof(DelayedRespawnAfterDeath), respawnDelay);
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void RespawnServerRpc()
+        /// <summary>Server-only delayed respawn. Invoked by <see cref="ServerApplyDeath"/>; must not be a ServerRpc.</summary>
+        private void DelayedRespawnAfterDeath()
         {
+            if (!IsServer) return;
             // Reset stats
             currentHealth.Value = MaxHealth;
             currentGems.Value = 0f;

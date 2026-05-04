@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using TitanOrbit.Core;
+using System.Globalization;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
 using TitanOrbit.Systems;
@@ -31,6 +32,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float damage = 10f;
         [SerializeField] private float lifetime = 2f; // Reduced from 10f for better performance
         [SerializeField] private float maxDistance = 30f; // ~3x previous range for space combat
+        [Tooltip("SphereCast hits on non-target geometry (e.g. planet shell, shooter mesh) right after spawn are ignored until the bullet has moved this far from spawn (toroidal). Prevents instant despawn on dedicated servers.")]
         [SerializeField] private float minTravelBeforeHit = 0.5f;
         [SerializeField] private TeamManager.Team ownerTeam = TeamManager.Team.None;
         private ulong ownerShipNetworkId;
@@ -240,6 +242,20 @@ namespace TitanOrbit.Entities
             // Update visual immediately (uses cached values; NetworkVariable sync will update clients)
             UpdateVisual();
 
+            // #region agent log 065367
+            {
+                var bulletNo = GetComponent<NetworkObject>();
+                ulong nid = bulletNo != null ? bulletNo.NetworkObjectId : 0UL;
+                bool pureClient = NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer;
+                if (IsServer)
+                    DebugNdjson065367.Write("H1", "Bullet.OnNetworkSpawn", "server_after_visual",
+                        "{\"netId\":" + nid + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + "}");
+                if (pureClient)
+                    DebugNdjson065367.Write("H5", "Bullet.OnNetworkSpawn", "pure_client_after_visual",
+                        "{\"netId\":" + nid + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"camMain\":" + (UnityEngine.Camera.main != null ? "true" : "false") + "}");
+            }
+            // #endregion agent log 065367
+
             #region agent log e695ff
             {
                 var nm = NetworkManager.Singleton;
@@ -261,6 +277,16 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkDespawn()
         {
+            // #region agent log 065367
+            if (IsServer)
+            {
+                float dt = Time.time - spawnTime;
+                var bulletNo = GetComponent<NetworkObject>();
+                ulong nid = bulletNo != null ? bulletNo.NetworkObjectId : 0UL;
+                DebugNdjson065367.Write("H1", "Bullet.OnNetworkDespawn", "server_despawn",
+                    "{\"netId\":" + nid + ",\"ageSec\":" + dt.ToString("0.###", CultureInfo.InvariantCulture) + ",\"quick\":" + (dt < 0.35f ? "true" : "false") + "}");
+            }
+            // #endregion agent log 065367
             if (serverCounted)
             {
                 ActiveServerBullets = Mathf.Max(0, ActiveServerBullets - 1);
@@ -325,15 +351,37 @@ namespace TitanOrbit.Entities
                 {
                     if (hit.collider.transform != transform && !hit.collider.transform.IsChildOf(transform))
                     {
-                        if (TryHit(hit.collider))
+                        // TryHit ignores the firing ship (same team) and many world layers; do not treat those as "stuck"
+                        // and despawn immediately — the first FixedUpdate segment often clips the shooter, planet atmosphere,
+                        // or huge planet meshes on dedicated servers while host/listen usually does not.
+                        if (IsColliderOnFiringShipNetworkObject(hit.collider))
+                        {
+                            // Continue; advance lastPosition below.
+                        }
+                        else if (TryHit(hit.collider))
                             return; // Hit valid target, despawned
-                        DespawnBullet(); // Hit something else (planet, etc) - despawn to avoid getting stuck
-                        return;
+                        else
+                        {
+                            float travelledFromSpawn = ToroidalMap.ToroidalDistance(transform.position, spawnPosition);
+                            if (travelledFromSpawn >= minTravelBeforeHit)
+                            {
+                                DespawnBullet(); // Hit something else (planet, etc) after leaving spawn clutter
+                                return;
+                            }
+                        }
                     }
                 }
             }
 
             lastPosition = transform.position;
+        }
+
+        /// <summary>True if the collider belongs to the firing ship's <see cref="NetworkObject"/> hierarchy (any child mesh/collider).</summary>
+        private bool IsColliderOnFiringShipNetworkObject(Collider col)
+        {
+            if (col == null || ownerShipNetworkId == 0) return false;
+            NetworkObject hitNo = col.GetComponentInParent<NetworkObject>();
+            return hitNo != null && hitNo.NetworkObjectId == ownerShipNetworkId;
         }
 
         private void CheckImmediateOverlaps()

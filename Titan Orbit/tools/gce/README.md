@@ -39,10 +39,33 @@ export OBJECT=titanorbit-linux-build/TitanOrbitLinux1-latest.tar.gz
 gcloud config set project "$PROJECT_ID"
 gcloud storage cp "gs://${BUCKET}/${OBJECT}" /tmp/titan-latest.tgz
 gcloud compute scp --project="$PROJECT_ID" --zone="$ZONE" /tmp/titan-latest.tgz "${VM}:/tmp/titan-latest.tgz"
-gcloud compute ssh "$VM" --project="$PROJECT_ID" --zone="$ZONE" --command 'bash -lc "set -e; mkdir -p /home/jason/titanorbit-server; rm -rf /home/jason/titanorbit-server/TitanOrbitLinux1; tar -xzf /tmp/titan-latest.tgz -C /home/jason/titanorbit-server; rm -f /tmp/titan-latest.tgz; chmod +x /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64 || true; ls -la /home/jason/titanorbit-server/TitanOrbitLinux1"'
+gcloud compute ssh "$VM" --project="$PROJECT_ID" --zone="$ZONE" --command 'bash -lc "set -e; mkdir -p /home/jason/titanorbit-server; rm -rf /home/jason/titanorbit-server/TitanOrbitLinux1; tar -xzf /tmp/titan-latest.tgz -C /home/jason/titanorbit-server; rm -f /tmp/titan-latest.tgz; chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true; chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64 2>/dev/null || true; chmod a+r /home/jason/titanorbit-server/TitanOrbitLinux1/GameAssembly.so /home/jason/titanorbit-server/TitanOrbitLinux1/UnityPlayer.so 2>/dev/null || true; ls -la /home/jason/titanorbit-server/TitanOrbitLinux1"'
 ```
 
+**IL2CPP Linux dedicated builds** often ship **`TitanOrbitServer`** (small ELF) with **no** **`TitanOrbitServer.x86_64`**. Only chmod’ing the `.x86_64` name leaves the real binary non-executable → **`systemd` fails with `status=203/EXEC` / `Permission denied`**. The line above sets **755** on both names and opens read/traverse on the tree (same idea as `upload_linux_build_to_gce_openssh.ps1`).
+
 If **`gcloud compute scp`** / **`ssh`** from Cloud Shell times out (VM has no public IP, or firewall), add **`--tunnel-through-iap`** to both **`gcloud compute scp`** and **`gcloud compute ssh`** lines (same flag on each). Ensure IAP TCP forwarding to port 22 is allowed (firewall + **`allow-iap-ssh`** tag) as described elsewhere in this README.
+
+### Troubleshooting: Serial Console shows `203/EXEC` or `Permission denied` on `TitanOrbitServer`
+
+That means **systemd cannot execute** `ExecStart` — almost always **missing execute bit** (or wrong owner) on the Unity player after **`tar`** from Windows, **not** a Unity code bug.
+
+**On the VM** (browser **SSH**, **Serial Console** login as `jason`, or Cloud Shell `gcloud compute ssh`):
+
+```bash
+sudo chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer \
+  /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64 2>/dev/null || true
+sudo chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true
+sudo chmod a+r /home/jason/titanorbit-server/TitanOrbitLinux1/GameAssembly.so \
+  /home/jason/titanorbit-server/TitanOrbitLinux1/UnityPlayer.so 2>/dev/null || true
+ls -la /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer*
+sudo systemctl restart titanorbit-server
+sudo systemctl status titanorbit-server --no-pager -l | head -n 25
+```
+
+You should see **`-rwxr-xr-x`** on the server binary. If the unit points at the wrong filename (`.x86_64` vs none), run **`bash cloudshell_restart_titanorbit_server.sh`** from this folder in **Cloud Shell** (it fixes permissions and syncs **`ExecStart`** to whichever binary exists), or redeploy with **`restart_titanorbit_server_on_gce.bat`** / **`restart_server_remote.ps1`**, which run the same chmod block before **`systemctl restart`**.
+
+Rarely, the game directory is on a filesystem mounted **`noexec`**; then move the install to **`/home`** or **`/opt`** (normal GCE disks are fine).
 
 ### Browser SSH and IAP error 4003
 
