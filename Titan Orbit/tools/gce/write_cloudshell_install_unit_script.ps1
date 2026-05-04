@@ -31,7 +31,7 @@ elif [ -f "$RemoteDir/TitanOrbitServer" ]; then
 else
   echo "No TitanOrbitServer or TitanOrbitServer.x86_64 in $RemoteDir"; ls -la "$RemoteDir" || true; exit 1
 fi
-chmod +x "$RemoteDir/`$EXE_NAME"
+chmod 755 "$RemoteDir/`$EXE_NAME"
 echo '$b64' | base64 -d | sudo tee $servicePath >/dev/null
 sudo sed -i "s|__TITANORBIT_EXE__|`$EXE_NAME|g" $servicePath
 sudo chmod 644 $servicePath

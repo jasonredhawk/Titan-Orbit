@@ -49,14 +49,16 @@ $instanceName = $Matches[2]
 # abort immediately and ssh would return 3 even though `restart` succeeded. Poll ActiveState instead.
 $restartScript = @'
 set -e
-# Windows-created tars often drop the Linux execute bit → systemd 203/EXEC without this.
+# Windows tar / umask 077: chmod +x on 700 leaves rwx------ → User=jason cannot exec. Force 755 on entry ELFs.
 shopt -s nullglob
 for f in /home/jason/titanorbit-server/TitanOrbitLinux1/*.x86_64; do
-  if [ -f "$f" ]; then chmod +x "$f" || true; fi
+  if [ -f "$f" ]; then chmod 755 "$f" || true; fi
 done
 if [ -f /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer ]; then
-  chmod +x /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer || true
+  chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer || true
 fi
+chmod a+r /home/jason/titanorbit-server/TitanOrbitLinux1/GameAssembly.so /home/jason/titanorbit-server/TitanOrbitLinux1/UnityPlayer.so 2>/dev/null || true
+chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true
 # Linux Dedicated Server builds may ship TitanOrbitServer (no .x86_64). Unit may still say .x86_64 from install-before-upload → 203/EXEC.
 BASE=/home/jason/titanorbit-server/TitanOrbitLinux1
 UNIT=/etc/systemd/system/titanorbit-server.service
@@ -109,7 +111,7 @@ if [ "$ast" != "active" ] || [ "$sub" != "running" ]; then
     echo ""
     echo "HINT: status=203/EXEC means systemd could not execute ExecStart. Common causes:"
     echo "      (1) Missing +x on the Linux player after upload from Windows tar — redeploy with latest"
-    echo "          tools/gce/upload script (chmod step) or: chmod +x /home/jason/titanorbit-server/TitanOrbitLinux1/*.x86_64"
+    echo "          tools/gce/upload script (chmod step) or: chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/*.x86_64"
     echo "      (2) Wrong binary name vs unit — e.g. build has TitanOrbitServer but unit says TitanOrbitServer.x86_64."
     echo "          Re-run deploy (restart syncs the unit) or: install_enable_server_service_on_gce.bat (or _iap.bat)."
   fi

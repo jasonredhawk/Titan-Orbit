@@ -288,8 +288,11 @@ finally {
 }
 
 $remotePrepare = "mkdir -p $TargetDir"
-# Windows tar often drops Linux +x; systemd 203/EXEC without chmod on the player binary.
-$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod +x $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod +x $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; exit 0"
+# Windows tar + tight umask: files may be mode 700 owned by the SSH user. chmod +x then only adds u+x → still 700;
+# systemd runs as User=jason → 203/EXEC "Permission denied". Use 755 on entry ELFs and open the tree for o+rx / a+r.
+# IL2CPP: small TitanOrbitServer ELF + GameAssembly.so / UnityPlayer.so must be readable by jason.
+# sudo chown fixes ownership when NOPASSWD sudo exists.
+$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod -R a+rX $TargetDir/$sourceBase 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod a+r $TargetDir/$sourceBase/GameAssembly.so $TargetDir/$sourceBase/UnityPlayer.so 2>/dev/null; sudo -n chown -R jason:jason $TargetDir/$sourceBase 2>/dev/null || true; exit 0"
 # Avoid `||` inside double quotes (PS 7+ parses it as the pipeline-chain operator).
 $remoteVerify = "ls -la $TargetDir; ls -la $TargetDir/$sourceBase " + '|| true'
 

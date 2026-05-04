@@ -1,5 +1,6 @@
 using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
 
@@ -45,6 +46,11 @@ namespace TitanOrbit.Editor.Build
         public static void BuildHeadlessServerLinux()
         {
             string outputBasePath = GetLinuxServerOutputBasePath();
+
+            // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
+            // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM (see Player.log on failure).
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.IL2CPP);
+            Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build.");
 
             var options = new BuildPlayerOptions
             {

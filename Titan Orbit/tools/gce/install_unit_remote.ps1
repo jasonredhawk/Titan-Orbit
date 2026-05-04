@@ -68,7 +68,7 @@ else
   echo "NOTE: No server binary in $RemoteDir yet. Installing unit for `$EXE_NAME; upload your Linux build to this folder, then: sudo systemctl restart titanorbit-server"
 fi
 if [ -f "$RemoteDir/`$EXE_NAME" ]; then
-  chmod +x "$RemoteDir/`$EXE_NAME"
+  chmod 755 "$RemoteDir/`$EXE_NAME"
 fi
 echo '$b64' | base64 -d | sudo tee $servicePath >/dev/null
 # Repo unit uses __TITANORBIT_EXE__; must match Unity output (usually TitanOrbitServer.x86_64) or systemd returns 203/EXEC.

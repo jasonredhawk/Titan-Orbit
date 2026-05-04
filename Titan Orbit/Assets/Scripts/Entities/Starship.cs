@@ -3081,8 +3081,12 @@ namespace TitanOrbit.Entities
         [ServerRpc]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
-            if (CombatSystem.Instance == null) return;
-            if (currentOrbitPlanet != null) return; // Cannot fire while in orbit zone
+            CombatSystem combat = CombatSystem.Instance;
+            if (combat == null)
+                combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
+            if (combat == null) return;
+            // Use owner-reported position for the orbit band: cached currentOrbitPlanet is not replicated and can block all shots on dedicated server.
+            if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
             if (gemMoonDocked.Value) return;
             EnsureBulletLastFireTime();
             Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
@@ -3093,16 +3097,21 @@ namespace TitanOrbit.Entities
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
             var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
-            // Fire bullets (Weapon only): only from actual weapon components (bulletFirePoints). No fallback to ship center — avoids phantom bullet with no muzzle.
+            // Fire bullets (Weapon only). Prefer server-built weapon transforms; if dedicated server never populated them,
+            // use the owner's cannon origin count from the RPC so shots still spawn.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int maxCannons = (bulletFirePoints != null && bulletFirePoints.Count > 0) ? bulletFirePoints.Count : 0;
+            int serverWeaponPoints = bulletFirePoints != null ? bulletFirePoints.Count : 0;
+            int ownerWeaponPoints = ownerReportedCannonOrigins != null ? ownerReportedCannonOrigins.Length : 0;
+            int maxCannons = Mathf.Max(serverWeaponPoints, ownerWeaponPoints);
             if (bulletWc.cannons != null && maxCannons > 0)
             {
                 var cannonsByEnergy = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<int>>();
                 int cannonCount = Mathf.Min(bulletWc.cannons.Count, maxCannons);
                 for (int i = 0; i < cannonCount; i++)
                 {
-                    if (bulletFirePoints == null || i >= bulletFirePoints.Count || bulletFirePoints[i] == null) continue;
+                    bool hasServerPoint = bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null;
+                    bool hasOwnerPoint = ownerReportedCannonOrigins != null && i < ownerReportedCannonOrigins.Length;
+                    if (!hasServerPoint && !hasOwnerPoint) continue;
                     int energyKey = GetEnergyCostGroupKey(bulletWc.cannons[i].energyCostPerShot);
                     if (!cannonsByEnergy.TryGetValue(energyKey, out var group))
                     {
@@ -3138,7 +3147,7 @@ namespace TitanOrbit.Entities
                         bulletLastFireTime[i] = Time.time;
                         bulletIndicesFired.Add((byte)i);
 
-                        int bankCount = CombatSystem.Instance != null ? CombatSystem.Instance.BulletPrefabBankCount : 0;
+                        int bankCount = combat.BulletPrefabBankCount;
                         // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
                         int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
                             ? (runtimeBulletPrefabIndex.Value % bankCount)
@@ -3147,7 +3156,9 @@ namespace TitanOrbit.Entities
                                 : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
                         bulletPrefabIndicesFired.Add(bulletIdx);
 
-                        Transform firePt = bulletFirePoints[i];
+                        Transform firePt = (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
+                            ? bulletFirePoints[i]
+                            : transform;
                         bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
                         bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
                         Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
@@ -3187,7 +3198,7 @@ namespace TitanOrbit.Entities
                             float damage = c.damagePerBullet;
                             float speed = c.bulletSpeed;
                             float scale = c.bulletScale * BulletScaleMultiplier;
-                            CombatSystem.Instance.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
+                            combat.SpawnBulletServerRpc(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
                             if (rb != null)
                             {
                                 float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
@@ -3396,7 +3407,9 @@ namespace TitanOrbit.Entities
             if (currentHealth.Value > deathThreshold || currentGems.Value > deathThreshold)
                 return;
             SuppressGemCollectionForRespawnDelay();
-            DieServerRpc(killerShipNetworkId);
+            // Do not invoke DieServerRpc() from server logic: NGO ServerRpc send path is for client→server;
+            // run death immediately on the authoritative host/dedicated process.
+            ServerApplyDeath(killerShipNetworkId);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -3864,7 +3877,13 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         private void DieServerRpc(ulong killerShipNetworkId = 0)
         {
-            if (isDead.Value) return;
+            ServerApplyDeath(killerShipNetworkId);
+        }
+
+        /// <summary>Server-only: lethal breakup, stats, and delayed respawn. Shared by <see cref="DieServerRpc"/> and <see cref="TryDieIfHullAndGemsDepleted"/>.</summary>
+        private void ServerApplyDeath(ulong killerShipNetworkId = 0)
+        {
+            if (!IsServer || isDead.Value) return;
             SuppressGemCollectionForRespawnDelay();
             if (killerShipNetworkId != 0 && ScoreSystem.Instance != null)
             {
@@ -3891,7 +3910,7 @@ namespace TitanOrbit.Entities
                 currentVelocity = Vector3.zero;
                 moveDirection = Vector3.zero;
             }
-            
+
             // Detach mesh pieces with physics on clients, then hide the real ship; central explosion VFX
             ShipDeathBreakupClientRpc();
             SpawnDeathExplosion();
@@ -4931,6 +4950,28 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server-only: detect if ship is inside a planet's orbit zone (e.g. after spawning there). OnTriggerEnter doesn't fire for objects that start inside.</summary>
+        /// <summary>Server: true if the given XZ world position lies in any planet's orbit band (same ring math as <see cref="TryDetectOrbitZoneServer"/>).</summary>
+        /// <remarks>
+        /// Used by <see cref="FireServerRpc"/> instead of the cached <see cref="currentOrbitPlanet"/> field, which is not replicated
+        /// and can disagree between dedicated server and owning client (blocking all shots while the client can still press fire).
+        /// </remarks>
+        private static bool ServerWorldPositionInsideAnyOrbitZone(Vector3 shipWorldPos)
+        {
+            shipWorldPos.y = 0f;
+            foreach (var planet in Planet.AllPlanets)
+            {
+                if (planet == null) continue;
+                Vector3 toShip = shipWorldPos - planet.transform.position;
+                toShip.y = 0f;
+                float dist = toShip.magnitude;
+                float inner = planet.PlanetSize * 0.5f;
+                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
+                if (dist >= inner && dist <= outer)
+                    return true;
+            }
+            return false;
+        }
+
         private void TryDetectOrbitZoneServer()
         {
             if (!IsServer || rb == null || currentOrbitPlanet != null) return;
