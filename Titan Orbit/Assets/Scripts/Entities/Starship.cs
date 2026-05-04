@@ -5,6 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using UnityEngine.Serialization;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine.InputSystem;
 using TitanOrbit.Core;
 using TitanOrbit.Input;
@@ -1274,8 +1275,6 @@ namespace TitanOrbit.Entities
         private void StartInOrbitAroundHomePlanet()
         {
             if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
-            // AI ships are placed by AIStarshipManager; don't overwrite their position
-            if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return;
             HomePlanet home = null;
             foreach (var hp in HomePlanet.AllHomePlanets)
             {
@@ -1283,18 +1282,75 @@ namespace TitanOrbit.Entities
                 if (hp.AssignedTeam == shipTeam.Value) { home = hp; break; }
             }
             if (home == null) return;
-            float orbitRadius = home.PlanetSize * 0.6f;
-            Vector3 planetPos = home.transform.position;
-            Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
+            if (!TryComputeOrbitSpawnPose(home, out Vector3 orbitPos, out Vector3 vel, out Quaternion rot)) return;
+            ApplyServerOrbitSpawnPoseAndNotifyOwner(orbitPos, vel, rot);
+        }
+
+        /// <summary>Computes spawn pose in the home orbit band. Returns false for AI ships (placed elsewhere).</summary>
+        private bool TryComputeOrbitSpawnPose(Planet planet, out Vector3 orbitPos, out Vector3 linearVelocity, out Quaternion rotation)
+        {
+            orbitPos = default;
+            linearVelocity = default;
+            rotation = default;
+            if (planet == null || rb == null) return false;
+            if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return false;
+
+            float orbitRadius = planet.PlanetSize * 0.6f;
+            Vector3 planetPos = planet.transform.position;
+            orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
+
+            float innerWorld = planet.PlanetSize * 0.5f;
+            float outerWorld = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
+            float targetSpeed = GetOrbitTargetSpeed(planet, orbitRadius, innerWorld, outerWorld);
+
+            linearVelocity = new Vector3(0f, 0f, -targetSpeed);
+            Vector3 horizForward = linearVelocity.sqrMagnitude > 0.0001f ? linearVelocity.normalized : Vector3.forward;
+            rotation = Quaternion.LookRotation(horizForward, Vector3.up);
+            return true;
+        }
+
+        /// <summary>
+        /// Server: applies orbit pose to this instance. On a dedicated server, player ships simulate on the owner client only —
+        /// writing <see cref="Rigidbody"/> here does not move the owning client, so we RPC the pose (and NetworkTransform teleport).
+        /// </summary>
+        private void ApplyServerOrbitSpawnPoseAndNotifyOwner(Vector3 orbitPos, Vector3 vel, Quaternion rot)
+        {
+            if (!IsServer || rb == null) return;
+
             rb.position = orbitPos;
+            rb.linearVelocity = vel;
+            rb.rotation = rot;
+            rb.angularVelocity = Vector3.zero;
+            currentVelocity = vel;
 
-            float innerWorld = home.PlanetSize * 0.5f;
-            float outerWorld = home.PlanetSize * home.GetOrbitZoneOuterRadiusLocal();
-            float targetSpeed = GetOrbitTargetSpeed(home, orbitRadius, innerWorld, outerWorld);
+            if (_isAIControlled) return;
 
-            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed); // Tangent for clockwise orbit
-            currentVelocity = rb.linearVelocity;
+            var nm = NetworkManager.Singleton;
+            bool dedicatedServer = nm != null && nm.IsServer && !nm.IsClient;
+            if (dedicatedServer && IsSpawned)
+                SnapOwnerShipPhysicsClientRpc(orbitPos, vel, rot, OwnerOnlyClientRpcParams);
+            else if (nm != null && nm.IsHost && IsServer)
+            {
+                var nt = GetComponent<NetworkTransform>();
+                if (nt != null)
+                    nt.SetState(orbitPos, rot, transform.localScale, teleportDisabled: false);
+            }
+        }
+
+        /// <summary>Owner client: authoritative physics pose after server placed us in orbit (dedicated server).</summary>
+        [ClientRpc]
+        private void SnapOwnerShipPhysicsClientRpc(Vector3 position, Vector3 linearVelocity, Quaternion rotation, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner || rb == null) return;
+            rb.position = position;
+            rb.linearVelocity = linearVelocity;
+            rb.rotation = rotation;
+            rb.angularVelocity = Vector3.zero;
+            currentVelocity = linearVelocity;
+            var nt = GetComponent<NetworkTransform>();
+            if (nt != null)
+                nt.SetState(position, rotation, transform.localScale, teleportDisabled: false);
         }
 
         private void Update()
@@ -3902,19 +3958,8 @@ namespace TitanOrbit.Entities
         /// <summary>Server: place ship in orbit around the given planet (used for respawn).</summary>
         private void PlaceShipInOrbitAround(Planet planet)
         {
-            if (planet == null || rb == null) return;
-            float orbitRadius = planet.PlanetSize * 0.6f;
-            Vector3 planetPos = planet.transform.position;
-            Vector3 orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
-            orbitPos.y = FIXED_Y_POSITION;
-            rb.position = orbitPos;
-
-            float innerWorld = planet.PlanetSize * 0.5f;
-            float outerWorld = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            float targetSpeed = GetOrbitTargetSpeed(planet, orbitRadius, innerWorld, outerWorld);
-
-            rb.linearVelocity = new Vector3(0f, 0f, -targetSpeed);
-            currentVelocity = rb.linearVelocity;
+            if (!TryComputeOrbitSpawnPose(planet, out Vector3 orbitPos, out Vector3 vel, out Quaternion rot)) return;
+            ApplyServerOrbitSpawnPoseAndNotifyOwner(orbitPos, vel, rot);
         }
 
         private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
