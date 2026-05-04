@@ -1636,6 +1636,79 @@ namespace TitanOrbit.Networking
             if (_dbgJoinMonitorCoroutine != null)
                 StopCoroutine(_dbgJoinMonitorCoroutine);
             _dbgJoinMonitorCoroutine = StartCoroutine(CoDebugJoinMonitor(source, lobbyIdOrTag));
+
+            // Independent blueprint-identity probe: tells us which server process the client landed on.
+            // Same lobbyId + same serverBootEpochUtc + same blueprintSeed across rejoins ⇒ same map.
+            // Different values ⇒ a new server process is the actual cause of "different map per rejoin".
+            StartCoroutine(CoLogBlueprintIdentityWhenReady(source, lobbyIdOrTag));
+        }
+
+        /// <summary>
+        /// Client-side: waits up to ~30s for the server-published <see cref="TitanOrbit.Generation.MapGenerator"/> blueprint
+        /// to replicate, then logs <c>lobbyId</c>, <c>serverBootEpochUtc</c>, <c>blueprintSeed</c>, and <c>blueprintCount</c>
+        /// once. This makes "rejoin shows different map" trivially diagnosable from the client log: identical values across
+        /// rejoins prove the client landed on the same server process; differing values prove it landed on a new one.
+        /// </summary>
+        private IEnumerator CoLogBlueprintIdentityWhenReady(string source, string lobbyIdOrTag)
+        {
+            const float timeoutSeconds = 45f;
+            float t0 = Time.realtimeSinceStartup;
+            TitanOrbit.Generation.MapGenerator mapGen = null;
+            while (Time.realtimeSinceStartup - t0 < timeoutSeconds)
+            {
+                if (mapGen == null)
+                    mapGen = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Generation.MapGenerator>();
+                if (mapGen != null && mapGen.IsSpawned && (mapGen.LoadingComplete || mapGen.BlueprintEntryCount > 0))
+                    break;
+                yield return null;
+            }
+
+            string lobbyId = currentLobby != null ? (currentLobby.Id ?? string.Empty) : string.Empty;
+            float elapsed = Time.realtimeSinceStartup - t0;
+            if (mapGen == null || !mapGen.IsSpawned)
+            {
+                Debug.LogWarning(
+                    "[NetworkGameManager] Blueprint identity probe: MapGenerator did not spawn within "
+                    + timeoutSeconds.ToString("F0", CultureInfo.InvariantCulture) + "s after join. lobbyId="
+                    + lobbyId + " source=" + source + " tag=" + lobbyIdOrTag);
+                AgentDebugLog(
+                    "BP",
+                    "NetworkGameManager.CoLogBlueprintIdentityWhenReady",
+                    "blueprint_probe_timeout",
+                    "{\"source\":\"" + EscapeJsonE2a466(source)
+                        + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag)
+                        + "\",\"lobbyId\":\"" + EscapeJsonE2a466(lobbyId)
+                        + "\",\"elapsedSeconds\":" + elapsed.ToString("F2", CultureInfo.InvariantCulture)
+                        + "}");
+                yield break;
+            }
+
+            long bootEpoch = mapGen.ServerBootEpochUtc;
+            int seedValue = mapGen.BlueprintSeed;
+            int entryCount = mapGen.BlueprintEntryCount;
+            bool loadingComplete = mapGen.LoadingComplete;
+            Debug.Log(
+                "[NetworkGameManager] Blueprint identity: lobbyId=" + lobbyId
+                + " serverBootEpochUtc=" + bootEpoch
+                + " blueprintSeed=" + seedValue
+                + " blueprintCount=" + entryCount
+                + " loadingComplete=" + (loadingComplete ? "true" : "false")
+                + " source=" + source
+                + " tag=" + lobbyIdOrTag
+                + " waitedSeconds=" + elapsed.ToString("F2", CultureInfo.InvariantCulture));
+            AgentDebugLog(
+                "BP",
+                "NetworkGameManager.CoLogBlueprintIdentityWhenReady",
+                "blueprint_identity",
+                "{\"source\":\"" + EscapeJsonE2a466(source)
+                    + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag)
+                    + "\",\"lobbyId\":\"" + EscapeJsonE2a466(lobbyId)
+                    + "\",\"serverBootEpochUtc\":" + bootEpoch
+                    + ",\"blueprintSeed\":" + seedValue
+                    + ",\"blueprintCount\":" + entryCount
+                    + ",\"loadingComplete\":" + (loadingComplete ? "true" : "false")
+                    + ",\"elapsedSeconds\":" + elapsed.ToString("F2", CultureInfo.InvariantCulture)
+                    + "}");
         }
 
         private void LogJoinMonitorRelayRepro(string messageTag, string source, string lobbyIdOrTag, float t0)

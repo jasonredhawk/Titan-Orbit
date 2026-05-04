@@ -104,8 +104,26 @@ namespace TitanOrbit.Generation
         /// <summary>Home + neutral planets + asteroids spawned for this match; used by joining clients to gauge replication.</summary>
         private readonly NetworkVariable<int> syncedWorldObjectCount = new NetworkVariable<int>(0);
 
+        /// <summary>
+        /// Single source-of-truth blueprint of every map entity (home + neutral + asteroid) the server placed this match.
+        /// NGO automatically syncs the full list to any joining client at connect time, so every player builds the same
+        /// world from one authoritative description. Server appends as it generates; clients only ever read.
+        /// </summary>
+        private readonly NetworkList<MapLayoutEntry> blueprint = new NetworkList<MapLayoutEntry>();
+        /// <summary>Random seed used by the server for this match; replicated so clients can log/identify the same match.</summary>
+        private readonly NetworkVariable<int> blueprintSeed = new NetworkVariable<int>(0);
+        /// <summary>UTC unix-seconds when the server process generated this map. Used by client diagnostics to tell same-server rejoin from new-server rejoin.</summary>
+        private readonly NetworkVariable<long> serverBootEpochUtc = new NetworkVariable<long>(0);
+
         public float LoadingProgress => loadingProgress.Value;
         public bool LoadingComplete => loadingComplete.Value;
+
+        /// <summary>Read-only count of authoritative map entities the server has published so far.</summary>
+        public int BlueprintEntryCount => blueprint != null ? blueprint.Count : 0;
+        /// <summary>Server-published seed for this match (0 until <see cref="OnNetworkSpawn"/> on server, replicated to clients).</summary>
+        public int BlueprintSeed => blueprintSeed != null ? blueprintSeed.Value : 0;
+        /// <summary>UTC unix-seconds when the server generated this map. Same value across rejoins to the same server process.</summary>
+        public long ServerBootEpochUtc => serverBootEpochUtc != null ? serverBootEpochUtc.Value : 0;
 
         private System.Random random;
         private System.Collections.Generic.List<Vector3> asteroidPositions = new System.Collections.Generic.List<Vector3>();
@@ -121,11 +139,6 @@ namespace TitanOrbit.Generation
         /// <summary>Rolled per map (2–5). Drives home planet count and <see cref="TeamManager"/> active teams.</summary>
         private int homePlanetCountThisMap = 3;
 
-        /// <summary>Server: spawn order + transforms for late joiners to replay loading visuals.</summary>
-        private readonly List<MapLayoutEntry> serverLayoutSnapshot = new List<MapLayoutEntry>();
-
-        private MapLayoutEntry[] clientJoinLayoutBuffer;
-        private bool clientJoinLayoutReady;
 
         private static readonly TeamManager.Team[] HomeTeamsOrdered =
         {
@@ -141,8 +154,9 @@ namespace TitanOrbit.Generation
             base.OnNetworkSpawn();
             if (IsServer)
             {
-                if (NetworkManager.Singleton != null)
-                    NetworkManager.Singleton.OnClientConnectedCallback += OnServerClientConnected;
+                // Stamp identity for this server-process map so clients can tell same-server rejoin from new-server rejoin.
+                if (serverBootEpochUtc.Value == 0)
+                    serverBootEpochUtc.Value = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 EnsureMapGenerated();
                 PushSyncedMapDimensionsToNetworkIfReady();
             }
@@ -156,102 +170,37 @@ namespace TitanOrbit.Generation
 
         public override void OnNetworkDespawn()
         {
-            if (IsServer && NetworkManager.Singleton != null)
-                NetworkManager.Singleton.OnClientConnectedCallback -= OnServerClientConnected;
             if (!IsServer)
             {
                 syncedMapWidth.OnValueChanged -= OnSyncedMapDimensionsChanged;
                 syncedMapHeight.OnValueChanged -= OnSyncedMapDimensionsChanged;
-                clientJoinLayoutBuffer = null;
-                clientJoinLayoutReady = false;
             }
             base.OnNetworkDespawn();
         }
 
-        private void OnServerClientConnected(ulong clientId)
-        {
-            if (!IsServer || NetworkManager.Singleton == null)
-                return;
-            if (clientId == NetworkManager.Singleton.LocalClientId)
-                return;
-            StartCoroutine(SendJoinLayoutToClientWhenReady(clientId));
-        }
-
-        private IEnumerator SendJoinLayoutToClientWhenReady(ulong clientId)
-        {
-            float wait = 0f;
-            while (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer && !loadingComplete.Value && wait < 120f)
-            {
-                wait += Time.unscaledDeltaTime;
-                yield return null;
-            }
-            if (!IsServer || serverLayoutSnapshot == null || serverLayoutSnapshot.Count == 0)
-            {
-                if (IsServer && (serverLayoutSnapshot == null || serverLayoutSnapshot.Count == 0))
-                    Debug.LogWarning("[MapGenerator] Join layout not sent: server snapshot is empty (late joiners will skip loading replay).");
-                yield break;
-            }
-
-            // Larger chunks + fewer yields so joiners finish "Receiving map layout..." faster over Relay.
-            const int chunkSize = 160;
-            var rpcParams = new ClientRpcParams
-            {
-                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
-            };
-            int total = serverLayoutSnapshot.Count;
-            int chunkIndex = 0;
-            for (int start = 0; start < total; start += chunkSize)
-            {
-                int len = Mathf.Min(chunkSize, total - start);
-                var chunk = new MapLayoutEntry[len];
-                for (int i = 0; i < len; i++)
-                    chunk[i] = serverLayoutSnapshot[start + i];
-                bool isLast = start + len >= total;
-                ReceiveJoinLayoutChunkClientRpc(total, start, chunk, isLast, rpcParams);
-                chunkIndex++;
-                if (!isLast && (chunkIndex % 3) == 0)
-                    yield return null;
-            }
-        }
-
-        [ClientRpc]
-        private void ReceiveJoinLayoutChunkClientRpc(int totalCount, int startIndex, MapLayoutEntry[] chunk, bool isLastChunk, ClientRpcParams clientRpcParams = default)
-        {
-            if (!IsClient || chunk == null || chunk.Length == 0)
-                return;
-            if (clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length != totalCount)
-            {
-                clientJoinLayoutBuffer = new MapLayoutEntry[totalCount];
-                clientJoinLayoutReady = false;
-            }
-            for (int i = 0; i < chunk.Length; i++)
-            {
-                int idx = startIndex + i;
-                if (idx >= 0 && idx < totalCount)
-                    clientJoinLayoutBuffer[idx] = chunk[i];
-            }
-            if (isLastChunk)
-                clientJoinLayoutReady = true;
-        }
-
-        /// <summary>Joining clients: layout metadata received and ready for <see cref="CoPlayJoinLayout"/>.</summary>
-        public bool HasClientJoinLayoutReady() => IsClient && !IsServer && clientJoinLayoutReady && clientJoinLayoutBuffer != null && clientJoinLayoutBuffer.Length > 0;
+        /// <summary>
+        /// Joining clients: blueprint metadata is ready when the server has finished generation and the
+        /// <see cref="NetworkList{MapLayoutEntry}"/> has been synced. NGO syncs the full list to a new client
+        /// at connect time, so we just wait for <see cref="loadingComplete"/> AND a non-empty list.
+        /// </summary>
+        public bool HasClientJoinLayoutReady() =>
+            IsClient && !IsServer && loadingComplete.Value && blueprint != null && blueprint.Count > 0;
 
         /// <summary>
-        /// Joining clients: progress at end of home phase and end of neutral phase (0–1), matching spawn order in the layout buffer.
+        /// Joining clients: progress at end of home phase and end of neutral phase (0–1), matching spawn order in the blueprint.
         /// Used by the loading UI so "Placing planets..." / "Scattering asteroids..." align with the replay.
         /// </summary>
         public void GetJoinReplayPhaseEndProgress(out float endHomesProgress, out float endNeutralsProgress)
         {
             endHomesProgress = 0.33f;
             endNeutralsProgress = 0.66f;
-            if (!IsClient || IsServer || clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length == 0)
+            if (!IsClient || IsServer || blueprint == null || blueprint.Count == 0)
                 return;
-            int n = clientJoinLayoutBuffer.Length;
+            int n = blueprint.Count;
             int homes = 0, neutrals = 0;
             for (int i = 0; i < n; i++)
             {
-                MapLayoutKind k = clientJoinLayoutBuffer[i].Kind;
+                MapLayoutKind k = blueprint[i].Kind;
                 if (k == MapLayoutKind.Home) homes++;
                 else if (k == MapLayoutKind.Neutral) neutrals++;
             }
@@ -260,13 +209,18 @@ namespace TitanOrbit.Generation
             endNeutralsProgress = (homes + neutrals) * inv;
         }
 
-        /// <summary>Client-only: progressive instantiate preview copies (network components stripped) in original spawn order.</summary>
+        /// <summary>Client-only: progressive instantiate preview copies (network components stripped) in original spawn order, driven by the server-published blueprint.</summary>
         public IEnumerator CoPlayJoinLayout(Transform previewParent, System.Action<float> onProgress)
         {
-            if (!IsClient || IsServer || clientJoinLayoutBuffer == null || clientJoinLayoutBuffer.Length == 0)
+            if (!IsClient || IsServer || blueprint == null || blueprint.Count == 0)
                 yield break;
 
-            var entries = clientJoinLayoutBuffer;
+            // Snapshot the list so the iteration is stable even if the server appends late entries during playback.
+            int snapshotCount = blueprint.Count;
+            var entries = new MapLayoutEntry[snapshotCount];
+            for (int i = 0; i < snapshotCount; i++)
+                entries[i] = blueprint[i];
+
             int totalSteps = Mathf.Max(1, entries.Length);
             float stepDelay = ComputeEffectiveProgressiveDelay(totalSteps);
             float asteroidDelay = ComputeEffectiveAsteroidDelay(stepDelay);
@@ -320,10 +274,15 @@ namespace TitanOrbit.Generation
                 UnityEngine.Object.Destroy(net);
         }
 
+        /// <summary>
+        /// Server-only: append a single authoritative map entity to the replicated blueprint.
+        /// NGO automatically syncs the addition to all connected clients (and to any future joiner via initial-state sync).
+        /// </summary>
         private void RecordLayoutEntry(in MapLayoutEntry entry)
         {
             if (!IsServer) return;
-            serverLayoutSnapshot.Add(entry);
+            if (blueprint == null) return;
+            blueprint.Add(entry);
         }
 
 
@@ -390,6 +349,14 @@ namespace TitanOrbit.Generation
             #endregion
             if (hasGenerated)
             {
+                // The blueprint is one-shot per server process: any second call indicates an unintended
+                // regeneration path (scene reload, duplicate spawn, etc.) which would change the layout
+                // mid-match and break the "single source of truth" contract clients depend on.
+                Debug.LogError(
+                    "[MapGenerator] EnsureMapGenerated called more than once on this server process. " +
+                    "Map generation is one-shot per match — ignoring this call. If you see this on a live server, "
+                    + "the previous match's blueprint is being preserved and re-served to clients (which is correct), "
+                    + "but the trigger should be investigated to avoid layout churn.");
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - already generated, skipping");
                 return;
             }
@@ -399,7 +366,12 @@ namespace TitanOrbit.Generation
                 return;
             }
             hasGenerated = true;
-            serverLayoutSnapshot.Clear();
+            // Clear any pre-existing blueprint state (defensive — a fresh server process starts empty,
+            // but if the NetworkBehaviour was respawned without the process restarting we still want a clean slate).
+            if (blueprint != null)
+                blueprint.Clear();
+            if (IsSpawned && serverBootEpochUtc.Value == 0)
+                serverBootEpochUtc.Value = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             EnsureParents();
             bool useProgressiveGeneration = (alwaysUseProgressiveGeneration || batchDelaySeconds > 0f) && gameObject.activeInHierarchy;
             if (useProgressiveGeneration)
@@ -415,10 +387,11 @@ namespace TitanOrbit.Generation
                 loadingComplete.Value = true;
                 int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
                 int plannedAsteroids = asteroidPrefab != null ? numberOfAsteroidsThisMap : 0;
+                int blueprintCount = blueprint != null ? blueprint.Count : 0;
                 if (IsSpawned)
-                    syncedWorldObjectCount.Value = serverLayoutSnapshot.Count;
+                    syncedWorldObjectCount.Value = blueprintCount;
                 BootTrace.Mark("MapGenerator.EnsureMapGenerated - immediate generation finished");
-                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Snapshot entries (spawned): {serverLayoutSnapshot.Count}");
+                Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Blueprint entries (spawned): {blueprintCount}. Seed: {blueprintSeed.Value}. ServerBootEpochUtc: {serverBootEpochUtc.Value}.");
             }
 
             PushSyncedMapDimensionsToNetworkIfReady();
@@ -451,6 +424,8 @@ namespace TitanOrbit.Generation
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - begin");
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
+            if (IsSpawned)
+                blueprintSeed.Value = seed;
 
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
@@ -571,9 +546,10 @@ namespace TitanOrbit.Generation
             loadingComplete.Value = true;
             int homeN = homePlanetPrefab != null ? homePlanetCountThisMap : 0;
             int plannedAsteroids = asteroidPrefab != null ? numberOfAsteroidsThisMap : 0;
+            int blueprintCountFinal = blueprint != null ? blueprint.Count : 0;
             if (IsSpawned)
-                syncedWorldObjectCount.Value = serverLayoutSnapshot.Count;
-            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Snapshot entries (spawned): {serverLayoutSnapshot.Count}");
+                syncedWorldObjectCount.Value = blueprintCountFinal;
+            Debug.Log($"[MapGenerator] Map generated. HomePlanets: {homeN}, Planets: {(planetPrefab != null ? numberOfNeutralPlanetsThisMap : 0)}, Asteroids (planned): {plannedAsteroids}. Blueprint entries (spawned): {blueprintCountFinal}. Seed: {blueprintSeed.Value}. ServerBootEpochUtc: {serverBootEpochUtc.Value}.");
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - finished");
         }
 
@@ -582,6 +558,8 @@ namespace TitanOrbit.Generation
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - begin");
             if (seed == 0) seed = System.Environment.TickCount;
             random = new System.Random(seed);
+            if (IsSpawned)
+                blueprintSeed.Value = seed;
 
             RollAndApplyMapSize();
             ComputeAsteroidParameters();
