@@ -65,6 +65,8 @@ sudo systemctl status titanorbit-server --no-pager -l | head -n 25
 
 You should see **`-rwxr-xr-x`** on the server binary. If the unit points at the wrong filename (`.x86_64` vs none), run **`bash cloudshell_restart_titanorbit_server.sh`** from this folder in **Cloud Shell** (it fixes permissions and syncs **`ExecStart`** to whichever binary exists), or redeploy with **`restart_titanorbit_server_on_gce.bat`** / **`restart_server_remote.ps1`**, which run the same chmod block before **`systemctl restart`**.
 
+**`reset_gce_vm.bat` / hard reboot** only restarts the guest — it **does not** repair **`chmod`**. If Serial Console shows **`203/EXEC`** / **`Permission denied`** on **`TitanOrbitServer`**, run the **`chmod`** block above, **or** reinstall the unit from this repo: **`tools/gce/titanorbit-server.service`** now includes **`PermissionsStartOnly=true`** and an **`ExecStartPre`** that **`chmod 755`** both **`TitanOrbitServer`** and **`TitanOrbitServer.x86_64`** as **root** on every start (so a bad **`tar`** extract is usually fixed by **`sudo systemctl daemon-reload`** after copying the file, then **`sudo systemctl restart titanorbit-server`**). Reinstall with **`install_unit_remote.ps1`** or **`bash cloudshell_install_titanorbit_unit.sh`** (see **`install_enable_server_service_on_gce.bat`**).
+
 Rarely, the game directory is on a filesystem mounted **`noexec`**; then move the install to **`/home`** or **`/opt`** (normal GCE disks are fine).
 
 ### Browser SSH and IAP error 4003

@@ -272,6 +272,15 @@ namespace TitanOrbit.Generation
             var net = go.GetComponent<NetworkObject>();
             if (net != null)
                 UnityEngine.Object.Destroy(net);
+            // Preview instances must not participate in physics — they overlap replicated world objects and can steal hits.
+            foreach (var c in go.GetComponentsInChildren<Collider>(true))
+            {
+                if (c != null) c.enabled = false;
+            }
+            foreach (var r in go.GetComponentsInChildren<Rigidbody>(true))
+            {
+                if (r != null) r.detectCollisions = false;
+            }
         }
 
         /// <summary>

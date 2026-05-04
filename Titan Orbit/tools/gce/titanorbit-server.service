@@ -7,6 +7,10 @@ Wants=network-online.target
 Type=simple
 User=jason
 WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
+# Tar/scp/Windows uploads often strip +x; without it systemd fails with 203/EXEC "Permission denied".
+# Run chmod as root before dropping to User=jason (PermissionsStartOnly).
+PermissionsStartOnly=true
+ExecStartPre=/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
 ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/__TITANORBIT_EXE__ -batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log
 Restart=always
 RestartSec=5

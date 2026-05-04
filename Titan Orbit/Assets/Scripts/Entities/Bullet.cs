@@ -443,7 +443,12 @@ namespace TitanOrbit.Entities
                 float appliedDamage = damage;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
-                    asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
+                asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
+                // #region agent log 065367
+                if (IsServer)
+                    DebugNdjson065367.Write("AS-verify", "Bullet.TryHit", "asteroid_hit",
+                        "{\"dmg\":" + appliedDamage.ToString(CultureInfo.InvariantCulture) + ",\"ownerShip\":" + ownerShipNetworkId + "}");
+                // #endregion agent log 065367
 
                 if (VisualEffectsManager.Instance != null)
                 {

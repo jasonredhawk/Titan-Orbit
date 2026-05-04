@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections;
+using System.Globalization;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
@@ -235,6 +236,7 @@ namespace TitanOrbit.Entities
             sgt.DirtyMesh();
 
             hasAppliedSurfaceVariation = true;
+            SyncSphereColliderToDisplacedPlanet();
         }
 
         private void FixedUpdate()
@@ -388,12 +390,38 @@ namespace TitanOrbit.Entities
                     sphereCol.isTrigger = false;
                 }
             }
+            SyncSphereColliderToDisplacedPlanet();
+        }
+
+        /// <summary>
+        /// SgtPlanet displaces vertices up to <see cref="SpaceGraphicsToolkit.SgtPlanet.Displacement"/> beyond <see cref="SpaceGraphicsToolkit.SgtPlanet.Radius"/>.
+        /// The default <see cref="SphereCollider"/> radius matched only the base radius, so bullets (and traces) missed the visible rock.
+        /// </summary>
+        private void SyncSphereColliderToDisplacedPlanet()
+        {
+            if (col is not SphereCollider sphereCol) return;
+            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            if (sgt == null) return;
+            float outer = sgt.Radius;
+            if (sgt.Displace)
+                outer += Mathf.Max(0f, sgt.Displacement);
+            outer *= 1.12f;
+            sphereCol.radius = Mathf.Max(0.05f, outer);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, ulong attackerShipNetworkId = 0)
         {
             if (isDestroyed.Value) return;
+            // #region agent log 065367
+            if (IsServer)
+            {
+                var no = GetComponent<NetworkObject>();
+                ulong nid = no != null ? no.NetworkObjectId : 0UL;
+                DebugNdjson065367.Write("AST", "Asteroid.TakeDamageServerRpc", "entry",
+                    "{\"netId\":" + nid + ",\"dmg\":" + damage.ToString("0.###", CultureInfo.InvariantCulture) + ",\"hpBefore\":" + health.Value.ToString("0.###", CultureInfo.InvariantCulture) + "}");
+            }
+            // #endregion agent log 065367
 
             if (damage > 0f && attackerShipNetworkId != 0)
             {
@@ -405,13 +433,11 @@ namespace TitanOrbit.Entities
 
             health.Value = Mathf.Max(0, health.Value - damage);
             if (health.Value <= 0)
-            {
-                DestroyAsteroidServerRpc();
-            }
+                ApplyAsteroidDestroyedServer();
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void DestroyAsteroidServerRpc()
+        /// <summary>Server-only destroy path (must not be a nested ServerRpc call).</summary>
+        private void ApplyAsteroidDestroyedServer()
         {
             if (isDestroyed.Value) return;
             isDestroyed.Value = true;

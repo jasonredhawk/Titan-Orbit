@@ -4295,7 +4295,12 @@ namespace TitanOrbit.Entities
                 vInc = _lastFixedPlayPlaneVelocity;
                 vn = Vector3.Dot(vInc, n);
             }
-            if (vn >= 0f) return;
+            if (vn >= 0f)
+            {
+                if (relativeSpeed < 2.5f) return;
+                vn = -Mathf.Max(1f, relativeSpeed * 0.22f);
+                vInc = n * vn;
+            }
 
             float e = GetEffectiveAsteroidRestitution();
             Vector3 vOut = vInc - (1f + e) * vn * n;
