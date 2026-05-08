@@ -41,11 +41,19 @@ namespace TitanOrbit.Entities
             HideLegacyMeshVisual();
         }
 
-        private void OnEnable()
+        public override void OnEnable()
         {
             if (planet == null)
                 planet = GetComponentInParent<Planet>();
             HideLegacyMeshVisual();
+            // Required on URP/HDRP: ImmediateModeShapeDrawer subscribes in base.OnEnable (beginCameraRendering).
+            // A private OnEnable here previously skipped base and orbit borders never drew.
+            base.OnEnable();
+        }
+
+        public override void OnDisable()
+        {
+            base.OnDisable();
         }
 
         /// <summary>Hide the old mesh-based orbit zone so only Shapes is visible.</summary>

@@ -91,6 +91,9 @@ namespace TitanOrbit.Entities
         private TrailRenderer cachedTrail;
         private bool serverCounted;
         private bool _e695ffLoggedDelayedVisual;
+        private bool _065367LoggedFirstCast;
+        private static readonly RaycastHit[] SphereCastHits = new RaycastHit[32];
+        private static readonly Collider[] OverlapFallbackHits = new Collider[32];
 
         public float Damage => damage;
         public TeamManager.Team OwnerTeam => ownerTeam;
@@ -230,13 +233,14 @@ namespace TitanOrbit.Entities
             if (netTransform != null)
                 netTransform.Interpolate = false;
 
-            // Lock Y position to 0
+            // Lock Y position to 0 (keep RB and transform aligned; Auto Sync Transforms is off in project settings).
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
-            
+            if (rb != null) rb.position = pos;
+
             spawnTime = Time.time;
-            spawnPosition = transform.position;
+            spawnPosition = rb != null ? rb.position : transform.position;
             lastPosition = spawnPosition;
 
             // Update visual immediately (uses cached values; NetworkVariable sync will update clients)
@@ -313,12 +317,13 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
-            // Always lock Y position (prevents drift)
-            Vector3 pos = transform.position;
-            if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
+            // Physics queries must follow Rigidbody pose (ProjectSettings Auto Sync Transforms is off).
+            Vector3 physicsPos = rb != null ? rb.position : transform.position;
+            if (Mathf.Abs(physicsPos.y - FIXED_Y_POSITION) > 0.01f)
             {
-                pos.y = FIXED_Y_POSITION;
-                transform.position = pos;
+                physicsPos.y = FIXED_Y_POSITION;
+                if (rb != null) rb.position = physicsPos;
+                transform.position = physicsPos;
             }
             
             // Ensure rigidbody velocity has no Y component
@@ -331,8 +336,10 @@ namespace TitanOrbit.Entities
 
             if (!IsServer) return;
 
+            physicsPos = rb != null ? rb.position : transform.position;
+
             // Use toroidal distance so bullets don't despawn when crossing map edge
-            float dist = ToroidalMap.ToroidalDistance(transform.position, spawnPosition);
+            float dist = ToroidalMap.ToroidalDistance(physicsPos, spawnPosition);
             if (dist > maxDistance || Time.time - spawnTime > lifetime)
             {
                 DespawnBullet();
@@ -340,40 +347,90 @@ namespace TitanOrbit.Entities
             }
 
             // Always check for collisions, even if close (fixes tunneling bug)
-            Vector3 to = transform.position;
+            Vector3 to = physicsPos;
             float pathLen = Vector3.Distance(lastPosition, to);
             
             if (pathLen > 0.001f)
             {
-                // Use SphereCast instead of Raycast for better detection of fast-moving bullets
+                // Use SphereCastNonAlloc + distance sort so the nearest valid target wins (single SphereCast can return an arbitrary hit when volumes overlap).
                 float bulletRadius = 0.3f; // Larger radius to reliably hit ships (BoxCollider ~0.5 wide)
-                if (Physics.SphereCast(lastPosition, bulletRadius, (to - lastPosition).normalized, out RaycastHit hit, pathLen, ~0, QueryTriggerInteraction.Ignore))
+                Vector3 dir = (to - lastPosition).normalized;
+                int n = Physics.SphereCastNonAlloc(lastPosition, bulletRadius, dir, SphereCastHits, pathLen, ~0, QueryTriggerInteraction.Ignore);
+                // #region agent log 065367
+                if (!_065367LoggedFirstCast && pathLen > 0.02f && IsServer)
                 {
-                    if (hit.collider.transform != transform && !hit.collider.transform.IsChildOf(transform))
+                    _065367LoggedFirstCast = true;
+                    float trRbDelta = rb != null ? Vector3.Distance(rb.position, transform.position) : 0f;
+                    string first = "none";
+                    if (n > 0 && SphereCastHits[0].collider != null)
+                        first = SphereCastHits[0].collider.name;
+                    if (first.Length > 64) first = first.Substring(0, 64);
+                    first = first.Replace("\\", "\\\\").Replace("\"", "\\'");
+                    DebugNdjson065367.Write("H-SCAST", "Bullet.FixedUpdate", "first_cast_sample",
+                        "{\"pathLen\":" + pathLen.ToString("0.####", CultureInfo.InvariantCulture)
+                        + ",\"n\":" + n + ",\"trRbDelta\":" + trRbDelta.ToString("0.####", CultureInfo.InvariantCulture)
+                        + ",\"firstHit\":\"" + first + "\"}");
+                }
+                // #endregion agent log 065367
+                if (n > 1)
+                {
+                    for (int i = 1; i < n; i++)
                     {
-                        // TryHit ignores the firing ship (same team) and many world layers; do not treat those as "stuck"
-                        // and despawn immediately — the first FixedUpdate segment often clips the shooter, planet atmosphere,
-                        // or huge planet meshes on dedicated servers while host/listen usually does not.
-                        if (IsColliderOnFiringShipNetworkObject(hit.collider))
+                        RaycastHit key = SphereCastHits[i];
+                        float kd = key.distance;
+                        int j = i - 1;
+                        while (j >= 0 && SphereCastHits[j].distance > kd)
                         {
-                            // Continue; advance lastPosition below.
+                            SphereCastHits[j + 1] = SphereCastHits[j];
+                            j--;
                         }
-                        else if (TryHit(hit.collider))
-                            return; // Hit valid target, despawned
-                        else
+                        SphereCastHits[j + 1] = key;
+                    }
+                }
+                for (int i = 0; i < n; i++)
+                {
+                    RaycastHit hit = SphereCastHits[i];
+                    if (hit.collider == null) continue;
+                    if (hit.collider.transform == transform || hit.collider.transform.IsChildOf(transform)) continue;
+                    if (IsColliderOnFiringShipNetworkObject(hit.collider)) continue;
+                    if (TryHit(hit.collider, hit.point)) return;
+                    float travelledFromSpawn = ToroidalMap.ToroidalDistance(physicsPos, spawnPosition);
+                    if (travelledFromSpawn >= minTravelBeforeHit)
+                    {
+                        DespawnBullet(hit.point);
+                        return;
+                    }
+                }
+
+                // Fallback: spherecast can miss thin windows vs large kinematic hulls; overlap current pose for valid targets.
+                int m = Physics.OverlapSphereNonAlloc(physicsPos, bulletRadius + 0.85f, OverlapFallbackHits, ~0, QueryTriggerInteraction.Ignore);
+                for (int a = 0; a < m; a++)
+                {
+                    int best = -1;
+                    float bestD = float.MaxValue;
+                    for (int b = a; b < m; b++)
+                    {
+                        Collider c = OverlapFallbackHits[b];
+                        if (c == null) continue;
+                        if (c.transform == transform || c.transform.IsChildOf(transform)) continue;
+                        if (IsColliderOnFiringShipNetworkObject(c)) continue;
+                        Vector3 cp = c.ClosestPoint(physicsPos);
+                        float d = (cp - physicsPos).sqrMagnitude;
+                        if (d < bestD)
                         {
-                            float travelledFromSpawn = ToroidalMap.ToroidalDistance(transform.position, spawnPosition);
-                            if (travelledFromSpawn >= minTravelBeforeHit)
-                            {
-                                DespawnBullet(); // Hit something else (planet, etc) after leaving spawn clutter
-                                return;
-                            }
+                            bestD = d;
+                            best = b;
                         }
                     }
+                    if (best < 0) break;
+                    Collider chosen = OverlapFallbackHits[best];
+                    OverlapFallbackHits[best] = OverlapFallbackHits[a];
+                    OverlapFallbackHits[a] = chosen;
+                    if (TryHit(chosen, chosen.ClosestPoint(physicsPos))) return;
                 }
             }
 
-            lastPosition = transform.position;
+            lastPosition = rb != null ? rb.position : transform.position;
         }
 
         /// <summary>True if the collider belongs to the firing ship's <see cref="NetworkObject"/> hierarchy (any child mesh/collider).</summary>
@@ -388,7 +445,8 @@ namespace TitanOrbit.Entities
         {
             // Check if bullet spawned inside or very close to an asteroid/ship
             float checkRadius = 0.5f;
-            Collider[] overlaps = Physics.OverlapSphere(transform.position, checkRadius, ~0, QueryTriggerInteraction.Ignore);
+            Vector3 overlapCenter = rb != null ? rb.position : transform.position;
+            Collider[] overlaps = Physics.OverlapSphere(overlapCenter, checkRadius, ~0, QueryTriggerInteraction.Ignore);
             
             foreach (Collider col in overlaps)
             {
@@ -398,20 +456,20 @@ namespace TitanOrbit.Entities
                     Asteroid asteroid = col.GetComponentInParent<Asteroid>();
                     if (asteroid != null && !asteroid.IsDestroyed)
                     {
-                        TryHit(col);
+                        TryHit(col, col.ClosestPoint(transform.position));
                         return;
                     }
                     
                     Starship ship = col.GetComponentInParent<Starship>();
                     if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
                     {
-                        TryHit(col);
+                        TryHit(col, col.ClosestPoint(transform.position));
                         return;
                     }
                     DroneBase drone = col.GetComponentInParent<DroneBase>();
                     if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
                     {
-                        TryHit(col);
+                        TryHit(col, col.ClosestPoint(transform.position));
                         return;
                     }
                 }
@@ -421,18 +479,24 @@ namespace TitanOrbit.Entities
         private void OnTriggerEnter(Collider other)
         {
             if (!IsServer) return;
-            TryHit(other);
+            Vector3 impact = other != null ? other.ClosestPoint(transform.position) : transform.position;
+            TryHit(other, impact);
         }
 
         private void OnCollisionEnter(Collision collision)
         {
             if (!IsServer) return;
-            if (collision != null && collision.collider != null)
-                TryHit(collision.collider);
+            if (collision == null || collision.collider == null) return;
+            Vector3 impact = transform.position;
+            if (collision.contactCount > 0)
+                impact = collision.GetContact(0).point;
+            else if (collision.collider != null)
+                impact = collision.collider.ClosestPoint(transform.position);
+            TryHit(collision.collider, impact);
         }
 
         /// <returns>True if we hit a valid target (asteroid, ship, drone) and despawned.</returns>
-        private bool TryHit(Collider other)
+        private bool TryHit(Collider other, Vector3 impactWorldPos)
         {
             if (other == null) return false;
 
@@ -443,30 +507,30 @@ namespace TitanOrbit.Entities
                 float appliedDamage = damage;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
-                asteroid.TakeDamageServerRpc(appliedDamage, ownerShipNetworkId);
+                asteroid.ApplyDamageFromBulletServer(appliedDamage, ownerShipNetworkId);
                 // #region agent log 065367
                 if (IsServer)
                     DebugNdjson065367.Write("AS-verify", "Bullet.TryHit", "asteroid_hit",
-                        "{\"dmg\":" + appliedDamage.ToString(CultureInfo.InvariantCulture) + ",\"ownerShip\":" + ownerShipNetworkId + "}");
+                        "{\"dmg\":" + appliedDamage.ToString(CultureInfo.InvariantCulture) + ",\"ownerShip\":" + ownerShipNetworkId + ",\"impactDist\":" + Vector3.Distance(impactWorldPos, transform.position).ToString("0.###", CultureInfo.InvariantCulture) + "}");
                 // #endregion agent log 065367
 
                 if (VisualEffectsManager.Instance != null)
                 {
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                        transform.position,
+                        impactWorldPos,
                         (int)FloatingCountChannel.DamageAsteroid,
                         appliedDamage,
                         (int)ownerTeam
                     );
                     VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
-                        transform.position,
+                        impactWorldPos,
                         asteroid.RemainingHealth,
                         asteroid.RemainingGems,
                         (int)ownerTeam
                     );
                 }
 
-                DespawnBullet();
+                DespawnBullet(impactWorldPos);
                 return true;
             }
 
@@ -483,20 +547,20 @@ namespace TitanOrbit.Entities
 
                 if (VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                        transform.position,
+                        impactWorldPos,
                         (int)FloatingCountChannel.DamageMoon,
                         appliedDamage,
                         (int)ownerTeam
                     );
 
-                DespawnBullet();
+                DespawnBullet(impactWorldPos);
                 return true;
             }
 
             ShipDeathDebris debrisShield = other.GetComponentInParent<ShipDeathDebris>();
             if (debrisShield != null && debrisShield.TryAbsorbBullet(ownerTeam))
             {
-                DespawnBullet();
+                DespawnBullet(impactWorldPos);
                 return true;
             }
 
@@ -507,13 +571,13 @@ namespace TitanOrbit.Entities
 
                 if (VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                        transform.position,
+                        impactWorldPos,
                         (int)FloatingCountChannel.DamageShipOrDrone,
                         damage,
                         (int)ownerTeam
                     );
 
-                DespawnBullet();
+                DespawnBullet(impactWorldPos);
                 return true;
             }
 
@@ -524,22 +588,25 @@ namespace TitanOrbit.Entities
 
                 if (VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                        transform.position,
+                        impactWorldPos,
                         (int)FloatingCountChannel.DamageShipOrDrone,
                         damage,
                         (int)ownerTeam
                     );
 
-                DespawnBullet();
+                DespawnBullet(impactWorldPos);
                 return true;
             }
 
             return false;
         }
 
-        private void DespawnBullet()
+        private void DespawnBullet() => DespawnBullet(transform.position);
+
+        private void DespawnBullet(Vector3 impactWorldPos)
         {
-            Vector3 impactPos = transform.position;
+            Vector3 impactPos = impactWorldPos;
+            impactPos.y = FIXED_Y_POSITION;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
             float impactPitch = GetImpactSoundPitch();
             GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);

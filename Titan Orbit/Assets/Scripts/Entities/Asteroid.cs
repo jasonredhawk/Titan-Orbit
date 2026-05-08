@@ -237,6 +237,14 @@ namespace TitanOrbit.Entities
 
             hasAppliedSurfaceVariation = true;
             SyncSphereColliderToDisplacedPlanet();
+            StartCoroutine(CoSyncColliderAfterMesh());
+        }
+
+        /// <summary>Mesh bounds update one frame after <see cref="SpaceGraphicsToolkit.SgtPlanet.DirtyMesh"/> so hit volume matches displaced visuals.</summary>
+        private IEnumerator CoSyncColliderAfterMesh()
+        {
+            yield return null;
+            SyncSphereColliderToDisplacedPlanet();
         }
 
         private void FixedUpdate()
@@ -407,10 +415,32 @@ namespace TitanOrbit.Entities
                 outer += Mathf.Max(0f, sgt.Displacement);
             outer *= 1.12f;
             sphereCol.radius = Mathf.Max(0.05f, outer);
+
+            Renderer rend = asteroidRenderer != null ? asteroidRenderer : GetComponentInChildren<Renderer>();
+            if (rend != null)
+            {
+                Bounds wb = rend.bounds;
+                float worldR = Mathf.Max(wb.extents.x, wb.extents.z);
+                float maxAxis = Mathf.Max(Mathf.Abs(transform.lossyScale.x), Mathf.Max(Mathf.Abs(transform.lossyScale.y), Mathf.Abs(transform.lossyScale.z)));
+                float localFromBounds = worldR / Mathf.Max(0.01f, maxAxis);
+                sphereCol.radius = Mathf.Max(sphereCol.radius, localFromBounds * 1.06f);
+            }
+        }
+
+        /// <summary>Server-only damage from bullets (same rules as <see cref="TakeDamageServerRpc"/>; avoids nested ServerRpc from another NetworkBehaviour).</summary>
+        public void ApplyDamageFromBulletServer(float damage, ulong attackerShipNetworkId = 0)
+        {
+            if (!IsServer) return;
+            ApplyIncomingDamageServer(damage, attackerShipNetworkId, "Asteroid.ApplyDamageFromBulletServer");
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, ulong attackerShipNetworkId = 0)
+        {
+            ApplyIncomingDamageServer(damage, attackerShipNetworkId, "Asteroid.TakeDamageServerRpc");
+        }
+
+        private void ApplyIncomingDamageServer(float damage, ulong attackerShipNetworkId, string logLocation)
         {
             if (isDestroyed.Value) return;
             // #region agent log 065367
@@ -418,7 +448,7 @@ namespace TitanOrbit.Entities
             {
                 var no = GetComponent<NetworkObject>();
                 ulong nid = no != null ? no.NetworkObjectId : 0UL;
-                DebugNdjson065367.Write("AST", "Asteroid.TakeDamageServerRpc", "entry",
+                DebugNdjson065367.Write("AST", logLocation, "entry",
                     "{\"netId\":" + nid + ",\"dmg\":" + damage.ToString("0.###", CultureInfo.InvariantCulture) + ",\"hpBefore\":" + health.Value.ToString("0.###", CultureInfo.InvariantCulture) + "}");
             }
             // #endregion agent log 065367
@@ -489,7 +519,28 @@ namespace TitanOrbit.Entities
 
                 bonusMultiplier = Mathf.Max(1f, bonusMultiplier);
                 float bonusValue = regularValue * Mathf.Max(0f, bonusMultiplier - 1f);
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, regularValue, bonusValue, asteroidSize, physicalSize, topDamagerShipId);
+                // #region agent log 065367
+                if (IsServer)
+                {
+                    var asteroidNo = GetComponent<NetworkObject>();
+                    ulong nid = asteroidNo != null ? asteroidNo.NetworkObjectId : 0UL;
+                    DebugNdjson065367.Write("AST-destroy", "Asteroid.ApplyAsteroidDestroyedServer", "before_spawn_gems",
+                        "{\"netId\":" + nid
+                        + ",\"remGems\":" + remainingGems.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                        + ",\"regular\":" + regularValue.ToString("0.###", CultureInfo.InvariantCulture)
+                        + ",\"bonus\":" + bonusValue.ToString("0.###", CultureInfo.InvariantCulture)
+                        + ",\"topDamager\":" + topDamagerShipId + "}");
+                }
+                // #endregion agent log 065367
+                GemSpawner.Instance.SpawnGemsFromAsteroidDestroyOnServer(pos, regularValue, bonusValue, asteroidSize, physicalSize, topDamagerShipId);
+            }
+            else
+            {
+                // #region agent log 065367
+                if (IsServer)
+                    DebugNdjson065367.Write("AST-destroy", "Asteroid.ApplyAsteroidDestroyedServer", "gemspawner_null", "{}");
+                // #endregion agent log 065367
+                Debug.LogWarning("[Asteroid] GemSpawner.Instance is null — no gems spawned. Ensure a GemSpawner is in the gameplay scene with gem prefab assigned, or ship Gem under Assets/Resources/Gem.prefab for headless builds.");
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).

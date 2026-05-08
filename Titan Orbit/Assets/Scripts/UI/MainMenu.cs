@@ -841,6 +841,8 @@ namespace TitanOrbit.UI
             float gateNow = Time.realtimeSinceStartup;
             if (gateNow < _nextAllowedLobbyRefreshRealtime)
             {
+                float remain = _nextAllowedLobbyRefreshRealtime - gateNow;
+                SetLobbyBrowserStatus($"Please wait {remain:0.0}s before refreshing again (reduces lobby rate limits).");
                 // #region agent log
                 NetworkGameManager.DebugSessionE2a466Log("post-fix", "H8", "MainMenu.RefreshLobbyListAsync", "refresh_skipped_cooldown",
                     "{\"remainingMs\":" + ((_nextAllowedLobbyRefreshRealtime - gateNow) * 1000f).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
@@ -859,7 +861,7 @@ namespace TitanOrbit.UI
             }
 
             _isLobbyRefreshInFlight = true;
-            _nextAllowedLobbyRefreshRealtime = gateNow + 5f;
+            _nextAllowedLobbyRefreshRealtime = gateNow + 10f;
             _dbgLobbyRefreshCount++;
             float now = Time.realtimeSinceStartup;
             float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
@@ -877,14 +879,78 @@ namespace TitanOrbit.UI
 
             try
             {
+                var fetched = await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40);
+                var kind = NetworkGameManager.LastOpenLobbyQueryKind;
+                // #region agent log 065367
+                NetworkGameManager.DebugSessionE2a466Log("post-fix", "LM-H1", "MainMenu.RefreshLobbyListAsync", "after_query_065367",
+                    "{\"latestOnly\":" + (latestOnlyFilter ? "true" : "false")
+                    + ",\"fetched\":" + fetched.Count
+                    + ",\"kind\":" + (int)kind
+                    + ",\"cachedBefore\":" + cachedLobbySummaries.Count + "}");
+                // #endregion agent log 065367
+
+                // #region agent log
+                F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "after_query",
+                    "{\"fetchedCount\":" + fetched.Count + ",\"kind\":" + (int)kind + ",\"cachedBefore\":" + cachedLobbySummaries.Count + ",\"latestOnlyFilter\":" + (latestOnlyFilter ? "true" : "false") + "}");
+                // #endregion
+
+                if (fetched.Count > 0)
+                {
+                    selectedLobbyId = null;
+                    selectedLobbyRowIndex = -1;
+                    cachedLobbySummaries.Clear();
+                    cachedLobbySummaries.AddRange(fetched);
+                    RenderLobbyList();
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.RateLimitBackoff)
+                {
+                    int waitSec = Mathf.Max(1, Mathf.CeilToInt(NetworkGameManager.LobbyRateLimitRemainingSeconds));
+                    SetLobbyBrowserStatus(
+                        "Lobby list is temporarily rate-limited by Unity. " +
+                        (cachedLobbySummaries.Count > 0
+                            ? $"Showing the previous list. Retry in about {waitSec}s."
+                            : $"Wait about {waitSec}s, then tap Refresh."));
+                    if (cachedLobbySummaries.Count > 0)
+                        RenderLobbyList();
+                    else
+                        ClearLobbyListRows();
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.UnityServicesNotReady)
+                {
+                    SetLobbyBrowserStatus("Connecting to multiplayer services… try Refresh in a few seconds.");
+                    if (cachedLobbySummaries.Count > 0)
+                        RenderLobbyList();
+                    else
+                        ClearLobbyListRows();
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.Error)
+                {
+                    selectedLobbyId = null;
+                    selectedLobbyRowIndex = -1;
+                    cachedLobbySummaries.Clear();
+                    ClearLobbyListRows();
+                    if (!string.IsNullOrEmpty(NetworkGameManager.LastOpenLobbyQueryErrorDetail))
+                    {
+                        string detail = NetworkGameManager.LastOpenLobbyQueryErrorDetail;
+                        if (detail.Length > 96)
+                            detail = detail.Substring(0, 93) + "…";
+                        SetLobbyBrowserStatus("Could not load lobbies: " + detail);
+                    }
+                    else
+                        SetLobbyBrowserStatus("Could not load lobbies. Check your connection and tap Refresh.");
+                    return;
+                }
+
                 selectedLobbyId = null;
                 selectedLobbyRowIndex = -1;
                 cachedLobbySummaries.Clear();
-                cachedLobbySummaries.AddRange(await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40));
-                // #region agent log
-                F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "after_query",
-                    "{\"cachedCount\":" + cachedLobbySummaries.Count + ",\"latestOnlyFilter\":" + (latestOnlyFilter ? "true" : "false") + "}");
-                // #endregion
+                cachedLobbySummaries.AddRange(fetched);
                 RenderLobbyList();
             }
             finally

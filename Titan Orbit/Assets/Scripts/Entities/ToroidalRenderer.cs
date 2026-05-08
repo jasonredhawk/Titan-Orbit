@@ -221,7 +221,14 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                // Static or kinematic entity: move root (planets, asteroids with SgtPlanet/procedural mesh)
+                // Static or kinematic entity: move root (planets, asteroids with SgtPlanet/procedural mesh).
+                // Server physics + NetworkTransform must stay at logical coordinates; bullets keep logical RB roots
+                // while ToroidalRenderer offsets only their Visual child. Moving asteroid roots here on a host
+                // with a camera desyncs SphereCasts/traces from bullet paths (dedicated headless skips early — no cam).
+                var nm = NetworkManager.Singleton;
+                if (nm != null && nm.IsServer)
+                    return;
+
                 transform.position = displayPos;
             }
         }

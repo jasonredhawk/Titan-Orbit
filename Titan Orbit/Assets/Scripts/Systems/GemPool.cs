@@ -34,7 +34,9 @@ namespace TitanOrbit.Systems
         private void Update()
         {
             if (poolCreated) return;
-            if (gemPrefab == null || NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening || !NetworkManager.Singleton.IsServer)
+            bool havePrefab = gemPrefab != null
+                || (GemSpawner.Instance != null && GemSpawner.Instance.GetRuntimeGemPrefabForPool() != null);
+            if (!havePrefab || NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening || !NetworkManager.Singleton.IsServer)
                 return;
 
             CreatePool();
@@ -44,9 +46,16 @@ namespace TitanOrbit.Systems
         private void CreatePool()
         {
             pool.Clear();
+            GameObject prefabToUse = gemPrefab;
+            if (GemSpawner.Instance != null)
+            {
+                GameObject fromSpawner = GemSpawner.Instance.GetRuntimeGemPrefabForPool();
+                if (fromSpawner != null) prefabToUse = fromSpawner;
+            }
+            if (prefabToUse == null) return;
             for (int i = 0; i < poolSize; i++)
             {
-                GameObject go = Instantiate(gemPrefab, Vector3.zero, Quaternion.identity);
+                GameObject go = Instantiate(prefabToUse, Vector3.zero, Quaternion.identity);
                 NetworkObject no = go.GetComponent<NetworkObject>();
                 if (no == null) { Destroy(go); continue; }
                 no.Spawn();

@@ -4651,12 +4651,24 @@ namespace TitanOrbit.Entities
             }
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public void AddGemsServerRpc(float amount, bool playCollectSound = false)
+        /// <summary>Server-only gem credit from pickups (same as <see cref="AddGemsServerRpc"/>; avoids invoking a ServerRpc from another NetworkBehaviour on the server).</summary>
+        public void AddGemsFromPickupServer(float amount, bool playCollectSound = false)
+        {
+            if (!IsServer) return;
+            ApplyAddGemsOnServer(amount, playCollectSound);
+        }
+
+        private void ApplyAddGemsOnServer(float amount, bool playCollectSound)
         {
             currentGems.Value = Mathf.Min(currentGems.Value + amount, GemCapacity);
             if (playCollectSound)
                 PlayGemCollectSoundClientRpc(amount);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void AddGemsServerRpc(float amount, bool playCollectSound = false)
+        {
+            ApplyAddGemsOnServer(amount, playCollectSound);
         }
 
         [ClientRpc]

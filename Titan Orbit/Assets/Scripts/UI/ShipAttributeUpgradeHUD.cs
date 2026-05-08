@@ -22,6 +22,9 @@ namespace TitanOrbit.UI
         [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
         [SerializeField] private float bottomPadding = 8f;
+        [Header("Mobile / touch")]
+        [Tooltip("Multiplies bar height, button width, fonts, ticks, and padding on phones/tablets so the bottom upgrade strip is easier to read and tap.")]
+        [SerializeField] private float mobileHudScale = 1.48f;
         [Tooltip("Vertical position of the ability title (negative = down from top edge). Increase to move title up.")]
         [SerializeField] private float titleFromTop = -7f;
         [Tooltip("Vertical offset of the upgrade tick squares (center anchor). Increase to move ticks up.")]
@@ -69,6 +72,11 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI[] costLabels = new TextMeshProUGUI[10];
         private Image[] costGemIcons = new Image[10];
 
+        /// <summary>1 on desktop; <see cref="mobileHudScale"/> on mobile, clamped for safety.</summary>
+        private float _layoutScale = 1f;
+
+        private float S(float v) => v * _layoutScale;
+
         private void Start()
         {
             if (!upgradeBarEnabled) return;
@@ -80,6 +88,8 @@ namespace TitanOrbit.UI
             Canvas canvas = Object.FindFirstObjectByType<Canvas>();
             if (canvas == null) return;
 
+            _layoutScale = Application.isMobilePlatform ? Mathf.Clamp(mobileHudScale, 1f, 2.25f) : 1f;
+
             rootPanel = new GameObject("ShipAttributeUpgradeBar");
             rootPanel.transform.SetParent(canvas.transform, false);
 
@@ -87,9 +97,12 @@ namespace TitanOrbit.UI
             rootRect.anchorMin = new Vector2(0.5f, 0f);
             rootRect.anchorMax = new Vector2(0.5f, 0f);
             rootRect.pivot = new Vector2(0.5f, 0f);
-            rootRect.anchoredPosition = new Vector2(0f, bottomPadding);
-            float totalWidth = 10 * buttonWidth + 9 * buttonSpacing;
-            rootRect.sizeDelta = new Vector2(totalWidth, barHeight);
+            rootRect.anchoredPosition = new Vector2(0f, S(bottomPadding));
+            float bw = S(buttonWidth);
+            float sp = S(buttonSpacing);
+            float bh = S(barHeight);
+            float totalWidth = 10 * bw + 9 * sp;
+            rootRect.sizeDelta = new Vector2(totalWidth, bh);
 
             Image bgImage = rootPanel.AddComponent<Image>();
             bgImage.color = new Color(0f, 0f, 0f, 0f);
@@ -100,8 +113,8 @@ namespace TitanOrbit.UI
 
             for (int i = 0; i < 10; i++)
             {
-                float x = -totalWidth / 2f + buttonWidth / 2f + i * (buttonWidth + buttonSpacing);
-                var btn = CreateUpgradeButton(rootPanel.transform, x, i, categoryColors[CategoryIndices[i]], keyStrings[i]);
+                float x = -totalWidth / 2f + bw / 2f + i * (bw + sp);
+                var btn = CreateUpgradeButton(rootPanel.transform, x, i, categoryColors[CategoryIndices[i]], keyStrings[i], bw, bh);
                 buttons[i] = btn.button;
                 titleTexts[i] = btn.titleText;
                 tickContainers[i] = btn.tickContainer;
@@ -112,7 +125,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color categoryColor, string keyStr)
+        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color categoryColor, string keyStr, float scaledButtonWidth, float scaledBarHeight)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -122,25 +135,25 @@ namespace TitanOrbit.UI
             btnRect.anchorMax = new Vector2(0.5f, 0.5f);
             btnRect.pivot = new Vector2(0.5f, 0.5f);
             btnRect.anchoredPosition = new Vector2(x, 0f);
-            btnRect.sizeDelta = new Vector2(buttonWidth, barHeight - 6f);
+            btnRect.sizeDelta = new Vector2(scaledButtonWidth, scaledBarHeight - S(6f));
 
             Image bgImage = btnObj.AddComponent<Image>();
             bgImage.color = categoryColor;
             bgImage.raycastTarget = true;
             var buttonOutline = btnObj.AddComponent<Outline>();
             buttonOutline.effectColor = buttonFrameColor;
-            buttonOutline.effectDistance = new Vector2(1f, 1f);
+            buttonOutline.effectDistance = new Vector2(S(1f), S(1f));
             var buttonShadow = btnObj.AddComponent<Shadow>();
             buttonShadow.effectColor = buttonShadowColor;
-            buttonShadow.effectDistance = new Vector2(0f, -2f);
+            buttonShadow.effectDistance = new Vector2(0f, S(-2f));
 
             GameObject innerShade = new GameObject("InnerShade");
             innerShade.transform.SetParent(btnObj.transform, false);
             RectTransform shadeRect = innerShade.AddComponent<RectTransform>();
             shadeRect.anchorMin = Vector2.zero;
             shadeRect.anchorMax = Vector2.one;
-            shadeRect.offsetMin = new Vector2(3f, 3f);
-            shadeRect.offsetMax = new Vector2(-3f, -3f);
+            shadeRect.offsetMin = new Vector2(S(3f), S(3f));
+            shadeRect.offsetMax = new Vector2(S(-3f), S(-3f));
             Image shadeImage = innerShade.AddComponent<Image>();
             shadeImage.color = buttonInnerShadeColor;
             shadeImage.raycastTarget = false;
@@ -151,8 +164,8 @@ namespace TitanOrbit.UI
             accentRect.anchorMin = new Vector2(0f, 1f);
             accentRect.anchorMax = new Vector2(1f, 1f);
             accentRect.pivot = new Vector2(0.5f, 1f);
-            accentRect.offsetMin = new Vector2(5f, -3f);
-            accentRect.offsetMax = new Vector2(-5f, -1f);
+            accentRect.offsetMin = new Vector2(S(5f), S(-3f));
+            accentRect.offsetMax = new Vector2(S(-5f), S(-1f));
             Image accentImage = accentLine.AddComponent<Image>();
             accentImage.color = buttonAccentColor;
             accentImage.raycastTarget = false;
@@ -169,11 +182,11 @@ namespace TitanOrbit.UI
             keyRect.anchorMin = new Vector2(0f, 1f);
             keyRect.anchorMax = new Vector2(0f, 1f);
             keyRect.pivot = new Vector2(0f, 1f);
-            keyRect.anchoredPosition = new Vector2(4f, -4f);
-            keyRect.sizeDelta = new Vector2(20f, 16f);
+            keyRect.anchoredPosition = new Vector2(S(4f), S(-4f));
+            keyRect.sizeDelta = new Vector2(S(20f), S(16f));
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
-            keyLabel.fontSize = 13f;
+            keyLabel.fontSize = S(13f);
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
             keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
@@ -185,11 +198,12 @@ namespace TitanOrbit.UI
             titleRect.anchorMin = new Vector2(0.5f, 1f);
             titleRect.anchorMax = new Vector2(0.5f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, titleFromTop);
-            titleRect.sizeDelta = new Vector2(buttonWidth - 10f, 12f);
+            titleRect.anchoredPosition = new Vector2(0f, S(titleFromTop));
+            float titleH = S(12f);
+            titleRect.sizeDelta = new Vector2(scaledButtonWidth - S(10f), titleH);
             TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
             titleText.text = Titles[index];
-            titleText.fontSize = 8.5f;
+            titleText.fontSize = S(8.5f);
             if (TMP_Settings.defaultFontAsset != null) titleText.font = TMP_Settings.defaultFontAsset;
             titleText.color = Color.white;
             titleText.fontStyle = FontStyles.Bold;
@@ -203,11 +217,11 @@ namespace TitanOrbit.UI
             tickRect.anchorMin = new Vector2(0.5f, 0.5f);
             tickRect.anchorMax = new Vector2(0.5f, 0.5f);
             tickRect.pivot = new Vector2(0.5f, 0.5f);
-            tickRect.anchoredPosition = new Vector2(0f, ticksCenterYOffset);
-            tickRect.sizeDelta = new Vector2(Mathf.Min(buttonWidth - 16f, 78f), 10f);
+            tickRect.anchoredPosition = new Vector2(0f, S(ticksCenterYOffset));
+            tickRect.sizeDelta = new Vector2(Mathf.Min(scaledButtonWidth - S(16f), S(78f)), S(10f));
 
             HorizontalLayoutGroup tickLayout = tickContainer.AddComponent<HorizontalLayoutGroup>();
-            tickLayout.spacing = 2f;
+            tickLayout.spacing = S(2f);
             tickLayout.childAlignment = TextAnchor.MiddleCenter;
             tickLayout.childControlWidth = true;
             tickLayout.childControlHeight = true;
@@ -221,12 +235,13 @@ namespace TitanOrbit.UI
             costRowRect.anchorMin = new Vector2(0.5f, 0f);
             costRowRect.anchorMax = new Vector2(0.5f, 0f);
             costRowRect.pivot = new Vector2(0.5f, 0f);
-            costRowRect.anchoredPosition = new Vector2(0f, 3f);
-            costRowRect.sizeDelta = new Vector2(buttonWidth - 6f, Mathf.Max(14f, gemIconSize + 2f));
+            costRowRect.anchoredPosition = new Vector2(0f, S(3f));
+            float scaledGem = S(gemIconSize);
+            costRowRect.sizeDelta = new Vector2(scaledButtonWidth - S(6f), Mathf.Max(S(14f), scaledGem + S(2f)));
 
             HorizontalLayoutGroup costRowLayout = costRow.AddComponent<HorizontalLayoutGroup>();
             costRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            costRowLayout.spacing = 1f;
+            costRowLayout.spacing = S(1f);
             costRowLayout.padding = new RectOffset(0, 0, 0, 0);
             costRowLayout.childForceExpandWidth = false;
             costRowLayout.childForceExpandHeight = false;
@@ -239,7 +254,7 @@ namespace TitanOrbit.UI
             costRect.sizeDelta = Vector2.zero;
             TextMeshProUGUI costLabel = costObj.AddComponent<TextMeshProUGUI>();
             costLabel.text = "";
-            costLabel.fontSize = 11f;
+            costLabel.fontSize = S(11f);
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
             costLabel.alignment = TextAlignmentOptions.MidlineRight;
@@ -277,8 +292,8 @@ namespace TitanOrbit.UI
                 Image img = tick.AddComponent<Image>();
                 img.color = new Color(0.3f, 0.3f, 0.35f, 0.8f);
                 LayoutElement le = tick.AddComponent<LayoutElement>();
-                le.preferredWidth = 7f;
-                le.preferredHeight = 7f;
+                le.preferredWidth = S(7f);
+                le.preferredHeight = S(7f);
             }
         }
 

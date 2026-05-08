@@ -25,7 +25,7 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 2
+      rammingPower: 5
       rammingPowerPerLevel: 0.5
       healthCap: 10
       healthCapPerLevel: 2
@@ -259,7 +259,7 @@ MonoBehaviour:
   - componentId: Weapon
     displayName: Weapon 1
     stats:
-      firePower: 3
+      firePower: 5
       firePowerPerLevel: 1
       bulletSpeed: 8
       bulletSpeedPerLevel: 2
@@ -271,9 +271,9 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 6
+      energyCap: 20
       energyCapPerLevel: 1.5
-      energyRegen: 1.5
+      energyRegen: 10
       energyRegenPerLevel: 0.35
       moveSpeed: 0
       moveSpeedPerLevel: 0

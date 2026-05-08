@@ -664,7 +664,7 @@ namespace TitanOrbit.Entities
             EnsureOrbitZoneVisual(orbitZoneObj);
         }
 
-        private void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
+        protected void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
         {
             var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
             if (shapesVisual == null)

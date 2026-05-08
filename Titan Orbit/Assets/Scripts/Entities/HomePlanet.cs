@@ -150,6 +150,7 @@ namespace TitanOrbit.Entities
             if (existing != null)
             {
                 RefreshOrbitZoneRadius();
+                EnsureOrbitZoneVisual(existing.gameObject);
                 return;
             }
             GameObject orbitZoneObj = new GameObject("OrbitZone");
@@ -161,6 +162,7 @@ namespace TitanOrbit.Entities
             orbitCol.radius = GetOrbitZoneOuterRadiusLocal();
             PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
             zone.SetPlanet(this);
+            EnsureOrbitZoneVisual(orbitZoneObj);
         }
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code instead of RPC when already on server.</summary>

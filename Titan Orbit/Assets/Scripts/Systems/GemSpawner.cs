@@ -1,5 +1,8 @@
+using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 using TitanOrbit.Entities;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -37,15 +40,56 @@ namespace TitanOrbit.Systems
                 GemPool.Instance.SetPrefab(GetGemPrefab());
         }
 
+        /// <summary>GemPool should use the same resolved prefab as spawning (registered with <see cref="NetworkManager"/>).</summary>
+        internal GameObject GetRuntimeGemPrefabForPool() => GetGemPrefab();
+
         private GameObject GetGemPrefab()
         {
-            if (gemPrefab != null) return gemPrefab;
+            GameObject raw = gemPrefab;
 #if UNITY_EDITOR
-            gemPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Gem.prefab");
-            return gemPrefab;
-#else
-            return null;
+            if (raw == null)
+                raw = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Gem.prefab");
 #endif
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Gem");
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Prefabs/Gem");
+
+            GameObject resolved = ResolveRegisteredGemPrefab(raw);
+            if (gemPrefab == null && resolved != null)
+                gemPrefab = resolved;
+            return resolved;
+        }
+
+        /// <summary>
+        /// Resources or copied prefabs can differ from the asset registered in NetworkPrefabs; clients then cannot spawn the replicated hash.
+        /// Map any Gem prefab instance to the first registered prefab that has a <see cref="Gem"/> component.
+        /// </summary>
+        private static GameObject ResolveRegisteredGemPrefab(GameObject candidate)
+        {
+            if (candidate == null) return null;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || nm.NetworkConfig?.Prefabs == null)
+                return candidate;
+            if (nm.NetworkConfig.Prefabs.Contains(candidate))
+                return candidate;
+
+            IReadOnlyList<NetworkPrefab> list = nm.NetworkConfig.Prefabs.Prefabs;
+            for (int i = 0; i < list.Count; i++)
+            {
+                GameObject reg = list[i].Prefab;
+                if (reg == null || reg.GetComponent<Gem>() == null) continue;
+                // #region agent log 065367
+                if (!ReferenceEquals(reg, candidate))
+                {
+                    DebugNdjson065367.Write("GEM-resolve", "GemSpawner.ResolveRegisteredGemPrefab", "remap_to_registered",
+                        "{\"from\":\"" + candidate.name + "\",\"to\":\"" + reg.name + "\"}");
+                }
+                // #endregion agent log 065367
+                return reg;
+            }
+
+            return candidate;
         }
 
         /// <summary>
@@ -63,13 +107,40 @@ namespace TitanOrbit.Systems
 
         private GameObject GetPeopleTransportPrefab()
         {
-            if (peopleTransportPrefab != null) return peopleTransportPrefab;
+            GameObject raw = peopleTransportPrefab;
 #if UNITY_EDITOR
-            peopleTransportPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
-            return peopleTransportPrefab;
-#else
-            return null;
+            if (raw == null)
+                raw = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
 #endif
+            if (raw == null)
+                raw = Resources.Load<GameObject>("PeopleTransport");
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Prefabs/PeopleTransport");
+
+            GameObject resolved = ResolveRegisteredPeopleTransportPrefab(raw);
+            if (peopleTransportPrefab == null && resolved != null)
+                peopleTransportPrefab = resolved;
+            return resolved;
+        }
+
+        private static GameObject ResolveRegisteredPeopleTransportPrefab(GameObject candidate)
+        {
+            if (candidate == null) return null;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || nm.NetworkConfig?.Prefabs == null)
+                return candidate;
+            if (nm.NetworkConfig.Prefabs.Contains(candidate))
+                return candidate;
+
+            IReadOnlyList<NetworkPrefab> list = nm.NetworkConfig.Prefabs.Prefabs;
+            for (int i = 0; i < list.Count; i++)
+            {
+                GameObject reg = list[i].Prefab;
+                if (reg == null || reg.GetComponent<PeopleTransportProjectile>() == null) continue;
+                return reg;
+            }
+
+            return candidate;
         }
 
         /// <summary>Spawns people beaming from planet to ship (load).</summary>
@@ -114,6 +185,19 @@ namespace TitanOrbit.Systems
             }
         }
 
+        /// <summary>Server-only burst from asteroid death (same logic as RPC; avoids invoking a ServerRpc from server destroy path).</summary>
+        public void SpawnGemsFromAsteroidDestroyOnServer(
+            Vector3 asteroidCenter,
+            float regularValue,
+            float bonusValue,
+            float asteroidSize = 1f,
+            float asteroidPhysicalSize = 0.5f,
+            ulong primaryDamagerShipId = 0)
+        {
+            if (!IsServer) return;
+            SpawnGemsAsteroidBurstImpl(asteroidCenter, regularValue, bonusValue, asteroidSize, asteroidPhysicalSize, primaryDamagerShipId);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemsServerRpc(
             Vector3 asteroidCenter,
@@ -123,11 +207,45 @@ namespace TitanOrbit.Systems
             float asteroidPhysicalSize = 0.5f,
             ulong primaryDamagerShipId = 0)
         {
+            SpawnGemsAsteroidBurstImpl(asteroidCenter, regularValue, bonusValue, asteroidSize, asteroidPhysicalSize, primaryDamagerShipId);
+        }
+
+        private void SpawnGemsAsteroidBurstImpl(
+            Vector3 asteroidCenter,
+            float regularValue,
+            float bonusValue,
+            float asteroidSize,
+            float asteroidPhysicalSize,
+            ulong primaryDamagerShipId)
+        {
             GameObject prefab = GetGemPrefab();
-            if (prefab == null) return;
+            // #region agent log 065367
+            if (IsServer)
+            {
+                var nm = NetworkManager.Singleton;
+                bool inList = nm != null && nm.IsListening && nm.NetworkConfig != null && nm.NetworkConfig.Prefabs != null && prefab != null && nm.NetworkConfig.Prefabs.Contains(prefab);
+                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "entry",
+                    "{\"prefInList\":" + (inList ? "true" : "false") + ",\"prefName\":\"" + (prefab != null ? prefab.name : "null") + "\",\"rv\":" + regularValue.ToString("0.###", CultureInfo.InvariantCulture) + ",\"bv\":" + bonusValue.ToString("0.###", CultureInfo.InvariantCulture) + "}");
+            }
+            // #endregion agent log 065367
+            if (prefab == null)
+            {
+                // #region agent log 065367
+                if (IsServer)
+                    DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_prefab_null", "{}");
+                // #endregion agent log 065367
+                return;
+            }
             regularValue = Mathf.Max(0f, regularValue);
             bonusValue = Mathf.Max(0f, bonusValue);
-            if (regularValue <= 0f && bonusValue <= 0f) return;
+            if (regularValue <= 0f && bonusValue <= 0f)
+            {
+                // #region agent log 065367
+                if (IsServer)
+                    DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_zero_values", "{}");
+                // #endregion agent log 065367
+                return;
+            }
 
             // 1–3 red gems whose values sum exactly to regularValue (asteroid's remaining gem worth).
             // Cannot split into more physical gems than floor(value) when value < 3 (each gem keeps positive share).
@@ -164,6 +282,11 @@ namespace TitanOrbit.Systems
                 float sizeMultiplier = Random.Range(0.96f, 1.04f);
                 SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, true);
             }
+            // #region agent log 065367
+            if (IsServer)
+                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_spawned",
+                    "{\"red\":" + redGemCount + ",\"bonus\":" + bonusGemCount + ",\"worth\":" + gemWorth.ToString("0.###", CultureInfo.InvariantCulture) + "}");
+            // #endregion agent log 065367
         }
         
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
@@ -285,6 +408,12 @@ namespace TitanOrbit.Systems
                 if (g != null) g.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, isBonusGem);
                 ApplyGemLaunchVelocityAfterSpawn(r, vel, angVel);
             }
+            // #region agent log 065367
+            else if (IsServer)
+            {
+                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGem", "no_network_object", "{\"pref\":\"" + (prefab != null ? prefab.name : "null") + "\"}");
+            }
+            // #endregion agent log 065367
         }
     }
 }

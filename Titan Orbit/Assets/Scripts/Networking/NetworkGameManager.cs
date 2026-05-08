@@ -62,7 +62,20 @@ namespace TitanOrbit.Networking
         private float nextLobbyHeartbeatTime;
         private Coroutine pendingTeamRequestCoroutine;
         private static DateTime _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
-        private static DateTime _dbgNextUnfilteredProbeAllowedUtc = DateTime.MinValue;
+
+        /// <summary>Why the last <see cref="QueryOpenLobbiesAsync"/> returned zero rows (for lobby UI; avoids showing "no games" during client throttle).</summary>
+        public enum OpenLobbyQueryResultKind
+        {
+            Ok,
+            RateLimitBackoff,
+            UnityServicesNotReady,
+            Error
+        }
+
+        public static OpenLobbyQueryResultKind LastOpenLobbyQueryKind { get; private set; }
+        public static string LastOpenLobbyQueryErrorDetail { get; private set; }
+        /// <summary>Seconds until <see cref="QueryOpenLobbiesAsync"/> will run again after a rate-limit backoff (approximate).</summary>
+        public static float LobbyRateLimitRemainingSeconds { get; private set; }
         private Coroutine _dbgJoinMonitorCoroutine;
         private bool _dbgNetcodeCallbacksHooked;
         /// <summary>Debug: ordering of disconnect vs OnTransportFailure (session e2a466).</summary>
@@ -443,7 +456,7 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Relay connection type for <see cref="AllocationUtils.ToRelayServerData"/>: WebGL only allows WSS; other platforms use UDP.
+        /// Relay connection type for <see cref="AllocationUtils.ToRelayServerData"/>: WebGL only allows WSS; other platforms default to UDP.
         /// </summary>
         static string RelayConnectionTypeForCurrentPlatform()
         {
@@ -452,6 +465,21 @@ namespace TitanOrbit.Networking
 #else
             return "udp";
 #endif
+        }
+
+        /// <summary>
+        /// Prefer lobby-advertised relay protocol when available; fall back to platform default.
+        /// Avoids immediate disconnects when client build defaults differ from server relay mode.
+        /// </summary>
+        static string ResolveRelayConnectionType(string lobbyRelayProtocol)
+        {
+            if (!string.IsNullOrWhiteSpace(lobbyRelayProtocol))
+            {
+                string lp = lobbyRelayProtocol.Trim().ToLowerInvariant();
+                if (lp == "wss" || lp == "udp")
+                    return lp;
+            }
+            return RelayConnectionTypeForCurrentPlatform();
         }
 
         /// <summary>
@@ -503,17 +531,17 @@ namespace TitanOrbit.Networking
         /// <summary>
         /// Sets Relay server data and <see cref="UnityTransport.UseWebSockets"/> so they match (WSS requires WebSockets on the transport).
         /// </summary>
-        static void ConfigureUnityTransportRelay(UnityTransport transport, Allocation allocation)
+        static void ConfigureUnityTransportRelay(UnityTransport transport, Allocation allocation, string relayConnectionType)
         {
-            string t = RelayConnectionTypeForCurrentPlatform();
+            string t = ResolveRelayConnectionType(relayConnectionType);
             transport.UseWebSockets = string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase);
             transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, t));
             ApplyRelayFriendlyTransportSettings(transport);
         }
 
-        static void ConfigureUnityTransportRelay(UnityTransport transport, JoinAllocation allocation)
+        static void ConfigureUnityTransportRelay(UnityTransport transport, JoinAllocation allocation, string relayConnectionType)
         {
-            string t = RelayConnectionTypeForCurrentPlatform();
+            string t = ResolveRelayConnectionType(relayConnectionType);
             transport.UseWebSockets = string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase);
             transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, t));
             ApplyRelayFriendlyTransportSettings(transport);
@@ -548,7 +576,7 @@ namespace TitanOrbit.Networking
                     Debug.LogError("UnityTransport not found on NetworkManager.");
                     return false;
                 }
-                ConfigureUnityTransportRelay(transport, joinAllocation);
+                ConfigureUnityTransportRelay(transport, joinAllocation, null);
                 // #region agent log
                 DebugSessionE2a466Log("post-fix", "H12", "NetworkGameManager.StartClientWithRelayAsync", "join_allocation_configured",
                     "{\"allocationId\":\"" + EscapeJsonE2a466(joinAllocation.AllocationId.ToString()) + "\",\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false") + ",\"relayConnectionType\":\"" + EscapeJsonE2a466(RelayConnectionTypeForCurrentPlatform()) + "\"}");
@@ -643,8 +671,12 @@ namespace TitanOrbit.Networking
                             string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
                             if (!string.IsNullOrEmpty(joinCode))
                             {
+                                string lobbyRelayProtocol = joinedLobby.Data.TryGetValue(LobbyRelayProtocolKey, out DataObject relayProtocolObj)
+                                    ? (relayProtocolObj?.Value ?? "")
+                                    : "";
+                                string resolvedRelayConnectionType = ResolveRelayConnectionType(lobbyRelayProtocol);
                                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
-                                ConfigureUnityTransportRelay(transport, joinAllocation);
+                                ConfigureUnityTransportRelay(transport, joinAllocation, resolvedRelayConnectionType);
                                 if (NetworkManager.Singleton.StartClient())
                                 {
                                     currentLobby = joinedLobby;
@@ -771,7 +803,7 @@ namespace TitanOrbit.Networking
                 int relayMaxConnections = Mathf.Max(1, cap - 1);
                 Allocation allocation = await RelayService.Instance.CreateAllocationAsync(relayMaxConnections);
                 string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-                ConfigureUnityTransportRelay(transport, allocation);
+                ConfigureUnityTransportRelay(transport, allocation, null);
 
                 long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 const bool isLatest = true;
@@ -920,12 +952,27 @@ namespace TitanOrbit.Networking
                     return false;
                 }
 
+                string lobbyRelayProtocol = joinedLobby.Data != null &&
+                    joinedLobby.Data.TryGetValue(LobbyRelayProtocolKey, out DataObject relayProtocolObjPre)
+                    ? (relayProtocolObjPre?.Value ?? "")
+                    : "";
+                string resolvedRelayConnectionType = ResolveRelayConnectionType(lobbyRelayProtocol);
+
+                // #region agent log 065367
+                DebugNdjson065367.Write("JOIN-H1", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "pre_join_allocation_protocol",
+                    "{\"lobbyRelayProtocol\":\"" + EscapeJsonE2a466(lobbyRelayProtocol) + "\",\"resolved\":\"" + EscapeJsonE2a466(resolvedRelayConnectionType) + "\",\"platformDefault\":\"" + EscapeJsonE2a466(RelayConnectionTypeForCurrentPlatform()) + "\"}");
+                // #endregion agent log 065367
+
                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
                 #region agent log
                 AgentDebugLog("H4", "PlayWebGLJoinByLobbyIdAsync", "JoinAllocation ok",
                     "{\"allocationId\":\"" + joinAllocation.AllocationId + "\",\"relayConnectionType\":\"" + RelayConnectionTypeForCurrentPlatform() + "\"}");
                 #endregion
-                ConfigureUnityTransportRelay(transport, joinAllocation);
+                ConfigureUnityTransportRelay(transport, joinAllocation, resolvedRelayConnectionType);
+                // #region agent log 065367
+                DebugNdjson065367.Write("JOIN-H2", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "post_configure_transport",
+                    "{\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false") + ",\"resolved\":\"" + EscapeJsonE2a466(resolvedRelayConnectionType) + "\"}");
+                // #endregion agent log 065367
                 // #region agent log
                 DebugSessionE2a466Log("post-fix", "H12", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "join_allocation_configured",
                     "{\"allocationId\":\"" + EscapeJsonE2a466(joinAllocation.AllocationId.ToString()) + "\",\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false") + ",\"relayConnectionType\":\"" + EscapeJsonE2a466(RelayConnectionTypeForCurrentPlatform()) + "\"}");
@@ -951,7 +998,7 @@ namespace TitanOrbit.Networking
                     bool isLatest = joinedLobby.Data != null &&
                         joinedLobby.Data.TryGetValue(LobbyIsLatestKey, out DataObject latestObj) &&
                         string.Equals(latestObj?.Value, "1", StringComparison.Ordinal);
-                    string lobbyRelayProtocol = joinedLobby.Data != null &&
+                    lobbyRelayProtocol = joinedLobby.Data != null &&
                         joinedLobby.Data.TryGetValue(LobbyRelayProtocolKey, out DataObject relayProtocolObj)
                         ? (relayProtocolObj?.Value ?? "")
                         : "";
@@ -1011,17 +1058,103 @@ namespace TitanOrbit.Networking
             return filters;
         }
 
+        /// <summary>
+        /// Some hosts lag updating indexed lobby data (N1/N2). After the strict query returns nothing, re-query by game name only and filter in memory.
+        /// </summary>
+        private static bool LobbyPassesJoinBrowserFilters(Lobby lobby, bool latestOnly)
+        {
+            if (lobby?.Data == null) return true;
+            if (lobby.Data.TryGetValue(LobbyGameNameKey, out DataObject gn) && gn != null &&
+                !string.Equals(gn.Value, LobbyGameNameValue, StringComparison.Ordinal))
+                return false;
+            if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject io) && io != null &&
+                !string.Equals(io.Value, "1", StringComparison.Ordinal))
+                return false;
+            if (latestOnly &&
+                lobby.Data.TryGetValue(LobbyIsLatestKey, out DataObject il) && il != null &&
+                !string.Equals(il.Value, "1", StringComparison.Ordinal))
+                return false;
+            return true;
+        }
+
+        private async Task MergeRelaxedGameNameQueryAsync(bool latestOnly, int count, List<LobbySummary> results)
+        {
+            try
+            {
+                var loose = new QueryLobbiesOptions
+                {
+                    Count = count,
+                    Filters = new List<QueryFilter>
+                    {
+                        new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
+                    },
+                    Order = new List<QueryOrder>
+                    {
+                        new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created),
+                    },
+                };
+                QueryResponse r2 = await LobbyService.Instance.QueryLobbiesAsync(loose);
+                if (r2?.Results == null) return;
+                _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
+                LobbyRateLimitRemainingSeconds = 0f;
+
+                var seen = new HashSet<string>();
+                foreach (var s in results)
+                {
+                    if (!string.IsNullOrEmpty(s.LobbyId))
+                        seen.Add(s.LobbyId);
+                }
+
+                int added = 0;
+                foreach (var lobby in r2.Results)
+                {
+                    if (lobby == null || string.IsNullOrEmpty(lobby.Id)) continue;
+                    if (seen.Contains(lobby.Id)) continue;
+                    if (!LobbyPassesJoinBrowserFilters(lobby, latestOnly)) continue;
+                    seen.Add(lobby.Id);
+                    results.Add(ToLobbySummary(lobby));
+                    added++;
+                }
+
+                // #region agent log 065367
+                if (added > 0)
+                    DebugNdjson065367.Write("LQ-H6", "NetworkGameManager.MergeRelaxedGameNameQueryAsync", "relaxed_merge",
+                        "{\"added\":" + added + ",\"total\":" + results.Count + "}");
+                // #endregion agent log 065367
+            }
+            catch (Exception ex)
+            {
+                if (IsLikelyLobbyRateLimitException(ex))
+                    _dbgNextLobbyQueryAllowedUtc = DateTime.UtcNow.AddSeconds(12);
+            }
+        }
+
+        private static bool IsLikelyLobbyRateLimitException(Exception e)
+        {
+            if (e == null) return false;
+            string m = e.Message ?? string.Empty;
+            if (string.Equals(m, "Too Many Requests", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (m.IndexOf("429", StringComparison.Ordinal) >= 0)
+                return true;
+            if (m.IndexOf("throttl", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (m.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
         public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20)
         {
             var results = new List<LobbySummary>();
-            if (DateTime.UtcNow < _dbgNextLobbyQueryAllowedUtc)
-            {
-                // #region agent log
-                DebugSessionE2a466Log("post-fix", "H9", "NetworkGameManager.QueryOpenLobbiesAsync", "query_skipped_backoff",
-                    "{\"remainingMs\":" + (_dbgNextLobbyQueryAllowedUtc - DateTime.UtcNow).TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture) + "}");
-                // #endregion
-                return results;
-            }
+            LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Ok;
+            LastOpenLobbyQueryErrorDetail = null;
+            LobbyRateLimitRemainingSeconds = 0f;
+            // #region agent log 065367
+            DebugNdjson065367.Write("LQ-H1", "NetworkGameManager.QueryOpenLobbiesAsync", "entry",
+                "{\"latestOnly\":" + (latestOnly ? "true" : "false") + ",\"count\":" + count + "}");
+            // #endregion agent log 065367
+
             // #region agent log
             DebugSessionE2a466Log("pre-fix", "H5", "NetworkGameManager.QueryOpenLobbiesAsync", "query_enter",
                 "{\"latestOnly\":" + (latestOnly ? "true" : "false") + ",\"count\":" + count + "}");
@@ -1034,6 +1167,7 @@ namespace TitanOrbit.Networking
             {
                 if (!await EnsureUnityServicesInitializedAsync())
                 {
+                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.UnityServicesNotReady;
                     // #region agent log
                     bool signedIn = false;
                     bool authorized = false;
@@ -1068,6 +1202,10 @@ namespace TitanOrbit.Networking
                 };
 
                 QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                // A query reached UGS successfully — clear post-429 client throttle so the list is not blank until an arbitrary window ends.
+                _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
+                LobbyRateLimitRemainingSeconds = 0f;
+
                 // #region agent log
                 int rawCount = response?.Results != null ? response.Results.Count : -1;
                 F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "query_done",
@@ -1079,6 +1217,8 @@ namespace TitanOrbit.Networking
                     DebugSessionE2a466Log("pre-fix", "H5", "NetworkGameManager.QueryOpenLobbiesAsync", "query_null_results",
                         "{\"responseNull\":" + (response == null ? "true" : "false") + "}");
                     // #endregion
+                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Error;
+                    LastOpenLobbyQueryErrorDetail = "Lobby query returned no result set.";
                     return results;
                 }
 
@@ -1089,6 +1229,15 @@ namespace TitanOrbit.Networking
                     results.Add(ToLobbySummary(lobby));
                 }
 
+                int strictSummaryCount = results.Count;
+                if (results.Count == 0)
+                    await MergeRelaxedGameNameQueryAsync(latestOnly, count, results);
+
+                // #region agent log 065367
+                DebugNdjson065367.Write("LQ-H3", "NetworkGameManager.QueryOpenLobbiesAsync", "after_primary_and_relaxed",
+                    "{\"latestOnly\":" + (latestOnly ? "true" : "false") + ",\"count\":" + results.Count + "}");
+                // #endregion agent log 065367
+
                 var sb = new StringBuilder();
                 sb.Append("{\"resultCount\":").Append(results.Count).Append(",\"lobbies\":[");
                 for (int i = 0; i < results.Count && i < 8; i++)
@@ -1097,7 +1246,7 @@ namespace TitanOrbit.Networking
                     if (i > 0) sb.Append(",");
                     string relayProtocol = "";
                     string serverListenAddress = "";
-                    if (i < response.Results.Count)
+                    if (i < strictSummaryCount && i < response.Results.Count)
                     {
                         var src = response.Results[i];
                         if (src != null && src.Data != null)
@@ -1122,78 +1271,31 @@ namespace TitanOrbit.Networking
                 DebugSessionE2a466Log("pre-fix", "H5", "NetworkGameManager.QueryOpenLobbiesAsync", "query_results",
                     sb.ToString());
                 // #endregion
-
-                if (results.Count == 0)
-                {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                    // Extra unfiltered query helps debug filter mismatches but counts toward Lobby rate limits ("Too Many Requests") and can make the list look empty while throttled.
-                    if (DateTime.UtcNow < _dbgNextUnfilteredProbeAllowedUtc)
-                    {
-                        // #region agent log
-                        DebugSessionE2a466Log("post-fix", "H9", "NetworkGameManager.QueryOpenLobbiesAsync", "query_unfiltered_probe_skipped_backoff",
-                            "{\"remainingMs\":" + (_dbgNextUnfilteredProbeAllowedUtc - DateTime.UtcNow).TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture) + "}");
-                        // #endregion
-                        return results;
-                    }
-
-                    try
-                    {
-                        QueryResponse unfiltered = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
-                        {
-                            Count = 5,
-                            Order = new List<QueryOrder> { new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created) }
-                        });
-                        _dbgNextUnfilteredProbeAllowedUtc = DateTime.UtcNow.AddSeconds(60);
-
-                        var ub = new StringBuilder();
-                        ub.Append("{\"unfilteredCount\":").Append(unfiltered?.Results != null ? unfiltered.Results.Count : 0).Append(",\"sample\":[");
-                        if (unfiltered?.Results != null)
-                        {
-                            for (int i = 0; i < unfiltered.Results.Count && i < 5; i++)
-                            {
-                                Lobby l = unfiltered.Results[i];
-                                if (i > 0) ub.Append(",");
-                                bool hasGameName = l?.Data != null && l.Data.ContainsKey(LobbyGameNameKey);
-                                bool hasIsOpen = l?.Data != null && l.Data.ContainsKey(LobbyIsOpenKey);
-                                string gameName = hasGameName ? l.Data[LobbyGameNameKey].Value : "";
-                                string isOpen = hasIsOpen ? l.Data[LobbyIsOpenKey].Value : "";
-                                ub.Append("{\"name\":\"").Append(EscapeJsonE2a466(l?.Name ?? ""))
-                                    .Append("\",\"players\":").Append(l?.Players != null ? l.Players.Count : 0)
-                                    .Append(",\"hasGameName\":").Append(hasGameName ? "true" : "false")
-                                    .Append(",\"gameName\":\"").Append(EscapeJsonE2a466(gameName))
-                                    .Append("\",\"hasIsOpen\":").Append(hasIsOpen ? "true" : "false")
-                                    .Append(",\"isOpen\":\"").Append(EscapeJsonE2a466(isOpen)).Append("\"}");
-                            }
-                        }
-                        ub.Append("]}");
-                        // #region agent log
-                        DebugSessionE2a466Log("pre-fix", "H6", "NetworkGameManager.QueryOpenLobbiesAsync", "query_unfiltered_probe",
-                            ub.ToString());
-                        // #endregion
-                    }
-                    catch (Exception probeEx)
-                    {
-                        if (probeEx is LobbyServiceException && string.Equals(probeEx.Message, "Too Many Requests", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _dbgNextUnfilteredProbeAllowedUtc = DateTime.UtcNow.AddSeconds(60);
-                        }
-                        // #region agent log
-                        DebugSessionE2a466Log("pre-fix", "H6", "NetworkGameManager.QueryOpenLobbiesAsync", "query_unfiltered_probe_exception",
-                            "{\"exType\":\"" + EscapeJsonE2a466(probeEx.GetType().Name) + "\",\"message\":\"" + EscapeJsonE2a466(probeEx.Message) + "\"}");
-                        // #endregion
-                    }
-#endif
-                }
             }
             catch (Exception e)
             {
-                if (e is LobbyServiceException && string.Equals(e.Message, "Too Many Requests", StringComparison.OrdinalIgnoreCase))
+                if (IsLikelyLobbyRateLimitException(e))
                 {
-                    _dbgNextLobbyQueryAllowedUtc = DateTime.UtcNow.AddSeconds(20);
+                    _dbgNextLobbyQueryAllowedUtc = DateTime.UtcNow.AddSeconds(12);
+                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.RateLimitBackoff;
+                    LobbyRateLimitRemainingSeconds = 12f;
+                    // #region agent log 065367
+                    DebugNdjson065367.Write("LQ-H4", "NetworkGameManager.QueryOpenLobbiesAsync", "rate_limited_exception",
+                        "{\"msg\":\"" + EscapeJsonE2a466(e.Message ?? "") + "\"}");
+                    // #endregion agent log 065367
                     // #region agent log
                     DebugSessionE2a466Log("post-fix", "H9", "NetworkGameManager.QueryOpenLobbiesAsync", "query_backoff_set",
-                        "{\"backoffMs\":20000}");
+                        "{\"backoffMs\":12000}");
                     // #endregion
+                }
+                else
+                {
+                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Error;
+                    LastOpenLobbyQueryErrorDetail = e.Message ?? e.GetType().Name;
+                    // #region agent log 065367
+                    DebugNdjson065367.Write("LQ-H5", "NetworkGameManager.QueryOpenLobbiesAsync", "query_exception",
+                        "{\"msg\":\"" + EscapeJsonE2a466(LastOpenLobbyQueryErrorDetail) + "\"}");
+                    // #endregion agent log 065367
                 }
                 // #region agent log
                 DebugSessionE2a466Log("pre-fix", "H5", "NetworkGameManager.QueryOpenLobbiesAsync", "query_exception",
@@ -1270,7 +1372,33 @@ namespace TitanOrbit.Networking
                         new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created)
                     }
                 });
-                return response?.Results ?? new System.Collections.Generic.List<Lobby>();
+                var list = response?.Results ?? new System.Collections.Generic.List<Lobby>();
+                if (list.Count > 0)
+                    return list;
+
+                QueryResponse relaxed = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                {
+                    Count = count,
+                    Filters = new System.Collections.Generic.List<QueryFilter>
+                    {
+                        new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
+                    },
+                    Order = new System.Collections.Generic.List<QueryOrder>
+                    {
+                        new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created),
+                    },
+                });
+                if (relaxed?.Results == null || relaxed.Results.Count == 0)
+                    return list;
+
+                var merged = new System.Collections.Generic.List<Lobby>();
+                foreach (var lobby in relaxed.Results)
+                {
+                    if (lobby == null) continue;
+                    if (!LobbyPassesJoinBrowserFilters(lobby, latestOnly)) continue;
+                    merged.Add(lobby);
+                }
+                return merged;
             }
             catch (System.Exception e)
             {

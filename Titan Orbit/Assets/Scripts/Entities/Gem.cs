@@ -533,7 +533,7 @@ namespace TitanOrbit.Entities
             if (toAdd <= 0f)
                 return;
 
-            ship.AddGemsServerRpc(toAdd, true);
+            ship.AddGemsFromPickupServer(toAdd, true);
 
             if (ScoreSystem.Instance != null)
                 ScoreSystem.Instance.AwardMining(ship, toAdd);
