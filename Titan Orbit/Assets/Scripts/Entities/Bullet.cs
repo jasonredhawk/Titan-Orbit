@@ -428,9 +428,102 @@ namespace TitanOrbit.Entities
                     OverlapFallbackHits[a] = chosen;
                     if (TryHit(chosen, chosen.ClosestPoint(physicsPos))) return;
                 }
+
+                // Toroidal fallback for asteroids: physics queries operate in one world copy, but gameplay space is periodic.
+                // When ship/bullet coordinates drift many map tiles from asteroid logical coords, SphereCast misses.
+                if (TryToroidalAsteroidFallbackHit(lastPosition, to, bulletRadius))
+                    return;
             }
 
             lastPosition = rb != null ? rb.position : transform.position;
+        }
+
+        /// <summary>
+        /// Checks asteroid hits in toroidal space when world-space physics casts miss due to map tiling copies.
+        /// </summary>
+        private bool TryToroidalAsteroidFallbackHit(Vector3 from, Vector3 to, float bulletRadius)
+        {
+            if (Asteroid.AllAsteroids == null || Asteroid.AllAsteroids.Count == 0)
+                return false;
+
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+            float bestDistSq = float.MaxValue;
+            Asteroid bestAsteroid = null;
+            Vector3 bestImpact = to;
+
+            for (int i = 0; i < Asteroid.AllAsteroids.Count; i++)
+            {
+                Asteroid asteroid = Asteroid.AllAsteroids[i];
+                if (asteroid == null || asteroid.IsDestroyed)
+                    continue;
+
+                float combinedRadius = asteroid.GetCollisionRadiusWorld() + Mathf.Max(0.01f, bulletRadius);
+                Vector3 center = asteroid.transform.position;
+
+                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
+                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
+
+                // Unwrap endpoint so the segment is the shortest path in toroidal local coordinates.
+                Vector3 seg = toLocal - fromLocal;
+                if (seg.x > halfW) seg.x -= mapW;
+                else if (seg.x < -halfW) seg.x += mapW;
+                if (seg.z > halfH) seg.z -= mapH;
+                else if (seg.z < -halfH) seg.z += mapH;
+                Vector3 toLocalUnwrapped = fromLocal + seg;
+
+                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
+                float distSq = closest.sqrMagnitude;
+                if (distSq > combinedRadius * combinedRadius)
+                    continue;
+
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    bestAsteroid = asteroid;
+                    bestImpact = new Vector3(center.x + closest.x, FIXED_Y_POSITION, center.z + closest.z);
+                }
+            }
+
+            if (bestAsteroid == null)
+                return false;
+
+            float appliedDamage = damage;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                appliedDamage = 999999f;
+
+            bestAsteroid.ApplyDamageFromBulletServer(appliedDamage, ownerShipNetworkId);
+
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    bestImpact,
+                    (int)FloatingCountChannel.DamageAsteroid,
+                    appliedDamage,
+                    (int)ownerTeam
+                );
+                VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
+                    bestImpact,
+                    bestAsteroid.RemainingHealth,
+                    bestAsteroid.RemainingGems,
+                    (int)ownerTeam
+                );
+            }
+
+            DespawnBullet(bestImpact);
+            return true;
+        }
+
+        private static Vector3 ClosestPointOnSegment(Vector3 a, Vector3 b, Vector3 p)
+        {
+            Vector3 ab = b - a;
+            float denom = Vector3.Dot(ab, ab);
+            if (denom <= 1e-6f)
+                return a;
+            float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / denom);
+            return a + ab * t;
         }
 
         /// <summary>True if the collider belongs to the firing ship's <see cref="NetworkObject"/> hierarchy (any child mesh/collider).</summary>

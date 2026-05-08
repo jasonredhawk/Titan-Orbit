@@ -11,13 +11,15 @@ namespace TitanOrbit.Entities
     public class GemMoonOrbitZoneMeshFallback : MonoBehaviour
     {
         [SerializeField] private float heightBelowMoon = 0.05f;
-        [SerializeField] private Color tint = new Color(0.55f, 0.75f, 0.98f, 0.22f);
+        [SerializeField] private Color tint = new Color(0.55f, 0.75f, 0.98f, 1f);
+        [SerializeField, Range(0f, 1f)] private float innerAlpha = 0.28f;
         [SerializeField] private int segments = 64;
 
         private PlanetGemMoon moon;
         private MeshFilter meshFilter;
         private MeshRenderer meshRenderer;
         private Material runtimeMaterial;
+        private Texture2D runtimeGradientTexture;
         private float lastOuter = -1f;
         private float lastInner = -1f;
 
@@ -37,6 +39,8 @@ namespace TitanOrbit.Entities
         {
             if (runtimeMaterial != null)
                 Destroy(runtimeMaterial);
+            if (runtimeGradientTexture != null)
+                Destroy(runtimeGradientTexture);
         }
 
         private void LateUpdate()
@@ -60,16 +64,18 @@ namespace TitanOrbit.Entities
             if (runtimeMaterial == null && meshRenderer != null)
             {
                 Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
+                if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
+                if (shader == null) shader = Shader.Find("Sprites/Default");
                 if (shader != null)
                 {
                     runtimeMaterial = new Material(shader);
-                    runtimeMaterial.SetColor("_BaseColor", tint);
-                    runtimeMaterial.SetColor("_Color", tint);
+                    ConfigureTransparentMaterial(runtimeMaterial);
                     runtimeMaterial.renderQueue = 3000;
                     meshRenderer.sharedMaterial = runtimeMaterial;
                     meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                     meshRenderer.receiveShadows = false;
+                    EnsureGradientTexture();
+                    ApplyTintAndGradient();
                 }
             }
         }
@@ -129,6 +135,47 @@ namespace TitanOrbit.Entities
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             return mesh;
+        }
+
+        private void EnsureGradientTexture()
+        {
+            if (runtimeGradientTexture != null) return;
+            runtimeGradientTexture = new Texture2D(64, 1, TextureFormat.RGBA32, false, true);
+            runtimeGradientTexture.wrapMode = TextureWrapMode.Clamp;
+            runtimeGradientTexture.filterMode = FilterMode.Bilinear;
+        }
+
+        private void ApplyTintAndGradient()
+        {
+            if (runtimeMaterial == null) return;
+            EnsureGradientTexture();
+            if (runtimeGradientTexture != null)
+            {
+                for (int x = 0; x < runtimeGradientTexture.width; x++)
+                {
+                    float t = x / (float)(runtimeGradientTexture.width - 1);
+                    float a = Mathf.Lerp(innerAlpha, 0f, t);
+                    runtimeGradientTexture.SetPixel(x, 0, new Color(1f, 1f, 1f, a));
+                }
+                runtimeGradientTexture.Apply(false, false);
+                runtimeMaterial.SetTexture("_BaseMap", runtimeGradientTexture);
+                runtimeMaterial.SetTexture("_MainTex", runtimeGradientTexture);
+            }
+            runtimeMaterial.SetColor("_BaseColor", tint);
+            runtimeMaterial.SetColor("_Color", tint);
+        }
+
+        private static void ConfigureTransparentMaterial(Material mat)
+        {
+            if (mat == null) return;
+            if (mat.HasProperty("_Surface")) mat.SetFloat("_Surface", 1f);
+            if (mat.HasProperty("_Blend")) mat.SetFloat("_Blend", 0f);
+            if (mat.HasProperty("_SrcBlend")) mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (mat.HasProperty("_DstBlend")) mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (mat.HasProperty("_ZWrite")) mat.SetFloat("_ZWrite", 0f);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
         }
     }
 }

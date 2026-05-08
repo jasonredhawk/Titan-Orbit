@@ -1220,12 +1220,19 @@ namespace TitanOrbit.Entities
             shipTeam.OnValueChanged += OnShipTeamValueChanged;
             ApplyHullIdentityColor();
 
+            // Hide the ship until the player picks a team — avoids showing a neutral ship in the team-select lobby.
+            // OnShipTeamValueChanged re-enables the visuals when shipTeam is assigned. AI ships skip this (they always have a team).
+            if (!_isAIControlled && shipTeam.Value == TeamManager.Team.None)
+                SetShipBodyVisibleLocal(false);
+
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
         }
 
         private void OnShipTeamValueChanged(TeamManager.Team previous, TeamManager.Team current)
         {
             ApplyHullIdentityColor();
+            if (!_isAIControlled)
+                SetShipBodyVisibleLocal(current != TeamManager.Team.None);
         }
 
         public override void OnNetworkDespawn()
@@ -2999,9 +3006,8 @@ namespace TitanOrbit.Entities
 
         private void HandleHealthRegen()
         {
-            // Health can regen from low values when not dead. While hull is depleted but the ship still carries gems,
-            // do not refill hull — otherwise regen fights the "gems drain at 0 hull" pipeline and lethal death never triggers.
-            const float depletedThreshold = 0.001f;
+            // Health can regen from low values when not dead.
+            // If hull and gems are both depleted, Update() runs TryDieIfHullAndGemsDepleted() before this method.
             if (IsServer && !isDead.Value && currentHealth.Value < MaxHealth)
             {
                 if (Time.time < lastHullDamageServerTime + healthRegenDelayAfterDamage)
@@ -3014,19 +3020,6 @@ namespace TitanOrbit.Entities
                             "{\"now\":" + Time.time.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
                             + ",\"lastHit\":" + lastHullDamageServerTime.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
                             + ",\"delay\":" + healthRegenDelayAfterDamage.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                    }
-                    // #endregion agent log 065367
-                    return;
-                }
-                if (currentHealth.Value <= depletedThreshold && currentGems.Value > depletedThreshold)
-                {
-                    // #region agent log 065367
-                    if (Time.time - _065367LastRegenLogServerTime > 1f)
-                    {
-                        _065367LastRegenLogServerTime = Time.time;
-                        DebugNdjson065367.Write("REG-H2", "Starship.HandleHealthRegen", "blocked_hull_zero_with_gems",
-                            "{\"health\":" + currentHealth.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                            + ",\"gems\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
                     }
                     // #endregion agent log 065367
                     return;
@@ -4247,6 +4240,25 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Local-only: toggle ship visuals + colliders. Used to hide the ship while the player has no team
+        /// (so they don't see a neutral ship in the team-select lobby) and to reveal it once a team is picked.</summary>
+        private void SetShipBodyVisibleLocal(bool visible)
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                if (renderer != null)
+                    renderer.enabled = visible;
+            }
+
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            foreach (var collider in colliders)
+            {
+                if (collider != null)
+                    collider.enabled = visible;
+            }
+        }
+
         /// <summary>Show all renderers to make ship visible again on respawn.</summary>
         private void ShowShipVisuals()
         {
@@ -5224,6 +5236,10 @@ namespace TitanOrbit.Entities
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
             ApplyHullIdentityColor();
+            // Re-hide on clients if visual was just applied via chassis-sync before the team is set.
+            // OnShipTeamValueChanged handles the show transition once the player picks a team.
+            if (!_isAIControlled && shipTeam.Value == TeamManager.Team.None)
+                SetShipBodyVisibleLocal(false);
         }
 
         /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>

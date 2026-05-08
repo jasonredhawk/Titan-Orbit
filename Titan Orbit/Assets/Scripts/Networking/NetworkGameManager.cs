@@ -61,6 +61,7 @@ namespace TitanOrbit.Networking
         private Lobby currentLobby;
         private float nextLobbyHeartbeatTime;
         private Coroutine pendingTeamRequestCoroutine;
+        private bool _leaveLobbyInProgress;
         private static DateTime _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
 
         /// <summary>Why the last <see cref="QueryOpenLobbiesAsync"/> returned zero rows (for lobby UI; avoids showing "no games" during client throttle).</summary>
@@ -365,6 +366,11 @@ namespace TitanOrbit.Networking
             // #endregion
             if (clientId == 0 && currentLobby != null && !string.IsNullOrWhiteSpace(currentLobby.Id))
                 _ = DebugFetchLobbyStateAfterDisconnectAsync(currentLobby.Id);
+
+            // Keep lobby list counts accurate by removing this user from lobby membership
+            // when the local gameplay connection drops.
+            if (nm != null && clientId == nm.LocalClientId)
+                _ = LeaveCurrentLobbyIfMemberAsync("local_client_disconnected");
         }
 
         private async Task DebugFetchLobbyStateAfterDisconnectAsync(string lobbyId)
@@ -400,6 +406,9 @@ namespace TitanOrbit.Networking
                 {
                 }
             }
+
+            if (currentLobby != null)
+                _ = LeaveCurrentLobbyIfMemberAsync("network_game_manager_destroyed");
         }
         #endregion
 
@@ -469,10 +478,13 @@ namespace TitanOrbit.Networking
 
         /// <summary>
         /// Prefer lobby-advertised relay protocol when available; fall back to platform default.
-        /// Avoids immediate disconnects when client build defaults differ from server relay mode.
+        /// Dedicated hosts store <c>udp</c> (their UTP mode); WebGL clients must still use <c>wss</c> to the same Relay allocation — browsers cannot use UDP.
         /// </summary>
         static string ResolveRelayConnectionType(string lobbyRelayProtocol)
         {
+#if UNITY_WEBGL
+            return "wss";
+#else
             if (!string.IsNullOrWhiteSpace(lobbyRelayProtocol))
             {
                 string lp = lobbyRelayProtocol.Trim().ToLowerInvariant();
@@ -480,6 +492,7 @@ namespace TitanOrbit.Networking
                     return lp;
             }
             return RelayConnectionTypeForCurrentPlatform();
+#endif
         }
 
         /// <summary>
@@ -1322,12 +1335,22 @@ namespace TitanOrbit.Networking
 
         private LobbySummary ToLobbySummary(Lobby lobby)
         {
+            int maxPlayerCapacity = Mathf.Max(1, lobby.MaxPlayers);
+            int playersFromMemberList = lobby.Players != null ? lobby.Players.Count : 0;
+            int playersFromAvailableSlots = Mathf.Clamp(maxPlayerCapacity - lobby.AvailableSlots, 0, maxPlayerCapacity);
+            bool isDedicatedServerLobby = lobby.Data != null && lobby.Data.ContainsKey(LobbyServerListenAddressKey);
+            int normalizedPlayerCount = playersFromAvailableSlots > 0 ? playersFromAvailableSlots : playersFromMemberList;
+            if (isDedicatedServerLobby)
+                normalizedPlayerCount = Mathf.Max(0, normalizedPlayerCount - 1);
+
             var summary = new LobbySummary
             {
                 LobbyId = lobby.Id,
                 Name = string.IsNullOrWhiteSpace(lobby.Name) ? "Unnamed Room" : lobby.Name,
-                CurrentPlayers = lobby.Players != null ? lobby.Players.Count : 0,
-                MaxPlayers = Mathf.Max(1, lobby.MaxPlayers),
+                // Dedicated lobbies include the server owner member in UGS membership;
+                // subtract it so browser rows show actual connected game players.
+                CurrentPlayers = normalizedPlayerCount,
+                MaxPlayers = maxPlayerCapacity,
                 IsOpen = true,
                 IsLatest = false,
                 CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -1349,6 +1372,51 @@ namespace TitanOrbit.Networking
             }
 
             return summary;
+        }
+
+        /// <summary>
+        /// Removes this authenticated player from the active lobby membership so room counts stay in sync.
+        /// </summary>
+        private async Task LeaveCurrentLobbyIfMemberAsync(string reason)
+        {
+            if (_leaveLobbyInProgress)
+                return;
+            if (currentLobby == null || string.IsNullOrWhiteSpace(currentLobby.Id))
+                return;
+            if (UnityServices.State != ServicesInitializationState.Initialized)
+                return;
+            if (!AuthenticationService.Instance.IsSignedIn || !AuthenticationService.Instance.IsAuthorized)
+                return;
+
+            string lobbyId = currentLobby.Id;
+            string playerId = AuthenticationService.Instance.PlayerId;
+            if (string.IsNullOrWhiteSpace(playerId))
+                return;
+
+            _leaveLobbyInProgress = true;
+            try
+            {
+                await LobbyService.Instance.RemovePlayerAsync(lobbyId, playerId);
+            }
+            catch (LobbyServiceException e)
+            {
+                // Already gone, lobby missing, or host-owned restriction are safe to ignore.
+                if (e.Reason != LobbyExceptionReason.PlayerNotFound &&
+                    e.Reason != LobbyExceptionReason.LobbyNotFound &&
+                    e.Reason != LobbyExceptionReason.Forbidden)
+                {
+                    Debug.LogWarning("[NetworkGameManager] LeaveCurrentLobbyIfMemberAsync failed (" + reason + "): " + e.Message);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] LeaveCurrentLobbyIfMemberAsync error (" + reason + "): " + e.Message);
+            }
+            finally
+            {
+                currentLobby = null;
+                _leaveLobbyInProgress = false;
+            }
         }
 
         /// <summary>
@@ -1481,6 +1549,9 @@ namespace TitanOrbit.Networking
                 NetworkManager.Singleton.OnClientConnectedCallback -= OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
             }
+
+            if (currentLobby != null)
+                _ = LeaveCurrentLobbyIfMemberAsync("network_despawn");
         }
 
         private void OnClientConnected(ulong clientId)

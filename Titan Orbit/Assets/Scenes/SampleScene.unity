@@ -1279,9 +1279,9 @@ MonoBehaviour:
   targetCamera: {fileID: 711795281}
   cameraController: {fileID: 711795280}
   spaceTexture: {fileID: 2800000, guid: ddcac1fac1f5c8943a30c2ef6b724062, type: 3}
-  scrollScale: 0.04
+  scrollScale: 0.01
   textureTiling: 2
-  depthOffset: 4.5
+  depthOffset: 20
   sizeMargin: 1.15
 --- !u!4 &252336436
 Transform:
@@ -2541,6 +2541,7 @@ MonoBehaviour:
   buttonWidth: 112
   buttonSpacing: 10
   bottomPadding: 12
+  mobileHudScale: 1.48
   titleFromTop: -7
   ticksCenterYOffset: -1
   buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
@@ -4057,13 +4058,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
   target: {fileID: 0}
-  offsetAtReferenceLevel: {x: 0, y: 40, z: 0}
-  orthographicSizeAtReferenceLevel: 9
+  offsetAtReferenceLevel: {x: 0, y: 30, z: 0}
+  zoomDistanceAtReferenceLevel: 9
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
   galacticZoomEnabled: 0
-  galacticZoomOrthoSize: 90
+  galacticZoomDistance: 90
   galacticZoomOutDuration: 4
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 0}
@@ -4073,7 +4074,7 @@ MonoBehaviour:
   collisionShakeRecoverPerSecond: 1.2
   collisionShakeSmoothingExponent: 1
   mouseZoomEnabled: 0
-  maxManualZoomOutOrthoSize: 80
+  maxManualZoomOutDistance: 80
   mouseWheelZoomSensitivity: 0.12
   ignoreMouseZoomOverUi: 1
 --- !u!20 &711795281
@@ -5617,7 +5618,6 @@ MonoBehaviour:
   progressText: {fileID: 0}
   statusText: {fileID: 0}
   cameraController: {fileID: 0}
-  loadingOrthoSize: 180
   loadingCameraHeight: 200
   mainMenu: {fileID: 1536533385}
   minLoadingDisplayTime: 1

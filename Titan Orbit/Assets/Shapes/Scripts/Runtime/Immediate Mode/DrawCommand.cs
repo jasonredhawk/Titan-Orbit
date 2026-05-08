@@ -120,11 +120,11 @@ namespace Shapes {
 		internal readonly List<DisposableMesh> cachedMeshes = new List<DisposableMesh>();
 		internal readonly List<ShapeDrawCall> drawCalls = new List<ShapeDrawCall>();
 		#if SHAPES_URP
-		public RenderPassEvent camEvt;
+		[System.NonSerialized] internal RenderPassEvent camEvt;
 		#elif SHAPES_HDRP
-		public CustomPassInjectionPoint camEvt;
+		[System.NonSerialized] internal CustomPassInjectionPoint camEvt;
 		#else
-		CameraEvent camEvt;
+		[System.NonSerialized] CameraEvent camEvt;
 		#endif
 
 

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 using TitanOrbit.Entities;
 
 namespace TitanOrbit.Camera
@@ -17,8 +18,9 @@ namespace TitanOrbit.Camera
         [SerializeField] private Vector3 offsetAtReferenceLevel = new Vector3(0, 40, 0);
 
         [Header("Distance by Ship Level")]
-        [Tooltip("Orthographic size (view distance). Larger = more zoomed out. 12 = closer view, 24 = zoomed out.")]
-        [SerializeField] private float orthographicSizeAtReferenceLevel = 12f;
+        [Tooltip("Base camera distance (view distance). Larger = more zoomed out. 12 = closer view, 24 = zoomed out.")]
+        [FormerlySerializedAs("orthographicSizeAtReferenceLevel")]
+        [SerializeField] private float zoomDistanceAtReferenceLevel = 12f;
         [Tooltip("Zoom scale at level 1 (e.g. 0.7 = slightly closer). Reaches 1.0 (100%) at level 6. 1 = no level-based zoom.")]
         [Range(0.3f, 1f)]
         [SerializeField] private float zoomScaleAtLevel1 = 1f;
@@ -32,8 +34,9 @@ namespace TitanOrbit.Camera
         [Header("Galactic Zoom")]
         [Tooltip("Master toggle for the galactic zoom-out effect. Disable to keep gameplay zoom only.")]
         [SerializeField] private bool galacticZoomEnabled = true;
-        [Tooltip("Orthographic size used for far-map view. Actual galactic zoom stops halfway between default zoom and this value.")]
-        [SerializeField] private float galacticZoomOrthoSize = 180f;
+        [Tooltip("Far-map camera distance target. Actual galactic zoom stops halfway between default zoom and this value.")]
+        [FormerlySerializedAs("galacticZoomOrthoSize")]
+        [SerializeField] private float galacticZoomDistance = 180f;
         [Tooltip("Seconds to smoothly zoom out to galactic view after depositing all gems.")]
         [Min(0.1f)]
         [SerializeField] private float galacticZoomOutDuration = 8f;
@@ -56,8 +59,9 @@ namespace TitanOrbit.Camera
         [Header("Mouse Zoom")]
         [Tooltip("Allow mouse wheel to zoom out from the default ship zoom up to max zoom out size.")]
         [SerializeField] private bool mouseZoomEnabled = true;
-        [Tooltip("Largest orthographic size when fully zoomed out with the wheel (larger = see more of the map).")]
-        [SerializeField] private float maxManualZoomOutOrthoSize = 80f;
+        [Tooltip("Largest camera distance when fully zoomed out with the wheel (larger = see more of the map).")]
+        [FormerlySerializedAs("maxManualZoomOutOrthoSize")]
+        [SerializeField] private float maxManualZoomOutDistance = 80f;
         [Tooltip("How much the zoom slider moves per scroll wheel unit (Unity uses ~±120 per notch on Windows).")]
         [SerializeField] private float mouseWheelZoomSensitivity = 0.12f;
         [Tooltip("If true, wheel does not zoom while the pointer is over UI.")]
@@ -82,10 +86,10 @@ namespace TitanOrbit.Camera
         private float rammingShakeDrive;
         private float collisionShakeSeed;
 
-        private float GetManualZoomedOrthoSize(float defaultOrthoSize)
+        private float GetManualZoomedDistance(float defaultDistance)
         {
-            float maxSize = Mathf.Max(maxManualZoomOutOrthoSize, defaultOrthoSize);
-            return Mathf.Lerp(defaultOrthoSize, maxSize, manualZoomT);
+            float maxDistance = Mathf.Max(maxManualZoomOutDistance, defaultDistance);
+            return Mathf.Lerp(defaultDistance, maxDistance, manualZoomT);
         }
 
         /// <summary>Inspector toggle: whether collision feedback may apply camera shake.</summary>
@@ -131,7 +135,7 @@ namespace TitanOrbit.Camera
             else
                 currentScale = targetScale;
 
-            float defaultOrthoSize = orthographicSizeAtReferenceLevel * currentScale;
+            float defaultDistance = zoomDistanceAtReferenceLevel * currentScale;
 
             if (cam.orthographic)
             {
@@ -159,15 +163,15 @@ namespace TitanOrbit.Camera
                         }
                     }
 
-                    cam.orthographicSize = GetManualZoomedOrthoSize(defaultOrthoSize);
+                    cam.orthographicSize = GetManualZoomedDistance(defaultDistance);
                 }
                 else
                 {
                     galacticZoomElapsed += Time.deltaTime;
 
-                    float gameplayOrthoSize = GetManualZoomedOrthoSize(defaultOrthoSize);
+                    float gameplayDistance = GetManualZoomedDistance(defaultDistance);
                     // Target zoomed-out size is halfway between gameplay zoom (including manual wheel) and the far-map size.
-                    float halfwayOutSize = Mathf.Lerp(gameplayOrthoSize, galacticZoomOrthoSize, 0.5f);
+                    float halfwayOutSize = Mathf.Lerp(gameplayDistance, galacticZoomDistance, 0.5f);
 
                     if (!galacticZoomReturning)
                     {
@@ -182,7 +186,7 @@ namespace TitanOrbit.Camera
                         float tIn = galacticZoomInDuration > 0.0001f
                             ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomInDuration)
                             : 1f;
-                        float size = Mathf.Lerp(galacticZoomStartSize, gameplayOrthoSize, tIn);
+                        float size = Mathf.Lerp(galacticZoomStartSize, gameplayDistance, tIn);
                         cam.orthographicSize = size;
 
                         if (tIn >= 1f - 0.0001f)
@@ -242,7 +246,7 @@ namespace TitanOrbit.Camera
         }
 
         /// <summary>
-        /// Hides the starfield while the map loads / team menu uses the zoomed-out camera (avoids a tiny quad at extreme ortho size).
+        /// Hides the starfield while the map loads / team menu uses the zoomed-out camera (avoids a tiny quad at extreme zoom distance).
         /// Call with <c>false</c> when releasing to normal ship follow.
         /// </summary>
         public void SetSpaceBackgroundHiddenForLoadingState(bool hidden)
@@ -261,7 +265,7 @@ namespace TitanOrbit.Camera
             }
         }
 
-        /// <summary>Begin galactic zoom out toward a large orthographic size.</summary>
+        /// <summary>Begin galactic zoom out toward a large camera distance.</summary>
         public void StartGalacticZoomOut()
         {
             if (!galacticZoomEnabled)
@@ -272,7 +276,7 @@ namespace TitanOrbit.Camera
             galacticZoomActive = true;
             galacticZoomReturning = false;
             galacticZoomElapsed = 0f;
-            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : orthographicSizeAtReferenceLevel * currentScale;
+            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : zoomDistanceAtReferenceLevel * currentScale;
 
             if (spaceBackground != null)
             {
@@ -288,7 +292,7 @@ namespace TitanOrbit.Camera
 
             galacticZoomReturning = true;
             galacticZoomElapsed = 0f;
-            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : orthographicSizeAtReferenceLevel * currentScale;
+            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : zoomDistanceAtReferenceLevel * currentScale;
         }
     }
 }

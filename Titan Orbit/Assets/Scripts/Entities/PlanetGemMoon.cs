@@ -303,14 +303,12 @@ namespace TitanOrbit.Entities
             EnsureMoonOrbitZoneMeshFallback(oz);
         }
 
-        /// <summary>Add optional mesh fallback by type name so this file compiles even if that script is missing/not imported yet.</summary>
+        /// <summary>Attach optional moon orbit mesh fallback without compile-time type dependency.</summary>
         private static void EnsureMoonOrbitZoneMeshFallback(GameObject target)
         {
             if (target == null) return;
-            // Try exact and namespaced type names first.
             System.Type fallbackType = System.Type.GetType("TitanOrbit.Entities.GemMoonOrbitZoneMeshFallback")
                 ?? System.Type.GetType("GemMoonOrbitZoneMeshFallback");
-            // Fallback: search all loaded assemblies so this still works if Type.GetType can't resolve by name alone.
             if (fallbackType == null)
             {
                 var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();

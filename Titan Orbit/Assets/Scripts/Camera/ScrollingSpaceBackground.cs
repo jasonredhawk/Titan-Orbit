@@ -34,19 +34,20 @@ namespace TitanOrbit.Camera
 
         [Header("Scrolling")]
         [Tooltip("How fast the background scrolls relative to movement. 0.02 = subtle, 0.05 = noticeable")]
-        [SerializeField] private float scrollScale = 0.03f;
+        [SerializeField] private float scrollScale = 0.01f;
 
         [Tooltip("Tiling - how many times the texture repeats across the visible area")]
         [SerializeField] private float textureTiling = 2f;
 
         [Header("Placement")]
-        [Tooltip("Distance below camera for the background plane (further = more parallax)")]
-        [SerializeField] private float depthOffset = 150f;
+        [Tooltip("Distance below the gameplay plane in world Y (further down = safer behind planets/ships)")]
+        [SerializeField] private float depthOffset = 400f;
         [Tooltip("Extra margin beyond visible area to prevent edge gaps on wide screens")]
-        [SerializeField] private float sizeMargin = 1.15f;
+        [SerializeField] private float sizeMargin = 1.35f;
 
         private MeshRenderer meshRenderer;
         private Material bgMaterial;
+        private Transform backgroundQuadTransform;
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
         private static readonly int UVScroll = Shader.PropertyToID("_UVScroll");
 
@@ -143,14 +144,10 @@ namespace TitanOrbit.Camera
             GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "SpaceBackgroundQuad";
             quad.transform.SetParent(transform);
+            backgroundQuadTransform = quad.transform;
 
-            quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            float orthoSize = targetCamera.orthographicSize;
-            float aspect = targetCamera.aspect > 0.01f ? targetCamera.aspect : (float)Screen.width / Mathf.Max(1, Screen.height);
-            float visibleHeight = 2f * orthoSize;
-            float visibleWidth = 2f * orthoSize * aspect;
-            float quadSize = Mathf.Max(visibleWidth, visibleHeight) * sizeMargin;
-            quad.transform.localScale = new Vector3(quadSize, quadSize, 1f);
+            backgroundQuadTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            ResizeQuadToCoverView();
 
             Object.Destroy(quad.GetComponent<Collider>());
 
@@ -172,11 +169,39 @@ namespace TitanOrbit.Camera
             if (bgMaterial == null) return;
 
             Vector3 camPos = targetCamera.transform.position;
-            transform.position = new Vector3(camPos.x, -depthOffset, camPos.z);
+            transform.position = new Vector3(camPos.x, -Mathf.Abs(depthOffset), camPos.z);
+            ResizeQuadToCoverView();
 
             float offsetX = camPos.x * scrollScale;
             float offsetZ = camPos.z * scrollScale;
             bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
+        }
+
+        private void ResizeQuadToCoverView()
+        {
+            if (targetCamera == null || backgroundQuadTransform == null)
+                return;
+
+            float aspect = targetCamera.aspect > 0.01f
+                ? targetCamera.aspect
+                : (float)Screen.width / Mathf.Max(1, Screen.height);
+
+            float visibleHeight;
+            if (targetCamera.orthographic)
+            {
+                visibleHeight = 2f * targetCamera.orthographicSize;
+            }
+            else
+            {
+                float backgroundY = -Mathf.Abs(depthOffset);
+                float cameraToBackground = Mathf.Abs(targetCamera.transform.position.y - backgroundY);
+                float halfFovRadians = targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+                visibleHeight = 2f * cameraToBackground * Mathf.Tan(halfFovRadians);
+            }
+
+            float visibleWidth = visibleHeight * aspect;
+            float quadSize = Mathf.Max(visibleWidth, visibleHeight) * sizeMargin;
+            backgroundQuadTransform.localScale = new Vector3(quadSize, quadSize, 1f);
         }
 
         private static void ApplyMainTexture(Material m, Texture2D tex)

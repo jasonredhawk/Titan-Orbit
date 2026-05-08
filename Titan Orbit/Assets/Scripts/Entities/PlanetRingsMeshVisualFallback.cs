@@ -55,7 +55,9 @@ namespace TitanOrbit.Entities
 
             Color baseColor = TeamManager.GetTeamColor(planet.TeamOwnership);
             Color ringColor = new Color(baseColor.r, baseColor.g, baseColor.b, ringOpacity);
-            Quaternion tilt = Quaternion.Euler(tiltDegrees, 0f, 0f);
+            // Mesh bands are authored in XZ (normal = +Y), while Shapes rings are effectively authored in XY
+            // before applying tilt. Add +90° so fallback matches Shapes/Saturn orientation.
+            Quaternion tilt = Quaternion.Euler(tiltDegrees + 90f, 0f, 0f);
 
             for (int i = 0; i < bands.Count; i++)
             {
@@ -110,7 +112,11 @@ namespace TitanOrbit.Entities
                 if (renderers[i].sharedMaterial == null && shader != null)
                 {
                     var mat = new Material(shader);
-                    mat.renderQueue = 3000;
+                    // Keep rings in the opaque/depth-tested queue so tilt reads like Saturn:
+                    // portions behind the planet are occluded while front portions remain visible.
+                    mat.renderQueue = -1;
+                    if (mat.HasProperty("_Surface")) mat.SetFloat("_Surface", 0f);
+                    if (mat.HasProperty("_ZWrite")) mat.SetFloat("_ZWrite", 1f);
                     renderers[i].sharedMaterial = mat;
                     renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                     renderers[i].receiveShadows = false;

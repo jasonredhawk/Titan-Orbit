@@ -24,10 +24,8 @@ namespace TitanOrbit.UI
 
         [Header("Camera")]
         [SerializeField] private CameraController cameraController;
-        [Tooltip("Fallback orthographic size when map size is not yet known (should match synced ToroidalMap after join).")]
-        [SerializeField] private float loadingOrthoSize = 180f;
-        [Tooltip("Camera height (Y) during loading.")]
-        [SerializeField] private float loadingCameraHeight = 200f;
+        [Tooltip("Camera height (Y) during loading. Larger = start further zoomed out.")]
+        [SerializeField] private float loadingCameraHeight = 320f;
 
         [Header("Transitions")]
         [SerializeField] private MainMenu mainMenu;
