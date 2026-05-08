@@ -306,6 +306,7 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
+        private float _065367LastRegenLogServerTime = -999f;
 
         private ClientRpcParams OwnerOnlyClientRpcParams => new ClientRpcParams
         {
@@ -3004,14 +3005,47 @@ namespace TitanOrbit.Entities
             if (IsServer && !isDead.Value && currentHealth.Value < MaxHealth)
             {
                 if (Time.time < lastHullDamageServerTime + healthRegenDelayAfterDamage)
+                {
+                    // #region agent log 065367
+                    if (Time.time - _065367LastRegenLogServerTime > 1f)
+                    {
+                        _065367LastRegenLogServerTime = Time.time;
+                        DebugNdjson065367.Write("REG-H1", "Starship.HandleHealthRegen", "blocked_recent_damage",
+                            "{\"now\":" + Time.time.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                            + ",\"lastHit\":" + lastHullDamageServerTime.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                            + ",\"delay\":" + healthRegenDelayAfterDamage.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                    }
+                    // #endregion agent log 065367
                     return;
+                }
                 if (currentHealth.Value <= depletedThreshold && currentGems.Value > depletedThreshold)
+                {
+                    // #region agent log 065367
+                    if (Time.time - _065367LastRegenLogServerTime > 1f)
+                    {
+                        _065367LastRegenLogServerTime = Time.time;
+                        DebugNdjson065367.Write("REG-H2", "Starship.HandleHealthRegen", "blocked_hull_zero_with_gems",
+                            "{\"health\":" + currentHealth.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                            + ",\"gems\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                    }
+                    // #endregion agent log 065367
                     return;
+                }
                 float regen = EffectiveHealthRegen * Time.deltaTime;
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode) regen *= 100f;
                 float newHealth = currentHealth.Value + regen;
                 // Ensure health never exceeds MaxHealth
                 currentHealth.Value = Mathf.Min(newHealth, MaxHealth);
+                // #region agent log 065367
+                if (Time.time - _065367LastRegenLogServerTime > 1f)
+                {
+                    _065367LastRegenLogServerTime = Time.time;
+                    DebugNdjson065367.Write("REG-H3", "Starship.HandleHealthRegen", "regen_applied",
+                        "{\"regen\":" + regen.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                        + ",\"healthNow\":" + currentHealth.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                        + ",\"max\":" + MaxHealth.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                }
+                // #endregion agent log 065367
             }
             // Safety check: clamp health to zero minimum (shouldn't go negative)
             if (IsServer && currentHealth.Value < 0f)
@@ -3823,7 +3857,12 @@ namespace TitanOrbit.Entities
             if (debugModeEnabled)
             {
                 float instantDepositAmount = currentGems.Value;
-                RemoveGemsServerRpc(instantDepositAmount);
+                // #region agent log 065367
+                DebugNdjson065367.Write("DEP-H1", "Starship.TickOrbitGemDeposit", "debug_before_remove",
+                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"amount\":" + instantDepositAmount.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                // #endregion agent log 065367
+                RemoveGemsFromDepositServer(instantDepositAmount);
                 depositAccumulator = 0f;
                 ApplyMoonGemDepositToPlanet(depositPlanet, instantDepositAmount);
                 depositedAnyGemsThisOrbit = true;
@@ -3843,7 +3882,13 @@ namespace TitanOrbit.Entities
             bool shouldDepositChunk = depositAccumulator >= gemValue && currentGems.Value >= gemValue && (now - lastDepositSpawnTime) >= gemInterval;
             if (shouldDepositChunk)
             {
-                RemoveGemsServerRpc(gemValue);
+                // #region agent log 065367
+                DebugNdjson065367.Write("DEP-H2", "Starship.TickOrbitGemDeposit", "chunk_before_remove",
+                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"gemValue\":" + gemValue.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"accum\":" + depositAccumulator.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                // #endregion agent log 065367
+                RemoveGemsFromDepositServer(gemValue);
                 depositAccumulator -= gemValue;
                 lastDepositSpawnTime = now;
 
@@ -3855,7 +3900,12 @@ namespace TitanOrbit.Entities
             if (!shouldDepositChunk && currentGems.Value > 0f && currentGems.Value < gemValue)
             {
                 float remainder = currentGems.Value;
-                RemoveGemsServerRpc(remainder);
+                // #region agent log 065367
+                DebugNdjson065367.Write("DEP-H3", "Starship.TickOrbitGemDeposit", "remainder_before_remove",
+                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"remainder\":" + remainder.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+                // #endregion agent log 065367
+                RemoveGemsFromDepositServer(remainder);
                 depositAccumulator = 0f;
                 ApplyMoonGemDepositToPlanet(depositPlanet, remainder);
                 depositedAnyGemsThisOrbit = true;
@@ -4692,11 +4742,32 @@ namespace TitanOrbit.Entities
                 AudioManager.Instance.PlayPeopleUnloadSound(amount);
         }
 
+        /// <summary>Server-only gem removal used by moon deposit path (avoids nested ServerRpc from server authority).</summary>
+        public void RemoveGemsFromDepositServer(float amount)
+        {
+            if (!IsServer) return;
+            ApplyRemoveGemsOnServer(amount, "Starship.RemoveGemsFromDepositServer");
+        }
+
+        private void ApplyRemoveGemsOnServer(float amount, string location)
+        {
+            // #region agent log 065367
+            float before = currentGems.Value;
+            // #endregion agent log 065367
+            currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
+            // #region agent log 065367
+            DebugNdjson065367.Write("DEP-H4", location, "after_remove",
+                "{\"amount\":" + amount.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"before\":" + before.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"after\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
+            // #endregion agent log 065367
+            TryDieIfHullAndGemsDepleted(0);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void RemoveGemsServerRpc(float amount)
         {
-            currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
-            TryDieIfHullAndGemsDepleted(0);
+            ApplyRemoveGemsOnServer(amount, "Starship.RemoveGemsServerRpc");
         }
 
         /// <summary>Client: start the galactic zoom-out camera animation on the owning player.</summary>

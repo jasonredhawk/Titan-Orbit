@@ -99,6 +99,9 @@ namespace TitanOrbit.Camera
                 cam = gameObject.AddComponent<UnityEngine.Camera>();
             }
 
+            cam.orthographic = false;
+            cam.fieldOfView = 45f;
+
             if (spaceBackground == null)
             {
                 spaceBackground = FindFirstObjectByType<ScrollingSpaceBackground>();

@@ -881,6 +881,20 @@ namespace TitanOrbit.UI
             {
                 var fetched = await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40);
                 var kind = NetworkGameManager.LastOpenLobbyQueryKind;
+                // If strict/latest query returns empty while services are otherwise OK, immediately retry with latestOnly=false.
+                // This avoids transient "no games" states when latest/index flags lag behind lobby creation.
+                if (fetched.Count == 0 &&
+                    latestOnlyFilter &&
+                    kind == NetworkGameManager.OpenLobbyQueryResultKind.Ok)
+                {
+                    var retry = await NetworkGameManager.Instance.QueryOpenLobbiesAsync(false, 40);
+                    var retryKind = NetworkGameManager.LastOpenLobbyQueryKind;
+                    if (retryKind == NetworkGameManager.OpenLobbyQueryResultKind.Ok && retry.Count > 0)
+                    {
+                        fetched = retry;
+                        kind = retryKind;
+                    }
+                }
                 // #region agent log 065367
                 NetworkGameManager.DebugSessionE2a466Log("post-fix", "LM-H1", "MainMenu.RefreshLobbyListAsync", "after_query_065367",
                     "{\"latestOnly\":" + (latestOnlyFilter ? "true" : "false")
@@ -931,6 +945,14 @@ namespace TitanOrbit.UI
 
                 if (kind == NetworkGameManager.OpenLobbyQueryResultKind.Error)
                 {
+                    // Keep previous lobby list visible on transient query errors.
+                    if (cachedLobbySummaries.Count > 0)
+                    {
+                        SetLobbyBrowserStatus("Lobby refresh failed. Showing previous list.");
+                        RenderLobbyList();
+                        return;
+                    }
+
                     selectedLobbyId = null;
                     selectedLobbyRowIndex = -1;
                     cachedLobbySummaries.Clear();

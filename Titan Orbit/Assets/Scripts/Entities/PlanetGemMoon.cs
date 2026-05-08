@@ -286,13 +286,40 @@ namespace TitanOrbit.Entities
 
         private void EnsureMoonOrbitZoneVisual()
         {
-            if (transform.Find("MoonOrbitZone") != null) return;
+            Transform existing = transform.Find("MoonOrbitZone");
+            if (existing != null)
+            {
+                if (existing.GetComponent<GemMoonOrbitZoneVisual>() == null)
+                    existing.gameObject.AddComponent<GemMoonOrbitZoneVisual>();
+                EnsureMoonOrbitZoneMeshFallback(existing.gameObject);
+                return;
+            }
             GameObject oz = new GameObject("MoonOrbitZone");
             oz.transform.SetParent(transform, false);
             oz.transform.localPosition = Vector3.zero;
             oz.transform.localRotation = Quaternion.identity;
             oz.transform.localScale = Vector3.one;
             oz.AddComponent<GemMoonOrbitZoneVisual>();
+            EnsureMoonOrbitZoneMeshFallback(oz);
+        }
+
+        /// <summary>Add optional mesh fallback by type name so this file compiles even if that script is missing/not imported yet.</summary>
+        private static void EnsureMoonOrbitZoneMeshFallback(GameObject target)
+        {
+            if (target == null) return;
+            // Try exact and namespaced type names first.
+            System.Type fallbackType = System.Type.GetType("TitanOrbit.Entities.GemMoonOrbitZoneMeshFallback")
+                ?? System.Type.GetType("GemMoonOrbitZoneMeshFallback");
+            // Fallback: search all loaded assemblies so this still works if Type.GetType can't resolve by name alone.
+            if (fallbackType == null)
+            {
+                var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length && fallbackType == null; i++)
+                    fallbackType = assemblies[i].GetType("TitanOrbit.Entities.GemMoonOrbitZoneMeshFallback", false);
+            }
+            if (fallbackType == null) return;
+            if (target.GetComponent(fallbackType) == null)
+                target.AddComponent(fallbackType);
         }
 
         private void OnEnable()

@@ -284,12 +284,8 @@ namespace TitanOrbit.UI
         {
             if (cam == null || !cameraOverridden) return;
 
-            float w = ToroidalMap.GetMapWidth();
-            float h = ToroidalMap.GetMapHeight();
-            float halfExtent = Mathf.Max(w, h) * 0.5f;
-            float targetOrtho = Mathf.Clamp(halfExtent * 1.08f, 40f, 2500f);
-            cam.orthographic = true;
-            cam.orthographicSize = targetOrtho;
+            cam.orthographic = false;
+            cam.fieldOfView = 45f;
             cam.transform.position = new Vector3(0f, loadingCameraHeight, 0f);
             cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         }
@@ -452,13 +448,8 @@ namespace TitanOrbit.UI
 
                 if (cam != null)
                 {
-                    float w = ToroidalMap.GetMapWidth();
-                    float h = ToroidalMap.GetMapHeight();
-                    bool haveBounds = w > 1f && h > 1f;
-                    float halfExtent = haveBounds ? Mathf.Max(w, h) * 0.5f : loadingOrthoSize;
-                    float targetOrtho = haveBounds ? Mathf.Clamp(halfExtent * 1.08f, 40f, 2500f) : loadingOrthoSize;
-                    cam.orthographic = true;
-                    cam.orthographicSize = targetOrtho;
+                    cam.orthographic = false;
+                    cam.fieldOfView = 45f;
                     cam.transform.position = new Vector3(0, loadingCameraHeight, 0);
                     cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
                 }

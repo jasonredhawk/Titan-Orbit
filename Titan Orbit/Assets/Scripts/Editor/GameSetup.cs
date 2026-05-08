@@ -641,11 +641,11 @@ namespace TitanOrbit.Editor
             UnityEngine.Camera cam = obj.AddComponent<UnityEngine.Camera>();
             CameraController cameraController = obj.AddComponent<CameraController>();
 
-            // Set up camera for top-down 2D-style view of 3D scene
+            // Set up camera for top-down perspective view of the 3D scene
             obj.transform.position = new Vector3(0, 50, 0); // High above for top-down
             obj.transform.rotation = Quaternion.Euler(90f, 0f, 0f); // Look straight down
-            cam.orthographic = true;
-            cam.orthographicSize = 12f; // Closer view of ship
+            cam.orthographic = false;
+            cam.fieldOfView = 45f;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.02f, 0.02f, 0.05f); // Dark space background
 

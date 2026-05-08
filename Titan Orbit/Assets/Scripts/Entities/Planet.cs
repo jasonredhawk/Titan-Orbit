@@ -669,6 +669,9 @@ namespace TitanOrbit.Entities
             var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
             if (shapesVisual == null)
                 orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+            var meshFallback = orbitZoneObj.GetComponent<OrbitZoneMeshVisualFallback>();
+            if (meshFallback == null)
+                orbitZoneObj.AddComponent<OrbitZoneMeshVisualFallback>();
         }
 
         /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>
@@ -830,13 +833,20 @@ namespace TitanOrbit.Entities
                 if (child.name == "Ring" || child.name.StartsWith("Ring"))
                     Object.Destroy(child.gameObject);
             }
-            if (GetComponentInChildren<PlanetRingsDrawer>(true) != null) return;
+            var existingDrawer = GetComponentInChildren<PlanetRingsDrawer>(true);
+            if (existingDrawer != null)
+            {
+                if (existingDrawer.GetComponent<PlanetRingsMeshVisualFallback>() == null)
+                    existingDrawer.gameObject.AddComponent<PlanetRingsMeshVisualFallback>();
+                return;
+            }
             GameObject ringsObj = new GameObject("PlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
             ringsObj.transform.localRotation = Quaternion.identity;
             ringsObj.transform.localScale = Vector3.one;
             ringsObj.AddComponent<PlanetRingsDrawer>();
+            ringsObj.AddComponent<PlanetRingsMeshVisualFallback>();
         }
 
         /// <summary>Override in HomePlanet to use a color that contrasts with the white ring.</summary>

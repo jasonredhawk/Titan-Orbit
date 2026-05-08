@@ -278,13 +278,19 @@ namespace TitanOrbit.Entities
         private void EnsureShapesRingsDrawer()
         {
             var drawer = GetComponentInChildren<HomePlanetRingsDrawer>(true);
-            if (drawer != null) return;
+            if (drawer != null)
+            {
+                if (drawer.GetComponent<PlanetRingsMeshVisualFallback>() == null)
+                    drawer.gameObject.AddComponent<PlanetRingsMeshVisualFallback>();
+                return;
+            }
             GameObject ringsObj = new GameObject("HomePlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
             ringsObj.transform.localRotation = Quaternion.identity;
             ringsObj.transform.localScale = Vector3.one;
             ringsObj.AddComponent<HomePlanetRingsDrawer>();
+            ringsObj.AddComponent<PlanetRingsMeshVisualFallback>();
         }
 
         private IEnumerator LevelUpScalePulse()
