@@ -265,8 +265,26 @@ namespace TitanOrbit.Entities
         /// <summary>Ensure a child with HomePlanetRingsDrawer exists so Saturn-style rings are drawn each frame.</summary>
         private void EnsureShapesRingsDrawer()
         {
-            var drawer = GetComponentInChildren<HomePlanetRingsDrawer>(true);
-            if (drawer != null)
+            var allDrawers = GetComponentsInChildren<HomePlanetRingsDrawer>(true);
+            HomePlanetRingsDrawer keep = null;
+            foreach (var d in allDrawers)
+            {
+                if (d != null && d.transform.name == "HomePlanetRings")
+                {
+                    keep = d;
+                    break;
+                }
+            }
+            if (keep == null && allDrawers.Length > 0)
+                keep = allDrawers[0];
+            foreach (var d in allDrawers)
+            {
+                if (d == null || d == keep)
+                    continue;
+                Object.Destroy(d.gameObject);
+            }
+
+            if (keep != null)
                 return;
             GameObject ringsObj = new GameObject("HomePlanetRings");
             ringsObj.transform.SetParent(transform);

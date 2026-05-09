@@ -668,6 +668,14 @@ namespace TitanOrbit.Entities
             }
 
             RefreshOrbitZoneRadius();
+            EnsureOrbitZoneBorderVisual();
+        }
+
+        /// <summary>Shapes border at orbit zone outer edge (same GameObject as <see cref="PlanetOrbitZone"/> on planet root).</summary>
+        private void EnsureOrbitZoneBorderVisual()
+        {
+            if (GetComponent<OrbitZoneShapesVisual>() == null)
+                gameObject.AddComponent<OrbitZoneShapesVisual>();
         }
 
         /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>
@@ -829,8 +837,27 @@ namespace TitanOrbit.Entities
                 if (child.name == "Ring" || child.name.StartsWith("Ring"))
                     Object.Destroy(child.gameObject);
             }
-            var existingDrawer = GetComponentInChildren<PlanetRingsDrawer>(true);
-            if (existingDrawer != null)
+
+            var allDrawers = GetComponentsInChildren<PlanetRingsDrawer>(true);
+            PlanetRingsDrawer keep = null;
+            foreach (var d in allDrawers)
+            {
+                if (d != null && d.transform.name == "PlanetRings")
+                {
+                    keep = d;
+                    break;
+                }
+            }
+            if (keep == null && allDrawers.Length > 0)
+                keep = allDrawers[0];
+            foreach (var d in allDrawers)
+            {
+                if (d == null || d == keep)
+                    continue;
+                Object.Destroy(d.gameObject);
+            }
+
+            if (keep != null)
                 return;
             GameObject ringsObj = new GameObject("PlanetRings");
             ringsObj.transform.SetParent(transform);
