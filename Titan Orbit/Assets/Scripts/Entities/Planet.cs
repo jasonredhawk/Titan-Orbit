@@ -168,12 +168,19 @@ namespace TitanOrbit.Entities
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes.</summary>
         protected virtual void RefreshOrbitZoneRadius()
         {
-            var oz = GetComponentInChildren<PlanetOrbitZone>();
+            var oz = GetComponent<PlanetOrbitZone>();
+            if (oz == null)
+                oz = GetComponentInChildren<PlanetOrbitZone>(true);
             if (oz != null)
             {
-                var col = oz.GetComponent<SphereCollider>();
-                if (col != null)
-                    col.radius = GetOrbitZoneOuterRadiusLocal();
+                foreach (var col in oz.GetComponents<SphereCollider>())
+                {
+                    if (col.isTrigger)
+                    {
+                        col.radius = GetOrbitZoneOuterRadiusLocal();
+                        break;
+                    }
+                }
             }
             RefreshGemMoonDockTriggerRadius();
             ApplyGemMoonVisualScale();
@@ -642,36 +649,25 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Orbit zone: surface (0.5) to outer (scaled by level: 1.5x base, +5% per level). Ships orbit at whatever radius they enter; farther = slower.
+        /// Trigger + <see cref="PlanetOrbitZone"/> live on the planet root (second SphereCollider). Legacy <c>OrbitZone</c> child objects are removed.
         /// </summary>
         private void EnsureOrbitZoneExists()
         {
-            PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
-            if (existing != null)
-            {
-                RefreshOrbitZoneRadius();
-                EnsureOrbitZoneVisual(existing.gameObject);
-                return;
-            }
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
-            orbitCollider.isTrigger = true;
-            orbitCollider.radius = GetOrbitZoneOuterRadiusLocal();
-            PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            zone.SetPlanet(this);
-            EnsureOrbitZoneVisual(orbitZoneObj);
-        }
+            Transform legacy = transform.Find("OrbitZone");
+            if (legacy != null)
+                DestroyImmediate(legacy.gameObject);
 
-        protected void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
-        {
-            var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
-            if (shapesVisual == null)
-                orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
-            var meshFallback = orbitZoneObj.GetComponent<OrbitZoneMeshVisualFallback>();
-            if (meshFallback == null)
-                orbitZoneObj.AddComponent<OrbitZoneMeshVisualFallback>();
+            PlanetOrbitZone zone = GetComponent<PlanetOrbitZone>();
+            if (zone == null)
+            {
+                SphereCollider orbitCollider = gameObject.AddComponent<SphereCollider>();
+                orbitCollider.isTrigger = true;
+                orbitCollider.radius = GetOrbitZoneOuterRadiusLocal();
+                zone = gameObject.AddComponent<PlanetOrbitZone>();
+                zone.SetPlanet(this);
+            }
+
+            RefreshOrbitZoneRadius();
         }
 
         /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>
@@ -835,18 +831,13 @@ namespace TitanOrbit.Entities
             }
             var existingDrawer = GetComponentInChildren<PlanetRingsDrawer>(true);
             if (existingDrawer != null)
-            {
-                if (existingDrawer.GetComponent<PlanetRingsMeshVisualFallback>() == null)
-                    existingDrawer.gameObject.AddComponent<PlanetRingsMeshVisualFallback>();
                 return;
-            }
             GameObject ringsObj = new GameObject("PlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
             ringsObj.transform.localRotation = Quaternion.identity;
             ringsObj.transform.localScale = Vector3.one;
             ringsObj.AddComponent<PlanetRingsDrawer>();
-            ringsObj.AddComponent<PlanetRingsMeshVisualFallback>();
         }
 
         /// <summary>Override in HomePlanet to use a color that contrasts with the white ring.</summary>

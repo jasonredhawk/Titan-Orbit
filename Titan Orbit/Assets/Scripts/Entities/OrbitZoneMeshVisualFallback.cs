@@ -26,13 +26,42 @@ namespace TitanOrbit.Entities
         private void Awake()
         {
             Initialize();
+            if (SuppressBecauseShapesHandlesOrbitZone())
+            {
+                if (meshRenderer != null)
+                    meshRenderer.enabled = false;
+                if (meshFilter != null)
+                    meshFilter.sharedMesh = null;
+                enabled = false;
+                return;
+            }
             RefreshMesh(true);
         }
 
         private void OnEnable()
         {
             Initialize();
+            if (SuppressBecauseShapesHandlesOrbitZone())
+            {
+                if (meshRenderer != null)
+                    meshRenderer.enabled = false;
+                if (meshFilter != null)
+                    meshFilter.sharedMesh = null;
+                enabled = false;
+                return;
+            }
             RefreshMesh(true);
+        }
+
+        /// <summary>Planet rings drawer draws orbit zone fill in Shapes — skip duplicate mesh when that path is active.</summary>
+        private bool SuppressBecauseShapesHandlesOrbitZone()
+        {
+            if (planet == null)
+                planet = GetComponentInParent<Planet>();
+            if (planet == null)
+                return false;
+            return planet.GetComponentInChildren<PlanetRingsDrawer>(true) != null
+                || planet.GetComponentInChildren<HomePlanetRingsDrawer>(true) != null;
         }
 
         private void OnDestroy()

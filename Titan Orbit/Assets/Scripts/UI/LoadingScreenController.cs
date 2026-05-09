@@ -37,6 +37,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float maxJoinWorldSyncSeconds = 18f;
         [Tooltip("Joining clients: fraction of planets/asteroids replicated before we show team selection. Lower = faster but you may see a brief pop-in.")]
         [SerializeField, Range(0.35f, 0.98f)] private float joinReplicationEnoughFraction = 0.62f;
+        [Tooltip("Joining clients: loading bar fraction (0–1) reached when layout replay finishes; replication fills from here to 100% so the bar does not sit at 100% during sync.")]
+        [SerializeField, Range(0.55f, 0.95f)] private float joinProgressEndAfterReplay = 0.78f;
 
         private UnityEngine.Camera cam;
         private bool wasShowing;
@@ -192,18 +194,25 @@ namespace TitanOrbit.UI
             }
             else if (pureClient)
             {
+                float replayEnd = Mathf.Clamp01(joinProgressEndAfterReplay);
                 if (!mapGen.LoadingComplete)
                 {
-                    progress = mapGen.LoadingProgress;
+                    // While the server is still generating, scale progress into the first part of the bar only
+                    // so we can continue smoothly into replay (avoids hitting 100% before local preview).
+                    progress = Mathf.Clamp01(mapGen.LoadingProgress) * replayEnd;
                 }
                 else if (!joinPlaybackComplete)
                 {
-                    progress = Mathf.Clamp01(Mathf.Max(0.06f, joinPlaybackProgress));
+                    // Blueprint replay: animate from ~0 through replayEnd as preview prefabs spawn.
+                    progress = Mathf.Lerp(0.02f, replayEnd, Mathf.Clamp01(joinPlaybackProgress));
                 }
                 else
                 {
+                    // Real networked objects: fill replayEnd → 1.0 from replication progress (was stuck at 100% with Max(1, rep)).
                     float rep = mapGen.GetClientWorldReplicationProgress();
-                    progress = Mathf.Clamp01(Mathf.Max(1f, rep));
+                    float thresh = Mathf.Max(0.05f, joinReplicationEnoughFraction);
+                    float repT = Mathf.Clamp01(rep / thresh);
+                    progress = Mathf.Lerp(replayEnd, 1f, repT);
                 }
 
                 float elapsedSync = Time.realtimeSinceStartup - loadingStartTime;
@@ -233,7 +242,9 @@ namespace TitanOrbit.UI
                     {
                         mapGen.GetJoinReplayPhaseEndProgress(out float endHomes, out float endNeutrals);
                         float jp = joinPlaybackProgress;
-                        if (jp < endHomes)
+                        if (jp >= 1f - 1e-4f)
+                            statusText.text = "Waiting for live objects...";
+                        else if (jp < endHomes)
                             statusText.text = "Building home bases...";
                         else if (jp < endNeutrals)
                             statusText.text = "Placing planets...";
@@ -344,8 +355,17 @@ namespace TitanOrbit.UI
             joinPreviewRoot.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             joinPlaybackProgress = 0.02f;
             yield return mapGen.StartCoroutine(mapGen.CoPlayJoinLayout(joinPreviewRoot.transform, p => joinPlaybackProgress = p));
-            joinPlaybackComplete = true;
             joinPlaybackProgress = 1f;
+            // Keep the preview visible until replicated NetworkObjects start arriving (or timeout) so the map does not go empty before sync.
+            float hold = 0f;
+            const float holdMax = 2.5f;
+            while (joinPreviewRoot != null && hold < holdMax && mapGen.GetClientWorldReplicationProgress() < 0.08f)
+            {
+                hold += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            joinPlaybackComplete = true;
             if (joinPreviewRoot != null)
             {
                 Destroy(joinPreviewRoot);

@@ -1,6 +1,5 @@
 using UnityEngine;
 using Unity.Netcode;
-using Unity.Netcode.Components;
 using TitanOrbit.Core;
 using System.Globalization;
 using TitanOrbit.Generation;
@@ -227,11 +226,6 @@ namespace TitanOrbit.Entities
                     syncedPlanarVelocity.Value = pv;
                 }
             }
-
-            // Fast movers: interpolation stacks delay on top of RTT for remote clients — snap to latest state instead.
-            var netTransform = GetComponent<NetworkTransform>();
-            if (netTransform != null)
-                netTransform.Interpolate = false;
 
             // Lock Y position to 0 (keep RB and transform aligned; Auto Sync Transforms is off in project settings).
             Vector3 pos = transform.position;

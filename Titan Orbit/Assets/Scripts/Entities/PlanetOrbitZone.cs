@@ -17,9 +17,26 @@ namespace TitanOrbit.Entities
         {
             if (planet == null)
                 planet = GetComponentInParent<Planet>();
-            zoneCollider = GetComponent<SphereCollider>();
-            if (zoneCollider != null)
-                zoneCollider.isTrigger = true;
+            ResolveZoneCollider();
+        }
+
+        /// <summary>Planet root may have a solid body sphere plus this trigger; use the trigger collider only.</summary>
+        private void ResolveZoneCollider()
+        {
+            zoneCollider = null;
+            foreach (var c in GetComponents<SphereCollider>())
+            {
+                if (c.isTrigger)
+                {
+                    zoneCollider = c;
+                    break;
+                }
+            }
+        }
+
+        private void OnValidate()
+        {
+            ResolveZoneCollider();
         }
 
         public Planet Planet => planet;

@@ -11,6 +11,7 @@ using Unity.Services.Authentication;
 using Unity.Services.Core;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
+using Unity.Services.Multiplayer;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
@@ -124,6 +125,19 @@ namespace TitanOrbit.Networking
                     return arg.Substring(prefix.Length);
             }
             return defaultValue;
+        }
+
+        /// <summary>Align with <see cref="NetworkGameManager"/>: legacy <c>udp</c> is stored/joined as <c>dtls</c> for MPS 2.0 Relay.</summary>
+        private static string SanitizeRelayProtocolForSdk(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "dtls";
+            string x = raw.Trim().ToLowerInvariant();
+            if (x == "wss")
+                return "wss";
+            if (x == "udp" || x == "dtls")
+                return "dtls";
+            return "dtls";
         }
 
         private static bool GetArgBool(string name, bool defaultValue)
@@ -379,7 +393,7 @@ namespace TitanOrbit.Networking
         {
             int maxPlayers = GetArgInt("maxPlayers", 60);
             ushort serverPort = (ushort)GetArgInt("serverPort", 7777);
-            string relayProtocol = GetArgString("relayProtocol", "udp");
+            string relayProtocol = SanitizeRelayProtocolForSdk(GetArgString("relayProtocol", "dtls"));
             bool isLatest = GetArgBool("isLatest", true);
             long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 20 * 60);
             int ugsInitTimeoutMs = GetArgInt("ugsInitTimeoutMs", 120000);
@@ -429,7 +443,8 @@ namespace TitanOrbit.Networking
                 "RelayService.GetJoinCodeAsync");
 
             transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
-            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProtocol));
+            RelayProtocol relayProto = relayProtocol == "wss" ? RelayProtocol.WSS : RelayProtocol.DTLS;
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
             NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
             // Start NGO before publishing the lobby so clients can never join a non-running server advertisement.

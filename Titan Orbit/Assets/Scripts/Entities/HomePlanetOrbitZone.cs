@@ -16,9 +16,25 @@ namespace TitanOrbit.Entities
         {
             if (homePlanet == null)
                 homePlanet = GetComponentInParent<HomePlanet>();
-            zoneCollider = GetComponent<SphereCollider>();
-            if (zoneCollider != null)
-                zoneCollider.isTrigger = true;
+            ResolveZoneCollider();
+        }
+
+        private void ResolveZoneCollider()
+        {
+            zoneCollider = null;
+            foreach (var c in GetComponents<SphereCollider>())
+            {
+                if (c.isTrigger)
+                {
+                    zoneCollider = c;
+                    break;
+                }
+            }
+        }
+
+        private void OnValidate()
+        {
+            ResolveZoneCollider();
         }
 
         public HomePlanet HomePlanet => homePlanet;

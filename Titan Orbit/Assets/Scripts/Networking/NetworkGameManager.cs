@@ -4,6 +4,7 @@ using Unity.Netcode.Transports.UTP;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Services;
+using Unity.Services.Multiplayer;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using Unity.Services.Lobbies;
@@ -119,6 +120,31 @@ namespace TitanOrbit.Networking
         }
         // #endregion
 
+        // #region agent log 65b1a1
+        static void DebugSession65b1a1Log(string hypothesisId, string location, string message, string dataJson)
+        {
+            try
+            {
+                string root = Path.GetDirectoryName(Application.dataPath);
+                if (string.IsNullOrEmpty(root))
+                    return;
+                string path = Path.Combine(root, "debug-65b1a1.log");
+                long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string data = string.IsNullOrWhiteSpace(dataJson) ? "{}" : dataJson;
+                string line =
+                    "{\"sessionId\":\"65b1a1\",\"hypothesisId\":\"" + EscapeJsonE2a466(hypothesisId) +
+                    "\",\"location\":\"" + EscapeJsonE2a466(location) +
+                    "\",\"message\":\"" + EscapeJsonE2a466(message) +
+                    "\",\"data\":" + data +
+                    ",\"timestamp\":" + ts + "}\n";
+                File.AppendAllText(path, line);
+            }
+            catch
+            {
+            }
+        }
+        // #endregion agent log 65b1a1
+
         #region agent log
         /// <summary>Debug session NDJSON (session ab7145). WebGL posts to local ingest; other platforms append to project debug-ab7145.log.</summary>
         public static void AgentDebugLog(string hypothesisId, string location, string message, string dataJson)
@@ -216,6 +242,7 @@ namespace TitanOrbit.Networking
                 var t = nm.GetComponent<UnityTransport>();
                 if (t == null) return "{\"transportNull\":true}";
                 return "{\"connectTimeoutMs\":" + t.ConnectTimeoutMS + ",\"heartbeatTimeoutMs\":" + t.HeartbeatTimeoutMS
+                    + ",\"maxConnectAttempts\":" + t.MaxConnectAttempts
                     + ",\"maxPacketQueueSize\":" + t.MaxPacketQueueSize + ",\"useWebSockets\":" + (t.UseWebSockets ? "true" : "false")
                     + ",\"isListening\":" + (nm.IsListening ? "true" : "false")
                     + ",\"isConnectedClient\":" + (nm.IsConnectedClient ? "true" : "false")
@@ -329,6 +356,9 @@ namespace TitanOrbit.Networking
                 "{\"relayConnectionType\":\"" + EscapeJsonE2a466(t) + "\",\"isHost\":" + (IsHost ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false") + "}");
             DebugSessionE2a466Log("relay-repro", "R1", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure_detail", r1Data);
             DebugSessionE695ffLog("R1", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure_detail", r1Data);
+            // #region agent log 65b1a1
+            DebugSession65b1a1Log("H3", "NetworkGameManager.AgentOnTransportFailure", "OnTransportFailure", r1Data);
+            // #endregion agent log 65b1a1
             // #endregion
         }
 
@@ -356,6 +386,10 @@ namespace TitanOrbit.Networking
             string r3Data = "{\"clientId\":" + clientId + ",\"disconnectReason\":\"" + EscapeJsonE2a466(reason) + "\",\"secSinceTransportFailure\":" + (secSinceTf < 0f ? "-1" : secSinceTf.ToString("F3", CultureInfo.InvariantCulture)) + ",\"transport\":" + BuildTransportSnapshotJsonForDebug() + "}";
             DebugSessionE2a466Log("relay-repro", "R3", "NetworkGameManager.DebugOnAnyClientDisconnected", "client_disconnect_detail", r3Data);
             DebugSessionE695ffLog("R3", "NetworkGameManager.DebugOnAnyClientDisconnected", "client_disconnect_detail", r3Data);
+            // #region agent log 65b1a1
+            if (nm != null && clientId == nm.LocalClientId)
+                DebugSession65b1a1Log("H5", "NetworkGameManager.DebugOnAnyClientDisconnected", "local_client_disconnect", r3Data);
+            // #endregion agent log 65b1a1
             try
             {
                 StartCoroutine(CoDisconnectReasonFollowUp(clientId));
@@ -442,6 +476,26 @@ namespace TitanOrbit.Networking
             }
         }
 
+        /// <summary>
+        /// Netcode refuses <see cref="NetworkManager.StartClient"/> / <see cref="NetworkManager.StartHost"/> if already
+        /// listening (e.g. Editor <see cref="autoStartServer"/> runs <see cref="StartServer"/> on Play).
+        /// </summary>
+        private static async Task EnsureShutdownIfNetcodeRunningAsync()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null)
+            {
+                return;
+            }
+            if (!nm.IsListening && !nm.IsClient && !nm.IsServer)
+            {
+                return;
+            }
+            Debug.Log("[NetworkGameManager] Shutting down existing network session before starting a new one.");
+            nm.Shutdown();
+            await Task.Delay(150);
+        }
+
         public void StartServer()
         {
             ApplyServerPort();
@@ -465,34 +519,69 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Relay connection type for <see cref="AllocationUtils.ToRelayServerData"/>: WebGL only allows WSS; other platforms default to UDP.
+        /// Relay connection type for <see cref="AllocationUtils.ToRelayServerData"/>.
+        /// Real WebGL <i>players</i> require WSS. The Unity Editor defines <c>UNITY_WEBGL</c> when the active build target
+        /// is WebGL, so we must exclude <c>UNITY_EDITOR</c> — otherwise Play Mode in the Editor wrongly forces WSS and
+        /// breaks joins to dedicated UDP Relay matches.
         /// </summary>
         static string RelayConnectionTypeForCurrentPlatform()
         {
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
             return "wss";
 #else
-            return "udp";
+            return "dtls";
 #endif
         }
 
         /// <summary>
         /// Prefer lobby-advertised relay protocol when available; fall back to platform default.
-        /// Dedicated hosts store <c>udp</c> (their UTP mode); WebGL clients must still use <c>wss</c> to the same Relay allocation — browsers cannot use UDP.
+        /// Dedicated hosts store <c>udp</c> (their UTP mode); browser WebGL clients must use <c>wss</c> to the same Relay allocation.
         /// </summary>
         static string ResolveRelayConnectionType(string lobbyRelayProtocol)
         {
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
             return "wss";
 #else
             if (!string.IsNullOrWhiteSpace(lobbyRelayProtocol))
             {
                 string lp = lobbyRelayProtocol.Trim().ToLowerInvariant();
-                if (lp == "wss" || lp == "udp")
+                if (lp == "wss" || lp == "udp" || lp == "dtls")
                     return lp;
             }
             return RelayConnectionTypeForCurrentPlatform();
 #endif
+        }
+
+        /// <summary>
+        /// Canonical tokens for <see cref="UseWebSockets"/> and <see cref="MapToRelayProtocolEnum"/>. Legacy lobby <c>udp</c> is
+        /// mapped to <c>dtls</c>: MPS 2.0 + <see cref="JoinAllocation"/> rejects plain <see cref="RelayProtocol.UDP"/> (runtime ArgumentException).
+        /// </summary>
+        static string NormalizeRelaySdkConnectionType(string t)
+        {
+            if (string.IsNullOrWhiteSpace(t))
+                return "dtls";
+            string x = t.Trim().ToLowerInvariant();
+            if (x == "wss")
+                return "wss";
+            if (x == "udp" || x == "dtls")
+                return "dtls";
+            return "dtls";
+        }
+
+        static RelayProtocol MapToRelayProtocolEnum(string normalizedT)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedT))
+                return RelayProtocol.DTLS;
+            switch (normalizedT.Trim().ToLowerInvariant())
+            {
+                case "wss":
+                    return RelayProtocol.WSS;
+                case "dtls":
+                case "udp":
+                    return RelayProtocol.DTLS;
+                default:
+                    return RelayProtocol.Default;
+            }
         }
 
         /// <summary>
@@ -534,11 +623,13 @@ namespace TitanOrbit.Networking
         /// <summary>Transport is up; pure clients must also be connection-approved or team RPCs / loading gates misbehave.</summary>
         public static bool IsNetcodeTransportReadyForGameplay(NetworkManager nm)
         {
-            if (nm == null || !nm.IsListening)
-                return false;
+            if (nm == null) return false;
+            // Pure client: rely on IsConnectedClient (connected, approved, synced). Requiring IsListening here
+            // caused false negatives in the Editor (loading screen stuck at "Connecting multiplayer session..."
+            // with netcode_wait_timeout in debug-e2a466.log while world load had already completed).
             if (nm.IsClient && !nm.IsServer)
                 return nm.IsConnectedClient;
-            return true;
+            return nm.IsListening;
         }
 
         /// <summary>
@@ -546,22 +637,81 @@ namespace TitanOrbit.Networking
         /// </summary>
         static void ConfigureUnityTransportRelay(UnityTransport transport, Allocation allocation, string relayConnectionType)
         {
-            string t = ResolveRelayConnectionType(relayConnectionType);
+            string t = NormalizeRelaySdkConnectionType(ResolveRelayConnectionType(relayConnectionType));
+            RelayProtocol proto = MapToRelayProtocolEnum(t);
             transport.UseWebSockets = string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase);
-            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, t));
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, proto));
             ApplyRelayFriendlyTransportSettings(transport);
         }
 
         static void ConfigureUnityTransportRelay(UnityTransport transport, JoinAllocation allocation, string relayConnectionType)
         {
-            string t = ResolveRelayConnectionType(relayConnectionType);
-            transport.UseWebSockets = string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase);
-            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, t));
+            // com.unity.services.multiplayer AllocationUtils.GetValidProtocols(): WebGL target ⇒ WSS only (even in Editor Play).
+            // Other targets ⇒ DTLS valid; try DTLS first to pair with typical DTLS dedicated listen, then WSS.
+            string dtlsFallbackReason = "";
+#if UNITY_WEBGL && !UNITY_EDITOR
+            transport.UseWebSockets = true;
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.WSS));
+#elif UNITY_EDITOR
+            if (UnityEditor.EditorUserBuildSettings.activeBuildTarget == UnityEditor.BuildTarget.WebGL)
+            {
+                transport.UseWebSockets = true;
+                transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.WSS));
+                dtlsFallbackReason = "skipped_dtls_editor_webgl_build_target";
+                Debug.LogWarning(
+                    "[NetworkGameManager] Active Build Target is WebGL: Unity Multiplayer Relay APIs in the Editor only allow WSS for JoinAllocation, "
+                    + "and Relay WSS from Editor Play often fails to reach IsConnectedClient against a DTLS dedicated host. "
+                    + "Switch **File > Build Settings** active platform to **Windows/Mac/Linux Standalone** to test joining the same dedicated server from the Editor.");
+            }
+            else
+            {
+                try
+                {
+                    transport.UseWebSockets = false;
+                    transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.DTLS));
+                }
+                catch (ArgumentException ex)
+                {
+                    dtlsFallbackReason = ex.Message ?? "";
+                    transport.UseWebSockets = true;
+                    transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.WSS));
+                }
+            }
+#else
+            try
+            {
+                transport.UseWebSockets = false;
+                transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.DTLS));
+            }
+            catch (ArgumentException ex)
+            {
+                dtlsFallbackReason = ex.Message ?? "";
+                transport.UseWebSockets = true;
+                transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayProtocol.WSS));
+            }
+#endif
             ApplyRelayFriendlyTransportSettings(transport);
+            // #region agent log 65b1a1
+#if UNITY_EDITOR
+            string bt = UnityEditor.EditorUserBuildSettings.activeBuildTarget.ToString();
+#else
+            const string bt = "n/a";
+#endif
+            DebugSession65b1a1Log(
+                "H7",
+                "NetworkGameManager.ConfigureUnityTransportRelay",
+                "join_allocation_transport",
+                "{\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false")
+                + ",\"hintLen\":" + (relayConnectionType != null ? relayConnectionType.Length : 0)
+                + ",\"connectTimeoutMs\":" + transport.ConnectTimeoutMS
+                + ",\"maxConnectAttempts\":" + transport.MaxConnectAttempts
+                + ",\"buildTarget\":\"" + EscapeJsonE2a466(bt)
+                + "\",\"dtlsFallbackReason\":\"" + EscapeJsonE2a466(dtlsFallbackReason) + "\"}");
+            // #endregion agent log 65b1a1
         }
 
         /// <summary>
-        /// Start as client using Unity Relay by joining the allocation for the given join code. Uses UDP or WSS per platform.
+        /// Start as client using Unity Relay by joining the allocation for the given join code (WebGL: WSS; other targets: DTLS with WSS fallback).
         /// </summary>
         /// <returns>True if StartClient was called successfully.</returns>
         public async Task<bool> StartClientWithRelayAsync(string joinCode)
@@ -573,8 +723,17 @@ namespace TitanOrbit.Networking
             }
             try
             {
-                if (!await EnsureUnityServicesInitializedAsync())
+                EnsurePlayerPrefabSet();
+                if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                {
+                    Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
                     return false;
+                }
+                if (!await EnsureUnityServicesInitializedAsync())
+                {
+                    return false;
+                }
+                await EnsureShutdownIfNetcodeRunningAsync();
                 #region agent log
                 RegisterAgentTransportFailureHandler();
                 #endregion
@@ -608,6 +767,10 @@ namespace TitanOrbit.Networking
             }
             catch (System.Exception e)
             {
+                // #region agent log 65b1a1
+                DebugSession65b1a1Log("H4", "NetworkGameManager.StartClientWithRelayAsync", "exception",
+                    "{\"exType\":\"" + EscapeJsonE2a466(e.GetType().Name) + "\",\"msg\":\"" + EscapeJsonE2a466(e.Message) + "\"}");
+                // #endregion agent log 65b1a1
                 Debug.LogException(e);
                 return false;
             }
@@ -634,13 +797,26 @@ namespace TitanOrbit.Networking
                     // #region agent log
                     F38c7dDebugLog.Write("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "ugs_not_ready", "{}");
                     // #endregion
+                    // #region agent log 65b1a1
+                    DebugSession65b1a1Log("H4", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "ugs_failed", "{}");
+                    // #endregion agent log 65b1a1
                     return false;
                 }
+
+                await EnsureShutdownIfNetcodeRunningAsync();
 
                 #region agent log
                 RegisterAgentTransportFailureHandler();
                 F38c7dDebugLog.Write("H4", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "quickjoin_enter", "{}");
                 #endregion
+                // #region agent log 65b1a1
+                {
+                    var nm1 = NetworkManager.Singleton;
+                    DebugSession65b1a1Log("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "after_shutdown",
+                        "{\"nmNull\":" + (nm1 == null ? "true" : "false") + ",\"isListening\":" + (nm1 != null && nm1.IsListening ? "true" : "false") +
+                        ",\"isClient\":" + (nm1 != null && nm1.IsClient ? "true" : "false") + ",\"isServer\":" + (nm1 != null && nm1.IsServer ? "true" : "false") + "}");
+                }
+                // #endregion agent log 65b1a1
 
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
                 if (transport == null)
@@ -690,7 +866,13 @@ namespace TitanOrbit.Networking
                                 string resolvedRelayConnectionType = ResolveRelayConnectionType(lobbyRelayProtocol);
                                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
                                 ConfigureUnityTransportRelay(transport, joinAllocation, resolvedRelayConnectionType);
-                                if (NetworkManager.Singleton.StartClient())
+                                bool startedQj = NetworkManager.Singleton.StartClient();
+                                // #region agent log 65b1a1
+                                DebugSession65b1a1Log("H2", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "quickjoin_relay_startclient",
+                                    "{\"started\":" + (startedQj ? "true" : "false") + ",\"useWebSockets\":" + (transport.UseWebSockets ? "true" : "false") +
+                                    ",\"lobbyRelayProtocol\":\"" + EscapeJsonE2a466(lobbyRelayProtocol) + "\",\"lobbyId\":\"" + EscapeJsonE2a466(joinedLobby.Id) + "\"}");
+                                // #endregion agent log 65b1a1
+                                if (startedQj)
                                 {
                                     currentLobby = joinedLobby;
                                     StartDebugJoinMonitor("quick_join", joinedLobby.Id);
@@ -701,9 +883,18 @@ namespace TitanOrbit.Networking
                         }
                         catch (Exception ex)
                         {
+                            // #region agent log 65b1a1
+                            DebugSession65b1a1Log("H2", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "quickjoin_relay_exception",
+                                "{\"exType\":\"" + EscapeJsonE2a466(ex.GetType().Name) + "\",\"msg\":\"" + EscapeJsonE2a466(ex.Message) + "\"}");
+                            // #endregion agent log 65b1a1
                             Debug.LogWarning("[NetworkGameManager] Quick join Relay/StartClient step failed: " + ex.Message);
                         }
                     }
+
+                    // #region agent log 65b1a1
+                    DebugSession65b1a1Log("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "enter_query_fallback",
+                        "{\"hadQuickJoinLobby\":" + (joinedLobby != null ? "true" : "false") + "}");
+                    // #endregion agent log 65b1a1
 
                     foreach (bool latestOnly in new[] { true, false })
                     {
@@ -749,16 +940,27 @@ namespace TitanOrbit.Networking
 
                     Debug.LogWarning(
                         "[NetworkGameManager] No open dedicated lobby to join. Start the headless server (or use Host match (browser) for a player-hosted test room).");
+                    // #region agent log 65b1a1
+                    DebugSession65b1a1Log("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "no_lobby_to_join", "{}");
+                    // #endregion agent log 65b1a1
                     return false;
                 }
                 catch (Exception inner)
                 {
+                    // #region agent log 65b1a1
+                    DebugSession65b1a1Log("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "inner_exception",
+                        "{\"exType\":\"" + EscapeJsonE2a466(inner.GetType().Name) + "\",\"msg\":\"" + EscapeJsonE2a466(inner.Message) + "\"}");
+                    // #endregion agent log 65b1a1
                     Debug.LogWarning("[NetworkGameManager] TryQuickJoinOpenLobbyAsClientAsync (inner): " + inner);
                     return false;
                 }
             }
             catch (System.Exception e)
             {
+                // #region agent log 65b1a1
+                DebugSession65b1a1Log("H1", "NetworkGameManager.TryQuickJoinOpenLobbyAsClientAsync", "outer_exception",
+                    "{\"exType\":\"" + EscapeJsonE2a466(e.GetType().Name) + "\",\"msg\":\"" + EscapeJsonE2a466(e.Message) + "\"}");
+                // #endregion agent log 65b1a1
                 Debug.LogWarning("[NetworkGameManager] TryQuickJoinOpenLobbyAsClientAsync failed. " + e.Message);
                 return false;
             }
@@ -782,6 +984,18 @@ namespace TitanOrbit.Networking
         /// </summary>
         public async Task<bool> PlayWebGLJoinAsync()
         {
+            // #region agent log 65b1a1
+#if UNITY_EDITOR
+            string bt = UnityEditor.EditorUserBuildSettings.activeBuildTarget.ToString();
+#else
+            const string bt = "n/a";
+#endif
+            var nm0 = NetworkManager.Singleton;
+            DebugSession65b1a1Log("H1", "NetworkGameManager.PlayWebGLJoinAsync", "enter",
+                "{\"autoStartServer\":" + (autoStartServer ? "true" : "false") + ",\"buildTarget\":\"" + EscapeJsonE2a466(bt) +
+                "\",\"nmNull\":" + (nm0 == null ? "true" : "false") + ",\"isListening\":" + (nm0 != null && nm0.IsListening ? "true" : "false") +
+                ",\"isClient\":" + (nm0 != null && nm0.IsClient ? "true" : "false") + ",\"isServer\":" + (nm0 != null && nm0.IsServer ? "true" : "false") + "}");
+            // #endregion agent log 65b1a1
             return await TryQuickJoinOpenLobbyAsClientAsync();
         }
 
@@ -802,6 +1016,8 @@ namespace TitanOrbit.Networking
             {
                 if (!await EnsureUnityServicesInitializedAsync())
                     return false;
+
+                await EnsureShutdownIfNetcodeRunningAsync();
 
                 RegisterAgentTransportFailureHandler();
                 var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
@@ -839,6 +1055,10 @@ namespace TitanOrbit.Networking
                                     createdAtEpochSeconds.ToString(CultureInfo.InvariantCulture),
                                     DataObject.IndexOptions.N3
                                 )
+                            },
+                            {
+                                LobbyRelayProtocolKey,
+                                new DataObject(DataObject.VisibilityOptions.Public, RelayConnectionTypeForCurrentPlatform())
                             },
                         },
                     });
@@ -893,6 +1113,12 @@ namespace TitanOrbit.Networking
 
             try
             {
+                EnsurePlayerPrefabSet();
+                if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                {
+                    Debug.LogError("Player Prefab not set on NetworkManager! Add a Starship prefab to Resources/Prefabs/Starship.prefab or use menu: Titan Orbit > Fix Player Prefab & Materials");
+                    return false;
+                }
                 if (!await EnsureUnityServicesInitializedAsync())
                 {
                     // #region agent log
@@ -900,6 +1126,7 @@ namespace TitanOrbit.Networking
                     // #endregion
                     return false;
                 }
+                await EnsureShutdownIfNetcodeRunningAsync();
                 #region agent log
                 RegisterAgentTransportFailureHandler();
                 #endregion
@@ -1034,6 +1261,10 @@ namespace TitanOrbit.Networking
                 // #region agent log
                 F38c7dDebugLog.Write("H4", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "start_client_false", "{}");
                 // #endregion
+                // #region agent log 65b1a1
+                DebugSession65b1a1Log("H2", "NetworkGameManager.PlayWebGLJoinByLobbyIdAsync", "startclient_false",
+                    "{\"useWebSockets\":" + (transport != null && transport.UseWebSockets ? "true" : "false") + "}");
+                // #endregion agent log 65b1a1
                 return false;
             }
             catch (LobbyServiceException e)
@@ -1600,17 +1831,28 @@ namespace TitanOrbit.Networking
         /// </summary>
         public static NetworkManager ResolveNetworkManagerForGameplay()
         {
+            // Prefer the project's Singleton when it is (or is becoming) a pure client — avoids picking another NM that is only "listening"
+            // before IsConnectedClient flips true, which kept the loading screen on "Connecting multiplayer session...".
             var s = NetworkManager.Singleton;
-            if (s != null && (s.IsClient || s.IsServer))
+            if (s != null && s.IsClient && !s.IsServer)
                 return s;
+
             var all = UnityEngine.Object.FindObjectsByType<NetworkManager>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            NetworkManager anyInRole = null;
             for (int i = 0; i < all.Length; i++)
             {
                 var nm = all[i];
-                if (nm != null && (nm.IsClient || nm.IsServer))
+                if (nm == null || !(nm.IsClient || nm.IsServer)) continue;
+                if (anyInRole == null) anyInRole = nm;
+                if (nm.IsClient && !nm.IsServer && nm.IsConnectedClient)
+                    return nm;
+                if (nm.IsServer && nm.IsListening)
                     return nm;
             }
-            return s;
+
+            if (s != null && (s.IsClient || s.IsServer))
+                return s;
+            return anyInRole;
         }
 
         /// <summary>Resolves the local player's ship even if <see cref="NetworkClient.PlayerObject"/> is not set yet (uses <see cref="NetworkSpawnManager.GetLocalPlayerObject"/> and child search).</summary>
@@ -1936,7 +2178,19 @@ namespace TitanOrbit.Networking
         private IEnumerator CoDebugJoinMonitor(string source, string lobbyIdOrTag)
         {
             float t0 = Time.realtimeSinceStartup;
-            yield return new WaitForSeconds(5f);
+            yield return new WaitForSeconds(1f);
+            var nmEarly = ResolveNetworkManagerForGameplay();
+            string discEarly = nmEarly != null ? (nmEarly.DisconnectReason ?? "") : "";
+            // #region agent log 65b1a1
+            DebugSession65b1a1Log(
+                "H9",
+                "NetworkGameManager.CoDebugJoinMonitor",
+                "join_monitor_1s",
+                "{\"source\":\"" + EscapeJsonE2a466(source) + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag)
+                + "\",\"connected\":" + (nmEarly != null && nmEarly.IsConnectedClient ? "true" : "false")
+                + ",\"disconnectReason\":\"" + EscapeJsonE2a466(discEarly) + "\",\"transport\":" + BuildTransportSnapshotJsonForDebug() + "}");
+            // #endregion agent log 65b1a1
+            yield return new WaitForSeconds(4f);
             var nm = ResolveNetworkManagerForGameplay();
             bool connectedAt5s = nm != null && nm.IsConnectedClient;
             int playersAt5s = currentLobby != null && currentLobby.Players != null ? currentLobby.Players.Count : -1;
@@ -1944,6 +2198,10 @@ namespace TitanOrbit.Networking
             DebugSessionE2a466Log("post-fix", "H10", "NetworkGameManager.CoDebugJoinMonitor", "join_monitor_5s",
                 "{\"source\":\"" + EscapeJsonE2a466(source) + "\",\"tag\":\"" + EscapeJsonE2a466(lobbyIdOrTag) + "\",\"connected\":" + (connectedAt5s ? "true" : "false") + ",\"lobbyPlayers\":" + playersAt5s + "}");
             // #endregion
+            // #region agent log 65b1a1
+            DebugSession65b1a1Log("H6", "NetworkGameManager.CoDebugJoinMonitor", "join_monitor_5s",
+                "{\"source\":\"" + EscapeJsonE2a466(source) + "\",\"connected\":" + (connectedAt5s ? "true" : "false") + ",\"lobbyPlayers\":" + playersAt5s + ",\"transport\":" + BuildTransportSnapshotJsonForDebug() + "}");
+            // #endregion agent log 65b1a1
 
             yield return new WaitForSeconds(10f);
             nm = ResolveNetworkManagerForGameplay();

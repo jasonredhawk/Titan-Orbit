@@ -1866,16 +1866,10 @@ namespace TitanOrbit.Editor
             planet.AddComponent<NetworkObject>();
             Planet planetScript = planet.AddComponent<Planet>();
 
-            // OrbitZone child: Shapes visual + orbit zone
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(planet.transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
+            SphereCollider orbitCollider = planet.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
             orbitCollider.radius = 0.85f * 1.5f * 0.75f; // Orbit zone base at level 1 (75% of previous size); runtime refreshes by level
-            PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+            PlanetOrbitZone orbitZoneScript = planet.AddComponent<PlanetOrbitZone>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = planetScript;
             orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();
@@ -1962,16 +1956,10 @@ namespace TitanOrbit.Editor
             homePlanet.AddComponent<NetworkObject>();
             HomePlanet homePlanetScript = homePlanet.AddComponent<HomePlanet>();
 
-            // OrbitZone child + Shapes visual
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(homePlanet.transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
+            SphereCollider orbitCollider = homePlanet.AddComponent<SphereCollider>();
             orbitCollider.isTrigger = true;
             orbitCollider.radius = 0.85f * 1.5f * 0.75f; // Orbit zone base at level 1 (75% of previous size); runtime refreshes by level
-            PlanetOrbitZone orbitZoneScript = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+            PlanetOrbitZone orbitZoneScript = homePlanet.AddComponent<PlanetOrbitZone>();
             var orbitZoneSO = new SerializedObject(orbitZoneScript);
             orbitZoneSO.FindProperty("planet").objectReferenceValue = homePlanetScript;
             orbitZoneSO.ApplyModifiedPropertiesWithoutUndo();

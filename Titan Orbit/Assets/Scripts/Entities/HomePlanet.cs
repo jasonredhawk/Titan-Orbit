@@ -124,19 +124,24 @@ namespace TitanOrbit.Entities
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes. Home planets may use HomePlanetOrbitZone.</summary>
         protected override void RefreshOrbitZoneRadius()
         {
-            var homeOz = GetComponentInChildren<HomePlanetOrbitZone>();
+            var homeOz = GetComponentInChildren<HomePlanetOrbitZone>(true);
             if (homeOz != null)
             {
-                var col = homeOz.GetComponent<SphereCollider>();
-                if (col != null)
-                    col.radius = GetOrbitZoneOuterRadiusLocal();
+                foreach (var col in homeOz.GetComponents<SphereCollider>())
+                {
+                    if (col.isTrigger)
+                    {
+                        col.radius = GetOrbitZoneOuterRadiusLocal();
+                        break;
+                    }
+                }
             }
 
             base.RefreshOrbitZoneRadius();
         }
 
         /// <summary>
-        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to outer (level-scaled). Base Planet may already create zone; we fix sizes.
+        /// Ensures body collider = planet sphere (radius 0.5). Orbit trigger + <see cref="PlanetOrbitZone"/> are created on the planet root by <see cref="Planet.EnsureOrbitZoneExists"/> from <see cref="Planet.OnNetworkSpawn"/>.
         /// </summary>
         private void EnsureSolidColliderAndOrbitZone()
         {
@@ -146,23 +151,6 @@ namespace TitanOrbit.Entities
                 bodyCollider.isTrigger = false;
                 bodyCollider.radius = 0.5f; // Match Unity primitive sphere (diameter 1)
             }
-            PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
-            if (existing != null)
-            {
-                RefreshOrbitZoneRadius();
-                EnsureOrbitZoneVisual(existing.gameObject);
-                return;
-            }
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCol = orbitZoneObj.AddComponent<SphereCollider>();
-            orbitCol.isTrigger = true;
-            orbitCol.radius = GetOrbitZoneOuterRadiusLocal();
-            PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            zone.SetPlanet(this);
-            EnsureOrbitZoneVisual(orbitZoneObj);
         }
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code instead of RPC when already on server.</summary>
@@ -279,18 +267,13 @@ namespace TitanOrbit.Entities
         {
             var drawer = GetComponentInChildren<HomePlanetRingsDrawer>(true);
             if (drawer != null)
-            {
-                if (drawer.GetComponent<PlanetRingsMeshVisualFallback>() == null)
-                    drawer.gameObject.AddComponent<PlanetRingsMeshVisualFallback>();
                 return;
-            }
             GameObject ringsObj = new GameObject("HomePlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
             ringsObj.transform.localRotation = Quaternion.identity;
             ringsObj.transform.localScale = Vector3.one;
             ringsObj.AddComponent<HomePlanetRingsDrawer>();
-            ringsObj.AddComponent<PlanetRingsMeshVisualFallback>();
         }
 
         private IEnumerator LevelUpScalePulse()

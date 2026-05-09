@@ -32,6 +32,17 @@ namespace TitanOrbit.Entities
         {
             if (planet == null)
                 planet = GetComponentInParent<Planet>();
+            // PlanetRingsDrawer / HomePlanetRingsDrawer already draw rings via Shapes; mesh bands stack on top.
+            if (GetComponent<PlanetRingsDrawer>() != null || GetComponent<HomePlanetRingsDrawer>() != null)
+            {
+                for (int i = 0; i < bands.Count; i++)
+                {
+                    if (bands[i] != null)
+                        bands[i].SetActive(false);
+                }
+                enabled = false;
+                return;
+            }
             RefreshBands(true);
         }
 
