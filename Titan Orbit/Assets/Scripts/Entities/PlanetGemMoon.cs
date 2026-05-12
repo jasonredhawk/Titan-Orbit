@@ -81,9 +81,18 @@ namespace TitanOrbit.Entities
         private Rigidbody _rb;
         private Transform _visualTransform;
 
+        // Orbit is now driven by a parametric formula tied to NetworkManager.ServerTime so every
+        // peer renders the moon at the same place without any per-tick replication. orbitAngle /
+        // spinAngleDegrees are still updated for any callers that read them, but the source of
+        // truth is the synced time + cached phase offsets below (see ComputeOrbitPosition).
         private float orbitAngle;
         private float spinAngleDegrees;
         private Vector3 cachedWorldVelocity;
+        private double phaseOffset;
+        private float lastOmega;
+        private bool hasLastOmega;
+        private Quaternion _visualBaseRotation = Quaternion.identity;
+        private bool _hasCapturedVisualBaseRotation;
 
         private float shieldPoints;
         private float runtimeMaxShieldPoints;
@@ -334,8 +343,14 @@ namespace TitanOrbit.Entities
                 var no = planet.GetComponent<NetworkObject>();
                 if (no != null) id = no.NetworkObjectId;
             }
-            orbitAngle = (id % 6283UL) * 0.001f;
+            // Deterministic phase per planet: every peer derives the same starting angle/spin
+            // from the planet's NetworkObjectId, so the parametric orbit lines up without any
+            // per-tick sync. The integer cast `spinAngleDegrees` is retained only for the
+            // SpinAngleDegrees getter; ComputeOrbitPosition / LateUpdate overwrite it each frame.
+            phaseOffset = (id % 6283UL) * 0.001f;
+            orbitAngle = (float)phaseOffset;
             spinAngleDegrees = (id % 360UL);
+            hasLastOmega = false;
 
             runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
             shieldPoints = runtimeMaxShieldPoints;
@@ -424,39 +439,11 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return;
 
-            Vector3 center = planet.transform.position;
-            center.y = 0f;
-
-            float rNominal = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
-            float moonDock = GetMoonDockSnapRadiusWorld();
-            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
-            float r = Mathf.Max(rNominal, rClear);
-            float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
-            float omega = r > 0.001f ? speed / r : 0f;
-
-            var nm = NetworkManager.Singleton;
-            if (nm == null || !nm.IsListening)
-            {
-                // Offline / not in a net session: same as original local integration.
-                orbitAngle -= omega * Time.fixedDeltaTime;
-            }
-            else if (nm.IsServer)
-            {
-                // Counter to ship orbit direction — authoritative integration only on server.
-                orbitAngle -= omega * Time.fixedDeltaTime;
-                planet.ServerSetGemMoonOrbitAngle(orbitAngle);
-            }
-            else
-            {
-                orbitAngle = planet.GemMoonOrbitAngleSynced;
-            }
-
-            Vector3 offset = new Vector3(Mathf.Cos(orbitAngle), 0f, Mathf.Sin(orbitAngle)) * r;
-            Vector3 pos = center + offset;
-            pos.y = 0f;
-
-            Vector3 radial = r > 0.001f ? offset / r : Vector3.forward;
-            cachedWorldVelocity = new Vector3(-radial.z, 0f, radial.x) * speed;
+            // Server still drives the kinematic rigidbody at the physics tick so dock / shield /
+            // body trigger callbacks fire on a stable cadence. Visual smoothness comes from
+            // LateUpdate below, which sets transform.position parametrically every render frame.
+            double t = GetSyncedTimeSeconds();
+            ComputeOrbitPosition(t, out Vector3 pos, out cachedWorldVelocity);
 
             if (_rb != null && _rb.isKinematic)
             {
@@ -466,12 +453,6 @@ namespace TitanOrbit.Entities
             {
                 transform.position = pos;
             }
-
-            // Visual moon spin around same tilted axis as the parent planet/rings.
-            spinAngleDegrees = (spinAngleDegrees + Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime) % 360f;
-            if (_visualTransform == null) _visualTransform = transform.Find("GemMoonVisual");
-            if (_visualTransform != null)
-                _visualTransform.RotateAround(transform.position, SpinAxisWorld, Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime);
 
             // Keep moon shield capacity scaled with current planet level.
             if (RefreshScaledShieldCapacityServer())
@@ -483,6 +464,86 @@ namespace TitanOrbit.Entities
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             TickMoonCombatDrain();
             TickMoonCollisionDamageServer();
+        }
+
+        /// <summary>
+        /// Deterministic orbit + spin update: every peer (server and clients) reads the synced
+        /// network time and computes the same world position/rotation. Replaces the old
+        /// per-tick NetworkVariable replication of the orbit angle, which produced a
+        /// stair-stepped visual on remote clients.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (planet == null) return;
+
+            double t = GetSyncedTimeSeconds();
+            ComputeOrbitPosition(t, out Vector3 pos, out cachedWorldVelocity);
+            transform.position = pos;
+
+            if (_visualTransform == null) _visualTransform = transform.Find("GemMoonVisual");
+            if (_visualTransform != null)
+            {
+                if (!_hasCapturedVisualBaseRotation)
+                {
+                    _visualBaseRotation = _visualTransform.rotation;
+                    _hasCapturedVisualBaseRotation = true;
+                }
+                float spinDeg = (float)((Mathf.Max(0f, spinDegreesPerSecond) * t) % 360.0);
+                if (spinDeg < 0f) spinDeg += 360f;
+                spinAngleDegrees = spinDeg;
+                _visualTransform.rotation = Quaternion.AngleAxis(spinDeg, SpinAxisWorld) * _visualBaseRotation;
+            }
+        }
+
+        /// <summary>Synced time on every peer (server-time domain). Falls back to local time when offline.</summary>
+        private double GetSyncedTimeSeconds()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening) return nm.ServerTime.Time;
+            return Time.timeAsDouble;
+        }
+
+        /// <summary>
+        /// Pure function of planet state + synced time. <paramref name="t"/> is the synced server time
+        /// in seconds. Returns the world position and tangential velocity of the moon at time t.
+        /// When the orbital angular speed changes (planet level up), <see cref="phaseOffset"/> is
+        /// adjusted so the angle stays continuous; both peers run the same correction independently.
+        /// </summary>
+        private void ComputeOrbitPosition(double t, out Vector3 pos, out Vector3 worldVelocity)
+        {
+            float rNominal = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
+            float moonDock = GetMoonDockSnapRadiusWorld();
+            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
+            float r = Mathf.Max(rNominal, rClear);
+            float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
+            float omega = r > 0.001f ? speed / r : 0f;
+
+            // Maintain angle continuity across omega changes: theta_old(T) == theta_new(T)
+            // <=> phaseOffset += (omegaNew - omegaOld) * T. The original orbit goes counter to
+            // ship orbit direction (negative omega in the integrator), so we subtract omega*t.
+            if (!hasLastOmega)
+            {
+                lastOmega = omega;
+                hasLastOmega = true;
+            }
+            else if (Mathf.Abs(omega - lastOmega) > 1e-5f)
+            {
+                phaseOffset += (omega - lastOmega) * t;
+                lastOmega = omega;
+            }
+
+            float theta = (float)(phaseOffset - omega * t);
+            orbitAngle = theta;
+
+            Vector3 center = planet.transform.position;
+            center.y = 0f;
+            Vector3 offset = new Vector3(Mathf.Cos(theta), 0f, Mathf.Sin(theta)) * r;
+            pos = center + offset;
+            pos.y = 0f;
+
+            Vector3 radial = r > 0.001f ? offset / r : Vector3.forward;
+            // Counter-clockwise tangent for the negative-omega motion above.
+            worldVelocity = new Vector3(-radial.z, 0f, radial.x) * speed;
         }
 
         private void TickMoonCollisionDamageServer()

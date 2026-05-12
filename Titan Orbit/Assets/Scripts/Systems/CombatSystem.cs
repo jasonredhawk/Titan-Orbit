@@ -18,15 +18,18 @@ namespace TitanOrbit.Systems
 
     /// <summary>
     /// Handles combat mechanics including bullet spawning and damage.
-    /// Always spawns the default bullet prefab; bullet prefab bank is used only for visuals (SciFi projectile particle).
-    /// When bulletBankCategories is populated (Demo Prefabs), B key cycles one per category and team color picks the variant (e.g. Red Bullets, Red Sparkler).
+    /// Bullets run in a server-only struct simulation (see <c>CombatSystem.ServerBullets.cs</c>);
+    /// clients render parametric tracers via <see cref="ClientBulletTracer"/>. The bullet prefab
+    /// bank is still used for visuals (SciFi projectile particle).
+    /// When bulletBankCategories is populated (Demo Prefabs), B key cycles one per category and
+    /// team color picks the variant (e.g. Red Bullets, Red Sparkler).
     /// </summary>
-    public class CombatSystem : NetworkBehaviour
+    public partial class CombatSystem : NetworkBehaviour
     {
         public static CombatSystem Instance { get; private set; }
 
-        [Header("Default Bullet (always spawned)")]
-        [Tooltip("Prefab spawned for every bullet. Must have Bullet, NetworkObject, Rigidbody, Collider. Visual is taken from Bullet Prefab Bank (projectile particle).")]
+        [Header("Legacy Bullet Prefab (deprecated)")]
+        [Tooltip("Unused at runtime: bullets now run as a server-only struct simulation with client tracers (CombatSystem.ServerBullets.cs). The field stays so existing editor tooling that references it keeps working.")]
         [SerializeField] private GameObject defaultBulletPrefab;
         [Header("Bullet Visual Bank (flat, legacy)")]
         [Tooltip("Prefabs with SciFiProjectileScript; only projectileParticle is used as the bullet visual. Run Titan Orbit > Populate Bullet Bank From Folder.")]
@@ -75,8 +78,6 @@ namespace TitanOrbit.Systems
         [SerializeField, Range(1, 20)] private int deathDebrisBulletHitsToBreak = 3;
         [Tooltip("How long debris acts as a bullet shield after death.")]
         [SerializeField, Range(0.1f, 20f)] private float deathDebrisBulletShieldDuration = 5f;
-
-        private static bool loggedBulletPrefabNull;
 
         private void Awake()
         {
@@ -234,100 +235,14 @@ namespace TitanOrbit.Systems
             return (sciFi != null && sciFi.impactParticle != null) ? sciFi.impactParticle : null;
         }
 
-        /// <summary>Server-only spawn used by <see cref="FireServerRpc"/> logic. Returns false if no NetworkObject was spawned (cap, prefab, etc.).</summary>
+        /// <summary>
+        /// Server-only spawn used by Starship's FireServerRpc logic. Routes through the lightweight
+        /// struct simulation (no NetworkObject per bullet); see <c>CombatSystem.ServerBullets.cs</c>.
+        /// Returns false when the bullet cap is reached so callers can skip energy/recoil deductions.
+        /// </summary>
         public bool TrySpawnBulletOnServer(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
         {
-            if (!IsServer) return false;
-            // #region agent log 065367
-            DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "entry",
-                "{\"activeBullets\":" + Bullet.ActiveServerBullets + ",\"maxBullets\":" + maxBullets + "}");
-            // #endregion agent log 065367
-            GameObject prefabToUse = defaultBulletPrefab != null && defaultBulletPrefab.GetComponent<NetworkObject>() != null
-                ? defaultBulletPrefab
-                : Resources.Load<GameObject>("Bullet");
-            if (prefabToUse == null) prefabToUse = Resources.Load<GameObject>("Prefabs/Bullet");
-            if (prefabToUse == null || prefabToUse.GetComponent<NetworkObject>() == null)
-            {
-                // #region agent log 065367
-                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"prefab_missing_or_no_netobj\"}");
-                // #endregion agent log 065367
-                if (!loggedBulletPrefabNull)
-                {
-                    loggedBulletPrefabNull = true;
-                    Debug.LogWarning("CombatSystem: Default Bullet Prefab is missing or has no NetworkObject. Assign a prefab with Bullet + NetworkObject + Rigidbody + Collider to CombatSystem Default Bullet Prefab, or add one at Resources/Bullet.prefab.");
-                }
-                return false;
-            }
-
-            int bankCount = BulletPrefabBankCount;
-            int requestedBankIndex = (bankCount > 0)
-                ? (bulletPrefabIndex >= 0 && bulletPrefabIndex < bankCount ? bulletPrefabIndex : 0)
-                : -1;
-
-            int currentBulletCount = Bullet.ActiveServerBullets;
-            if (currentBulletCount >= maxBullets)
-            {
-                // #region agent log 065367
-                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit",
-                    "{\"reason\":\"max_bullets\",\"active\":" + currentBulletCount + ",\"max\":" + maxBullets + "}");
-                // #endregion agent log 065367
-                return false;
-            }
-
-            Vector3 dir = direction;
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
-            else dir.Normalize();
-
-            float finalSpeed = speed * bulletSpeedMultiplier;
-
-            Vector3 spawnPos = position + dir * spawnOffset;
-            Vector3 lookAtTarget = spawnPos + dir * 10f;
-            lookAtTarget.y = spawnPos.y;
-            Quaternion lookRot = Quaternion.LookRotation((lookAtTarget - spawnPos).normalized, Vector3.up);
-            GameObject bulletObj = Instantiate(prefabToUse, spawnPos, lookRot);
-            Bullet bullet = bulletObj.GetComponent<Bullet>();
-            Rigidbody bulletRb = bulletObj.GetComponent<Rigidbody>();
-
-            if (bullet == null || bulletRb == null)
-            {
-                // #region agent log 065367
-                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"missing_bullet_or_rb\"}");
-                // #endregion agent log 065367
-                UnityEngine.Object.Destroy(bulletObj);
-                return false;
-            }
-            if (bulletObj.GetComponent<Collider>() == null && bulletObj.GetComponentInChildren<Collider>() == null)
-                Debug.LogWarning($"CombatSystem: Default bullet prefab has no Collider. Bullets will not detect hits.");
-
-            bullet.Initialize(finalSpeed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, false, requestedBankIndex);
-
-            bulletRb.useGravity = false;
-            bulletRb.isKinematic = false;
-            bulletRb.interpolation = RigidbodyInterpolation.Interpolate;
-            bulletRb.collisionDetectionMode = CollisionDetectionMode.Continuous;
-            Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
-            Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
-            bulletRb.AddForce(totalVelocity, ForceMode.VelocityChange);
-
-            NetworkObject bulletNetObj = bulletObj.GetComponent<NetworkObject>();
-            if (bulletNetObj == null)
-            {
-                // #region agent log 065367
-                DebugNdjson065367.Write("H3", "CombatSystem.TrySpawnBulletOnServer", "early_exit", "{\"reason\":\"bullet_no_netobj\"}");
-                // #endregion agent log 065367
-                Debug.LogWarning($"CombatSystem: Default bullet prefab has no NetworkObject. Assign Default Bullet Prefab on CombatSystem or run Titan Orbit > Populate Bullet Bank From Folder.");
-                UnityEngine.Object.Destroy(bulletObj);
-                return false;
-            }
-            bulletNetObj.Spawn();
-            // #region agent log 065367
-            DebugNdjson065367.Write("H1", "CombatSystem.TrySpawnBulletOnServer", "spawn_ok",
-                "{\"bulletNetId\":" + bulletNetObj.NetworkObjectId + ",\"ownerShipNetworkId\":" + ownerShipNetworkId + "}");
-            // #endregion agent log 065367
-            if (bulletParent != null && bulletParent.GetComponent<NetworkObject>() != null)
-                bulletObj.transform.SetParent(bulletParent);
-            return true;
+            return TrySpawnServerBullet(position, direction, speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, shipVelocity, bulletPrefabIndex);
         }
 
         [ServerRpc(RequireOwnership = false)]

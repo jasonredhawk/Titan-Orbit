@@ -58,8 +58,12 @@ if not exist "%SOURCE_DIR%" (
 echo.
 echo [3/4] Creating archive...
 if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
+REM Exclude Unity IL2CPP backup + Burst debug trees (huge; not needed on server; fills VM disk if packed).
 pushd "%SOURCE_PARENT%"
-tar -czf "%ARCHIVE_PATH%" "%SOURCE_BASENAME%"
+tar -czf "%ARCHIVE_PATH%" ^
+  --exclude="%SOURCE_BASENAME%/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame" ^
+  --exclude="%SOURCE_BASENAME%/Titan Orbit_BurstDebugInformation_DoNotShip" ^
+  "%SOURCE_BASENAME%"
 set "TAR_EXIT=%errorlevel%"
 popd
 if not "%TAR_EXIT%"=="0" (

@@ -17,9 +17,13 @@ namespace TitanOrbit.Entities
     }
 
     /// <summary>
-    /// Bullet - hits asteroids and ships, despawns on hit or max distance/lifetime.
-    /// Uses path raycast to prevent tunneling when close.
-    /// Simple visual shapes (round, square, zigzag); size reflects cannon bulletScale and ship upgrades.
+    /// LEGACY: per-bullet NetworkObject + NetworkTransform projectile. Kept for backwards
+    /// compatibility with existing prefabs and editor tooling, but no runtime path spawns this
+    /// type anymore. New shots run through the lightweight server simulation in
+    /// <see cref="TitanOrbit.Systems.CombatSystem"/> (see <c>CombatSystem.ServerBullets.cs</c>)
+    /// and are rendered on each client by <see cref="ClientBulletTracer"/>.
+    /// Visual shape options (round, square, zigzag) are still consumed via
+    /// <see cref="BulletShape"/> below.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class Bullet : NetworkBehaviour

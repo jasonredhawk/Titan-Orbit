@@ -4058,7 +4058,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
   target: {fileID: 0}
-  offsetAtReferenceLevel: {x: 0, y: 30, z: 0}
+  offsetAtReferenceLevel: {x: 0, y: 20, z: 0}
   zoomDistanceAtReferenceLevel: 9
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
@@ -5624,6 +5624,7 @@ MonoBehaviour:
   maxWaitNetcodeSeconds: 45
   maxJoinWorldSyncSeconds: 45
   joinReplicationEnoughFraction: 0.62
+  joinProgressEndAfterReplay: 0.78
 --- !u!4 &867079294
 Transform:
   m_ObjectHideFlags: 0

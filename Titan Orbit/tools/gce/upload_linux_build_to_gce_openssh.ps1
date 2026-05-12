@@ -272,19 +272,143 @@ if (-not (Test-Path -LiteralPath $SourceDir)) {
 }
 
 Write-Host ('[2/4] Creating archive: ' + $archivePath)
-if (Test-Path $archivePath) {
-    Remove-Item $archivePath -Force
+# Unity IL2CPP / Burst leave huge editor-only trees in the build folder. They must not be packed:
+# they bloat the tarball and tar -xzf on the VM then fills the disk ("No space left on device").
+$tarExcludes = @(
+    "--exclude=${sourceBase}/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame",
+    "--exclude=${sourceBase}/Titan Orbit_BurstDebugInformation_DoNotShip"
+)
+
+# Critical IL2CPP runtime files. If any of these end up zero-byte in the archive the headless
+# server will fail with "Failed to initialize IL2CPP" on boot and the lobby list will stay empty.
+# Windows tar.exe (libarchive) can silently capture locked/scanned files as 0 bytes — verify and
+# retry the pack until it's clean (or fail loudly with an actionable error).
+function Get-CriticalSourceFiles {
+    $entry  = (Join-Path $SourceDir 'TitanOrbitServer')
+    $ga     = (Join-Path $SourceDir 'GameAssembly.so')
+    $up     = (Join-Path $SourceDir 'UnityPlayer.so')
+    $meta   = (Join-Path $SourceDir 'TitanOrbitServer_Data\il2cpp_data\Metadata\global-metadata.dat')
+    return @($entry, $ga, $up, $meta) | Where-Object { Test-Path -LiteralPath $_ }
 }
-Push-Location $sourceParent
-try {
-    & tar.exe -czf $archivePath $sourceBase
+
+function Test-LocalSourceIntegrity {
+    $missing = @()
+    $zero    = @()
+    foreach ($f in (Get-CriticalSourceFiles)) {
+        $fi = Get-Item -LiteralPath $f
+        if (-not $fi) { $missing += $f; continue }
+        if ($fi.Length -lt 1024) { $zero += ('{0} ({1} bytes)' -f $fi.FullName, $fi.Length) }
+    }
+    $meta = (Join-Path $SourceDir 'TitanOrbitServer_Data\il2cpp_data\Metadata\global-metadata.dat')
+    if (-not (Test-Path -LiteralPath $meta)) { $missing += $meta }
+    if ($missing.Count -gt 0 -or $zero.Count -gt 0) {
+        Write-Host ''
+        Write-Host '*** Local build is bad before we even pack it. ***' -ForegroundColor Red
+        if ($missing.Count -gt 0) { Write-Host ('  Missing: ' + ($missing -join '; ')) -ForegroundColor Red }
+        if ($zero.Count    -gt 0) { Write-Host ('  Zero/tiny: ' + ($zero    -join '; ')) -ForegroundColor Red }
+        Write-Host 'Rebuild the Linux server in Unity (Build Settings -> Build), then re-run this script.'
+        return $false
+    }
+    return $true
+}
+
+function Get-TarListLineUncompressedSizeBytes {
+    param([string] $Line)
+    if ([string]::IsNullOrWhiteSpace($Line)) { return 0L }
+    # Windows tar.exe (libarchive) listing is NOT fixed-column. Owner may be "0/0", "root/root",
+    # or numeric "0 0" (uid gid) -- naive "column 3 = size" reads gid 0 and falsely flags the
+    # whole archive as corrupt. Parse size as the integer before the mtime.
+    $rx = [regex]'^[^\s]+\s+(?:(?:\d+/\d+)|(?:\d+\s+\d+)|(?:[^/\s]+/[^/\s]+))\s+(\d+)\s+(?:(?:\d{4}-\d{2}-\d{2})|(?:\w{3}\s))'
+    $m = $rx.Match($Line)
+    if ($m.Success) {
+        return [long]$m.Groups[1].Value
+    }
+    $m2 = [regex]::Match($Line, '\s(\d+)\s+\d{4}-\d{2}-\d{2}\b')
+    if ($m2.Success) { return [long]$m2.Groups[1].Value }
+    $m3 = [regex]::Match($Line, '\s(\d+)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s')
+    if ($m3.Success) { return [long]$m3.Groups[1].Value }
+    return 0L
+}
+
+function Test-ArchiveIntegrity {
+    param([string] $Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    # tar -tvzf: see Get-TarListLineUncompressedSizeBytes (owner field layout varies on Windows).
+    $out = & tar.exe -tvzf $Path 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Error ('tar failed (exit ' + $LASTEXITCODE + ')')
-        exit 1
+        Write-Host ('tar -tvzf failed (exit ' + $LASTEXITCODE + ')') -ForegroundColor Red
+        return $false
+    }
+    $required = @(
+        @{ Pattern = 'il2cpp_data/Metadata/global-metadata\.dat$'; MinBytes = 1MB         ; Label = 'global-metadata.dat' },
+        @{ Pattern = '/GameAssembly\.so$'                        ; MinBytes = 10MB        ; Label = 'GameAssembly.so'     },
+        @{ Pattern = '/UnityPlayer\.so$'                         ; MinBytes = 5MB         ; Label = 'UnityPlayer.so'      },
+        @{ Pattern = '/TitanOrbitServer$'                        ; MinBytes = 1024        ; Label = 'TitanOrbitServer'    }
+    )
+    $allOk = $true
+    foreach ($req in $required) {
+        $line = $out | Where-Object { $_ -match $req.Pattern } | Select-Object -First 1
+        if (-not $line) {
+            Write-Host ('  [archive] MISSING ' + $req.Label) -ForegroundColor Red
+            $allOk = $false; continue
+        }
+        $bytes = Get-TarListLineUncompressedSizeBytes -Line $line
+        if ($bytes -lt $req.MinBytes) {
+            Write-Host ('  [archive] {0} is only {1} bytes (need >= {2}) -- Windows tar dropped its content (file locked / antivirus), or listing parse failed. Raw: {3}' -f $req.Label, $bytes, [long]$req.MinBytes, $line) -ForegroundColor Red
+            $allOk = $false
+        }
+        else {
+            Write-Host ('  [archive] OK {0} ({1:N0} bytes)' -f $req.Label, $bytes)
+        }
+    }
+    return $allOk
+}
+
+if (-not (Test-LocalSourceIntegrity)) {
+    exit 1
+}
+
+$packAttempts = 3
+$packed = $false
+for ($i = 1; $i -le $packAttempts; $i++) {
+    if (Test-Path $archivePath) {
+        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host ('  pack attempt {0}/{1} ...' -f $i, $packAttempts)
+    Push-Location $sourceParent
+    try {
+        & tar.exe @(@('-czf', $archivePath) + $tarExcludes + @($sourceBase))
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ('  tar failed (exit ' + $LASTEXITCODE + ')') -ForegroundColor Yellow
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    if (Test-ArchiveIntegrity -Path $archivePath) {
+        $packed = $true
+        break
+    }
+    if ($i -lt $packAttempts) {
+        Write-Host '  Archive is missing IL2CPP content. Waiting 8s for any file lock (Unity / antivirus) to release, then retrying...' -ForegroundColor Yellow
+        Start-Sleep -Seconds 8
     }
 }
-finally {
-    Pop-Location
+
+if (-not $packed) {
+    Write-Host ''
+    Write-Host ('*** Could not produce a valid archive after ' + $packAttempts + ' attempts. ***') -ForegroundColor Red
+    Write-Host 'Most likely cause: Windows tar.exe captured an IL2CPP file as 0 bytes because something' -ForegroundColor Red
+    Write-Host 'else has it open (Unity Editor, antivirus real-time scan, indexer).' -ForegroundColor Red
+    Write-Host ''
+    Write-Host 'Do this and re-run:' -ForegroundColor Yellow
+    Write-Host '  1. Quit Unity Editor entirely.' -ForegroundColor Yellow
+    Write-Host '  2. (Optional) Add BuildOutput\Server to your antivirus exclusions.' -ForegroundColor Yellow
+    Write-Host '  3. Re-run upload_linux_build_to_gce.bat (or this script).' -ForegroundColor Yellow
+    if (Test-Path $archivePath) {
+        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+    }
+    exit 1
 }
 
 $remotePrepare = "mkdir -p $TargetDir"
@@ -295,6 +419,39 @@ $remotePrepare = "mkdir -p $TargetDir"
 $remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod -R a+rX $TargetDir/$sourceBase 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod a+r $TargetDir/$sourceBase/GameAssembly.so $TargetDir/$sourceBase/UnityPlayer.so 2>/dev/null; sudo -n chown -R jason:jason $TargetDir/$sourceBase 2>/dev/null || true; exit 0"
 # Avoid `||` inside double quotes (PS 7+ parses it as the pipeline-chain operator).
 $remoteVerify = "ls -la $TargetDir; ls -la $TargetDir/$sourceBase " + '|| true'
+# After extract, fail loudly if any IL2CPP runtime file is empty on the VM. This is the symptom of
+# the "no game rooms in lobby" bug: server crashes with "Failed to initialize IL2CPP" because
+# global-metadata.dat is 0 bytes, so it never publishes a lobby.
+$remoteIntegrity = @"
+set -e
+B=$TargetDir/$sourceBase
+fail=0
+check() {
+  local p="`$1"; local min=`$2; local label="`$3"
+  if [ ! -s "`$p" ]; then
+    sz=`$(stat -c%s "`$p" 2>/dev/null || echo MISSING)
+    echo "[VM] BAD: `$label is `$sz bytes at `$p"
+    fail=1
+  else
+    sz=`$(stat -c%s "`$p")
+    if [ "`$sz" -lt "`$min" ]; then
+      echo "[VM] BAD: `$label is `$sz bytes (< `$min) at `$p"
+      fail=1
+    else
+      echo "[VM] OK:  `$label `$sz bytes"
+    fi
+  fi
+}
+check "`$B/TitanOrbitServer"                                                       1024     TitanOrbitServer
+check "`$B/GameAssembly.so"                                                        10000000 GameAssembly.so
+check "`$B/UnityPlayer.so"                                                         5000000  UnityPlayer.so
+check "`$B/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat"         1000000  global-metadata.dat
+if [ "`$fail" -ne 0 ]; then
+  echo "[VM] Integrity check failed - the extracted server will not boot. Aborting upload."
+  exit 42
+fi
+echo "[VM] All IL2CPP runtime files look good."
+"@
 
 function Invoke-UploadViaIapTunnel {
     Write-Host '[3/4] Upload via IAP tunnel + OpenSSH scp (no plink) ...'
@@ -323,6 +480,12 @@ function Invoke-UploadViaIapTunnel {
         & $sshExe @sshArgs2
         if ($LASTEXITCODE -ne 0) {
             throw ('ssh verify failed (exit ' + $LASTEXITCODE + ')')
+        }
+
+        $sshArgs3 = @("-T") + $sshCommon + @("-p", "$TunnelPort", "${SshUser}@127.0.0.1", "bash -s")
+        $remoteIntegrity | & $sshExe @sshArgs3
+        if ($LASTEXITCODE -ne 0) {
+            throw ('VM integrity check failed (exit ' + $LASTEXITCODE + '). The uploaded build is missing IL2CPP runtime bytes; the server will not boot.')
         }
     }
 }
@@ -360,6 +523,14 @@ if (-not $IapOnly.IsPresent -and -not [string]::IsNullOrWhiteSpace($nat)) {
         & $sshExe @sshArgs2
         if ($LASTEXITCODE -ne 0) {
             $directOk = $false
+        }
+    }
+    if ($directOk) {
+        $sshArgs3 = @("-4", "-T") + $sshCommon + @($target, "bash -s")
+        $remoteIntegrity | & $sshExe @sshArgs3
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error 'VM integrity check failed after extraction. Server will not boot. Aborting.'
+            exit 1
         }
     }
 

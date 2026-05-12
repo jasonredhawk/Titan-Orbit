@@ -267,8 +267,6 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> planetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<int> planetIdNet = new NetworkVariable<int>(0);
-        /// <summary>Server-driven gem moon orbit angle (radians); clients read for deterministic moon position vs per-peer FixedUpdate integration drift.</summary>
-        private readonly NetworkVariable<float> gemMoonOrbitAngle = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         /// <summary>
         /// Connection bonuses from planet‑to‑planet territory triangles.
@@ -310,15 +308,6 @@ namespace TitanOrbit.Entities
         public float CurrentGems => currentGems.Value;
         /// <summary>Max gems at current level. Override GetMaxGemsForLevel in HomePlanet for different thresholds.</summary>
         public float MaxGems => GetMaxGemsForLevel(planetLevel.Value);
-
-        /// <summary>Authoritative gem moon orbit phase (radians), replicated from the server.</summary>
-        public float GemMoonOrbitAngleSynced => gemMoonOrbitAngle.Value;
-
-        internal void ServerSetGemMoonOrbitAngle(float angleRadians)
-        {
-            if (!IsServer) return;
-            gemMoonOrbitAngle.Value = angleRadians;
-        }
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -375,9 +364,8 @@ namespace TitanOrbit.Entities
                 // All planets (neutral and home) start at 100% population capacity.
                 currentPopulation.Value = potentialMax;
                 maxPopulation.Value = potentialMax;
-
-                // Gem moon orbit must match PlanetGemMoon's OnEnable seed so clients stay aligned until NV replicates.
-                gemMoonOrbitAngle.Value = (NetworkObjectId % 6283UL) * 0.001f;
+                // Gem moon orbit phase is now derived deterministically per peer in
+                // PlanetGemMoon.OnEnable (NetworkObjectId % 6283UL * 0.001f); no replication needed.
             }
 
             if (populationText != null)

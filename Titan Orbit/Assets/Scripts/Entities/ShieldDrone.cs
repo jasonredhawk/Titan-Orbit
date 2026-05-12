@@ -1,9 +1,12 @@
 using UnityEngine;
 using TitanOrbit.Core;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
 {
-    /// <summary>Drone that rotates around the starship and moves to block incoming enemy bullets.</summary>
+    /// <summary>Drone that rotates around the starship and moves to block incoming enemy bullets.
+    /// Threat data comes from <see cref="DroneTargetCache"/> snapshots of the server bullet
+    /// simulation; bullets are no longer per-NetworkObject so we cannot inspect transforms.</summary>
     public class ShieldDrone : DroneBase
     {
         [Header("Shield Drone")]
@@ -12,12 +15,10 @@ namespace TitanOrbit.Entities
 
         protected override void DroneBehaviourServer()
         {
-            Bullet threat = FindIncomingBulletTowardShip();
-            if (threat != null)
+            if (TryFindIncomingBulletTowardShip(out Vector3 bulletPos, out Vector3 _))
             {
                 Vector3 shipPos = ownerShip.transform.position;
                 shipPos.y = 0f;
-                Vector3 bulletPos = threat.transform.position;
                 bulletPos.y = 0f;
                 Vector3 toShip = shipPos - bulletPos;
                 toShip.y = 0f;
@@ -44,37 +45,51 @@ namespace TitanOrbit.Entities
             UpdateOrbitPosition();
         }
 
-        private Bullet FindIncomingBulletTowardShip()
+        private bool TryFindIncomingBulletTowardShip(out Vector3 bulletPos, out Vector3 bulletVelocity)
         {
-            if (ownerShip == null) return null;
+            bulletPos = Vector3.zero;
+            bulletVelocity = Vector3.zero;
+            if (ownerShip == null) return false;
             DroneTargetCache.RefreshIfNeeded();
+
             Vector3 shipPos = ownerShip.transform.position;
             shipPos.y = 0f;
-            Bullet[] bullets = DroneTargetCache.Bullets;
-            Bullet best = null;
+            int n = DroneTargetCache.BulletSnapshotCount;
             float bestScore = float.MaxValue;
-            foreach (var b in bullets)
+            bool found = false;
+            for (int i = 0; i < n; i++)
             {
-                if (b.OwnerTeam == ownerShip.ShipTeam) continue;
-                Vector3 bp = b.transform.position;
+                ServerBulletSnapshot snap = DroneTargetCache.GetBulletSnapshot(i);
+                if (snap.OwnerTeam == ownerShip.ShipTeam) continue;
+
+                Vector3 bp = snap.Position;
                 bp.y = 0f;
                 float dist = Vector3.Distance(bp, shipPos);
                 if (dist > bulletDetectRadius) continue;
+
                 Vector3 toShip = shipPos - bp;
                 toShip.y = 0f;
                 if (toShip.sqrMagnitude < 0.01f) continue;
                 toShip.Normalize();
-                Rigidbody brb = b.GetComponent<Rigidbody>();
-                Vector3 bulletVel = brb != null ? brb.linearVelocity : Vector3.forward;
-                bulletVel.y = 0f;
-                if (bulletVel.sqrMagnitude < 0.01f) continue;
-                bulletVel.Normalize();
-                float dot = Vector3.Dot(bulletVel, toShip);
+
+                Vector3 vel = snap.Velocity;
+                vel.y = 0f;
+                if (vel.sqrMagnitude < 0.01f) continue;
+                Vector3 velNormalized = vel.normalized;
+
+                float dot = Vector3.Dot(velNormalized, toShip);
                 if (dot < 0.5f) continue;
+
                 float score = dist * (1f - dot);
-                if (score < bestScore) { bestScore = score; best = b; }
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bulletPos = bp;
+                    bulletVelocity = vel;
+                    found = true;
+                }
             }
-            return best;
+            return found;
         }
     }
 }

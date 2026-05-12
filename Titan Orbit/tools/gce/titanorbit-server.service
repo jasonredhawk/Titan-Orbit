@@ -7,10 +7,13 @@ Wants=network-online.target
 Type=simple
 User=jason
 WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
-# Tar/scp/Windows uploads often strip +x; without it systemd fails with 203/EXEC "Permission denied".
-# Run chmod as root before dropping to User=jason (PermissionsStartOnly).
-PermissionsStartOnly=true
-ExecStartPre=/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
+# Tar/scp/Windows uploads often strip +x and may leave files root-owned from a prior deploy;
+# without these pre-steps systemd fails with 203/EXEC "Permission denied".
+# The leading '+' on each ExecStartPre runs that line with full root privileges, regardless of
+# User= above. (PermissionsStartOnly=true is deprecated and unreliable on modern systemd, hence '+'.)
+ExecStartPre=+/bin/bash -c 'chown -R jason:jason /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
+ExecStartPre=+/bin/bash -c 'chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
+ExecStartPre=+/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
 ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/__TITANORBIT_EXE__ -batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log
 Restart=always
 RestartSec=5
