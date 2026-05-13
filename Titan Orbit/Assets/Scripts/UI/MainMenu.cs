@@ -3,7 +3,6 @@ using UnityEngine.UI;
 using UnityEngine.Purchasing;
 using TMPro;
 using Unity.Netcode;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Networking;
 using TitanOrbit.Services;
 using System.Threading.Tasks;
@@ -827,10 +826,6 @@ namespace TitanOrbit.UI
 
         private async Task RefreshLobbyListAsync()
         {
-            // #region agent log
-            F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
-                "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
-            // #endregion
             if (NetworkGameManager.Instance == null)
             {
                 SetLobbyBrowserStatus("Network not ready yet. Open this screen again or tap Refresh.");
@@ -841,10 +836,6 @@ namespace TitanOrbit.UI
             float now = Time.realtimeSinceStartup;
             float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
             _dbgLastLobbyRefreshRealtime = now;
-            // #region agent log
-            NetworkGameManager.DebugSessionE2a466Log("pre-fix", "H7", "MainMenu.RefreshLobbyListAsync", "refresh_requested",
-                "{\"count\":" + _dbgLobbyRefreshCount + ",\"deltaMs\":" + delta.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
-            // #endregion
 
             SetLobbyBrowserStatus("Loading lobbies...");
             if (refreshLobbiesButton != null)
@@ -870,18 +861,6 @@ namespace TitanOrbit.UI
                         kind = retryKind;
                     }
                 }
-                // #region agent log 065367
-                NetworkGameManager.DebugSessionE2a466Log("post-fix", "LM-H1", "MainMenu.RefreshLobbyListAsync", "after_query_065367",
-                    "{\"latestOnly\":" + (latestOnlyFilter ? "true" : "false")
-                    + ",\"fetched\":" + fetched.Count
-                    + ",\"kind\":" + (int)kind
-                    + ",\"cachedBefore\":" + cachedLobbySummaries.Count + "}");
-                // #endregion agent log 065367
-
-                // #region agent log
-                F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "after_query",
-                    "{\"fetchedCount\":" + fetched.Count + ",\"kind\":" + (int)kind + ",\"cachedBefore\":" + cachedLobbySummaries.Count + ",\"latestOnlyFilter\":" + (latestOnlyFilter ? "true" : "false") + "}");
-                // #endregion
 
                 if (fetched.Count > 0)
                 {

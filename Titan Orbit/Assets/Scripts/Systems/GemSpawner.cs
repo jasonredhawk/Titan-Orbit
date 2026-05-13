@@ -79,13 +79,6 @@ namespace TitanOrbit.Systems
             {
                 GameObject reg = list[i].Prefab;
                 if (reg == null || reg.GetComponent<Gem>() == null) continue;
-                // #region agent log 065367
-                if (!ReferenceEquals(reg, candidate))
-                {
-                    DebugNdjson065367.Write("GEM-resolve", "GemSpawner.ResolveRegisteredGemPrefab", "remap_to_registered",
-                        "{\"from\":\"" + candidate.name + "\",\"to\":\"" + reg.name + "\"}");
-                }
-                // #endregion agent log 065367
                 return reg;
             }
 
@@ -219,31 +212,14 @@ namespace TitanOrbit.Systems
             ulong primaryDamagerShipId)
         {
             GameObject prefab = GetGemPrefab();
-            // #region agent log 065367
-            if (IsServer)
-            {
-                var nm = NetworkManager.Singleton;
-                bool inList = nm != null && nm.IsListening && nm.NetworkConfig != null && nm.NetworkConfig.Prefabs != null && prefab != null && nm.NetworkConfig.Prefabs.Contains(prefab);
-                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "entry",
-                    "{\"prefInList\":" + (inList ? "true" : "false") + ",\"prefName\":\"" + (prefab != null ? prefab.name : "null") + "\",\"rv\":" + regularValue.ToString("0.###", CultureInfo.InvariantCulture) + ",\"bv\":" + bonusValue.ToString("0.###", CultureInfo.InvariantCulture) + "}");
-            }
-            // #endregion agent log 065367
             if (prefab == null)
             {
-                // #region agent log 065367
-                if (IsServer)
-                    DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_prefab_null", "{}");
-                // #endregion agent log 065367
                 return;
             }
             regularValue = Mathf.Max(0f, regularValue);
             bonusValue = Mathf.Max(0f, bonusValue);
             if (regularValue <= 0f && bonusValue <= 0f)
             {
-                // #region agent log 065367
-                if (IsServer)
-                    DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_zero_values", "{}");
-                // #endregion agent log 065367
                 return;
             }
 
@@ -282,11 +258,6 @@ namespace TitanOrbit.Systems
                 float sizeMultiplier = Random.Range(0.96f, 1.04f);
                 SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, true);
             }
-            // #region agent log 065367
-            if (IsServer)
-                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGemsAsteroidBurstImpl", "exit_spawned",
-                    "{\"red\":" + redGemCount + ",\"bonus\":" + bonusGemCount + ",\"worth\":" + gemWorth.ToString("0.###", CultureInfo.InvariantCulture) + "}");
-            // #endregion agent log 065367
         }
         
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
@@ -408,12 +379,6 @@ namespace TitanOrbit.Systems
                 if (g != null) g.Initialize(gemValue, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, isBonusGem);
                 ApplyGemLaunchVelocityAfterSpawn(r, vel, angVel);
             }
-            // #region agent log 065367
-            else if (IsServer)
-            {
-                DebugNdjson065367.Write("GEM-spawn", "GemSpawner.SpawnGem", "no_network_object", "{\"pref\":\"" + (prefab != null ? prefab.name : "null") + "\"}");
-            }
-            // #endregion agent log 065367
         }
     }
 }

@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
-using TitanOrbit.Systems;
 using TitanOrbit.Entities;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Core
 {
@@ -29,10 +29,6 @@ namespace TitanOrbit.Core
 
         private NetworkVariable<GameState> currentGameState = new NetworkVariable<GameState>(GameState.Lobby);
         private NetworkVariable<float> matchTimer = new NetworkVariable<float>(0f);
-        // #region agent log
-        private static float s_lastPerfLogTime = -999f;
-        private static int s_lastFrameLog = -999;
-        // #endregion
 
         public enum GameState
         {
@@ -98,23 +94,6 @@ namespace TitanOrbit.Core
 
         private void Update()
         {
-            // #region agent log
-            int frame = Time.frameCount;
-            if (frame % 60 == 0)
-            {
-                float t = Time.realtimeSinceStartup;
-                float dt = Time.deltaTime;
-                float fps = dt > 0f ? (1f / dt) : 0f;
-                DebugSessionLog.Write(
-                    "GameManager.Update",
-                    "frame timing",
-                    "{\"frame\":" + frame + ",\"realtime\":" + t + ",\"deltaTime\":" + dt + ",\"fps\":" + fps + "}",
-                    "C");
-                s_lastFrameLog = frame;
-            }
-            // Disable periodic FindObjectsByType-based object count logging to avoid long-frame spikes
-            // that worsen over time during idle gameplay. Frame timing logging above remains enabled.
-            // #endregion
             if (IsServer && currentGameState.Value == GameState.InProgress)
             {
                 matchTimer.Value += Time.deltaTime;

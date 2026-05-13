@@ -233,6 +233,59 @@ namespace TitanOrbit.Systems
             return b.Active;
         }
 
+        /// <summary>
+        /// Same geometry as <see cref="TrySpawnServerBullet"/> for cosmetic tracers (no pool slot, no cap check).
+        /// Used by the owning client to show bullets immediately before the server spawn batch arrives.
+        /// </summary>
+        public BulletSpawnPayload BuildBulletTracerPayloadForClientPreview(
+            Vector3 position,
+            Vector3 direction,
+            float speed,
+            float damage,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            float visualScaleMultiplier,
+            byte bulletShapeIndex,
+            Vector3 shipVelocity,
+            int bulletPrefabIndex)
+        {
+            Vector3 dir = direction;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            else dir.Normalize();
+
+            float finalSpeed = Mathf.Max(0.01f, speed * bulletSpeedMultiplier);
+            Vector3 spawnPos = position + dir * spawnOffset;
+            spawnPos.y = 0f;
+
+            Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
+            Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
+
+            int bankCount = BulletPrefabBankCount;
+            int requestedBankIndex = (bankCount > 0)
+                ? (bulletPrefabIndex >= 0 && bulletPrefabIndex < bankCount ? bulletPrefabIndex : 0)
+                : -1;
+
+            float scaleMul = Mathf.Max(0.1f, visualScaleMultiplier);
+
+            return new BulletSpawnPayload
+            {
+                SpawnPosition = spawnPos,
+                Velocity = totalVelocity,
+                MaxDistance = DefaultMaxDistance,
+                Lifetime = DefaultLifetime,
+                OwnerShipNetworkId = ownerShipNetworkId,
+                Damage = damage,
+                VisualPrefabBankIndex = requestedBankIndex,
+                Sequence = 0,
+                ServerSpawnTime = 0f,
+                OwnerTeamByte = (byte)ownerTeam,
+                ShapeIndex = bulletShapeIndex,
+                NoTrailFlag = 0,
+                ScaleMultiplier = scaleMul,
+            };
+        }
+
         private int AcquireSlot()
         {
             if (serverBullets == null) return -1;
@@ -448,8 +501,15 @@ namespace TitanOrbit.Systems
         private void SpawnBulletBatchClientRpc(BulletSpawnPayload[] payloads)
         {
             if (payloads == null) return;
+            ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
             for (int i = 0; i < payloads.Length; i++)
-                ClientBulletTracer.Spawn(payloads[i]);
+            {
+                BulletSpawnPayload p = payloads[i];
+                // Owner already has lag-free ClientBulletTracer from HandleInput; do not spawn a second tracer from the server batch.
+                if (localShipId != 0 && p.OwnerShipNetworkId == localShipId)
+                    continue;
+                ClientBulletTracer.Spawn(p);
+            }
         }
 
         [ClientRpc]
@@ -457,6 +517,8 @@ namespace TitanOrbit.Systems
         {
             TeamManager.Team team = (TeamManager.Team)teamByte;
             ClientBulletTracer.DespawnBySequence(sequence);
+            // Owner predicted tracers are not keyed by server sequence; clear the nearest cosmetic bullet.
+            ClientBulletTracer.DespawnOwnerPredictedNearestToImpact(position, 3.5f);
 
             if (Application.isMobilePlatform)
             {

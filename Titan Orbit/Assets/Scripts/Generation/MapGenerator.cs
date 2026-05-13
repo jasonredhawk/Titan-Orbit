@@ -1,6 +1,5 @@
 using UnityEngine;
 using Unity.Netcode;
-using TitanOrbit.Networking;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Systems;
@@ -351,11 +350,6 @@ namespace TitanOrbit.Generation
         public void EnsureMapGenerated()
         {
             BootTrace.Mark("MapGenerator.EnsureMapGenerated - enter");
-            #region agent log
-            bool srv = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
-            NetworkGameManager.AgentDebugLog("H5", "MapGenerator.EnsureMapGenerated", "entry",
-                "{\"isServer\":" + (srv ? "true" : "false") + ",\"hasGenerated\":" + (hasGenerated ? "true" : "false") + "}");
-            #endregion
             if (hasGenerated)
             {
                 // The blueprint is one-shot per server process: any second call indicates an unintended

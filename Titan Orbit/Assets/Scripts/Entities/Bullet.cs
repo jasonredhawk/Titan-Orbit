@@ -5,7 +5,6 @@ using System.Globalization;
 using TitanOrbit.Generation;
 using TitanOrbit.Audio;
 using TitanOrbit.Systems;
-using TitanOrbit.Networking;
 namespace TitanOrbit.Entities
 {
     /// <summary>Visual shape of the bullet: simple shapes, no long tail. Size is driven by ship visual scale multiplier.</summary>
@@ -93,8 +92,6 @@ namespace TitanOrbit.Entities
         private Material proceduralMaterialInstance; // Instance we create for color; destroyed with bullet
         private TrailRenderer cachedTrail;
         private bool serverCounted;
-        private bool _e695ffLoggedDelayedVisual;
-        private bool _065367LoggedFirstCast;
         private static readonly RaycastHit[] SphereCastHits = new RaycastHit[32];
         private static readonly Collider[] OverlapFallbackHits = new Collider[32];
 
@@ -244,29 +241,6 @@ namespace TitanOrbit.Entities
             // Update visual immediately (uses cached values; NetworkVariable sync will update clients)
             UpdateVisual();
 
-            // #region agent log 065367
-            {
-                var bulletNo = GetComponent<NetworkObject>();
-                ulong nid = bulletNo != null ? bulletNo.NetworkObjectId : 0UL;
-                bool pureClient = NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer;
-                if (IsServer)
-                    DebugNdjson065367.Write("H1", "Bullet.OnNetworkSpawn", "server_after_visual",
-                        "{\"netId\":" + nid + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + "}");
-                if (pureClient)
-                    DebugNdjson065367.Write("H5", "Bullet.OnNetworkSpawn", "pure_client_after_visual",
-                        "{\"netId\":" + nid + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"camMain\":" + (UnityEngine.Camera.main != null ? "true" : "false") + "}");
-            }
-            // #endregion agent log 065367
-
-            #region agent log e695ff
-            {
-                var nm = NetworkManager.Singleton;
-                bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
-                NetworkGameManager.DebugSessionE695ffLog("B1", "Bullet.OnNetworkSpawn", "after_UpdateVisual",
-                    "{\"runId\":\"post-kinematic-revert\",\"isServer\":" + (IsServer ? "true" : "false") + ",\"isClient\":" + (IsClient ? "true" : "false") + ",\"pureClient\":" + (pureClient ? "true" : "false") + ",\"rbKinematic\":" + (rb != null && rb.isKinematic ? "true" : "false") + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + ",\"camMain\":" + (UnityEngine.Camera.main != null ? "true" : "false") + ",\"parent\":\"" + (transform.parent != null ? transform.parent.name : "null") + "\",\"activeHierarchy\":" + (gameObject.activeInHierarchy ? "true" : "false") + "}");
-            }
-            #endregion
-            
             // Also schedule a delayed update in case NetworkVariable sync is delayed
             StartCoroutine(DelayedVisualUpdate());
             
@@ -279,16 +253,6 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkDespawn()
         {
-            // #region agent log 065367
-            if (IsServer)
-            {
-                float dt = Time.time - spawnTime;
-                var bulletNo = GetComponent<NetworkObject>();
-                ulong nid = bulletNo != null ? bulletNo.NetworkObjectId : 0UL;
-                DebugNdjson065367.Write("H1", "Bullet.OnNetworkDespawn", "server_despawn",
-                    "{\"netId\":" + nid + ",\"ageSec\":" + dt.ToString("0.###", CultureInfo.InvariantCulture) + ",\"quick\":" + (dt < 0.35f ? "true" : "false") + "}");
-            }
-            // #endregion agent log 065367
             if (serverCounted)
             {
                 ActiveServerBullets = Mathf.Max(0, ActiveServerBullets - 1);
@@ -301,16 +265,6 @@ namespace TitanOrbit.Entities
         {
             yield return null; // Wait one frame for NetworkVariable to sync
             UpdateVisual();
-            #region agent log e695ff
-            if (!_e695ffLoggedDelayedVisual)
-            {
-                _e695ffLoggedDelayedVisual = true;
-                var nm = NetworkManager.Singleton;
-                bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
-                NetworkGameManager.DebugSessionE695ffLog("B1", "Bullet.DelayedVisualUpdate", "after_frame2",
-                    "{\"pureClient\":" + (pureClient ? "true" : "false") + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + ",\"bankIdx\":" + visualPrefabBankIndex.Value + ",\"spawnedVisual\":" + (spawnedVisual != null ? "true" : "false") + "}");
-            }
-            #endregion
         }
 
         private void FixedUpdate()
@@ -354,22 +308,6 @@ namespace TitanOrbit.Entities
                 float bulletRadius = 0.3f; // Larger radius to reliably hit ships (BoxCollider ~0.5 wide)
                 Vector3 dir = (to - lastPosition).normalized;
                 int n = Physics.SphereCastNonAlloc(lastPosition, bulletRadius, dir, SphereCastHits, pathLen, ~0, QueryTriggerInteraction.Ignore);
-                // #region agent log 065367
-                if (!_065367LoggedFirstCast && pathLen > 0.02f && IsServer)
-                {
-                    _065367LoggedFirstCast = true;
-                    float trRbDelta = rb != null ? Vector3.Distance(rb.position, transform.position) : 0f;
-                    string first = "none";
-                    if (n > 0 && SphereCastHits[0].collider != null)
-                        first = SphereCastHits[0].collider.name;
-                    if (first.Length > 64) first = first.Substring(0, 64);
-                    first = first.Replace("\\", "\\\\").Replace("\"", "\\'");
-                    DebugNdjson065367.Write("H-SCAST", "Bullet.FixedUpdate", "first_cast_sample",
-                        "{\"pathLen\":" + pathLen.ToString("0.####", CultureInfo.InvariantCulture)
-                        + ",\"n\":" + n + ",\"trRbDelta\":" + trRbDelta.ToString("0.####", CultureInfo.InvariantCulture)
-                        + ",\"firstHit\":\"" + first + "\"}");
-                }
-                // #endregion agent log 065367
                 if (n > 1)
                 {
                     for (int i = 1; i < n; i++)
@@ -599,11 +537,6 @@ namespace TitanOrbit.Entities
                 if (GameManager.Instance != null && GameManager.Instance.DebugMode)
                     appliedDamage = 999999f; // One-shot asteroids in debug mode
                 asteroid.ApplyDamageFromBulletServer(appliedDamage, ownerShipNetworkId);
-                // #region agent log 065367
-                if (IsServer)
-                    DebugNdjson065367.Write("AS-verify", "Bullet.TryHit", "asteroid_hit",
-                        "{\"dmg\":" + appliedDamage.ToString(CultureInfo.InvariantCulture) + ",\"ownerShip\":" + ownerShipNetworkId + ",\"impactDist\":" + Vector3.Distance(impactWorldPos, transform.position).ToString("0.###", CultureInfo.InvariantCulture) + "}");
-                // #endregion agent log 065367
 
                 if (VisualEffectsManager.Instance != null)
                 {

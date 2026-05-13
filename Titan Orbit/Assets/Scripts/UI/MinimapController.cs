@@ -1465,7 +1465,6 @@ namespace TitanOrbit.UI
         {
             if (playerTransform == null || playerShip == null || !playerShip)
                 return;
-            float startTime = Time.realtimeSinceStartup;
             // Normal 6s full refresh. Do NOT force full FindObjects every tick while ghosts exist — that was a major hitch.
             RefreshEntityCache(false);
             if (deadAsteroidGhosts.Count > 0 && Time.time >= nextGhostAsteroidRescanTime)
@@ -1473,25 +1472,6 @@ namespace TitanOrbit.UI
                 nextGhostAsteroidRescanTime = Time.time + GhostAsteroidRescanInterval;
                 cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
             }
-            // #region agent log
-            if (Time.frameCount % 120 == 0)
-            {
-                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "MinimapController.UpdateBlips",
-                    "blip and cache counts",
-                    "{\"blips\":" + blips.Count +
-                    ",\"edgeMarkers\":" + edgeMarkers.Count +
-                    ",\"markerEdgeMarkers\":" + markerEdgeMarkers.Count +
-                    ",\"cachedShips\":" + (cachedShips?.Length ?? 0) +
-                    ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) +
-                    ",\"cachedAsteroids\":" + (cachedAsteroids?.Length ?? 0) +
-                    ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) +
-                    ",\"durationMs\":" + durMs +
-                    "}",
-                    "B");
-            }
-            // #endregion
             Vector3 playerPos = playerTransform.position;
             // 1 world unit → minimap pixels (used for blip sizing and asteroid scale updates every frame)
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);

@@ -4,9 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Systems;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
-using System;
 using System.Collections.Generic;
-using System.IO;
 
 namespace TitanOrbit.UI
 {
@@ -36,6 +34,7 @@ namespace TitanOrbit.UI
 
         private readonly List<Vector2> _triangleClipScratch = new List<Vector2>(8);
         private const int DiskFanSlices = 28;
+        private static bool s_loggedFirstMinimapDraw;
 
         private static Texture2D _whiteTex;
         private static Texture2D WhiteTex => _whiteTex != null ? _whiteTex : (_whiteTex = CreateWhiteTex());
@@ -54,26 +53,7 @@ namespace TitanOrbit.UI
             texture = WhiteTex;
             color = Color.white;
             _minimap = GetComponentInParent<MinimapController>();
-            // #region agent log
-            DebugLog("MinimapConnectionsUI.cs:Awake", "Awake", "{\"hasMinimap\":" + (_minimap != null) + "}", "H1");
-            // #endregion
         }
-
-        // #region agent log
-        static int _populateCallCount;
-        static void DebugLog(string location, string message, string dataJson, string hypothesisId)
-        {
-            try
-            {
-                string path = Path.Combine(Application.persistentDataPath, "debug-441e0e.log");
-                string escaped = message.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                string line = "{\"sessionId\":\"441e0e\",\"timestamp\":" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + ",\"location\":\"" + location + "\",\"message\":\"" + escaped + "\",\"data\":" + (string.IsNullOrEmpty(dataJson) ? "{}" : dataJson) + ",\"hypothesisId\":\"" + hypothesisId + "\"}\n";
-                File.AppendAllText(path, line);
-                if (_populateCallCount <= 5) UnityEngine.Debug.Log("[MinimapConnections] " + message + " " + dataJson);
-            }
-            catch (Exception ex) { UnityEngine.Debug.LogWarning("[MinimapConnections] Log failed: " + ex.Message); }
-        }
-        // #endregion
 
         private void Update()
         {
@@ -121,7 +101,6 @@ namespace TitanOrbit.UI
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {
-            float startTime = Time.realtimeSinceStartup;
             vh.Clear();
             var conn = PlanetConnectionSystem.Instance;
             int ec = conn != null && conn.CurrentEdges != null ? conn.CurrentEdges.Count : 0;
@@ -129,34 +108,15 @@ namespace TitanOrbit.UI
             if (ec == 0 && tc == 0)
                 return;
 
-            // #region agent log
-            int frame = Time.frameCount;
-            if (frame % 60 == 0)
-            {
-                int verts = vh.currentVertCount;
-                float durMsSoFar = (Time.realtimeSinceStartup - startTime) * 1000f;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "MinimapConnectionsUI.OnPopulateMesh",
-                    "mesh rebuild",
-                    "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertsBeforeClear\":" + verts + ",\"durationMs\":" + durMsSoFar + "}",
-                    "A");
-            }
-            // #endregion
             if (_minimap == null)
                 _minimap = GetComponentInParent<MinimapController>();
             if (_minimap == null)
             {
-                // #region agent log
-                DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "early return: minimap null", "{}", "H1");
-                // #endregion
                 return;
             }
 
             if (conn == null)
             {
-                // #region agent log
-                DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "early return: PlanetConnectionSystem.Instance null", "{}", "H2");
-                // #endregion
                 return;
             }
 
@@ -164,26 +124,14 @@ namespace TitanOrbit.UI
             var triangles = conn.CurrentTriangles;
             ec = edges?.Count ?? 0;
             tc = triangles?.Count ?? 0;
-            // #region agent log
-            // (vertCount logged at end of method)
-            // #endregion
             if ((edges == null || edges.Count == 0) && (triangles == null || triangles.Count == 0))
             {
-                // #region agent log
-                DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "early return: no edges and no triangles", "{\"edges\":" + ec + ",\"triangles\":" + tc + "}", "H2");
-                // #endregion
                 return;
             }
 
             Rect r = rectTransform.rect;
-            // #region agent log
-            if (_populateCallCount <= 5) DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "rect", "{\"rectW\":" + r.width + ",\"rectH\":" + r.height + ",\"centerX\":" + r.center.x + ",\"centerY\":" + r.center.y + "}", "H4");
-            // #endregion
             if (r.width < 1f || r.height < 1f)
             {
-                // #region agent log
-                DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "early return: rect too small", "{\"rectW\":" + r.width + ",\"rectH\":" + r.height + "}", "H4");
-                // #endregion
                 return;
             }
 
@@ -249,20 +197,11 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // #region agent log
-            if (frame % 60 == 0)
+            if (vh.currentVertCount > 0 && !s_loggedFirstMinimapDraw)
             {
-                float totalDurMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "MinimapConnectionsUI.OnPopulateMesh",
-                    "after populate",
-                    "{\"frame\":" + frame + ",\"edges\":" + ec + ",\"triangles\":" + tc + ",\"vertCount\":" + vh.currentVertCount + ",\"durationMs\":" + totalDurMs + "}",
-                    "A");
-            }
-            if (_populateCallCount <= 5) DebugLog("MinimapConnectionsUI.cs:OnPopulateMesh", "after populate", "{\"vertCount\":" + vh.currentVertCount + "}", "H3");
-            if (vh.currentVertCount > 0 && _populateCallCount == 1)
+                s_loggedFirstMinimapDraw = true;
                 UnityEngine.Debug.Log("[MinimapConnections] Minimap is drawing " + (triangles?.Count ?? 0) + " triangles and " + (edges?.Count ?? 0) + " lines (same data as main map).");
-            // #endregion
+            }
         }
 
         private bool TryProject(Vector2 center, float halfW, float halfH, Vector3 playerPos, float radius, Vector3 worldPos,

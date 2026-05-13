@@ -8,7 +8,7 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Draws Saturn-style tilted rings around a HomePlanet using Shapes immediate mode.
     /// Ring count = Home Planet level (1–6). Level 1 has 1 ring, adds one per level up to 6.
-    /// Orbit zone + rings also get mesh backup matching <see cref="GemMoonOrbitZoneVisual"/> / <see cref="PlanetRingsDrawer"/>.
+    /// Optional MeshRenderer backup matches <see cref="GemMoonOrbitZoneVisual"/> / <see cref="PlanetRingsDrawer"/> when Shapes IM fails. Keep off when IM works to avoid duplicate transparent geometry flickering against tilted rings.
     /// </summary>
     [ExecuteAlways]
     public class HomePlanetRingsDrawer : ImmediateModeShapeDrawer
@@ -44,6 +44,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private float orbitZoneHeightBelowPlanet = 1f;
 
         [Header("Mesh backup (GemMoonOrbitZoneVisual pattern)")]
+        [Tooltip("When enabled, orbit zone + ring bands are also drawn with MeshRenderers. Turn off when Shapes immediate mode works: duplicate transparent geometry z-fights with tilted rings.")]
+        [SerializeField] private bool renderMeshBackupGeometry = false;
         [SerializeField, Range(0f, 1f)] private float orbitMeshInnerAlpha = 0.28f;
         [SerializeField] private int meshSegments = 96;
 
@@ -103,6 +105,14 @@ namespace TitanOrbit.Entities
             if (orbitMeshGradient != null)
                 Destroy(orbitMeshGradient);
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            RefreshOrbitMesh(true);
+            RefreshRingMeshes(true);
+        }
+#endif
 
         public Vector3 GetRingAxisWorld()
         {
@@ -236,7 +246,14 @@ namespace TitanOrbit.Entities
         {
             EnsureOrbitMeshChild();
             if (orbitMeshRenderer != null)
+            {
+                if (!renderMeshBackupGeometry)
+                {
+                    orbitMeshRenderer.enabled = false;
+                    return;
+                }
                 orbitMeshRenderer.enabled = drawOrbitZoneFill;
+            }
             if (!drawOrbitZoneFill || homePlanet == null || orbitMeshFilter == null)
                 return;
 
@@ -295,6 +312,17 @@ namespace TitanOrbit.Entities
             if (homePlanet == null)
                 homePlanet = GetComponentInParent<Planet>() as HomePlanet;
             if (homePlanet == null) return;
+
+            if (!renderMeshBackupGeometry)
+            {
+                EnsureRingBandChildren();
+                for (int i = 0; i < ringBandRenderers.Count; i++)
+                {
+                    if (ringBandRenderers[i] != null)
+                        ringBandRenderers[i].enabled = false;
+                }
+                return;
+            }
 
             int ringCount = Mathf.Clamp(homePlanet.IsSpawned ? homePlanet.HomePlanetLevel : 1, 1, 6);
             if (force || ringCount != lastRingBandCount)

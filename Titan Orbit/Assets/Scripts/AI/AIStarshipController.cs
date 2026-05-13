@@ -1097,26 +1097,11 @@ namespace TitanOrbit.AI
             if (!Application.isPlaying) return;
             if (Time.time - lastCacheRefreshTime < cacheRefreshInterval) return;
 
-            float startTime = Time.realtimeSinceStartup;
-
             lastCacheRefreshTime = Time.time;
             cachedAsteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
             cachedGems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
             cachedPlanets = Planet.AllPlanets.ToArray();
             cachedShips = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
-
-            // #region agent log
-            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-            TitanOrbit.Core.DebugSessionLog.Write(
-                "AIStarshipController.RefreshObjectCache",
-                "ai cache refresh",
-                "{\"asteroids\":" + (cachedAsteroids != null ? cachedAsteroids.Length : 0) +
-                ",\"gems\":" + (cachedGems != null ? cachedGems.Length : 0) +
-                ",\"planets\":" + (cachedPlanets != null ? cachedPlanets.Length : 0) +
-                ",\"ships\":" + (cachedShips != null ? cachedShips.Length : 0) +
-                ",\"durationMs\":" + durMs + "}",
-                "A");
-            // #endregion
         }
 
         /// <summary>Find nearest gem within maxRange. Used for CollectingGems - only pursue gems in close proximity.</summary>

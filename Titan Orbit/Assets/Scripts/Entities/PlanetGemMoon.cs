@@ -298,6 +298,14 @@ namespace TitanOrbit.Entities
             Transform existing = transform.Find("MoonOrbitZone");
             if (existing != null)
             {
+                Transform legacyMeshFallback = existing.Find("MoonOrbitZoneMeshFallback");
+                if (legacyMeshFallback != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(legacyMeshFallback.gameObject);
+                    else
+                        DestroyImmediate(legacyMeshFallback.gameObject);
+                }
                 if (existing.GetComponent<GemMoonOrbitZoneVisual>() == null)
                     existing.gameObject.AddComponent<GemMoonOrbitZoneVisual>();
                 EnsureMoonOrbitZoneMeshFallback(existing.gameObject);

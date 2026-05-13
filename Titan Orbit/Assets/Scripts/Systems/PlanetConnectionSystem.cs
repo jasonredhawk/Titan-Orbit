@@ -123,8 +123,6 @@ namespace TitanOrbit.Systems
 
         private void RecomputeGraph()
         {
-            float startTime = Time.realtimeSinceStartup;
-
             // Refresh planet cache only when stale to avoid FindObjectsOfType cost growing over time (idle FPS leak).
             if (_cachedPlanets.Length == 0 || (Time.time - _lastPlanetCacheTime) >= PlanetCacheRefreshInterval)
             {
@@ -198,14 +196,6 @@ namespace TitanOrbit.Systems
             }
 
             ApplyBonusesFromTriangles(allPlanets);
-            // #region agent log
-            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-            DebugSessionLog.Write(
-                "PlanetConnectionSystem.RecomputeGraph",
-                "edges and triangles",
-                "{\"edges\":" + edges.Count + ",\"triangles\":" + triangles.Count + ",\"durationMs\":" + durMs + "}",
-                "D");
-            // #endregion
         }
 
         private void ApplyBonusesFromTriangles(Planet[] allPlanets)

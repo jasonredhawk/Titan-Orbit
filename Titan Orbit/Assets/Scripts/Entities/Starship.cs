@@ -14,7 +14,6 @@ using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
-using TitanOrbit.Networking;
 using SciFiArsenal;
 
 namespace TitanOrbit.Entities
@@ -195,7 +194,7 @@ namespace TitanOrbit.Entities
         [SerializeField] [Range(0.2f, 1.5f)] private float componentScaleVisibility = 0.6f;
         [Tooltip("Extra influence of gem capacity upgrades on wing size. 1.67 with visibility 0.6 means +100% gem capacity can produce about 2x wing scale.")]
         [SerializeField] [Range(1f, 3f)] private float wingGemScaleBoost = 1.67f;
-        [Tooltip("Extra multiplier for bullet size so projectiles scale more visibly with Fire Power / Bullet Speed / cards. 1 = same as weapon component scale; 1.5 = bullets grow 50% more per upgrade.")]
+        [Tooltip("How much extra bullet size grows once Fire Power / Bullet Speed / cards push the upgrade factor above 1. At 0 upgrades the projectile scale multiplier is 1 (cannon bulletScale × prefab only); this only amplifies the upgrade delta.")]
         [SerializeField] [Range(0.5f, 3f)] private float bulletScaleExaggeration = 1.5f;
 
         private List<Transform> cockpitScaleTransforms = new List<Transform>();
@@ -306,7 +305,6 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
-        private float _065367LastRegenLogServerTime = -999f;
 
         private ClientRpcParams OwnerOnlyClientRpcParams => new ClientRpcParams
         {
@@ -562,8 +560,8 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Weapon component scale from Fire Power + Bullet Speed attributes and cards. Used for weapon visuals and muzzle particles.</summary>
-        private float WeaponComponentScaleMultiplier
+        /// <summary>Projectile-only scale factor from Fire Power + Bullet Speed attributes and weapon cards (not used for weapon mesh or muzzle — those use <see cref="ApplyComponentAttributeScaling"/>).</summary>
+        private float WeaponProjectileUpgradeScaleMultiplier
         {
             get
             {
@@ -573,11 +571,23 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Same factor that makes fire rate faster (1 + attrFirePower * 0.1). Used so bullet size always scales when fire power upgrades.</summary>
+        /// <summary>Same factor that makes fire rate faster (1 + attrFirePower * 0.1). Stacked with projectile upgrade scale so fire-power upgrades visibly grow bullets.</summary>
         private float FirePowerScaleFactor => 1f + attrFirePower.Value * ATTR_MULTIPLIER_PER_LEVEL;
 
-        /// <summary>Bullet projectile scale: cannon bulletScale × fire-power factor (same as fire rate) × weapon/card scale × exaggeration. Ensures upgrading fire power visibly increases bullet size.</summary>
-        private float BulletScaleMultiplier => FirePowerScaleFactor * WeaponComponentScaleMultiplier * Mathf.Max(0.5f, bulletScaleExaggeration);
+        /// <summary>
+        /// Bullet projectile scale multiplier from upgrades only: 1 with no fire-power / bullet-speed / card combat boosts.
+        /// Authored cannon bulletScale and prefab VFX then define the baseline size (tuning bullet speed in ShipFamilyDefinition does not add extra multiplier here).
+        /// Exaggeration applies only to the delta above 1 so the default is not permanently inflated.
+        /// </summary>
+        private float BulletScaleMultiplier
+        {
+            get
+            {
+                float upgradeProduct = Mathf.Max(0.01f, FirePowerScaleFactor * WeaponProjectileUpgradeScaleMultiplier);
+                float exaggeration = Mathf.Max(0.5f, bulletScaleExaggeration);
+                return 1f + (upgradeProduct - 1f) * exaggeration;
+            }
+        }
 
 #if UNITY_EDITOR
         // Editor-only helpers exposing effective ship ability stats for inspector visualizations
@@ -1363,10 +1373,6 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
-            float updateStartTime = Time.realtimeSinceStartup;
-            bool didTriggerZoomReturn = false;
-            bool didShowOrbitUI = false;
-            bool didHideOrbitUI = false;
             // Server: regen for ALL ships (including AI) - run before IsOwner check
             if (IsServer && !isDead.Value)
             {
@@ -1431,7 +1437,6 @@ namespace TitanOrbit.Entities
                 if (s_cachedCameraController != null)
                 {
                     s_cachedCameraController.TriggerGalacticZoomReturn();
-                    didTriggerZoomReturn = true;
                 }
             }
 
@@ -1450,13 +1455,11 @@ namespace TitanOrbit.Entities
                     if (shouldShowOrbitUI && !_orbitUiVisible)
                     {
                         s_cachedOrbitUI.Show(this, orbitUiPlanet);
-                        didShowOrbitUI = true;
                         _orbitUiVisible = true;
                     }
                     else if (!shouldShowOrbitUI && _orbitUiVisible)
                     {
                         s_cachedOrbitUI.Hide();
-                        didHideOrbitUI = true;
                         _orbitUiVisible = false;
                     }
                 }
@@ -1469,33 +1472,10 @@ namespace TitanOrbit.Entities
                 lastOrbitDetectClientTime = Time.time;
                 TryDetectOrbitZone();
             }
-
-            // #region agent log
-            if (IsOwner && !_isAIControlled)
-            {
-                int frame = Time.frameCount;
-                if ((frame % 180) == 0)
-                {
-                    float durMs = (Time.realtimeSinceStartup - updateStartTime) * 1000f;
-                    TitanOrbit.Core.DebugSessionLog.Write(
-                        "Starship.Update",
-                        "starship update",
-                        "{\"durationMs\":" + durMs +
-                        ",\"didTriggerZoomReturn\":" + (didTriggerZoomReturn ? "true" : "false") +
-                        ",\"didShowOrbitUI\":" + (didShowOrbitUI ? "true" : "false") +
-                        ",\"didHideOrbitUI\":" + (didHideOrbitUI ? "true" : "false") +
-                        ",\"hasOrbitPlanet\":" + (currentOrbitPlanet != null ? "true" : "false") +
-                        "}",
-                        "SU");
-                }
-            }
-            // #endregion
         }
 
         private void LateUpdate()
         {
-            float startTime = Time.realtimeSinceStartup;
-
             RefreshCardStatsCache();
             if (visualBaseScale > 0.001f && lastPrefabScale.sqrMagnitude > 0.001f)
             {
@@ -1512,27 +1492,6 @@ namespace TitanOrbit.Entities
             if (!enableVisualBankingPitch) return;
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             ApplyVisualBanking(Time.deltaTime);
-
-            // #region agent log
-            if (IsOwner && !_isAIControlled)
-            {
-                int frame = Time.frameCount;
-                if ((frame % 180) == 0)
-                {
-                    float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                    TitanOrbit.Core.DebugSessionLog.Write(
-                        "Starship.LateUpdate",
-                        "starship lateupdate",
-                        "{\"durationMs\":" + durMs +
-                        ",\"cockpitCount\":" + cockpitScaleTransforms.Count +
-                        ",\"wingCount\":" + wingScaleTransforms.Count +
-                        ",\"engineCount\":" + engineScaleTransforms.Count +
-                        ",\"thrusterCount\":" + thrusterScaleTransforms.Count +
-                        ",\"partCount\":" + partScaleTransforms.Count + "}",
-                        "S");
-                }
-            }
-            // #endregion
         }
 
         /// <summary>Effective exaggeration. Uses GameManager when set; else per-ship value (legacy 0.5 treated as 0.15).</summary>
@@ -2050,7 +2009,6 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
-            float startTime = Time.realtimeSinceStartup;
             if (rb == null) return;
 
             try
@@ -2333,24 +2291,6 @@ namespace TitanOrbit.Entities
                 HandleRotation();
             }
 
-            // #region agent log
-            if (IsOwner && !_isAIControlled)
-            {
-                int frame = Time.frameCount;
-                if ((frame % 180) == 0)
-                {
-                    float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                    TitanOrbit.Core.DebugSessionLog.Write(
-                        "Starship.FixedUpdate",
-                        "starship fixedupdate",
-                        "{\"durationMs\":" + durMs +
-                        ",\"isDead\":" + isDead.Value +
-                        ",\"hasOrbitPlanet\":" + (currentOrbitPlanet != null) +
-                        "}",
-                        "SF");
-                }
-            }
-            // #endregion
             }
             finally
             {
@@ -2610,9 +2550,7 @@ namespace TitanOrbit.Entities
                 moveDirection = Vector3.zero;
             }
 
-            // Shooting: send FireServerRpc whenever CanFire() passes; server uses Mathf.Max(server cannon transforms,
-            // owner-reported origins). Requiring bulletFirePoints.Count > 0 on the client blocked dedicated-client play:
-            // the host/server often builds weapon transforms before (or without) the owning client's BankPivot/weapons matching.
+            // Shooting: owner sends world-space muzzles + velocity; player ships never snap to server-side weapon rigs.
             bool uiBlocksShot = IsPointerOverUI();
             MobileInputHandler mobileHud = MobileInputHandler.Resolve();
             if (mobileHud != null && (mobileHud.ShootButtonPressed
@@ -2626,32 +2564,11 @@ namespace TitanOrbit.Entities
                 else dir.Normalize();
                 Vector3 shipVelForFire = rb != null ? rb.linearVelocity : Vector3.zero;
                 shipVelForFire.y = 0f;
-                Vector3[] cannonOrigins = null;
-                Vector3[] cannonForwards = null;
-                if (bulletFirePoints != null && bulletFirePoints.Count > 0)
-                {
-                    int n = bulletFirePoints.Count;
-                    cannonOrigins = new Vector3[n];
-                    cannonForwards = new Vector3[n];
-                    for (int i = 0; i < n; i++)
-                    {
-                        Transform pt = bulletFirePoints[i];
-                        if (pt == null)
-                        {
-                            cannonOrigins[i] = transform.position;
-                            cannonForwards[i] = dir;
-                            continue;
-                        }
-
-                        cannonOrigins[i] = pt.position;
-                        Vector3 fwd = pt.forward;
-                        fwd.y = 0f;
-                        if (fwd.sqrMagnitude < 0.01f) fwd = dir;
-                        else fwd.Normalize();
-                        cannonForwards[i] = fwd;
-                    }
-                }
+                TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] cannonOrigins, out Vector3[] cannonForwards);
                 FireServerRpc(transform.position, dir, shipVelForFire, cannonOrigins, cannonForwards);
+                // Owner: immediate cosmetic tracers (host + dedicated client) so shots are not gated on RPC latency.
+                if (ShouldSpawnOwnerPredictedBulletTracers())
+                    TrySpawnOwnerPredictedBulletVolley(transform.position, dir, shipVelForFire, cannonOrigins, cannonForwards);
             }
 
             // Rocket: Q key (or FireRocket if bound). Prefer large if available.
@@ -3012,16 +2929,6 @@ namespace TitanOrbit.Entities
             {
                 if (Time.time < lastHullDamageServerTime + healthRegenDelayAfterDamage)
                 {
-                    // #region agent log 065367
-                    if (Time.time - _065367LastRegenLogServerTime > 1f)
-                    {
-                        _065367LastRegenLogServerTime = Time.time;
-                        DebugNdjson065367.Write("REG-H1", "Starship.HandleHealthRegen", "blocked_recent_damage",
-                            "{\"now\":" + Time.time.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                            + ",\"lastHit\":" + lastHullDamageServerTime.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                            + ",\"delay\":" + healthRegenDelayAfterDamage.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                    }
-                    // #endregion agent log 065367
                     return;
                 }
                 float regen = EffectiveHealthRegen * Time.deltaTime;
@@ -3029,16 +2936,6 @@ namespace TitanOrbit.Entities
                 float newHealth = currentHealth.Value + regen;
                 // Ensure health never exceeds MaxHealth
                 currentHealth.Value = Mathf.Min(newHealth, MaxHealth);
-                // #region agent log 065367
-                if (Time.time - _065367LastRegenLogServerTime > 1f)
-                {
-                    _065367LastRegenLogServerTime = Time.time;
-                    DebugNdjson065367.Write("REG-H3", "Starship.HandleHealthRegen", "regen_applied",
-                        "{\"regen\":" + regen.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                        + ",\"healthNow\":" + currentHealth.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                        + ",\"max\":" + MaxHealth.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                }
-                // #endregion agent log 065367
             }
             // Safety check: clamp health to zero minimum (shouldn't go negative)
             if (IsServer && currentHealth.Value < 0f)
@@ -3112,7 +3009,190 @@ namespace TitanOrbit.Entities
             }
         }
 
-        [ServerRpc]
+        private bool ShouldSpawnOwnerPredictedBulletTracers()
+        {
+            if (!IsOwner) return false;
+            var nm = NetworkManager.Singleton;
+            return nm != null && nm.IsClient;
+        }
+
+        /// <summary>
+        /// Builds per-cannon world origins and aim axes from this client's transforms (same sizing rules as <see cref="FireServerRpc"/>).
+        /// Missing weapon slots use ship position + ship forward so the server never substitutes desynced server rigs for players.
+        /// </summary>
+        private bool TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] origins, out Vector3[] forwards)
+        {
+            origins = null;
+            forwards = null;
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            if (bulletWc == null || bulletWc.cannons == null || bulletWc.cannons.Count == 0)
+                return false;
+
+            Vector3 shipFwd = transform.forward;
+            shipFwd.y = 0f;
+            if (shipFwd.sqrMagnitude < 0.01f) shipFwd = Vector3.forward;
+            else shipFwd.Normalize();
+
+            int fpCount = bulletFirePoints != null ? bulletFirePoints.Count : 0;
+            int cannonCount = bulletWc.cannons.Count;
+            int maxCannons = Mathf.Max(fpCount, cannonCount);
+            int n = Mathf.Min(cannonCount, maxCannons);
+            if (n <= 0)
+                return false;
+
+            origins = new Vector3[n];
+            forwards = new Vector3[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
+                {
+                    Transform pt = bulletFirePoints[i];
+                    origins[i] = pt.position;
+                    Vector3 wd = pt.forward;
+                    wd.y = 0f;
+                    if (wd.sqrMagnitude < 0.01f) wd = shipFwd;
+                    else wd.Normalize();
+                    forwards[i] = wd;
+                }
+                else
+                {
+                    origins[i] = transform.position;
+                    forwards[i] = shipFwd;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Owner-only cosmetic tracers using the same volley rules as <see cref="FireServerRpc"/> (instant feedback on host and client).
+        /// </summary>
+        private void TrySpawnOwnerPredictedBulletVolley(
+            Vector3 shipPosition,
+            Vector3 shipForward,
+            Vector3 ownerReportedShipVelocity,
+            Vector3[] ownerReportedCannonOrigins,
+            Vector3[] ownerReportedCannonForwards)
+        {
+            CombatSystem combat = CombatSystem.Instance;
+            if (combat == null)
+                combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
+            if (combat == null) return;
+            if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
+            if (gemMoonDocked.Value) return;
+            EnsureBulletLastFireTime();
+            Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
+                ? ownerReportedShipVelocity
+                : (rb != null ? rb.linearVelocity : Vector3.zero);
+            shipVel.y = 0f;
+
+            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
+            int serverWeaponPoints = bulletFirePoints != null ? bulletFirePoints.Count : 0;
+            int ownerWeaponPoints = ownerReportedCannonOrigins != null ? ownerReportedCannonOrigins.Length : 0;
+            int maxCannons = Mathf.Max(serverWeaponPoints, ownerWeaponPoints);
+            if (bulletWc.cannons == null || maxCannons <= 0) return;
+
+            var cannonsByEnergy = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<int>>();
+            int cannonCount = Mathf.Min(bulletWc.cannons.Count, maxCannons);
+            for (int i = 0; i < cannonCount; i++)
+            {
+                bool hasServerPoint = bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null;
+                bool hasOwnerPoint = ownerReportedCannonOrigins != null && i < ownerReportedCannonOrigins.Length;
+                if (!hasServerPoint && !hasOwnerPoint) continue;
+                int energyKey = GetEnergyCostGroupKey(bulletWc.cannons[i].energyCostPerShot);
+                if (!cannonsByEnergy.TryGetValue(energyKey, out var group))
+                {
+                    group = new System.Collections.Generic.List<int>();
+                    cannonsByEnergy.Add(energyKey, group);
+                }
+                group.Add(i);
+            }
+
+            foreach (var kv in cannonsByEnergy)
+            {
+                int energyKey = kv.Key;
+                var group = kv.Value;
+                if (group == null || group.Count == 0) continue;
+
+                int start = 0;
+                if (bulletRoundRobinStartByEnergy.TryGetValue(energyKey, out int savedStart) && group.Count > 0)
+                    start = ((savedStart % group.Count) + group.Count) % group.Count;
+
+                for (int step = 0; step < group.Count; step++)
+                {
+                    int i = group[(start + step) % group.Count];
+                    var c = bulletWc.cannons[i];
+                    bool skipEnergyForHostOwnerCosmetic = IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+                    if (!skipEnergyForHostOwnerCosmetic && currentEnergy.Value < c.energyCostPerShot) continue;
+
+                    float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
+
+                    int bankCount = combat.BulletPrefabBankCount;
+                    int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
+                        ? (runtimeBulletPrefabIndex.Value % bankCount)
+                        : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
+                            ? c.bulletPrefabIndex
+                            : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
+
+                    Transform firePt = (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
+                        ? bulletFirePoints[i]
+                        : transform;
+                    bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
+                    bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
+                    Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
+
+                    Vector3 cannonFwd = hasOwnerReportedForward ? ownerReportedCannonForwards[i] : firePt.forward;
+                    cannonFwd.y = 0f;
+                    if (cannonFwd.sqrMagnitude < 0.01f)
+                    {
+                        cannonFwd = shipForward;
+                        cannonFwd.y = 0f;
+                    }
+                    if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
+                    cannonFwd.Normalize();
+                    Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
+
+                    float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
+                    Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
+                    int numShots = 1;
+                    float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
+                    if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                        numShots = Mathf.Max(1, c.spreadProjectileCount);
+                    bool spawnedAnyForThisCannon = false;
+                    for (int s = 0; s < numShots; s++)
+                    {
+                        Vector3 dir = baseDir;
+                        if (c.spreadType == CannonSpreadType.RandomSpread)
+                        {
+                            float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
+                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                        }
+                        else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                        {
+                            float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
+                            float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
+                            dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                        }
+                        float damage = c.damagePerBullet;
+                        float speed = c.bulletSpeed;
+                        float scale = c.bulletScale * BulletScaleMultiplier;
+                        BulletSpawnPayload payload = combat.BuildBulletTracerPayloadForClientPreview(
+                            fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
+                        ClientBulletTracer.SpawnOwnerPredicted(payload);
+                        spawnedAnyForThisCannon = true;
+                    }
+
+                    if (!spawnedAnyForThisCannon) continue;
+
+                    // Match server cooldown locally so we do not spawn a full volley every frame while ShootPressed
+                    // stays true (FireClientRpc arrives later after RTT).
+                    if (i < bulletLastFireTime.Length)
+                        bulletLastFireTime[i] = Time.time;
+                }
+            }
+        }
+
+        [ServerRpc(RequireOwnership = true)]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
             CombatSystem combat = CombatSystem.Instance;
@@ -3123,16 +3203,26 @@ namespace TitanOrbit.Entities
             if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
             if (gemMoonDocked.Value) return;
             EnsureBulletLastFireTime();
-            Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
-                ? ownerReportedShipVelocity
-                : (rb != null ? rb.linearVelocity : Vector3.zero);
-            shipVel.y = 0f;
+
+            bool useOnlyOwnerBallistics = NetworkObject != null && NetworkObject.IsPlayerObject;
+            Vector3 shipVel;
+            if (useOnlyOwnerBallistics)
+            {
+                shipVel = ownerReportedShipVelocity;
+                shipVel.y = 0f;
+            }
+            else
+            {
+                shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
+                    ? ownerReportedShipVelocity
+                    : (rb != null ? rb.linearVelocity : Vector3.zero);
+                shipVel.y = 0f;
+            }
 
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
             var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
-            // Fire bullets (Weapon only). Prefer server-built weapon transforms; if dedicated server never populated them,
-            // use the owner's cannon origin count from the RPC so shots still spawn.
+            // Player ships: spawn geometry matches the owning client's RPC (no server-side muzzle snap). AI uses server transforms when arrays are null.
             var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
             int serverWeaponPoints = bulletFirePoints != null ? bulletFirePoints.Count : 0;
             int ownerWeaponPoints = ownerReportedCannonOrigins != null ? ownerReportedCannonOrigins.Length : 0;
@@ -3190,10 +3280,22 @@ namespace TitanOrbit.Entities
                             : transform;
                         bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
                         bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
-                        Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
 
-                        // Horizontal aim basis from this weapon's facing (not ship forward) so side mounts / turrets shoot correctly.
-                        Vector3 cannonFwd = hasOwnerReportedForward ? ownerReportedCannonForwards[i] : firePt.forward;
+                        Vector3 fireOrigin;
+                        if (hasOwnerReportedOrigin)
+                            fireOrigin = ownerReportedCannonOrigins[i];
+                        else if (useOnlyOwnerBallistics)
+                            fireOrigin = shipPosition;
+                        else
+                            fireOrigin = firePt.position;
+
+                        Vector3 cannonFwd;
+                        if (hasOwnerReportedForward)
+                            cannonFwd = ownerReportedCannonForwards[i];
+                        else if (useOnlyOwnerBallistics)
+                            cannonFwd = shipForward;
+                        else
+                            cannonFwd = firePt.forward;
                         cannonFwd.y = 0f;
                         if (cannonFwd.sqrMagnitude < 0.01f)
                         {
@@ -3265,13 +3367,6 @@ namespace TitanOrbit.Entities
         [ClientRpc]
         private void FireClientRpc(byte[] bulletIndicesFired, int[] bulletPrefabIndices)
         {
-            #region agent log e695ff
-            if (IsOwner && bulletIndicesFired != null && bulletIndicesFired.Length > 0)
-            {
-                NetworkGameManager.DebugSessionE695ffLog("B5", "Starship.FireClientRpc", "owner_muzzle_rpc",
-                    "{\"shots\":" + bulletIndicesFired.Length + ",\"combatSys\":" + (CombatSystem.Instance != null ? "true" : "false") + "}");
-            }
-            #endregion
             if (bulletIndicesFired != null)
             {
                 for (int j = 0; j < bulletIndicesFired.Length; j++)
@@ -3334,6 +3429,18 @@ namespace TitanOrbit.Entities
                     int idx = bulletIndicesFired[j];
                     float pitch = GetWeaponSoundPitchForCannon(idx);
                     AudioManager.Instance.PlayWeaponShootSound(pitch);
+                }
+            }
+
+            if (IsOwner && bulletIndicesFired != null && bulletIndicesFired.Length > 0)
+            {
+                EnsureBulletLastFireTime();
+                float t = Time.time;
+                for (int j = 0; j < bulletIndicesFired.Length; j++)
+                {
+                    int idx = bulletIndicesFired[j];
+                    if (idx >= 0 && idx < bulletLastFireTime.Length)
+                        bulletLastFireTime[idx] = t;
                 }
             }
         }
@@ -3850,11 +3957,6 @@ namespace TitanOrbit.Entities
             if (debugModeEnabled)
             {
                 float instantDepositAmount = currentGems.Value;
-                // #region agent log 065367
-                DebugNdjson065367.Write("DEP-H1", "Starship.TickOrbitGemDeposit", "debug_before_remove",
-                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                    + ",\"amount\":" + instantDepositAmount.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                // #endregion agent log 065367
                 RemoveGemsFromDepositServer(instantDepositAmount);
                 depositAccumulator = 0f;
                 ApplyMoonGemDepositToPlanet(depositPlanet, instantDepositAmount);
@@ -3875,12 +3977,6 @@ namespace TitanOrbit.Entities
             bool shouldDepositChunk = depositAccumulator >= gemValue && currentGems.Value >= gemValue && (now - lastDepositSpawnTime) >= gemInterval;
             if (shouldDepositChunk)
             {
-                // #region agent log 065367
-                DebugNdjson065367.Write("DEP-H2", "Starship.TickOrbitGemDeposit", "chunk_before_remove",
-                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                    + ",\"gemValue\":" + gemValue.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                    + ",\"accum\":" + depositAccumulator.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                // #endregion agent log 065367
                 RemoveGemsFromDepositServer(gemValue);
                 depositAccumulator -= gemValue;
                 lastDepositSpawnTime = now;
@@ -3893,11 +3989,6 @@ namespace TitanOrbit.Entities
             if (!shouldDepositChunk && currentGems.Value > 0f && currentGems.Value < gemValue)
             {
                 float remainder = currentGems.Value;
-                // #region agent log 065367
-                DebugNdjson065367.Write("DEP-H3", "Starship.TickOrbitGemDeposit", "remainder_before_remove",
-                    "{\"gemsBefore\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                    + ",\"remainder\":" + remainder.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                // #endregion agent log 065367
                 RemoveGemsFromDepositServer(remainder);
                 depositAccumulator = 0f;
                 ApplyMoonGemDepositToPlanet(depositPlanet, remainder);
@@ -4758,28 +4849,19 @@ namespace TitanOrbit.Entities
         public void RemoveGemsFromDepositServer(float amount)
         {
             if (!IsServer) return;
-            ApplyRemoveGemsOnServer(amount, "Starship.RemoveGemsFromDepositServer");
+            ApplyRemoveGemsOnServer(amount);
         }
 
-        private void ApplyRemoveGemsOnServer(float amount, string location)
+        private void ApplyRemoveGemsOnServer(float amount)
         {
-            // #region agent log 065367
-            float before = currentGems.Value;
-            // #endregion agent log 065367
             currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
-            // #region agent log 065367
-            DebugNdjson065367.Write("DEP-H4", location, "after_remove",
-                "{\"amount\":" + amount.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"before\":" + before.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"after\":" + currentGems.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "}");
-            // #endregion agent log 065367
             TryDieIfHullAndGemsDepleted(0);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void RemoveGemsServerRpc(float amount)
         {
-            ApplyRemoveGemsOnServer(amount, "Starship.RemoveGemsServerRpc");
+            ApplyRemoveGemsOnServer(amount);
         }
 
         /// <summary>Client: start the galactic zoom-out camera animation on the owning player.</summary>

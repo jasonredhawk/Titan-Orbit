@@ -11,14 +11,5 @@ namespace TitanOrbit.Networking
     public class OwnerAuthoritativeNetworkTransform : NetworkTransform
     {
         protected override bool OnIsServerAuthoritative() => false;
-
-        public override void OnNetworkSpawn()
-        {
-            base.OnNetworkSpawn();
-            #region agent log e695ff
-            NetworkGameManager.DebugSessionE695ffLog("H7", "OwnerAuthoritativeNetworkTransform.OnNetworkSpawn", "spawn",
-                "{\"isOwner\":" + (IsOwner ? "true" : "false") + ",\"isServer\":" + (IsServer ? "true" : "false") + ",\"ownerAuthoritative\":true}");
-            #endregion
-        }
     }
 }

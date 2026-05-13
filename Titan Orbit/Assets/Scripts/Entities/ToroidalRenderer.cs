@@ -1,7 +1,6 @@
 using UnityEngine;
 using TitanOrbit.Camera;
 using TitanOrbit.Generation;
-using TitanOrbit.Networking;
 using Unity.Netcode;
 
 namespace TitanOrbit.Entities
@@ -29,7 +28,6 @@ namespace TitanOrbit.Entities
         /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
         private bool _isShip;
         private Starship _starship;
-        private static int s_e695ffCamNullLogs;
 
         private void Start()
         {
@@ -145,14 +143,6 @@ namespace TitanOrbit.Entities
                 cam = s_cachedGameplayCameraFromController;
             if (cam == null)
             {
-                #region agent log e695ff
-                if (!_isShip && rb != null && !rb.isKinematic && s_e695ffCamNullLogs < 12)
-                {
-                    s_e695ffCamNullLogs++;
-                    NetworkGameManager.DebugSessionE695ffLog("B2", "ToroidalRenderer.LateUpdate", "cam_null_skip",
-                        "{\"go\":\"" + gameObject.name + "\"}");
-                }
-                #endregion
                 return;
             }
 

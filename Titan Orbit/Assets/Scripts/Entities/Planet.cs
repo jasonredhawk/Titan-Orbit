@@ -656,14 +656,6 @@ namespace TitanOrbit.Entities
             }
 
             RefreshOrbitZoneRadius();
-            EnsureOrbitZoneBorderVisual();
-        }
-
-        /// <summary>Shapes border at orbit zone outer edge (same GameObject as <see cref="PlanetOrbitZone"/> on planet root).</summary>
-        private void EnsureOrbitZoneBorderVisual()
-        {
-            if (GetComponent<OrbitZoneShapesVisual>() == null)
-                gameObject.AddComponent<OrbitZoneShapesVisual>();
         }
 
         /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>

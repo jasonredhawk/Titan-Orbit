@@ -6,7 +6,6 @@ using Unity.Services.Authentication.PlayerAccounts;
 using Unity.Services.Core;
 using System.Linq;
 using UnityEngine;
-using TitanOrbit.Diagnostics;
 
 namespace TitanOrbit.Services
 {
@@ -148,19 +147,10 @@ namespace TitanOrbit.Services
                 if (ok)
                     await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
 #endif
-                // #region agent log
-                F38c7dDebugLog.Write("H1", "UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync", ok ? "guest_ok" : "guest_not_ok",
-                    "{\"ugsState\":" + (int)UnityServices.State + ",\"signedIn\":" + (AuthenticationService.Instance.IsSignedIn ? "true" : "false") +
-                    ",\"authorized\":" + (AuthenticationService.Instance.IsAuthorized ? "true" : "false") + "}");
-                // #endregion
                 return ok;
             }
             catch (Exception e)
             {
-                // #region agent log
-                F38c7dDebugLog.Write("H1", "UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync", "guest_exception",
-                    "{\"exType\":\"" + e.GetType().Name + "\"}");
-                // #endregion
                 Debug.LogWarning("[UnityGameServicesBootstrap] Unity Services failed (offline or build not linked). " + e.Message);
                 return false;
             }

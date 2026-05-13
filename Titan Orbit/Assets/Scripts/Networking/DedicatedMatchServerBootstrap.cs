@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using Unity.Netcode;
@@ -36,45 +35,7 @@ namespace TitanOrbit.Networking
         private const string LobbyCreatedAtEpochKey = "CreatedAtEpoch";
         private const string LobbyRelayProtocolKey = "RelayProtocol";
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
-        private static int _dbgHeartbeatOkCount;
-        private static int _dbgHeartbeatFailCount;
         private static int _dbgWatchdogFailCount;
-
-        // #region agent log
-        private static string EscapeJson(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return string.Empty;
-            return value
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", "\\r")
-                .Replace("\n", "\\n");
-        }
-
-        private static void DebugSessionE2a466Log(string runId, string hypothesisId, string location, string message, string dataJson)
-        {
-            try
-            {
-                string root = Path.GetDirectoryName(Application.dataPath);
-                if (string.IsNullOrEmpty(root))
-                    return;
-                string path = Path.Combine(root, "debug-e2a466.log");
-                long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"e2a466\",\"runId\":\"" + EscapeJson(runId) +
-                    "\",\"hypothesisId\":\"" + EscapeJson(hypothesisId) +
-                    "\",\"location\":\"" + EscapeJson(location) +
-                    "\",\"message\":\"" + EscapeJson(message) +
-                    "\",\"data\":" + dataJson +
-                    ",\"timestamp\":" + ts + "}\n";
-                File.AppendAllText(path, line);
-            }
-            catch
-            {
-            }
-        }
-        // #endregion
 
         /// <summary>
         /// Linux GCE builds use the Dedicated Server player subtarget (compile-time <c>UNITY_SERVER</c>);
@@ -475,10 +436,6 @@ namespace TitanOrbit.Networking
                 }
                 catch (Exception e)
                 {
-                    // #region agent log
-                    F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.BootAsyncWithRetriesAsync", "boot_attempt_failed",
-                        "{\"attempt\":" + attempt + ",\"maxAttempts\":" + maxAttempts + ",\"exType\":\"" + e.GetType().Name + "\"}");
-                    // #endregion
                     DedicatedServerFileLog.Append("boot", "Boot attempt " + attempt + "/" + maxAttempts + " failed.", e);
                     Debug.LogWarning(
                         "[DedicatedMatchServerBootstrap] Boot attempt " + attempt + "/" + maxAttempts + " failed: " +
@@ -512,11 +469,6 @@ namespace TitanOrbit.Networking
             int lobbyCreateTimeoutMs = GetArgInt("lobbyCreateTimeoutMs", 60000);
             string serverListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
 
-            // #region agent log
-            DebugSessionE2a466Log("pre-fix", "H1", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "server_boot_attempt",
-                "{\"maxPlayers\":" + maxPlayers + ",\"serverPort\":" + serverPort + ",\"relayProtocol\":\"" + EscapeJson(relayProtocol) + "\",\"isLatest\":" + (isLatest ? "true" : "false") + "}");
-            // #endregion
-
             Debug.Log(
                 "[DedicatedMatchServerBootstrap] TryStartInitialMatchAsync. maxPlayers=" + maxPlayers +
                 " serverPort=" + serverPort + " relayProtocol=" + relayProtocol + " serverListenAddress=" + serverListenAddress + " isLatest=" + isLatest);
@@ -548,10 +500,6 @@ namespace TitanOrbit.Networking
             }
 
             transport.SetConnectionData(transport.ConnectionData.Address, serverPort, serverListenAddress);
-            // #region agent log
-            DebugSessionE2a466Log("post-fix", "H17", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "transport_server_bind_applied",
-                "{\"serverListenAddress\":\"" + EscapeJson(serverListenAddress) + "\",\"serverPort\":" + serverPort + "}");
-            // #endregion
 
             int maxConnections = Mathf.Max(1, maxPlayers - 1);
             Debug.Log("[DedicatedMatchServerBootstrap] Creating Relay allocation (maxConnections=" + maxConnections + ")...");
@@ -618,21 +566,11 @@ namespace TitanOrbit.Networking
                 throw;
             }
 
-            // #region agent log
-            DebugSessionE2a466Log("pre-fix", "H2", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "lobby_created",
-                "{\"lobbyIdLen\":" + (createdLobby.Id != null ? createdLobby.Id.Length : 0) + ",\"lobbyName\":\"" + EscapeJson(createdLobby.Name) + "\",\"joinCodeLen\":" + (joinCode != null ? joinCode.Length : 0) + ",\"maxPlayers\":" + maxPlayers + "}");
-            // #endregion
-
             Debug.Log("[DedicatedMatchServerBootstrap] Starting server for lobby " + createdLobby.Id + " (isLatest=" + isLatest + ").");
             DedicatedServerFileLog.Append(
                 "lobby",
                 "UGS lobby published id=" + createdLobby.Id + " name=" + (createdLobby.Name ?? "") + " isLatest=" + isLatest +
                 " maxPlayers=" + maxPlayers + " relayJoinCodeLen=" + (joinCode != null ? joinCode.Length : 0));
-
-            // #region agent log
-            F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "lobby_created",
-                "{\"lobbyIdLen\":" + (createdLobby.Id != null ? createdLobby.Id.Length : 0) + ",\"isLatest\":" + (isLatest ? "true" : "false") + "}");
-            // #endregion
 
             _ = HeartbeatLoopAsync(createdLobby.Id);
             _ = LobbyPresenceWatchdogAsync(createdLobby.Id);
@@ -670,19 +608,11 @@ namespace TitanOrbit.Networking
                 {
                     consecutiveFailures++;
                     _dbgWatchdogFailCount++;
-                    // #region agent log
-                    DebugSessionE2a466Log("pre-fix", "H3", "DedicatedMatchServerBootstrap.LobbyPresenceWatchdogAsync", "watchdog_get_lobby_failed",
-                        "{\"failureCount\":" + consecutiveFailures + ",\"totalFailures\":" + _dbgWatchdogFailCount + ",\"threshold\":" + threshold + ",\"message\":\"" + EscapeJson(e.Message) + "\"}");
-                    // #endregion
                     Debug.LogWarning(
                         "[DedicatedMatchServerBootstrap] LobbyPresenceWatchdog GetLobby failed (" + consecutiveFailures + "/" +
                         threshold + "): " + e.Message);
                     if (consecutiveFailures >= threshold)
                     {
-                        // #region agent log
-                        DebugSessionE2a466Log("pre-fix", "H3", "DedicatedMatchServerBootstrap.LobbyPresenceWatchdogAsync", "watchdog_quit_triggered",
-                            "{\"failureCount\":" + consecutiveFailures + ",\"threshold\":" + threshold + "}");
-                        // #endregion
                         Debug.LogError(
                             "[DedicatedMatchServerBootstrap] Lobby no longer reachable; exiting so the service can restart with a new lobby.");
                         DedicatedServerFileLog.Append("watchdog", "Lobby unreachable after " + consecutiveFailures + " failures; exiting process.");
@@ -703,22 +633,9 @@ namespace TitanOrbit.Networking
                 {
                     if (!string.IsNullOrWhiteSpace(lobbyId))
                         await LobbyService.Instance.SendHeartbeatPingAsync(lobbyId);
-                    _dbgHeartbeatOkCount++;
-                    if (_dbgHeartbeatOkCount % 20 == 0)
-                    {
-                        // #region agent log
-                        DebugSessionE2a466Log("pre-fix", "H4", "DedicatedMatchServerBootstrap.HeartbeatLoopAsync", "heartbeat_ok_checkpoint",
-                            "{\"okCount\":" + _dbgHeartbeatOkCount + ",\"failCount\":" + _dbgHeartbeatFailCount + "}");
-                        // #endregion
-                    }
                 }
                 catch (Exception e)
                 {
-                    _dbgHeartbeatFailCount++;
-                    // #region agent log
-                    DebugSessionE2a466Log("pre-fix", "H4", "DedicatedMatchServerBootstrap.HeartbeatLoopAsync", "heartbeat_failed",
-                        "{\"okCount\":" + _dbgHeartbeatOkCount + ",\"failCount\":" + _dbgHeartbeatFailCount + ",\"message\":\"" + EscapeJson(e.Message) + "\"}");
-                    // #endregion
                     Debug.LogWarning("[DedicatedMatchServerBootstrap] Heartbeat failed: " + e.Message);
                 }
 

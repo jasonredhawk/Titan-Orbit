@@ -167,8 +167,6 @@ namespace TitanOrbit.UI
 
         private void UpdateHUD()
         {
-            float startTime = Time.realtimeSinceStartup;
-
             if (healthBar != null)
                 healthBar.value = playerShip.CurrentHealth / playerShip.MaxHealth;
 
@@ -197,22 +195,6 @@ namespace TitanOrbit.UI
                 teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
 
             UpdateLeaderboardPanel();
-
-            // #region agent log
-            if (Time.frameCount % 180 == 0)
-            {
-                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                int rows = leaderboardRows != null ? leaderboardRows.Count : 0;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "HUDController.UpdateHUD",
-                    "hud and leaderboard",
-                    "{\"rows\":" + rows +
-                    ",\"showInGamePanels\":" + (playerShip != null && playerShip.ShipTeam != TeamManager.Team.None ? "true" : "false") +
-                    ",\"durationMs\":" + durMs +
-                    "}",
-                    "H");
-            }
-            // #endregion
         }
 
         private void UpdateLeaderboardPanel()

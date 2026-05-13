@@ -1,7 +1,5 @@
 using UnityEngine;
 using TitanOrbit.Networking;
-using System;
-using System.IO;
 
 namespace TitanOrbit.Entities
 {
@@ -43,26 +41,12 @@ namespace TitanOrbit.Entities
         private MeshRenderer[] _renderers;
         private TextMesh _headerText;
         private bool _isAiShip;
-        private float _nextDebugLogTime;
-
-        private static readonly string DebugLogPath = Path.Combine(Application.dataPath, "..", "debug-82adea.log");
-        private static int s_alivePanels;
-        private static float s_perfAccumMs;
-        private static int s_perfAccumCalls;
-        private static float s_nextPerfLogTime;
-        private static int s_lastPerfLogFrame = -1;
 
         /// <summary>Called from <see cref="Starship"/> to attach as a child of the Starship root.</summary>
         public static void CreateAsStarshipChild(Starship ship)
         {
             if (ship == null) return;
             Transform existing = ship.transform.Find(ChildObjectName);
-            // #region agent log
-            AppendDebugLog("run-lag-debug", "H2", "EnemyShipWorldStatsPanel.cs:58", "create_panel_requested",
-                "{\"shipInstanceId\":" + ship.GetInstanceID() +
-                ",\"ownerClientId\":" + ship.OwnerClientId +
-                ",\"existingPanel\":" + (existing != null ? "true" : "false") + "}");
-            // #endregion
             if (existing != null) return;
 
             var go = new GameObject(ChildObjectName);
@@ -79,11 +63,6 @@ namespace TitanOrbit.Entities
                 Destroy(gameObject);
                 return;
             }
-            s_alivePanels++;
-            // #region agent log
-            AppendDebugLog("run-name-debug", "H1", "EnemyShipWorldStatsPanel.cs:63", "panel_awake",
-                "{\"shipInstanceId\":" + _ship.GetInstanceID() + ",\"ownerClientId\":" + _ship.OwnerClientId + ",\"isAiShip\":" + (_isAiShip ? "true" : "false") + "}");
-            // #endregion
 
             transform.localPosition = localOffset;
             transform.localRotation = Quaternion.identity;
@@ -95,11 +74,6 @@ namespace TitanOrbit.Entities
             BuildRow("Gems", 1, gemsFill, out _fillGems, out _fillGemsRenderer);
             BuildRow("People", 2, peopleFill, out _fillPeople, out _fillPeopleRenderer);
             _renderers = GetComponentsInChildren<MeshRenderer>(true);
-        }
-
-        private void OnDestroy()
-        {
-            s_alivePanels = Mathf.Max(0, s_alivePanels - 1);
         }
 
         private void BuildHeaderText()
@@ -179,7 +153,6 @@ namespace TitanOrbit.Entities
 
         private void LateUpdate()
         {
-            float perfStart = Time.realtimeSinceStartup;
             if (_ship == null)
             {
                 Destroy(gameObject);
@@ -212,20 +185,6 @@ namespace TitanOrbit.Entities
                     playerName = PlayerDisplayNames.GetDisplayName(_ship.OwnerClientId, false);
                 }
                 _headerText.text = playerName + "  Lv." + _ship.ShipLevel;
-                if (Time.unscaledTime >= _nextDebugLogTime)
-                {
-                    ulong netId = (_ship.NetworkObject != null && _ship.NetworkObject.IsSpawned) ? _ship.NetworkObjectId : 0ul;
-                    // #region agent log
-                    AppendDebugLog("run-name-debug", "H2", "EnemyShipWorldStatsPanel.cs:203", "header_name_resolution",
-                        "{\"ownerClientId\":" + _ship.OwnerClientId +
-                        ",\"isAiShip\":" + (_isAiShip ? "true" : "false") +
-                        ",\"networkObjectSpawned\":" + ((_ship.NetworkObject != null && _ship.NetworkObject.IsSpawned) ? "true" : "false") +
-                        ",\"networkObjectId\":" + netId +
-                        ",\"resolvedName\":\"" + EscapeJson(playerName) + "\"" +
-                        ",\"headerText\":\"" + EscapeJson(_headerText.text) + "\"}");
-                    // #endregion
-                    _nextDebugLogTime = Time.unscaledTime + 1.0f;
-                }
             }
 
             float h = _ship.MaxHealth > 0f ? Mathf.Clamp01(_ship.CurrentHealth / _ship.MaxHealth) : 0f;
@@ -238,26 +197,6 @@ namespace TitanOrbit.Entities
             ApplyFillColor(_fillHealthRenderer, healthFill);
             ApplyFillColor(_fillGemsRenderer, gemsFill);
             ApplyFillColor(_fillPeopleRenderer, peopleFill);
-
-            // #region agent log
-            s_perfAccumCalls++;
-            s_perfAccumMs += (Time.realtimeSinceStartup - perfStart) * 1000f;
-            if (Time.unscaledTime >= s_nextPerfLogTime && s_lastPerfLogFrame != Time.frameCount)
-            {
-                s_lastPerfLogFrame = Time.frameCount;
-                float avg = s_perfAccumCalls > 0 ? (s_perfAccumMs / s_perfAccumCalls) : 0f;
-                AppendDebugLog("run-lag-debug", "H1", "EnemyShipWorldStatsPanel.cs:236", "panel_perf_window",
-                    "{\"alivePanels\":" + s_alivePanels +
-                    ",\"windowCalls\":" + s_perfAccumCalls +
-                    ",\"windowTotalMs\":" + s_perfAccumMs +
-                    ",\"avgMsPerCall\":" + avg +
-                    ",\"renderersPerPanel\":" + (_renderers != null ? _renderers.Length : 0) +
-                    ",\"sampleShipId\":" + (_ship.NetworkObject != null && _ship.NetworkObject.IsSpawned ? _ship.NetworkObjectId : 0ul) + "}");
-                s_perfAccumCalls = 0;
-                s_perfAccumMs = 0f;
-                s_nextPerfLogTime = Time.unscaledTime + 1.0f;
-            }
-            // #endregion
         }
 
         private void ApplyFill(Transform fill, float t)
@@ -279,22 +218,5 @@ namespace TitanOrbit.Entities
             mat.color = color;
         }
 
-        private static string EscapeJson(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        }
-
-        private static void AppendDebugLog(string runId, string hypothesisId, string location, string message, string dataJson)
-        {
-            try
-            {
-                string line = "{\"sessionId\":\"82adea\",\"runId\":\"" + runId + "\",\"hypothesisId\":\"" + hypothesisId +
-                              "\",\"location\":\"" + location + "\",\"message\":\"" + message + "\",\"data\":" + dataJson +
-                              ",\"timestamp\":" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
-                File.AppendAllText(DebugLogPath, line + Environment.NewLine);
-            }
-            catch { }
-        }
     }
 }

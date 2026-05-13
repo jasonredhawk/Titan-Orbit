@@ -1,7 +1,5 @@
 using UnityEngine;
 using TitanOrbit.Core;
-using System;
-using System.IO;
 
 namespace TitanOrbit.Entities
 {
@@ -26,11 +24,6 @@ namespace TitanOrbit.Entities
         private Renderer[] cachedRenderers;
         private float lastCacheTime = -999f;
         private const float CacheRefreshInterval = 1f;
-        private static readonly string DebugLogPath = Path.Combine(Application.dataPath, "..", "debug-82adea.log");
-        private static float s_perfMs;
-        private static int s_perfCalls;
-        private static float s_nextPerfLogTime;
-        private static int s_lastPerfLogFrame = -1;
 
         private void Awake()
         {
@@ -47,7 +40,6 @@ namespace TitanOrbit.Entities
         private void Update()
         {
             if (!enableLegacyTint) return;
-            float t0 = Time.realtimeSinceStartup;
             Color c = GetTeamColor(starship.ShipTeam);
             var targetRenderers = GetAccentRenderers();
 
@@ -58,24 +50,6 @@ namespace TitanOrbit.Entities
                 propBlock.SetColor("_BaseColor", c);
                 r.SetPropertyBlock(propBlock);
             }
-
-            // #region agent log
-            s_perfCalls++;
-            s_perfMs += (Time.realtimeSinceStartup - t0) * 1000f;
-            if (Time.unscaledTime >= s_nextPerfLogTime && s_lastPerfLogFrame != Time.frameCount)
-            {
-                s_lastPerfLogFrame = Time.frameCount;
-                float avg = s_perfCalls > 0 ? s_perfMs / s_perfCalls : 0f;
-                AppendDebugLog("run-lag-debug", "H3", "ShipTeamColor.cs:63", "ship_team_color_perf_window",
-                    "{\"windowCalls\":" + s_perfCalls +
-                    ",\"windowTotalMs\":" + s_perfMs +
-                    ",\"avgMsPerCall\":" + avg +
-                    ",\"rendererCount\":" + (targetRenderers != null ? targetRenderers.Length : 0) + "}");
-                s_perfCalls = 0;
-                s_perfMs = 0f;
-                s_nextPerfLogTime = Time.unscaledTime + 1.0f;
-            }
-            // #endregion
         }
 
         private Renderer[] GetAccentRenderers()
@@ -128,18 +102,6 @@ namespace TitanOrbit.Entities
                 case TeamManager.Team.TeamC: return teamCColor;
                 default: return Color.gray;
             }
-        }
-
-        private static void AppendDebugLog(string runId, string hypothesisId, string location, string message, string dataJson)
-        {
-            try
-            {
-                string line = "{\"sessionId\":\"82adea\",\"runId\":\"" + runId + "\",\"hypothesisId\":\"" + hypothesisId +
-                              "\",\"location\":\"" + location + "\",\"message\":\"" + message + "\",\"data\":" + dataJson +
-                              ",\"timestamp\":" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}";
-                File.AppendAllText(DebugLogPath, line + Environment.NewLine);
-            }
-            catch { }
         }
     }
 }

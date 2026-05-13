@@ -9,15 +9,9 @@ using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Cosmetic-only client bullet visual. Spawned by <see cref="CombatSystem"/> on every client
-    /// after the server simulation creates a bullet, and then advances on a fixed straight-line
-    /// trajectory: <c>position = spawnPosition + velocity * (currentServerTime - serverSpawnTime)</c>.
-    /// No NetworkObject, no NetworkTransform, no physics body — the server is solely authoritative
-    /// for hit detection and damage.
-    /// Using synced server time (instead of local <c>Time.time</c>) means the tracer pops in
-    /// already advanced by the one-way network latency, matching where the server has actually
-    /// simulated the bullet to. Without this, shots appeared to fire from where the ship was at
-    /// fire time (RTT-stale) and looked like they came out behind the moving ship.
+    /// Cosmetic-only client bullet visual. Other players' shots are spawned from <see cref="CombatSystem"/>'s server
+    /// batch and advance with synced server time. The firing owner uses <see cref="SpawnOwnerPredicted"/> only;
+    /// spawn batches for that owner's ship are ignored so there is no second tracer. Hits remain server-authoritative.
     /// </summary>
     public sealed class ClientBulletTracer : MonoBehaviour
     {
@@ -26,6 +20,7 @@ namespace TitanOrbit.Entities
         private static int s_cachedCameraFrame = -1;
         private static UnityEngine.Camera s_cachedGameplayCamera;
         private static readonly Dictionary<uint, ClientBulletTracer> s_bySequence = new Dictionary<uint, ClientBulletTracer>(256);
+        private static readonly List<ClientBulletTracer> s_ownerPredicted = new List<ClientBulletTracer>(32);
 
         private Vector3 logicalSpawn;
         private Vector3 velocity;
@@ -34,6 +29,86 @@ namespace TitanOrbit.Entities
         private float maxDistance;
         private float lifetime;
         private uint sequence;
+        private bool ownerPredictedVisual;
+
+        /// <summary>NetworkObjectId of the local player's ship, or 0 when unavailable.</summary>
+        public static ulong GetLocalPlayerOwnedShipNetworkObjectId()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsClient || nm.LocalClient == null || nm.LocalClient.PlayerObject == null)
+                return 0;
+            return nm.LocalClient.PlayerObject.NetworkObjectId;
+        }
+
+        /// <summary>
+        /// Owner-only cosmetic bullet: advances by local <see cref="Time.time"/> so it appears at the muzzle
+        /// the frame the player fires, instead of waiting for the server spawn batch.
+        /// </summary>
+        public static GameObject SpawnOwnerPredicted(BulletSpawnPayload payload)
+        {
+            EnsurePool();
+            GameObject go = new GameObject("ClientBulletTracer_Predicted");
+            go.transform.SetParent(s_pool, false);
+
+            Vector3 spawn = payload.SpawnPosition;
+            spawn.y = 0f;
+            Vector3 vel = payload.Velocity;
+            vel.y = 0f;
+
+            var tracer = go.AddComponent<ClientBulletTracer>();
+            tracer.logicalSpawn = spawn;
+            tracer.velocity = vel;
+            tracer.serverSpawnTime = 0f;
+            tracer.localSpawnTimeFallback = Time.time;
+            tracer.maxDistance = Mathf.Max(0.5f, payload.MaxDistance);
+            tracer.lifetime = Mathf.Max(0.1f, payload.Lifetime);
+            tracer.sequence = 0;
+            tracer.ownerPredictedVisual = true;
+            s_ownerPredicted.Add(tracer);
+
+            go.transform.position = spawn;
+            if (vel.sqrMagnitude > 0.0001f)
+                go.transform.rotation = Quaternion.LookRotation(vel.normalized, Vector3.up);
+
+            BulletShape shape = (BulletShape)Mathf.Clamp(payload.ShapeIndex, 0, 2);
+            float speedForVisual = vel.magnitude;
+            BulletVisualFactory.BuildVisual(
+                go.transform,
+                payload.VisualPrefabBankIndex,
+                (TeamManager.Team)payload.OwnerTeamByte,
+                shape,
+                payload.ScaleMultiplier,
+                speedForVisual,
+                payload.NoTrailFlag != 0);
+
+            return go;
+        }
+
+        /// <summary>Removes the closest owner-predicted tracer to an impact (no server sequence on those visuals).</summary>
+        public static void DespawnOwnerPredictedNearestToImpact(Vector3 impactWorldPos, float maxDist)
+        {
+            if (s_ownerPredicted.Count == 0) return;
+            impactWorldPos.y = 0f;
+
+            ClientBulletTracer best = null;
+            float bestD = float.MaxValue;
+            for (int i = 0; i < s_ownerPredicted.Count; i++)
+            {
+                ClientBulletTracer t = s_ownerPredicted[i];
+                if (t == null || !t.ownerPredictedVisual) continue;
+                Vector3 p = t.transform.position;
+                p.y = 0f;
+                float d = ToroidalMap.ToroidalDistance(p, impactWorldPos);
+                if (d < maxDist && d < bestD)
+                {
+                    bestD = d;
+                    best = t;
+                }
+            }
+
+            if (best != null)
+                Object.Destroy(best.gameObject);
+        }
 
         public static GameObject Spawn(BulletSpawnPayload payload)
         {
@@ -93,6 +168,8 @@ namespace TitanOrbit.Entities
         {
             if (sequence != 0)
                 s_bySequence.Remove(sequence);
+            if (ownerPredictedVisual)
+                s_ownerPredicted.Remove(this);
         }
 
         private static void EnsurePool()
@@ -129,6 +206,9 @@ namespace TitanOrbit.Entities
         /// </summary>
         private float GetElapsedSinceServerSpawn()
         {
+            if (ownerPredictedVisual)
+                return Mathf.Max(0f, Time.time - localSpawnTimeFallback);
+
             var nm = NetworkManager.Singleton;
             if (nm != null && nm.IsListening)
                 return Mathf.Max(0f, (float)nm.ServerTime.Time - serverSpawnTime);
