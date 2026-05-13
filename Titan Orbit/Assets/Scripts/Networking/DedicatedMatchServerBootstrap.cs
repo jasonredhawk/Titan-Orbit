@@ -77,27 +77,82 @@ namespace TitanOrbit.Networking
         // #endregion
 
         /// <summary>
+        /// Linux GCE builds use the Dedicated Server player subtarget (compile-time <c>UNITY_SERVER</c>);
+        /// those processes are not guaranteed to set <see cref="Application.isBatchMode"/> unless <c>-batchmode</c> is passed.
+        /// Without this gate, the dedicated bootstrap never runs and no UGS lobby is created.
+        /// </summary>
+        private static bool IsDedicatedMatchServerProcess()
+        {
+#if UNITY_EDITOR
+            return false;
+#else
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                return false;
+#if UNITY_SERVER
+            return true;
+#else
+            if (Application.isBatchMode)
+                return true;
+            return HasTitanOrbitDedicatedCliFlag();
+#endif
+#endif
+        }
+
+        private static bool HasTitanOrbitDedicatedCliFlag()
+        {
+            foreach (string arg in Environment.GetCommandLineArgs())
+            {
+                if (arg == null)
+                    continue;
+                if (string.Equals(arg, "--titanOrbitDedicated", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                const string prefix = "--titanOrbitDedicated=";
+                if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    string v = arg.Substring(prefix.Length);
+                    return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Logs before the first scene loads so headless SSH sessions don't look "stuck" after engine init lines.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void BootMarkerBeforeSceneLoad()
         {
-            if (!Application.isBatchMode || Application.platform == RuntimePlatform.WebGLPlayer)
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
                 return;
+            if (!IsDedicatedMatchServerProcess())
+                return;
+
+            string cmd = Environment.CommandLine ?? string.Empty;
+            if (cmd.Length > 1800)
+                cmd = cmd.Substring(0, 1797) + "...";
+            DedicatedServerFileLog.Append(
+                "boot",
+                "BeforeSceneLoad pid=" + System.Diagnostics.Process.GetCurrentProcess().Id +
+                " batchMode=" + Application.isBatchMode +
+#if UNITY_SERVER
+                " build=UNITY_SERVER" +
+#else
+                " build=player" +
+#endif
+                " cmdline=" + cmd);
             Debug.Log("[DedicatedMatchServerBootstrap] BeforeSceneLoad: dedicated server bootstrap will run AfterSceneLoad.");
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Init()
         {
-            // Only run in headless server processes.
-            // (This avoids accidentally starting a server in normal client/editor play.)
-            if (!Application.isBatchMode)
-                return;
-
             if (Application.platform == RuntimePlatform.WebGLPlayer)
                 return;
+            if (!IsDedicatedMatchServerProcess())
+                return;
 
+            DedicatedServerFileLog.Append("boot", "AfterSceneLoad Init scheduling BootAsync (Relay + UGS Lobby + Netcode).");
             Debug.Log("[DedicatedMatchServerBootstrap] AfterSceneLoad: scheduling BootAsync...");
             _ = BootAsyncWithRetriesAsync();
         }
@@ -213,6 +268,7 @@ namespace TitanOrbit.Networking
             }
             catch (Exception e)
             {
+                DedicatedServerFileLog.Append("ugs", "Unity Services init or sign-in failed.", e);
                 Debug.LogWarning("[DedicatedMatchServerBootstrap] Unity Services failed. " + e.Message);
                 return false;
             }
@@ -340,14 +396,67 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
+        /// After a cold VM start or systemd restart, <see cref="NetworkManager"/> may not exist yet on the first frame after scene load.
+        /// </summary>
+        private static async Task<bool> WaitForNetworkManagerAndPlayerPrefabAsync()
+        {
+            int waitSeconds = GetArgInt("waitNetworkManagerSeconds", 120);
+            waitSeconds = Mathf.Max(10, waitSeconds);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
+            DedicatedServerFileLog.Append(
+                "boot",
+                "Waiting for NetworkManager + player prefab (up to " + waitSeconds + "s; increase with --waitNetworkManagerSeconds= if needed).");
+            int iteration = 0;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (NetworkManager.Singleton != null)
+                {
+                    EnsurePlayerPrefabSet();
+                    SanitizeNetworkPrefabs();
+                    var cfg = NetworkManager.Singleton.NetworkConfig;
+                    if (cfg != null && cfg.PlayerPrefab != null)
+                    {
+                        DedicatedServerFileLog.Append("boot", "NetworkManager and PlayerPrefab ready.");
+                        return true;
+                    }
+                }
+
+                if (iteration % 20 == 0)
+                {
+                    DedicatedServerFileLog.Append(
+                        "boot",
+                        "Still waiting… nmSingletonNull=" + (NetworkManager.Singleton == null ? "1" : "0"));
+                }
+
+                iteration++;
+                await Task.Delay(250);
+            }
+
+            DedicatedServerFileLog.Append(
+                "boot",
+                "Timed out after " + waitSeconds + "s: NetworkManager or PlayerPrefab never became ready.");
+            return false;
+        }
+
+        /// <summary>
         /// Retries initial match creation (UGS + Relay + Lobby + Netcode) so a VM that boots before networking is ready can still publish a lobby.
         /// </summary>
         private static async Task BootAsyncWithRetriesAsync()
         {
+            if (!await WaitForNetworkManagerAndPlayerPrefabAsync())
+            {
+                Debug.LogError(
+                    "[DedicatedMatchServerBootstrap] NetworkManager or Player Prefab did not become ready in time. " +
+                    "See TitanOrbitDedicatedServer.log and increase --waitNetworkManagerSeconds= if the scene loads slowly.");
+                Application.Quit(1);
+                return;
+            }
+
             EnsurePlayerPrefabSet();
             SanitizeNetworkPrefabs();
             if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
             {
+                DedicatedServerFileLog.Append("boot", "Abort: NetworkManager or Player Prefab missing after wait.");
                 Debug.LogError("[DedicatedMatchServerBootstrap] Player Prefab not set on NetworkManager.");
                 Application.Quit(1);
                 return;
@@ -370,6 +479,7 @@ namespace TitanOrbit.Networking
                     F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.BootAsyncWithRetriesAsync", "boot_attempt_failed",
                         "{\"attempt\":" + attempt + ",\"maxAttempts\":" + maxAttempts + ",\"exType\":\"" + e.GetType().Name + "\"}");
                     // #endregion
+                    DedicatedServerFileLog.Append("boot", "Boot attempt " + attempt + "/" + maxAttempts + " failed.", e);
                     Debug.LogWarning(
                         "[DedicatedMatchServerBootstrap] Boot attempt " + attempt + "/" + maxAttempts + " failed: " +
                         e.GetType().Name + ": " + e.Message);
@@ -416,6 +526,19 @@ namespace TitanOrbit.Networking
                     TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
             {
                 throw new InvalidOperationException("Cannot initialize Unity Services on server.");
+            }
+
+            try
+            {
+                string authPid = AuthenticationService.Instance.PlayerId;
+                string prefix = string.IsNullOrEmpty(authPid) ? "" : (authPid.Length <= 10 ? authPid : authPid.Substring(0, 10) + "…");
+                DedicatedServerFileLog.Append(
+                    "ugs",
+                    "Unity Services ready. playerIdPrefix=" + prefix + " cloudProjectId=" + (Application.cloudProjectId ?? ""));
+            }
+            catch (Exception logEx)
+            {
+                DedicatedServerFileLog.Append("ugs", "Post-sign-in diagnostic log failed (non-fatal).", logEx);
             }
 
             var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
@@ -501,6 +624,10 @@ namespace TitanOrbit.Networking
             // #endregion
 
             Debug.Log("[DedicatedMatchServerBootstrap] Starting server for lobby " + createdLobby.Id + " (isLatest=" + isLatest + ").");
+            DedicatedServerFileLog.Append(
+                "lobby",
+                "UGS lobby published id=" + createdLobby.Id + " name=" + (createdLobby.Name ?? "") + " isLatest=" + isLatest +
+                " maxPlayers=" + maxPlayers + " relayJoinCodeLen=" + (joinCode != null ? joinCode.Length : 0));
 
             // #region agent log
             F38c7dDebugLog.Write("H5", "DedicatedMatchServerBootstrap.TryStartInitialMatchAsync", "lobby_created",
@@ -558,6 +685,7 @@ namespace TitanOrbit.Networking
                         // #endregion
                         Debug.LogError(
                             "[DedicatedMatchServerBootstrap] Lobby no longer reachable; exiting so the service can restart with a new lobby.");
+                        DedicatedServerFileLog.Append("watchdog", "Lobby unreachable after " + consecutiveFailures + " failures; exiting process.");
                         Application.Quit(1);
                         return;
                     }
@@ -701,6 +829,9 @@ namespace TitanOrbit.Networking
                 }
 
                 string args =
+#if !UNITY_SERVER
+                    "-batchmode -nographics " +
+#endif
                     $"--maxPlayers={maxPlayers} " +
                     $"--serverPort={childServerPort} " +
                     $"--relayProtocol={relayProtocol} " +

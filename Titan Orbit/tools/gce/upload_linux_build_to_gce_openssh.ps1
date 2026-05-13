@@ -452,9 +452,6 @@ if [ "`$fail" -ne 0 ]; then
 fi
 echo "[VM] All IL2CPP runtime files look good."
 "@
-# Piping a Windows here-string to `bash -s` must use LF-only line endings; CRLF breaks parsing
-# (`check() {\r`, `set: invalid option`, etc.) and makes the integrity step fail spuriously.
-$remoteIntegrityUnix = ($remoteIntegrity -replace "`r`n", "`n") -replace "`r", "`n"
 
 function Invoke-UploadViaIapTunnel {
     Write-Host '[3/4] Upload via IAP tunnel + OpenSSH scp (no plink) ...'
@@ -486,7 +483,7 @@ function Invoke-UploadViaIapTunnel {
         }
 
         $sshArgs3 = @("-T") + $sshCommon + @("-p", "$TunnelPort", "${SshUser}@127.0.0.1", "bash -s")
-        $remoteIntegrityUnix | & $sshExe @sshArgs3
+        $remoteIntegrity | & $sshExe @sshArgs3
         if ($LASTEXITCODE -ne 0) {
             throw ('VM integrity check failed (exit ' + $LASTEXITCODE + '). The uploaded build is missing IL2CPP runtime bytes; the server will not boot.')
         }
@@ -530,7 +527,7 @@ if (-not $IapOnly.IsPresent -and -not [string]::IsNullOrWhiteSpace($nat)) {
     }
     if ($directOk) {
         $sshArgs3 = @("-4", "-T") + $sshCommon + @($target, "bash -s")
-        $remoteIntegrityUnix | & $sshExe @sshArgs3
+        $remoteIntegrity | & $sshExe @sshArgs3
         if ($LASTEXITCODE -ne 0) {
             Write-Error 'VM integrity check failed after extraction. Server will not boot. Aborting.'
             exit 1

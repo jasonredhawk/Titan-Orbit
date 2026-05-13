@@ -39,7 +39,7 @@ export OBJECT=titanorbit-linux-build/TitanOrbitLinux1-latest.tar.gz
 gcloud config set project "$PROJECT_ID"
 gcloud storage cp "gs://${BUCKET}/${OBJECT}" /tmp/titan-latest.tgz
 gcloud compute scp --project="$PROJECT_ID" --zone="$ZONE" /tmp/titan-latest.tgz "${VM}:/tmp/titan-latest.tgz"
-gcloud compute ssh "$VM" --project="$PROJECT_ID" --zone="$ZONE" --command 'bash -lc "set -e; mkdir -p /home/jason/titanorbit-server; rm -rf /home/jason/titanorbit-server/TitanOrbitLinux1; tar -xzf /tmp/titan-latest.tgz -C /home/jason/titanorbit-server; rm -f /tmp/titan-latest.tgz; chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true; chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64 2>/dev/null || true; chmod a+r /home/jason/titanorbit-server/TitanOrbitLinux1/GameAssembly.so /home/jason/titanorbit-server/TitanOrbitLinux1/UnityPlayer.so 2>/dev/null || true; ls -la /home/jason/titanorbit-server/TitanOrbitLinux1"'
+gcloud compute ssh "$VM" --project="$PROJECT_ID" --zone="$ZONE" --command 'bash -lc "set -e; mkdir -p /home/jason/titanorbit-server; rm -rf /home/jason/titanorbit-server/TitanOrbitLinux1; tar -xzf /tmp/titan-latest.tgz -C /home/jason/titanorbit-server; rm -f /tmp/titan-latest.tgz; chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true; chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64 2>/dev/null || true; chmod a+r /home/jason/titanorbit-server/TitanOrbitLinux1/GameAssembly.so /home/jason/titanorbit-server/TitanOrbitLinux1/UnityPlayer.so 2>/dev/null || true; test $(stat -c%s /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat 2>/dev/null || echo 0) -ge 1000000 || { echo FATAL: global-metadata.dat missing or too small after extract. Repack on Windows with Unity closed, or use upload_linux_build_to_gce. >&2; exit 1; }; ls -la /home/jason/titanorbit-server/TitanOrbitLinux1"'
 ```
 
 **IL2CPP Linux dedicated builds** often ship **`TitanOrbitServer`** (small ELF) with **no** **`TitanOrbitServer.x86_64`**. Only chmod’ing the `.x86_64` name leaves the real binary non-executable → **`systemd` fails with `status=203/EXEC` / `Permission denied`**. The line above sets **755** on both names and opens read/traverse on the tree (same idea as `upload_linux_build_to_gce_openssh.ps1`).
@@ -68,6 +68,55 @@ You should see **`-rwxr-xr-x`** on the server binary. If the unit points at the 
 **`reset_gce_vm.bat` / hard reboot** only restarts the guest — it **does not** repair **`chmod`**. If Serial Console shows **`203/EXEC`** / **`Permission denied`** on **`TitanOrbitServer`**, run the **`chmod`** block above, **or** reinstall the unit from this repo: **`tools/gce/titanorbit-server.service`** now includes **`PermissionsStartOnly=true`** and an **`ExecStartPre`** that **`chmod 755`** both **`TitanOrbitServer`** and **`TitanOrbitServer.x86_64`** as **root** on every start (so a bad **`tar`** extract is usually fixed by **`sudo systemctl daemon-reload`** after copying the file, then **`sudo systemctl restart titanorbit-server`**). Reinstall with **`install_unit_remote.ps1`** or **`bash cloudshell_install_titanorbit_unit.sh`** (see **`install_enable_server_service_on_gce.bat`**).
 
 Rarely, the game directory is on a filesystem mounted **`noexec`**; then move the install to **`/home`** or **`/opt`** (normal GCE disks are fine).
+
+### Troubleshooting: Serial / journal shows `status=1/FAILURE` and `[UnityMemory]` in a tight restart loop
+
+**What it means:** **`systemd` is starting the player**, Unity prints the usual **`[UnityMemory] … boot.config`** lines, then the process **exits with code 1** within a fraction of a second. That is **not** the same as **`203/EXEC`** (wrong permissions / bad path). The next evidence is almost always in **`Player.log`** next to the binary, or in **`TitanOrbitDedicatedServer.log`** if managed code got far enough to append a line.
+
+**Stop the log flood first** (optional but makes serial usable):
+
+```bash
+sudo systemctl stop titanorbit-server
+```
+
+**Collect runtime evidence on the VM** (paths match **`titanorbit-server.service`** in this repo):
+
+```bash
+cd /home/jason/titanorbit-server/TitanOrbitLinux1
+ls -la
+ls -la TitanOrbitServer_Data 2>/dev/null || echo "MISSING TitanOrbitServer_Data (incomplete extract or wrong folder)"
+tail -n 200 Player.log
+tail -n 100 TitanOrbitDedicatedServer.log 2>/dev/null || true
+command -v ldd >/dev/null && ldd ./TitanOrbitServer 2>/dev/null | head -n 40
+command -v ldd >/dev/null && ldd ./TitanOrbitServer.x86_64 2>/dev/null | head -n 40
+```
+
+**Run the same command as `ExecStart` in the foreground** (copy the exact binary name from **`systemctl cat titanorbit-server`** after install — it should **not** still say **`__TITANORBIT_EXE__`**). You should see the same exit code and often a clearer last line on the terminal.
+
+**Interpretation:** If **`Player.log`** ends with a **managed** exception or **`DedicatedMatchServerBootstrap`** / **`Application.Quit`**, fix that path in the game or configuration (UGS keys, scene list, prefabs). If the log stops right after engine lines or mentions **missing `.so`**, **`SIGSEGV`**, or **Burst / native plugin** load errors, treat it as a **Linux build / deploy / `glibc`** issue (`ldd`, full tarball redeploy, VM image compatibility).
+
+#### `Player.log` ends with **`Failed to initialize IL2CPP`** (confirmed root cause class)
+
+That line is emitted **before** managed game code runs. In practice it is almost always one of:
+
+1. **Corrupt or truncated IL2CPP payload on the VM** — e.g. **`GameAssembly.so`**, **`UnityPlayer.so`**, or **`TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat`** is **missing, empty, or far too small** (common when **`tar`** was built on Windows while Unity or antivirus still had files open). A typical pattern is **large `GameAssembly.so` + `UnityPlayer.so` but `global-metadata.dat` is 0 bytes** → **`Failed to initialize IL2CPP`**. The **OpenSSH upload** path (`upload_linux_build_to_gce_openssh.ps1`) checks archive and VM file sizes. **`upload_linux_build_to_gcs.bat`** now refuses to upload if **`global-metadata.dat`** (or **`GameAssembly.so`**) is missing or too small before **`tar`**. The **Cloud Shell** one-liner below **aborts the extract** if **`global-metadata.dat`** on the VM is **smaller than 1 MB** so you do not silently run a broken install.
+
+2. **Missing system libraries** for the Unity player — run **`ldd ./GameAssembly.so`** (from the install folder) and fix any **`not found`** lines (on Debian 12, installing **`libc6`**, **`libstdc++6`**, and **`libgcc-s1`** covers most stock players).
+
+**On the VM, verify sizes** (adjust the path if your install user differs from **`jason`**):
+
+```bash
+cd /home/jason/titanorbit-server/TitanOrbitLinux1
+stat -c '%n %s bytes' GameAssembly.so UnityPlayer.so TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat 2>/dev/null
+```
+
+Healthy IL2CPP builds are typically on the order of **tens of MB** for **`GameAssembly.so`**, **several MB+** for **`UnityPlayer.so`**, and **~1MB+** for **`global-metadata.dat`**. If any size is **0** or suspiciously tiny, **rebuild the Linux server in Unity**, **quit the Editor**, then re-create the tarball and redeploy (or use **`upload_linux_build_to_gce.bat`** / **`upload_linux_build_to_gce_openssh.ps1`**, which refuse bad archives).
+
+**Check dynamic deps:**
+
+```bash
+ldd ./GameAssembly.so 2>&1 | grep -F 'not found' || echo "No missing libs reported by ldd."
+```
 
 ### Browser SSH and IAP error 4003
 

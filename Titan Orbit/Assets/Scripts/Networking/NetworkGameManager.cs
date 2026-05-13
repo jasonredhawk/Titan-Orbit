@@ -16,6 +16,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using TitanOrbit.Data;
 using TitanOrbit.Diagnostics;
@@ -43,6 +44,53 @@ namespace TitanOrbit.Networking
         }
 
         public static NetworkGameManager Instance { get; private set; }
+
+        /// <summary>
+        /// Unity Lobbies SDK is not safe under concurrent <see cref="LobbyService.Instance.QueryLobbiesAsync"/> calls
+        /// (observed <see cref="NullReferenceException"/> with overlapping refreshes — see debug-be1131 session be1131).
+        /// </summary>
+        static readonly SemaphoreSlim LobbyQueryApiGate = new SemaphoreSlim(1, 1);
+
+        /// <summary>
+        /// Serializes entire join-browser refresh (primary + relaxed + stabilization recursion) so two UI refresh
+        /// callers cannot interleave (post-fix logs still showed overlapping <c>post_ensure_pre_lobby</c> and stray <c>H3</c>).
+        /// </summary>
+        static readonly SemaphoreSlim OpenLobbyRefreshGate = new SemaphoreSlim(1, 1);
+
+        static async Task<QueryResponse> QueryLobbiesSerializedAsync(QueryLobbiesOptions options)
+        {
+            await LobbyQueryApiGate.WaitAsync();
+            try
+            {
+                try
+                {
+                    QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                    // #region agent log be1131
+                    Be1131SessionLog.Write(
+                        "H6",
+                        "NetworkGameManager.QueryLobbiesSerializedAsync",
+                        "query_ok",
+                        "{\"runId\":\"post-fix\",\"resultCount\":" + (response?.Results != null ? response.Results.Count : -1) + "}");
+                    // #endregion agent log be1131
+                    return response;
+                }
+                catch (NullReferenceException ex)
+                {
+                    // #region agent log be1131
+                    Be1131SessionLog.Write(
+                        "H7",
+                        "NetworkGameManager.QueryLobbiesSerializedAsync",
+                        "nre_fallback_empty",
+                        "{\"runId\":\"post-fix\",\"msgLen\":" + (ex.Message != null ? ex.Message.Length : 0) + "}");
+                    // #endregion agent log be1131
+                    return new QueryResponse(new List<Lobby>(), null);
+                }
+            }
+            finally
+            {
+                LobbyQueryApiGate.Release();
+            }
+        }
 
         [Header("Network Settings")]
         [SerializeField] private int maxPlayers = 60;
@@ -900,7 +948,7 @@ namespace TitanOrbit.Networking
                     {
                         try
                         {
-                            QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                            QueryResponse response = await QueryLobbiesSerializedAsync(new QueryLobbiesOptions
                             {
                                 Count = 15,
                                 Filters = BuildDedicatedLobbyQueryFilters(latestOnly),
@@ -1321,61 +1369,18 @@ namespace TitanOrbit.Networking
             return true;
         }
 
-        private async Task MergeRelaxedGameNameQueryAsync(bool latestOnly, int count, List<LobbySummary> results)
+        private enum RelaxedLobbyMergeResult
         {
-            try
-            {
-                var loose = new QueryLobbiesOptions
-                {
-                    Count = count,
-                    Filters = new List<QueryFilter>
-                    {
-                        new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
-                    },
-                    Order = new List<QueryOrder>
-                    {
-                        new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created),
-                    },
-                };
-                QueryResponse r2 = await LobbyService.Instance.QueryLobbiesAsync(loose);
-                if (r2?.Results == null) return;
-                _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
-                LobbyRateLimitRemainingSeconds = 0f;
-
-                var seen = new HashSet<string>();
-                foreach (var s in results)
-                {
-                    if (!string.IsNullOrEmpty(s.LobbyId))
-                        seen.Add(s.LobbyId);
-                }
-
-                int added = 0;
-                foreach (var lobby in r2.Results)
-                {
-                    if (lobby == null || string.IsNullOrEmpty(lobby.Id)) continue;
-                    if (seen.Contains(lobby.Id)) continue;
-                    if (!LobbyPassesJoinBrowserFilters(lobby, latestOnly)) continue;
-                    seen.Add(lobby.Id);
-                    results.Add(ToLobbySummary(lobby));
-                    added++;
-                }
-
-                // #region agent log 065367
-                if (added > 0)
-                    DebugNdjson065367.Write("LQ-H6", "NetworkGameManager.MergeRelaxedGameNameQueryAsync", "relaxed_merge",
-                        "{\"added\":" + added + ",\"total\":" + results.Count + "}");
-                // #endregion agent log 065367
-            }
-            catch (Exception ex)
-            {
-                if (IsLikelyLobbyRateLimitException(ex))
-                    _dbgNextLobbyQueryAllowedUtc = DateTime.UtcNow.AddSeconds(12);
-            }
+            Completed,
+            RateLimited,
+            Failed
         }
 
         private static bool IsLikelyLobbyRateLimitException(Exception e)
         {
             if (e == null) return false;
+            if (e is LobbyServiceException lse && lse.Reason == LobbyExceptionReason.RateLimited)
+                return true;
             string m = e.Message ?? string.Empty;
             if (string.Equals(m, "Too Many Requests", StringComparison.OrdinalIgnoreCase))
                 return true;
@@ -1388,7 +1393,30 @@ namespace TitanOrbit.Networking
             return false;
         }
 
-        public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20)
+        private Task<RelaxedLobbyMergeResult> MergeRelaxedGameNameQueryAsync(bool latestOnly, int count, List<LobbySummary> results)
+        {
+            // com.unity.services.multiplayer 2.0.0: a second QueryLobbiesAsync in the same refresh (merge-after-strict)
+            // consistently throws NullReferenceException after the first call succeeds (runtime logs be1131 + editor stacks).
+            // Strict query + stabilization retries must carry index lag; skip this extra SDK call.
+            return Task.FromResult(RelaxedLobbyMergeResult.Completed);
+        }
+
+        /// <summary>Queries UGS for joinable dedicated lobbies (optionally only &quot;latest&quot;).</summary>
+        /// <param name="emptyStabilizationAttempt">Leave default; used internally to retry empty-but-successful results while UGS indexes catch up.</param>
+        public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20, int emptyStabilizationAttempt = 0)
+        {
+            await OpenLobbyRefreshGate.WaitAsync();
+            try
+            {
+                return await QueryOpenLobbiesInternalAsync(latestOnly, count, emptyStabilizationAttempt);
+            }
+            finally
+            {
+                OpenLobbyRefreshGate.Release();
+            }
+        }
+
+        private async Task<List<LobbySummary>> QueryOpenLobbiesInternalAsync(bool latestOnly, int count = 20, int emptyStabilizationAttempt = 0)
         {
             var results = new List<LobbySummary>();
             LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Ok;
@@ -1433,6 +1461,36 @@ namespace TitanOrbit.Networking
                     return results;
                 }
 
+                // #region agent log be1131
+                {
+                    bool si = false, au = false;
+                    int ugs = (int)UnityServices.State;
+                    int tokenLen = -1;
+                    try
+                    {
+                        si = AuthenticationService.Instance.IsSignedIn;
+                        au = AuthenticationService.Instance.IsAuthorized;
+                        string tok = AuthenticationService.Instance.AccessToken;
+                        tokenLen = tok != null ? tok.Length : 0;
+                    }
+                    catch
+                    {
+                    }
+                    Be1131SessionLog.Write("H4", "NetworkGameManager.QueryOpenLobbiesAsync", "post_ensure_pre_lobby",
+                        "{\"ugs\":" + ugs + ",\"signedIn\":" + (si ? "true" : "false") + ",\"authorized\":" +
+                        (au ? "true" : "false") + ",\"cloudIdLen\":" + (Application.cloudProjectId != null ? Application.cloudProjectId.Length : 0) +
+                        ",\"accessTokenLen\":" + tokenLen + "}");
+                }
+                // #endregion agent log be1131
+
+                if (LobbyService.Instance == null)
+                {
+                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.UnityServicesNotReady;
+                    LastOpenLobbyQueryErrorDetail =
+                        "Lobby service is not ready yet. Wait a moment and tap Refresh (Unity Gaming Services may still be finishing setup).";
+                    return results;
+                }
+
                 var filters = BuildDedicatedLobbyQueryFilters(latestOnly);
 
                 var options = new QueryLobbiesOptions
@@ -1445,7 +1503,12 @@ namespace TitanOrbit.Networking
                     }
                 };
 
-                QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(options);
+                // #region agent log be1131
+                Be1131SessionLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "before_QueryLobbies_primary",
+                    "{\"filterCount\":" + filters.Count + ",\"orderCount\":" + (options.Order != null ? options.Order.Count : -1) + "}");
+                // #endregion agent log be1131
+
+                QueryResponse response = await QueryLobbiesSerializedAsync(options);
                 // A query reached UGS successfully — clear post-429 client throttle so the list is not blank until an arbitrary window ends.
                 _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
                 LobbyRateLimitRemainingSeconds = 0f;
@@ -1475,7 +1538,14 @@ namespace TitanOrbit.Networking
 
                 int strictSummaryCount = results.Count;
                 if (results.Count == 0)
-                    await MergeRelaxedGameNameQueryAsync(latestOnly, count, results);
+                {
+                    RelaxedLobbyMergeResult mergeResult = await MergeRelaxedGameNameQueryAsync(latestOnly, count, results);
+                    if (mergeResult == RelaxedLobbyMergeResult.RateLimited)
+                    {
+                        LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.RateLimitBackoff;
+                        LobbyRateLimitRemainingSeconds = 12f;
+                    }
+                }
 
                 // #region agent log 065367
                 DebugNdjson065367.Write("LQ-H3", "NetworkGameManager.QueryOpenLobbiesAsync", "after_primary_and_relaxed",
@@ -1549,7 +1619,34 @@ namespace TitanOrbit.Networking
                 F38c7dDebugLog.Write("H2", "NetworkGameManager.QueryOpenLobbiesAsync", "query_exception",
                     "{\"exType\":\"" + e.GetType().Name + "\"}");
                 // #endregion
+                // #region agent log be1131
+                Be1131SessionLog.Write("H3", "NetworkGameManager.QueryOpenLobbiesAsync", "catch_ex",
+                    Be1131SessionLog.ExChainJson(e));
+                // #endregion agent log be1131
                 Debug.LogWarning("[NetworkGameManager] QueryOpenLobbiesAsync failed: " + e.Message);
+            }
+
+            // After a fresh headless deploy or systemd restart, the first client query often returns zero rows
+            // while Relay/Lobby creation finishes or while indexed filters (N1/N2) catch up — not "no server".
+            const int maxEmptyStabilizationAttemptsBroad = 14;
+            const int maxEmptyStabilizationAttemptsLatestOnly = 5;
+            int maxEmptyStabilizationAttempts = latestOnly ? maxEmptyStabilizationAttemptsLatestOnly : maxEmptyStabilizationAttemptsBroad;
+            if (results.Count == 0 && LastOpenLobbyQueryKind == OpenLobbyQueryResultKind.Ok &&
+                emptyStabilizationAttempt < maxEmptyStabilizationAttempts - 1)
+            {
+                int backoffMs = 1200 + Mathf.Min(emptyStabilizationAttempt * 150, 900);
+                await Task.Delay(backoffMs);
+                return await QueryOpenLobbiesInternalAsync(latestOnly, count, emptyStabilizationAttempt + 1);
+            }
+
+            if (results.Count == 0 && LastOpenLobbyQueryKind == OpenLobbyQueryResultKind.Ok &&
+                emptyStabilizationAttempt >= maxEmptyStabilizationAttempts - 1)
+            {
+                Debug.LogWarning(
+                    "[NetworkGameManager] Lobby list still empty after stabilization retries. " +
+                    "If a dedicated server should be running, on the VM read TitanOrbitDedicatedServer.log next to the server build " +
+                    "and Player.log. Confirm the Unity cloud project id matches this editor/player: " +
+                    (string.IsNullOrEmpty(Application.cloudProjectId) ? "(none)" : Application.cloudProjectId) + ".");
             }
 
             // #region agent log
@@ -1660,9 +1757,12 @@ namespace TitanOrbit.Networking
                 if (!await EnsureUnityServicesInitializedAsync())
                     return new System.Collections.Generic.List<Lobby>();
 
+                if (LobbyService.Instance == null)
+                    return new System.Collections.Generic.List<Lobby>();
+
                 var filters = BuildDedicatedLobbyQueryFilters(latestOnly);
 
-                QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                QueryResponse response = await QueryLobbiesSerializedAsync(new QueryLobbiesOptions
                 {
                     Count = count,
                     Filters = filters,
@@ -1675,29 +1775,9 @@ namespace TitanOrbit.Networking
                 if (list.Count > 0)
                     return list;
 
-                QueryResponse relaxed = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
-                {
-                    Count = count,
-                    Filters = new System.Collections.Generic.List<QueryFilter>
-                    {
-                        new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
-                    },
-                    Order = new System.Collections.Generic.List<QueryOrder>
-                    {
-                        new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created),
-                    },
-                });
-                if (relaxed?.Results == null || relaxed.Results.Count == 0)
-                    return list;
-
-                var merged = new System.Collections.Generic.List<Lobby>();
-                foreach (var lobby in relaxed.Results)
-                {
-                    if (lobby == null) continue;
-                    if (!LobbyPassesJoinBrowserFilters(lobby, latestOnly)) continue;
-                    merged.Add(lobby);
-                }
-                return merged;
+                // Second QueryLobbiesAsync (relaxed merge) omitted: same com.unity.services.multiplayer 2.0.0 NRE-after-first-query
+                // behavior as desktop; rely on strict filters + caller retries.
+                return list;
             }
             catch (System.Exception e)
             {

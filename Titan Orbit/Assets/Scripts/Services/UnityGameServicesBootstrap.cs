@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Authentication;
 using Unity.Services.Authentication.PlayerAccounts;
@@ -19,6 +20,8 @@ namespace TitanOrbit.Services
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
         static bool _pendingLinkInsteadOfSignIn;
+        /// <summary>Serializes guest init so IAP, MainMenu, and <see cref="Networking.NetworkGameManager"/> do not trip "already signing in".</summary>
+        static readonly SemaphoreSlim EnsureGuestSessionGate = new SemaphoreSlim(1, 1);
 
         /// <summary>Invoked after sign-in, sign-out, or failed Unity Player Account completion.</summary>
         public static event Action AuthStateChanged;
@@ -77,13 +80,6 @@ namespace TitanOrbit.Services
             RegisterCoreAuthEventsOnce();
         }
 
-        /// <summary>Anonymous session for Relay/Lobby when the player has not used a Unity account.</summary>
-        public static async Task SignInGuestAsync()
-        {
-            await InitializeUnityServicesAsync();
-            await EnsureAuthenticationSessionRestoredAsync();
-        }
-
         /// <summary>
         /// Uses <see cref="AuthenticationService.Instance.SignInAnonymouslyAsync"/> to create a guest session or
         /// <b>restore a cached session</b> (including Unity Player Account–linked players) per Unity session docs.
@@ -93,16 +89,60 @@ namespace TitanOrbit.Services
             var auth = AuthenticationService.Instance;
             if (auth.IsAuthorized)
                 return;
-            await auth.SignInAnonymouslyAsync();
+
+            const int maxAttempts = 12;
+            Exception last = null;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    await auth.SignInAnonymouslyAsync();
+                    return;
+                }
+                catch (Exception e)
+                {
+                    last = e;
+                    string msg = e.Message ?? string.Empty;
+                    bool waitForConcurrentSignIn = msg.IndexOf("already signing in", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        msg.IndexOf("invalid state", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!waitForConcurrentSignIn || attempt >= maxAttempts)
+                        throw;
+
+                    int delayMs = 80 + attempt * 40;
+                    await Task.Delay(delayMs);
+                    if (auth.IsAuthorized)
+                        return;
+                }
+            }
+
+            if (last != null)
+                throw last;
         }
+
+        /// <summary>Initializes core UGS and anonymous auth; serialized so callers do not hit "already signing in".</summary>
+        static async Task EnsureUnityServicesAndAnonymousAuthLockedAsync()
+        {
+            await EnsureGuestSessionGate.WaitAsync();
+            try
+            {
+                await InitializeUnityServicesAsync();
+                await EnsureAuthenticationSessionRestoredAsync();
+            }
+            finally
+            {
+                EnsureGuestSessionGate.Release();
+            }
+        }
+
+        /// <summary>Anonymous session for Relay/Lobby when the player has not used a Unity account.</summary>
+        public static Task SignInGuestAsync() => EnsureUnityServicesAndAnonymousAuthLockedAsync();
 
         /// <summary>Initializes UGS and ensures an anonymous or existing session for online multiplayer APIs.</summary>
         public static async Task<bool> EnsureGuestSessionForOnlineAsync()
         {
             try
             {
-                await InitializeUnityServicesAsync();
-                await EnsureAuthenticationSessionRestoredAsync();
+                await EnsureUnityServicesAndAnonymousAuthLockedAsync();
                 bool ok = AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
 #if UNITY_WEBGL && !UNITY_EDITOR
                 if (ok)

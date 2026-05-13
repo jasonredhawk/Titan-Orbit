@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Purchasing;
 using UnityEngine.Purchasing.Extension;
@@ -45,8 +46,22 @@ namespace TitanOrbit.Services
         {
             EnsureCatalogDefaults();
             TitanOrbitEntitlements.RegisterRemoveAdsProductId(removeAdsProductId);
-            if (initializeOnAwake)
-                InitializePurchasing();
+        }
+
+        async void Start()
+        {
+            if (!initializeOnAwake || _controller != null)
+                return;
+            try
+            {
+                await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitIapManager] UGS guest session before IAP: " + e.Message);
+            }
+
+            InitializePurchasing();
         }
 
         void EnsureCatalogDefaults()

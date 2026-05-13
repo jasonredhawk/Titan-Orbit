@@ -73,8 +73,6 @@ namespace TitanOrbit.UI
         private bool deferTeamPanelUntilNetworkReady;
         private float _dbgLastLobbyRefreshRealtime = -1f;
         private int _dbgLobbyRefreshCount;
-        private bool _isLobbyRefreshInFlight;
-        private float _nextAllowedLobbyRefreshRealtime;
 
         private RectTransform _authMainCardRt;
         private Image _authMainCardBg;
@@ -829,27 +827,6 @@ namespace TitanOrbit.UI
 
         private async Task RefreshLobbyListAsync()
         {
-            if (_isLobbyRefreshInFlight)
-            {
-                // #region agent log
-                NetworkGameManager.DebugSessionE2a466Log("post-fix", "H8", "MainMenu.RefreshLobbyListAsync", "refresh_skipped_inflight",
-                    "{\"count\":" + _dbgLobbyRefreshCount + "}");
-                // #endregion
-                return;
-            }
-
-            float gateNow = Time.realtimeSinceStartup;
-            if (gateNow < _nextAllowedLobbyRefreshRealtime)
-            {
-                float remain = _nextAllowedLobbyRefreshRealtime - gateNow;
-                SetLobbyBrowserStatus($"Please wait {remain:0.0}s before refreshing again (reduces lobby rate limits).");
-                // #region agent log
-                NetworkGameManager.DebugSessionE2a466Log("post-fix", "H8", "MainMenu.RefreshLobbyListAsync", "refresh_skipped_cooldown",
-                    "{\"remainingMs\":" + ((_nextAllowedLobbyRefreshRealtime - gateNow) * 1000f).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "}");
-                // #endregion
-                return;
-            }
-
             // #region agent log
             F38c7dDebugLog.Write("H3", "MainMenu.RefreshLobbyListAsync", "enter",
                 "{\"nmInstanceNull\":" + (NetworkGameManager.Instance == null ? "true" : "false") + "}");
@@ -860,8 +837,6 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            _isLobbyRefreshInFlight = true;
-            _nextAllowedLobbyRefreshRealtime = gateNow + 10f;
             _dbgLobbyRefreshCount++;
             float now = Time.realtimeSinceStartup;
             float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
@@ -977,7 +952,6 @@ namespace TitanOrbit.UI
             }
             finally
             {
-                _isLobbyRefreshInFlight = false;
                 if (refreshLobbiesButton != null)
                     refreshLobbiesButton.interactable = true;
             }

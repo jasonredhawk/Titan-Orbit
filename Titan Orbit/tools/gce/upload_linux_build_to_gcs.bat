@@ -56,6 +56,32 @@ if not exist "%SOURCE_DIR%" (
 )
 
 echo.
+echo Verifying IL2CPP files before tar - avoids uploading a tree where global-metadata.dat is empty on the VM.
+set "META=%SOURCE_DIR%\TitanOrbitServer_Data\il2cpp_data\Metadata\global-metadata.dat"
+if not exist "%META%" (
+  echo ERROR: Missing metadata file:
+  echo   %META%
+  echo Quit Unity Editor, rebuild Headless Server ^(Linux^), then retry.
+  exit /b 1
+)
+for %%A in ("%META%") do set "META_SIZE=%%~zA"
+if %META_SIZE% LSS 1000000 (
+  echo ERROR: global-metadata.dat is only %META_SIZE% bytes ^(need ^>= 1000000^).
+  echo Quit Unity / antivirus may have locked the file during a previous tar. Rebuild or retry.
+  exit /b 1
+)
+set "GASM=%SOURCE_DIR%\GameAssembly.so"
+if not exist "%GASM%" (
+  echo ERROR: Missing GameAssembly.so under %SOURCE_DIR%
+  exit /b 1
+)
+for %%A in ("%GASM%") do set "GASM_SIZE=%%~zA"
+if %GASM_SIZE% LSS 10000000 (
+  echo ERROR: GameAssembly.so is only %GASM_SIZE% bytes ^(need ^>= 10000000 for IL2CPP^).
+  exit /b 1
+)
+
+echo.
 echo [3/4] Creating archive...
 if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
 REM Exclude Unity IL2CPP backup + Burst debug trees (huge; not needed on server; fills VM disk if packed).
