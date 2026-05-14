@@ -6,6 +6,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Networking;
 using Unity.Netcode;
 using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace TitanOrbit.UI
@@ -24,8 +25,10 @@ namespace TitanOrbit.UI
 
         [Header("Camera")]
         [SerializeField] private CameraController cameraController;
-        [Tooltip("Camera height (Y) during loading. Larger = start further zoomed out.")]
+        [Tooltip("Minimum camera height (Y) during loading. Actual height is the larger of this and a value computed from ToroidalMap size, field of view, and aspect so the full map fits on screen.")]
         [SerializeField] private float loadingCameraHeight = 320f;
+        [Tooltip("Extra margin applied when fitting the toroidal map bounds into the loading camera view (1 = tight fit).")]
+        [SerializeField] private float loadingCameraFitMargin = 1.08f;
 
         [Header("Transitions")]
         [SerializeField] private MainMenu mainMenu;
@@ -39,6 +42,20 @@ namespace TitanOrbit.UI
         [SerializeField, Range(0.35f, 0.98f)] private float joinReplicationEnoughFraction = 0.62f;
         [Tooltip("Joining clients: loading bar fraction (0–1) reached when layout replay finishes; replication fills from here to 100% so the bar does not sit at 100% during sync.")]
         [SerializeField, Range(0.55f, 0.95f)] private float joinProgressEndAfterReplay = 0.78f;
+
+        [Header("Loading map build animation")]
+        [Tooltip("Target minimum real time (seconds) to spend revealing the full blueprint so the build never flashes by in one frame. Per-spawn delay is max(this ÷ entries, Min Spawn Spacing).")]
+        [SerializeField] private float loadingBuildTargetDurationSeconds = 3.25f;
+        [Tooltip("Minimum real-time pause between each preview spawn (scaled time does not affect this).")]
+        [SerializeField] private float loadingPreviewMinSpawnSpacingRealtime = 0.012f;
+        [Tooltip("After this many preview spawns, yield one frame so the UI and GPU can breathe.")]
+        [SerializeField] private int loadingPreviewMaxSpawnsPerFrame = 28;
+        [Tooltip("When the loading panel has a root Image, set its alpha so the 3D world stays visible behind the UI.")]
+        [SerializeField, Range(0.05f, 1f)] private float loadingBackdropImageAlpha = 0.28f;
+        [Tooltip("Toroidal distance threshold when matching a blueprint row to a spawned NetworkObject.")]
+        [SerializeField] private float loadingBlueprintRevealMaxToroidalDistance = 7.5f;
+        [Tooltip("Max real seconds to wait for each entity to replicate before moving on (prevents hang on slow sync).")]
+        [SerializeField] private float loadingRevealMaxWaitPerBlueprintEntrySeconds = 8f;
 
         private UnityEngine.Camera cam;
         private bool wasShowing;
@@ -222,8 +239,11 @@ namespace TitanOrbit.UI
             }
             else
             {
-                progress = mapGen.LoadingProgress;
-                complete = mapGen.LoadingComplete;
+                if (mapGen.LoadingComplete && !joinPlaybackComplete)
+                    progress = Mathf.Lerp(0.02f, 1f, Mathf.Clamp01(joinPlaybackProgress));
+                else
+                    progress = mapGen.LoadingProgress;
+                complete = mapGen.LoadingComplete && joinPlaybackComplete;
             }
 
             if (progressBar != null)
@@ -236,14 +256,14 @@ namespace TitanOrbit.UI
             {
                 if (complete)
                     statusText.text = netcodeListening ? "Ready!" : "Connecting multiplayer session...";
-                else if (pureClient && mapGen != null && mapGen.LoadingComplete && !joinPlaybackComplete)
+                else if (mapGen != null && mapGen.LoadingComplete && !joinPlaybackComplete)
                 {
-                    if (mapGen.HasClientJoinLayoutReady())
+                    if (mapGen.BlueprintEntryCount > 0)
                     {
                         mapGen.GetJoinReplayPhaseEndProgress(out float endHomes, out float endNeutrals);
                         float jp = joinPlaybackProgress;
                         if (jp >= 1f - 1e-4f)
-                            statusText.text = "Waiting for live objects...";
+                            statusText.text = pureClient ? "Waiting for live objects..." : "Materializing world...";
                         else if (jp < endHomes)
                             statusText.text = "Building home bases...";
                         else if (jp < endNeutrals)
@@ -290,8 +310,31 @@ namespace TitanOrbit.UI
 
             cam.orthographic = false;
             cam.fieldOfView = 45f;
-            cam.transform.position = new Vector3(0f, loadingCameraHeight, 0f);
+            float y = ComputeLoadingCameraYForToroidalMap();
+            cam.transform.position = new Vector3(0f, y, 0f);
             cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        /// <summary>
+        /// Perspective top-down camera at (0,Y,0) with euler (90,0,0): vertical FOV covers world Z, horizontal covers world X.
+        /// </summary>
+        private float ComputeLoadingCameraYForToroidalMap()
+        {
+            float w = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float h = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float margin = Mathf.Max(1f, loadingCameraFitMargin);
+            float halfW = w * 0.5f * margin;
+            float halfH = h * 0.5f * margin;
+            if (cam == null)
+                return loadingCameraHeight;
+            float vRad = Mathf.Tan(0.5f * cam.fieldOfView * Mathf.Deg2Rad);
+            if (vRad < 1e-5f)
+                return loadingCameraHeight;
+            float hRad = vRad * Mathf.Max(0.01f, cam.aspect);
+            float distForZ = halfH / vRad;
+            float distForX = halfW / hRad;
+            float fit = Mathf.Max(distForX, distForZ);
+            return Mathf.Max(loadingCameraHeight, fit);
         }
 
         /// <summary>Show the loading screen and set up zoomed-out camera view.</summary>
@@ -299,9 +342,9 @@ namespace TitanOrbit.UI
         {
             teamMenuShownAfterLoad = false;
             var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
-            bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
+            bool wantsLayoutPlayback = nm != null && nm.IsClient;
             joinPlaybackProgress = 0f;
-            joinPlaybackComplete = !pureClient;
+            joinPlaybackComplete = !wantsLayoutPlayback;
             if (joinLayoutPlaybackRoutine != null)
             {
                 StopCoroutine(joinLayoutPlaybackRoutine);
@@ -318,43 +361,149 @@ namespace TitanOrbit.UI
                 loadingPanel.SetActive(true);
                 wasShowing = true;
                 loadingStartTime = Time.realtimeSinceStartup;
+                ApplyLoadingScreenBackdropAlpha();
             }
 
             OverrideCameraForLoading(true);
 
-            if (pureClient)
+            if (wantsLayoutPlayback)
             {
                 var mapGen = FindFirstObjectByType<MapGenerator>();
                 if (mapGen != null)
-                    joinLayoutPlaybackRoutine = StartCoroutine(CoJoinClientLayoutPlayback(mapGen));
+                    joinLayoutPlaybackRoutine = StartCoroutine(CoJoinClientLayoutPlayback(mapGen, nm));
             }
         }
 
-        private IEnumerator CoJoinClientLayoutPlayback(MapGenerator mapGen)
+        private void ApplyLoadingScreenBackdropAlpha()
         {
-            float waitMeta = 0f;
-            const float metaTimeout = 90f;
-            while (mapGen != null && !mapGen.HasClientJoinLayoutReady() && waitMeta < metaTimeout)
-            {
-                waitMeta += Time.unscaledDeltaTime;
-                yield return null;
-            }
-            if (mapGen == null || !mapGen.HasClientJoinLayoutReady())
+            if (loadingPanel == null) return;
+            var img = loadingPanel.GetComponent<Image>();
+            if (img == null) return;
+            Color c = img.color;
+            c.a = Mathf.Clamp01(loadingBackdropImageAlpha);
+            img.color = c;
+        }
+
+        private IEnumerator CoJoinClientLayoutPlayback(MapGenerator mapGen, NetworkManager nm)
+        {
+            if (mapGen == null || nm == null || !nm.IsClient)
             {
                 joinPlaybackComplete = true;
                 joinLayoutPlaybackRoutine = null;
                 yield break;
             }
 
+            bool listenHost = nm.IsClient && nm.IsServer;
+
             joinPreviewRoot = new GameObject("JoinLoadingPreview");
             joinPreviewRoot.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             joinPlaybackProgress = 0.02f;
-            yield return mapGen.StartCoroutine(mapGen.CoPlayJoinLayout(joinPreviewRoot.transform, p => joinPlaybackProgress = p));
+
+            const float metaTimeout = 90f;
+            float waitStart = Time.realtimeSinceStartup;
+
+            while (mapGen != null && (!mapGen.LoadingComplete || mapGen.BlueprintEntryCount == 0))
+            {
+                if (joinPreviewRoot == null)
+                {
+                    joinLayoutPlaybackRoutine = null;
+                    yield break;
+                }
+
+                if (Time.realtimeSinceStartup - waitStart > metaTimeout)
+                {
+                    Debug.LogWarning("[LoadingScreenController] Timed out waiting for map blueprint before build animation.");
+                    break;
+                }
+
+                joinPlaybackProgress = Mathf.Clamp01(mapGen.LoadingProgress) * 0.92f;
+                yield return null;
+            }
+
+            int n = mapGen != null ? mapGen.BlueprintEntryCount : 0;
+            if (mapGen == null || joinPreviewRoot == null || n <= 0)
+            {
+                if (mapGen != null)
+                {
+                    mapGen.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(true);
+                    if (listenHost)
+                        mapGen.SetAuthoritativeMapVisualRenderersEnabled(true);
+                }
+
+                joinPlaybackProgress = 1f;
+                joinPlaybackComplete = true;
+                if (joinPreviewRoot != null)
+                {
+                    Destroy(joinPreviewRoot);
+                    joinPreviewRoot = null;
+                }
+                joinLayoutPlaybackRoutine = null;
+                yield break;
+            }
+
+            var entries = new MapLayoutEntry[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (!mapGen.TryGetBlueprintEntry(i, out entries[i]))
+                {
+                    Debug.LogWarning("[LoadingScreenController] Blueprint snapshot failed at index " + i + ".");
+                    joinPlaybackProgress = 1f;
+                    joinPlaybackComplete = true;
+                    mapGen.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(true);
+                    if (listenHost)
+                        mapGen.SetAuthoritativeMapVisualRenderersEnabled(true);
+                    if (joinPreviewRoot != null)
+                    {
+                        Destroy(joinPreviewRoot);
+                        joinPreviewRoot = null;
+                    }
+                    joinLayoutPlaybackRoutine = null;
+                    yield break;
+                }
+            }
+
+            mapGen.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(false);
+            if (listenHost)
+                mapGen.SetAuthoritativeMapVisualRenderersEnabled(false);
+
+            var revealedNetworkObjectIds = new HashSet<ulong>();
+            float perStep = Mathf.Max(
+                loadingPreviewMinSpawnSpacingRealtime,
+                loadingBuildTargetDurationSeconds / Mathf.Max(1, n));
+
+            for (int idx = 0; idx < n; idx++)
+            {
+                if (mapGen == null || joinPreviewRoot == null)
+                    break;
+
+                float waitCap = Mathf.Max(0.35f, loadingRevealMaxWaitPerBlueprintEntrySeconds);
+                float started = Time.realtimeSinceStartup;
+                while (mapGen != null && !mapGen.TryRevealOneMapEntityForBlueprintEntry(entries[idx], revealedNetworkObjectIds, loadingBlueprintRevealMaxToroidalDistance))
+                {
+                    if (Time.realtimeSinceStartup - started > waitCap)
+                        break;
+                    yield return null;
+                }
+
+                joinPlaybackProgress = (idx + 1f) / Mathf.Max(1f, n);
+
+                yield return new WaitForSecondsRealtime(perStep);
+                if ((idx + 1) % loadingPreviewMaxSpawnsPerFrame == 0)
+                    yield return null;
+            }
+
+            if (mapGen != null)
+            {
+                if (listenHost)
+                    mapGen.SetAuthoritativeMapVisualRenderersEnabled(true);
+                mapGen.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(true);
+            }
+
             joinPlaybackProgress = 1f;
-            // Keep the preview visible until replicated NetworkObjects start arriving (or timeout) so the map does not go empty before sync.
+
             float hold = 0f;
             const float holdMax = 2.5f;
-            while (joinPreviewRoot != null && hold < holdMax && mapGen.GetClientWorldReplicationProgress() < 0.08f)
+            while (joinPreviewRoot != null && mapGen != null && hold < holdMax && mapGen.GetClientWorldReplicationProgress() < 0.08f)
             {
                 hold += Time.unscaledDeltaTime;
                 yield return null;
@@ -372,6 +521,13 @@ namespace TitanOrbit.UI
         /// <summary>Hide loading screen and show team menu. Camera stays zoomed out until player picks a team.</summary>
         public void HideLoadingAndShowTeamMenu()
         {
+            var mapGenRestore = FindFirstObjectByType<MapGenerator>();
+            if (mapGenRestore != null)
+            {
+                mapGenRestore.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(true);
+                mapGenRestore.SetAuthoritativeMapVisualRenderersEnabled(true);
+            }
+
             if (joinLayoutPlaybackRoutine != null)
             {
                 StopCoroutine(joinLayoutPlaybackRoutine);
@@ -463,7 +619,8 @@ namespace TitanOrbit.UI
                 {
                     cam.orthographic = false;
                     cam.fieldOfView = 45f;
-                    cam.transform.position = new Vector3(0, loadingCameraHeight, 0);
+                    float y = ComputeLoadingCameraYForToroidalMap();
+                    cam.transform.position = new Vector3(0, y, 0);
                     cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
                 }
             }
@@ -480,6 +637,13 @@ namespace TitanOrbit.UI
 
         private void OnDestroy()
         {
+            var mapGenRestore = FindFirstObjectByType<MapGenerator>();
+            if (mapGenRestore != null)
+            {
+                mapGenRestore.SetAllSpawnedMapVisualRenderersEnabledForLocalClient(true);
+                mapGenRestore.SetAuthoritativeMapVisualRenderersEnabled(true);
+            }
+
             if (teamSelectTransitionRoutine != null)
                 StopCoroutine(teamSelectTransitionRoutine);
             if (cameraOverridden && cameraController != null)

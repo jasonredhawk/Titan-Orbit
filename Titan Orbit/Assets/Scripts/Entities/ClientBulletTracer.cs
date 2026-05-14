@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Audio;
 using TitanOrbit.Camera;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
@@ -11,16 +12,22 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Cosmetic-only client bullet visual. Other players' shots are spawned from <see cref="CombatSystem"/>'s server
     /// batch and advance with synced server time. The firing owner uses <see cref="SpawnOwnerPredicted"/> only;
-    /// spawn batches for that owner's ship are ignored so there is no second tracer. Hits remain server-authoritative.
+    /// spawn batches for that owner's ship are ignored so there is no second tracer. Owner tracers sweep physics
+    /// locally for impact VFX (no damage); server impact RPC skips duplicate VFX for that owner. Hits remain
+    /// server-authoritative.
     /// </summary>
     public sealed class ClientBulletTracer : MonoBehaviour
     {
+        private const float OwnerPredictedBulletRadius = 0.3f;
+        private const float OwnerPredictedMinTravelBeforeGenericHit = 0.5f;
+
         private static Transform s_pool;
         private static UnityEngine.Camera s_cachedMainCamera;
         private static int s_cachedCameraFrame = -1;
         private static UnityEngine.Camera s_cachedGameplayCamera;
         private static readonly Dictionary<uint, ClientBulletTracer> s_bySequence = new Dictionary<uint, ClientBulletTracer>(256);
         private static readonly List<ClientBulletTracer> s_ownerPredicted = new List<ClientBulletTracer>(32);
+        private static readonly RaycastHit[] s_ownerPredictedHits = new RaycastHit[32];
 
         private Vector3 logicalSpawn;
         private Vector3 velocity;
@@ -30,6 +37,12 @@ namespace TitanOrbit.Entities
         private float lifetime;
         private uint sequence;
         private bool ownerPredictedVisual;
+
+        private Vector3 lastLogicalWorld;
+        private ulong ownerShipNetworkId;
+        private TeamManager.Team ownerTeam;
+        private float damageForImpactPitch;
+        private int visualPrefabBankIndex;
 
         /// <summary>NetworkObjectId of the local player's ship, or 0 when unavailable.</summary>
         public static ulong GetLocalPlayerOwnedShipNetworkObjectId()
@@ -64,6 +77,11 @@ namespace TitanOrbit.Entities
             tracer.lifetime = Mathf.Max(0.1f, payload.Lifetime);
             tracer.sequence = 0;
             tracer.ownerPredictedVisual = true;
+            tracer.lastLogicalWorld = spawn;
+            tracer.ownerShipNetworkId = payload.OwnerShipNetworkId;
+            tracer.ownerTeam = (TeamManager.Team)payload.OwnerTeamByte;
+            tracer.damageForImpactPitch = Mathf.Max(0.01f, payload.Damage);
+            tracer.visualPrefabBankIndex = payload.VisualPrefabBankIndex;
             s_ownerPredicted.Add(tracer);
 
             go.transform.position = spawn;
@@ -75,39 +93,13 @@ namespace TitanOrbit.Entities
             BulletVisualFactory.BuildVisual(
                 go.transform,
                 payload.VisualPrefabBankIndex,
-                (TeamManager.Team)payload.OwnerTeamByte,
+                tracer.ownerTeam,
                 shape,
                 payload.ScaleMultiplier,
                 speedForVisual,
                 payload.NoTrailFlag != 0);
 
             return go;
-        }
-
-        /// <summary>Removes the closest owner-predicted tracer to an impact (no server sequence on those visuals).</summary>
-        public static void DespawnOwnerPredictedNearestToImpact(Vector3 impactWorldPos, float maxDist)
-        {
-            if (s_ownerPredicted.Count == 0) return;
-            impactWorldPos.y = 0f;
-
-            ClientBulletTracer best = null;
-            float bestD = float.MaxValue;
-            for (int i = 0; i < s_ownerPredicted.Count; i++)
-            {
-                ClientBulletTracer t = s_ownerPredicted[i];
-                if (t == null || !t.ownerPredictedVisual) continue;
-                Vector3 p = t.transform.position;
-                p.y = 0f;
-                float d = ToroidalMap.ToroidalDistance(p, impactWorldPos);
-                if (d < maxDist && d < bestD)
-                {
-                    bestD = d;
-                    best = t;
-                }
-            }
-
-            if (best != null)
-                Object.Destroy(best.gameObject);
         }
 
         public static GameObject Spawn(BulletSpawnPayload payload)
@@ -186,6 +178,15 @@ namespace TitanOrbit.Entities
             Vector3 logical = logicalSpawn + velocity * elapsed;
             logical.y = 0f;
 
+            if (ownerPredictedVisual)
+            {
+                if (TryOwnerPredictedCosmeticHit(logical))
+                {
+                    Destroy(gameObject);
+                    return;
+                }
+            }
+
             if (elapsed > lifetime
                 || ToroidalMap.ToroidalDistance(logical, logicalSpawn) > maxDistance)
             {
@@ -198,6 +199,111 @@ namespace TitanOrbit.Entities
                 ? ToroidalMap.GetDisplayPosition(logical, cam.transform.position)
                 : logical;
             transform.position = displayPos;
+
+            if (ownerPredictedVisual)
+                lastLogicalWorld = logical;
+        }
+
+        /// <summary>
+        /// Client-only sweep: mirrors server bullet spherecast + toroidal asteroid fallback for impact VFX only.
+        /// </summary>
+        private bool TryOwnerPredictedCosmeticHit(Vector3 logicalCurrent)
+        {
+            Vector3 from = lastLogicalWorld;
+            Vector3 to = logicalCurrent;
+            float pathLen = Vector3.Distance(from, to);
+            if (pathLen < 0.001f)
+                return false;
+
+            Vector3 rayDir = (to - from) / pathLen;
+            int hitCount = Physics.SphereCastNonAlloc(
+                from,
+                OwnerPredictedBulletRadius,
+                rayDir,
+                s_ownerPredictedHits,
+                pathLen,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+
+            if (hitCount > 1)
+                SortOwnerPredictedHitsByDistance(hitCount);
+
+            for (int i = 0; i < hitCount; i++)
+            {
+                RaycastHit hit = s_ownerPredictedHits[i];
+                if (hit.collider == null) continue;
+                if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, ownerShipNetworkId))
+                    continue;
+
+                if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam))
+                {
+                    PlayOwnerPredictedImpact(hit.point);
+                    return true;
+                }
+
+                Vector3 along = from + rayDir * hit.distance;
+                float travelled = ToroidalMap.ToroidalDistance(along, logicalSpawn);
+                if (travelled >= OwnerPredictedMinTravelBeforeGenericHit)
+                {
+                    PlayOwnerPredictedImpact(hit.point);
+                    return true;
+                }
+            }
+
+            if (BulletHitResolver.TryToroidalAsteroidSegmentCosmeticOnly(
+                    from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
+            {
+                toroidalImpact.y = 0f;
+                PlayOwnerPredictedImpact(toroidalImpact);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void SortOwnerPredictedHitsByDistance(int n)
+        {
+            for (int i = 1; i < n; i++)
+            {
+                RaycastHit key = s_ownerPredictedHits[i];
+                float kd = key.distance;
+                int j = i - 1;
+                while (j >= 0 && s_ownerPredictedHits[j].distance > kd)
+                {
+                    s_ownerPredictedHits[j + 1] = s_ownerPredictedHits[j];
+                    j--;
+                }
+                s_ownerPredictedHits[j + 1] = key;
+            }
+        }
+
+        private void PlayOwnerPredictedImpact(Vector3 position)
+        {
+            position.y = 0f;
+            float pitch = BulletHitResolver.GetImpactSoundPitch(damageForImpactPitch);
+
+            if (Application.isMobilePlatform)
+            {
+                BulletVisualFactory.SpawnMobileImpact(position, ownerTeam, BulletVisualFactory.DefaultImpactScale);
+            }
+            else
+            {
+                GameObject prefab = null;
+                if (visualPrefabBankIndex >= 0 && CombatSystem.Instance != null)
+                    prefab = CombatSystem.Instance.GetImpactPrefabFromBank(visualPrefabBankIndex, ownerTeam);
+                if (prefab != null)
+                {
+                    BulletVisualFactory.SpawnImpactAt(
+                        position,
+                        prefab,
+                        pitch,
+                        BulletVisualFactory.DefaultImpactScale,
+                        BulletVisualFactory.DefaultImpactDuration);
+                }
+            }
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayImpactSound(pitch);
         }
 
         /// <summary>

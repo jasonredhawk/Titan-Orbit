@@ -36,6 +36,8 @@ namespace TitanOrbit.UI
         [SerializeField, FormerlySerializedAs("rightMargin")] private float horizontalMargin = 20f;
         [Tooltip("Inset from the bottom or top screen edge, depending on placement.")]
         [SerializeField, FormerlySerializedAs("bottomMargin")] private float verticalMargin = 20f;
+        [Tooltip("When placement is Bottom Left, extra space above the bottom ship upgrade strip before this panel.")]
+        [SerializeField] private float stackGapAboveUpgradeBar = 8f;
 
         [Header("Colors")]
         [SerializeField] private Color backgroundColor = new Color(0f, 0f, 0f, 0.45f);
@@ -290,10 +292,18 @@ namespace TitanOrbit.UI
             return "+" + FormatHudNumber(v, preferInteger);
         }
 
+        private float GetBottomLeftStackYBoost()
+        {
+            if (placement != SpeedometerPlacement.BottomLeft) return 0f;
+            var upgradeBar = Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
+            if (upgradeBar == null) return 0f;
+            return upgradeBar.GetUpgradeBarCanvasHeight() + stackGapAboveUpgradeBar;
+        }
+
         private void ApplyPlacement(RectTransform rootRect)
         {
             float h = horizontalMargin;
-            float v = verticalMargin;
+            float v = verticalMargin + GetBottomLeftStackYBoost();
             switch (placement)
             {
                 case SpeedometerPlacement.BottomLeft:
@@ -374,6 +384,9 @@ namespace TitanOrbit.UI
             if (HUDController.ShipUpgradeTreeObscuresHud)
                 show = false;
             rootPanel.SetActive(show);
+            if (placement == SpeedometerPlacement.BottomLeft)
+                ApplyPlacement(rootPanel.GetComponent<RectTransform>());
+
             if (!show || ship == null)
             {
                 hasLastHorizontalSpeed = false;

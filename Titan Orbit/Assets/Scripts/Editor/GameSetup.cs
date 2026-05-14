@@ -973,7 +973,7 @@ namespace TitanOrbit.Editor
             proximityRadarObj.transform.SetParent(hudObj.transform, false);
             proximityRadarObj.AddComponent<TitanOrbit.UI.ProximityRadarHUD>();
 
-            // Ship Attribute Upgrade bar (bottom center) - 10 abilities, keys 1-9 and 0
+            // Ship Attribute Upgrade bar (bottom-left, sized to clear minimap) - 10 abilities, keys 1-9 and 0
             hudObj.AddComponent<TitanOrbit.UI.ShipAttributeUpgradeHUD>();
 
             // Wire HUDController (ship stats top-left; home planet panel removed)

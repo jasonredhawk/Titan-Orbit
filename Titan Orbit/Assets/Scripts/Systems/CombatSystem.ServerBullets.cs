@@ -124,6 +124,7 @@ namespace TitanOrbit.Systems
             public byte TeamByte;
             public float Pitch;
             public uint Sequence;
+            public ulong OwnerShipNetworkId;
         }
 
         private ServerBullet[] serverBullets;
@@ -458,6 +459,7 @@ namespace TitanOrbit.Systems
                 TeamByte = b.OwnerTeam == TeamManager.Team.None ? (byte)0 : (byte)b.OwnerTeam,
                 Pitch = BulletHitResolver.GetImpactSoundPitch(b.Damage),
                 Sequence = b.Sequence,
+                OwnerShipNetworkId = b.OwnerShipNetworkId,
             });
             ReleaseSlot(slot);
         }
@@ -492,7 +494,7 @@ namespace TitanOrbit.Systems
             for (int i = 0; i < pendingImpacts.Count; i++)
             {
                 PendingImpact p = pendingImpacts[i];
-                SpawnBulletImpactClientRpc(p.Position, p.BankIndex, p.TeamByte, p.Pitch, p.Sequence);
+                SpawnBulletImpactClientRpc(p.Position, p.BankIndex, p.TeamByte, p.Pitch, p.Sequence, p.OwnerShipNetworkId);
             }
             pendingImpacts.Clear();
         }
@@ -513,12 +515,18 @@ namespace TitanOrbit.Systems
         }
 
         [ClientRpc]
-        private void SpawnBulletImpactClientRpc(Vector3 position, int impactPrefabBankIndex, byte teamByte, float pitch, uint sequence)
+        private void SpawnBulletImpactClientRpc(Vector3 position, int impactPrefabBankIndex, byte teamByte, float pitch, uint sequence, ulong bulletOwnerShipNetworkId)
         {
+            ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
+            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound from the server RPC.
+            if (localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
+            {
+                ClientBulletTracer.DespawnBySequence(sequence);
+                return;
+            }
+
             TeamManager.Team team = (TeamManager.Team)teamByte;
             ClientBulletTracer.DespawnBySequence(sequence);
-            // Owner predicted tracers are not keyed by server sequence; clear the nearest cosmetic bullet.
-            ClientBulletTracer.DespawnOwnerPredictedNearestToImpact(position, 3.5f);
 
             if (Application.isMobilePlatform)
             {

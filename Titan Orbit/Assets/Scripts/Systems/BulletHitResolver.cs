@@ -76,6 +76,96 @@ namespace TitanOrbit.Systems
             return false;
         }
 
+        /// <summary>
+        /// Client-only: same target types as <see cref="TryHit"/> with no damage or RPCs. Used so owner-predicted
+        /// bullet visuals stop on asteroids, ships, moons, etc. without waiting for the server impact message.
+        /// </summary>
+        public static bool IsCosmeticBulletImpactTarget(Collider other, TeamManager.Team ownerTeam)
+        {
+            if (other == null) return false;
+
+            Asteroid asteroid = other.GetComponentInParent<Asteroid>();
+            if (asteroid != null && !asteroid.IsDestroyed)
+                return true;
+
+            PlanetGemMoon moon = other.GetComponentInParent<PlanetGemMoon>();
+            if (moon != null)
+                return !moon.IsTeamFriendlyToThisMoon(ownerTeam);
+
+            ShipDeathDebris debrisShield = other.GetComponentInParent<ShipDeathDebris>();
+            if (debrisShield != null)
+                return debrisShield.WouldAbsorbEnemyBulletCosmetic(ownerTeam);
+
+            Starship ship = other.GetComponentInParent<Starship>();
+            if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
+                return true;
+
+            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Toroidal asteroid segment test without applying damage (owner-predicted client tracer only).
+        /// </summary>
+        public static bool TryToroidalAsteroidSegmentCosmeticOnly(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            out Vector3 impactPos)
+        {
+            impactPos = to;
+            if (Asteroid.AllAsteroids == null || Asteroid.AllAsteroids.Count == 0)
+                return false;
+
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+            float bestDistSq = float.MaxValue;
+            Asteroid bestAsteroid = null;
+            Vector3 bestImpact = to;
+
+            float radiusPad = Mathf.Max(0.01f, bulletRadius);
+
+            for (int i = 0; i < Asteroid.AllAsteroids.Count; i++)
+            {
+                Asteroid asteroid = Asteroid.AllAsteroids[i];
+                if (asteroid == null || asteroid.IsDestroyed) continue;
+
+                float combinedRadius = asteroid.GetCollisionRadiusWorld() + radiusPad;
+                Vector3 center = asteroid.transform.position;
+
+                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
+                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
+
+                Vector3 seg = toLocal - fromLocal;
+                if (seg.x > halfW) seg.x -= mapW;
+                else if (seg.x < -halfW) seg.x += mapW;
+                if (seg.z > halfH) seg.z -= mapH;
+                else if (seg.z < -halfH) seg.z += mapH;
+                Vector3 toLocalUnwrapped = fromLocal + seg;
+
+                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
+                float distSq = closest.sqrMagnitude;
+                if (distSq > combinedRadius * combinedRadius) continue;
+
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    bestAsteroid = asteroid;
+                    bestImpact = new Vector3(center.x + closest.x, FixedY, center.z + closest.z);
+                }
+            }
+
+            if (bestAsteroid == null) return false;
+
+            impactPos = bestImpact;
+            return true;
+        }
+
         public static void ApplyAsteroidHit(Asteroid asteroid, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
             float appliedDamage = damage;

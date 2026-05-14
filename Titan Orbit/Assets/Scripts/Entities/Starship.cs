@@ -670,6 +670,11 @@ namespace TitanOrbit.Entities
         /// <summary>Forward acceleration along facing (m/s²), updated every FixedUpdate. Used for pitch when network/ownership would hide raw input.</summary>
         private float _cachedForwardAccelAlongFwd;
 
+        /// <summary>Below this horizontal speed (m/s), visual banking ignores microscopic yaw and forward-accel pitch is not derived from velocity (stops idle rocking from mouse jitter + in-place rotation).</summary>
+        private const float IdleVisualLinearSpeedThreshold = 0.12f;
+        /// <summary>When nearly stationary, per-frame yaw smaller than this (degrees) does not drive bank angle.</summary>
+        private const float IdleBankSignedAngleDeadbandDeg = 0.55f;
+
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth
         {
@@ -1929,6 +1934,13 @@ namespace TitanOrbit.Entities
             ff.Normalize();
             float fwdSp = Vector3.Dot(v, ff);
             float dt = Time.fixedDeltaTime;
+            if (v.magnitude < IdleVisualLinearSpeedThreshold)
+            {
+                _cachedForwardAccelAlongFwd = 0f;
+                _visualPitchPrevFwdSpeed = fwdSp;
+                _visualPitchFwdSpeedInitialized = true;
+                return;
+            }
             if (_visualPitchFwdSpeedInitialized)
                 _cachedForwardAccelAlongFwd = (fwdSp - _visualPitchPrevFwdSpeed) / Mathf.Max(1e-5f, dt);
             else
@@ -1977,6 +1989,11 @@ namespace TitanOrbit.Entities
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
             // Roll (Z): bank whenever turning; amount based on turn rate, independent of forward speed.
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
+            Vector3 velFlat = rb.linearVelocity;
+            velFlat.y = 0f;
+            if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
+                && Mathf.Abs(signedAngle) < IdleBankSignedAngleDeadbandDeg)
+                signedAngle = 0f;
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
             float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBank;
@@ -6211,6 +6228,16 @@ namespace TitanOrbit.Entities
             if (remainingHits <= 0)
                 Destroy(gameObject);
             return true;
+        }
+
+        /// <summary>Read-only: whether an enemy bullet would be absorbed (for client-only tracer VFX; does not change state).</summary>
+        public bool WouldAbsorbEnemyBulletCosmetic(TeamManager.Team bulletTeam)
+        {
+            if (Time.time > activeUntilTime)
+                return false;
+            if (ownerTeam != TeamManager.Team.None && bulletTeam == ownerTeam)
+                return false;
+            return remainingHits > 0;
         }
     }
 }

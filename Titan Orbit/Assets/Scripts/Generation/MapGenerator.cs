@@ -193,7 +193,7 @@ namespace TitanOrbit.Generation
         {
             endHomesProgress = 0.33f;
             endNeutralsProgress = 0.66f;
-            if (!IsClient || IsServer || blueprint == null || blueprint.Count == 0)
+            if (!IsClient || blueprint == null || blueprint.Count == 0)
                 return;
             int n = blueprint.Count;
             int homes = 0, neutrals = 0;
@@ -208,10 +208,201 @@ namespace TitanOrbit.Generation
             endNeutralsProgress = (homes + neutrals) * inv;
         }
 
+        /// <summary>Step delay (seconds) used when pacing join/loading preview spawns for a map of this many blueprint rows.</summary>
+        public float GetJoinPreviewStepDelayForEntryCount(int totalEntries) =>
+            ComputeEffectiveProgressiveDelay(Mathf.Max(1, totalEntries));
+
+        /// <summary>Asteroid step delay for join/loading preview pacing.</summary>
+        public float GetJoinPreviewAsteroidDelayForEntryCount(int totalEntries) =>
+            ComputeEffectiveAsteroidDelay(GetJoinPreviewStepDelayForEntryCount(totalEntries));
+
+        /// <summary>Read one row from the replicated blueprint (client-safe).</summary>
+        public bool TryGetBlueprintEntry(int index, out MapLayoutEntry entry)
+        {
+            entry = default;
+            if (blueprint == null || index < 0 || index >= blueprint.Count)
+                return false;
+            entry = blueprint[index];
+            return true;
+        }
+
+        /// <summary>
+        /// Local client: spawn a preview from a snapshot entry (same visuals as <see cref="ClientSpawnLoadingPreviewAt"/>).
+        /// </summary>
+        public void ClientSpawnLoadingPreviewFromEntry(in MapLayoutEntry e, Transform previewParent, ref int neutralTemplateId)
+        {
+            if (!IsClient || previewParent == null)
+                return;
+            SpawnJoinPreviewForEntry(e, previewParent, ref neutralTemplateId);
+        }
+
+        /// <summary>
+        /// Any client (including listen host): toggles renderers on map-related spawned <see cref="NetworkObject"/>s from the spawn manager.
+        /// </summary>
+        public void SetAllSpawnedMapVisualRenderersEnabledForLocalClient(bool enabled)
+        {
+            if (!IsClient)
+                return;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || nm.SpawnManager == null)
+                return;
+            foreach (var netObj in nm.SpawnManager.SpawnedObjects.Values)
+            {
+                if (netObj == null || !netObj.IsSpawned)
+                    continue;
+                if (netObj.GetComponentInChildren<Asteroid>(true) == null
+                    && netObj.GetComponentInChildren<Planet>(true) == null)
+                    continue;
+                foreach (var r in netObj.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (r != null)
+                        r.enabled = enabled;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dedicated client: toggles mesh/visual renderers on replicated map content so loading previews are visible
+        /// instead of networked meshes popping in over the animation.
+        /// </summary>
+        public void SetClientReplicatedMapVisualRenderersEnabled(bool enabled)
+        {
+            if (!IsClient || IsServer)
+                return;
+            SetAllSpawnedMapVisualRenderersEnabledForLocalClient(enabled);
+        }
+
+        /// <summary>
+        /// Local client (dedicated client or listen host): spawn one non-networked preview from the blueprint.
+        /// Call indices in order so neutral planets receive monotonic template ids.
+        /// </summary>
+        public bool ClientSpawnLoadingPreviewAt(int index, Transform previewParent, ref int neutralTemplateId, out MapLayoutKind kind)
+        {
+            kind = default;
+            if (!IsClient || blueprint == null || previewParent == null)
+                return false;
+            if (index < 0 || index >= blueprint.Count)
+                return false;
+            MapLayoutEntry e = blueprint[index];
+            kind = e.Kind;
+            SpawnJoinPreviewForEntry(e, previewParent, ref neutralTemplateId);
+            return true;
+        }
+
+        /// <summary>
+        /// Listen host only: toggles renderers on authoritative map content under this generator so loading previews can play without z-fighting.
+        /// </summary>
+        public void SetAuthoritativeMapVisualRenderersEnabled(bool enabled)
+        {
+            if (!IsServer || !IsClient)
+                return;
+            void Walk(Transform t)
+            {
+                if (t == null) return;
+                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (r != null)
+                        r.enabled = enabled;
+                }
+            }
+            Walk(planetsParent);
+            Walk(asteroidsParent);
+            Walk(homePlanetsParent);
+        }
+
+        /// <summary>
+        /// Enables renderers on the single best-matching spawned map <see cref="NetworkObject"/> for this blueprint row.
+        /// Call in blueprint order; pass the same <paramref name="revealedNetworkObjectIds"/> set across calls so each entity reveals at most once.
+        /// </summary>
+        public bool TryRevealOneMapEntityForBlueprintEntry(in MapLayoutEntry e, HashSet<ulong> revealedNetworkObjectIds, float maxToroidalDistance)
+        {
+            if (!IsClient)
+                return false;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || nm.SpawnManager == null)
+                return false;
+
+            NetworkObject best = null;
+            float bestD = float.MaxValue;
+
+            foreach (var netObj in nm.SpawnManager.SpawnedObjects.Values)
+            {
+                if (netObj == null || !netObj.IsSpawned)
+                    continue;
+                if (revealedNetworkObjectIds.Contains(netObj.NetworkObjectId))
+                    continue;
+                if (netObj.GetComponentInParent<Starship>(true) != null)
+                    continue;
+                if (!MapEntryKindMatchesNetworkObject(e.Kind, netObj))
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(e.Position, netObj.transform.position);
+                if (d < bestD && d <= maxToroidalDistance)
+                {
+                    bestD = d;
+                    best = netObj;
+                }
+            }
+
+            if (best == null)
+                return false;
+
+            revealedNetworkObjectIds.Add(best.NetworkObjectId);
+            foreach (var r in best.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r != null)
+                    r.enabled = true;
+            }
+            return true;
+        }
+
+        private static bool MapEntryKindMatchesNetworkObject(MapLayoutKind kind, NetworkObject netObj)
+        {
+            switch (kind)
+            {
+                case MapLayoutKind.Home:
+                    return netObj.GetComponentInChildren<HomePlanet>(true) != null;
+                case MapLayoutKind.Neutral:
+                    return netObj.GetComponentInChildren<HomePlanet>(true) == null
+                        && netObj.GetComponentInChildren<Planet>(true) != null;
+                case MapLayoutKind.Asteroid:
+                    return netObj.GetComponentInChildren<Asteroid>(true) != null;
+                default:
+                    return false;
+            }
+        }
+
+        private void SpawnJoinPreviewForEntry(in MapLayoutEntry e, Transform previewParent, ref int neutralTemplateId)
+        {
+            GameObject prefab = e.Kind switch
+            {
+                MapLayoutKind.Home => homePlanetPrefab,
+                MapLayoutKind.Neutral => planetPrefab,
+                MapLayoutKind.Asteroid => asteroidPrefab,
+                _ => null
+            };
+            if (prefab == null) return;
+
+            GameObject go = UnityEngine.Object.Instantiate(prefab, e.Position, e.Rotation, previewParent);
+            go.transform.localScale = e.Scale;
+            if (e.Kind == MapLayoutKind.Neutral)
+            {
+                var pl = go.GetComponent<Planet>();
+                if (pl != null)
+                    pl.SetTemplatePlanetId(++neutralTemplateId);
+            }
+            StripNetworkForLocalPreview(go);
+            foreach (var ren in go.GetComponentsInChildren<Renderer>(true))
+            {
+                if (ren != null)
+                    ren.enabled = true;
+            }
+        }
+
         /// <summary>Client-only: progressive instantiate preview copies (network components stripped) in original spawn order, driven by the server-published blueprint.</summary>
         public IEnumerator CoPlayJoinLayout(Transform previewParent, System.Action<float> onProgress)
         {
-            if (!IsClient || IsServer || blueprint == null || blueprint.Count == 0)
+            if (!IsClient || blueprint == null || blueprint.Count == 0)
                 yield break;
 
             // Snapshot the list so the iteration is stable even if the server appends late entries during playback.
@@ -227,30 +418,11 @@ namespace TitanOrbit.Generation
 
             for (int i = 0; i < entries.Length; i++)
             {
-                MapLayoutEntry e = entries[i];
-                GameObject prefab = e.Kind switch
-                {
-                    MapLayoutKind.Home => homePlanetPrefab,
-                    MapLayoutKind.Neutral => planetPrefab,
-                    MapLayoutKind.Asteroid => asteroidPrefab,
-                    _ => null
-                };
-                if (prefab != null)
-                {
-                    GameObject go = UnityEngine.Object.Instantiate(prefab, e.Position, e.Rotation, previewParent);
-                    go.transform.localScale = e.Scale;
-                    if (e.Kind == MapLayoutKind.Neutral)
-                    {
-                        var pl = go.GetComponent<Planet>();
-                        if (pl != null)
-                            pl.SetTemplatePlanetId(++neutralTemplateId);
-                    }
-                    StripNetworkForLocalPreview(go);
-                }
+                SpawnJoinPreviewForEntry(entries[i], previewParent, ref neutralTemplateId);
 
                 onProgress?.Invoke((float)(i + 1) / totalSteps);
 
-                bool isAst = e.Kind == MapLayoutKind.Asteroid;
+                bool isAst = entries[i].Kind == MapLayoutKind.Asteroid;
                 float w = isAst ? asteroidDelay : stepDelay;
                 if (w > 0f)
                     yield return new WaitForSeconds(w);
