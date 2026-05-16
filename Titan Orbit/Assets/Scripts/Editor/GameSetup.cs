@@ -2289,6 +2289,12 @@ namespace TitanOrbit.Editor
             var mr = go.GetComponent<MeshRenderer>();
             if (mr != null) mr.sharedMaterial = CreateAndSaveMaterial("TitanOrbit_PeopleTransport", new Color(0.95f, 0.8f, 0.4f));
             go.AddComponent<NetworkObject>();
+            var netObj = go.GetComponent<NetworkObject>();
+            if (netObj != null) netObj.SynchronizeTransform = false;
+            var nt = go.AddComponent<Unity.Netcode.Components.NetworkTransform>();
+            nt.Interpolate = true;
+            go.AddComponent<Unity.Netcode.Components.NetworkRigidbody>();
+            go.AddComponent<TitanOrbit.Entities.ToroidalRenderer>();
             go.AddComponent<TitanOrbit.Entities.PeopleTransportProjectile>();
             string path = "Assets/Prefabs/PeopleTransport.prefab";
             EnsurePrefabDirectory();

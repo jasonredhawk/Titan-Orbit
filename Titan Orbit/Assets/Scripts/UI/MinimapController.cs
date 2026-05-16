@@ -601,15 +601,15 @@ namespace TitanOrbit.UI
 
         private void SetupExpandButton()
         {
-            // Create expand button in bottom-right corner of minimap
+            // Top-left of minimap (easier thumb reach on phones than bottom-right screen corner)
             GameObject buttonObj = new GameObject("ExpandButton");
             buttonObj.transform.SetParent(minimapRect, false);
             
             RectTransform buttonRect = buttonObj.AddComponent<RectTransform>();
-            buttonRect.anchorMin = new Vector2(1, 0);
-            buttonRect.anchorMax = new Vector2(1, 0);
-            buttonRect.pivot = new Vector2(1, 0);
-            buttonRect.anchoredPosition = new Vector2(-8, 8);
+            buttonRect.anchorMin = new Vector2(0, 1);
+            buttonRect.anchorMax = new Vector2(0, 1);
+            buttonRect.pivot = new Vector2(0, 1);
+            buttonRect.anchoredPosition = new Vector2(8, -8);
             buttonRect.sizeDelta = new Vector2(46f, 20f);
             
             Image buttonImage = buttonObj.AddComponent<Image>();
@@ -865,16 +865,16 @@ namespace TitanOrbit.UI
             SetupMask();
             SetupCircularBorder();
             
-            // Update button icon back to expand icon and reposition to bottom-right
+            // Update button icon back to expand icon and reposition to top-left of minimap
             if (expandButton != null)
             {
                 RectTransform buttonRect = expandButton.GetComponent<RectTransform>();
                 if (buttonRect != null)
                 {
-                    buttonRect.anchorMin = new Vector2(1, 0);
-                    buttonRect.anchorMax = new Vector2(1, 0);
-                    buttonRect.pivot = new Vector2(1, 0);
-                    buttonRect.anchoredPosition = new Vector2(-8, 8);
+                    buttonRect.anchorMin = new Vector2(0, 1);
+                    buttonRect.anchorMax = new Vector2(0, 1);
+                    buttonRect.pivot = new Vector2(0, 1);
+                    buttonRect.anchoredPosition = new Vector2(8, -8);
                     buttonRect.sizeDelta = new Vector2(46f, 20f);
                 }
 

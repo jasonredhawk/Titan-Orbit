@@ -4,6 +4,8 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
+using TitanOrbit.Debugging;
+using TitanOrbit.Generation;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -150,15 +152,34 @@ namespace TitanOrbit.Systems
 
         private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId)
         {
+            if (!IsServer) return;
             GameObject prefab = GetPeopleTransportPrefab();
-            if (prefab == null || amount <= 0f) return;
+            if (prefab == null || amount <= 0f)
+            {
+                #region agent log
+                AgentDebugNdjson7964bb.Log(
+                    "H4",
+                    "GemSpawner.SpawnPeopleTransport",
+                    "abort",
+                    "{\"reason\":\"" + (prefab == null ? "prefab_null" : "amount_lte_0") + "\",\"isLoad\":" + (isLoad ? "true" : "false") + "}");
+                #endregion
+                return;
+            }
 
-            Vector3 dir = (toPos - fromPos);
+            #region agent log
+            AgentDebugNdjson7964bb.Log(
+                "H4",
+                "GemSpawner.SpawnPeopleTransport",
+                "spawn",
+                "{\"isLoad\":" + (isLoad ? "true" : "false") + ",\"amount\":" + amount.ToString(CultureInfo.InvariantCulture)
+                + ",\"targetNetId\":" + targetNetworkObjectId + "}");
+            #endregion
+
+            Vector3 pos = fromPos;
+            Vector3 dir = ToroidalMap.ToroidalDirection(fromPos, toPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             else dir.Normalize();
-
-            Vector3 pos = fromPos;
             float speed = 6f;
 
             GameObject obj = Instantiate(prefab, pos, Quaternion.identity);

@@ -41,7 +41,8 @@ namespace TitanOrbit.Entities
             // NetworkRigidbody keeps client RBs kinematic while NetworkTransform drives the root.
             bool isBullet = GetComponent<Bullet>() != null;
             bool isGem = GetComponent<Gem>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet || isGem))
+            bool isPeopleTransport = GetComponent<PeopleTransportProjectile>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem || isPeopleTransport))
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null)
@@ -65,7 +66,8 @@ namespace TitanOrbit.Entities
                 return;
             bool isBullet = GetComponent<Bullet>() != null;
             bool isGem = GetComponent<Gem>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet || isGem) && visualChild == null)
+            bool isPeopleTransport = GetComponent<PeopleTransportProjectile>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem || isPeopleTransport) && visualChild == null)
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null) visualChild = v;

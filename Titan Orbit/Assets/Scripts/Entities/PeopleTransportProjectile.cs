@@ -1,8 +1,11 @@
 using UnityEngine;
 using Unity.Netcode;
+using Unity.Netcode.Components;
+using System.Globalization;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.Debugging;
 
 namespace TitanOrbit.Entities
 {
@@ -27,16 +30,54 @@ namespace TitanOrbit.Entities
         private const float VisualScaleMaxMultiplier = 2.1f;
         private Vector3 baseVisualScale = Vector3.one;
 
+        #region agent log
+        private static float _agentDbgLastProjectileClientLog = -999f;
+        #endregion
+
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
             baseVisualScale = transform.localScale.sqrMagnitude > 0.0001f ? transform.localScale : Vector3.one;
+            EnsureNetworkedMoverComponents();
+        }
+
+        /// <summary>Match Gem prefab: NetworkTransform + NetworkRigidbody + ToroidalRenderer for client visuals on a toroidal map.</summary>
+        private void EnsureNetworkedMoverComponents()
+        {
+            if (GetComponent<NetworkTransform>() == null)
+            {
+                var nt = gameObject.AddComponent<NetworkTransform>();
+                nt.Interpolate = true;
+            }
+
+            if (GetComponent<NetworkRigidbody>() == null)
+                gameObject.AddComponent<NetworkRigidbody>();
+
+            if (GetComponent<ToroidalRenderer>() == null)
+                gameObject.AddComponent<ToroidalRenderer>();
+
+            var netObj = GetComponent<NetworkObject>();
+            if (netObj != null)
+                netObj.SynchronizeTransform = false;
         }
 
         public override void OnNetworkSpawn()
         {
             amount.OnValueChanged += OnAmountChanged;
             ApplyVisualScaleFromAmount(amount.Value);
+
+            #region agent log
+            if (!IsServer && IsClient && Time.unscaledTime - _agentDbgLastProjectileClientLog >= 0.15f)
+            {
+                _agentDbgLastProjectileClientLog = Time.unscaledTime;
+                AgentDebugNdjson7964bb.Log(
+                    "H_visual",
+                    "PeopleTransportProjectile.OnNetworkSpawn",
+                    "projectile_on_client",
+                    "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
+                    + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
+            }
+            #endregion
         }
 
         private void FixedUpdate()
@@ -160,7 +201,11 @@ namespace TitanOrbit.Entities
             float clampedAmount = Mathf.Clamp(Mathf.Max(0.001f, peopleAmount), PeopleAmountScaleMin, PeopleAmountScaleMax);
             float normalized = Mathf.InverseLerp(PeopleAmountScaleMin, PeopleAmountScaleMax, clampedAmount);
             float scaleMultiplier = Mathf.Lerp(VisualScaleMinMultiplier, VisualScaleMaxMultiplier, normalized);
-            transform.localScale = baseVisualScale * scaleMultiplier;
+            Vector3 scale = baseVisualScale * scaleMultiplier;
+            transform.localScale = scale;
+            Transform visual = transform.Find("Visual");
+            if (visual != null)
+                visual.localScale = Vector3.one;
         }
 
         private void OnTriggerEnter(Collider other)

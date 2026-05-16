@@ -1,106 +1,65 @@
 #!/usr/bin/env bash
-# Free disk space on a GCE (or other) Linux VM before uploading a new Titan Orbit headless build.
-# Windows: tools\gce\vm_free_disk_for_server_upload_gce.bat (or .ps1) [useIap] [aggressive] — no gcloud scp/pscp
-# On the VM (browser SSH / Cloud Shell), e.g.:
-#   bash vm_free_disk_for_server_upload.sh
-#   TITANORBIT_SERVER_DIR=/home/jason_redhawk/titanorbit-server/TitanOrbitLinux1 bash vm_free_disk_for_server_upload.sh
-#
-# Optional:
-#   --aggressive   journal smaller cap, apt lists cache, optional docker prune, /var/crash
-#
-# Staged OpenSSH uploads land in /tmp (see upload_linux_build_to_gce_openssh.ps1); partial files
-# must be removed or the next scp can fail with "write remote ... Failure".
-# Deploy archives exclude TitanOrbitServer_BackUpThisFolder_* and Titan Orbit_BurstDebugInformation_*;
-# if an old tarball on the VM still contained them, rm the trees here and redeploy.
+# VM cleanup before Titan Orbit deploy. Windows: vm_free_disk_for_server_upload_gce.ps1 [useIap] [aggressive]
+# TITANORBIT_SERVER_DIR=/path/to/TitanOrbitLinux1 to override game dir.
+# --aggressive: apt lists, journal 32M, /var/crash, docker prune, rm entire game dir, rm ~/.cache
 
 set -euo pipefail
 
 AGGRESSIVE=false
-for a in "$@"; do
-  if [[ "$a" == "--aggressive" ]]; then AGGRESSIVE=true; fi
-done
+for a in "$@"; do [[ "$a" == "--aggressive" ]] && AGGRESSIVE=true; done
 
-INSTALL_ROOT="${TITANORBIT_SERVER_DIR:-$HOME/titanorbit-server/TitanOrbitLinux1}"
+GAME_DIR="${TITANORBIT_SERVER_DIR:-$HOME/titanorbit-server/TitanOrbitLinux1}"
+SERVER_PARENT="$(dirname -- "$GAME_DIR")"
 
-echo "== Disk before =="
-df -h / /home /tmp 2>/dev/null || df -h /
+echo "== Disk before =="; df -h / /home /tmp 2>/dev/null || df -h /
+echo "== du /home/$USER (largest last) =="; du -xhd1 "/home/$USER" 2>/dev/null | sort -h | tail -n 12 || true
 
-echo ""
-echo "== Removing staged SCP / upload tarballs in /tmp (Titan Orbit) =="
-# Partial or completed uploads from tools/gce upload scripts and README Cloud Shell examples.
-sudo bash -c 'shopt -s nullglob
-paths=(/tmp/TitanOrbitLinux*.tar.gz /tmp/titan-latest.tgz /tmp/titan-*.tgz /tmp/titan-*.tar.gz)
-if ((${#paths[@]})); then rm -fv "${paths[@]}"; else echo "(no matching tarballs in /tmp)"; fi'
+echo "== stop titanorbit-server =="
+command -v systemctl >/dev/null 2>&1 && { sudo systemctl stop titanorbit-server 2>/dev/null || true; sleep 2; }
 
-echo ""
-echo "== Removing staged upload tarballs in home (~/.titanorbit-upload-*.tar.gz) =="
-find "$HOME" -maxdepth 1 -name '.titanorbit-upload-*.tar.gz' -type f -print -delete 2>/dev/null || true
-
-echo ""
-echo "== Removing Unity IL2CPP / Burst debug trees under install (if present) =="
-# These are huge and not needed on the VM; safe to delete even if upload tarball excluded them.
-if [[ -d "$INSTALL_ROOT/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame" ]]; then
-  rm -rfv "$INSTALL_ROOT/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame"
-fi
-if [[ -d "$INSTALL_ROOT/Titan Orbit_BurstDebugInformation_DoNotShip" ]]; then
-  rm -rfv "$INSTALL_ROOT/Titan Orbit_BurstDebugInformation_DoNotShip"
+echo "== truncate Unity logs under $SERVER_PARENT =="
+if [[ -d "$SERVER_PARENT" ]]; then
+  find "$SERVER_PARENT" -type f \( -name 'Player.log' -o -name 'TitanOrbitDedicatedServer.log' -o -name 'output.log' \) 2>/dev/null | while read -r f; do
+    echo "  $f"; truncate -s 0 "$f" 2>/dev/null || true
+  done
+  find "$SERVER_PARENT" -path '*/TitanOrbitServer_Data/StreamingAssets/*.log' -type f -delete 2>/dev/null || true
 fi
 
-echo ""
-echo "== APT package cache cleanup (needs sudo) =="
+echo "== rm partial/broken install (tiny/missing global-metadata.dat) =="
+META="$GAME_DIR/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat"
+if [[ -d "$GAME_DIR" ]]; then
+  sz=0; [[ -f "$META" ]] && sz=$(stat -c%s "$META" 2>/dev/null || echo 0)
+  if [[ ! -f "$META" ]] || [[ "$sz" -lt 100000 ]]; then echo "  rm -rf $GAME_DIR"; rm -rf "$GAME_DIR"; fi
+fi
+
+echo "== rm IL2CPP/Burst junk dirs if present =="
+if [[ -d "$GAME_DIR/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame" ]]; then rm -rf "$GAME_DIR/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame"; fi
+if [[ -d "$GAME_DIR/Titan Orbit_BurstDebugInformation_DoNotShip" ]]; then rm -rf "$GAME_DIR/Titan Orbit_BurstDebugInformation_DoNotShip"; fi
+
+echo "== /tmp Titan tarballs =="
+sudo bash -c 'shopt -s nullglob; p=(/tmp/TitanOrbitLinux*.tar.gz /tmp/titan-latest.tgz /tmp/titan-*.tgz /tmp/titan-*.tar.gz); ((${#p[@]})) && rm -f "${p[@]}"'
+
+echo "== ~/.titanorbit-upload-*.tar.gz =="; find "$HOME" -maxdepth 1 -name '.titanorbit-upload-*.tar.gz' -type f -delete 2>/dev/null || true
+
+echo "== apt clean =="
 if command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get clean
-  sudo apt-get autoclean -y || true
-  sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
-else
-  echo "(no apt-get; skipping)"
+  sudo apt-get clean; sudo apt-get autoclean -y || true; sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
 fi
+if $AGGRESSIVE && command -v apt-get >/dev/null 2>&1; then sudo rm -rf /var/lib/apt/lists/* /var/lib/apt/lists/partial/* 2>/dev/null || true; fi
 
-if $AGGRESSIVE; then
-  echo ""
-  echo "== Aggressive: remove apt lists cache (regenerated on next apt update) =="
-  if command -v apt-get >/dev/null 2>&1; then
-    sudo rm -rf /var/lib/apt/lists/* /var/lib/apt/lists/partial/* 2>/dev/null || true
-  fi
-fi
-
-echo ""
-echo "== Journal vacuum (needs sudo) =="
+echo "== journalctl vacuum =="
 if command -v journalctl >/dev/null 2>&1; then
-  if $AGGRESSIVE; then
-    sudo journalctl --vacuum-size=50M || true
-  else
-    sudo journalctl --vacuum-size=150M || true
-  fi
-else
-  echo "(no journalctl; skipping)"
+  if $AGGRESSIVE; then sudo journalctl --vacuum-size=32M || true; else sudo journalctl --vacuum-size=64M || true; fi
 fi
 
 if $AGGRESSIVE; then
-  echo ""
-  echo "== Aggressive: crash dumps under /var/crash =="
-  if [[ -d /var/crash ]]; then
-    sudo bash -c 'shopt -s nullglob; c=(/var/crash/*); ((${#c[@]})) && rm -rfv "${c[@]}"'
-  fi
-
-  echo ""
-  echo "== Aggressive: Docker unused data (prune; not a full image wipe) =="
-  if command -v docker >/dev/null 2>&1; then
-    sudo docker system prune -f 2>/dev/null || docker system prune -f 2>/dev/null || true
-  else
-    echo "(no docker; skipping)"
-  fi
+  echo "== aggressive: /var/crash =="; [[ -d /var/crash ]] && sudo bash -c 'shopt -s nullglob; c=(/var/crash/*); ((${#c[@]})) && rm -rf "${c[@]}"'
+  echo "== aggressive: docker prune =="; command -v docker >/dev/null 2>&1 && { sudo docker system prune -f 2>/dev/null || true; }
+  echo "== aggressive: rm game $GAME_DIR =="; [[ -d "$GAME_DIR" ]] && rm -rf "$GAME_DIR"
 fi
 
-echo ""
-echo "== Optional user caches (pip) =="
-if [[ -d "$HOME/.cache/pip" ]]; then
-  rm -rfv "$HOME/.cache/pip"
-fi
+echo "== user cache =="; if $AGGRESSIVE; then [[ -d "$HOME/.cache" ]] && rm -rf "$HOME/.cache"; else [[ -d "$HOME/.cache/pip" ]] && rm -rf "$HOME/.cache/pip"; fi
 
-echo ""
-echo "== Disk after =="
-df -h / /home /tmp 2>/dev/null || df -h /
-
-echo ""
-echo "Done. Re-upload your headless build, then: sudo systemctl restart titanorbit-server"
+echo "== Disk after =="; df -h / /home /tmp 2>/dev/null || df -h /
+du -xhd1 "/home/$USER" 2>/dev/null | sort -h | tail -n 12 || true
+echo "Done. Still full? Resize boot disk. Start server: sudo systemctl start titanorbit-server"

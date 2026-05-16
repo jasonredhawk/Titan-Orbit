@@ -12,6 +12,7 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.Debugging;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
 using SciFiArsenal;
@@ -630,9 +631,22 @@ namespace TitanOrbit.Entities
         private float lastDepositSpawnTime = -999f;
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
-        [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
+        [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 0f;
         private float peopleTransferStationaryTimer;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
+
+        /// <summary>
+        /// Player ships simulate on the owner; on the server <see cref="Rigidbody.linearVelocity"/> is not updated.
+        /// Orbit population transfer and stable-orbit checks run server-side, so we derive planar speed from replicated pose deltas.
+        /// </summary>
+        private Vector3 _serverLastPlanarPoseForVelocity;
+        private Vector3 _serverEstimatedPlanarVelocity;
+        private bool _serverHasLastPlanarPoseForVelocity;
+
+        #region agent log
+        private float _agentDbgLastPeopleTransferLog = -999f;
+        private float _agentDbgLastClientOrbitLog = -999f;
+        #endregion
 
         // Galactic zoom tracking (server-side)
         private bool hadGemsWhileInOrbitThisOrbit;
@@ -1376,6 +1390,44 @@ namespace TitanOrbit.Entities
                 nt.SetState(position, rotation, transform.localScale, teleportDisabled: false);
         }
 
+        [ClientRpc]
+        private void AgentDbgMirrorOrbitPopClientRpc(
+            bool havePlanet,
+            bool inAnyShell,
+            bool stable,
+            bool friendly,
+            bool reinforce,
+            float surplusAboveHalf,
+            int peopleSpace,
+            bool gemNull,
+            float xferTimer,
+            float xferHold,
+            float curPopSnapshot,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner) return;
+            string role = "game_client";
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsHost)
+                role = "host_client";
+            string pn = currentOrbitPlanet != null ? (currentOrbitPlanet.name ?? "?") : "null";
+            AgentDebugNdjson7964bb.Log(
+                "H_server_mirror",
+                "Starship.AgentDbgMirrorOrbitPopClientRpc",
+                "server_player_orbit_pop",
+                "{\"role\":\"" + AgentDebugNdjson7964bb.JsonEscape(role) + "\",\"havePlanet\":" + (havePlanet ? "true" : "false")
+                + ",\"clientCachedPlanet\":\"" + AgentDebugNdjson7964bb.JsonEscape(pn) + "\",\"inAnyShell\":" + (inAnyShell ? "true" : "false")
+                + ",\"stable\":" + (stable ? "true" : "false")
+                + ",\"friendly\":" + (friendly ? "true" : "false")
+                + ",\"reinforce\":" + (reinforce ? "true" : "false")
+                + ",\"surplusAboveHalf\":" + surplusAboveHalf.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"peopleSpace\":" + peopleSpace + ",\"gemNull\":" + (gemNull ? "true" : "false")
+                + ",\"timer\":" + xferTimer.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"hold\":" + xferHold.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"curPop\":" + curPopSnapshot.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"shipTeam\":" + (int)shipTeam.Value + "}");
+        }
+
         private void Update()
         {
             // Server: regen for ALL ships (including AI) - run before IsOwner check
@@ -1425,6 +1477,23 @@ namespace TitanOrbit.Entities
             }
 
             if (!IsOwner) return;
+
+            #region agent log
+            if (!IsServer && !isDead.Value && !_isAIControlled && Time.time - _agentDbgLastClientOrbitLog >= 1f)
+            {
+                _agentDbgLastClientOrbitLog = Time.time;
+                bool inCachedShell = currentOrbitPlanet != null && rb != null
+                    && IsShipInCachedPlanetOrbitShell(currentOrbitPlanet, transform.position, rb.position);
+                string pn = currentOrbitPlanet != null ? (currentOrbitPlanet.name ?? "?") : "null";
+                AgentDebugNdjson7964bb.Log(
+                    "H_client",
+                    "Starship.Update",
+                    "client_owner_orbit",
+                    "{\"planet\":\"" + AgentDebugNdjson7964bb.JsonEscape(pn) + "\",\"isInOrbit\":" + (IsInOrbit ? "true" : "false")
+                    + ",\"inCachedShell\":" + (inCachedShell ? "true" : "false") + "}");
+            }
+            #endregion
+
             // AI ships have their own controller; skip player input and orbit UI logic
             if (_isAIControlled) return;
 
@@ -2030,6 +2099,31 @@ namespace TitanOrbit.Entities
 
             try
             {
+            // Owner-authoritative ships: server never runs player thrust/orbit integration, so rb.linearVelocity is stale.
+            // Population transfer and IsInStableOrbit use motion — estimate planar velocity from consecutive replicated positions.
+            if (IsServer && !_isAIControlled)
+            {
+                if (isDead.Value)
+                {
+                    _serverHasLastPlanarPoseForVelocity = false;
+                    _serverEstimatedPlanarVelocity = Vector3.zero;
+                }
+                else if (rb != null)
+                {
+                    // OwnerAuthoritativeNetworkTransform updates the root transform on the server; rb can lag one frame behind NT.
+                    Vector3 pos = transform.position;
+                    pos.y = 0f;
+                    if (_serverHasLastPlanarPoseForVelocity)
+                    {
+                        Vector3 delta = pos - _serverLastPlanarPoseForVelocity;
+                        delta.y = 0f;
+                        float dt = Time.fixedDeltaTime;
+                        _serverEstimatedPlanarVelocity = dt > 0.0001f ? delta / dt : Vector3.zero;
+                    }
+                    _serverLastPlanarPoseForVelocity = pos;
+                    _serverHasLastPlanarPoseForVelocity = true;
+                }
+            }
 
             // Apply asteroid bounce before movement forces so thrust does not overwrite the rebound.
             if (_hasPendingAsteroidBounce)
@@ -2872,8 +2966,7 @@ namespace TitanOrbit.Entities
             float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
             if (targetSpeed < 0.001f) return false;
 
-            Vector3 vel = rb.linearVelocity;
-            vel.y = 0f;
+            Vector3 vel = GetPlanarVelocityForOrbitStableCheck();
             float speed = vel.magnitude;
             if (speed < 0.001f) return false;
 
@@ -2884,13 +2977,69 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Population transfer should run while genuinely orbiting (tangential motion), not when nearly stationary.
-        /// The old near-zero velocity gate never fired during normal orbit, so people never loaded/unloaded.
+        /// Planar velocity for orbit-stability checks. Server uses pose deltas for player ships (owner simulates physics).
+        /// </summary>
+        private Vector3 GetPlanarVelocityForOrbitStableCheck()
+        {
+            if (rb == null) return Vector3.zero;
+            if (IsServer && !_isAIControlled)
+                return _serverEstimatedPlanarVelocity;
+            Vector3 v = rb.linearVelocity;
+            v.y = 0f;
+            return v;
+        }
+
+        /// <summary>True when the ship lies in the planet's orbit band (same ring math as <see cref="TryDetectOrbitZoneServer"/>).</summary>
+        private static bool IsWorldPositionInPlanetOrbitShell(Planet planet, Vector3 shipWorldPos)
+        {
+            if (planet == null) return false;
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
+            float inner = planet.PlanetSize * 0.5f;
+            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
+            return dist >= inner && dist <= outer;
+        }
+
+        private static bool IsShipInCachedPlanetOrbitShell(Planet planet, Vector3 transformWorld, Vector3 rigidbodyWorld)
+        {
+            if (planet == null) return false;
+            return IsWorldPositionInPlanetOrbitShell(planet, transformWorld)
+                || IsWorldPositionInPlanetOrbitShell(planet, rigidbodyWorld);
+        }
+
+        /// <summary>Expanded orbit band for server-side checks when owner-replicated pose jitters slightly outside the strict trigger ring.</summary>
+        private static bool IsWorldPositionInPlanetOrbitShellRelaxed(Planet planet, Vector3 shipWorldPos, float margin = 0.1f)
+        {
+            if (planet == null) return false;
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
+            float inner = planet.PlanetSize * 0.5f * (1f - margin);
+            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * (1f + margin);
+            return dist >= inner && dist <= outer;
+        }
+
+        private static bool IsShipInCachedPlanetOrbitShellRelaxed(Planet planet, Vector3 transformWorld, Vector3 rigidbodyWorld)
+        {
+            if (planet == null) return false;
+            return IsWorldPositionInPlanetOrbitShellRelaxed(planet, transformWorld)
+                || IsWorldPositionInPlanetOrbitShellRelaxed(planet, rigidbodyWorld);
+        }
+
+        /// <summary>
+        /// Population transfer gate: strict "UI orbit" on clients/owner, or on the server for player ships simply
+        /// being inside the planet's orbit shell (owner authority makes velocity-based checks unreliable).
         /// </summary>
         private bool IsOrbitStableForPeopleTransfer()
         {
             if (IsInStableOrbit())
                 return true;
+
+            // Owner-simulated ships: server proxy pose can sit just outside the strict collider ring while the owner is in orbit.
+            if (IsServer && !_isAIControlled && currentOrbitPlanet != null && rb != null
+                && (IsShipInCachedPlanetOrbitShell(currentOrbitPlanet, transform.position, rb.position)
+                    || IsShipInCachedPlanetOrbitShellRelaxed(currentOrbitPlanet, transform.position, rb.position)))
+                return true;
+
             // AI uses a fixed tangent speed that may not match GetOrbitTargetSpeed ratios; accept looser alignment in-band.
             if (!_isAIControlled || currentOrbitPlanet == null || rb == null)
                 return false;
@@ -3666,6 +3815,53 @@ namespace TitanOrbit.Entities
         /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload is 1 person/s (not scaled by ship level); load still scales with level (~2 chunks/s).</summary>
         private void TickOrbitPopulationTransfer()
         {
+            if (IsServer && currentOrbitPlanet == null && rb != null)
+                TryBindOrbitPlanetFromShipWorldPositions();
+
+            #region agent log
+            if (IsServer && !_isAIControlled && !isDead.Value)
+            {
+                var dbgNo = GetComponent<NetworkObject>();
+                if (dbgNo != null && dbgNo.IsPlayerObject && Time.fixedTime - _agentDbgLastPeopleTransferLog >= 1f)
+                {
+                    _agentDbgLastPeopleTransferLog = Time.fixedTime;
+                    bool haveP = currentOrbitPlanet != null;
+                    bool inAnyShell = ServerWorldPositionInsideAnyOrbitZone(transform.position)
+                        || (rb != null && ServerWorldPositionInsideAnyOrbitZone(rb.position));
+                    bool stable = haveP && IsOrbitStableForPeopleTransfer();
+                    bool dbgFriendly = false;
+                    float curPop = -1f;
+                    bool reinforce = false;
+                    float avail = -1f;
+                    int peopleSpace = -1;
+                    bool gemNull = GemSpawner.Instance == null;
+                    if (haveP)
+                    {
+                        dbgFriendly = (currentOrbitPlanet is HomePlanet dbgHome && dbgHome.AssignedTeam == shipTeam.Value)
+                            || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
+                        float halfCap = 0.5f * currentOrbitPlanet.MaxPopulation;
+                        curPop = currentOrbitPlanet.CurrentPopulation;
+                        reinforce = curPop < halfCap - 0.0001f;
+                        avail = Mathf.Max(0f, curPop - halfCap);
+                        peopleSpace = Mathf.RoundToInt(PeopleCapacity - currentPeople.Value - peopleInTransit);
+                    }
+                    AgentDbgMirrorOrbitPopClientRpc(
+                        haveP,
+                        inAnyShell,
+                        stable,
+                        dbgFriendly,
+                        reinforce,
+                        avail,
+                        peopleSpace,
+                        gemNull,
+                        peopleTransferStationaryTimer,
+                        peopleTransferStationaryHoldSeconds,
+                        curPop,
+                        OwnerOnlyClientRpcParams);
+                }
+            }
+            #endregion
+
             if (currentOrbitPlanet == null)
             {
                 peopleLoadAccumulator = 0f;
@@ -5176,9 +5372,7 @@ namespace TitanOrbit.Entities
             foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
-                Vector3 toShip = shipWorldPos - planet.transform.position;
-                toShip.y = 0f;
-                float dist = toShip.magnitude;
+                float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
                 float inner = planet.PlanetSize * 0.5f;
                 float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
                 if (dist >= inner && dist <= outer)
@@ -5187,23 +5381,27 @@ namespace TitanOrbit.Entities
             return false;
         }
 
-        private void TryDetectOrbitZoneServer()
+        private bool TryBindOrbitPlanetFromShipWorldPositions()
         {
-            if (!IsServer || rb == null || currentOrbitPlanet != null) return;
+            if (!IsServer || rb == null) return false;
+            Vector3 p0 = rb.position;
+            Vector3 p1 = transform.position;
             foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
-                Vector3 toShip = rb.position - planet.transform.position;
-                toShip.y = 0f;
-                float dist = toShip.magnitude;
-                float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-                if (dist >= inner && dist <= outer)
+                if (IsWorldPositionInPlanetOrbitShell(planet, p0) || IsWorldPositionInPlanetOrbitShell(planet, p1))
                 {
                     currentOrbitPlanet = planet;
-                    break;
+                    return true;
                 }
             }
+            return false;
+        }
+
+        private void TryDetectOrbitZoneServer()
+        {
+            if (!IsServer || rb == null || currentOrbitPlanet != null) return;
+            TryBindOrbitPlanetFromShipWorldPositions();
         }
 
         /// <summary>Owner-only: detect if we're inside a planet's orbit zone (e.g. after spawning there).</summary>

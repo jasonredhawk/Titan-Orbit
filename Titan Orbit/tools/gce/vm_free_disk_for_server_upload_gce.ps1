@@ -5,7 +5,7 @@
 # Usage (from tools\gce):
 #   powershell -NoProfile -File .\vm_free_disk_for_server_upload_gce.ps1
 #   powershell -NoProfile -File .\vm_free_disk_for_server_upload_gce.ps1 -UseIap -Aggressive
-#   powershell -NoProfile -File .\vm_free_disk_for_server_upload_gce.ps1 useIap aggressive   # same as .bat passthrough
+#   Bare words useIap/aggressive bind to $ProjectId/$Zone by mistake — use -UseIap / -Aggressive, or .bat repairs below.
 
 param(
     [string] $ProjectId = "titan-orbit",
@@ -17,6 +17,22 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Positional args from cmd (e.g. vm_free_disk_for_server_upload_gce.bat useIap aggressive) bind to string params first.
+$flagLike = '^(?i)(useIap|aggressive|plainFirst)$'
+foreach ($paramName in @('ProjectId', 'Zone', 'InstanceName', 'SshUser')) {
+    $v = (Get-Variable -Name $paramName -Scope 0).Value
+    if ($v -match $flagLike) {
+        if ($v -ieq 'useIap') { $UseIap = $true }
+        if ($v -ieq 'aggressive') { $Aggressive = $true }
+        switch ($paramName) {
+            'ProjectId' { $ProjectId = 'titan-orbit' }
+            'Zone' { $Zone = 'us-central1-f' }
+            'InstanceName' { $InstanceName = 'titanorbitcp' }
+            'SshUser' { $SshUser = 'jason' }
+        }
+    }
+}
 
 foreach ($a in $args) {
     if ($a -ieq "useIap") { $UseIap = $true }

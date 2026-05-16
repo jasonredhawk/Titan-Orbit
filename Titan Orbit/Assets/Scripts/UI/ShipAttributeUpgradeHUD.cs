@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using TMPro;
@@ -47,10 +48,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float tickColumnFromRight = -5f;
         [Tooltip("Vertical offset of the upgrade tick column (center anchor). Increase to move ticks up.")]
         [SerializeField] private float ticksCenterYOffset = -3f;
-        [Tooltip("Max font size used when auto-sizing the ability title (scaled on mobile).")]
-        [SerializeField] private float titleFontSizeMax = 24f;
-        [Tooltip("Min font size floor for the auto-sized title.")]
-        [SerializeField] private float titleFontSizeMin = 5f;
+        [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
+        [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 16f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
@@ -333,7 +332,7 @@ namespace TitanOrbit.UI
             keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
 
-            // Title: centered in the main area (above cost row, leaves right strip for ticks); largest font that fits (TMP auto-size).
+            // Title: centered in the main area (above cost row, leaves right strip for ticks); one font size for every slot.
             GameObject titleObj = new GameObject("Title");
             titleObj.transform.SetParent(btnObj.transform, false);
             RectTransform titleRect = titleObj.AddComponent<RectTransform>();
@@ -351,9 +350,8 @@ namespace TitanOrbit.UI
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.enableWordWrapping = true;
             titleText.overflowMode = TextOverflowModes.Overflow;
-            titleText.enableAutoSizing = true;
-            titleText.fontSizeMin = E(titleFontSizeMin);
-            titleText.fontSizeMax = E(titleFontSizeMax);
+            titleText.enableAutoSizing = false;
+            titleText.fontSize = E(titleFontSize);
             titleText.raycastTarget = false;
 
             // Tick container: vertical stack, flush to the right edge of the button

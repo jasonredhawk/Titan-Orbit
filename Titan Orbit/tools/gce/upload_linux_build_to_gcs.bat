@@ -113,5 +113,8 @@ if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
 
 echo.
 echo Upload complete.
-echo Next: open Google Cloud Console -^> Cloud Shell ^(terminal icon^) and run the block under "Simple deploy: GCS + Cloud Shell" in tools\gce\README.md
+echo To install on the VM without Cloud Shell: from tools\gce run
+echo   deploy_server_gce.bat useGcs
+echo Optional: freeDisk useGcs useIap   ^(see deploy_server_gce.bat header^).
+echo Manual path: Google Cloud Console -^> Cloud Shell — block "Simple deploy: GCS + Cloud Shell" in tools\gce\README.md
 exit /b 0
