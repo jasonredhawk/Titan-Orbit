@@ -1399,6 +1399,8 @@ namespace TitanOrbit.Entities
             bool reinforce,
             float surplusAboveHalf,
             int peopleSpace,
+            int shipPeople,
+            float unloadAccumSnapshot,
             bool gemNull,
             float xferTimer,
             float xferHold,
@@ -1421,7 +1423,9 @@ namespace TitanOrbit.Entities
                 + ",\"friendly\":" + (friendly ? "true" : "false")
                 + ",\"reinforce\":" + (reinforce ? "true" : "false")
                 + ",\"surplusAboveHalf\":" + surplusAboveHalf.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"peopleSpace\":" + peopleSpace + ",\"gemNull\":" + (gemNull ? "true" : "false")
+                + ",\"peopleSpace\":" + peopleSpace + ",\"shipPeople\":" + shipPeople
+                + ",\"unloadAccum\":" + unloadAccumSnapshot.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"gemNull\":" + (gemNull ? "true" : "false")
                 + ",\"timer\":" + xferTimer.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + ",\"hold\":" + xferHold.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + ",\"curPop\":" + curPopSnapshot.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -3813,10 +3817,38 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload is 1 person/s (not scaled by ship level); load still scales with level (~2 chunks/s).</summary>
+        /// <summary>Server: pick the orbit planet whose shell contains this ship (closest toroidal match). Avoids stale HomePlanet cache blocking hostile unload.</summary>
+        private void RefreshServerOrbitPlanetFromPosition()
+        {
+            if (!IsServer || rb == null)
+                return;
+
+            Vector3 p0 = rb.position;
+            Vector3 p1 = transform.position;
+            Planet best = null;
+            float bestDist = float.MaxValue;
+
+            foreach (var planet in Planet.AllPlanets)
+            {
+                if (planet == null) continue;
+                if (!IsShipInCachedPlanetOrbitShellRelaxed(planet, p1, p0))
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(p0, planet.transform.position);
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    best = planet;
+                }
+            }
+
+            currentOrbitPlanet = best;
+        }
+
         private void TickOrbitPopulationTransfer()
         {
-            if (IsServer && currentOrbitPlanet == null && rb != null)
-                TryBindOrbitPlanetFromShipWorldPositions();
+            if (IsServer)
+                RefreshServerOrbitPlanetFromPosition();
 
             #region agent log
             if (IsServer && !_isAIControlled && !isDead.Value)
@@ -3834,6 +3866,8 @@ namespace TitanOrbit.Entities
                     bool reinforce = false;
                     float avail = -1f;
                     int peopleSpace = -1;
+                    int shipPeople = Mathf.RoundToInt(currentPeople.Value);
+                    float unloadAccumSnap = peopleUnloadAccumulator;
                     bool gemNull = GemSpawner.Instance == null;
                     if (haveP)
                     {
@@ -3853,6 +3887,8 @@ namespace TitanOrbit.Entities
                         reinforce,
                         avail,
                         peopleSpace,
+                        shipPeople,
+                        unloadAccumSnap,
                         gemNull,
                         peopleTransferStationaryTimer,
                         peopleTransferStationaryHoldSeconds,
@@ -4063,52 +4099,61 @@ namespace TitanOrbit.Entities
                     peopleUnloadAccumulator += unloadAccumStep;
 
                 if (peopleUnloadAccumulator >= peopleUnloadChunk
-                    && currentPeople.Value >= peopleUnloadChunk
-                    && GemSpawner.Instance != null)
+                    && currentPeople.Value >= peopleUnloadChunk)
                 {
-                    RemovePeopleServerRpc(peopleUnloadChunk);
+                    ApplyHostileOrbitPeopleUnload(peopleUnloadChunk);
                     peopleUnloadAccumulator -= peopleUnloadChunk;
-
-                    Vector3 shipPos = rb != null ? rb.position : transform.position;
-                    Vector3 planetPos = currentOrbitPlanet.transform.position;
-                    var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
-                    var shipNo = GetComponent<NetworkObject>();
-                    if (planetNo != null && shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleUnloadChunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
-
-                    if (VisualEffectsManager.Instance != null)
-                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                            planetPos,
-                            (int)FloatingCountChannel.PeopleUnload,
-                            peopleUnloadChunk,
-                            (int)shipTeam.Value);
-                    PlayPeopleUnloadSoundClientRpc(peopleUnloadChunk);
                 }
                 else if (currentPeople.Value > 0f
                     && currentPeople.Value < peopleUnloadChunk
-                    && peopleUnloadAccumulator >= currentPeople.Value - 0.0001f
-                    && GemSpawner.Instance != null)
+                    && peopleUnloadAccumulator >= currentPeople.Value - 0.0001f)
                 {
                     float remainder = currentPeople.Value;
-                    RemovePeopleServerRpc(remainder);
+                    ApplyHostileOrbitPeopleUnload(remainder);
                     peopleUnloadAccumulator = Mathf.Max(0f, peopleUnloadAccumulator - remainder);
-
-                    Vector3 shipPos = rb != null ? rb.position : transform.position;
-                    Vector3 planetPos = currentOrbitPlanet.transform.position;
-                    var planetNo = currentOrbitPlanet.GetComponent<NetworkObject>();
-                    var shipNo = GetComponent<NetworkObject>();
-                    if (planetNo != null && shipNo != null)
-                        GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, remainder, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
-
-                    if (VisualEffectsManager.Instance != null)
-                        VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                            planetPos,
-                            (int)FloatingCountChannel.PeopleUnload,
-                            remainder,
-                            (int)shipTeam.Value);
-                    PlayPeopleUnloadSoundClientRpc(remainder);
                 }
             }
+        }
+
+        /// <summary>Server: invasion unload — apply population immediately, spawn visual projectile (delivery only despawns).</summary>
+        private void ApplyHostileOrbitPeopleUnload(float chunk)
+        {
+            if (!IsServer || currentOrbitPlanet == null || chunk <= 0f || currentPeople.Value < chunk - 0.0001f)
+                return;
+
+            Planet targetPlanet = currentOrbitPlanet;
+            RemovePeopleFromServer(chunk);
+            targetPlanet.AddPopulationFromServer(chunk, shipTeam.Value);
+
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            Vector3 planetPos = targetPlanet.transform.position;
+            var planetNo = targetPlanet.GetComponent<NetworkObject>();
+            var shipNo = GetComponent<NetworkObject>();
+            if (GemSpawner.Instance != null && planetNo != null && shipNo != null)
+                GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, chunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
+
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    planetPos,
+                    (int)FloatingCountChannel.PeopleUnload,
+                    chunk,
+                    (int)shipTeam.Value);
+            }
+
+            PlayPeopleUnloadSoundClientRpc(chunk);
+
+            if (ScoreSystem.Instance != null)
+                ScoreSystem.Instance.AwardHostileUnload(this, chunk);
+
+            #region agent log
+            AgentDebugNdjson7964bb.Log(
+                "H_unload",
+                "Starship.ApplyHostileOrbitPeopleUnload",
+                "applied",
+                "{\"chunk\":" + chunk.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"planet\":\"" + AgentDebugNdjson7964bb.JsonEscape(targetPlanet.name ?? "?") + "\"}");
+            #endregion
         }
 
         /// <summary>Server: credits gems straight to the planet (same as old flying deposit gems). No gem projectiles.</summary>
@@ -5128,7 +5173,21 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         public void AddPeopleServerRpc(float amount)
         {
+            AddPeopleFromServer(amount);
+        }
+
+        /// <summary>Server-only: add people without routing through ServerRpc (used by people transport projectiles).</summary>
+        public void AddPeopleFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
             currentPeople.Value = Mathf.Min(currentPeople.Value + amount, PeopleCapacity);
+        }
+
+        /// <summary>Server-only: remove people without routing through ServerRpc.</summary>
+        public void RemovePeopleFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            currentPeople.Value = Mathf.Max(0f, currentPeople.Value - amount);
         }
 
         /// <summary>
@@ -5155,7 +5214,7 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         public void RemovePeopleServerRpc(float amount)
         {
-            currentPeople.Value = Mathf.Max(0f, currentPeople.Value - amount);
+            RemovePeopleFromServer(amount);
         }
 
         [ServerRpc(RequireOwnership = true)]

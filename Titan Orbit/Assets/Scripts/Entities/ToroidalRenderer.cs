@@ -191,9 +191,12 @@ namespace TitanOrbit.Entities
                 }
                 var bullet = GetComponent<Bullet>();
                 bool isBullet = bullet != null;
+                var peopleTransport = GetComponent<PeopleTransportProjectile>();
                 Vector3 bulletExtrapolation = Vector3.zero;
                 if (isBullet && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
                     bulletExtrapolation = bullet.GetClientVisualExtrapolationOffset();
+                else if (peopleTransport != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+                    bulletExtrapolation = peopleTransport.GetClientVisualExtrapolationOffset();
                 displayPos += bulletExtrapolation;
                 // Mobile: toroidal display offset can place bullet visuals off-screen if Camera.main differs from the gameplay camera.
                 // Keep visuals parented at local origin so they follow the network transform (same as desktop when toroidal is wrong).

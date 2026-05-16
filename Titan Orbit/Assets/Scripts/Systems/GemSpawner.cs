@@ -168,18 +168,21 @@ namespace TitanOrbit.Systems
 
             #region agent log
             AgentDebugNdjson7964bb.Log(
-                "H4",
+                isLoad ? "H4" : "H_unload",
                 "GemSpawner.SpawnPeopleTransport",
                 "spawn",
                 "{\"isLoad\":" + (isLoad ? "true" : "false") + ",\"amount\":" + amount.ToString(CultureInfo.InvariantCulture)
                 + ",\"targetNetId\":" + targetNetworkObjectId + "}");
             #endregion
 
-            Vector3 pos = fromPos;
             Vector3 dir = ToroidalMap.ToroidalDirection(fromPos, toPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             else dir.Normalize();
+            // Nudge unload spawns slightly off the hull so the sphere is visible leaving the ship.
+            Vector3 pos = fromPos;
+            if (!isLoad)
+                pos += dir * 0.75f;
             float speed = 6f;
 
             GameObject obj = Instantiate(prefab, pos, Quaternion.identity);

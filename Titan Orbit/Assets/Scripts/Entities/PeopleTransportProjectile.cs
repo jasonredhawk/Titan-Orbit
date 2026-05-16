@@ -22,13 +22,22 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> team = new NetworkVariable<int>((int)TeamManager.Team.None);
         private NetworkVariable<ulong> spawningShipId = new NetworkVariable<ulong>(0);
         private NetworkVariable<ulong> sourcePlanetId = new NetworkVariable<ulong>(0);
+        private NetworkVariable<Vector3> syncedPlanarVelocity = new NetworkVariable<Vector3>(
+            Vector3.zero,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
         private Rigidbody rb;
-        private const float magnetSpeed = 8f;
+        private const float magnetSpeed = 10f;
         private const float PeopleAmountScaleMin = 1f;
         private const float PeopleAmountScaleMax = 12f;
         private const float VisualScaleMinMultiplier = 0.9f;
         private const float VisualScaleMaxMultiplier = 2.1f;
+        private const float ShipCollectSlop = 0.5f;
+        private const float MinInvasionVisualSeconds = 0.4f;
+        private const float MinInvasionVisualTravel = 2.5f;
         private Vector3 baseVisualScale = Vector3.one;
+        private Vector3 serverSpawnPosition;
+        private float serverSpawnTime;
 
         #region agent log
         private static float _agentDbgLastProjectileClientLog = -999f;
@@ -67,51 +76,220 @@ namespace TitanOrbit.Entities
             ApplyVisualScaleFromAmount(amount.Value);
 
             #region agent log
-            if (!IsServer && IsClient && Time.unscaledTime - _agentDbgLastProjectileClientLog >= 0.15f)
+            if (Time.unscaledTime - _agentDbgLastProjectileClientLog >= 0.15f)
             {
                 _agentDbgLastProjectileClientLog = Time.unscaledTime;
-                AgentDebugNdjson7964bb.Log(
-                    "H_visual",
-                    "PeopleTransportProjectile.OnNetworkSpawn",
-                    "projectile_on_client",
-                    "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
-                    + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
+                if (!IsServer && IsClient)
+                {
+                    AgentDebugNdjson7964bb.Log(
+                        "H_visual",
+                        "PeopleTransportProjectile.OnNetworkSpawn",
+                        "projectile_on_client",
+                        "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
+                        + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
+                }
+                else if (IsServer)
+                {
+                    AgentDebugNdjson7964bb.Log(
+                        "H_unload",
+                        "PeopleTransportProjectile.OnNetworkSpawn",
+                        "projectile_on_server",
+                        "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
+                        + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
+                }
             }
             #endregion
+        }
+
+        /// <summary>
+        /// World-space offset for visuals on remote clients (same idea as legacy bullets).
+        /// </summary>
+        public Vector3 GetClientVisualExtrapolationOffset()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
+                return Vector3.zero;
+
+            Vector3 v = syncedPlanarVelocity.Value;
+            v.y = 0f;
+            if (v.sqrMagnitude < 0.0001f)
+                return Vector3.zero;
+
+            var transport = NetworkManager.Singleton.NetworkConfig?.NetworkTransport;
+            float rttSec = 0.1f;
+            if (transport != null)
+            {
+                ulong ms = transport.GetCurrentRtt(NetworkManager.ServerClientId);
+                if (ms > 0)
+                    rttSec = ms * 0.001f;
+            }
+
+            rttSec = Mathf.Clamp(rttSec, 0.02f, 0.35f);
+            return v * (rttSec * 0.55f);
         }
 
         private void FixedUpdate()
         {
             if (!IsServer || rb == null || amount.Value <= 0f) return;
 
-            // When loading (planet->ship), magnetically pull toward the target ship so we track it while it orbits
-            if (isLoad.Value && targetId.Value != 0)
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
+                return;
+
+            Vector3 myPos = rb.position;
+            myPos.y = 0f;
+
+            if (isLoad.Value)
             {
-                var nm = NetworkManager.Singleton;
-                if (nm != null && nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
-                {
-                    Starship ship = targetObj.GetComponent<Starship>();
-                    if (ship != null && !ship.IsDead)
-                    {
-                        if (!ship.IsInOrbit)
-                        {
-                            ReturnToSourcePlanet(ship);
-                            return;
-                        }
+                Starship ship = targetObj.GetComponent<Starship>();
+                if (ship == null || ship.IsDead) return;
 
-                        Vector3 myPos = rb.position;
-                        Vector3 shipPos = ship.transform.position;
-                        Vector3 toShip = ToroidalMap.ToroidalDirection(myPos, shipPos);
-                        toShip.y = 0f;
-                        if (toShip.sqrMagnitude < 0.0001f) toShip = Vector3.forward;
-                        else toShip.Normalize();
+                Vector3 shipPos = GetShipWorldPosition(ship);
+                ApplyMagnetVelocity(myPos, shipPos);
 
-                        Vector3 targetVel = toShip * magnetSpeed;
-                        rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, magnetSpeed * Time.fixedDeltaTime * 4f);
-                        rb.linearDamping = 0f;
-                    }
-                }
+                if (IsWithinShipCollectRange(myPos, ship))
+                    TryDeliverLoadToShip(ship);
             }
+            else
+            {
+                Planet planet = targetObj.GetComponent<Planet>();
+                if (planet == null) return;
+
+                Vector3 planetPos = planet.transform.position;
+                planetPos.y = 0f;
+                ApplyMagnetVelocity(myPos, planetPos);
+
+                if (CanCompleteUnloadDelivery(myPos, planet))
+                    TryDeliverUnloadToPlanet(planet, nm);
+            }
+
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            syncedPlanarVelocity.Value = vel;
+        }
+
+        private static Vector3 GetShipWorldPosition(Starship ship)
+        {
+            Vector3 shipPos = ship.transform.position;
+            var shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+                shipPos = shipRb.position;
+            shipPos.y = 0f;
+            return shipPos;
+        }
+
+        private void ApplyMagnetVelocity(Vector3 myPos, Vector3 targetPos)
+        {
+            Vector3 toTarget = ToroidalMap.ToroidalDirection(myPos, targetPos);
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < 0.0001f) toTarget = Vector3.forward;
+            else toTarget.Normalize();
+
+            Vector3 targetVel = toTarget * magnetSpeed;
+            rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, magnetSpeed * Time.fixedDeltaTime * 4f);
+            rb.linearDamping = 0f;
+        }
+
+        private bool IsWithinShipCollectRange(Vector3 projectilePos, Starship ship)
+        {
+            float hullRadius = ShipCollectSlop;
+            Collider shipCollider = ship.GetComponent<Collider>();
+            if (shipCollider != null && shipCollider.enabled)
+            {
+                Vector3 e = shipCollider.bounds.extents;
+                float colliderRadius = Mathf.Sqrt(e.x * e.x + e.z * e.z);
+                if (colliderRadius > 0.01f)
+                    hullRadius = Mathf.Max(hullRadius, colliderRadius * 0.45f);
+            }
+
+            return ToroidalMap.ToroidalDistance(projectilePos, GetShipWorldPosition(ship)) <= hullRadius;
+        }
+
+        private static bool IsWithinPlanetOrbitShell(Planet planet, Vector3 worldPos)
+        {
+            if (planet == null) return false;
+            worldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(worldPos, planet.transform.position);
+            float inner = planet.PlanetSize * 0.5f * 0.9f;
+            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * 1.1f;
+            return dist >= inner && dist <= outer;
+        }
+
+        private bool IsSameTeamPlanet(Planet planet)
+        {
+            if (planet == null) return false;
+            var sourceTeam = (TeamManager.Team)team.Value;
+            return planet.TeamOwnership == sourceTeam
+                || (planet is HomePlanet home && home.AssignedTeam == sourceTeam);
+        }
+
+        /// <summary>Friendly unload: orbit shell. Invasion unload: must travel from ship then reach near the planet surface (population already applied at spawn).</summary>
+        private bool CanCompleteUnloadDelivery(Vector3 projectilePos, Planet planet)
+        {
+            if (planet == null) return false;
+
+            if (IsSameTeamPlanet(planet))
+                return IsWithinPlanetOrbitShell(planet, projectilePos);
+
+            if (Time.time - serverSpawnTime < MinInvasionVisualSeconds)
+                return false;
+            if (ToroidalMap.ToroidalDistance(projectilePos, serverSpawnPosition) < MinInvasionVisualTravel)
+                return false;
+
+            float distToPlanet = ToroidalMap.ToroidalDistance(projectilePos, planet.transform.position);
+            float surfaceRadius = planet.PlanetSize * 0.5f + planet.PlanetSize * 0.35f;
+            return distToPlanet <= surfaceRadius;
+        }
+
+        private void TryDeliverLoadToShip(Starship ship)
+        {
+            if (!IsServer || amount.Value <= 0f || ship == null) return;
+
+            float space = ship.PeopleCapacity - ship.CurrentPeople;
+            float toAdd = Mathf.Min(amount.Value, space);
+            if (toAdd > 0f)
+            {
+                ship.AddPeopleFromServer(toAdd);
+                Vector3 feedbackPos = GetShipWorldPosition(ship);
+                ship.OnPeopleLoadArrivedFromProjectile(toAdd, (TeamManager.Team)team.Value, feedbackPos);
+                ship.ReleasePeopleInTransit(toAdd);
+                if (ScoreSystem.Instance != null)
+                    ScoreSystem.Instance.AwardFriendlyLoad(ship, toAdd);
+            }
+            else
+                ship.ReleasePeopleInTransit(amount.Value);
+
+            DespawnProjectile();
+        }
+
+        private void TryDeliverUnloadToPlanet(Planet planet, NetworkManager nm)
+        {
+            if (!IsServer || amount.Value <= 0f || planet == null) return;
+
+            bool sameTeamPlanet = IsSameTeamPlanet(planet);
+
+            // Friendly reinforce unload: apply when the projectile reaches the planet.
+            // Hostile invasion: population is applied when the ship spawns the projectile.
+            if (sameTeamPlanet)
+                planet.AddPopulationFromServer(amount.Value, (TeamManager.Team)team.Value);
+
+            #region agent log
+            AgentDebugNdjson7964bb.Log(
+                "H_unload",
+                "PeopleTransportProjectile.TryDeliverUnloadToPlanet",
+                "delivered",
+                "{\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture)
+                + ",\"sameTeam\":" + (sameTeamPlanet ? "true" : "false") + "}");
+            #endregion
+
+            DespawnProjectile();
+        }
+
+        private void DespawnProjectile()
+        {
+            amount.Value = 0f;
+            var no = GetComponent<NetworkObject>();
+            if (no != null)
+                no.Despawn();
         }
 
         public void Initialize(float peopleAmount, ulong targetNetworkObjectId, bool loadingFromPlanet, TeamManager.Team sourceTeam, ulong shipNetworkObjectId = 0, ulong sourcePlanetNetworkObjectId = 0)
@@ -124,55 +302,18 @@ namespace TitanOrbit.Entities
                 team.Value = (int)sourceTeam;
                 spawningShipId.Value = shipNetworkObjectId;
                 sourcePlanetId.Value = sourcePlanetNetworkObjectId;
-                if (rb != null) rb.linearDamping = 0f;
+                if (rb != null)
+                {
+                    rb.linearDamping = 0f;
+                    serverSpawnPosition = rb.position;
+                }
+                else
+                    serverSpawnPosition = transform.position;
+                serverSpawnPosition.y = 0f;
+                serverSpawnTime = Time.time;
                 ApplyVisualScaleFromAmount(peopleAmount);
+                syncedPlanarVelocity.Value = Vector3.zero;
             }
-        }
-
-        private void ReturnToSourcePlanet(Starship targetShip)
-        {
-            if (!IsServer || !isLoad.Value || amount.Value <= 0f) return;
-
-            if (targetShip != null)
-                targetShip.ReleasePeopleInTransit(amount.Value);
-
-            if (sourcePlanetId.Value == 0)
-            {
-                amount.Value = 0f;
-                var no = GetComponent<NetworkObject>();
-                if (no != null) no.Despawn();
-                return;
-            }
-
-            var nm = NetworkManager.Singleton;
-            if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(sourcePlanetId.Value, out NetworkObject sourceObj))
-            {
-                amount.Value = 0f;
-                var no = GetComponent<NetworkObject>();
-                if (no != null) no.Despawn();
-                return;
-            }
-
-            Planet sourcePlanet = sourceObj.GetComponent<Planet>();
-            if (sourcePlanet == null)
-            {
-                amount.Value = 0f;
-                var no = GetComponent<NetworkObject>();
-                if (no != null) no.Despawn();
-                return;
-            }
-
-            isLoad.Value = false;
-            targetId.Value = sourcePlanetId.Value;
-
-            Vector3 myPos = rb.position;
-            Vector3 planetPos = sourcePlanet.transform.position;
-            Vector3 toPlanet = ToroidalMap.ToroidalDirection(myPos, planetPos);
-            toPlanet.y = 0f;
-            if (toPlanet.sqrMagnitude < 0.0001f) toPlanet = Vector3.back;
-            else toPlanet.Normalize();
-            rb.linearVelocity = toPlanet * magnetSpeed;
-            rb.linearDamping = 0f;
         }
 
         public override void OnNetworkDespawn()
@@ -210,8 +351,7 @@ namespace TitanOrbit.Entities
 
         private void OnTriggerEnter(Collider other)
         {
-            if (!IsServer) return;
-            if (amount.Value <= 0f) return;
+            if (!IsServer || amount.Value <= 0f) return;
 
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
@@ -222,44 +362,16 @@ namespace TitanOrbit.Entities
                 Starship ship = targetObj.GetComponent<Starship>();
                 Starship hitShip = other.GetComponent<Starship>() ?? other.GetComponentInParent<Starship>();
                 if (ship != null && hitShip == ship)
-                {
-                    float space = ship.PeopleCapacity - ship.CurrentPeople;
-                    float toAdd = Mathf.Min(amount.Value, space);
-                    if (toAdd > 0f)
-                    {
-                        ship.AddPeopleServerRpc(toAdd);
-                        Vector3 feedbackPos = ship.transform.position;
-                        feedbackPos.y = 0f;
-                        ship.OnPeopleLoadArrivedFromProjectile(toAdd, (TeamManager.Team)team.Value, feedbackPos);
-                        ship.ReleasePeopleInTransit(toAdd);
-                        if (ScoreSystem.Instance != null)
-                            ScoreSystem.Instance.AwardFriendlyLoad(ship, toAdd);
-                    }
-                    else
-                        ship.ReleasePeopleInTransit(amount.Value);
-                    amount.Value = 0f;
-                    var no = GetComponent<NetworkObject>();
-                    if (no != null) no.Despawn();
-                }
+                    TryDeliverLoadToShip(ship);
             }
             else
             {
                 Planet planet = targetObj.GetComponent<Planet>();
-                if (planet != null && other.GetComponent<Planet>() == planet)
-                {
-                    planet.AddPopulationServerRpc(amount.Value, (TeamManager.Team)team.Value);
-                    if (ScoreSystem.Instance != null && spawningShipId.Value != 0 && nm.SpawnManager.SpawnedObjects.TryGetValue(spawningShipId.Value, out var shipObj))
-                    {
-                        var unloader = shipObj.GetComponent<Starship>();
-                        if (unloader != null)
-                            ScoreSystem.Instance.AwardHostileUnload(unloader, amount.Value);
-                    }
-                    amount.Value = 0f;
-                    var no = GetComponent<NetworkObject>();
-                    if (no != null) no.Despawn();
-                }
+                Planet hitPlanet = other.GetComponent<Planet>() ?? other.GetComponentInParent<Planet>();
+                Vector3 myPos = rb != null ? rb.position : transform.position;
+                if (planet != null && hitPlanet == planet && CanCompleteUnloadDelivery(myPos, planet))
+                    TryDeliverUnloadToPlanet(planet, nm);
             }
         }
-
     }
 }

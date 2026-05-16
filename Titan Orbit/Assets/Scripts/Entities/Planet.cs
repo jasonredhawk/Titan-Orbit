@@ -1082,20 +1082,35 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         public void AddPopulationServerRpc(float amount, TeamManager.Team sourceTeam)
         {
+            AddPopulationFromServer(amount, sourceTeam);
+        }
+
+        /// <summary>Server-only: apply population from people transport (reinforce or hostile unload).</summary>
+        public void AddPopulationFromServer(float amount, TeamManager.Team sourceTeam)
+        {
+            if (!IsServer || amount <= 0f) return;
+
             // Same-team planet: add population (reinforce)
             if (teamOwnership.Value != TeamManager.Team.None && teamOwnership.Value == sourceTeam)
             {
                 currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, MaxPopulation);
                 return;
             }
+
             // Neutral or enemy: unload decreases their population (capture attempt)
-            if (amount > 0f)
-                lastHostilePopulationImpactServerTime = Time.time;
+            lastHostilePopulationImpactServerTime = Time.time;
             currentPopulation.Value -= amount;
             if (currentPopulation.Value <= 0)
-            {
-                CapturePlanetServerRpc(sourceTeam);
-            }
+                CapturePlanetFromServer(sourceTeam);
+        }
+
+        private void CapturePlanetFromServer(TeamManager.Team newTeam)
+        {
+            if (!IsServer) return;
+            teamOwnership.Value = newTeam;
+            currentPopulation.Value = 0f;
+            maxPopulation.Value = GetMaxPopulationForPlanet();
+            CapturePlanetClientRpc(newTeam);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -1107,10 +1122,7 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         public void CapturePlanetServerRpc(TeamManager.Team newTeam)
         {
-            teamOwnership.Value = newTeam;
-            currentPopulation.Value = 0f; // Reset population after capture
-            maxPopulation.Value = GetMaxPopulationForPlanet(); // New owner gets full cap (e.g. 50-150)
-            CapturePlanetClientRpc(newTeam);
+            CapturePlanetFromServer(newTeam);
         }
 
         [ClientRpc]
