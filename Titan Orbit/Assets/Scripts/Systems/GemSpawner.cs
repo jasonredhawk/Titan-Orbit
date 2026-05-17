@@ -1,10 +1,8 @@
 using System.Collections.Generic;
-using System.Globalization;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
-using TitanOrbit.Debugging;
 using TitanOrbit.Generation;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -155,25 +153,7 @@ namespace TitanOrbit.Systems
             if (!IsServer) return;
             GameObject prefab = GetPeopleTransportPrefab();
             if (prefab == null || amount <= 0f)
-            {
-                #region agent log
-                AgentDebugNdjson7964bb.Log(
-                    "H4",
-                    "GemSpawner.SpawnPeopleTransport",
-                    "abort",
-                    "{\"reason\":\"" + (prefab == null ? "prefab_null" : "amount_lte_0") + "\",\"isLoad\":" + (isLoad ? "true" : "false") + "}");
-                #endregion
                 return;
-            }
-
-            #region agent log
-            AgentDebugNdjson7964bb.Log(
-                isLoad ? "H4" : "H_unload",
-                "GemSpawner.SpawnPeopleTransport",
-                "spawn",
-                "{\"isLoad\":" + (isLoad ? "true" : "false") + ",\"amount\":" + amount.ToString(CultureInfo.InvariantCulture)
-                + ",\"targetNetId\":" + targetNetworkObjectId + "}");
-            #endregion
 
             Vector3 dir = ToroidalMap.ToroidalDirection(fromPos, toPos);
             dir.y = 0f;

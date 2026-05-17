@@ -1,11 +1,9 @@
 using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
-using System.Globalization;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
-using TitanOrbit.Debugging;
 
 namespace TitanOrbit.Entities
 {
@@ -14,6 +12,7 @@ namespace TitanOrbit.Entities
     /// Absorbs on contact with target.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
+    [DefaultExecutionOrder(32500)] // After ToroidalRenderer repositions the Visual child
     public class PeopleTransportProjectile : NetworkBehaviour
     {
         private NetworkVariable<float> amount = new NetworkVariable<float>(1f);
@@ -27,21 +26,25 @@ namespace TitanOrbit.Entities
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
         private Rigidbody rb;
-        private const float magnetSpeed = 10f;
+        private const float magnetSpeed = 11f;
+        private const float magnetCloseRangeSpeed = 18f;
+        private const float magnetCloseRangeWorld = 5f;
         private const float PeopleAmountScaleMin = 1f;
         private const float PeopleAmountScaleMax = 12f;
         private const float VisualScaleMinMultiplier = 0.9f;
         private const float VisualScaleMaxMultiplier = 2.1f;
-        private const float ShipCollectSlop = 0.5f;
-        private const float MinInvasionVisualSeconds = 0.4f;
-        private const float MinInvasionVisualTravel = 2.5f;
+        private const float ShipCollectHullMultiplier = 0.42f;
+        private const float ShipCollectExtraSlop = 0.3f;
+        private const float PlanetSurfaceReachFraction = 0.96f;
+        private const float MinVisualTravelSeconds = 0.35f;
+        private const float MinVisualTravelDistance = 0.75f;
+        private const float ClientVisualApproachLerp = 24f;
+        private const float ClientVelocityLeadMultiplier = 1.15f;
+        private const float ClientApproachDisplayMax = 28f;
         private Vector3 baseVisualScale = Vector3.one;
         private Vector3 serverSpawnPosition;
         private float serverSpawnTime;
-
-        #region agent log
-        private static float _agentDbgLastProjectileClientLog = -999f;
-        #endregion
+        private Transform visualChild;
 
         private void Awake()
         {
@@ -57,6 +60,14 @@ namespace TitanOrbit.Entities
             {
                 var nt = gameObject.AddComponent<NetworkTransform>();
                 nt.Interpolate = true;
+                nt.UseUnreliableDeltas = true;
+            }
+
+            var existingNt = GetComponent<NetworkTransform>();
+            if (existingNt != null)
+            {
+                existingNt.UseUnreliableDeltas = true;
+                existingNt.PositionThreshold = 0.02f;
             }
 
             if (GetComponent<NetworkRigidbody>() == null)
@@ -74,31 +85,6 @@ namespace TitanOrbit.Entities
         {
             amount.OnValueChanged += OnAmountChanged;
             ApplyVisualScaleFromAmount(amount.Value);
-
-            #region agent log
-            if (Time.unscaledTime - _agentDbgLastProjectileClientLog >= 0.15f)
-            {
-                _agentDbgLastProjectileClientLog = Time.unscaledTime;
-                if (!IsServer && IsClient)
-                {
-                    AgentDebugNdjson7964bb.Log(
-                        "H_visual",
-                        "PeopleTransportProjectile.OnNetworkSpawn",
-                        "projectile_on_client",
-                        "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
-                        + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
-                }
-                else if (IsServer)
-                {
-                    AgentDebugNdjson7964bb.Log(
-                        "H_unload",
-                        "PeopleTransportProjectile.OnNetworkSpawn",
-                        "projectile_on_server",
-                        "{\"isLoad\":" + (isLoad.Value ? "true" : "false")
-                        + ",\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture) + "}");
-                }
-            }
-            #endregion
         }
 
         /// <summary>
@@ -124,7 +110,59 @@ namespace TitanOrbit.Entities
             }
 
             rttSec = Mathf.Clamp(rttSec, 0.02f, 0.35f);
-            return v * (rttSec * 0.55f);
+            return v * (rttSec * ClientVelocityLeadMultiplier);
+        }
+
+        private void LateUpdate()
+        {
+            if (!IsClient || amount.Value <= 0f)
+                return;
+
+            CacheVisualChild();
+            if (visualChild == null)
+                return;
+
+            Vector3? destDisplay = TryGetDestinationDisplayPosition();
+            if (!destDisplay.HasValue)
+                return;
+
+            float displayDist = Vector3.Distance(visualChild.position, destDisplay.Value);
+            if (displayDist > ClientApproachDisplayMax)
+                return;
+
+            float t = 1f - Mathf.Exp(-ClientVisualApproachLerp * Time.deltaTime);
+            visualChild.position = Vector3.Lerp(visualChild.position, destDisplay.Value, t);
+        }
+
+        private void CacheVisualChild()
+        {
+            if (visualChild == null)
+                visualChild = transform.Find("Visual");
+        }
+
+        private Vector3? TryGetDestinationDisplayPosition()
+        {
+            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            if (cam == null)
+                return null;
+
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
+                return null;
+
+            if (isLoad.Value)
+            {
+                Starship ship = targetObj.GetComponent<Starship>();
+                if (ship == null) return null;
+                Vector3 logical = GetShipWorldPosition(ship);
+                return ToroidalMap.GetDisplayPosition(logical, cam.transform.position);
+            }
+
+            Planet planet = targetObj.GetComponent<Planet>();
+            if (planet == null) return null;
+            Vector3 from = rb != null ? rb.position : transform.position;
+            Vector3 surfaceLogical = GetPlanetSurfaceMagnetTarget(planet, from);
+            return ToroidalMap.GetDisplayPosition(surfaceLogical, cam.transform.position);
         }
 
         private void FixedUpdate()
@@ -146,7 +184,7 @@ namespace TitanOrbit.Entities
                 Vector3 shipPos = GetShipWorldPosition(ship);
                 ApplyMagnetVelocity(myPos, shipPos);
 
-                if (IsWithinShipCollectRange(myPos, ship))
+                if (HasMinVisualTravel(myPos) && IsWithinShipCollectRange(myPos, ship))
                     TryDeliverLoadToShip(ship);
             }
             else
@@ -154,9 +192,8 @@ namespace TitanOrbit.Entities
                 Planet planet = targetObj.GetComponent<Planet>();
                 if (planet == null) return;
 
-                Vector3 planetPos = planet.transform.position;
-                planetPos.y = 0f;
-                ApplyMagnetVelocity(myPos, planetPos);
+                Vector3 magnetTarget = GetPlanetSurfaceMagnetTarget(planet, myPos);
+                ApplyMagnetVelocity(myPos, magnetTarget);
 
                 if (CanCompleteUnloadDelivery(myPos, planet))
                     TryDeliverUnloadToPlanet(planet, nm);
@@ -184,34 +221,62 @@ namespace TitanOrbit.Entities
             if (toTarget.sqrMagnitude < 0.0001f) toTarget = Vector3.forward;
             else toTarget.Normalize();
 
-            Vector3 targetVel = toTarget * magnetSpeed;
-            rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, magnetSpeed * Time.fixedDeltaTime * 4f);
+            float dist = ToroidalMap.ToroidalDistance(myPos, targetPos);
+            float speed = dist <= magnetCloseRangeWorld ? magnetCloseRangeSpeed : magnetSpeed;
+            Vector3 targetVel = toTarget * speed;
+            rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
             rb.linearDamping = 0f;
         }
 
-        private bool IsWithinShipCollectRange(Vector3 projectilePos, Starship ship)
+        private float GetShipCollectReach(Starship ship)
         {
-            float hullRadius = ShipCollectSlop;
+            float reach = ShipCollectExtraSlop;
             Collider shipCollider = ship.GetComponent<Collider>();
             if (shipCollider != null && shipCollider.enabled)
             {
                 Vector3 e = shipCollider.bounds.extents;
                 float colliderRadius = Mathf.Sqrt(e.x * e.x + e.z * e.z);
                 if (colliderRadius > 0.01f)
-                    hullRadius = Mathf.Max(hullRadius, colliderRadius * 0.45f);
+                    reach = colliderRadius * ShipCollectHullMultiplier + ShipCollectExtraSlop;
             }
 
-            return ToroidalMap.ToroidalDistance(projectilePos, GetShipWorldPosition(ship)) <= hullRadius;
+            return reach;
         }
 
-        private static bool IsWithinPlanetOrbitShell(Planet planet, Vector3 worldPos)
+        private bool IsWithinShipCollectRange(Vector3 projectilePos, Starship ship)
+        {
+            return ToroidalMap.ToroidalDistance(projectilePos, GetShipWorldPosition(ship)) <= GetShipCollectReach(ship);
+        }
+
+        /// <summary>Point on the planet hull facing the projectile (not the core) so visuals meet the mesh.</summary>
+        private static Vector3 GetPlanetSurfaceMagnetTarget(Planet planet, Vector3 fromPos)
+        {
+            Vector3 planetPos = planet.transform.position;
+            planetPos.y = 0f;
+            Vector3 toCore = ToroidalMap.ToroidalDirection(fromPos, planetPos);
+            toCore.y = 0f;
+            if (toCore.sqrMagnitude < 0.0001f)
+                return planetPos;
+
+            toCore.Normalize();
+            float surfaceWorld = planet.PlanetSize * 0.5f;
+            return planetPos - toCore * surfaceWorld;
+        }
+
+        private static bool IsWithinPlanetSurfaceReach(Planet planet, Vector3 worldPos)
         {
             if (planet == null) return false;
             worldPos.y = 0f;
             float dist = ToroidalMap.ToroidalDistance(worldPos, planet.transform.position);
-            float inner = planet.PlanetSize * 0.5f * 0.9f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * 1.1f;
-            return dist >= inner && dist <= outer;
+            float surfaceWorld = planet.PlanetSize * 0.5f;
+            return dist <= surfaceWorld * PlanetSurfaceReachFraction;
+        }
+
+        private bool HasMinVisualTravel(Vector3 projectilePos)
+        {
+            if (Time.time - serverSpawnTime < MinVisualTravelSeconds)
+                return false;
+            return ToroidalMap.ToroidalDistance(projectilePos, serverSpawnPosition) >= MinVisualTravelDistance;
         }
 
         private bool IsSameTeamPlanet(Planet planet)
@@ -222,22 +287,13 @@ namespace TitanOrbit.Entities
                 || (planet is HomePlanet home && home.AssignedTeam == sourceTeam);
         }
 
-        /// <summary>Friendly unload: orbit shell. Invasion unload: must travel from ship then reach near the planet surface (population already applied at spawn).</summary>
+        /// <summary>Unload completes on the planet hull after a short visible trip (population may already be applied for invasion).</summary>
         private bool CanCompleteUnloadDelivery(Vector3 projectilePos, Planet planet)
         {
             if (planet == null) return false;
-
-            if (IsSameTeamPlanet(planet))
-                return IsWithinPlanetOrbitShell(planet, projectilePos);
-
-            if (Time.time - serverSpawnTime < MinInvasionVisualSeconds)
+            if (!HasMinVisualTravel(projectilePos))
                 return false;
-            if (ToroidalMap.ToroidalDistance(projectilePos, serverSpawnPosition) < MinInvasionVisualTravel)
-                return false;
-
-            float distToPlanet = ToroidalMap.ToroidalDistance(projectilePos, planet.transform.position);
-            float surfaceRadius = planet.PlanetSize * 0.5f + planet.PlanetSize * 0.35f;
-            return distToPlanet <= surfaceRadius;
+            return IsWithinPlanetSurfaceReach(planet, projectilePos);
         }
 
         private void TryDeliverLoadToShip(Starship ship)
@@ -272,15 +328,6 @@ namespace TitanOrbit.Entities
             if (sameTeamPlanet)
                 planet.AddPopulationFromServer(amount.Value, (TeamManager.Team)team.Value);
 
-            #region agent log
-            AgentDebugNdjson7964bb.Log(
-                "H_unload",
-                "PeopleTransportProjectile.TryDeliverUnloadToPlanet",
-                "delivered",
-                "{\"amount\":" + amount.Value.ToString(CultureInfo.InvariantCulture)
-                + ",\"sameTeam\":" + (sameTeamPlanet ? "true" : "false") + "}");
-            #endregion
-
             DespawnProjectile();
         }
 
@@ -302,11 +349,12 @@ namespace TitanOrbit.Entities
                 team.Value = (int)sourceTeam;
                 spawningShipId.Value = shipNetworkObjectId;
                 sourcePlanetId.Value = sourcePlanetNetworkObjectId;
-                if (rb != null)
-                {
-                    rb.linearDamping = 0f;
-                    serverSpawnPosition = rb.position;
-                }
+            if (rb != null)
+            {
+                rb.linearDamping = 0f;
+                rb.interpolation = RigidbodyInterpolation.Interpolate;
+                serverSpawnPosition = rb.position;
+            }
                 else
                     serverSpawnPosition = transform.position;
                 serverSpawnPosition.y = 0f;
@@ -361,7 +409,10 @@ namespace TitanOrbit.Entities
             {
                 Starship ship = targetObj.GetComponent<Starship>();
                 Starship hitShip = other.GetComponent<Starship>() ?? other.GetComponentInParent<Starship>();
-                if (ship != null && hitShip == ship)
+                Vector3 myPos = rb != null ? rb.position : transform.position;
+                if (ship != null && hitShip == ship
+                    && HasMinVisualTravel(myPos)
+                    && IsWithinShipCollectRange(myPos, ship))
                     TryDeliverLoadToShip(ship);
             }
             else

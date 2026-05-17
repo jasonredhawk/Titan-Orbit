@@ -14,6 +14,8 @@ WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
 ExecStartPre=+/bin/bash -c 'chown -R jason:jason /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
 ExecStartPre=+/bin/bash -c 'chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
 ExecStartPre=+/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
+# Abort early if IL2CPP metadata was truncated during tar/upload (Player.log: "Failed to initialize IL2CPP").
+ExecStartPre=+/bin/bash -c 'META=/home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat; SZ=$(stat -c%s "$META" 2>/dev/null || echo 0); if [ "$SZ" -lt 1000000 ]; then echo "FATAL: $META is ${SZ} bytes (need >= 1MB). Redeploy Linux build from GCS or upload_linux_build_to_gce." >&2; exit 1; fi'
 # Logs (SSH on the VM):
 #   tail -f /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log
 #   tail -f /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitDedicatedServer.log

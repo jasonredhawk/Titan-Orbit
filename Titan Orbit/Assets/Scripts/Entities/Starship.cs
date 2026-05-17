@@ -12,7 +12,6 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
-using TitanOrbit.Debugging;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
 using SciFiArsenal;
@@ -642,11 +641,6 @@ namespace TitanOrbit.Entities
         private Vector3 _serverLastPlanarPoseForVelocity;
         private Vector3 _serverEstimatedPlanarVelocity;
         private bool _serverHasLastPlanarPoseForVelocity;
-
-        #region agent log
-        private float _agentDbgLastPeopleTransferLog = -999f;
-        private float _agentDbgLastClientOrbitLog = -999f;
-        #endregion
 
         // Galactic zoom tracking (server-side)
         private bool hadGemsWhileInOrbitThisOrbit;
@@ -1390,48 +1384,6 @@ namespace TitanOrbit.Entities
                 nt.SetState(position, rotation, transform.localScale, teleportDisabled: false);
         }
 
-        [ClientRpc]
-        private void AgentDbgMirrorOrbitPopClientRpc(
-            bool havePlanet,
-            bool inAnyShell,
-            bool stable,
-            bool friendly,
-            bool reinforce,
-            float surplusAboveHalf,
-            int peopleSpace,
-            int shipPeople,
-            float unloadAccumSnapshot,
-            bool gemNull,
-            float xferTimer,
-            float xferHold,
-            float curPopSnapshot,
-            ClientRpcParams clientRpcParams = default)
-        {
-            if (!IsOwner) return;
-            string role = "game_client";
-            var nm = NetworkManager.Singleton;
-            if (nm != null && nm.IsHost)
-                role = "host_client";
-            string pn = currentOrbitPlanet != null ? (currentOrbitPlanet.name ?? "?") : "null";
-            AgentDebugNdjson7964bb.Log(
-                "H_server_mirror",
-                "Starship.AgentDbgMirrorOrbitPopClientRpc",
-                "server_player_orbit_pop",
-                "{\"role\":\"" + AgentDebugNdjson7964bb.JsonEscape(role) + "\",\"havePlanet\":" + (havePlanet ? "true" : "false")
-                + ",\"clientCachedPlanet\":\"" + AgentDebugNdjson7964bb.JsonEscape(pn) + "\",\"inAnyShell\":" + (inAnyShell ? "true" : "false")
-                + ",\"stable\":" + (stable ? "true" : "false")
-                + ",\"friendly\":" + (friendly ? "true" : "false")
-                + ",\"reinforce\":" + (reinforce ? "true" : "false")
-                + ",\"surplusAboveHalf\":" + surplusAboveHalf.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"peopleSpace\":" + peopleSpace + ",\"shipPeople\":" + shipPeople
-                + ",\"unloadAccum\":" + unloadAccumSnapshot.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"gemNull\":" + (gemNull ? "true" : "false")
-                + ",\"timer\":" + xferTimer.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"hold\":" + xferHold.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"curPop\":" + curPopSnapshot.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"shipTeam\":" + (int)shipTeam.Value + "}");
-        }
-
         private void Update()
         {
             // Server: regen for ALL ships (including AI) - run before IsOwner check
@@ -1481,22 +1433,6 @@ namespace TitanOrbit.Entities
             }
 
             if (!IsOwner) return;
-
-            #region agent log
-            if (!IsServer && !isDead.Value && !_isAIControlled && Time.time - _agentDbgLastClientOrbitLog >= 1f)
-            {
-                _agentDbgLastClientOrbitLog = Time.time;
-                bool inCachedShell = currentOrbitPlanet != null && rb != null
-                    && IsShipInCachedPlanetOrbitShell(currentOrbitPlanet, transform.position, rb.position);
-                string pn = currentOrbitPlanet != null ? (currentOrbitPlanet.name ?? "?") : "null";
-                AgentDebugNdjson7964bb.Log(
-                    "H_client",
-                    "Starship.Update",
-                    "client_owner_orbit",
-                    "{\"planet\":\"" + AgentDebugNdjson7964bb.JsonEscape(pn) + "\",\"isInOrbit\":" + (IsInOrbit ? "true" : "false")
-                    + ",\"inCachedShell\":" + (inCachedShell ? "true" : "false") + "}");
-            }
-            #endregion
 
             // AI ships have their own controller; skip player input and orbit UI logic
             if (_isAIControlled) return;
@@ -3850,54 +3786,6 @@ namespace TitanOrbit.Entities
             if (IsServer)
                 RefreshServerOrbitPlanetFromPosition();
 
-            #region agent log
-            if (IsServer && !_isAIControlled && !isDead.Value)
-            {
-                var dbgNo = GetComponent<NetworkObject>();
-                if (dbgNo != null && dbgNo.IsPlayerObject && Time.fixedTime - _agentDbgLastPeopleTransferLog >= 1f)
-                {
-                    _agentDbgLastPeopleTransferLog = Time.fixedTime;
-                    bool haveP = currentOrbitPlanet != null;
-                    bool inAnyShell = ServerWorldPositionInsideAnyOrbitZone(transform.position)
-                        || (rb != null && ServerWorldPositionInsideAnyOrbitZone(rb.position));
-                    bool stable = haveP && IsOrbitStableForPeopleTransfer();
-                    bool dbgFriendly = false;
-                    float curPop = -1f;
-                    bool reinforce = false;
-                    float avail = -1f;
-                    int peopleSpace = -1;
-                    int shipPeople = Mathf.RoundToInt(currentPeople.Value);
-                    float unloadAccumSnap = peopleUnloadAccumulator;
-                    bool gemNull = GemSpawner.Instance == null;
-                    if (haveP)
-                    {
-                        dbgFriendly = (currentOrbitPlanet is HomePlanet dbgHome && dbgHome.AssignedTeam == shipTeam.Value)
-                            || currentOrbitPlanet.TeamOwnership == shipTeam.Value;
-                        float halfCap = 0.5f * currentOrbitPlanet.MaxPopulation;
-                        curPop = currentOrbitPlanet.CurrentPopulation;
-                        reinforce = curPop < halfCap - 0.0001f;
-                        avail = Mathf.Max(0f, curPop - halfCap);
-                        peopleSpace = Mathf.RoundToInt(PeopleCapacity - currentPeople.Value - peopleInTransit);
-                    }
-                    AgentDbgMirrorOrbitPopClientRpc(
-                        haveP,
-                        inAnyShell,
-                        stable,
-                        dbgFriendly,
-                        reinforce,
-                        avail,
-                        peopleSpace,
-                        shipPeople,
-                        unloadAccumSnap,
-                        gemNull,
-                        peopleTransferStationaryTimer,
-                        peopleTransferStationaryHoldSeconds,
-                        curPop,
-                        OwnerOnlyClientRpcParams);
-                }
-            }
-            #endregion
-
             if (currentOrbitPlanet == null)
             {
                 peopleLoadAccumulator = 0f;
@@ -4145,15 +4033,6 @@ namespace TitanOrbit.Entities
 
             if (ScoreSystem.Instance != null)
                 ScoreSystem.Instance.AwardHostileUnload(this, chunk);
-
-            #region agent log
-            AgentDebugNdjson7964bb.Log(
-                "H_unload",
-                "Starship.ApplyHostileOrbitPeopleUnload",
-                "applied",
-                "{\"chunk\":" + chunk.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"planet\":\"" + AgentDebugNdjson7964bb.JsonEscape(targetPlanet.name ?? "?") + "\"}");
-            #endregion
         }
 
         /// <summary>Server: credits gems straight to the planet (same as old flying deposit gems). No gem projectiles.</summary>
