@@ -12,7 +12,6 @@ namespace TitanOrbit.Entities
     /// Absorbs on contact with target.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
-    [DefaultExecutionOrder(32500)] // After ToroidalRenderer repositions the Visual child
     public class PeopleTransportProjectile : NetworkBehaviour
     {
         private NetworkVariable<float> amount = new NetworkVariable<float>(1f);
@@ -38,13 +37,19 @@ namespace TitanOrbit.Entities
         private const float PlanetSurfaceReachFraction = 0.96f;
         private const float MinVisualTravelSeconds = 0.35f;
         private const float MinVisualTravelDistance = 0.75f;
-        private const float ClientVisualApproachLerp = 24f;
-        private const float ClientVelocityLeadMultiplier = 1.15f;
-        private const float ClientApproachDisplayMax = 28f;
+        private const float ClientNetworkSnapDistance = 10f;
+        private const float ClientNetworkBlendRate = 14f;
         private Vector3 baseVisualScale = Vector3.one;
         private Vector3 serverSpawnPosition;
         private float serverSpawnTime;
-        private Transform visualChild;
+        private Vector3 clientPredictedPosition;
+        private Vector3 clientPredictedVelocity;
+        private bool clientPredictionInitialized;
+
+        /// <summary>Remote clients simulate magnet motion locally for smooth visuals; host/server use physics.</summary>
+        public bool UsesClientPredictedPosition => IsClient && !IsServer;
+
+        public Vector3 ClientPredictedLogicalPosition => clientPredictedPosition;
 
         private void Awake()
         {
@@ -85,84 +90,114 @@ namespace TitanOrbit.Entities
         {
             amount.OnValueChanged += OnAmountChanged;
             ApplyVisualScaleFromAmount(amount.Value);
+            ResetClientPredictionFromNetwork();
+            CatchUpClientPredictionAfterSpawn();
         }
 
-        /// <summary>
-        /// World-space offset for visuals on remote clients (same idea as legacy bullets).
-        /// </summary>
-        public Vector3 GetClientVisualExtrapolationOffset()
+        /// <summary>Advance client visuals by ~half RTT so spheres don't pop in behind the ship/planet.</summary>
+        private void CatchUpClientPredictionAfterSpawn()
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)
-                return Vector3.zero;
+            if (!UsesClientPredictedPosition || amount.Value <= 0f)
+                return;
 
-            Vector3 v = syncedPlanarVelocity.Value;
-            v.y = 0f;
-            if (v.sqrMagnitude < 0.0001f)
-                return Vector3.zero;
-
-            var transport = NetworkManager.Singleton.NetworkConfig?.NetworkTransport;
-            float rttSec = 0.1f;
+            float catchUpSec = 0.06f;
+            var nm = NetworkManager.Singleton;
+            var transport = nm?.NetworkConfig?.NetworkTransport;
             if (transport != null)
             {
                 ulong ms = transport.GetCurrentRtt(NetworkManager.ServerClientId);
                 if (ms > 0)
-                    rttSec = ms * 0.001f;
+                    catchUpSec = ms * 0.0005f;
+            }
+            catchUpSec = Mathf.Clamp(catchUpSec, 0f, 0.22f);
+            if (catchUpSec <= 0.001f || !TryGetMagnetTargetPosition(out Vector3 targetPos))
+                return;
+
+            const float step = 1f / 60f;
+            int steps = Mathf.Max(1, Mathf.CeilToInt(catchUpSec / step));
+            for (int i = 0; i < steps; i++)
+            {
+                clientPredictedVelocity = ComputeMagnetVelocity(
+                    clientPredictedPosition, targetPos, clientPredictedVelocity, step);
+                clientPredictedPosition += clientPredictedVelocity * step;
+                clientPredictedPosition.y = 0f;
+            }
+        }
+
+        /// <summary>Legacy RTT extrapolation; unused when <see cref="UsesClientPredictedPosition"/> runs local magnet sim.</summary>
+        public Vector3 GetClientVisualExtrapolationOffset() => Vector3.zero;
+
+        private void Update()
+        {
+            if (!UsesClientPredictedPosition || amount.Value <= 0f)
+                return;
+
+            if (!clientPredictionInitialized)
+                ResetClientPredictionFromNetwork();
+
+            if (!TryGetMagnetTargetPosition(out Vector3 targetPos))
+                return;
+
+            clientPredictedVelocity = ComputeMagnetVelocity(
+                clientPredictedPosition, targetPos, clientPredictedVelocity, Time.deltaTime);
+            clientPredictedPosition += clientPredictedVelocity * Time.deltaTime;
+            clientPredictedPosition.y = 0f;
+
+            SoftBlendClientPredictionTowardNetwork();
+        }
+
+        private void ResetClientPredictionFromNetwork()
+        {
+            clientPredictedPosition = rb != null ? rb.position : transform.position;
+            clientPredictedPosition.y = 0f;
+            clientPredictedVelocity = syncedPlanarVelocity.Value;
+            clientPredictedVelocity.y = 0f;
+            clientPredictionInitialized = true;
+        }
+
+        private void SoftBlendClientPredictionTowardNetwork()
+        {
+            Vector3 netPos = transform.position;
+            netPos.y = 0f;
+            float drift = ToroidalMap.ToroidalDistance(clientPredictedPosition, netPos);
+            if (drift > ClientNetworkSnapDistance)
+            {
+                clientPredictedPosition = netPos;
+                clientPredictedVelocity = syncedPlanarVelocity.Value;
+                clientPredictedVelocity.y = 0f;
+                return;
             }
 
-            rttSec = Mathf.Clamp(rttSec, 0.02f, 0.35f);
-            return v * (rttSec * ClientVelocityLeadMultiplier);
+            if (drift < 0.2f)
+                return;
+
+            float blend = (1f - Mathf.Exp(-ClientNetworkBlendRate * Time.deltaTime)) * Mathf.Clamp01(drift / 2.5f);
+            clientPredictedPosition += ToroidalMap.ShortestWorldOffsetXZ(clientPredictedPosition, netPos) * blend;
+            clientPredictedPosition.y = 0f;
+            clientPredictedVelocity = Vector3.Lerp(clientPredictedVelocity, syncedPlanarVelocity.Value, blend * 0.35f);
         }
 
-        private void LateUpdate()
+        private bool TryGetMagnetTargetPosition(out Vector3 targetPos)
         {
-            if (!IsClient || amount.Value <= 0f)
-                return;
-
-            CacheVisualChild();
-            if (visualChild == null)
-                return;
-
-            Vector3? destDisplay = TryGetDestinationDisplayPosition();
-            if (!destDisplay.HasValue)
-                return;
-
-            float displayDist = Vector3.Distance(visualChild.position, destDisplay.Value);
-            if (displayDist > ClientApproachDisplayMax)
-                return;
-
-            float t = 1f - Mathf.Exp(-ClientVisualApproachLerp * Time.deltaTime);
-            visualChild.position = Vector3.Lerp(visualChild.position, destDisplay.Value, t);
-        }
-
-        private void CacheVisualChild()
-        {
-            if (visualChild == null)
-                visualChild = transform.Find("Visual");
-        }
-
-        private Vector3? TryGetDestinationDisplayPosition()
-        {
-            UnityEngine.Camera cam = UnityEngine.Camera.main;
-            if (cam == null)
-                return null;
-
+            targetPos = Vector3.zero;
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
-                return null;
+                return false;
 
             if (isLoad.Value)
             {
                 Starship ship = targetObj.GetComponent<Starship>();
-                if (ship == null) return null;
-                Vector3 logical = GetShipWorldPosition(ship);
-                return ToroidalMap.GetDisplayPosition(logical, cam.transform.position);
+                if (ship == null || ship.IsDead)
+                    return false;
+                targetPos = GetShipWorldPosition(ship);
+                return true;
             }
 
             Planet planet = targetObj.GetComponent<Planet>();
-            if (planet == null) return null;
-            Vector3 from = rb != null ? rb.position : transform.position;
-            Vector3 surfaceLogical = GetPlanetSurfaceMagnetTarget(planet, from);
-            return ToroidalMap.GetDisplayPosition(surfaceLogical, cam.transform.position);
+            if (planet == null)
+                return false;
+            targetPos = GetPlanetSurfaceMagnetTarget(planet, clientPredictedPosition);
+            return true;
         }
 
         private void FixedUpdate()
@@ -216,6 +251,15 @@ namespace TitanOrbit.Entities
 
         private void ApplyMagnetVelocity(Vector3 myPos, Vector3 targetPos)
         {
+            if (rb == null) return;
+            rb.linearVelocity = ComputeMagnetVelocity(myPos, targetPos, rb.linearVelocity, Time.fixedDeltaTime);
+            rb.linearDamping = 0f;
+        }
+
+        private static Vector3 ComputeMagnetVelocity(Vector3 myPos, Vector3 targetPos, Vector3 currentVel, float dt)
+        {
+            myPos.y = 0f;
+            targetPos.y = 0f;
             Vector3 toTarget = ToroidalMap.ToroidalDirection(myPos, targetPos);
             toTarget.y = 0f;
             if (toTarget.sqrMagnitude < 0.0001f) toTarget = Vector3.forward;
@@ -224,8 +268,7 @@ namespace TitanOrbit.Entities
             float dist = ToroidalMap.ToroidalDistance(myPos, targetPos);
             float speed = dist <= magnetCloseRangeWorld ? magnetCloseRangeSpeed : magnetSpeed;
             Vector3 targetVel = toTarget * speed;
-            rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, speed * Time.fixedDeltaTime * 4f);
-            rb.linearDamping = 0f;
+            return Vector3.MoveTowards(currentVel, targetVel, speed * dt * 4f);
         }
 
         private float GetShipCollectReach(Starship ship)
@@ -349,18 +392,22 @@ namespace TitanOrbit.Entities
                 team.Value = (int)sourceTeam;
                 spawningShipId.Value = shipNetworkObjectId;
                 sourcePlanetId.Value = sourcePlanetNetworkObjectId;
-            if (rb != null)
-            {
-                rb.linearDamping = 0f;
-                rb.interpolation = RigidbodyInterpolation.Interpolate;
-                serverSpawnPosition = rb.position;
-            }
+
+                if (rb != null)
+                {
+                    rb.linearDamping = 0f;
+                    rb.interpolation = RigidbodyInterpolation.Interpolate;
+                    serverSpawnPosition = rb.position;
+                }
                 else
                     serverSpawnPosition = transform.position;
                 serverSpawnPosition.y = 0f;
                 serverSpawnTime = Time.time;
                 ApplyVisualScaleFromAmount(peopleAmount);
-                syncedPlanarVelocity.Value = Vector3.zero;
+
+                Vector3 initVel = rb != null ? rb.linearVelocity : Vector3.zero;
+                initVel.y = 0f;
+                syncedPlanarVelocity.Value = initVel;
             }
         }
 

@@ -24,8 +24,19 @@ namespace TitanOrbit.Entities
         [SerializeField] private float pickupRadius = 2f;
         [SerializeField] private float stopSpeedThreshold = 0.05f;
         [SerializeField] private float slowdownDrag = 0.5f;
-        [SerializeField] private float baseScale = 0.48f; // Used on non-asteroid gem paths; scales with linear value mapping
-        [SerializeField] private float visualScaleMultiplier = 2.2f; // Global scale so value-1 gems are visible; value-70 is larger volume
+        [Header("Visual scale")]
+        [Tooltip("Game value mapped to the smallest visual size. Matches Asteroid.MAX_GEM_VALUE lower bound.")]
+        [SerializeField] private float minGemValue = 1f;
+        [Tooltip("Game value mapped to the largest visual size. Matches Asteroid.MAX_GEM_VALUE upper bound.")]
+        [SerializeField] private float maxGemValue = 70f;
+        [Tooltip("World localScale used when value <= minGemValue. Larger than the legacy minimum so value-1 gems are clearly visible.")]
+        [SerializeField] private float scaleAtMinValue = 0.45f;
+        [Tooltip("World localScale used when value >= maxGemValue.")]
+        [SerializeField] private float scaleAtMaxValue = 1.2f;
+        [Tooltip("Pickup radius multiplier at minGemValue.")]
+        [SerializeField] private float pickupRadiusMinMul = 1f;
+        [Tooltip("Pickup radius multiplier at maxGemValue.")]
+        [SerializeField] private float pickupRadiusMaxMul = 1.5f;
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
@@ -34,9 +45,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shipProximitySlop = 0.35f;
         [Tooltip("Scales ship collider radius contribution for proximity collection (lower = tighter pickup).")]
         [SerializeField] private float shipProximityRadiusMultiplier = 0.45f;
+        [Header("Pickup priority")]
+        [Tooltip("Asteroid gems: non-top-damager ships must wait this long before pickup (top damager is immediate).")]
+        [SerializeField] private float asteroidNonPriorityPickupDelaySeconds = 1f;
         [Header("Ship-expelled pickup")]
         [Tooltip("Seconds before the ship that dropped these gems (e.g. hull breakup) can collect them again. Other ships are unaffected.")]
-        [SerializeField] private float selfPickupDelaySeconds = 2f;
+        [SerializeField] private float selfPickupDelaySeconds = 1f;
         [Header("Visuals")]
         [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
         [SerializeField] private Color bonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
@@ -195,32 +209,22 @@ namespace TitanOrbit.Entities
                 if (elapsedTime >= lifetimeSeconds - shrinkDuration)
                     lifetimeRemaining = Mathf.Clamp01((lifetimeSeconds - elapsedTime) / shrinkDuration);
             }
-            
-            // Visual size is linear in gem value (1–70). Cube-root was legacy “volume ∝ value” and made sizes too subtle.
-            float valueClamped = Mathf.Max(1f, value.Value);
-            float tValue = Mathf.InverseLerp(1f, 70f, Mathf.Min(valueClamped, 70f));
-            float gemSizeMult = gemSize.Value > 0.001f ? gemSize.Value : 1f;
 
-            float scale;
-            if (asteroidPhysicalSize.Value > 0.01f)
-            {
-                // Slightly above 0.85× mesh so gems read clearly; still bounded by asteroid scale.
-                float maxScale = asteroidPhysicalSize.Value * 1.05f;
-                float minScale = maxScale * 0.52f;
-                scale = Mathf.Lerp(minScale, maxScale, tValue);
-                scale *= Mathf.Lerp(0.96f, 1.04f, Mathf.InverseLerp(0.25f, 2.2f, gemSizeMult));
-                scale = Mathf.Min(scale, maxScale);
-                scale *= lifetimeRemaining;
-            }
-            else
-            {
-                float baseLinear = Mathf.Lerp(0.74f, 2.2f, tValue);
-                scale = baseScale * baseLinear * gemSizeMult * lifetimeRemaining * visualScaleMultiplier;
-            }
+            float tValue = ComputeValueT(value.Value);
+            float scale = Mathf.Lerp(scaleAtMinValue, scaleAtMaxValue, tValue) * lifetimeRemaining;
 
             transform.localScale = Vector3.one * scale;
 
-            effectivePickupRadius = pickupRadius * Mathf.Lerp(1f, 1.5f, tValue) * lifetimeRemaining;
+            effectivePickupRadius = pickupRadius * Mathf.Lerp(pickupRadiusMinMul, pickupRadiusMaxMul, tValue) * lifetimeRemaining;
+        }
+
+        /// <summary>Linear 0..1 ramp from <see cref="minGemValue"/> to <see cref="maxGemValue"/>; clamps outside the range so deposits >70 still hit max.</summary>
+        private float ComputeValueT(float gemValue)
+        {
+            float lo = Mathf.Min(minGemValue, maxGemValue);
+            float hi = Mathf.Max(minGemValue, maxGemValue);
+            if (hi - lo <= 0.0001f) return 0f;
+            return Mathf.InverseLerp(lo, hi, Mathf.Clamp(gemValue, lo, hi));
         }
 
         public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0, bool bonusGem = false)
@@ -228,8 +232,10 @@ namespace TitanOrbit.Entities
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = asteroidScale;
+                // sizeMultiplier / asteroidScale are kept for API compatibility but no longer drive visual scale;
+                // value alone maps to size via ComputeValueT. Neutral values keep replicated state clean.
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = gemValue;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = 0;
@@ -242,14 +248,14 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect until <see cref="selfPickupDelaySeconds"/> elapses; enemies can collect immediately.</summary>
+        /// <summary>Initialize gem expelled from a ship. Victim cannot collect until <see cref="selfPickupDelaySeconds"/>; other ships may collect immediately.</summary>
         public void InitializeFromShip(float gemValue, float sizeMultiplier, ulong expelledByShipNetworkId)
         {
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = 0.5f; // Default for ship gems
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = gemValue;
                 expelledByShipId.Value = expelledByShipNetworkId;
                 depositTargetPlanetId.Value = 0;
@@ -267,14 +273,14 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. sizeMultiplier scales with ship level.</summary>
+        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. Visual size derives from <paramref name="amount"/>.</summary>
         public void InitializeForDeposit(float amount, float sizeMultiplier, ulong targetPlanetNetworkObjectId, TeamManager.Team team, ulong clientId)
         {
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = 0.85f * sizeMultiplier; // Scale with ship level
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = amount;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = targetPlanetNetworkObjectId;
@@ -390,6 +396,43 @@ namespace TitanOrbit.Entities
             serverNoImmediatePickupUntilTime = 0f;
         }
 
+        private float GetServerTime()
+        {
+            return NetworkManager.Singleton != null
+                ? (float)NetworkManager.Singleton.ServerTime.Time
+                : Time.time;
+        }
+
+        private ulong GetShipNetworkObjectId(Starship ship)
+        {
+            var shipNo = ship != null ? ship.NetworkObject : null;
+            return shipNo != null ? shipNo.NetworkObjectId : 0ul;
+        }
+
+        /// <summary>Server: asteroid gems grant immediate pickup to top damager; other ships wait <see cref="asteroidNonPriorityPickupDelaySeconds"/>.</summary>
+        private bool IsShipBlockedByAsteroidPriority(Starship ship)
+        {
+            if (depositTargetPlanetId.Value != 0) return false;
+            if (expelledByShipId.Value != 0) return false;
+            ulong priorityId = magnetPriorityShipId.Value;
+            if (priorityId == 0) return false;
+
+            ulong shipId = GetShipNetworkObjectId(ship);
+            if (shipId == 0 || shipId == priorityId) return false;
+
+            float elapsed = GetServerTime() - spawnTime.Value;
+            return elapsed < Mathf.Max(0f, asteroidNonPriorityPickupDelaySeconds);
+        }
+
+        /// <summary>Server: whether this ship may collect or magnet this gem right now.</summary>
+        public bool CanShipCollect(Starship ship)
+        {
+            if (!IsServer || ship == null) return false;
+            if (IsShipTemporarilyBlockedFromPickup(ship)) return false;
+            if (IsShipBlockedByAsteroidPriority(ship)) return false;
+            return true;
+        }
+
         private void OnTriggerEnter(Collider other) => TryHandlePickupTrigger(other);
 
         /// <summary>
@@ -451,7 +494,7 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponent<Starship>();
             if (ship == null) return;
 
-            if (IsShipTemporarilyBlockedFromPickup(ship))
+            if (!CanShipCollect(ship))
                 return;
 
             CollectToShip(ship);
@@ -490,7 +533,7 @@ namespace TitanOrbit.Entities
                 if (ToroidalMap.ToroidalDistance(gemPos, shipPos) > maxDist)
                     continue;
 
-                if (IsShipTemporarilyBlockedFromPickup(ship))
+                if (!CanShipCollect(ship))
                     continue;
 
                 CollectToShip(ship);
@@ -521,6 +564,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || ship == null) return;
             if (value.Value <= 0f) return;
+            if (!CanShipCollect(ship)) return;
             if (ship.IsDead || ship.IsGemCollectionSuppressed || ship.CurrentGems >= ship.GemCapacity) return;
 
             Vector3 gemPos = rb != null ? rb.position : transform.position;

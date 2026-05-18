@@ -121,8 +121,8 @@ namespace TitanOrbit.Entities
             if (rb != null)
             {
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-                // Lock Y position - asteroids stay on same plane
-                rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+                // Lock Y position only — tumbling uses X/Z rotation; freezing those axes blocks visual spin.
+                rb.constraints = RigidbodyConstraints.FreezePositionY;
             }
             
             // Ensure collider is enabled and not a trigger (for ship collisions)
@@ -158,9 +158,11 @@ namespace TitanOrbit.Entities
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
             
+            spawnPosition = transform.position;
+            InitializeDeterministicRotation(spawnPosition);
+
             if (IsServer)
             {
-                spawnPosition = transform.position;
                 spawnScale = transform.localScale;
                 float rawSize = Mathf.Max(0.01f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
                 // Gem value 1-70: map radius [MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS] to [1, 70]
@@ -176,21 +178,25 @@ namespace TitanOrbit.Entities
                 health.Value = maxGems.Value * 3f;
                 isDestroyed.Value = false;
                 damageByShip.Clear();
-                
-                // Set up rotation - deterministic based on position (same for all clients)
-                // Use position hash to ensure same rotation for all clients
-                int hash = (int)(spawnPosition.x * 1000 + spawnPosition.z * 1000);
-                System.Random rng = new System.Random(hash);
-                rotationAxis = new Vector3(
-                    (float)(rng.NextDouble() * 2 - 1),
-                    0f, // Keep rotation in XZ plane
-                    (float)(rng.NextDouble() * 2 - 1)
-                ).normalized;
-                rotationSpeed = 20f + (float)(rng.NextDouble() * 30f); // Faster rotation speed (20-50 degrees per second)
-                
+
                 // Ensure physics state is correct
                 EnsurePhysicsState();
             }
+        }
+
+        /// <summary>Per-asteroid tumble axis/speed from spawn position so every peer matches without network sync.</summary>
+        private void InitializeDeterministicRotation(Vector3 position)
+        {
+            int hash = (int)(position.x * 1000 + position.z * 1000);
+            var rng = new System.Random(hash);
+            rotationAxis = new Vector3(
+                (float)(rng.NextDouble() * 2 - 1),
+                0f,
+                (float)(rng.NextDouble() * 2 - 1)
+            ).normalized;
+            if (rotationAxis.sqrMagnitude < 0.01f)
+                rotationAxis = Vector3.right;
+            rotationSpeed = 20f + (float)(rng.NextDouble() * 30f);
         }
 
         private void Update()
@@ -260,10 +266,14 @@ namespace TitanOrbit.Entities
             // Position is set by ToroidalRenderer in LateUpdate (display copy closest to camera).
             // Do not wrap here or entities will disappear at edges.
 
-            // Gentle rotation - all clients can see it
+            // Gentle rotation - all clients simulate the same deterministic tumble.
             if (!isDestroyed.Value && rotationAxis.sqrMagnitude > 0.01f)
             {
-                transform.Rotate(rotationAxis, rotationSpeed * Time.fixedDeltaTime, Space.World);
+                float step = rotationSpeed * Time.fixedDeltaTime;
+                if (rb != null)
+                    rb.MoveRotation(Quaternion.AngleAxis(step, rotationAxis) * rb.rotation);
+                else
+                    transform.Rotate(rotationAxis, step, Space.World);
             }
             
             if (!IsServer) return;

@@ -2244,7 +2244,8 @@ namespace TitanOrbit.Editor
             AssetDatabase.SaveAssets();
 
             GameObject gem = new GameObject("Gem");
-            gem.transform.localScale = Vector3.one * 0.5f;
+            // Visual size is driven by Gem.UpdateVisualScale (linear in value); keep prefab root at unit scale.
+            gem.transform.localScale = Vector3.one;
 
             MeshFilter mf = gem.AddComponent<MeshFilter>();
             mf.sharedMesh = crystalMesh;

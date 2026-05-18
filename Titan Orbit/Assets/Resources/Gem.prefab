@@ -35,7 +35,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -225,15 +225,20 @@ MonoBehaviour:
   pickupRadius: 2
   stopSpeedThreshold: 0.05
   slowdownDrag: 0.5
-  baseScale: 1
-  visualScaleMultiplier: 1
+  minGemValue: 1
+  maxGemValue: 70
+  scaleAtMinValue: 0.45
+  scaleAtMaxValue: 1.2
+  pickupRadiusMinMul: 1
+  pickupRadiusMaxMul: 1.5
   lifetimeSeconds: 20
   shrinkDuration: 5
   magnetSpeed: 8
   collectRadius: 0.6
   shipProximitySlop: 0.35
   shipProximityRadiusMultiplier: 0.45
-  selfPickupDelaySeconds: 0.5
+  asteroidNonPriorityPickupDelaySeconds: 1
+  selfPickupDelaySeconds: 1
   gemTintColor: {r: 1, g: 0, b: 0, a: 0.45}
   bonusGemTintColor: {r: 1, g: 0.9, b: 0.15, a: 0.55}
 --- !u!114 &1238730556394064687

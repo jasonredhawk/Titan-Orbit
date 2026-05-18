@@ -166,11 +166,20 @@ namespace TitanOrbit.Entities
 
             if (rb != null)
             {
-                // On non-authority peers, NetworkRigidbody is often kinematic and NetworkTransform drives transform.
-                // Use transform position in that case so we don't sample stale rb.position and freeze visuals.
-                Vector3 sourcePos = rb.isKinematic ? transform.position : rb.position;
-                logicalPosition = ToroidalMap.WrapPosition(sourcePos);
-                logicalPositionStored = true;
+                var peopleTransport = GetComponent<PeopleTransportProjectile>();
+                if (peopleTransport != null && peopleTransport.UsesClientPredictedPosition)
+                {
+                    logicalPosition = ToroidalMap.WrapPosition(peopleTransport.ClientPredictedLogicalPosition);
+                    logicalPositionStored = true;
+                }
+                else
+                {
+                    // On non-authority peers, NetworkRigidbody is often kinematic and NetworkTransform drives transform.
+                    // Use transform position in that case so we don't sample stale rb.position and freeze visuals.
+                    Vector3 sourcePos = rb.isKinematic ? transform.position : rb.position;
+                    logicalPosition = ToroidalMap.WrapPosition(sourcePos);
+                    logicalPositionStored = true;
+                }
             }
             else if (!logicalPositionStored)
             {
@@ -191,12 +200,9 @@ namespace TitanOrbit.Entities
                 }
                 var bullet = GetComponent<Bullet>();
                 bool isBullet = bullet != null;
-                var peopleTransport = GetComponent<PeopleTransportProjectile>();
                 Vector3 bulletExtrapolation = Vector3.zero;
                 if (isBullet && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
                     bulletExtrapolation = bullet.GetClientVisualExtrapolationOffset();
-                else if (peopleTransport != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
-                    bulletExtrapolation = peopleTransport.GetClientVisualExtrapolationOffset();
                 displayPos += bulletExtrapolation;
                 // Mobile: toroidal display offset can place bullet visuals off-screen if Camera.main differs from the gameplay camera.
                 // Keep visuals parented at local origin so they follow the network transform (same as desktop when toroidal is wrong).

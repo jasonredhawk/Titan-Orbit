@@ -2545,6 +2545,7 @@ namespace TitanOrbit.Entities
             {
                 if (gem == null || !gem.IsSpawned || gem.IsInPool || gem.IsDepositGem) continue;
                 if (gem.Value <= 0f) continue;
+                if (!gem.CanShipCollect(this)) continue;
 
                 Rigidbody gemRb = gem.GetComponent<Rigidbody>();
                 if (gemRb == null) continue;
@@ -2552,10 +2553,6 @@ namespace TitanOrbit.Entities
                 Vector3 gemPos = gemRb.position;
                 float dist = TitanOrbit.Generation.ToroidalMap.ToroidalDistance(gemPos, shipPos);
                 if (dist > searchRadius) continue;
-
-                // Respect expelled cooldown: victim ship cannot collect their own expelled gems immediately.
-                // This is enforced on collision as well; here we just avoid pulling them in.
-                // (Gem handles the exact cooldown window during collection.)
 
                 Vector3 toShip = TitanOrbit.Generation.ToroidalMap.ToroidalDirection(gemPos, shipPos);
                 toShip.y = 0f;
@@ -3717,7 +3714,8 @@ namespace TitanOrbit.Entities
                         if (GemSpawner.Instance != null)
                         {
                             ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
-                            GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
+                            Vector3 expelPos = rb != null ? rb.position : transform.position;
+                            GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, gemsToExpel, myId);
                         }
                     }
                 }
@@ -3734,14 +3732,12 @@ namespace TitanOrbit.Entities
                     if (GemSpawner.Instance != null)
                     {
                         ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
-                        GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, gemsToExpel, myId);
+                        Vector3 expelPos = rb != null ? rb.position : transform.position;
+                        GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, gemsToExpel, myId);
                     }
                 }
             }
 
-            const float deathThreshold = 0.001f;
-            if (currentHealth.Value <= deathThreshold)
-                SuppressGemCollectionForRespawnDelay();
             TryDieIfHullAndGemsDepleted(attackerShipNetworkId);
         }
 

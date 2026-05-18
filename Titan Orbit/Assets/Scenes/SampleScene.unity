@@ -2537,6 +2537,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipAttributeUpgradeHUD
   upgradeBarEnabled: 1
+  stripAnchorUseCanvasRectPadding: 1
   upgradeStripInsetFromLeft: -600
   upgradeStripInsetFromBottom: 20
   minimapHorizontalGap: 12
@@ -2550,7 +2551,7 @@ MonoBehaviour:
   tickColumnRightInset: 14
   tickColumnFromRight: -5
   ticksCenterYOffset: -1
-  titleFontSize: 19
+  titleFontSize: 13.3
   buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
   buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
   buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
@@ -13977,6 +13978,7 @@ MonoBehaviour:
   displaySize: 384
   minimapContent: {fileID: 0}
   sizeScaleFactor: 1.2
+  playerBlipSize: 10
   asteroidBlipScaleFactor: 1
   edgeMarkerSize: 36
   edgeMarkerMinSize: 20

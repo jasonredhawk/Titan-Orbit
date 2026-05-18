@@ -250,23 +250,29 @@ namespace TitanOrbit.Systems
                     bonusGemCount = 1;
             }
 
-            // Visual size comes from Gem (linear in value); tiny jitter only.
+            // Visual size is fully derived from gem value inside Gem.UpdateVisualScale; spawner only forwards value.
             for (int i = 0; i < redGemCount; i++)
-            {
-                float sizeMultiplier = Random.Range(0.96f, 1.04f);
-                SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, false);
-            }
+                SpawnGem(prefab, asteroidCenter, gemWorth, 1f, asteroidPhysicalSize, primaryDamagerShipId, false);
 
             for (int i = 0; i < bonusGemCount; i++)
-            {
-                float sizeMultiplier = Random.Range(0.96f, 1.04f);
-                SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, true);
-            }
+                SpawnGem(prefab, asteroidCenter, gemWorth, 1f, asteroidPhysicalSize, primaryDamagerShipId, true);
         }
         
+        /// <summary>Server-only gem expulsion (hull breakup, ramming self-damage, etc.). Avoids nested ServerRpc when invoked from server damage/collision paths.</summary>
+        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        {
+            if (!IsServer) return;
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId);
+        }
+
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        {
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId);
+        }
+
+        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null || totalValue <= 0f) return;
@@ -279,8 +285,7 @@ namespace TitanOrbit.Systems
             {
                 float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
                 gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                float sizeMult = Mathf.Lerp(0.58f, 1.2f, Mathf.Clamp01(gemValue / 25f));
-                SpawnGemFromShip(prefab, shipPosition, gemValue, sizeMult, expelledByShipId);
+                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId);
                 remaining -= gemValue;
             }
         }
@@ -298,7 +303,8 @@ namespace TitanOrbit.Systems
 
             Vector3 pos = shipPosition;
             float depositSpeed = 8f;
-            float sizeMult = Mathf.Clamp(amount / 10f, 0.5f, 3f);
+            // Visual size is derived from `amount` inside Gem.UpdateVisualScale; spawner forwards a neutral multiplier.
+            float sizeMult = 1f;
             Vector3 vel = dir * depositSpeed;
             Vector3 angVel = new Vector3(Random.Range(-2f, 2f), Random.Range(-2f, 2f), Random.Range(-2f, 2f));
 

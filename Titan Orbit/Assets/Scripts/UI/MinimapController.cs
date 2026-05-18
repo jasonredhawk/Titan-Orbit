@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, asteroids.
+    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, gem moons, asteroids.
     /// Each team has its own color.
     /// </summary>
     public class MinimapController : MonoBehaviour
@@ -25,7 +25,10 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
+        [SerializeField] private float playerBlipSize = 10f; // Cross blip for local player (other ships use 12f)
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
+        [SerializeField] private float moonBlipScaleFactor = 0.85f;
+        [SerializeField] private float moonBlipMinSize = 5f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
         [SerializeField] private float edgeMarkerMaxSize = 48f; // Maximum size for closest planets
@@ -89,6 +92,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Color planetColor = new Color(0.6f, 0.6f, 0.6f);
         [SerializeField] private Color homePlanetColor = new Color(1f, 0.9f, 0.2f);
         [SerializeField] private Color asteroidColor = new Color(0.8f, 0.8f, 0.8f); // Light grey for better visibility
+        [SerializeField] private Color moonColor = new Color(0.55f, 0.88f, 1f); // Neutral gem-moon tint when planet is uncaptured
 
         private Starship playerShip;
         private Transform playerTransform;
@@ -721,7 +725,7 @@ namespace TitanOrbit.UI
                     if (expandButtonLabel != null)
                     {
                         expandButtonLabel.text = "\u00d7";
-                        expandButtonLabel.fontSize = 18f;
+                        expandButtonLabel.fontSize = 12f;
                     }
                 }
                 
@@ -1568,15 +1572,14 @@ namespace TitanOrbit.UI
             }
 
             // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 18f, BlipType.Cross), true);
+            EnsureBlip(playerTransform, () => CreateBlip(Color.white, playerBlipSize, BlipType.Cross), true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
 
                 TeamManager.Team playerTeam = playerShip.ShipTeam;
                 Color playerColor = playerTeam == TeamManager.Team.None ? Color.white : GetTeamColor(playerTeam);
-                float currentSize = playerRt.sizeDelta.x;
-                UpdateBlip(playerTransform, playerColor, currentSize);
+                UpdateBlip(playerTransform, playerColor, playerBlipSize);
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
@@ -1723,6 +1726,8 @@ namespace TitanOrbit.UI
                     }
                 }
             }
+
+            UpdateGemMoonBlips(playerPos, worldToMinimapScale);
  
             // Update minimap markers
             var allMarkers = cachedMarkers;
@@ -2163,6 +2168,67 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Ensure asteroid blips exist. Size is updated every frame in the main blip loop when scale changes (respawn, etc.).
         /// </summary>
+        private void UpdateGemMoonBlips(Vector3 playerPos, float worldToMinimapScale)
+        {
+            foreach (var p in cachedPlanets)
+            {
+                if (p == null) continue;
+                PlanetGemMoon moon = p.GemMoon;
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+
+                Transform moonTransform = moon.transform;
+                Vector3 worldPos = moonTransform.position;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
+
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                bool isOutsideVisibleArea = dist > minimapRadius;
+                bool isHome = p is HomePlanet;
+                TeamManager.Team team = p.TeamOwnership;
+
+                Color moonBlipColor = team == TeamManager.Team.None
+                    ? (isHome ? Color.Lerp(moonColor, homePlanetColor, 0.35f) : moonColor)
+                    : GetTeamColor(team);
+                float moonBlipSize = GetGemMoonBlipSize(moon, worldToMinimapScale);
+
+                if (isOutsideVisibleArea)
+                {
+                    if (blips.ContainsKey(moonTransform))
+                        blips[moonTransform].gameObject.SetActive(false);
+                    UpdateEdgeMarker(moonTransform, dx, dz, dist, isHome, team);
+                }
+                else
+                {
+                    if (edgeMarkers.ContainsKey(moonTransform))
+                        edgeMarkers[moonTransform].gameObject.SetActive(false);
+
+                    if (blips.ContainsKey(moonTransform))
+                    {
+                        blips[moonTransform].gameObject.SetActive(true);
+                        UpdateBlip(moonTransform, moonBlipColor, moonBlipSize);
+                    }
+                    else
+                    {
+                        EnsureBlip(moonTransform, () => CreateBlip(moonBlipColor, moonBlipSize, BlipType.Circle));
+                    }
+                }
+            }
+        }
+
+        private float GetGemMoonBlipSize(PlanetGemMoon moon, float worldToMinimapScale)
+        {
+            float physicalSize = 1f;
+            Transform vis = moon.transform.Find("GemMoonVisual");
+            if (vis != null)
+            {
+                Vector3 worldScale = vis.lossyScale;
+                physicalSize = (worldScale.x + worldScale.y + worldScale.z) / 3f;
+            }
+
+            return Mathf.Max(
+                moonBlipMinSize,
+                physicalSize * worldToMinimapScale * sizeScaleFactor * moonBlipScaleFactor);
+        }
+
         private void EnsureAsteroidBlips(float worldToMinimapScale)
         {
             if (cachedAsteroids == null || cachedAsteroids.Length == 0)

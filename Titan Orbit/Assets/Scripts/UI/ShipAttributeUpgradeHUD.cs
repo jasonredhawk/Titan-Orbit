@@ -49,7 +49,7 @@ namespace TitanOrbit.UI
         [Tooltip("Vertical offset of the upgrade tick column (center anchor). Increase to move ticks up.")]
         [SerializeField] private float ticksCenterYOffset = -3f;
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
-        [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 16f;
+        [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 10f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
@@ -104,8 +104,11 @@ namespace TitanOrbit.UI
         /// <summary><see cref="_layoutScale"/> × width fit so the bar fits left of the minimap.</summary>
         private float _elementScale = 1f;
 
+        private const float FontSizeScale = 1f;
+
         private float S(float v) => v * _layoutScale;
         private float E(float v) => v * _elementScale;
+        private float F(float nominalFontSize) => E(nominalFontSize * FontSizeScale);
 
         /// <summary>Height of the upgrade strip in canvas units (for stacking other HUDs above it).</summary>
         public float GetUpgradeBarCanvasHeight()
@@ -327,7 +330,7 @@ namespace TitanOrbit.UI
             keyRect.sizeDelta = new Vector2(E(20f), E(16f));
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
-            keyLabel.fontSize = E(13f);
+            keyLabel.fontSize = F(13f);
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
             keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
@@ -400,7 +403,7 @@ namespace TitanOrbit.UI
             costRect.sizeDelta = Vector2.zero;
             TextMeshProUGUI costLabel = costObj.AddComponent<TextMeshProUGUI>();
             costLabel.text = "";
-            costLabel.fontSize = E(11f);
+            costLabel.fontSize = F(11f);
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
             costLabel.alignment = TextAlignmentOptions.MidlineRight;
