@@ -258,6 +258,14 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
+            if (BulletHitResolver.TryToroidalGemMoonSegmentCosmeticOnly(
+                    from, to, OwnerPredictedBulletRadius, ownerTeam, out Vector3 moonImpact))
+            {
+                moonImpact.y = 0f;
+                PlayOwnerPredictedImpact(moonImpact);
+                return true;
+            }
+
             return false;
         }
 

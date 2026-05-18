@@ -2194,13 +2194,10 @@ namespace TitanOrbit.UI
                 {
                     if (blips.ContainsKey(moonTransform))
                         blips[moonTransform].gameObject.SetActive(false);
-                    UpdateEdgeMarker(moonTransform, dx, dz, dist, isHome, team);
+                    RemoveShipEdgeMarker(moonTransform);
                 }
                 else
                 {
-                    if (edgeMarkers.ContainsKey(moonTransform))
-                        edgeMarkers[moonTransform].gameObject.SetActive(false);
-
                     if (blips.ContainsKey(moonTransform))
                     {
                         blips[moonTransform].gameObject.SetActive(true);

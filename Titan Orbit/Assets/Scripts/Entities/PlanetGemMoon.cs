@@ -27,7 +27,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float moonOrbitRingClearanceMarginWorld = 0.4f;
 
         [Header("Combat")]
-        [Tooltip("Base shield at planet level 1. Effective max shield scales with planet level.")]
+        [Tooltip("Base shield at planet level 1. Effective max = base * 2^(level-1) (same curve as planet gem capacity). Level 1=base, 2=2×, 3=4×, …")]
         [SerializeField] private float maxShieldPoints = 250f;
         [Header("Shield Regeneration")]
         [Tooltip("How long after the last shield hit the moon waits before starting to regenerate.")]
@@ -97,6 +97,8 @@ namespace TitanOrbit.Entities
         private float shieldPoints;
         private float runtimeMaxShieldPoints;
         private double lastShieldHitServerTime;
+        /// <summary>Remote clients: shield value at <see cref="lastShieldHitServerTime"/> for regen display (mirrors server regen).</summary>
+        private float _shieldRegenBaseline;
 
         private GameObject _matrixShieldInstance;
         private TeamManager.Team _matrixShieldTeam = TeamManager.Team.None;
@@ -119,6 +121,7 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _lastPlanetImpactTimeByInstanceId = new Dictionary<int, float>();
         private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
         private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
+        private static readonly Collider[] ShieldRepelOverlapBuffer = new Collider[32];
 
         [Header("Enemy Shield Barrier")]
         [Tooltip("When an enemy/non-friendly ship enters the shield area while the shield has points, push it outward to prevent passing through.")]
@@ -126,6 +129,15 @@ namespace TitanOrbit.Entities
         [SerializeField] private float enemyShieldRepelMaxSpeed = 22f;
 
         public Planet Planet => planet;
+
+        /// <summary>Active gem moons in the scene (combat / toroidal bullet sweeps).</summary>
+        public static int ActiveMoonCount => ActiveMoons.Count;
+
+        public static PlanetGemMoon GetActiveMoonAt(int index)
+        {
+            if (index < 0 || index >= ActiveMoons.Count) return null;
+            return ActiveMoons[index];
+        }
         public Vector3 WorldOrbitVelocity => cachedWorldVelocity;
         public float SpinAngleDegrees => spinAngleDegrees;
         public float SpinDegreesPerSecond => spinDegreesPerSecond;
@@ -156,8 +168,13 @@ namespace TitanOrbit.Entities
             return gemPointsClientDisplay;
         }
 
-        /// <summary>Current shield points for UI.</summary>
-        public float GetShieldPointsForDisplay() => Mathf.Max(0f, shieldPoints);
+        /// <summary>Current shield points for UI and VFX (server: simulated; clients: regen from last sync).</summary>
+        public float GetShieldPointsForDisplay()
+        {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                return Mathf.Max(0f, shieldPoints);
+            return Mathf.Max(0f, ComputeDisplayedShieldPoints(GetServerTimeNowSeconds()));
+        }
 
         /// <summary>Max shield points for UI.</summary>
         public float GetMaxShieldPointsForDisplay() => Mathf.Max(0f, runtimeMaxShieldPoints);
@@ -165,7 +182,7 @@ namespace TitanOrbit.Entities
         private float GetScaledMaxShieldPoints()
         {
             int level = planet != null ? Mathf.Max(1, planet.PlanetLevel) : 1;
-            return Mathf.Max(0.001f, maxShieldPoints * level);
+            return Mathf.Max(0.001f, maxShieldPoints * Mathf.Pow(2f, level - 1));
         }
 
         private bool RefreshScaledShieldCapacityServer()
@@ -362,6 +379,7 @@ namespace TitanOrbit.Entities
 
             runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
             shieldPoints = runtimeMaxShieldPoints;
+            _shieldRegenBaseline = runtimeMaxShieldPoints;
             lastShieldHitServerTime = GetServerTimeNowSeconds();
 
             // Only the server tracks/updates gem drain & spawning logic.
@@ -374,9 +392,10 @@ namespace TitanOrbit.Entities
             else
             {
                 // Client receives authoritative shield state through RPC shortly after spawn.
-                // Until then, assume full shield so the matrix VFX isn't hidden at 0 (RPC will correct).
-                runtimeMaxShieldPoints = Mathf.Max(0.001f, maxShieldPoints);
+                // Until then, assume full shield at level-scaled max so VFX isn't hidden at 0 (RPC will correct).
+                runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
                 shieldPoints = runtimeMaxShieldPoints;
+                _shieldRegenBaseline = runtimeMaxShieldPoints;
                 lastShieldHitServerTime = GetServerTimeNowSeconds();
             }
 
@@ -466,7 +485,11 @@ namespace TitanOrbit.Entities
             if (RefreshScaledShieldCapacityServer())
                 PushFullStateToClients();
 
-            TickMoonShieldRegen();
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                TickMoonShieldRegen();
+                TickEnemyShieldRepelServer();
+            }
             UpdateMatrixShieldVisual();
 
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
@@ -716,6 +739,33 @@ namespace TitanOrbit.Entities
             GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, spawnValue, 0ul);
         }
 
+        private void TickEnemyShieldRepelServer()
+        {
+            if (shieldPoints <= 0.001f) return;
+
+            float radius = GetMoonShieldOuterRadiusWorld();
+            if (radius <= 0.0001f) return;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+
+            int count = Physics.OverlapSphereNonAlloc(
+                moonPos,
+                radius,
+                ShieldRepelOverlapBuffer,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider col = ShieldRepelOverlapBuffer[i];
+                if (col == null) continue;
+                Starship ship = col.GetComponentInParent<Starship>();
+                if (ship == null || ship.IsDead) continue;
+                TryRepelEnemyShipWithShield(ship);
+            }
+        }
+
         private void TickMoonShieldRegen()
         {
             if (shieldPoints >= runtimeMaxShieldPoints - 0.001f) return;
@@ -752,15 +802,60 @@ namespace TitanOrbit.Entities
 
         public void ApplyShieldClientSync(float currentShieldPoints, float syncMaxShieldPoints, float lastHitServerTimeSeconds, float currentMoonGemPoints)
         {
-            shieldPoints = Mathf.Max(0f, currentShieldPoints);
+            float prevMax = runtimeMaxShieldPoints;
             runtimeMaxShieldPoints = Mathf.Max(0.001f, syncMaxShieldPoints);
-            lastShieldHitServerTime = lastHitServerTimeSeconds;
             gemPointsClientDisplay = Mathf.Max(0f, currentMoonGemPoints);
+
+            // Host/server: shieldPoints are driven by TickMoonShieldRegen — do not overwrite from RPC.
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                UpdateMatrixShieldVisual();
+                if (statsDisplay == null)
+                    statsDisplay = GetComponent<GemMoonStatsDisplay>();
+                if (statsDisplay != null)
+                    statsDisplay.Refresh();
+                return;
+            }
+
+            bool hitAnchorChanged = Mathf.Abs((float)(lastShieldHitServerTime - lastHitServerTimeSeconds)) > 0.05f;
+            bool maxChanged = Mathf.Abs(prevMax - runtimeMaxShieldPoints) > 0.001f;
+            lastShieldHitServerTime = lastHitServerTimeSeconds;
+            if (hitAnchorChanged || maxChanged)
+                _shieldRegenBaseline = Mathf.Max(0f, currentShieldPoints);
+            else
+                _shieldRegenBaseline = Mathf.Min(_shieldRegenBaseline, Mathf.Max(0f, currentShieldPoints));
+
+            shieldPoints = ComputeDisplayedShieldPoints(GetServerTimeNowSeconds());
             UpdateMatrixShieldVisual();
             if (statsDisplay == null)
                 statsDisplay = GetComponent<GemMoonStatsDisplay>();
             if (statsDisplay != null)
                 statsDisplay.Refresh();
+        }
+
+        /// <summary>
+        /// Mirrors server <see cref="TickMoonShieldRegen"/> using synced server time so clients show regen without per-tick RPCs.
+        /// </summary>
+        private float ComputeDisplayedShieldPoints(double now)
+        {
+            float max = Mathf.Max(0.001f, runtimeMaxShieldPoints);
+            if (_shieldRegenBaseline >= max - 0.001f)
+                return max;
+
+            double sinceHit = now - lastShieldHitServerTime;
+            if (sinceHit <= shieldRegenDelaySeconds)
+                return Mathf.Clamp(_shieldRegenBaseline, 0f, max);
+
+            float regenRatePerSecond = max / Mathf.Max(0.01f, shieldRegenSecondsToFull);
+            float regenned = _shieldRegenBaseline + regenRatePerSecond * (float)(sinceHit - shieldRegenDelaySeconds);
+            return Mathf.Clamp(regenned, 0f, max);
+        }
+
+        private void RefreshClientDisplayedShield()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer)
+                return;
+            shieldPoints = ComputeDisplayedShieldPoints(GetServerTimeNowSeconds());
         }
 
         private void EnsureMatrixShieldVisual()
@@ -792,6 +887,7 @@ namespace TitanOrbit.Entities
 
         private void UpdateMatrixShieldVisual()
         {
+            RefreshClientDisplayedShield();
             EnsureMatrixShieldVisual();
             if (_matrixShieldInstance == null) return;
 
@@ -959,6 +1055,26 @@ namespace TitanOrbit.Entities
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
         }
 
+        /// <summary>World-space radius used for bullet / toroidal hit tests (shield shell when up, body when down).</summary>
+        public float GetMoonBulletHitRadiusWorld()
+        {
+            if (GetShieldPointsForDisplay() > 0.001f)
+                return GetMoonShieldOuterRadiusWorld();
+            return GetMoonBodyRadiusWorld();
+        }
+
+        /// <summary>Checks every active moon and repels <paramref name="ship"/> when inside an enemy shield (owner client).</summary>
+        public static void TickShieldRepelForAllMoons(Starship ship)
+        {
+            if (ship == null || ship.IsDead) return;
+            for (int i = 0; i < ActiveMoons.Count; i++)
+            {
+                PlanetGemMoon moon = ActiveMoons[i];
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+                moon.TryRepelEnemyShipWithShield(ship);
+            }
+        }
+
         /// <summary>World-space radius of the outer shield barrier (may be larger than the dock trigger).</summary>
         public float GetMoonShieldOuterRadiusWorld()
         {
@@ -1051,7 +1167,7 @@ namespace TitanOrbit.Entities
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (planet == null) return;
 
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
@@ -1086,7 +1202,7 @@ namespace TitanOrbit.Entities
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (planet == null) return;
 
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
@@ -1100,7 +1216,7 @@ namespace TitanOrbit.Entities
         private void OnTriggerExit(Collider other)
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
@@ -1155,11 +1271,8 @@ namespace TitanOrbit.Entities
         private bool TryRepelEnemyShipWithShield(Starship ship)
         {
             if (ship == null) return false;
-            if (shieldPoints <= 0.001f) return false;
+            if (GetShieldPointsForDisplay() <= 0.001f) return false;
             if (IsShipFriendlyToThisMoon(ship)) return false;
-
-            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
-            if (shipRb == null) return false;
 
             float shieldRadiusWorld = GetMoonShieldOuterRadiusWorld();
             if (shieldRadiusWorld <= 0.0001f) return false;
@@ -1170,6 +1283,8 @@ namespace TitanOrbit.Entities
             shipPos.y = 0f;
 
             float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+            if (dist > shieldRadiusWorld) return false;
+
             Vector3 dir = ToroidalMap.ToroidalDirection(moonPos, shipPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
@@ -1182,11 +1297,12 @@ namespace TitanOrbit.Entities
             Vector3 outwardVel = dir * repelSpeed;
             outwardVel.y = 0f;
 
-            // Prevent accidental dock state while shield is active for non-friendly ships.
-            ship.ServerSetGemMoonDocked(false, null);
+            bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                ship.ServerNotifyGemMoonShieldRepel(outwardVel);
+            else if (ship.IsOwner && !isAi)
+                ship.ApplyGemMoonShieldRepelLocal(outwardVel);
 
-            shipRb.linearVelocity = outwardVel;
-            shipRb.angularVelocity = Vector3.zero;
             return true;
         }
 

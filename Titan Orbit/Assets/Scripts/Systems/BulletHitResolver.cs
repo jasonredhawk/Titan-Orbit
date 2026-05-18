@@ -166,6 +166,65 @@ namespace TitanOrbit.Systems
             return true;
         }
 
+        /// <summary>Client-only toroidal moon impact test (no damage).</summary>
+        public static bool TryToroidalGemMoonSegmentCosmeticOnly(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            TeamManager.Team ownerTeam,
+            out Vector3 impactPos)
+        {
+            impactPos = to;
+            int moonCount = PlanetGemMoon.ActiveMoonCount;
+            if (moonCount == 0) return false;
+
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+            float bestDistSq = float.MaxValue;
+            bool found = false;
+            Vector3 bestImpact = to;
+            float radiusPad = Mathf.Max(0.01f, bulletRadius);
+
+            for (int i = 0; i < moonCount; i++)
+            {
+                PlanetGemMoon moon = PlanetGemMoon.GetActiveMoonAt(i);
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+                if (moon.IsTeamFriendlyToThisMoon(ownerTeam)) continue;
+
+                float combinedRadius = moon.GetMoonBulletHitRadiusWorld() + radiusPad;
+                Vector3 center = moon.transform.position;
+                center.y = 0f;
+
+                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
+                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
+
+                Vector3 seg = toLocal - fromLocal;
+                if (seg.x > halfW) seg.x -= mapW;
+                else if (seg.x < -halfW) seg.x += mapW;
+                if (seg.z > halfH) seg.z -= mapH;
+                else if (seg.z < -halfH) seg.z += mapH;
+                Vector3 toLocalUnwrapped = fromLocal + seg;
+
+                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
+                float distSq = closest.sqrMagnitude;
+                if (distSq > combinedRadius * combinedRadius) continue;
+
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    found = true;
+                    bestImpact = new Vector3(center.x + closest.x, FixedY, center.z + closest.z);
+                }
+            }
+
+            if (!found) return false;
+
+            impactPos = bestImpact;
+            return true;
+        }
+
         public static void ApplyAsteroidHit(Asteroid asteroid, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
             float appliedDamage = damage;
@@ -287,6 +346,71 @@ namespace TitanOrbit.Systems
             if (bestAsteroid == null) return false;
 
             ApplyAsteroidHit(bestAsteroid, damage, ownerTeam, ownerShipNetworkId, bestImpact);
+            impactPos = bestImpact;
+            return true;
+        }
+
+        /// <summary>
+        /// Toroidal gem-moon segment test (same motivation as <see cref="TryToroidalAsteroidSegmentHit"/>).
+        /// Uses shield outer radius while the shield has points, otherwise the moon body radius.
+        /// </summary>
+        public static bool TryToroidalGemMoonSegmentHit(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            float damage,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            out Vector3 impactPos)
+        {
+            impactPos = to;
+            int moonCount = PlanetGemMoon.ActiveMoonCount;
+            if (moonCount == 0) return false;
+
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+            float bestDistSq = float.MaxValue;
+            PlanetGemMoon bestMoon = null;
+            Vector3 bestImpact = to;
+            float radiusPad = Mathf.Max(0.01f, bulletRadius);
+
+            for (int i = 0; i < moonCount; i++)
+            {
+                PlanetGemMoon moon = PlanetGemMoon.GetActiveMoonAt(i);
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+                if (moon.IsTeamFriendlyToThisMoon(ownerTeam)) continue;
+
+                float combinedRadius = moon.GetMoonBulletHitRadiusWorld() + radiusPad;
+                Vector3 center = moon.transform.position;
+                center.y = 0f;
+
+                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
+                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
+
+                Vector3 seg = toLocal - fromLocal;
+                if (seg.x > halfW) seg.x -= mapW;
+                else if (seg.x < -halfW) seg.x += mapW;
+                if (seg.z > halfH) seg.z -= mapH;
+                else if (seg.z < -halfH) seg.z += mapH;
+                Vector3 toLocalUnwrapped = fromLocal + seg;
+
+                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
+                float distSq = closest.sqrMagnitude;
+                if (distSq > combinedRadius * combinedRadius) continue;
+
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    bestMoon = moon;
+                    bestImpact = new Vector3(center.x + closest.x, FixedY, center.z + closest.z);
+                }
+            }
+
+            if (bestMoon == null) return false;
+
+            ApplyMoonHit(bestMoon, damage, ownerTeam, bestImpact);
             impactPos = bestImpact;
             return true;
         }

@@ -374,6 +374,12 @@ namespace TitanOrbit.Systems
                 DespawnWithImpact(slot, toroidalImpact);
                 return;
             }
+
+            if (BulletHitResolver.TryToroidalGemMoonSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 moonImpact))
+            {
+                DespawnWithImpact(slot, moonImpact);
+                return;
+            }
         }
 
         private bool TryOverlapFallbackHit(int slot)

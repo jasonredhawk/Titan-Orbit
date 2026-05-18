@@ -297,6 +297,8 @@ namespace TitanOrbit.Entities
 
         private bool _hasPendingAsteroidBounce;
         private Vector3 _pendingAsteroidBounceVelocity;
+        private bool _hasPendingGemMoonShieldRepel;
+        private Vector3 _pendingGemMoonShieldRepelVelocity;
         /// <summary>XZ velocity at end of last FixedUpdate (pre-collision reference when relativeVelocity is ambiguous).</summary>
         private Vector3 _lastFixedPlayPlaneVelocity;
         /// <summary>Cooldown for ship–ship scrape sounds from toroidal overlap (pair key → last Time.time).</summary>
@@ -2078,6 +2080,22 @@ namespace TitanOrbit.Entities
                 _hasPendingAsteroidBounce = false;
             }
 
+            if (_hasPendingGemMoonShieldRepel)
+            {
+                bool repelAuth = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+                if (repelAuth)
+                {
+                    Vector3 rv = _pendingGemMoonShieldRepelVelocity;
+                    rb.linearVelocity = new Vector3(rv.x, 0f, rv.z);
+                    rb.angularVelocity = Vector3.zero;
+                    currentVelocity = rb.linearVelocity;
+                }
+                _hasPendingGemMoonShieldRepel = false;
+            }
+
+            if (!isDead.Value && !_isAIControlled && IsOwner)
+                PlanetGemMoon.TickShieldRepelForAllMoons(this);
+
             // Gem load increases mass: ship feels heavier and has more momentum (slower to accelerate/brake)
             rb.mass = EffectiveMass;
 
@@ -2700,8 +2718,16 @@ namespace TitanOrbit.Entities
             EventSystem.current.RaycastAll(eventData, s_raycastResults);
             foreach (var r in s_raycastResults)
             {
-                if (r.gameObject != null && r.module is GraphicRaycaster)
-                    return true;
+                if (r.gameObject == null || r.module is not GraphicRaycaster)
+                    continue;
+                // Gem moon world-space stat labels must not cancel hold-fire when the cursor is over an enemy moon.
+                if (r.gameObject.GetComponentInParent<TitanOrbit.UI.GemMoonStatsDisplay>() != null)
+                {
+                    if (TitanOrbit.UI.GemMoonStatsDisplay.PointerHitBlocksCombatInput(r.gameObject))
+                        return true;
+                    continue;
+                }
+                return true;
             }
             return false;
         }
@@ -5110,6 +5136,46 @@ namespace TitanOrbit.Entities
         public void SetWantToDepositGemsServerRpc(bool value)
         {
             wantToDepositGems.Value = value;
+        }
+
+        /// <summary>Owner client: immediate repel from an active gem-moon shield (player ships are not driven by server physics).</summary>
+        public void ApplyGemMoonShieldRepelLocal(Vector3 outwardVelocityWorld)
+        {
+            if (rb == null) return;
+            outwardVelocityWorld.y = 0f;
+            _pendingGemMoonShieldRepelVelocity = outwardVelocityWorld;
+            _hasPendingGemMoonShieldRepel = true;
+            rb.linearVelocity = outwardVelocityWorld;
+            rb.angularVelocity = Vector3.zero;
+            currentVelocity = rb.linearVelocity;
+        }
+
+        [ClientRpc]
+        private void ApplyGemMoonShieldRepelClientRpc(Vector3 outwardVelocityWorld, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner || rb == null) return;
+            ApplyGemMoonShieldRepelLocal(outwardVelocityWorld);
+        }
+
+        /// <summary>Server-only: repel a ship from this moon's shield (AI on server rigidbody; players via owner ClientRpc).</summary>
+        public void ServerNotifyGemMoonShieldRepel(Vector3 outwardVelocityWorld)
+        {
+            if (!IsServer) return;
+            outwardVelocityWorld.y = 0f;
+            ServerSetGemMoonDocked(false, null);
+
+            bool isAi = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
+            if (isAi)
+            {
+                if (rb != null)
+                {
+                    rb.linearVelocity = outwardVelocityWorld;
+                    rb.angularVelocity = Vector3.zero;
+                }
+                return;
+            }
+
+            ApplyGemMoonShieldRepelClientRpc(outwardVelocityWorld, OwnerOnlyClientRpcParams);
         }
 
         /// <summary>Server-only: set by <see cref="PlanetGemMoon"/> when a ship enters or leaves the dock trigger.</summary>

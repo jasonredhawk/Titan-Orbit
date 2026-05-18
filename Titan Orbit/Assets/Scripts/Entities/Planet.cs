@@ -1057,7 +1057,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Client-sync for the gem moon's matrix shield (deplete on hit + client-side regen over time).
+        /// Client-sync for the gem moon's matrix shield (deplete on hit; clients extrapolate regen from server time).
         /// </summary>
         [ClientRpc]
         public void GemMoonShieldClientRpc(float currentShieldPoints, float maxShieldPoints, float lastHitServerTime, float currentMoonGemPoints)

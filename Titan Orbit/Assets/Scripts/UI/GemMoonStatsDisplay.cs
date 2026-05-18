@@ -233,6 +233,7 @@ namespace TitanOrbit.UI
             text.fontStyle = FontStyles.Bold;
             text.fontWeight = FontWeight.Black;
             text.color = Color.white;
+            text.raycastTarget = false;
             var rect = textGo.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -317,6 +318,24 @@ namespace TitanOrbit.UI
         public void Refresh()
         {
             lastRefresh = -999f;
+        }
+
+        /// <summary>
+        /// World-space gem/shield labels are display-only. Dock chips (Cards/Ships) still count as UI for input blocking.
+        /// </summary>
+        public static bool PointerHitBlocksCombatInput(GameObject hitObject)
+        {
+            if (hitObject == null) return false;
+            Transform t = hitObject.transform;
+            while (t != null)
+            {
+                if (t.name.StartsWith("MoonBtn_") || t.name == "MoonDockActions")
+                    return true;
+                if (t.GetComponent<GemMoonStatsDisplay>() != null)
+                    return false;
+                t = t.parent;
+            }
+            return false;
         }
     }
 }
