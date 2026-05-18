@@ -2917,7 +2917,9 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == null || rb == null) return false;
 
             Vector3 planetPos = currentOrbitPlanet.transform.position;
-            Vector3 toShip = rb.position - planetPos;
+            // Owner-simulated ships: replicated transform is authoritative on the server; rb can lag NT.
+            Vector3 shipWorld = (IsServer && !_isAIControlled) ? transform.position : rb.position;
+            Vector3 toShip = shipWorld - planetPos;
             toShip.y = 0f;
             float dist = toShip.magnitude;
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
@@ -2989,18 +2991,12 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Population transfer gate: strict "UI orbit" on clients/owner, or on the server for player ships simply
-        /// being inside the planet's orbit shell (owner authority makes velocity-based checks unreliable).
+        /// Population transfer gate: same as <see cref="IsInStableOrbit"/> for players (captured orbit, not fly-through).
+        /// AI uses a looser tangent alignment when owner velocity ratios do not apply.
         /// </summary>
         private bool IsOrbitStableForPeopleTransfer()
         {
             if (IsInStableOrbit())
-                return true;
-
-            // Owner-simulated ships: server proxy pose can sit just outside the strict collider ring while the owner is in orbit.
-            if (IsServer && !_isAIControlled && currentOrbitPlanet != null && rb != null
-                && (IsShipInCachedPlanetOrbitShell(currentOrbitPlanet, transform.position, rb.position)
-                    || IsShipInCachedPlanetOrbitShellRelaxed(currentOrbitPlanet, transform.position, rb.position)))
                 return true;
 
             // AI uses a fixed tangent speed that may not match GetOrbitTargetSpeed ratios; accept looser alignment in-band.

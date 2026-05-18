@@ -49,7 +49,7 @@ namespace TitanOrbit.UI
         [Tooltip("Vertical offset of the upgrade tick column (center anchor). Increase to move ticks up.")]
         [SerializeField] private float ticksCenterYOffset = -3f;
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
-        [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 11f;
+        [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 12f;
 
         [Header("Visual Styling")]
         [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
