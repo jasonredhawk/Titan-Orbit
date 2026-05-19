@@ -3198,6 +3198,12 @@ namespace TitanOrbit.Entities
             return !_isAIControlled || wantToLoadPeople.Value;
         }
 
+        /// <summary>AI transporters only invade when wantToUnload is set; players unload automatically in hostile/neutral orbit.</summary>
+        private bool ShouldUnloadPeopleToNeutralOrEnemyPlanet()
+        {
+            return !_isAIControlled || wantToUnloadPeople.Value;
+        }
+
         private void ClearPeopleTransferIntentIfComplete(Planet orbitPlanet, bool friendly, bool planetWantsReinforce)
         {
             if (!IsServer) return;
@@ -4191,7 +4197,7 @@ namespace TitanOrbit.Entities
             {
                 ClearPeopleTransferIntentIfComplete(currentOrbitPlanet, false, false);
 
-                if (!wantToUnloadPeople.Value)
+                if (!ShouldUnloadPeopleToNeutralOrEnemyPlanet())
                 {
                     peopleUnloadAccumulator = 0f;
                     return;
