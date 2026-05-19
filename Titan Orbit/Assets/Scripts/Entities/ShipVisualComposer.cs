@@ -68,7 +68,7 @@ namespace TitanOrbit.Entities
                 if (prefabToUse == null) continue;
 
                 GameObject instance = Instantiate(prefabToUse, root);
-                instance.name = "CardPart_" + (string.IsNullOrEmpty(card.componentKey) ? card.cardId : card.componentKey);
+                instance.name = "CardPart_" + (string.IsNullOrEmpty(card.componentKey) ? card.GetStableCardId() : card.componentKey);
                 Transform t = instance.transform;
                 t.localPosition = Vector3.zero;
                 t.localRotation = Quaternion.identity;

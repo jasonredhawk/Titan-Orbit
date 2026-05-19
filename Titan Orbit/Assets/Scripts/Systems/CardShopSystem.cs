@@ -32,6 +32,9 @@ namespace TitanOrbit.Systems
         /// <summary>Last card IDs received from a spin (client). Empty strings mean no offer in that slot.</summary>
         private readonly string[] _clientSpinOfferCardIds = new string[3];
 
+        /// <summary>Fires on the purchasing client when a spin offer arrives (three card ids).</summary>
+        public static event Action ClientSpinOfferReceived;
+
         /// <summary>Fires on the purchasing client after a spin card is equipped — offer is cleared so the UI can show empty slots until the next spin.</summary>
         public static event Action ClientSpinOfferConsumed;
 
@@ -474,9 +477,9 @@ namespace TitanOrbit.Systems
             CardData p0 = PickOneWeighted(pool, rng);
             CardData p1 = PickOneWeighted(pool, rng);
             CardData p2 = PickOneWeighted(pool, rng);
-            string a = p0 != null ? p0.cardId : string.Empty;
-            string b = p1 != null ? p1.cardId : string.Empty;
-            string c = p2 != null ? p2.cardId : string.Empty;
+            string a = p0 != null ? p0.GetStableCardId() : string.Empty;
+            string b = p1 != null ? p1.GetStableCardId() : string.Empty;
+            string c = p2 != null ? p2.GetStableCardId() : string.Empty;
 
             if (!_pendingCardSpins.ContainsKey(shipNetworkId))
                 _pendingCardSpins[shipNetworkId] = new PendingCardSpin();
@@ -497,6 +500,7 @@ namespace TitanOrbit.Systems
             _clientSpinOfferCardIds[0] = a ?? string.Empty;
             _clientSpinOfferCardIds[1] = b ?? string.Empty;
             _clientSpinOfferCardIds[2] = c ?? string.Empty;
+            ClientSpinOfferReceived?.Invoke();
         }
 
         #endregion
@@ -774,7 +778,7 @@ namespace TitanOrbit.Systems
             {
                 foreach (var card in family.GetUpgradeCards())
                 {
-                    if (card != null && card.cardId == cardId) return card;
+                    if (CardMatchesId(card, cardId)) return card;
                 }
             }
             return GetCardById(cardId);
@@ -789,10 +793,16 @@ namespace TitanOrbit.Systems
                 if (entry?.shipFamilyDefinition == null) continue;
                 foreach (var card in entry.shipFamilyDefinition.GetUpgradeCards())
                 {
-                    if (card != null && card.cardId == cardId) return card;
+                    if (CardMatchesId(card, cardId)) return card;
                 }
             }
             return null;
+        }
+
+        private static bool CardMatchesId(CardData card, string cardId)
+        {
+            if (card == null || string.IsNullOrEmpty(cardId)) return false;
+            return string.Equals(card.GetStableCardId(), cardId, StringComparison.Ordinal);
         }
 
         private ShipChassisDefinition FindChassisById(string chassisId)

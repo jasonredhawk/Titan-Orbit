@@ -12,6 +12,7 @@ using TitanOrbit.Input;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
+using TitanOrbit.Services;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
 using SciFiArsenal;
@@ -114,6 +115,9 @@ namespace TitanOrbit.Entities
         private float gemMoonUndockOrbitCaptureEase = 0.22f;
         private float gemMoonUndockOrbitGraceUntilTime = -1f;
         private Vector3 gemMoonUndockCachedMoonPos;
+        /// <summary>Server: time spent nearly stationary inside a friendly gem-moon zone before auto-dock is allowed.</summary>
+        private float _serverGemMoonLandingDwellSeconds;
+        private const float GemMoonLandingDwellSecondsRequired = 0.45f;
 
         private float gemMoonVisualScaleMultiplier = 1f;
         private bool wasGemMoonDocked;
@@ -396,6 +400,8 @@ namespace TitanOrbit.Entities
         private ShipFamilyDefinition currentVisualFamilyDefinition;
         /// <summary>Last chassis index we applied (so we re-apply when buying a new ship). -2 = never applied; server uses this to apply default AstroEagle_01 once.</summary>
         private int _lastAppliedChassisIndex = -2;
+        /// <summary>Server: true after default spawn or map-instance restore has run for this human player ship.</summary>
+        private bool _playerSpawnSetupComplete;
 
         private NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
@@ -405,6 +411,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<bool> wantToLoadPeople = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToUnloadPeople = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToDepositGems = new NetworkVariable<bool>(false);
+        /// <summary>Owner-synced: right-click / move-forward held (server uses this for gem-moon landing gating).</summary>
+        private NetworkVariable<bool> moveForwardPressedNet = new NetworkVariable<bool>(
+            false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Owner);
         /// <summary>Server-authored: ship is snapped to the planet gem moon (safe from damage; gem deposit + orbit station UI).</summary>
         private NetworkVariable<bool> gemMoonDocked = new NetworkVariable<bool>(false);
         /// <summary>Server: NetworkObjectId of the planet whose gem moon we are docked at (0 when not docked).</summary>
@@ -632,7 +643,8 @@ namespace TitanOrbit.Entities
         private float lastDepositSpawnTime = -999f;
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
-        [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 0f;
+        [Tooltip("Seconds the ship must stay in stable orbit without thrusting before people load/unload begins.")]
+        [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
         private float peopleTransferStationaryTimer;
         private float peopleInTransit; // People in projectiles heading to this ship (load only)
 
@@ -908,6 +920,9 @@ namespace TitanOrbit.Entities
         public bool WantToLoadPeople => wantToLoadPeople.Value;
         public bool WantToUnloadPeople => wantToUnloadPeople.Value;
         public bool WantToDepositGems => wantToDepositGems.Value;
+        /// <summary>Server: owner-synced thrust (right mouse). AI ships always read false.</summary>
+        public bool IsMoveForwardPressedForGemMoonLanding =>
+            !_isAIControlled && moveForwardPressedNet.Value;
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
         /// <summary>True when this ship is gem-moon docked and the dock target is <paramref name="planet"/>.</summary>
@@ -1174,26 +1189,8 @@ namespace TitanOrbit.Entities
                 for (int i = equippedCardIds.Count; i < equippedCards.Count; i++)
                 {
                     if (i < equippedCards.Count && equippedCards[i] != null)
-                        equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(equippedCards[i].cardId) });
+                        equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(equippedCards[i].GetStableCardId()) });
                 }
-            }
-
-            // Server: apply starter ship (chassis 0) first so SetShipData won't overwrite with a different prefab
-            if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
-            {
-                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
-                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
-                if (starterPrefab == null)
-                    starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
-                if (starterPrefab != null)
-                {
-                    ApplyShipVisualFromPrefab(starterPrefab);
-                    SetCurrentChassisIndex(0);
-                    if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
-                    _lastAppliedChassisIndex = 0;
-                }
-                else
-                    Debug.LogWarning("Starship: No starter ship prefab. Assign ShipUnlockTable.homeShipFamilyDefinition (e.g. AstroEagleShipFamily) with upgrade tree prefabs, and ensure CardShopSystem references the same ShipUnlockTable.");
             }
 
             // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
@@ -1204,28 +1201,20 @@ namespace TitanOrbit.Entities
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
-            
-            if (IsServer)
+
+            if (IsServer && !_isAIControlled)
             {
-                currentHealth.Value = MaxHealth;
-                currentGems.Value = 0f;
-                currentPeople.Value = 0f;
-                currentEnergy.Value = EffectiveEnergyCapacity;
-                if (TeamManager.Instance != null)
-                    shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
-                if (shipTeam.Value == TeamManager.Team.None)
-                {
-                    // Not yet chosen a team: hold ship at lobby position (off-world) until they click Join
-                    if (rb != null)
-                    {
-                        Vector3 lobbyPos = new Vector3(0f, -10000f, 0f); // below play area
-                        rb.position = lobbyPos;
-                        rb.linearVelocity = Vector3.zero;
-                    }
-                }
-                else
-                    StartInOrbitAroundHomePlanet();
+                // Defer starter ship / vitals until map-instance restore is attempted (owner sends auth id via ServerRpc).
+                if (IsOwner)
+                    TryRestoreOrApplyDefaultSpawnSetup(UnityGameServicesBootstrap.PlayerId);
             }
+            else if (IsServer && _isAIControlled)
+            {
+                ApplyDefaultPlayerSpawnSetup();
+            }
+
+            if (IsClient && IsOwner && !_isAIControlled)
+                RegisterMapInstanceProgressServerRpc(UnityGameServicesBootstrap.PlayerId ?? string.Empty);
 
             // Initialize banking state so first LateUpdate doesn't spike
             if (rb != null)
@@ -1263,7 +1252,202 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
+            if (IsServer && !_isAIControlled)
+                MapInstanceShipProgressStore.SaveSnapshot(
+                    MapInstanceShipProgressStore.ResolveAuthPlayerId(OwnerClientId),
+                    CaptureMapInstanceProgress());
             base.OnNetworkDespawn();
+        }
+
+        [ServerRpc(RequireOwnership = true)]
+        private void RegisterMapInstanceProgressServerRpc(string authPlayerId, ServerRpcParams rpcParams = default)
+        {
+            if (!IsServer || _isAIControlled) return;
+            if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
+            MapInstanceShipProgressStore.RegisterClientAuthId(
+                OwnerClientId,
+                MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId));
+            TryRestoreOrApplyDefaultSpawnSetup(authPlayerId);
+        }
+
+        private void TryRestoreOrApplyDefaultSpawnSetup(string authPlayerId)
+        {
+            if (!IsServer || _isAIControlled || _playerSpawnSetupComplete) return;
+
+            string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId);
+            MapInstanceShipProgressStore.RegisterClientAuthId(OwnerClientId, key);
+            if (MapInstanceShipProgressStore.TryGetSnapshot(key, out PlayerShipProgressSnapshot snapshot))
+                ApplyMapInstanceProgress(snapshot);
+            else
+                ApplyDefaultPlayerSpawnSetup();
+        }
+
+        /// <summary>Server: first-time spawn for this map instance (starter chassis, fresh vitals).</summary>
+        private void ApplyDefaultPlayerSpawnSetup()
+        {
+            if (!IsServer || _playerSpawnSetupComplete) return;
+            _playerSpawnSetupComplete = true;
+
+            if (!_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
+            {
+                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
+                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId)
+                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId)
+                    : null;
+                if (starterPrefab == null)
+                    starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
+                if (starterPrefab != null)
+                {
+                    ApplyShipVisualFromPrefab(starterPrefab);
+                    SetCurrentChassisIndex(0);
+                    if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
+                    _lastAppliedChassisIndex = 0;
+                }
+                else
+                    Debug.LogWarning("Starship: No starter ship prefab. Assign ShipUnlockTable.homeShipFamilyDefinition (e.g. AstroEagleShipFamily) with upgrade tree prefabs, and ensure CardShopSystem references the same ShipUnlockTable.");
+            }
+
+            currentHealth.Value = MaxHealth;
+            currentGems.Value = 0f;
+            currentPeople.Value = 0f;
+            currentEnergy.Value = EffectiveEnergyCapacity;
+            if (TeamManager.Instance != null)
+                shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
+            PlaceShipForCurrentTeamOrLobby();
+        }
+
+        private void PlaceShipForCurrentTeamOrLobby()
+        {
+            if (!IsServer || rb == null) return;
+            if (shipTeam.Value == TeamManager.Team.None)
+            {
+                Vector3 lobbyPos = new Vector3(0f, -10000f, 0f);
+                rb.position = lobbyPos;
+                rb.linearVelocity = Vector3.zero;
+                return;
+            }
+            StartInOrbitAroundHomePlanet();
+        }
+
+        /// <summary>Server: snapshot loadout for <see cref="MapInstanceShipProgressStore"/>.</summary>
+        public PlayerShipProgressSnapshot CaptureMapInstanceProgress()
+        {
+            var cardIds = new List<string>();
+            if (equippedCards != null)
+            {
+                for (int i = 0; i < equippedCards.Count; i++)
+                {
+                    if (equippedCards[i] != null)
+                    {
+                        string stableId = equippedCards[i].GetStableCardId();
+                        if (!string.IsNullOrEmpty(stableId))
+                            cardIds.Add(stableId);
+                    }
+                }
+            }
+
+            return new PlayerShipProgressSnapshot(
+                ShipLevel,
+                BranchIndex,
+                currentChassisIndex.Value,
+                currentChassisId.Value.ToString(),
+                shipTeam.Value,
+                attrFirePower.Value,
+                attrBulletSpeed.Value,
+                attrMaxHealth.Value,
+                attrHealthRegen.Value,
+                attrEnergyCapacity.Value,
+                attrEnergyRegen.Value,
+                attrMovementSpeed.Value,
+                attrRotationSpeed.Value,
+                attrGemCapacity.Value,
+                attrPeopleCapacity.Value,
+                cardIds.ToArray(),
+                smallRocketsCount.Value,
+                largeRocketsCount.Value,
+                smallMinesCount.Value,
+                largeMinesCount.Value,
+                currentHealth.Value,
+                currentGems.Value,
+                currentPeople.Value,
+                currentEnergy.Value);
+        }
+
+        /// <summary>Server: restore loadout saved for this map instance.</summary>
+        private void ApplyMapInstanceProgress(in PlayerShipProgressSnapshot snapshot)
+        {
+            if (!IsServer || _isAIControlled) return;
+            _playerSpawnSetupComplete = true;
+
+            shipLevel = Mathf.Max(1, snapshot.ShipLevel);
+            if (networkShipLevel != null)
+                networkShipLevel.Value = shipLevel;
+            if (networkBranchIndex != null)
+                networkBranchIndex.Value = snapshot.BranchIndex;
+
+            SetCurrentChassisIndex(snapshot.ChassisIndex);
+            if (!string.IsNullOrEmpty(snapshot.ChassisId))
+                SetCurrentChassisId(snapshot.ChassisId);
+
+            if (CardShopSystem.Instance != null)
+            {
+                GameObject prefab = !string.IsNullOrEmpty(snapshot.ChassisId)
+                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(snapshot.ChassisId)
+                    : null;
+                if (prefab == null && snapshot.ChassisIndex >= 0)
+                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(snapshot.ChassisIndex);
+                if (prefab != null)
+                {
+                    ApplyShipVisualFromPrefab(prefab);
+                    _lastAppliedChassisIndex = snapshot.ChassisIndex;
+                }
+            }
+
+            attrFirePower.Value = snapshot.AttrFirePower;
+            attrBulletSpeed.Value = snapshot.AttrBulletSpeed;
+            attrMaxHealth.Value = snapshot.AttrMaxHealth;
+            attrHealthRegen.Value = snapshot.AttrHealthRegen;
+            attrEnergyCapacity.Value = snapshot.AttrEnergyCapacity;
+            attrEnergyRegen.Value = snapshot.AttrEnergyRegen;
+            attrMovementSpeed.Value = snapshot.AttrMovementSpeed;
+            attrRotationSpeed.Value = snapshot.AttrRotationSpeed;
+            attrGemCapacity.Value = snapshot.AttrGemCapacity;
+            attrPeopleCapacity.Value = snapshot.AttrPeopleCapacity;
+
+            ClearAllCardsFromServer();
+            if (CardShopSystem.Instance != null && snapshot.CardIds != null)
+            {
+                for (int i = 0; i < snapshot.CardIds.Length; i++)
+                {
+                    CardData card = CardShopSystem.Instance.GetCardByIdForShip(this, snapshot.CardIds[i]);
+                    if (card != null)
+                        AddCardFromServer(card);
+                }
+            }
+
+            smallRocketsCount.Value = snapshot.SmallRockets;
+            largeRocketsCount.Value = snapshot.LargeRockets;
+            smallMinesCount.Value = snapshot.SmallMines;
+            largeMinesCount.Value = snapshot.LargeMines;
+
+            currentHealth.Value = Mathf.Clamp(snapshot.CurrentHealth, 0f, MaxHealth);
+            currentGems.Value = Mathf.Max(0f, snapshot.CurrentGems);
+            currentPeople.Value = Mathf.Max(0f, snapshot.CurrentPeople);
+            currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
+
+            if (snapshot.Team != TeamManager.Team.None && TeamManager.Instance != null)
+            {
+                if (TeamManager.Instance.GetPlayerTeam(OwnerClientId) == TeamManager.Team.None)
+                    TeamManager.Instance.AddPlayerToTeam(OwnerClientId, snapshot.Team);
+                shipTeam.Value = snapshot.Team;
+            }
+            else if (TeamManager.Instance != null)
+            {
+                shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
+            }
+
+            ApplyHullIdentityColor();
+            PlaceShipForCurrentTeamOrLobby();
         }
 
         /// <summary>Server only: called by NetworkGameManager when team is assigned (after client connect). Sets team and starts in orbit.</summary>
@@ -1400,7 +1584,7 @@ namespace TitanOrbit.Entities
             }
 
             // Server: ensure first ship (no chassis yet) gets starter visual (AstroEagle_01 or first family's ship 1)
-            if (IsServer && !_isAIControlled && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
+            if (IsServer && !_isAIControlled && !_playerSpawnSetupComplete && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
                 GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
@@ -1441,6 +1625,8 @@ namespace TitanOrbit.Entities
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
+            if (moveForwardPressedNet.Value != movePressed)
+                moveForwardPressedNet.Value = movePressed;
 
             if (movePressed && !wasMovePressedLastFrame && gemMoonDocked.Value)
                 RequestUndockGemMoonServerRpc();
@@ -2057,8 +2243,7 @@ namespace TitanOrbit.Entities
                     pos.y = 0f;
                     if (_serverHasLastPlanarPoseForVelocity)
                     {
-                        Vector3 delta = pos - _serverLastPlanarPoseForVelocity;
-                        delta.y = 0f;
+                        Vector3 delta = ToroidalMap.ShortestWorldOffsetXZ(_serverLastPlanarPoseForVelocity, pos);
                         float dt = Time.fixedDeltaTime;
                         _serverEstimatedPlanarVelocity = dt > 0.0001f ? delta / dt : Vector3.zero;
                     }
@@ -2158,17 +2343,11 @@ namespace TitanOrbit.Entities
                     float distToMoon = ToroidalMap.ToroidalDistance(shipPosForBoundary, moonPosForBoundary);
                     moonDockOuterRadius = moon.GetMoonDockSnapRadiusWorld() * gemMoonLandingRangeMultiplier;
                     float bodyRadiusWorld = moon.GetMoonBodyRadiusWorld();
-                    float shipRadius = 0.05f;
-                    Collider shipCol = rootCollider != null ? rootCollider : GetComponent<Collider>();
-                    if (shipCol != null)
-                    {
-                        Bounds b = shipCol.bounds;
-                        shipRadius = Mathf.Max(0.05f, Mathf.Max(b.extents.x, b.extents.z) * 0.6f);
-                    }
+                    float shipRadius = GetShipCollisionRadiusXZ();
                     moonDockSurfaceRadius = bodyRadiusWorld + shipRadius;
 
                     withinGemMoonBoundary = moonDockOuterRadius > 0.0001f
-                        && distToMoon <= moonDockOuterRadius;
+                        && distToMoon <= moonDockOuterRadius + shipRadius;
 
                 }
             }
@@ -2348,7 +2527,8 @@ namespace TitanOrbit.Entities
             if (gemMoonDocked.Value && withinGemMoonBoundary)
                 return;
 
-            bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed;
+            bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed
+                && !IsInsideFriendlyGemMoonOrbitZone();
             if (useOrbit)
             {
                 HandleOrbitMovement();
@@ -2556,14 +2736,15 @@ namespace TitanOrbit.Entities
 
             Vector3 shipPos = rb != null ? rb.position : transform.position;
             bool inOrbitZone = currentOrbitPlanet != null;
-            float searchRadius = inOrbitZone ? 4.5f : 2.5f;
-            float attractionSpeed = inOrbitZone ? 14f : 8f;
+            GemTractorBeamSettings.GetAttractionParams(inOrbitZone, out float searchRadius, out float attractionSpeed);
+            float accel = attractionSpeed * Time.fixedDeltaTime * GemTractorBeamSettings.AttractionAccelerationFactor;
 
             foreach (var gem in TitanOrbit.Entities.Gem.AllGems)
             {
-                if (gem == null || !gem.IsSpawned || gem.IsInPool || gem.IsDepositGem) continue;
-                if (gem.Value <= 0f) continue;
-                if (!gem.CanShipCollect(this)) continue;
+                if (!GemTractorBeamSettings.CanShipMagneticallyPull(this, gem))
+                    continue;
+                if (!gem.CanShipCollect(this))
+                    continue;
 
                 Rigidbody gemRb = gem.GetComponent<Rigidbody>();
                 if (gemRb == null) continue;
@@ -2578,11 +2759,7 @@ namespace TitanOrbit.Entities
                 toShip.Normalize();
 
                 Vector3 targetVel = toShip * attractionSpeed;
-                gemRb.linearVelocity = Vector3.MoveTowards(
-                    gemRb.linearVelocity,
-                    targetVel,
-                    attractionSpeed * Time.fixedDeltaTime * 4f
-                );
+                gemRb.linearVelocity = Vector3.MoveTowards(gemRb.linearVelocity, targetVel, accel);
                 gemRb.linearDamping = 0f;
             }
         }
@@ -2917,15 +3094,15 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == null || rb == null) return false;
 
             Vector3 planetPos = currentOrbitPlanet.transform.position;
+            planetPos.y = 0f;
             // Owner-simulated ships: replicated transform is authoritative on the server; rb can lag NT.
-            Vector3 shipWorld = (IsServer && !_isAIControlled) ? transform.position : rb.position;
-            Vector3 toShip = shipWorld - planetPos;
-            toShip.y = 0f;
-            float dist = toShip.magnitude;
+            Vector3 shipWorld = GetShipWorldPositionForOrbitChecks();
+            float dist = ToroidalMap.ToroidalDistance(shipWorld, planetPos);
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
             float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
             if (dist < innerWorld || dist > outerWorld) return false;
 
+            Vector3 toShip = ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipWorld);
             Vector3 radial = toShip / dist;
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
             float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
@@ -2990,36 +3167,50 @@ namespace TitanOrbit.Entities
                 || IsWorldPositionInPlanetOrbitShellRelaxed(planet, rigidbodyWorld);
         }
 
-        /// <summary>
-        /// Population transfer gate: same as <see cref="IsInStableOrbit"/> for players (captured orbit, not fly-through).
-        /// AI uses a looser tangent alignment when owner velocity ratios do not apply.
-        /// </summary>
-        private bool IsOrbitStableForPeopleTransfer()
+        /// <summary>World XZ position used for server-side orbit band checks (owner sim uses replicated transform).</summary>
+        private Vector3 GetShipWorldPositionForOrbitChecks()
         {
-            if (IsInStableOrbit())
-                return true;
+            Vector3 p = (IsServer && !_isAIControlled) ? transform.position : rb.position;
+            p.y = 0f;
+            return p;
+        }
 
-            // AI uses a fixed tangent speed that may not match GetOrbitTargetSpeed ratios; accept looser alignment in-band.
-            if (!_isAIControlled || currentOrbitPlanet == null || rb == null)
+        /// <summary>True when the ship is not actively thrusting (player RMB). Orbit transfer requires coasting in captured orbit.</summary>
+        private bool IsShipIdleForPeopleTransfer()
+        {
+            return _isAIControlled || !IsMoveForwardPressedForGemMoonLanding;
+        }
+
+        /// <summary>
+        /// Each fixed tick while in orbit without thrusting. Server sets <see cref="currentOrbitPlanet"/> from the orbit shell each tick.
+        /// The 1s dwell timer is the stable-orbit requirement.
+        /// </summary>
+        private bool CanAccumulatePeopleTransferDwell()
+        {
+            if (currentOrbitPlanet == null || rb == null)
                 return false;
-            Vector3 planetPos = currentOrbitPlanet.transform.position;
-            Vector3 toShip = rb.position - planetPos;
-            toShip.y = 0f;
-            float dist = toShip.magnitude;
-            if (dist < 0.01f)
-                return false;
-            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
-            if (dist < innerWorld || dist > outerWorld)
-                return false;
-            Vector3 vel = rb.linearVelocity;
-            vel.y = 0f;
-            if (vel.sqrMagnitude < 0.0001f)
-                return false;
-            Vector3 radial = toShip / dist;
-            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
-            float alignment = Vector3.Dot(vel.normalized, tangent);
-            return alignment >= 0.82f;
+            return IsShipIdleForPeopleTransfer();
+        }
+
+        /// <summary>AI transporters only load when their controller sets wantToLoad; players load surplus automatically.</summary>
+        private bool ShouldLoadPeopleFromOrbitPlanet()
+        {
+            return !_isAIControlled || wantToLoadPeople.Value;
+        }
+
+        private void ClearPeopleTransferIntentIfComplete(Planet orbitPlanet, bool friendly, bool planetWantsReinforce)
+        {
+            if (!IsServer) return;
+            if (wantToLoadPeople.Value && CurrentPeople >= PeopleCapacity - 0.0001f)
+                wantToLoadPeople.Value = false;
+            if (wantToUnloadPeople.Value && CurrentPeople <= 0.0001f)
+                wantToUnloadPeople.Value = false;
+            if (friendly && !planetWantsReinforce && orbitPlanet != null)
+            {
+                float surplus = Mathf.Max(0f, orbitPlanet.CurrentPopulation - 0.5f * orbitPlanet.MaxPopulation);
+                if (wantToLoadPeople.Value && surplus < 0.0001f && peopleInTransit < 0.0001f)
+                    wantToLoadPeople.Value = false;
+            }
         }
 
         private void HandleRotation()
@@ -3770,7 +3961,7 @@ namespace TitanOrbit.Entities
             // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
-        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload is 1 person/s (not scaled by ship level); load still scales with level (~2 chunks/s).</summary>
+        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload is 1 person/s (not scaled by ship level); load still scales with level (~2 chunks/s). Transfer only after <see cref="CanAccumulatePeopleTransferDwell"/> for <see cref="peopleTransferStationaryHoldSeconds"/>.</summary>
         /// <summary>Server: pick the orbit planet whose shell contains this ship (closest toroidal match). Avoids stale HomePlanet cache blocking hostile unload.</summary>
         private void RefreshServerOrbitPlanetFromPosition()
         {
@@ -3812,12 +4003,15 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            bool orbitStableForTransfer = IsOrbitStableForPeopleTransfer();
-            if (orbitStableForTransfer)
-                peopleTransferStationaryTimer += Time.fixedDeltaTime;
-            else
+            if (!CanAccumulatePeopleTransferDwell())
+            {
                 peopleTransferStationaryTimer = 0f;
+                peopleLoadAccumulator = 0f;
+                peopleUnloadAccumulator = 0f;
+                return;
+            }
 
+            peopleTransferStationaryTimer += Time.fixedDeltaTime;
             if (peopleTransferStationaryTimer < peopleTransferStationaryHoldSeconds)
                 return;
 
@@ -3849,6 +4043,7 @@ namespace TitanOrbit.Entities
                 float curPop = orbitPlanet.CurrentPopulation;
                 // Below 50%: planet pulls people from ships until half capacity. At/above 50%: only surplus above half can load onto ships.
                 bool planetWantsReinforce = curPop < halfCap - 0.0001f;
+                ClearPeopleTransferIntentIfComplete(orbitPlanet, true, planetWantsReinforce);
 
                 if (planetWantsReinforce)
                 {
@@ -3927,6 +4122,12 @@ namespace TitanOrbit.Entities
 
                 peopleUnloadAccumulator = 0f;
                 float available = Mathf.Max(0f, curPop - halfCap);
+                if (!ShouldLoadPeopleFromOrbitPlanet())
+                {
+                    peopleLoadAccumulator = 0f;
+                    return;
+                }
+
                 if (debugModeEnabled)
                 {
                     float instantLoadAmount = Mathf.Min(peopleSpaceAvailable, available);
@@ -3988,6 +4189,14 @@ namespace TitanOrbit.Entities
             }
             else
             {
+                ClearPeopleTransferIntentIfComplete(currentOrbitPlanet, false, false);
+
+                if (!wantToUnloadPeople.Value)
+                {
+                    peopleUnloadAccumulator = 0f;
+                    return;
+                }
+
                 if (debugModeEnabled)
                 {
                     float instantUnloadPeople = currentPeople.Value;
@@ -4787,7 +4996,8 @@ namespace TitanOrbit.Entities
             return ua <= ub ? ((ulong)ua << 32) | ub : ((ulong)ub << 32) | ua;
         }
 
-        private float GetShipCollisionRadiusXZ()
+        /// <summary>XZ hull radius for moon dock zones, ship-vs-ship separation, etc.</summary>
+        public float GetShipCollisionRadiusXZ()
         {
             Collider c = rootCollider != null ? rootCollider : GetComponent<Collider>();
             if (c == null) return 0.05f;
@@ -5175,11 +5385,51 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server-only: set by <see cref="PlanetGemMoon"/> when a ship enters or leaves the dock trigger.</summary>
+        /// <summary>Server: accumulate low-speed time in a gem-moon zone so fly-through does not auto-dock.</summary>
+        public void ServerTickGemMoonLandingDwell(bool counting, float deltaTime)
+        {
+            if (!IsServer) return;
+            if (counting)
+                _serverGemMoonLandingDwellSeconds = Mathf.Min(
+                    _serverGemMoonLandingDwellSeconds + deltaTime,
+                    GemMoonLandingDwellSecondsRequired + 0.5f);
+            else
+                _serverGemMoonLandingDwellSeconds = 0f;
+        }
+
+        public bool ServerGemMoonLandingDwellMet =>
+            _serverGemMoonLandingDwellSeconds >= GemMoonLandingDwellSecondsRequired;
+
+        /// <summary>True when inside a friendly gem moon's dock/orbit shell (skip forced planet orbit capture while passing through).</summary>
+        public bool IsInsideFriendlyGemMoonOrbitZone(float radiusMultiplier = 1.05f)
+        {
+            if (shipTeam.Value == TeamManager.Team.None) return false;
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            shipPos.y = 0f;
+            for (int i = 0; i < PlanetGemMoon.ActiveMoonCount; i++)
+            {
+                PlanetGemMoon moon = PlanetGemMoon.GetActiveMoonAt(i);
+                if (moon == null || !moon.IsTeamFriendlyToThisMoon(shipTeam.Value)) continue;
+                Vector3 moonPos = moon.transform.position;
+                moonPos.y = 0f;
+                float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+                float r = moon.GetMoonDockSnapRadiusWorld() * radiusMultiplier;
+                float shipRadius = GetShipCollisionRadiusXZ();
+                if (r > 0.0001f && dist <= r + shipRadius)
+                    return true;
+            }
+            return false;
+        }
+
         public void ServerSetGemMoonDocked(bool value, Planet planetContext = null)
         {
             if (!IsServer) return;
             bool wasDocked = gemMoonDocked.Value;
             gemMoonDocked.Value = value;
+            // Only clear landing dwell when actually undocking. OnTriggerStay calls Set(false) every
+            // frame while dwell accumulates; resetting here prevented the landing sequence from ever starting.
+            if (!value && wasDocked)
+                _serverGemMoonLandingDwellSeconds = 0f;
             if (value && planetContext != null)
             {
                 var no = planetContext.GetComponent<NetworkObject>();
@@ -5243,7 +5493,8 @@ namespace TitanOrbit.Entities
             int cost = AttributeUpgradeCost;
             if (currentGems.Value < cost - 0.01f) return;
 
-            RemoveGemsServerRpc(cost);
+            // Already on server inside this ServerRpc — nested ServerRpc would not deduct gems.
+            ApplyRemoveGemsOnServer(cost);
             switch (attributeIndex)
             {
                 case 0: attrFirePower.Value++; break;
@@ -6333,7 +6584,7 @@ namespace TitanOrbit.Entities
             if (!equippedCards.Contains(card))
             {
                 equippedCards.Add(card);
-                equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(card.cardId) });
+                equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(card.GetStableCardId()) });
                 _cardStatsCacheFrame = -1;
             }
         }

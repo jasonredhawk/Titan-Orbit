@@ -399,6 +399,12 @@ namespace TitanOrbit.Entities
             teamOwnership.OnValueChanged += OnOwnershipChanged;
             currentPopulation.OnValueChanged += (float oldVal, float newVal) => UpdatePopulationDisplay();
             planetLevel.OnValueChanged += OnPlanetLevelChanged;
+
+            if (!IsServer)
+            {
+                var mapNetObj = GetComponent<NetworkObject>();
+                MapGenerator.Active?.HandleClientMapEntitySpawned(mapNetObj);
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -1029,15 +1035,15 @@ namespace TitanOrbit.Entities
             float maxForLevel = GetMaxGemsForLevel(currentLevel);
             // Level up when gems reach exact max capacity (e.g. 100/100). Use small epsilon for float precision.
             if (maxForLevel > 0f && currentGems.Value >= maxForLevel - 0.001f)
-                LevelUpServerRpc();
+                LevelUpFromServer();
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void LevelUpServerRpc()
+        /// <summary>Server-only level-up. Must not be a ServerRpc — deposits run on the server and NGO does not reliably execute self-invoked ServerRpcs.</summary>
+        private void LevelUpFromServer()
         {
-            if (planetLevel.Value >= GetMaxLevel()) return; // Max level
+            if (!IsServer) return;
+            if (planetLevel.Value >= GetMaxLevel()) return;
 
-            int oldLevel = planetLevel.Value;
             planetLevel.Value++;
             currentGems.Value = 0f; // Reset gem count to 0 when leveling up
 

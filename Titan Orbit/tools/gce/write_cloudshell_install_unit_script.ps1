@@ -11,12 +11,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $unitPath = Join-Path $PSScriptRoot "titanorbit-server.service"
+$wrapperPath = Join-Path $PSScriptRoot "run_titanorbit_server.sh"
 if (-not (Test-Path $unitPath)) {
     Write-Error "Missing unit file: $unitPath"
     exit 1
 }
+if (-not (Test-Path $wrapperPath)) {
+    Write-Error "Missing wrapper script: $wrapperPath"
+    exit 1
+}
 
 $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($unitPath))
+$wrapperB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($wrapperPath))
 $servicePath = "/etc/systemd/system/titanorbit-server.service"
 
 $remoteScript = (@"
@@ -32,15 +38,17 @@ else
   echo "No TitanOrbitServer or TitanOrbitServer.x86_64 in $RemoteDir"; ls -la "$RemoteDir" || true; exit 1
 fi
 chmod 755 "$RemoteDir/`$EXE_NAME"
+echo '$wrapperB64' | base64 -d > "$RemoteDir/run_titanorbit_server.sh"
+chmod 755 "$RemoteDir/run_titanorbit_server.sh"
 echo '$b64' | base64 -d | sudo tee $servicePath >/dev/null
-sudo sed -i "s|__TITANORBIT_EXE__|`$EXE_NAME|g" $servicePath
 sudo chmod 644 $servicePath
 sudo systemctl daemon-reload
 sudo systemctl enable --now titanorbit-server.service
 sudo systemctl status titanorbit-server.service --no-pager -l | sed -n '1,80p'
 echo
 echo Recent log:
-if [ -f "$RemoteDir/Player.log" ]; then tail -n 80 "$RemoteDir/Player.log"; else echo "(no Player.log yet - Unity may create it shortly after startup)"; fi
+sudo journalctl -u titanorbit-server -n 40 --no-pager || true
+if [ -f "$RemoteDir/Player.log" ]; then tail -n 80 "$RemoteDir/Player.log"; else echo "(no Player.log yet)"; fi
 "@) -replace "`r`n", "`n"
 
 $scriptB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteScript))

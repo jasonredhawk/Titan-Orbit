@@ -246,12 +246,19 @@ namespace TitanOrbit.UI
 
         private void OnEnable()
         {
+            CardShopSystem.ClientSpinOfferReceived += OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed += OnClientSpinOfferConsumed;
         }
 
         private void OnDisable()
         {
+            CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
+        }
+
+        private void OnClientSpinOfferReceived()
+        {
+            RefreshStoreLabels();
         }
 
         private void OnClientSpinOfferConsumed()
@@ -3063,7 +3070,7 @@ namespace TitanOrbit.UI
                     cardTitleTexts[i].enableAutoSizing = true;
                     cardTitleTexts[i].fontSize = 14f;
                     cardTitleTexts[i].color = new Color(0.98f, 0.99f, 1f, 1f);
-                    cardTitleTexts[i].text = card.displayName;
+                    cardTitleTexts[i].text = card.GetDisplayNameOrDefault();
                     ApplySpaceCardOutline(cardTitleTexts[i], 0.22f);
                 }
                 int rar = Mathf.Clamp((int)card.rarity, 1, 5);
@@ -3105,7 +3112,7 @@ namespace TitanOrbit.UI
                 }
                 if (cardDescTexts[i] != null)
                 {
-                    cardDescTexts[i].text = string.IsNullOrEmpty(card.description) ? "" : card.description;
+                    cardDescTexts[i].text = card.GetDescriptionOrDefault();
                     cardDescTexts[i].color = new Color(0.9f, 0.93f, 0.98f, 1f);
                     ApplySpaceCardOutline(cardDescTexts[i], 0.16f);
                 }
@@ -3661,7 +3668,7 @@ namespace TitanOrbit.UI
             if (planetNo == null || !planetNo.IsSpawned) return;
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
             if (shipNo == null || !shipNo.IsSpawned) return;
-            CardShopSystem.Instance.PurchaseCardServerRpc(planetNo.NetworkObjectId, shipNo.NetworkObjectId, card.cardId);
+            CardShopSystem.Instance.PurchaseCardServerRpc(planetNo.NetworkObjectId, shipNo.NetworkObjectId, card.GetStableCardId());
             pendingGemsRequest = true;
             if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
         }

@@ -27,6 +27,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> maxGems = new NetworkVariable<float>(100f);
         private NetworkVariable<float> health = new NetworkVariable<float>(50f);
         private NetworkVariable<bool> isDestroyed = new NetworkVariable<bool>(false);
+        /// <summary>Team.None = neutral; otherwise inside that team's moving triangle (gem-moon vertices).</summary>
+        private NetworkVariable<int> territoryTeamInt = new NetworkVariable<int>(
+            (int)TeamManager.Team.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         [Header("Visual")]
         [SerializeField] private Renderer asteroidRenderer;
@@ -73,6 +78,9 @@ namespace TitanOrbit.Entities
         public float RemainingHealth => health.Value;
         public float AsteroidSize => asteroidSize;
         public bool IsDestroyed => isDestroyed.Value;
+        /// <summary>Neutral when not inside a team triangle; otherwise the owning team (re-evaluated as triangles move).</summary>
+        public TeamManager.Team TerritoryTeam => (TeamManager.Team)territoryTeamInt.Value;
+        public bool IsInTeamTerritory => TerritoryTeam != TeamManager.Team.None;
         public Vector3 WorldVelocity => rb != null ? rb.linearVelocity : Vector3.zero;
 
         public bool CanBeMined() => !isDestroyed.Value && remainingGems.Value > 0;
@@ -153,6 +161,9 @@ namespace TitanOrbit.Entities
         {
             if (!AllAsteroids.Contains(this))
                 AllAsteroids.Add(this);
+            territoryTeamInt.OnValueChanged += OnTerritoryTeamChanged;
+            OnTerritoryTeamChanged((int)TeamManager.Team.None, territoryTeamInt.Value);
+
             // Lock Y position to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
@@ -178,10 +189,37 @@ namespace TitanOrbit.Entities
                 health.Value = maxGems.Value * 3f;
                 isDestroyed.Value = false;
                 damageByShip.Clear();
+                territoryTeamInt.Value = (int)TeamManager.Team.None;
 
                 // Ensure physics state is correct
                 EnsurePhysicsState();
             }
+
+            if (!IsServer)
+            {
+                var mapNetObj = GetComponent<NetworkObject>();
+                MapGenerator.Active?.HandleClientMapEntitySpawned(mapNetObj);
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            territoryTeamInt.OnValueChanged -= OnTerritoryTeamChanged;
+            base.OnNetworkDespawn();
+        }
+
+        private void OnTerritoryTeamChanged(int previous, int next)
+        {
+            SetTerritoryHighlight((TeamManager.Team)next);
+        }
+
+        /// <summary>Server-only: set neutral vs team territory from the current moving triangles.</summary>
+        public void ServerRefreshTerritoryTeam(TeamManager.Team team)
+        {
+            if (!IsServer) return;
+            int next = (int)team;
+            if (territoryTeamInt.Value != next)
+                territoryTeamInt.Value = next;
         }
 
         /// <summary>Per-asteroid tumble axis/speed from spawn position so every peer matches without network sync.</summary>
@@ -337,8 +375,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Client-side visual highlight for asteroids under a team's triangle territory.
-        /// Does not affect gameplay, only tint. Pass Team.None to clear highlight.
+        /// Visual highlight for neutral vs team triangle territory. Pass Team.None to clear highlight.
         /// Asteroids use SgtPlanet (Graphics.DrawMesh + MaterialPropertyBlock); we set _Color on its Properties.
         /// </summary>
         public void SetTerritoryHighlight(TeamManager.Team team)
@@ -502,19 +539,15 @@ namespace TitanOrbit.Entities
 
                 // Bonus only for same team as triangle: 5% per home planet level. Enemies get no bonus.
                 float bonusMultiplier = 1f;
-                var conn = Systems.PlanetConnectionSystem.Instance;
-                if (conn != null)
+                TeamManager.Team asteroidTeam = TerritoryTeam;
+                if (asteroidTeam != TeamManager.Team.None && topDamagerShipId != 0)
                 {
-                    TeamManager.Team asteroidTeam = conn.GetTeamAtPosition(pos);
-                    if (asteroidTeam != TeamManager.Team.None && topDamagerShipId != 0)
+                    var nm = Unity.Netcode.NetworkManager.Singleton;
+                    if (nm != null && nm.SpawnManager != null && nm.SpawnManager.SpawnedObjects.TryGetValue(topDamagerShipId, out Unity.Netcode.NetworkObject netObj))
                     {
-                        var nm = Unity.Netcode.NetworkManager.Singleton;
-                        if (nm != null && nm.SpawnManager != null && nm.SpawnManager.SpawnedObjects.TryGetValue(topDamagerShipId, out Unity.Netcode.NetworkObject netObj))
-                        {
-                            var ship = netObj != null ? netObj.GetComponent<Starship>() : null;
-                            if (ship != null && ship.ShipTeam == asteroidTeam)
-                                bonusMultiplier = 1f + 0.05f * Systems.PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
-                        }
+                        var ship = netObj != null ? netObj.GetComponent<Starship>() : null;
+                        if (ship != null && ship.ShipTeam == asteroidTeam)
+                            bonusMultiplier = 1f + 0.05f * Systems.PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
                     }
                 }
 

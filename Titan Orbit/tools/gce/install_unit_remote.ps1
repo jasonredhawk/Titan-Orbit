@@ -37,8 +37,13 @@ catch {
 }
 
 $unitPath = Join-Path $PSScriptRoot "titanorbit-server.service"
+$wrapperPath = Join-Path $PSScriptRoot "run_titanorbit_server.sh"
 if (-not (Test-Path $unitPath)) {
     Write-Error "Missing unit file: $unitPath"
+    exit 1
+}
+if (-not (Test-Path $wrapperPath)) {
+    Write-Error "Missing wrapper script: $wrapperPath"
     exit 1
 }
 
@@ -50,6 +55,7 @@ $sshUser = $Matches[1]
 $instanceName = $Matches[2]
 
 $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($unitPath))
+$wrapperB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($wrapperPath))
 $servicePath = "/etc/systemd/system/titanorbit-server.service"
 
 $remoteScript = (@"
@@ -70,9 +76,10 @@ fi
 if [ -f "$RemoteDir/`$EXE_NAME" ]; then
   chmod 755 "$RemoteDir/`$EXE_NAME"
 fi
+echo '$wrapperB64' | base64 -d > "$RemoteDir/run_titanorbit_server.sh"
+chmod 755 "$RemoteDir/run_titanorbit_server.sh"
+chown jason:jason "$RemoteDir/run_titanorbit_server.sh" 2>/dev/null || sudo chown jason:jason "$RemoteDir/run_titanorbit_server.sh"
 echo '$b64' | base64 -d | sudo tee $servicePath >/dev/null
-# Repo unit uses __TITANORBIT_EXE__; must match Unity output (usually TitanOrbitServer.x86_64) or systemd returns 203/EXEC.
-sudo sed -i "s|__TITANORBIT_EXE__|`$EXE_NAME|g" $servicePath
 sudo chmod 644 $servicePath
 sudo systemctl daemon-reload
 if [ -f "$RemoteDir/`$EXE_NAME" ]; then
@@ -94,8 +101,8 @@ function Invoke-GcloudComputeSsh {
     # Do NOT pass "bash -s" after "--": on Windows, gcloud uses PuTTY plink, and plink's "-s" means "subsystem" (popup: Unknown option -s).
     # Do NOT pipe the install script on stdin: gcloud/plink often read stdin for (Y/n) first; the first line consumed can make remote bash see "y" as line 1.
     $installPackB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteScript))
-    if ($installPackB64.Length -gt 6000) {
-        Write-Error "Encoded install script is too long for gcloud --command on Windows (~8k limit). Shorten titanorbit-server.service or use -UseIap."
+    if ($installPackB64.Length -gt 12000) {
+        Write-Error "Encoded install script is too long for gcloud --command on Windows (~16k limit). Shorten install script or use Cloud Shell install."
         exit 1
     }
     # bash -lc '...' keeps the pipe on the VM; PS invokes gcloud with argv (no cmd.exe), so local Windows base64 is never run.
@@ -167,7 +174,7 @@ function Invoke-DirectOpenSshInstall {
         return 99
     }
     $installPackB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteScript))
-    if ($installPackB64.Length -gt 6000) {
+    if ($installPackB64.Length -gt 12000) {
         return 1
     }
     $iapSshRemoteArg = "bash -lc `"echo $installPackB64 | base64 -d | bash -s`""

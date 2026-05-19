@@ -626,7 +626,7 @@ namespace TitanOrbit.Entities
                 if (moonDamage > 0.0001f)
                     TakeDamageServer(moonDamage);
                 if (asteroidDamage > 0.0001f)
-                    asteroid.TakeDamageServerRpc(asteroidDamage, 0ul);
+                    asteroid.ApplyDamageFromBulletServer(asteroidDamage, 0ul);
             }
         }
 
@@ -1190,7 +1190,9 @@ namespace TitanOrbit.Entities
             // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
             if (!IsShipReadyToLandInMoonZone(ship))
             {
-                ship.ServerSetGemMoonDocked(false, null);
+                // Only undock if already docked; otherwise keep accumulating landing dwell (see Starship.ServerSetGemMoonDocked).
+                if (ship.GemMoonDocked)
+                    ship.ServerSetGemMoonDocked(false, null);
                 return;
             }
 
@@ -1243,8 +1245,12 @@ namespace TitanOrbit.Entities
             shipPos.y = 0f;
 
             float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f;
-            bool shouldStayDocked = keepDockRadiusWorld > 0.0001f && xzDist <= keepDockRadiusWorld;
+            float shipRadius = ship.GetShipCollisionRadiusXZ();
+            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f + shipRadius;
+            // Only preserve an existing dock when Y-snap briefly leaves the trigger — never dock on exit alone.
+            bool shouldStayDocked = ship.GemMoonDocked
+                && keepDockRadiusWorld > 0.0001f
+                && xzDist <= keepDockRadiusWorld;
 
             ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
         }
@@ -1335,6 +1341,13 @@ namespace TitanOrbit.Entities
             if (shipTeam == TeamManager.Team.None) return false;
             if (shipTeam != planetTeam) return false;
 
+            // Players must release forward thrust (right mouse) and coast down before landing — same intent as planet orbit UI.
+            if (ship.IsMoveForwardPressedForGemMoonLanding)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
             Vector3 moonPos = transform.position;
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
@@ -1342,8 +1355,10 @@ namespace TitanOrbit.Entities
 
             float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
             float zoneRadius = GetMoonDockSnapRadiusWorld();
+            float shipRadius = ship.GetShipCollisionRadiusXZ();
             if (zoneRadius <= 0.0001f) return false;
-            if (dist > zoneRadius) return false;
+            // Zone is authored around the moon center; large hulls can overlap the trigger while the center stays outside.
+            if (dist > zoneRadius + shipRadius) return false;
 
             Rigidbody shipRb = ship.GetComponent<Rigidbody>();
             if (shipRb == null) return false;
@@ -1352,8 +1367,41 @@ namespace TitanOrbit.Entities
             vel.y = 0f;
             float speed = vel.magnitude;
 
-            // Mostly stationary — allow light drift so docking is easier to trigger.
-            return speed <= 1.85f;
+            const float maxLandingSpeed = 1.85f;
+            const float flyThroughMaxSpeed = 2.35f;
+
+            if (speed > flyThroughMaxSpeed)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            // Arcing through the shell at meaningful speed is pass-through, not landing intent.
+            if (speed > 0.25f)
+            {
+                Vector3 awayFromMoon = ToroidalMap.ToroidalDirection(moonPos, shipPos);
+                awayFromMoon.y = 0f;
+                if (awayFromMoon.sqrMagnitude > 0.0001f)
+                {
+                    awayFromMoon.Normalize();
+                    float radialSpeed = Mathf.Abs(Vector3.Dot(vel, awayFromMoon));
+                    float tangentialSpeedSq = Mathf.Max(0f, speed * speed - radialSpeed * radialSpeed);
+                    if (speed >= 1.4f && tangentialSpeedSq > speed * speed * 0.36f)
+                    {
+                        ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                        return false;
+                    }
+                }
+            }
+
+            if (speed > maxLandingSpeed)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            ship.ServerTickGemMoonLandingDwell(true, Time.fixedDeltaTime);
+            return ship.ServerGemMoonLandingDwellMet;
         }
     }
 }

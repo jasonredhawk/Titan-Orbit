@@ -51,24 +51,41 @@ namespace TitanOrbit.Core
             {
                 Instance = this;
                 DontDestroyOnLoad(gameObject);
-
-                BootTrace.Mark("GameManager.Awake - creating PlanetConnectionSystems");
-                var systemsGo = new GameObject("PlanetConnectionSystems");
-                DontDestroyOnLoad(systemsGo);
-                systemsGo.AddComponent<PlanetConnectionSystem>();
-                systemsGo.AddComponent<AsteroidTerritoryHighlighter>();
-                systemsGo.AddComponent<PlanetConnectionShapesVisual>();
-                BootTrace.Mark("GameManager.Awake - PlanetConnectionSystems created");
             }
             else
             {
                 BootTrace.Mark("GameManager.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
+                return;
             }
+
+            EnsureWorldShapeVisuals();
+        }
+
+        /// <summary>Creates shared world-space Shapes drawers (idempotent; safe if Awake order varies).</summary>
+        public static void EnsureWorldShapeVisuals()
+        {
+            var systemsGo = GameObject.Find("PlanetConnectionSystems");
+            if (systemsGo == null)
+            {
+                systemsGo = new GameObject("PlanetConnectionSystems");
+                DontDestroyOnLoad(systemsGo);
+            }
+
+            if (systemsGo.GetComponent<PlanetConnectionSystem>() == null)
+                systemsGo.AddComponent<PlanetConnectionSystem>();
+            if (systemsGo.GetComponent<AsteroidTerritoryHighlighter>() == null)
+                systemsGo.AddComponent<AsteroidTerritoryHighlighter>();
+            if (systemsGo.GetComponent<PlanetConnectionShapesVisual>() == null)
+                systemsGo.AddComponent<PlanetConnectionShapesVisual>();
+            if (systemsGo.GetComponent<GemTractorBeamVisual>() == null)
+                systemsGo.AddComponent<GemTractorBeamVisual>();
         }
 
         public override void OnNetworkSpawn()
         {
+            EnsureWorldShapeVisuals();
+
             if (IsServer)
             {
                 currentGameState.Value = GameState.Lobby;

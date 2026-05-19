@@ -69,6 +69,17 @@ namespace TitanOrbit.Systems
         public IReadOnlyList<PlanetEdge> CurrentEdges => edges;
         public IReadOnlyList<PlanetTriangle> CurrentTriangles => triangles;
 
+        /// <summary>
+        /// Toroidal position for triangle/map visuals: each planet's orbiting gem moon when present,
+        /// otherwise the planet center.
+        /// </summary>
+        public static Vector3 GetTriangleVertexToroidalPosition(Planet planet)
+        {
+            if (planet == null)
+                return Vector3.zero;
+            return ToroidalMap.WrapPosition(planet.GetGemMoonWorldPosition());
+        }
+
         /// <summary>Returns triangle vertices with a stable anchor (smallest PlanetId) so drawing does not flip when camera moves.</summary>
         public static void GetStableTriangleOrder(PlanetTriangle tri, out Planet anchor, out Planet b, out Planet c)
         {
@@ -484,9 +495,9 @@ namespace TitanOrbit.Systems
 
         private static bool PointInTriangleXZ(Vector2 p, PlanetTriangle tri)
         {
-            Vector3 a3 = tri.A.ToroidalPosition;
-            Vector3 b3 = tri.B.ToroidalPosition;
-            Vector3 c3 = tri.C.ToroidalPosition;
+            Vector3 a3 = GetTriangleVertexToroidalPosition(tri.A);
+            Vector3 b3 = GetTriangleVertexToroidalPosition(tri.B);
+            Vector3 c3 = GetTriangleVertexToroidalPosition(tri.C);
             Vector2 a = new Vector2(a3.x, a3.z);
             Vector2 b = new Vector2(b3.x, b3.z);
             Vector2 c = new Vector2(c3.x, c3.z);
@@ -508,9 +519,9 @@ namespace TitanOrbit.Systems
         /// that wrap the map boundary are tested correctly.</summary>
         private static bool PointInTriangleXZCanonical(Vector2 pCanonical, PlanetTriangle tri)
         {
-            Vector3 wa = tri.A.ToroidalPosition;
-            Vector3 wb = tri.B.ToroidalPosition;
-            Vector3 wc = tri.C.ToroidalPosition;
+            Vector3 wa = GetTriangleVertexToroidalPosition(tri.A);
+            Vector3 wb = GetTriangleVertexToroidalPosition(tri.B);
+            Vector3 wc = GetTriangleVertexToroidalPosition(tri.C);
             Vector3 wp = new Vector3(pCanonical.x, 0f, pCanonical.y);
 
             // Unwrap triangle: A at origin, B and C at shortest offsets from A

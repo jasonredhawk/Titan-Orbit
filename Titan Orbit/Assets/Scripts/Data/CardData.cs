@@ -89,6 +89,43 @@ namespace TitanOrbit.Data
 
         [Tooltip("Normalized component key from USC mapping (e.g. \"AstroEagle_Engine_2\").")]
         public string componentKey;
+
+        private void OnEnable()
+        {
+            CardDataRuntimeRestore.TryRestoreFromAssetName(this);
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (string.IsNullOrEmpty(cardId) && !string.IsNullOrEmpty(name))
+                cardId = name;
+            CardDataRuntimeRestore.TryRestoreFromAssetName(this);
+        }
+#endif
+
+        /// <summary>Stable id for networking and save/load. Falls back to the asset file name when cardId was not serialized.</summary>
+        public string GetStableCardId()
+        {
+            if (!string.IsNullOrEmpty(cardId)) return cardId;
+            return string.IsNullOrEmpty(name) ? string.Empty : name;
+        }
+
+        /// <summary>Player-facing title; uses <see cref="displayName"/> or a name derived from the asset file.</summary>
+        public string GetDisplayNameOrDefault()
+        {
+            if (!string.IsNullOrEmpty(displayName)) return displayName;
+            CardDataRuntimeRestore.TryRestoreFromAssetName(this);
+            return string.IsNullOrEmpty(displayName) ? name : displayName;
+        }
+
+        /// <summary>Card body text for shop UI.</summary>
+        public string GetDescriptionOrDefault()
+        {
+            if (!string.IsNullOrEmpty(description)) return description;
+            CardDataRuntimeRestore.TryRestoreFromAssetName(this);
+            return description ?? string.Empty;
+        }
     }
 }
 

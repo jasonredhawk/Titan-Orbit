@@ -69,6 +69,20 @@ You should see **`-rwxr-xr-x`** on the server binary. If the unit points at the 
 
 Rarely, the game directory is on a filesystem mounted **`noexec`**; then move the install to **`/home`** or **`/opt`** (normal GCE disks are fine).
 
+### Serial console flooded on boot / “can’t reboot properly”
+
+The VM **is** booting. **`titanorbit-server`** is enabled, crashes in ~0.5s, and **systemd restarts it every few seconds**, so Serial Console looks like a reboot loop.
+
+**At the `titanorbitcp login:` prompt**, log in (browser SSH works too), then run:
+
+```bash
+sudo systemctl stop titanorbit-server
+sudo systemctl disable titanorbit-server
+sudo systemctl mask titanorbit-server
+```
+
+Or run **`tools/gce/emergency_stop_titanorbit_server.sh`** on the VM. After that, the serial log stays quiet. Fix **`Player.log`** / redeploy, then **`sudo systemctl unmask titanorbit-server && sudo systemctl enable --now titanorbit-server`**.
+
 ### Troubleshooting: Serial / journal shows `status=1/FAILURE` and `[UnityMemory]` in a tight restart loop
 
 **What it means:** **`systemd` is starting the player**, Unity prints the usual **`[UnityMemory] … boot.config`** lines, then the process **exits with code 1** within a fraction of a second. That is **not** the same as **`203/EXEC`** (wrong permissions / bad path). The next evidence is almost always in **`Player.log`** next to the binary, or in **`TitanOrbitDedicatedServer.log`** if managed code got far enough to append a line.
@@ -78,6 +92,8 @@ Rarely, the game directory is on a filesystem mounted **`noexec`**; then move th
 ```bash
 sudo systemctl stop titanorbit-server
 ```
+
+After you **reinstall the unit** from this repo (`install_unit_remote.ps1` or redeploy with `upload_linux_build_to_gce_openssh.ps1`), Unity logs go to **journald** (`-logFile /dev/stdout`), so the **Serial Console** and `journalctl -u titanorbit-server -n 100` should show the real error line (e.g. **`Failed to initialize IL2CPP`**) instead of only `[UnityMemory]` lines. **ExecStartPre** also refuses to start if **`GameAssembly.so`**, **`UnityPlayer.so`**, or **`global-metadata.dat`** are too small.
 
 **Collect runtime evidence on the VM** (paths match **`titanorbit-server.service`** in this repo):
 
@@ -91,7 +107,7 @@ command -v ldd >/dev/null && ldd ./TitanOrbitServer 2>/dev/null | head -n 40
 command -v ldd >/dev/null && ldd ./TitanOrbitServer.x86_64 2>/dev/null | head -n 40
 ```
 
-**Run the same command as `ExecStart` in the foreground** (copy the exact binary name from **`systemctl cat titanorbit-server`** after install — it should **not** still say **`__TITANORBIT_EXE__`**). You should see the same exit code and often a clearer last line on the terminal.
+**Run the same command as `ExecStart` in the foreground** (after install, **`systemctl cat titanorbit-server`** should show **`run_titanorbit_server.sh`** as the entry point). You should see the same exit code and often a clearer last line on the terminal.
 
 **Interpretation:** If **`Player.log`** ends with a **managed** exception or **`DedicatedMatchServerBootstrap`** / **`Application.Quit`**, fix that path in the game or configuration (UGS keys, scene list, prefabs). If the log stops right after engine lines or mentions **missing `.so`**, **`SIGSEGV`**, or **Burst / native plugin** load errors, treat it as a **Linux build / deploy / `glibc`** issue (`ldd`, full tarball redeploy, VM image compatibility).
 

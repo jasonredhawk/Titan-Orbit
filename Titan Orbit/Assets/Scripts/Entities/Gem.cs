@@ -81,6 +81,7 @@ namespace TitanOrbit.Entities
         public float GemSize => gemSize.Value;
         public bool IsInPool => isInPool.Value;
         public bool IsDepositGem => depositTargetPlanetId.Value != 0;
+        public bool IsBonusGem => isBonusGem.Value;
         // Initialize(...) can run before NetworkObject.Spawn(); in that window IsServer may still be false.
         private bool HasServerAuthority => IsServer || (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer);
 
@@ -424,13 +425,31 @@ namespace TitanOrbit.Entities
             return elapsed < Mathf.Max(0f, asteroidNonPriorityPickupDelaySeconds);
         }
 
+        /// <summary>Whether this ship may collect or magnet this gem (all peers for visuals; server uses extra gates).</summary>
+        public bool IsCollectibleByShip(Starship ship)
+        {
+            if (ship == null) return false;
+            if (IsShipBlockedBySelfExpulsion(ship)) return false;
+            if (IsShipBlockedByAsteroidPriority(ship)) return false;
+            return true;
+        }
+
         /// <summary>Server: whether this ship may collect or magnet this gem right now.</summary>
         public bool CanShipCollect(Starship ship)
         {
             if (!IsServer || ship == null) return false;
             if (IsShipTemporarilyBlockedFromPickup(ship)) return false;
-            if (IsShipBlockedByAsteroidPriority(ship)) return false;
-            return true;
+            return IsCollectibleByShip(ship);
+        }
+
+        private bool IsShipBlockedBySelfExpulsion(Starship ship)
+        {
+            ulong expelled = expelledByShipId.Value;
+            if (expelled == 0) return false;
+            ulong shipId = GetShipNetworkObjectId(ship);
+            if (shipId == 0 || shipId != expelled) return false;
+            float elapsed = GetServerTime() - spawnTime.Value;
+            return elapsed < Mathf.Max(0f, selfPickupDelaySeconds);
         }
 
         private void OnTriggerEnter(Collider other) => TryHandlePickupTrigger(other);
@@ -651,6 +670,13 @@ namespace TitanOrbit.Entities
                 return;
             }
             
+            // While magnetically pulled, the attracting ship drives velocity — skip idle slowdown drag.
+            if (GemTractorBeamSettings.IsPulledByAnyShip(this))
+            {
+                TryProximityCollectShip();
+                return;
+            }
+
             // No automatic ship attraction: just apply drag so gems slow down and stop.
             if (rb != null)
             {

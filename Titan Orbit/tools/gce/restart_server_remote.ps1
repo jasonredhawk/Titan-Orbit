@@ -96,6 +96,13 @@ while [ $i -lt 120 ]; do
   fi
   if [ "$ast" = "failed" ]; then
     sudo systemctl status __SN__ --no-pager -l
+    echo '--- journalctl (last 100) ---'
+    sudo journalctl -u __SN__ -n 100 --no-pager || true
+    echo '--- IL2CPP file sizes ---'
+    B=$(dirname "__LOG__")
+    stat -c '%n %s bytes' "$B/GameAssembly.so" "$B/UnityPlayer.so" "$B/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat" 2>/dev/null || true
+    echo '--- Player.log tail ---'
+    if [ -f "__LOG__" ]; then tail -n 100 "__LOG__"; else echo 'No Player.log.'; fi
     exit 1
   fi
   i=$((i+1))
@@ -112,9 +119,21 @@ if [ "$ast" != "active" ] || [ "$sub" != "running" ]; then
     echo "HINT: status=203/EXEC means systemd could not execute ExecStart. Common causes:"
     echo "      (1) Missing +x on the Linux player after upload from Windows tar — redeploy with latest"
     echo "          tools/gce/upload script (chmod step) or: chmod 755 /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/*.x86_64"
-    echo "      (2) Wrong binary name vs unit — e.g. build has TitanOrbitServer but unit says TitanOrbitServer.x86_64."
-    echo "          Re-run deploy (restart syncs the unit) or: install_enable_server_service_on_gce.bat (or _iap.bat)."
+    echo "      (2) Missing run_titanorbit_server.sh — reinstall unit (install_unit_remote.ps1) or redeploy with upload_linux_build_to_gce_openssh.ps1"
   fi
+  if sudo systemctl status __SN__ --no-pager -l 2>/dev/null | grep -qE 'status=1/FAILURE|exited, status=1'; then
+    echo ""
+    echo "HINT: status=1 after [UnityMemory] lines = Unity crashed during startup (often IL2CPP)."
+    echo "      journalctl -u __SN__ -n 100  and  stat GameAssembly.so UnityPlayer.so global-metadata.dat"
+    echo "      Redeploy: quit Unity Editor, rebuild Linux server, upload_linux_build_to_gce_openssh.ps1"
+  fi
+  echo '--- journalctl (last 100) ---'
+  sudo journalctl -u __SN__ -n 100 --no-pager || true
+  echo '--- IL2CPP file sizes ---'
+  B=$(dirname "__LOG__")
+  stat -c '%n %s bytes' "$B/GameAssembly.so" "$B/UnityPlayer.so" "$B/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat" 2>/dev/null || true
+  echo '--- Player.log tail ---'
+  if [ -f "__LOG__" ]; then tail -n 100 "__LOG__"; else echo 'No Player.log yet.'; fi
   exit 1
 fi
 echo '--- Player.log tail ---'

@@ -9,7 +9,7 @@ using System.Collections.Generic;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Draws planet connection lines and triangle territories on the minimap using standard Unity UI.
+    /// Draws triangle territories on the minimap using standard Unity UI (vertices at each planet's gem moon).
     /// Uses RawImage so the Canvas always includes it in rebuilds and calls OnPopulateMesh.
     /// Team-colored using TeamManager.
     /// </summary>
@@ -17,15 +17,13 @@ namespace TitanOrbit.UI
     public class MinimapConnectionsUI : RawImage
     {
         [Header("Style")]
-        [SerializeField] private float lineThicknessPx = 4f;
         [SerializeField] private float triangleAlpha = 0.22f;
         [SerializeField] private float triangleBorderPx = 2f;
         [SerializeField] private float triangleBorderAlpha = 0.75f;
 
         private MinimapController _minimap;
 
-        /// <summary>Cached connection counts so we only mark dirty when data or player position changes (avoids full mesh rebuild every frame).</summary>
-        private int _lastEdgesCount = -1;
+        /// <summary>Cached triangle count so we only mark dirty when data or player position changes (avoids full mesh rebuild every frame).</summary>
         private int _lastTrianglesCount = -1;
         private Vector3 _lastPlayerPosition;
         private float _lastMinimapRadius = -1f;
@@ -58,14 +56,12 @@ namespace TitanOrbit.UI
         private void Update()
         {
             var conn = PlanetConnectionSystem.Instance;
-            int ec = conn != null && conn.CurrentEdges != null ? conn.CurrentEdges.Count : 0;
             int tc = conn != null && conn.CurrentTriangles != null ? conn.CurrentTriangles.Count : 0;
 
-            if (ec == 0 && tc == 0)
+            if (tc == 0)
             {
-                if (_lastEdgesCount > 0 || _lastTrianglesCount > 0)
+                if (_lastTrianglesCount > 0)
                 {
-                    _lastEdgesCount = 0;
                     _lastTrianglesCount = 0;
                     _havePlayerSampleForConnections = false;
                     SetVerticesDirty();
@@ -75,7 +71,7 @@ namespace TitanOrbit.UI
 
             Vector3 playerPos = _minimap != null ? _minimap.PlayerPosition : Vector3.zero;
             float radius = _minimap != null ? Mathf.Max(1f, _minimap.MinimapRadius) : 1f;
-            bool dataChanged = ec != _lastEdgesCount || tc != _lastTrianglesCount;
+            bool dataChanged = tc != _lastTrianglesCount;
             // Float position never equals last frame exactly — that was marking dirty every frame and
             // forcing Canvas/mesh rebuilds that make planet lines + TMP shimmer. Only redraw when the
             // ship moves enough to shift the minimap projection by ~half a pixel (XZ only).
@@ -86,10 +82,11 @@ namespace TitanOrbit.UI
             Vector3 delta = playerPos - _lastPlayerPosition;
             float dxzSq = delta.x * delta.x + delta.z * delta.z;
             bool significantMove = dxzSq > threshSq || Mathf.Abs(radius - _lastMinimapRadius) > 0.01f;
-            bool playerMoved = (ec > 0 || tc > 0) && (!_havePlayerSampleForConnections || significantMove);
-            if (dataChanged || playerMoved || displayChanged)
+            bool playerMoved = !_havePlayerSampleForConnections || significantMove;
+            // Gem moons orbit — triangle vertices move every frame.
+            bool moonMotion = true;
+            if (dataChanged || playerMoved || displayChanged || moonMotion)
             {
-                _lastEdgesCount = ec;
                 _lastTrianglesCount = tc;
                 _lastPlayerPosition = playerPos;
                 _lastMinimapRadius = radius;
@@ -103,9 +100,8 @@ namespace TitanOrbit.UI
         {
             vh.Clear();
             var conn = PlanetConnectionSystem.Instance;
-            int ec = conn != null && conn.CurrentEdges != null ? conn.CurrentEdges.Count : 0;
             int tc = conn != null && conn.CurrentTriangles != null ? conn.CurrentTriangles.Count : 0;
-            if (ec == 0 && tc == 0)
+            if (tc == 0)
                 return;
 
             if (_minimap == null)
@@ -120,14 +116,9 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            var edges = conn.CurrentEdges;
             var triangles = conn.CurrentTriangles;
-            ec = edges?.Count ?? 0;
-            tc = triangles?.Count ?? 0;
-            if ((edges == null || edges.Count == 0) && (triangles == null || triangles.Count == 0))
-            {
+            if (triangles == null || triangles.Count == 0)
                 return;
-            }
 
             Rect r = rectTransform.rect;
             if (r.width < 1f || r.height < 1f)
@@ -146,16 +137,13 @@ namespace TitanOrbit.UI
             // Use stable center: content pivot is (0.5,0.5) so local center is (0,0); avoids flip when rect layout varies
             Vector2 stableCenter = Vector2.zero;
 
-            // Triangles first (fill then border), then lines
-            if (triangles != null)
-            {
-                foreach (var tri in triangles)
+            foreach (var tri in triangles)
                 {
                     if (tri.A == null || tri.B == null || tri.C == null) continue;
                     PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet b, out Planet c);
-                    Vector3 aCanon = anchor.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, b.ToroidalPosition);
-                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, c.ToroidalPosition);
+                    Vector3 aCanon = PlanetConnectionSystem.GetTriangleVertexToroidalPosition(anchor);
+                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, PlanetConnectionSystem.GetTriangleVertexToroidalPosition(b));
+                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, PlanetConnectionSystem.GetTriangleVertexToroidalPosition(c));
                     if (!TryProject(stableCenter, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out _)) continue;
                     float scaleX = displayHalf / radius;
                     float scaleZ = displayHalf / radius;
@@ -175,32 +163,12 @@ namespace TitanOrbit.UI
                         AddLine(vh, pbPc, pcPb, triangleBorderPx, borderColor);
                     if (ClipSegmentToCircle(stableCenter, circleRadius, pc, pa, out Vector2 pcPa, out Vector2 paPc))
                         AddLine(vh, pcPa, paPc, triangleBorderPx, borderColor);
-                }
-            }
-
-            if (edges != null)
-            {
-                foreach (var e in edges)
-                {
-                    if (e.A == null || e.B == null) continue;
-                    PlanetConnectionSystem.GetStableEdgeOrder(e, out Planet ea, out Planet eb);
-                    Vector3 aCanon = ea.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, eb.ToroidalPosition);
-                    if (!TryProject(stableCenter, displayHalf, displayHalf, playerPos, radius, aCanon, out Vector2 pa, out _)) continue;
-                    float scaleX = displayHalf / radius;
-                    float scaleZ = displayHalf / radius;
-                    Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
-                    // Segment can cross the minimap circle even when both endpoints are outside.
-                    Color lineColor = TeamManager.GetTeamColor(e.Team);
-                    if (ClipSegmentToCircle(stableCenter, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
-                        AddLine(vh, paOut, pbOut, lineThicknessPx, lineColor);
-                }
             }
 
             if (vh.currentVertCount > 0 && !s_loggedFirstMinimapDraw)
             {
                 s_loggedFirstMinimapDraw = true;
-                UnityEngine.Debug.Log("[MinimapConnections] Minimap is drawing " + (triangles?.Count ?? 0) + " triangles and " + (edges?.Count ?? 0) + " lines (same data as main map).");
+                UnityEngine.Debug.Log("[MinimapConnections] Minimap is drawing " + triangles.Count + " moon-vertex triangles.");
             }
         }
 

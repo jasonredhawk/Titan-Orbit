@@ -199,7 +199,7 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>Server: human player ship for <paramref name="clientId"/> when <see cref="NetworkSpawnManager.GetPlayerNetworkObject"/> is null (e.g. inactive <see cref="NetworkManager.Singleton"/> vs the running instance).</summary>
-        private static Starship TryGetPlayerStarshipForClient(ulong clientId)
+        public static Starship GetPlayerStarshipForClient(ulong clientId)
         {
             var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
             if (nm == null || nm.SpawnManager == null) return null;
@@ -269,7 +269,7 @@ namespace TitanOrbit.Core
             }
             if (ok && actualTeam != Team.None)
             {
-                var ship = TryGetPlayerStarshipForClient(clientId);
+                var ship = GetPlayerStarshipForClient(clientId);
                 if (ship != null)
                     ship.AssignTeamAndStartInOrbit(actualTeam);
             }

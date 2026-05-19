@@ -243,7 +243,7 @@ namespace TitanOrbit.Systems
                     impactWorldPos,
                     asteroid.RemainingHealth,
                     asteroid.RemainingGems,
-                    (int)ownerTeam);
+                    (int)asteroid.TerritoryTeam);
             }
         }
 

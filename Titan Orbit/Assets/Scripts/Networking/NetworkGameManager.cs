@@ -1225,9 +1225,25 @@ namespace TitanOrbit.Networking
         private void OnClientDisconnected(ulong clientId)
         {
             Debug.Log($"Client {clientId} disconnected");
+            SaveMapInstanceShipProgressForDisconnectingClient(clientId);
             PlayerDisplayNames.RemoveClient(clientId);
             if (TeamManager.Instance != null)
                 TeamManager.Instance.RemovePlayer(clientId);
+            TitanOrbit.Systems.MapInstanceShipProgressStore.UnregisterClient(clientId);
+        }
+
+        /// <summary>Server: persist human ship loadout for this map instance so the same auth player can restore after reconnect.</summary>
+        private static void SaveMapInstanceShipProgressForDisconnectingClient(ulong clientId)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+                return;
+
+            Starship ship = TeamManager.GetPlayerStarshipForClient(clientId);
+            if (ship == null || ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null)
+                return;
+
+            string authPlayerId = TitanOrbit.Systems.MapInstanceShipProgressStore.ResolveAuthPlayerId(clientId);
+            TitanOrbit.Systems.MapInstanceShipProgressStore.SaveSnapshot(authPlayerId, ship.CaptureMapInstanceProgress());
         }
 
         [ClientRpc]

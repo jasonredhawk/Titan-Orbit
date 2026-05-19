@@ -294,7 +294,7 @@ namespace TitanOrbit.UI
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned) return;
 
-            CardShopSystem.Instance.PurchaseCardServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, card.cardId);
+            CardShopSystem.Instance.PurchaseCardServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, card.GetStableCardId());
 
             // Refresh contributed gems after purchase.
             pendingGemsRequest = true;

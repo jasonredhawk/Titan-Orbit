@@ -411,12 +411,19 @@ if (-not $packed) {
     exit 1
 }
 
+$wrapperPath = Join-Path $PSScriptRoot "run_titanorbit_server.sh"
+if (-not (Test-Path $wrapperPath)) {
+    Write-Error "Missing systemd wrapper: $wrapperPath"
+    exit 1
+}
+$wrapperB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($wrapperPath))
+
 $remotePrepare = "mkdir -p $TargetDir"
 # Windows tar + tight umask: files may be mode 700 owned by the SSH user. chmod +x then only adds u+x → still 700;
 # systemd runs as User=jason → 203/EXEC "Permission denied". Use 755 on entry ELFs and open the tree for o+rx / a+r.
 # IL2CPP: small TitanOrbitServer ELF + GameAssembly.so / UnityPlayer.so must be readable by jason.
 # sudo chown fixes ownership when NOPASSWD sudo exists.
-$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod -R a+rX $TargetDir/$sourceBase 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod a+r $TargetDir/$sourceBase/GameAssembly.so $TargetDir/$sourceBase/UnityPlayer.so 2>/dev/null; sudo -n chown -R jason:jason $TargetDir/$sourceBase 2>/dev/null || true; exit 0"
+$remoteExtract = "mkdir -p $TargetDir; rm -rf $TargetDir/$sourceBase; tar -xzf $bundleRemote -C $TargetDir; rm -f $bundleRemote; chmod -R a+rX $TargetDir/$sourceBase 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer 2>/dev/null; chmod 755 $TargetDir/$sourceBase/TitanOrbitServer.x86_64 2>/dev/null; chmod a+r $TargetDir/$sourceBase/GameAssembly.so $TargetDir/$sourceBase/UnityPlayer.so 2>/dev/null; echo '$wrapperB64' | base64 -d > $TargetDir/$sourceBase/run_titanorbit_server.sh; chmod 755 $TargetDir/$sourceBase/run_titanorbit_server.sh; sudo -n chown -R jason:jason $TargetDir/$sourceBase 2>/dev/null || true; exit 0"
 # Avoid `||` inside double quotes (PS 7+ parses it as the pipeline-chain operator).
 $remoteVerify = "ls -la $TargetDir; ls -la $TargetDir/$sourceBase " + '|| true'
 # After extract, fail loudly if any IL2CPP runtime file is empty on the VM. This is the symptom of

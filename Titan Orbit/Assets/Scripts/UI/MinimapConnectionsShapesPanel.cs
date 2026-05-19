@@ -9,7 +9,7 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Draws planet connection lines and triangle territories inside the minimap UI,
+    /// Draws triangle territories inside the minimap UI (vertices at each planet's gem moon),
     /// using the same data as the world-space PlanetConnectionSystem.
     /// Attach this to a RectTransform that sits on top of the minimap and lives under a
     /// Canvas with TitanOrbitShapesCanvas (ImmediateModeCanvas).
@@ -17,7 +17,6 @@ namespace TitanOrbit.UI
     public class MinimapConnectionsShapesPanel : ImmediateModePanel
     {
         [Header("Style")]
-        [SerializeField] private float lineThickness = 4f;
         [SerializeField] private float triangleAlpha = 0.22f;
         [SerializeField] private float triangleBorderThickness = 2.5f;
         [SerializeField] private float triangleBorderAlpha = 0.75f;
@@ -84,15 +83,13 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            var edges = conn.CurrentEdges;
             var triangles = conn.CurrentTriangles;
-            if ((edges == null || edges.Count == 0) && (triangles == null || triangles.Count == 0))
+            if (triangles == null || triangles.Count == 0)
             {
                 if (debugLog && !_loggedNoData)
                 {
                     _loggedNoData = true;
-                    int ec = edges?.Count ?? 0, tc = triangles?.Count ?? 0;
-                    Debug.LogWarning($"[MinimapConnections] Skipped: no edges or triangles ({ec} edges, {tc} triangles). Need at least 2 same-team planets for a connection.");
+                    Debug.LogWarning("[MinimapConnections] Skipped: no triangles. Need at least 3 same-team planets for a territory.");
                 }
                 return;
             }
@@ -114,56 +111,31 @@ namespace TitanOrbit.UI
             float scaleZ = displayHalf / radius;
             Vector2 stableCenter = rect.center;
 
-            // Triangles first (background), then borders, then lines.
-            if (triangles != null)
+            foreach (var tri in triangles)
             {
-                foreach (var tri in triangles)
-                {
-                    if (tri.A == null || tri.B == null || tri.C == null)
-                        continue;
+                if (tri.A == null || tri.B == null || tri.C == null)
+                    continue;
 
-                    PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet b, out Planet c);
-                    Vector3 aCanon = anchor.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, b.ToroidalPosition);
-                    Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, c.ToroidalPosition);
-                    if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa, out _))
-                        continue;
-                    Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
-                    Vector2 pc = pa + new Vector2(cLocal.x * scaleX, cLocal.y * scaleZ);
+                PlanetConnectionSystem.GetStableTriangleOrder(tri, out Planet anchor, out Planet b, out Planet c);
+                Vector3 aCanon = PlanetConnectionSystem.GetTriangleVertexToroidalPosition(anchor);
+                Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, PlanetConnectionSystem.GetTriangleVertexToroidalPosition(b));
+                Vector2 cLocal = ToroidalMap.ShortestOffsetXZ(aCanon, PlanetConnectionSystem.GetTriangleVertexToroidalPosition(c));
+                if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa, out _))
+                    continue;
+                Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
+                Vector2 pc = pa + new Vector2(cLocal.x * scaleX, cLocal.y * scaleZ);
 
-                    Color baseColor = TeamManager.GetTeamColor(tri.Team);
-                    Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
-                    Color borderColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
+                Color baseColor = TeamManager.GetTeamColor(tri.Team);
+                Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
+                Color borderColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
 
-                    DrawTriangleClippedToCircle(stableCenter, circleRadius, pa, pb, pc, fillColor, borderColor);
-                }
-            }
-
-            if (edges != null)
-            {
-                foreach (var e in edges)
-                {
-                    if (e.A == null || e.B == null)
-                        continue;
-
-                    PlanetConnectionSystem.GetStableEdgeOrder(e, out Planet ea, out Planet eb);
-                    Vector3 aCanon = ea.ToroidalPosition;
-                    Vector2 bLocal = ToroidalMap.ShortestOffsetXZ(aCanon, eb.ToroidalPosition);
-                    if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa, out _))
-                        continue;
-                    Vector2 pb = pa + new Vector2(bLocal.x * scaleX, bLocal.y * scaleZ);
-
-                    Color lineColor = new Color(TeamManager.GetTeamColor(e.Team).r, TeamManager.GetTeamColor(e.Team).g, TeamManager.GetTeamColor(e.Team).b, 1f);
-                    if (ClipSegmentToCircle(stableCenter, circleRadius, pa, pb, out Vector2 paOut, out Vector2 pbOut))
-                        Draw.Line(paOut, pbOut, lineThickness, LineEndCap.Round, lineColor);
-                }
+                DrawTriangleClippedToCircle(stableCenter, circleRadius, pa, pb, pc, fillColor, borderColor);
             }
 
             if (debugLog && _loggedDrawing && !_loggedDrewOnce)
             {
                 _loggedDrewOnce = true;
-                int ec = edges?.Count ?? 0, tc = triangles?.Count ?? 0;
-                Debug.Log($"[MinimapConnections] Drew {ec} edges and {tc} triangles. If you still don't see them, ensure Canvas has TitanOrbitShapesCanvas and Minimap is under that Canvas.");
+                Debug.Log($"[MinimapConnections] Drew {triangles.Count} moon-vertex triangles. Ensure Canvas has TitanOrbitShapesCanvas and Minimap is under that Canvas.");
             }
         }
 
