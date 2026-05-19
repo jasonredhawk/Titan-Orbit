@@ -272,142 +272,14 @@ if (-not (Test-Path -LiteralPath $SourceDir)) {
 }
 
 Write-Host ('[2/4] Creating archive: ' + $archivePath)
-# Unity IL2CPP / Burst leave huge editor-only trees in the build folder. They must not be packed:
-# they bloat the tarball and tar -xzf on the VM then fills the disk ("No space left on device").
-$tarExcludes = @(
-    "--exclude=${sourceBase}/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame",
-    "--exclude=${sourceBase}/Titan Orbit_BurstDebugInformation_DoNotShip"
-)
-
-# Critical IL2CPP runtime files. If any of these end up zero-byte in the archive the headless
-# server will fail with "Failed to initialize IL2CPP" on boot and the lobby list will stay empty.
-# Windows tar.exe (libarchive) can silently capture locked/scanned files as 0 bytes — verify and
-# retry the pack until it's clean (or fail loudly with an actionable error).
-function Get-CriticalSourceFiles {
-    $entry  = (Join-Path $SourceDir 'TitanOrbitServer')
-    $ga     = (Join-Path $SourceDir 'GameAssembly.so')
-    $up     = (Join-Path $SourceDir 'UnityPlayer.so')
-    $meta   = (Join-Path $SourceDir 'TitanOrbitServer_Data\il2cpp_data\Metadata\global-metadata.dat')
-    return @($entry, $ga, $up, $meta) | Where-Object { Test-Path -LiteralPath $_ }
+. (Join-Path $PSScriptRoot 'pack_linux_server_archive.ps1')
+try {
+    $null = New-TitanOrbitLinuxServerArchive -Root $SourceDir -OutPath $archivePath -Attempts 3
 }
-
-function Test-LocalSourceIntegrity {
-    $missing = @()
-    $zero    = @()
-    foreach ($f in (Get-CriticalSourceFiles)) {
-        $fi = Get-Item -LiteralPath $f
-        if (-not $fi) { $missing += $f; continue }
-        if ($fi.Length -lt 1024) { $zero += ('{0} ({1} bytes)' -f $fi.FullName, $fi.Length) }
-    }
-    $meta = (Join-Path $SourceDir 'TitanOrbitServer_Data\il2cpp_data\Metadata\global-metadata.dat')
-    if (-not (Test-Path -LiteralPath $meta)) { $missing += $meta }
-    if ($missing.Count -gt 0 -or $zero.Count -gt 0) {
-        Write-Host ''
-        Write-Host '*** Local build is bad before we even pack it. ***' -ForegroundColor Red
-        if ($missing.Count -gt 0) { Write-Host ('  Missing: ' + ($missing -join '; ')) -ForegroundColor Red }
-        if ($zero.Count    -gt 0) { Write-Host ('  Zero/tiny: ' + ($zero    -join '; ')) -ForegroundColor Red }
-        Write-Host 'Rebuild the Linux server in Unity (Build Settings -> Build), then re-run this script.'
-        return $false
-    }
-    return $true
-}
-
-function Get-TarListLineUncompressedSizeBytes {
-    param([string] $Line)
-    if ([string]::IsNullOrWhiteSpace($Line)) { return 0L }
-    # Windows tar.exe (libarchive) listing is NOT fixed-column. Owner may be "0/0", "root/root",
-    # or numeric "0 0" (uid gid) -- naive "column 3 = size" reads gid 0 and falsely flags the
-    # whole archive as corrupt. Parse size as the integer before the mtime.
-    $rx = [regex]'^[^\s]+\s+(?:(?:\d+/\d+)|(?:\d+\s+\d+)|(?:[^/\s]+/[^/\s]+))\s+(\d+)\s+(?:(?:\d{4}-\d{2}-\d{2})|(?:\w{3}\s))'
-    $m = $rx.Match($Line)
-    if ($m.Success) {
-        return [long]$m.Groups[1].Value
-    }
-    $m2 = [regex]::Match($Line, '\s(\d+)\s+\d{4}-\d{2}-\d{2}\b')
-    if ($m2.Success) { return [long]$m2.Groups[1].Value }
-    $m3 = [regex]::Match($Line, '\s(\d+)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s')
-    if ($m3.Success) { return [long]$m3.Groups[1].Value }
-    return 0L
-}
-
-function Test-ArchiveIntegrity {
-    param([string] $Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $false }
-    # tar -tvzf: see Get-TarListLineUncompressedSizeBytes (owner field layout varies on Windows).
-    $out = & tar.exe -tvzf $Path 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ('tar -tvzf failed (exit ' + $LASTEXITCODE + ')') -ForegroundColor Red
-        return $false
-    }
-    $required = @(
-        @{ Pattern = 'il2cpp_data/Metadata/global-metadata\.dat$'; MinBytes = 1MB         ; Label = 'global-metadata.dat' },
-        @{ Pattern = '/GameAssembly\.so$'                        ; MinBytes = 10MB        ; Label = 'GameAssembly.so'     },
-        @{ Pattern = '/UnityPlayer\.so$'                         ; MinBytes = 5MB         ; Label = 'UnityPlayer.so'      },
-        @{ Pattern = '/TitanOrbitServer$'                        ; MinBytes = 1024        ; Label = 'TitanOrbitServer'    }
-    )
-    $allOk = $true
-    foreach ($req in $required) {
-        $line = $out | Where-Object { $_ -match $req.Pattern } | Select-Object -First 1
-        if (-not $line) {
-            Write-Host ('  [archive] MISSING ' + $req.Label) -ForegroundColor Red
-            $allOk = $false; continue
-        }
-        $bytes = Get-TarListLineUncompressedSizeBytes -Line $line
-        if ($bytes -lt $req.MinBytes) {
-            Write-Host ('  [archive] {0} is only {1} bytes (need >= {2}) -- Windows tar dropped its content (file locked / antivirus), or listing parse failed. Raw: {3}' -f $req.Label, $bytes, [long]$req.MinBytes, $line) -ForegroundColor Red
-            $allOk = $false
-        }
-        else {
-            Write-Host ('  [archive] OK {0} ({1:N0} bytes)' -f $req.Label, $bytes)
-        }
-    }
-    return $allOk
-}
-
-if (-not (Test-LocalSourceIntegrity)) {
-    exit 1
-}
-
-$packAttempts = 3
-$packed = $false
-for ($i = 1; $i -le $packAttempts; $i++) {
-    if (Test-Path $archivePath) {
-        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
-    }
-    Write-Host ('  pack attempt {0}/{1} ...' -f $i, $packAttempts)
-    Push-Location $sourceParent
-    try {
-        & tar.exe @(@('-czf', $archivePath) + $tarExcludes + @($sourceBase))
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ('  tar failed (exit ' + $LASTEXITCODE + ')') -ForegroundColor Yellow
-        }
-    }
-    finally {
-        Pop-Location
-    }
-    if (Test-ArchiveIntegrity -Path $archivePath) {
-        $packed = $true
-        break
-    }
-    if ($i -lt $packAttempts) {
-        Write-Host '  Archive is missing IL2CPP content. Waiting 8s for any file lock (Unity / antivirus) to release, then retrying...' -ForegroundColor Yellow
-        Start-Sleep -Seconds 8
-    }
-}
-
-if (-not $packed) {
-    Write-Host ''
-    Write-Host ('*** Could not produce a valid archive after ' + $packAttempts + ' attempts. ***') -ForegroundColor Red
-    Write-Host 'Most likely cause: Windows tar.exe captured an IL2CPP file as 0 bytes because something' -ForegroundColor Red
-    Write-Host 'else has it open (Unity Editor, antivirus real-time scan, indexer).' -ForegroundColor Red
-    Write-Host ''
-    Write-Host 'Do this and re-run:' -ForegroundColor Yellow
-    Write-Host '  1. Quit Unity Editor entirely.' -ForegroundColor Yellow
-    Write-Host '  2. (Optional) Add BuildOutput\Server to your antivirus exclusions.' -ForegroundColor Yellow
-    Write-Host '  3. Re-run upload_linux_build_to_gce.bat (or this script).' -ForegroundColor Yellow
-    if (Test-Path $archivePath) {
-        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
-    }
+catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host 'Quit Unity Editor, then re-run upload_linux_build_to_gce.bat' -ForegroundColor Yellow
+    if (Test-Path $archivePath) { Remove-Item $archivePath -Force -ErrorAction SilentlyContinue }
     exit 1
 }
 

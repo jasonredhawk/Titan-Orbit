@@ -67,8 +67,8 @@ namespace TitanOrbit.Systems
 
             if (peopleToLoad > 0)
             {
-                planet.RemovePopulationServerRpc(peopleToLoad);
-                ship.AddPeopleServerRpc(peopleToLoad);
+                planet.RemovePopulationFromServer(peopleToLoad);
+                ship.AddPeopleFromServer(peopleToLoad);
             }
         }
 
@@ -99,8 +99,8 @@ namespace TitanOrbit.Systems
 
             if (peopleToDrop > 0)
             {
-                ship.RemovePeopleServerRpc(peopleToDrop);
-                planet.AddPopulationServerRpc(peopleToDrop, ship.ShipTeam);
+                ship.RemovePeopleFromServer(peopleToDrop);
+                planet.AddPopulationFromServer(peopleToDrop, ship.ShipTeam);
             }
         }
     }

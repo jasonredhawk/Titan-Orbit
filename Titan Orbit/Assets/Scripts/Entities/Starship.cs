@@ -408,6 +408,15 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentPeople = new NetworkVariable<float>(0f);
         private NetworkVariable<float> currentEnergy = new NetworkVariable<float>(50f);
         private NetworkVariable<TeamManager.Team> shipTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
+        /// <summary>Human player spawned but has not picked a team yet (team-select / loading).</summary>
+        private bool IsAwaitingTeamSelection => !_isAIControlled && shipTeam.Value == TeamManager.Team.None;
+
+        private void SyncInputHandlerForTeamSelectionState()
+        {
+            if (_isAIControlled || inputHandler == null || !IsOwner) return;
+            inputHandler.enabled = !IsAwaitingTeamSelection;
+        }
+
         private NetworkVariable<bool> wantToLoadPeople = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToUnloadPeople = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToDepositGems = new NetworkVariable<bool>(false);
@@ -1238,6 +1247,7 @@ namespace TitanOrbit.Entities
             // OnShipTeamValueChanged re-enables the visuals when shipTeam is assigned. AI ships skip this (they always have a team).
             if (!_isAIControlled && shipTeam.Value == TeamManager.Team.None)
                 SetShipBodyVisibleLocal(false);
+            SyncInputHandlerForTeamSelectionState();
 
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
         }
@@ -1247,6 +1257,7 @@ namespace TitanOrbit.Entities
             ApplyHullIdentityColor();
             if (!_isAIControlled)
                 SetShipBodyVisibleLocal(current != TeamManager.Team.None);
+            SyncInputHandlerForTeamSelectionState();
         }
 
         public override void OnNetworkDespawn()
@@ -1622,6 +1633,13 @@ namespace TitanOrbit.Entities
 
             // AI ships have their own controller; skip player input and orbit UI logic
             if (_isAIControlled) return;
+
+            if (IsAwaitingTeamSelection)
+            {
+                if (moveForwardPressedNet.Value)
+                    moveForwardPressedNet.Value = false;
+                return;
+            }
 
             HandleInput();
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
@@ -2514,6 +2532,7 @@ namespace TitanOrbit.Entities
             // AI-controlled ships have their own movement; don't apply player/orbit movement
             if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
             if (!IsOwner) return;
+            if (IsAwaitingTeamSelection) return;
 
             // Player movement input undocks and restores original parent.
             if (gemMoonDocked.Value && inputHandler != null && inputHandler.MoveForwardPressed)
@@ -2767,6 +2786,7 @@ namespace TitanOrbit.Entities
         private void HandleInput()
         {
             if (inputHandler == null) return;
+            if (IsAwaitingTeamSelection) return;
 
             // Ensure we have a fire point (e.g. if ApplyShipVisual wasn't run or prefab has no FirePoint child)
             EnsureFirePoint();
@@ -3279,6 +3299,7 @@ namespace TitanOrbit.Entities
         private bool CanFire()
         {
             if (isDead.Value) return false;
+            if (IsAwaitingTeamSelection) return false;
             // Orbit firing rule is enforced on the server via ServerWorldPositionInsideAnyOrbitZone (FireServerRpc).
             // Local currentOrbitPlanet is not replicated and often disagrees with the server on relay/dedicated clients,
             // which prevented FireServerRpc from ever being sent while host/editor looked fine.
@@ -3302,6 +3323,7 @@ namespace TitanOrbit.Entities
         [ServerRpc]
         private void CycleBulletPrefabServerRpc()
         {
+            if (IsAwaitingTeamSelection) return;
             if (CombatSystem.Instance == null) return;
             int count = CombatSystem.Instance.BulletPrefabBankCount;
             if (count < 1) return;
@@ -3517,6 +3539,7 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = true)]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
+            if (IsAwaitingTeamSelection) return;
             CombatSystem combat = CombatSystem.Instance;
             if (combat == null)
                 combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
@@ -3814,6 +3837,7 @@ namespace TitanOrbit.Entities
         [ServerRpc]
         private void FireRocketServerRpc(bool preferLarge)
         {
+            if (IsAwaitingTeamSelection) return;
             // Dead ships cannot fire rockets
             if (isDead.Value) return;
             if (currentOrbitPlanet != null || gemMoonDocked.Value) return;
@@ -3831,6 +3855,7 @@ namespace TitanOrbit.Entities
         [ServerRpc]
         private void PlaceMineServerRpc(Vector3 position, bool preferLarge)
         {
+            if (IsAwaitingTeamSelection) return;
             // Dead ships cannot place mines
             if (isDead.Value) return;
             if (currentOrbitPlanet != null || gemMoonDocked.Value) return;
@@ -4061,8 +4086,8 @@ namespace TitanOrbit.Entities
                         float instantUnload = Mathf.Min(currentPeople.Value, roomToHalf);
                         if (instantUnload > 0f)
                         {
-                            RemovePeopleServerRpc(instantUnload);
-                            orbitPlanet.AddPopulationServerRpc(instantUnload, shipTeam.Value);
+                            RemovePeopleFromServer(instantUnload);
+                            orbitPlanet.AddPopulationFromServer(instantUnload, shipTeam.Value);
                             PlayPeopleUnloadSoundClientRpc(instantUnload);
                         }
                         return;
@@ -4077,7 +4102,7 @@ namespace TitanOrbit.Entities
                         && roomBudget >= peopleUnloadChunk
                         && GemSpawner.Instance != null)
                     {
-                        RemovePeopleServerRpc(peopleUnloadChunk);
+                        RemovePeopleFromServer(peopleUnloadChunk);
                         peopleUnloadAccumulator -= peopleUnloadChunk;
                         roomBudget -= peopleUnloadChunk;
 
@@ -4104,7 +4129,7 @@ namespace TitanOrbit.Entities
                             && peopleUnloadAccumulator >= maxReinforceRem - 0.0001f
                             && GemSpawner.Instance != null)
                         {
-                            RemovePeopleServerRpc(maxReinforceRem);
+                            RemovePeopleFromServer(maxReinforceRem);
                             peopleUnloadAccumulator -= maxReinforceRem;
 
                             Vector3 shipPos = rb != null ? rb.position : transform.position;
@@ -4139,8 +4164,8 @@ namespace TitanOrbit.Entities
                     float instantLoadAmount = Mathf.Min(peopleSpaceAvailable, available);
                     if (instantLoadAmount > 0f)
                     {
-                        orbitPlanet.RemovePopulationServerRpc(instantLoadAmount);
-                        AddPeopleServerRpc(instantLoadAmount);
+                        orbitPlanet.RemovePopulationFromServer(instantLoadAmount);
+                        AddPeopleFromServer(instantLoadAmount);
                         PlayPeopleLoadSoundClientRpc(instantLoadAmount);
                     }
                     return;
@@ -4159,7 +4184,7 @@ namespace TitanOrbit.Entities
                     if (spaceLeft < peopleDropValue || surplusNow < peopleDropValue)
                         break;
 
-                    orbitPlanet.RemovePopulationServerRpc(peopleDropValue);
+                    orbitPlanet.RemovePopulationFromServer(peopleDropValue);
                     peopleLoadAccumulator -= peopleDropValue;
                     peopleInTransit += peopleDropValue;
                     loadSpawnCount++;
@@ -4181,7 +4206,7 @@ namespace TitanOrbit.Entities
                     && peopleLoadAccumulator >= maxLoadRem - 0.0001f
                     && GemSpawner.Instance != null)
                 {
-                    orbitPlanet.RemovePopulationServerRpc(maxLoadRem);
+                    orbitPlanet.RemovePopulationFromServer(maxLoadRem);
                     peopleLoadAccumulator -= maxLoadRem;
                     peopleInTransit += maxLoadRem;
 
@@ -4208,9 +4233,9 @@ namespace TitanOrbit.Entities
                     float instantUnloadPeople = currentPeople.Value;
                     if (instantUnloadPeople > 0f)
                     {
-                        RemovePeopleServerRpc(instantUnloadPeople);
+                        RemovePeopleFromServer(instantUnloadPeople);
                         // Debug-only shortcut: each 1 unloaded person applies 100 population impact.
-                        currentOrbitPlanet.AddPopulationServerRpc(instantUnloadPeople * 100f, shipTeam.Value);
+                        currentOrbitPlanet.AddPopulationFromServer(instantUnloadPeople * 100f, shipTeam.Value);
                         PlayPeopleUnloadSoundClientRpc(instantUnloadPeople);
                     }
                     return;

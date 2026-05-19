@@ -82,18 +82,15 @@ if %GASM_SIZE% LSS 10000000 (
 )
 
 echo.
-echo [3/4] Creating archive...
+echo [3/4] Creating archive (materialize global-metadata.dat + verify tarball)...
 if exist "%ARCHIVE_PATH%" del /f /q "%ARCHIVE_PATH%" >nul 2>&1
-REM Exclude Unity IL2CPP backup + Burst debug trees (huge; not needed on server; fills VM disk if packed).
-pushd "%SOURCE_PARENT%"
-tar -czf "%ARCHIVE_PATH%" ^
-  --exclude="%SOURCE_BASENAME%/TitanOrbitServer_BackUpThisFolder_ButDontShipItWithYourGame" ^
-  --exclude="%SOURCE_BASENAME%/Titan Orbit_BurstDebugInformation_DoNotShip" ^
-  "%SOURCE_BASENAME%"
-set "TAR_EXIT=%errorlevel%"
-popd
-if not "%TAR_EXIT%"=="0" (
-  echo ERROR: tar failed.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0invoke_pack_linux_server_archive.ps1" -SourceDir "%SOURCE_DIR%" -ArchivePath "%ARCHIVE_PATH%"
+if errorlevel 1 (
+  echo ERROR: pack failed. Quit Unity Editor and retry.
+  exit /b 1
+)
+if not exist "%ARCHIVE_PATH%" (
+  echo ERROR: Archive not created: %ARCHIVE_PATH%
   exit /b 1
 )
 

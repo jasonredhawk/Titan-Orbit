@@ -1119,10 +1119,17 @@ namespace TitanOrbit.Entities
             CapturePlanetClientRpc(newTeam);
         }
 
+        /// <summary>Server-only: remove population when crew loads onto a ship (avoids nested ServerRpc from server orbit transfer).</summary>
+        public void RemovePopulationFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            currentPopulation.Value = Mathf.Max(0f, currentPopulation.Value - amount);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void RemovePopulationServerRpc(float amount)
         {
-            currentPopulation.Value = Mathf.Max(0f, currentPopulation.Value - amount);
+            RemovePopulationFromServer(amount);
         }
 
         [ServerRpc(RequireOwnership = false)]
