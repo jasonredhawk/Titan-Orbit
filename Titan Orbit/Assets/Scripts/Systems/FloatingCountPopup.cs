@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TitanOrbit.Systems
 {
@@ -9,6 +10,10 @@ namespace TitanOrbit.Systems
     public class FloatingCountPopup : MonoBehaviour
     {
         private const float MIN_POPUP_WORLD_Y = 4f;
+        private const int TextSortingOrder = 5001;
+        private const int IconSortingOrder = 5000;
+        private static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
+
         private TMP_Text tmpText;
         private SpriteRenderer iconRenderer;
 
@@ -24,17 +29,27 @@ namespace TitanOrbit.Systems
         {
             if (tmpText == null)
             {
-                var text3d = GetComponent<TextMeshPro>();
+                Transform textT = transform.Find("Text");
+                GameObject textGo = textT != null ? textT.gameObject : new GameObject("Text");
+                if (textT == null)
+                    textGo.transform.SetParent(transform, false);
+
+                var text3d = textGo.GetComponent<TextMeshPro>();
                 if (text3d == null)
-                    text3d = gameObject.AddComponent<TextMeshPro>();
+                    text3d = textGo.AddComponent<TextMeshPro>();
                 tmpText = text3d;
             }
 
             if (iconRenderer == null)
             {
-                iconRenderer = GetComponent<SpriteRenderer>();
+                Transform iconT = transform.Find("Icon");
+                GameObject iconGo = iconT != null ? iconT.gameObject : new GameObject("Icon");
+                if (iconT == null)
+                    iconGo.transform.SetParent(transform, false);
+
+                iconRenderer = iconGo.GetComponent<SpriteRenderer>();
                 if (iconRenderer == null)
-                    iconRenderer = gameObject.AddComponent<SpriteRenderer>();
+                    iconRenderer = iconGo.AddComponent<SpriteRenderer>();
             }
         }
 
@@ -88,13 +103,13 @@ namespace TitanOrbit.Systems
             tmpText.text = message;
             if (font != null)
                 tmpText.font = font;
-            // Extra runtime downscale so popups stay compact even if inspector font size is still large.
-            tmpText.fontSize = fontSize * 0.6f;
+            tmpText.fontSize = Mathf.Max(1f, fontSize);
             tmpText.transform.localScale = Vector3.one;
             tmpText.alignment = TextAlignmentOptions.Center;
             tmpText.enableWordWrapping = false;
             tmpText.richText = false;
             tmpText.color = baseColor;
+            ApplyReadableTextMaterial(tmpText);
             // Ensure TMP generates its first mesh immediately (avoids "invisible for a few frames" issues).
             tmpText.ForceMeshUpdate();
 
@@ -108,7 +123,7 @@ namespace TitanOrbit.Systems
                     iconRenderer.transform.localPosition = iconLocalOffset;
                     iconRenderer.transform.localScale = Vector3.one * Mathf.Max(0.0001f, iconScale);
                     iconRenderer.enabled = true;
-                    iconRenderer.sortingOrder = 5000;
+                    iconRenderer.sortingOrder = IconSortingOrder;
                 }
             }
             else
@@ -116,6 +131,32 @@ namespace TitanOrbit.Systems
                 if (iconRenderer != null)
                     iconRenderer.enabled = false;
             }
+        }
+
+        /// <summary>
+        /// Match planet population text: outline + high render queue so popups draw above planets/ships.
+        /// </summary>
+        private static void ApplyReadableTextMaterial(TMP_Text text)
+        {
+            if (text == null)
+                return;
+
+            Material mat = text.fontMaterial;
+            if (mat == null)
+                return;
+
+            mat.EnableKeyword("OUTLINE_ON");
+            if (mat.HasProperty("_OutlineColor"))
+                mat.SetColor("_OutlineColor", new Color(0f, 0f, 0f, 0.85f));
+            if (mat.HasProperty("_OutlineWidth"))
+                mat.SetFloat("_OutlineWidth", 0.2f);
+            if (mat.HasProperty("_OutlineSoftness"))
+                mat.SetFloat("_OutlineSoftness", 0.08f);
+            mat.renderQueue = RenderQueueOverlay;
+
+            var renderer = text.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.sortingOrder = TextSortingOrder;
         }
 
         /// <summary>

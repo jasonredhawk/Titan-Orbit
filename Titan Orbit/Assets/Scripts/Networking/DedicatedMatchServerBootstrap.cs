@@ -518,6 +518,8 @@ namespace TitanOrbit.Networking
             transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
             NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
+            DeferredPlayerShipSpawn.Configure(NetworkManager.Singleton);
+
             // Start NGO before publishing the lobby so clients can never join a non-running server advertisement.
             bool started = NetworkManager.Singleton.StartServer();
             if (!started)

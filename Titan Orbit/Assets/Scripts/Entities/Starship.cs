@@ -154,6 +154,8 @@ namespace TitanOrbit.Entities
         private Vector3 rootColliderBaselineSize = Vector3.one;
         private Vector3 rootColliderBaselineCenter;
         private bool rootColliderBaselineCaptured;
+        /// <summary>Trigger-only sphere for gem-moon dock detection; sized to hull visual without enlarging physics collider.</summary>
+        private SphereCollider moonDockProbeCollider;
 
         [Header("Combat")]
         [SerializeField] private Transform firePoint;
@@ -408,7 +410,7 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentPeople = new NetworkVariable<float>(0f);
         private NetworkVariable<float> currentEnergy = new NetworkVariable<float>(50f);
         private NetworkVariable<TeamManager.Team> shipTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
-        /// <summary>Human player spawned but has not picked a team yet (team-select / loading).</summary>
+        /// <summary>Human player has no team yet (brief replication window; player ships are spawned only after team join).</summary>
         private bool IsAwaitingTeamSelection => !_isAIControlled && shipTeam.Value == TeamManager.Team.None;
 
         private void SyncInputHandlerForTeamSelectionState()
@@ -1006,6 +1008,7 @@ namespace TitanOrbit.Entities
             if (rb == null) rb = GetComponent<Rigidbody>();
             rootCollider = GetComponent<Collider>();
             TryCaptureRootBoxColliderBaseline();
+            EnsureMoonDockProbeCollider();
             if (inputHandler == null) inputHandler = GetComponent<PlayerInputHandler>();
             if (energyCapacity <= 0f) energyCapacity = 50f;
             if (energyRegenRate <= 0f) energyRegenRate = 5f;
@@ -1243,10 +1246,6 @@ namespace TitanOrbit.Entities
             shipTeam.OnValueChanged += OnShipTeamValueChanged;
             ApplyHullIdentityColor();
 
-            // Hide the ship until the player picks a team — avoids showing a neutral ship in the team-select lobby.
-            // OnShipTeamValueChanged re-enables the visuals when shipTeam is assigned. AI ships skip this (they always have a team).
-            if (!_isAIControlled && shipTeam.Value == TeamManager.Team.None)
-                SetShipBodyVisibleLocal(false);
             SyncInputHandlerForTeamSelectionState();
 
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
@@ -1255,8 +1254,6 @@ namespace TitanOrbit.Entities
         private void OnShipTeamValueChanged(TeamManager.Team previous, TeamManager.Team current)
         {
             ApplyHullIdentityColor();
-            if (!_isAIControlled)
-                SetShipBodyVisibleLocal(current != TeamManager.Team.None);
             SyncInputHandlerForTeamSelectionState();
         }
 
@@ -1707,6 +1704,7 @@ namespace TitanOrbit.Entities
                 }
             }
             ApplyComponentAttributeScaling();
+            UpdateMoonDockProbeCollider();
             UpdateEngineAndThrusterVFX();
             ResolveBankPivotFromHierarchy();
             if (!enableVisualBankingPitch) return;
@@ -1907,6 +1905,28 @@ namespace TitanOrbit.Entities
                 rootColliderBaselineCenter = box.center;
                 rootColliderBaselineCaptured = true;
             }
+        }
+
+        private void EnsureMoonDockProbeCollider()
+        {
+            if (moonDockProbeCollider != null) return;
+            var go = new GameObject("MoonDockProbe");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            moonDockProbeCollider = go.AddComponent<SphereCollider>();
+            moonDockProbeCollider.isTrigger = true;
+        }
+
+        private void UpdateMoonDockProbeCollider()
+        {
+            EnsureMoonDockProbeCollider();
+            if (moonDockProbeCollider == null) return;
+            moonDockProbeCollider.enabled = !gemMoonDocked.Value;
+            float worldRadius = GetShipMoonDockRadiusXZ();
+            float parentScale = Mathf.Max(0.01f, Mathf.Max(transform.lossyScale.x, transform.lossyScale.z));
+            moonDockProbeCollider.radius = worldRadius / parentScale;
         }
 
         /// <summary>Scales the authored root BoxCollider so it stays aligned with attribute-driven component mesh scaling.</summary>
@@ -2361,7 +2381,7 @@ namespace TitanOrbit.Entities
                     float distToMoon = ToroidalMap.ToroidalDistance(shipPosForBoundary, moonPosForBoundary);
                     moonDockOuterRadius = moon.GetMoonDockSnapRadiusWorld() * gemMoonLandingRangeMultiplier;
                     float bodyRadiusWorld = moon.GetMoonBodyRadiusWorld();
-                    float shipRadius = GetShipCollisionRadiusXZ();
+                    float shipRadius = GetShipMoonDockRadiusXZ();
                     moonDockSurfaceRadius = bodyRadiusWorld + shipRadius;
 
                     withinGemMoonBoundary = moonDockOuterRadius > 0.0001f
@@ -2729,11 +2749,14 @@ namespace TitanOrbit.Entities
                     rootColliderDockOverrideActive = true;
                 }
                 rootCollider.enabled = false;
+                if (moonDockProbeCollider != null)
+                    moonDockProbeCollider.enabled = false;
             }
             else if (rootColliderDockOverrideActive)
             {
                 rootCollider.enabled = rootColliderEnabledBeforeDock;
                 rootColliderDockOverrideActive = false;
+                UpdateMoonDockProbeCollider();
             }
         }
 
@@ -4726,25 +4749,6 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Local-only: toggle ship visuals + colliders. Used to hide the ship while the player has no team
-        /// (so they don't see a neutral ship in the team-select lobby) and to reveal it once a team is picked.</summary>
-        private void SetShipBodyVisibleLocal(bool visible)
-        {
-            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
-            foreach (var renderer in renderers)
-            {
-                if (renderer != null)
-                    renderer.enabled = visible;
-            }
-
-            Collider[] colliders = GetComponentsInChildren<Collider>(true);
-            foreach (var collider in colliders)
-            {
-                if (collider != null)
-                    collider.enabled = visible;
-            }
-        }
-
         /// <summary>Show all renderers to make ship visible again on respawn.</summary>
         private void ShowShipVisuals()
         {
@@ -5034,6 +5038,20 @@ namespace TitanOrbit.Entities
             if (c == null) return 0.05f;
             Bounds b = c.bounds;
             return Mathf.Max(0.05f, Mathf.Max(b.extents.x, b.extents.z) * 0.6f);
+        }
+
+        /// <summary>
+        /// XZ radius for gem-moon docking only. Scales with the loaded hull (Prefab container) so level-up visuals
+        /// can reach moon triggers without resizing the physics BoxCollider (which would collide with planets).
+        /// </summary>
+        public float GetShipMoonDockRadiusXZ()
+        {
+            float colliderR = GetShipCollisionRadiusXZ();
+            Transform visual = GetCardVisualRoot();
+            if (visual == null) return colliderR;
+            Vector3 ls = visual.lossyScale;
+            float hullScale = Mathf.Max(0.01f, Mathf.Max(ls.x, ls.y, ls.z));
+            return Mathf.Max(colliderR, colliderR * hullScale);
         }
 
         private float GetCollisionVfxShipMinRelativeSpeed()
@@ -5445,7 +5463,7 @@ namespace TitanOrbit.Entities
                 moonPos.y = 0f;
                 float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
                 float r = moon.GetMoonDockSnapRadiusWorld() * radiusMultiplier;
-                float shipRadius = GetShipCollisionRadiusXZ();
+                float shipRadius = GetShipMoonDockRadiusXZ();
                 if (r > 0.0001f && dist <= r + shipRadius)
                     return true;
             }
@@ -5811,10 +5829,6 @@ namespace TitanOrbit.Entities
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
             ApplyHullIdentityColor();
-            // Re-hide on clients if visual was just applied via chassis-sync before the team is set.
-            // OnShipTeamValueChanged handles the show transition once the player picks a team.
-            if (!_isAIControlled && shipTeam.Value == TeamManager.Team.None)
-                SetShipBodyVisibleLocal(false);
         }
 
         /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>
@@ -5932,6 +5946,7 @@ namespace TitanOrbit.Entities
             string familyPrefix = DeriveFamilyPrefixFromPrefab(shipPrefab);
             ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef, matchedComponentIds, perComponentStatsList);
             ApplyHullIdentityColor();
+            UpdateMoonDockProbeCollider();
         }
 
         /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>

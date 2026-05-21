@@ -1188,7 +1188,7 @@ namespace TitanOrbit.Entities
             }
 
             // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
-            if (!IsShipReadyToLandInMoonZone(ship))
+            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger: true))
             {
                 // Only undock if already docked; otherwise keep accumulating landing dwell (see Starship.ServerSetGemMoonDocked).
                 if (ship.GemMoonDocked)
@@ -1245,7 +1245,7 @@ namespace TitanOrbit.Entities
             shipPos.y = 0f;
 
             float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float shipRadius = ship.GetShipCollisionRadiusXZ();
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
             float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f + shipRadius;
             // Only preserve an existing dock when Y-snap briefly leaves the trigger — never dock on exit alone.
             bool shouldStayDocked = ship.GemMoonDocked
@@ -1328,7 +1328,7 @@ namespace TitanOrbit.Entities
             return dist >= inner && dist <= outer;
         }
 
-        private bool IsShipReadyToLandInMoonZone(Starship ship)
+        private bool IsShipReadyToLandInMoonZone(Starship ship, bool overlapsDockTrigger = false)
         {
             if (ship == null) return false;
             if (planet == null) return false;
@@ -1355,10 +1355,10 @@ namespace TitanOrbit.Entities
 
             float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
             float zoneRadius = GetMoonDockSnapRadiusWorld();
-            float shipRadius = ship.GetShipCollisionRadiusXZ();
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
             if (zoneRadius <= 0.0001f) return false;
-            // Zone is authored around the moon center; large hulls can overlap the trigger while the center stays outside.
-            if (dist > zoneRadius + shipRadius) return false;
+            // When the dock trigger already overlaps the ship, trust that instead of center-distance (large tier hulls).
+            if (!overlapsDockTrigger && dist > zoneRadius + shipRadius) return false;
 
             Rigidbody shipRb = ship.GetComponent<Rigidbody>();
             if (shipRb == null) return false;

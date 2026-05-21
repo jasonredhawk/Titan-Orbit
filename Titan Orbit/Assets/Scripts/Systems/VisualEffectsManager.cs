@@ -94,6 +94,9 @@ namespace TitanOrbit.Systems
 
         private void Awake()
         {
+            if (floatingCountVisibility == null)
+                floatingCountVisibility = new FloatingCountChannelVisibility();
+
             if (Instance == null)
             {
                 Instance = this;
@@ -102,6 +105,11 @@ namespace TitanOrbit.Systems
             {
                 Destroy(gameObject);
             }
+        }
+
+        private bool IsFloatingCountChannelVisible(FloatingCountChannel channel)
+        {
+            return floatingCountVisibility == null || floatingCountVisibility.IsEnabled(channel);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -157,14 +165,24 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemPickupTextServerRpc(Vector3 position, float amount, TeamManager.Team team)
         {
+            if (IsServer && IsClient)
+                SpawnGemPickupTextOnClient(position, amount, team);
+
             SpawnGemPickupTextClientRpc(position, amount, (int)team);
         }
 
         [ClientRpc]
         private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
         {
-            TeamManager.Team team = (TeamManager.Team)teamInt;
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.GemPickup))
+            if (IsServer)
+                return;
+
+            SpawnGemPickupTextOnClient(position, amount, (TeamManager.Team)teamInt);
+        }
+
+        private void SpawnGemPickupTextOnClient(Vector3 position, float amount, TeamManager.Team team)
+        {
+            if (!IsFloatingCountChannelVisible(FloatingCountChannel.GemPickup))
                 return;
 
             // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
@@ -184,12 +202,24 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnFloatingCountServerRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
+            // Host is server+client: ClientRpc alone can miss local delivery on in-scene managers in some NGO setups.
+            if (IsServer && IsClient)
+                SpawnFloatingCountPopupLocal(
+                    position,
+                    (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex),
+                    signedAmount,
+                    (TeamManager.Team)teamInt);
+
             SpawnFloatingCountClientRpc(position, channelId, signedAmount, teamInt);
         }
 
         [ClientRpc]
         private void SpawnFloatingCountClientRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
+            // Host already spawned in ServerRpc; remote clients only here.
+            if (IsServer)
+                return;
+
             var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
             TeamManager.Team team = (TeamManager.Team)teamInt;
             SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
@@ -205,7 +235,7 @@ namespace TitanOrbit.Systems
         private void SpawnAsteroidStatsFloatingTextClientRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+            if (!IsFloatingCountChannelVisible(FloatingCountChannel.DamageAsteroid))
                 return;
 
             Color hpColor = floatingCountHealthPositiveColor;
@@ -226,7 +256,7 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void SpawnImpactForceFloatingTextClientRpc(Vector3 position, float impactForceNewtons)
         {
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
+            if (!IsFloatingCountChannelVisible(FloatingCountChannel.DamageAsteroid))
                 return;
 
             float clampedForce = Mathf.Max(0f, impactForceNewtons);
@@ -239,7 +269,7 @@ namespace TitanOrbit.Systems
 
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(channel))
+            if (!IsFloatingCountChannelVisible(channel))
                 return;
 
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
@@ -250,8 +280,11 @@ namespace TitanOrbit.Systems
             }
 
             float abs = Mathf.Abs(signedAmount);
+            if (abs < 0.01f)
+                return;
             int amountInt = Mathf.RoundToInt(abs);
-            if (amountInt <= 0) return;
+            if (amountInt <= 0)
+                amountInt = 1;
 
             char sign = signedAmount >= 0f ? '+' : '-';
             string label = channel switch

@@ -269,9 +269,12 @@ namespace TitanOrbit.Core
             }
             if (ok && actualTeam != Team.None)
             {
+                TitanOrbit.Networking.DeferredPlayerShipSpawn.TrySpawnForClient(clientId);
                 var ship = GetPlayerStarshipForClient(clientId);
                 if (ship != null)
                     ship.AssignTeamAndStartInOrbit(actualTeam);
+                else
+                    Debug.LogError($"[TeamManager] Team assigned for client {clientId} but player ship failed to spawn.");
             }
             // Notify via NetworkGameManager (same NetworkObject as us) so clients reliably receive the ClientRpc.
             var ngm = NetworkGameManager.Instance;

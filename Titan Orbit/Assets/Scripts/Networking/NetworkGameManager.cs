@@ -204,6 +204,14 @@ namespace TitanOrbit.Networking
             }
         }
 
+        /// <summary>Call before StartServer/StartClient/StartHost so players are not spawned until they join a team.</summary>
+        private static void PrepareNetworkManagerForSessionStart()
+        {
+            EnsurePlayerPrefabSet();
+            if (NetworkManager.Singleton != null)
+                DeferredPlayerShipSpawn.Configure(NetworkManager.Singleton);
+        }
+
         /// <summary>
         /// Netcode refuses <see cref="NetworkManager.StartClient"/> / <see cref="NetworkManager.StartHost"/> if already
         /// listening (e.g. Editor <see cref="autoStartServer"/> runs <see cref="StartServer"/> on Play).
@@ -226,6 +234,7 @@ namespace TitanOrbit.Networking
 
         public void StartServer()
         {
+            PrepareNetworkManagerForSessionStart();
             ApplyServerPort();
             NetworkManager.Singleton.StartServer();
             Debug.Log($"Server started on port {serverPort}");
@@ -233,6 +242,7 @@ namespace TitanOrbit.Networking
 
         public void StartClient()
         {
+            PrepareNetworkManagerForSessionStart();
             NetworkManager.Singleton.StartClient();
             Debug.Log("Client started");
         }
@@ -442,6 +452,7 @@ namespace TitanOrbit.Networking
                     return false;
                 }
                 ConfigureUnityTransportRelay(transport, joinAllocation, null);
+                PrepareNetworkManagerForSessionStart();
                 bool started = NetworkManager.Singleton.StartClient();
                 if (started)
                 {
@@ -527,6 +538,7 @@ namespace TitanOrbit.Networking
                                 string resolvedRelayConnectionType = ResolveRelayConnectionType(lobbyRelayProtocol);
                                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
                                 ConfigureUnityTransportRelay(transport, joinAllocation, resolvedRelayConnectionType);
+                                PrepareNetworkManagerForSessionStart();
                                 bool startedQj = NetworkManager.Singleton.StartClient();
                                 if (startedQj)
                                 {
@@ -686,6 +698,7 @@ namespace TitanOrbit.Networking
                         },
                     });
 
+                PrepareNetworkManagerForSessionStart();
                 bool started = NetworkManager.Singleton.StartHost();
                 if (!started)
                 {
@@ -798,6 +811,7 @@ namespace TitanOrbit.Networking
                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
                 ConfigureUnityTransportRelay(transport, joinAllocation, resolvedRelayConnectionType);
 
+                PrepareNetworkManagerForSessionStart();
                 bool startedLobby = NetworkManager.Singleton.StartClient();
                 if (startedLobby)
                 {
@@ -1315,11 +1329,10 @@ namespace TitanOrbit.Networking
             return ship;
         }
 
-        private IEnumerator CoRequestTeamWhenLocalPlayerReady(TeamManager.Team team)
+        private IEnumerator CoRequestTeamWhenTeamManagerReady(TeamManager.Team team)
         {
             const float timeoutSeconds = 25f;
-            float t0 = Time.realtimeSinceStartup;
-            float deadline = t0 + timeoutSeconds;
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
             var nm0 = ResolveNetworkManagerForGameplay();
             if (nm0 == null || !IsNetcodeTransportReadyForGameplay(nm0))
             {
@@ -1336,10 +1349,9 @@ namespace TitanOrbit.Networking
                     OnTeamChoiceFailed?.Invoke("Lost connection before joining a team. Return to the menu and rejoin the match.");
                     yield break;
                 }
-                var ship = TryGetLocalStarship();
-                if (ship != null)
+                if (TeamManager.Instance != null && TeamManager.Instance.IsSpawned)
                 {
-                    ship.RequestJoinTeamFromClient(team);
+                    TeamManager.Instance.RequestTeamServerRpc(team);
                     pendingTeamRequestCoroutine = null;
                     yield break;
                 }
@@ -1347,15 +1359,7 @@ namespace TitanOrbit.Networking
             }
 
             pendingTeamRequestCoroutine = null;
-            if (TeamManager.Instance != null && TeamManager.Instance.IsSpawned)
-            {
-                Debug.LogWarning("[NetworkGameManager] Local player object not ready after wait; using TeamManager team RPC fallback.");
-                TeamManager.Instance.RequestTeamServerRpc(team);
-            }
-            else
-            {
-                OnTeamChoiceFailed?.Invoke("Cannot join a team — connection still loading. Try again.");
-            }
+            OnTeamChoiceFailed?.Invoke("Cannot join a team — connection still loading. Try again.");
         }
 
         /// <summary>Team UI should call this instead of <see cref="TeamManager.RequestTeamServerRpc"/> so the request uses the local player ship (reliable for late join / in-progress matches).</summary>
@@ -1380,22 +1384,22 @@ namespace TitanOrbit.Networking
                 return;
             }
 
+            if (TeamManager.Instance != null && TeamManager.Instance.IsSpawned)
+            {
+                TeamManager.Instance.RequestTeamServerRpc(team);
+                return;
+            }
+
             var runner = Instance ?? UnityEngine.Object.FindAnyObjectByType<NetworkGameManager>(FindObjectsInactive.Include);
             if (runner != null)
             {
                 if (runner.pendingTeamRequestCoroutine != null)
                     runner.StopCoroutine(runner.pendingTeamRequestCoroutine);
-                runner.pendingTeamRequestCoroutine = runner.StartCoroutine(runner.CoRequestTeamWhenLocalPlayerReady(team));
+                runner.pendingTeamRequestCoroutine = runner.StartCoroutine(runner.CoRequestTeamWhenTeamManagerReady(team));
                 return;
             }
 
-            if (TeamManager.Instance != null && TeamManager.Instance.IsSpawned)
-            {
-                Debug.LogWarning("[NetworkGameManager] Local player object not ready; using TeamManager team RPC fallback.");
-                TeamManager.Instance.RequestTeamServerRpc(team);
-                return;
-            }
-            Debug.LogError("[NetworkGameManager] Cannot request team: no player object and no TeamManager.");
+            Debug.LogError("[NetworkGameManager] Cannot request team: TeamManager not ready.");
             OnTeamChoiceFailed?.Invoke("Cannot join a team yet — connection still loading. Try again.");
         }
 
@@ -1404,7 +1408,7 @@ namespace TitanOrbit.Networking
         {
             if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
                 return false;
-            EnsurePlayerPrefabSet();
+            PrepareNetworkManagerForSessionStart();
             ApplyServerPort();
             if (!NetworkManager.Singleton.StartServer())
                 return false;
@@ -1432,6 +1436,7 @@ namespace TitanOrbit.Networking
             transport.UseWebSockets = false;
 #endif
             transport.SetConnectionData(address, serverPort);
+            PrepareNetworkManagerForSessionStart();
             bool ok = NetworkManager.Singleton.StartClient();
             if (ok)
                 Debug.Log($"[NetworkGameManager] LAN client connecting to {address}:{serverPort}");
