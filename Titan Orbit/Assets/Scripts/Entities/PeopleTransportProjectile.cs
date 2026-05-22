@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -24,7 +25,15 @@ namespace TitanOrbit.Entities
             Vector3.zero,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        /// <summary>When true, projectile is pooled (hidden); skip magnet logic and do not despawn.</summary>
+        private NetworkVariable<bool> isInPool = new NetworkVariable<bool>(true);
         private Rigidbody rb;
+        private NetworkTransform networkTransform;
+        private bool serverInitializedBeforeSpawn;
+        private Coroutine serverReapplyVelocityRoutine;
+
+        public bool IsInPool => isInPool.Value;
+        private bool HasServerAuthority => IsServer || (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer);
         private const float magnetSpeed = 11f;
         private const float magnetCloseRangeSpeed = 18f;
         private const float magnetCloseRangeWorld = 5f;
@@ -34,7 +43,10 @@ namespace TitanOrbit.Entities
         private const float VisualScaleMaxMultiplier = 2.1f;
         private const float ShipCollectHullMultiplier = 0.42f;
         private const float ShipCollectExtraSlop = 0.3f;
-        private const float PlanetSurfaceReachFraction = 0.96f;
+        /// <summary>Unload completes at/near the hull (magnet target is on the surface, not inside the sphere).</summary>
+        private const float PlanetSurfaceReachOutwardSlop = 0.06f;
+        private const float PlanetUnloadMagnetCollectSlop = 0.55f;
+        private const float PlanetUnloadStuckFailsafeSeconds = 1.25f;
         private const float MinVisualTravelSeconds = 0.35f;
         private const float MinVisualTravelDistance = 0.75f;
         private const float ClientNetworkSnapDistance = 10f;
@@ -42,6 +54,7 @@ namespace TitanOrbit.Entities
         private Vector3 baseVisualScale = Vector3.one;
         private Vector3 serverSpawnPosition;
         private float serverSpawnTime;
+        private float serverNearPlanetSurfaceSince = -1f;
         private Vector3 clientPredictedPosition;
         private Vector3 clientPredictedVelocity;
         private bool clientPredictionInitialized;
@@ -54,8 +67,11 @@ namespace TitanOrbit.Entities
         private void Awake()
         {
             rb = GetComponent<Rigidbody>();
+            networkTransform = GetComponent<NetworkTransform>();
             baseVisualScale = transform.localScale.sqrMagnitude > 0.0001f ? transform.localScale : Vector3.one;
             EnsureNetworkedMoverComponents();
+            if (networkTransform == null)
+                networkTransform = GetComponent<NetworkTransform>();
         }
 
         /// <summary>Match Gem prefab: NetworkTransform + NetworkRigidbody + ToroidalRenderer for client visuals on a toroidal map.</summary>
@@ -88,8 +104,13 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            if (IsServer && !serverInitializedBeforeSpawn)
+                isInPool.Value = false;
+
             amount.OnValueChanged += OnAmountChanged;
+            isInPool.OnValueChanged += OnIsInPoolChanged;
             ApplyVisualScaleFromAmount(amount.Value);
+            OnIsInPoolChanged(false, isInPool.Value);
             ResetClientPredictionFromNetwork();
             CatchUpClientPredictionAfterSpawn();
         }
@@ -129,7 +150,7 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
-            if (!UsesClientPredictedPosition || amount.Value <= 0f)
+            if (isInPool.Value || !UsesClientPredictedPosition || amount.Value <= 0f)
                 return;
 
             if (!clientPredictionInitialized)
@@ -202,7 +223,7 @@ namespace TitanOrbit.Entities
 
         private void FixedUpdate()
         {
-            if (!IsServer || rb == null || amount.Value <= 0f) return;
+            if (!IsServer || rb == null || isInPool.Value || amount.Value <= 0f) return;
 
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
@@ -231,7 +252,15 @@ namespace TitanOrbit.Entities
                 ApplyMagnetVelocity(myPos, magnetTarget);
 
                 if (CanCompleteUnloadDelivery(myPos, planet))
+                {
+                    serverNearPlanetSurfaceSince = -1f;
                     TryDeliverUnloadToPlanet(planet, nm);
+                }
+                else if (ShouldForceUnloadAfterStuckNearSurface(myPos, planet))
+                {
+                    serverNearPlanetSurfaceSince = -1f;
+                    TryDeliverUnloadToPlanet(planet, nm);
+                }
             }
 
             Vector3 vel = rb.linearVelocity;
@@ -306,13 +335,47 @@ namespace TitanOrbit.Entities
             return planetPos - toCore * surfaceWorld;
         }
 
+        private static float GetPlanetSurfaceWorldRadius(Planet planet)
+        {
+            return planet != null ? planet.PlanetSize * 0.5f : 0f;
+        }
+
         private static bool IsWithinPlanetSurfaceReach(Planet planet, Vector3 worldPos)
         {
             if (planet == null) return false;
             worldPos.y = 0f;
             float dist = ToroidalMap.ToroidalDistance(worldPos, planet.transform.position);
-            float surfaceWorld = planet.PlanetSize * 0.5f;
-            return dist <= surfaceWorld * PlanetSurfaceReachFraction;
+            float surfaceWorld = GetPlanetSurfaceWorldRadius(planet);
+            float outwardSlop = Mathf.Max(PlanetUnloadMagnetCollectSlop * 0.5f, surfaceWorld * PlanetSurfaceReachOutwardSlop);
+            return dist <= surfaceWorld + outwardSlop;
+        }
+
+        private static bool IsWithinPlanetUnloadMagnetCollectRange(Planet planet, Vector3 worldPos)
+        {
+            if (planet == null) return false;
+            Vector3 magnetTarget = GetPlanetSurfaceMagnetTarget(planet, worldPos);
+            float slop = Mathf.Max(PlanetUnloadMagnetCollectSlop, planet.PlanetSize * 0.035f);
+            return ToroidalMap.ToroidalDistance(worldPos, magnetTarget) <= slop;
+        }
+
+        private bool ShouldForceUnloadAfterStuckNearSurface(Vector3 projectilePos, Planet planet)
+        {
+            if (!HasMinVisualTravel(projectilePos) || planet == null)
+            {
+                serverNearPlanetSurfaceSince = -1f;
+                return false;
+            }
+
+            if (!IsWithinPlanetSurfaceReach(planet, projectilePos)
+                && !IsWithinPlanetUnloadMagnetCollectRange(planet, projectilePos))
+            {
+                serverNearPlanetSurfaceSince = -1f;
+                return false;
+            }
+
+            if (serverNearPlanetSurfaceSince < 0f)
+                serverNearPlanetSurfaceSince = Time.time;
+            return Time.time - serverNearPlanetSurfaceSince >= PlanetUnloadStuckFailsafeSeconds;
         }
 
         private bool HasMinVisualTravel(Vector3 projectilePos)
@@ -336,7 +399,8 @@ namespace TitanOrbit.Entities
             if (planet == null) return false;
             if (!HasMinVisualTravel(projectilePos))
                 return false;
-            return IsWithinPlanetSurfaceReach(planet, projectilePos);
+            return IsWithinPlanetSurfaceReach(planet, projectilePos)
+                || IsWithinPlanetUnloadMagnetCollectRange(planet, projectilePos);
         }
 
         private void TryDeliverLoadToShip(Starship ship)
@@ -377,15 +441,119 @@ namespace TitanOrbit.Entities
         private void DespawnProjectile()
         {
             amount.Value = 0f;
+            if (PeoplePool.Instance != null && PeoplePool.Instance.ReturnToPool(this))
+                return;
+
             var no = GetComponent<NetworkObject>();
             if (no != null)
                 no.Despawn();
         }
 
+        /// <summary>Server only. Recycles projectile without Despawn.</summary>
+        public void ServerReturnToPool()
+        {
+            if (!IsServer) return;
+            StopServerReapplyVelocityRoutine();
+            amount.Value = 0f;
+            targetId.Value = 0;
+            isLoad.Value = true;
+            team.Value = (int)TeamManager.Team.None;
+            spawningShipId.Value = 0;
+            sourcePlanetId.Value = 0;
+            syncedPlanarVelocity.Value = Vector3.zero;
+            serverNearPlanetSurfaceSince = -1f;
+            serverInitializedBeforeSpawn = false;
+            transform.position = Vector3.zero;
+            if (rb != null)
+            {
+                rb.position = Vector3.zero;
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+            isInPool.Value = true;
+        }
+
+        /// <summary>Server only. Marks projectile active after Initialize.</summary>
+        public void ServerActivateFromPool()
+        {
+            if (IsServer) isInPool.Value = false;
+        }
+
+        /// <summary>Server only. Snap NetworkTransform after pool recycle and apply launch velocity.</summary>
+        public void ServerFinishPooledSpawn(Vector3 worldPosition, Vector3 linearVelocity)
+        {
+            if (!IsServer) return;
+
+            worldPosition.y = 0f;
+            linearVelocity.y = 0f;
+            Quaternion rot = transform.rotation;
+            Vector3 scale = transform.localScale;
+
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+                rb.position = worldPosition;
+                rb.linearVelocity = linearVelocity;
+                rb.angularVelocity = Vector3.zero;
+                rb.linearDamping = 0f;
+                rb.WakeUp();
+            }
+            else
+            {
+                transform.SetPositionAndRotation(worldPosition, rot);
+            }
+
+            if (networkTransform != null)
+                networkTransform.SetState(worldPosition, rot, scale, teleportDisabled: false);
+
+            serverSpawnPosition = worldPosition;
+            serverSpawnTime = Time.time;
+            serverNearPlanetSurfaceSince = -1f;
+            syncedPlanarVelocity.Value = linearVelocity;
+
+            if (rb != null)
+            {
+                rb.position = worldPosition;
+                rb.linearVelocity = linearVelocity;
+                rb.WakeUp();
+            }
+
+            StopServerReapplyVelocityRoutine();
+            serverReapplyVelocityRoutine = StartCoroutine(ServerReapplyVelocityAfterPhysicsSync(linearVelocity));
+        }
+
+        private void StopServerReapplyVelocityRoutine()
+        {
+            if (serverReapplyVelocityRoutine != null)
+            {
+                StopCoroutine(serverReapplyVelocityRoutine);
+                serverReapplyVelocityRoutine = null;
+            }
+        }
+
+        private IEnumerator ServerReapplyVelocityAfterPhysicsSync(Vector3 linearVelocity)
+        {
+            yield return new WaitForFixedUpdate();
+            serverReapplyVelocityRoutine = null;
+            if (!IsServer || rb == null || isInPool.Value) yield break;
+            linearVelocity.y = 0f;
+            rb.isKinematic = false;
+            rb.linearVelocity = linearVelocity;
+            rb.angularVelocity = Vector3.zero;
+            syncedPlanarVelocity.Value = linearVelocity;
+            rb.WakeUp();
+        }
+
+        private void OnIsInPoolChanged(bool previous, bool current)
+        {
+            gameObject.SetActive(!current);
+        }
+
         public void Initialize(float peopleAmount, ulong targetNetworkObjectId, bool loadingFromPlanet, TeamManager.Team sourceTeam, ulong shipNetworkObjectId = 0, ulong sourcePlanetNetworkObjectId = 0)
         {
-            if (IsServer)
+            if (HasServerAuthority)
             {
+                serverInitializedBeforeSpawn = true;
                 amount.Value = peopleAmount;
                 targetId.Value = targetNetworkObjectId;
                 isLoad.Value = loadingFromPlanet;
@@ -403,6 +571,7 @@ namespace TitanOrbit.Entities
                     serverSpawnPosition = transform.position;
                 serverSpawnPosition.y = 0f;
                 serverSpawnTime = Time.time;
+                serverNearPlanetSurfaceSince = -1f;
                 ApplyVisualScaleFromAmount(peopleAmount);
 
                 Vector3 initVel = rb != null ? rb.linearVelocity : Vector3.zero;
@@ -414,6 +583,9 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             amount.OnValueChanged -= OnAmountChanged;
+            isInPool.OnValueChanged -= OnIsInPoolChanged;
+            StopServerReapplyVelocityRoutine();
+            serverInitializedBeforeSpawn = false;
             if (IsServer && isLoad.Value && amount.Value > 0f && targetId.Value != 0)
             {
                 var nm = NetworkManager.Singleton;
@@ -446,7 +618,7 @@ namespace TitanOrbit.Entities
 
         private void OnTriggerEnter(Collider other)
         {
-            if (!IsServer || amount.Value <= 0f) return;
+            if (!IsServer || isInPool.Value || amount.Value <= 0f) return;
 
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))

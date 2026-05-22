@@ -122,6 +122,9 @@ namespace TitanOrbit.Entities
         private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
         private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
         private static readonly Collider[] ShieldRepelOverlapBuffer = new Collider[32];
+        private static readonly Collider[] DockLandingOverlapBuffer = new Collider[32];
+        /// <summary>Physics overlap query extends past the toroidal dock shell so large hulls are still found.</summary>
+        private const float DockLandingOverlapExtraWorld = 4f;
 
         [Header("Enemy Shield Barrier")]
         [Tooltip("When an enemy/non-friendly ship enters the shield area while the shield has points, push it outward to prevent passing through.")]
@@ -489,6 +492,7 @@ namespace TitanOrbit.Entities
             {
                 TickMoonShieldRegen();
                 TickEnemyShieldRepelServer();
+                TickGemMoonLandingServer();
             }
             UpdateMatrixShieldVisual();
 
@@ -1169,6 +1173,46 @@ namespace TitanOrbit.Entities
 
             var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
+            TryApplyGemMoonLandingForShip(ship);
+        }
+
+        /// <summary>
+        /// Authoritative landing check each physics tick (toroidal dock-zone radius), not only trigger overlap.
+        /// Kinematic moon motion can skip OnTriggerStay for large or upgraded hulls.
+        /// </summary>
+        private void TickGemMoonLandingServer()
+        {
+            if (planet == null) return;
+
+            float zoneWorld = GetMoonDockSnapRadiusWorld();
+            if (zoneWorld <= 0.0001f) return;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            float queryRadius = zoneWorld + DockLandingOverlapExtraWorld;
+
+            int count = Physics.OverlapSphereNonAlloc(
+                moonPos,
+                queryRadius,
+                DockLandingOverlapBuffer,
+                ~0,
+                QueryTriggerInteraction.Collide);
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider col = DockLandingOverlapBuffer[i];
+                if (col == null) continue;
+                Starship ship = col.GetComponentInParent<Starship>();
+                if (ship == null || ship.IsDead) continue;
+                if (!IsShipInsideMoonDockZone(ship)) continue;
+                TryApplyGemMoonLandingForShip(ship);
+            }
+        }
+
+        private void TryApplyGemMoonLandingForShip(Starship ship)
+        {
+            if (ship == null || ship.IsDead || planet == null) return;
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
             if (ship.GemMoonDockIgnoreUntilServerTime > now)
@@ -1187,16 +1231,31 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
-            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger: true))
+            if (!IsShipReadyToLandInMoonZone(ship))
             {
-                // Only undock if already docked; otherwise keep accumulating landing dwell (see Starship.ServerSetGemMoonDocked).
                 if (ship.GemMoonDocked)
                     ship.ServerSetGemMoonDocked(false, null);
                 return;
             }
 
             ship.ServerSetGemMoonDocked(true, planet);
+        }
+
+        /// <summary>True when the ship's XZ position is inside the moon dock / orbit shell (toroidal, includes hull radius).</summary>
+        public bool IsShipInsideMoonDockZone(Starship ship, float zoneRadiusMultiplier = 1f)
+        {
+            if (ship == null) return false;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            Vector3 shipPos = ship.transform.position;
+            shipPos.y = 0f;
+
+            float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+            float zoneRadius = GetMoonDockSnapRadiusWorld() * Mathf.Max(0.0001f, zoneRadiusMultiplier);
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
+            if (zoneRadius <= 0.0001f) return false;
+            return dist <= zoneRadius + shipRadius;
         }
 
         private void OnTriggerEnter(Collider other)
@@ -1239,18 +1298,8 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 moonPos = transform.position;
-            moonPos.y = 0f;
-            Vector3 shipPos = ship.transform.position;
-            shipPos.y = 0f;
-
-            float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float shipRadius = ship.GetShipMoonDockRadiusXZ();
-            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f + shipRadius;
             // Only preserve an existing dock when Y-snap briefly leaves the trigger — never dock on exit alone.
-            bool shouldStayDocked = ship.GemMoonDocked
-                && keepDockRadiusWorld > 0.0001f
-                && xzDist <= keepDockRadiusWorld;
+            bool shouldStayDocked = ship.GemMoonDocked && IsShipInsideMoonDockZone(ship, 1.05f);
 
             ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
         }
@@ -1328,7 +1377,7 @@ namespace TitanOrbit.Entities
             return dist >= inner && dist <= outer;
         }
 
-        private bool IsShipReadyToLandInMoonZone(Starship ship, bool overlapsDockTrigger = false)
+        private bool IsShipReadyToLandInMoonZone(Starship ship)
         {
             if (ship == null) return false;
             if (planet == null) return false;
@@ -1348,17 +1397,16 @@ namespace TitanOrbit.Entities
                 return false;
             }
 
+            if (!IsShipInsideMoonDockZone(ship))
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
             Vector3 moonPos = transform.position;
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
-
-            float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float zoneRadius = GetMoonDockSnapRadiusWorld();
-            float shipRadius = ship.GetShipMoonDockRadiusXZ();
-            if (zoneRadius <= 0.0001f) return false;
-            // When the dock trigger already overlaps the ship, trust that instead of center-distance (large tier hulls).
-            if (!overlapsDockTrigger && dist > zoneRadius + shipRadius) return false;
 
             Rigidbody shipRb = ship.GetComponent<Rigidbody>();
             if (shipRb == null) return false;

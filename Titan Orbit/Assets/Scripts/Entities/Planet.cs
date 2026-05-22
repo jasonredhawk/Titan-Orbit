@@ -992,11 +992,11 @@ namespace TitanOrbit.Entities
 
             // Feedback popup: show only the actual amount that increased gems (clamped by max).
             float delta = currentGems.Value - before;
-            if (delta > 0.0001f && VisualEffectsManager.Instance != null)
+            if (delta > 0.0001f)
             {
                 Vector3 popupPos = popupWorldPosition ?? transform.position;
                 popupPos.y = 0f;
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                ShowFloatingCountFeedbackClientRpc(
                     popupPos,
                     (int)FloatingCountChannel.GemDeposit,
                     delta,
@@ -1017,6 +1017,14 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (amount <= 0f) return;
             currentGems.Value = Mathf.Max(0f, currentGems.Value - amount);
+        }
+
+        [ClientRpc]
+        private void ShowFloatingCountFeedbackClientRpc(Vector3 worldPosition, int channelId, float signedAmount, int teamInt)
+        {
+            if (VisualEffectsManager.Instance == null) return;
+            var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
+            VisualEffectsManager.Instance.ShowFloatingCount(worldPosition, channel, signedAmount, (TeamManager.Team)teamInt);
         }
 
         [ServerRpc(RequireOwnership = false)]

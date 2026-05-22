@@ -601,8 +601,7 @@ namespace TitanOrbit.Entities
             if (ScoreSystem.Instance != null)
                 ScoreSystem.Instance.AwardMining(ship, toAdd);
 
-            if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, ship.ShipTeam);
+            ship.BroadcastFloatingCountFeedback(gemPos, FloatingCountChannel.GemPickup, toAdd, ship.ShipTeam);
 
             value.Value = 0f;
             if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))

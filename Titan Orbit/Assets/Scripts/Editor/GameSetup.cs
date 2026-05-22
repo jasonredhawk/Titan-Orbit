@@ -504,6 +504,8 @@ namespace TitanOrbit.Editor
             
             CombatSystem combatSystem = obj.AddComponent<CombatSystem>();
             GemSpawner gemSpawner = obj.AddComponent<GemSpawner>();
+            obj.AddComponent<GemPool>();
+            obj.AddComponent<PeoplePool>();
             AsteroidRespawnManager asteroidRespawn = obj.AddComponent<AsteroidRespawnManager>();
             MiningSystem miningSystem = obj.AddComponent<MiningSystem>();
             TransportSystem transportSystem = obj.AddComponent<TransportSystem>();

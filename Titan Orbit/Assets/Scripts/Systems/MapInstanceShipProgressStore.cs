@@ -75,6 +75,13 @@ namespace TitanOrbit.Systems
             return SnapshotsByAuthPlayerId.TryGetValue(authPlayerId, out snapshot);
         }
 
+        public static void ClearSnapshot(string authPlayerId)
+        {
+            if (!_bound || string.IsNullOrEmpty(authPlayerId))
+                return;
+            SnapshotsByAuthPlayerId.Remove(authPlayerId);
+        }
+
         private static string FallbackAuthKey(ulong clientId) => "client:" + clientId.ToString();
     }
 

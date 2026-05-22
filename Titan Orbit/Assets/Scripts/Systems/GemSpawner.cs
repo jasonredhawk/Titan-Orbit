@@ -22,6 +22,8 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject peopleTransportPrefab;
         [Tooltip("When false, asteroid gems use Instantiate+Spawn (original behavior). Set true to use GemPool for fewer allocations.")]
         [SerializeField] private bool useGemPool = false;
+        [Tooltip("When false, people transport uses Instantiate+Spawn. Set true to use PeoplePool for orbit load/unload.")]
+        [SerializeField] private bool usePeoplePool = true;
         [SerializeField] private float explosionSpeed = 2f;
         [SerializeField] private float explosionRadius = 1f;
         [Tooltip("Asteroid gem burst - kept much lower so gems don't fly away.")]
@@ -36,12 +38,26 @@ namespace TitanOrbit.Systems
 
         private void Start()
         {
+            EnsurePoolComponents();
             if (GemPool.Instance != null)
                 GemPool.Instance.SetPrefab(GetGemPrefab());
+            if (PeoplePool.Instance != null)
+                PeoplePool.Instance.SetPrefab(GetPeopleTransportPrefab());
+        }
+
+        private void EnsurePoolComponents()
+        {
+            if (useGemPool && GetComponent<GemPool>() == null)
+                gameObject.AddComponent<GemPool>();
+            if (usePeoplePool && GetComponent<PeoplePool>() == null)
+                gameObject.AddComponent<PeoplePool>();
         }
 
         /// <summary>GemPool should use the same resolved prefab as spawning (registered with <see cref="NetworkManager"/>).</summary>
         internal GameObject GetRuntimeGemPrefabForPool() => GetGemPrefab();
+
+        /// <summary>PeoplePool should use the same resolved prefab as spawning (registered with <see cref="NetworkManager"/>).</summary>
+        internal GameObject GetRuntimePeopleTransportPrefabForPool() => GetPeopleTransportPrefab();
 
         private GameObject GetGemPrefab()
         {
@@ -95,6 +111,17 @@ namespace TitanOrbit.Systems
             r.isKinematic = false;
             r.linearVelocity = linearVelocity;
             r.angularVelocity = angularVelocity;
+            r.WakeUp();
+        }
+
+        private static void ApplyPeopleLaunchVelocityAfterSpawn(Rigidbody r, Vector3 linearVelocity)
+        {
+            if (r == null) return;
+            r.isKinematic = false;
+            linearVelocity.y = 0f;
+            r.linearVelocity = linearVelocity;
+            r.angularVelocity = Vector3.zero;
+            r.linearDamping = 0f;
             r.WakeUp();
         }
 
@@ -164,14 +191,21 @@ namespace TitanOrbit.Systems
             if (!isLoad)
                 pos += dir * 0.75f;
             float speed = 6f;
+            Vector3 vel = dir * speed;
+
+            PeopleTransportProjectile pooled = null;
+            if (usePeoplePool && PeoplePool.Instance != null)
+                pooled = PeoplePool.Instance.GetNext();
+            if (pooled != null)
+            {
+                pooled.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId, sourcePlanetNetworkObjectId);
+                pooled.ServerActivateFromPool();
+                pooled.ServerFinishPooledSpawn(pos, vel);
+                return;
+            }
 
             GameObject obj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = obj.GetComponent<Rigidbody>();
-            if (rb != null)
-            {
-                rb.linearVelocity = dir * speed;
-                rb.linearDamping = 0f;
-            }
 
             NetworkObject netObj = obj.GetComponent<NetworkObject>();
             if (netObj != null)
@@ -179,6 +213,7 @@ namespace TitanOrbit.Systems
                 netObj.Spawn();
                 var p = obj.GetComponent<PeopleTransportProjectile>();
                 if (p != null) p.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId, sourcePlanetNetworkObjectId);
+                ApplyPeopleLaunchVelocityAfterSpawn(rb, vel);
             }
         }
 

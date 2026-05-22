@@ -101,15 +101,66 @@ namespace TitanOrbit.Systems
             {
                 Instance = this;
             }
-            else
+            else if (Instance != this)
             {
                 Destroy(gameObject);
             }
         }
 
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+            Instance = this;
+        }
+
         private bool IsFloatingCountChannelVisible(FloatingCountChannel channel)
         {
             return floatingCountVisibility == null || floatingCountVisibility.IsEnabled(channel);
+        }
+
+        /// <summary>Client-side entry for floating count popups (e.g. from entity ClientRpcs on spawned ships/planets).</summary>
+        public void ShowFloatingCount(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
+        {
+            SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
+        }
+
+        /// <summary>True when this instance can send/receive Netcode RPCs for floating popups.</summary>
+        private bool CanSendFloatingCountRpcs =>
+            NetworkManager.Singleton != null
+            && NetworkManager.Singleton.IsListening
+            && IsSpawned;
+
+        /// <summary>Spawn floating count on every client (and host). Falls back to local spawn when not networked.</summary>
+        private void DispatchFloatingCountToClients(
+            Vector3 position,
+            FloatingCountChannel channel,
+            float signedAmount,
+            TeamManager.Team team)
+        {
+            int channelId = (int)channel;
+            int teamInt = (int)team;
+
+            if (CanSendFloatingCountRpcs)
+            {
+                SpawnFloatingCountClientRpc(position, channelId, signedAmount, teamInt);
+                return;
+            }
+
+            // No Netcode or manager not spawned yet — still show on this machine when it can render.
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening || IsClient)
+                SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
+        }
+
+        private void DispatchGemPickupTextToClients(Vector3 position, float amount, TeamManager.Team team)
+        {
+            if (CanSendFloatingCountRpcs)
+            {
+                SpawnGemPickupTextClientRpc(position, amount, (int)team);
+                return;
+            }
+
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening || IsClient)
+                SpawnGemPickupTextOnClient(position, amount, team);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -165,24 +216,24 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemPickupTextServerRpc(Vector3 position, float amount, TeamManager.Team team)
         {
-            if (IsServer && IsClient)
-                SpawnGemPickupTextOnClient(position, amount, team);
-
-            SpawnGemPickupTextClientRpc(position, amount, (int)team);
+            DispatchGemPickupTextToClients(position, amount, team);
         }
 
         [ClientRpc]
         private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
         {
-            if (IsServer)
-                return;
-
             SpawnGemPickupTextOnClient(position, amount, (TeamManager.Team)teamInt);
         }
 
         private void SpawnGemPickupTextOnClient(Vector3 position, float amount, TeamManager.Team team)
         {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsClient)
+                return;
+
             if (!IsFloatingCountChannelVisible(FloatingCountChannel.GemPickup))
+                return;
+
+            if (UnityEngine.Camera.main == null)
                 return;
 
             // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
@@ -202,24 +253,13 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnFloatingCountServerRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
-            // Host is server+client: ClientRpc alone can miss local delivery on in-scene managers in some NGO setups.
-            if (IsServer && IsClient)
-                SpawnFloatingCountPopupLocal(
-                    position,
-                    (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex),
-                    signedAmount,
-                    (TeamManager.Team)teamInt);
-
-            SpawnFloatingCountClientRpc(position, channelId, signedAmount, teamInt);
+            var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
+            DispatchFloatingCountToClients(position, channel, signedAmount, (TeamManager.Team)teamInt);
         }
 
         [ClientRpc]
         private void SpawnFloatingCountClientRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
-            // Host already spawned in ServerRpc; remote clients only here.
-            if (IsServer)
-                return;
-
             var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
             TeamManager.Team team = (TeamManager.Team)teamInt;
             SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
@@ -269,7 +309,13 @@ namespace TitanOrbit.Systems
 
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsClient)
+                return;
+
             if (!IsFloatingCountChannelVisible(channel))
+                return;
+
+            if (UnityEngine.Camera.main == null)
                 return;
 
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
@@ -359,6 +405,12 @@ namespace TitanOrbit.Systems
 
         private void SpawnCustomFloatingCountPopupLocal(Vector3 position, string message, Sprite icon, Color color)
         {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsClient)
+                return;
+
+            if (UnityEngine.Camera.main == null)
+                return;
+
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
             if (fontToUse == null)
                 return;
