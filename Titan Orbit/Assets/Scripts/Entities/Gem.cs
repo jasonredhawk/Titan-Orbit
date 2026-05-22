@@ -50,7 +50,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float asteroidNonPriorityPickupDelaySeconds = 1f;
         [Header("Ship-expelled pickup")]
         [Tooltip("Seconds before the ship that dropped these gems (e.g. hull breakup) can collect them again. Other ships are unaffected.")]
-        [SerializeField] private float selfPickupDelaySeconds = 1f;
+        [SerializeField] private float selfPickupDelaySeconds = 2f;
         [Header("Visuals")]
         [SerializeField] private Color gemTintColor = new Color(1f, 0f, 0f, 0.45f);
         [SerializeField] private Color bonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
@@ -630,6 +630,46 @@ namespace TitanOrbit.Entities
             return null;
         }
 
+        /// <summary>Server: stop coasting toward ships that moved out of magnetic pull range.</summary>
+        private void ServerClipMagneticVelocityTowardOutOfRangeShips()
+        {
+            if (rb == null || depositTargetPlanetId.Value != 0)
+                return;
+
+            Vector3 gemPos = rb.position;
+            gemPos.y = 0f;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+
+            var ships = Starship.AllStarships;
+            if (ships == null)
+                return;
+
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Starship ship = ships[i];
+                if (ship == null || !ship.IsSpawned || ship.IsDead)
+                    continue;
+                if (GemTractorBeamSettings.IsWithinMagneticPullRange(ship, this))
+                    continue;
+
+                var shipRb = ship.GetComponent<Rigidbody>();
+                Vector3 shipPos = shipRb != null ? shipRb.position : ship.transform.position;
+                shipPos.y = 0f;
+
+                Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, shipPos);
+                toShip.y = 0f;
+                if (toShip.sqrMagnitude < 0.0001f)
+                    continue;
+
+                float toward = Vector3.Dot(vel, toShip.normalized);
+                if (toward > 0f)
+                    vel -= toShip.normalized * toward;
+            }
+
+            rb.linearVelocity = new Vector3(vel.x, rb.linearVelocity.y, vel.z);
+        }
+
         private void FixedUpdate()
         {
             // Throttle visual scale updates: every 5th FixedUpdate (staggered by instance) to cut cost when many gems exist
@@ -676,6 +716,8 @@ namespace TitanOrbit.Entities
                 TryProximityCollectShip();
                 return;
             }
+
+            ServerClipMagneticVelocityTowardOutOfRangeShips();
 
             // No automatic ship attraction: just apply drag so gems slow down and stop.
             if (rb != null)

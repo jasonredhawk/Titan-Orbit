@@ -7,8 +7,9 @@ namespace TitanOrbit.Entities
     /// <summary>Shared reach and pull strength for gem tractor beams (server physics + client Shapes visuals).</summary>
     public static class GemTractorBeamSettings
     {
-        public const float SearchRadiusNormal = 6.5f;
-        public const float SearchRadiusOrbit = 10f;
+        /// <summary>Max toroidal distance (m) for magnetic pull; gems beyond this are not pulled and cut off if the ship moves away.</summary>
+        public const float SearchRadiusNormal = 3f;
+        public const float SearchRadiusOrbit = 4.5f;
         public const float AttractionSpeedNormal = 10f;
         public const float AttractionSpeedOrbit = 16f;
         public const float AttractionAccelerationFactor = 4f;
@@ -17,6 +18,7 @@ namespace TitanOrbit.Entities
         public const float ActivePullTowardSpeedThreshold = 0.22f;
 
         private static int pullSetCacheFrame = -1;
+        private static float pullSetCachePhysicsFixedTime = -1f;
         private static readonly Dictionary<int, HashSet<int>> pullSetByShipInstanceId = new Dictionary<int, HashSet<int>>(32);
         private static readonly List<GemPullCandidate> pullCandidateScratch = new List<GemPullCandidate>(64);
 
@@ -39,6 +41,23 @@ namespace TitanOrbit.Entities
             return ToroidalMap.ToroidalDistance(gemPos, shipPos) <= searchRadius;
         }
 
+        public static bool IsWithinMagneticPullRange(Starship ship, Gem gem)
+        {
+            if (ship == null || gem == null)
+                return false;
+            return IsWithinReach(GetGemPosition(gem), GetShipPosition(ship), ship.IsInOrbit);
+        }
+
+        /// <summary>Server: rebuild pull-set budgets every physics step so range cut-off tracks ship movement.</summary>
+        public static void BeginPhysicsPullUpdate()
+        {
+            if (pullSetCachePhysicsFixedTime == Time.fixedTime)
+                return;
+            pullSetCachePhysicsFixedTime = Time.fixedTime;
+            pullSetByShipInstanceId.Clear();
+            pullSetCacheFrame = -1;
+        }
+
         /// <summary>
         /// True when this gem is in the ship's magnetic pull budget (only enough gems to fill remaining capacity are selected).
         /// </summary>
@@ -54,6 +73,8 @@ namespace TitanOrbit.Entities
         public static bool IsActivelyBeingPulledToward(Starship ship, Gem gem)
         {
             if (!CanShipMagneticallyPull(ship, gem))
+                return false;
+            if (!IsWithinMagneticPullRange(ship, gem))
                 return false;
 
             return GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold;

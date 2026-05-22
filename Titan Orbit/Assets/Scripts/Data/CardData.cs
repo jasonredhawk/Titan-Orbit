@@ -77,7 +77,7 @@ namespace TitanOrbit.Data
         public float bulletSpeedMultiplier = 1f;
         [Tooltip("Multiplies gem deposit transfer speed while docked at a gem moon.")]
         public float gemDepositSpeedMultiplier = 1f;
-        [Tooltip("Multiplies people load speed while in orbit (unload uses a fixed base rate on the ship; future cards may add an unload multiplier).")]
+        [Tooltip("Multiplies people load and unload speed while in orbit.")]
         public float peopleTransferSpeedMultiplier = 1f;
 
         [Header("Mass & Visual")]

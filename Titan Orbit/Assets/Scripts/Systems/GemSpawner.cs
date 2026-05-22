@@ -259,33 +259,39 @@ namespace TitanOrbit.Systems
         }
         
         /// <summary>Server-only gem expulsion (hull breakup, ramming self-damage, etc.). Avoids nested ServerRpc when invoked from server damage/collision paths.</summary>
-        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        /// <param name="expulsionIntensity">0 = many small gems (grind); 1 = few large gems (hard impact).</param>
+        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f)
         {
             if (!IsServer) return;
-            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId);
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity);
         }
 
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f)
         {
-            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId);
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity);
         }
 
-        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null || totalValue <= 0f) return;
 
-            // Spawn as one or a few gems (simpler than asteroid distribution)
+            float intensity = Mathf.Clamp01(expulsionIntensity);
             float remaining = totalValue;
-            int maxGems = Mathf.Min(5, Mathf.CeilToInt(totalValue / 2f));
-            if (maxGems < 1) maxGems = 1;
+            int maxGems = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(5f, 1f, intensity)));
+            maxGems = Mathf.Min(maxGems, Mathf.Max(1, Mathf.CeilToInt(totalValue)));
+            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity);
+
             for (int i = 0; i < maxGems && remaining > 0.1f; i++)
             {
-                float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
-                gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId);
+                bool last = i == maxGems - 1;
+                float maxChunk = Mathf.Lerp(Mathf.Min(3f, remaining), Mathf.Min(remaining, 50f), intensity);
+                float minChunk = Mathf.Lerp(1f, Mathf.Max(2f, remaining * 0.35f), intensity);
+                float gemValue = last ? remaining : Random.Range(minChunk, maxChunk);
+                gemValue = Mathf.Clamp(gemValue, 1f, Mathf.Min(50f, remaining));
+                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul);
                 remaining -= gemValue;
             }
         }
@@ -332,13 +338,13 @@ namespace TitanOrbit.Systems
             }
         }
 
-        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId)
+        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId, float launchSpeedMultiplier = 1f)
         {
             Vector2 dir2 = Random.insideUnitCircle.normalized;
             if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
             Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
             Vector3 pos = shipCenter + dir * explosionRadius * Random.Range(0.3f, 1f);
-            Vector3 vel = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+            Vector3 vel = dir * explosionSpeed * Mathf.Max(0.1f, launchSpeedMultiplier) * Random.Range(0.8f, 1.2f);
             Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
 
             // Do not use GemPool here: recycling + NetworkTransform/physics ordering was leaving hull-expelled gems at zero velocity.
