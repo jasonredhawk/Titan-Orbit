@@ -8191,8 +8191,6 @@ GameObject:
   - component: {fileID: 1207700299}
   - component: {fileID: 1207700298}
   - component: {fileID: 1207700313}
-  - component: {fileID: 1207700315}
-  - component: {fileID: 1207700314}
   - component: {fileID: 1207700312}
   - component: {fileID: 1207700311}
   - component: {fileID: 1207700310}
@@ -8491,39 +8489,10 @@ MonoBehaviour:
   gemPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
   peopleTransportPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   useGemPool: 1
-  usePeoplePool: 1
   explosionSpeed: 1.5
   explosionRadius: 1
   asteroidExplosionSpeed: 1.5
   asteroidExplosionRadius: 1
---- !u!114 &1207700314
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1207700297}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4635ebadfab505946a2edf3d9ae93ed7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.GemPool
-  gemPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
-  poolSize: 60
---- !u!114 &1207700315
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1207700297}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b7e4a91c3f2d5480a9e6b1c4d8f2037e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Systems.PeoplePool
-  peopleTransportPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
-  poolSize: 40
 --- !u!114 &1207700313
 MonoBehaviour:
   m_ObjectHideFlags: 0

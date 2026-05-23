@@ -15,7 +15,6 @@ using TitanOrbit.Systems;
 using TitanOrbit.Services;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
-using TitanOrbit.UI;
 using SciFiArsenal;
 
 namespace TitanOrbit.Entities
@@ -405,10 +404,6 @@ namespace TitanOrbit.Entities
         private int _lastAppliedChassisIndex = -2;
         /// <summary>Server: true after default spawn or map-instance restore has run for this human player ship.</summary>
         private bool _playerSpawnSetupComplete;
-        /// <summary>Server: waiting for owner to pick rescued ship vs fresh starter.</summary>
-        private bool _awaitingMapInstanceSpawnChoice;
-        /// <summary>Client owner: true while rescued-ship modal is open.</summary>
-        private bool _clientAwaitingMapInstanceSpawnChoice;
 
         private NetworkVariable<float> currentHealth = new NetworkVariable<float>(100f);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
@@ -417,13 +412,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<TeamManager.Team> shipTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         /// <summary>Human player has no team yet (brief replication window; player ships are spawned only after team join).</summary>
         private bool IsAwaitingTeamSelection => !_isAIControlled && shipTeam.Value == TeamManager.Team.None;
-        private bool IsAwaitingSpawnLoadoutChoice =>
-            !_isAIControlled && (_awaitingMapInstanceSpawnChoice || _clientAwaitingMapInstanceSpawnChoice);
 
         private void SyncInputHandlerForTeamSelectionState()
         {
             if (_isAIControlled || inputHandler == null || !IsOwner) return;
-            inputHandler.enabled = !IsAwaitingTeamSelection && !IsAwaitingSpawnLoadoutChoice;
+            inputHandler.enabled = !IsAwaitingTeamSelection;
         }
 
         private NetworkVariable<bool> wantToLoadPeople = new NetworkVariable<bool>(false);
@@ -1267,8 +1260,6 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
-            if (IsOwner && !_isAIControlled)
-                OnMapInstanceSpawnChoiceResolved();
             if (IsServer && !_isAIControlled)
                 MapInstanceShipProgressStore.SaveSnapshot(
                     MapInstanceShipProgressStore.ResolveAuthPlayerId(OwnerClientId),
@@ -1289,93 +1280,14 @@ namespace TitanOrbit.Entities
 
         private void TryRestoreOrApplyDefaultSpawnSetup(string authPlayerId)
         {
-            if (!IsServer || _isAIControlled || _playerSpawnSetupComplete || _awaitingMapInstanceSpawnChoice) return;
+            if (!IsServer || _isAIControlled || _playerSpawnSetupComplete) return;
 
             string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId);
             MapInstanceShipProgressStore.RegisterClientAuthId(OwnerClientId, key);
             if (MapInstanceShipProgressStore.TryGetSnapshot(key, out PlayerShipProgressSnapshot snapshot))
-            {
-                _awaitingMapInstanceSpawnChoice = true;
-                ParkShipInLobbyHold();
-                int cardCount = snapshot.CardIds != null ? snapshot.CardIds.Length : 0;
-                PromptMapInstanceSpawnChoiceClientRpc(
-                    Mathf.Max(1, snapshot.ShipLevel),
-                    cardCount,
-                    OwnerOnlyClientRpcParams);
-                return;
-            }
-
-            ApplyDefaultPlayerSpawnSetup();
-        }
-
-        /// <summary>Owner client: team selection UI calls this after the player picks rescued ship vs fresh starter.</summary>
-        public void SubmitMapInstanceSpawnChoiceFromClient(bool useRescuedShip)
-        {
-            if (!IsOwner || _isAIControlled) return;
-            SubmitMapInstanceSpawnChoiceServerRpc(useRescuedShip);
-        }
-
-        [ServerRpc(RequireOwnership = true)]
-        private void SubmitMapInstanceSpawnChoiceServerRpc(bool useRescuedShip, ServerRpcParams rpcParams = default)
-        {
-            if (!IsServer || _isAIControlled || _playerSpawnSetupComplete) return;
-            if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
-            if (!_awaitingMapInstanceSpawnChoice) return;
-
-            _awaitingMapInstanceSpawnChoice = false;
-            string key = MapInstanceShipProgressStore.ResolveAuthPlayerId(OwnerClientId);
-            if (useRescuedShip && MapInstanceShipProgressStore.TryGetSnapshot(key, out PlayerShipProgressSnapshot snapshot))
                 ApplyMapInstanceProgress(snapshot);
             else
-            {
-                MapInstanceShipProgressStore.ClearSnapshot(key);
-                ApplyFreshMapInstanceStarterSpawn();
-            }
-
-            MapInstanceSpawnChoiceCompleteClientRpc(OwnerOnlyClientRpcParams);
-        }
-
-        [ClientRpc]
-        private void MapInstanceSpawnChoiceCompleteClientRpc(ClientRpcParams clientRpcParams = default)
-        {
-            OnMapInstanceSpawnChoiceResolved();
-        }
-
-        [ClientRpc]
-        private void PromptMapInstanceSpawnChoiceClientRpc(int savedShipLevel, int savedCardCount, ClientRpcParams clientRpcParams = default)
-        {
-            if (!IsOwner || _isAIControlled) return;
-            _clientAwaitingMapInstanceSpawnChoice = true;
-            SyncInputHandlerForTeamSelectionState();
-            RescuedShipChoiceUI.Show(this, savedShipLevel, savedCardCount);
-        }
-
-        private void OnMapInstanceSpawnChoiceResolved()
-        {
-            if (!IsOwner || _isAIControlled) return;
-            _clientAwaitingMapInstanceSpawnChoice = false;
-            RescuedShipChoiceUI.Hide();
-            SyncInputHandlerForTeamSelectionState();
-        }
-
-        /// <summary>Server: fresh Level 1 starter after the player declines a rescued ship.</summary>
-        private void ApplyFreshMapInstanceStarterSpawn()
-        {
-            if (!IsServer || _isAIControlled) return;
-            ResetCardsAndAttributesFromServer();
-            shipLevel = 1;
-            if (networkShipLevel != null)
-                networkShipLevel.Value = 1;
-            if (networkBranchIndex != null)
-                networkBranchIndex.Value = 0;
-            smallRocketsCount.Value = 0;
-            largeRocketsCount.Value = 0;
-            smallMinesCount.Value = 0;
-            largeMinesCount.Value = 0;
-            SetCurrentChassisIndex(-1);
-            SetCurrentChassisId(string.Empty);
-            _lastAppliedChassisIndex = -2;
-            ApplyDefaultPlayerSpawnSetup();
+                ApplyDefaultPlayerSpawnSetup();
         }
 
         /// <summary>Server: first-time spawn for this map instance (starter chassis, fresh vitals).</summary>
@@ -1584,18 +1496,9 @@ namespace TitanOrbit.Entities
             ApplyHullIdentityColor();
         }
 
-        private void ParkShipInLobbyHold()
-        {
-            if (!IsServer || rb == null) return;
-            Vector3 lobbyPos = new Vector3(0f, -10000f, 0f);
-            rb.position = lobbyPos;
-            rb.linearVelocity = Vector3.zero;
-        }
-
         /// <summary>Server: position ship in orbit around its team's home planet at spawn.</summary>
         private void StartInOrbitAroundHomePlanet()
         {
-            if (_awaitingMapInstanceSpawnChoice) return;
             if (shipTeam.Value == TeamManager.Team.None || rb == null) return;
             HomePlanet home = null;
             foreach (var hp in HomePlanet.AllHomePlanets)
@@ -1689,7 +1592,7 @@ namespace TitanOrbit.Entities
             }
 
             // Server: ensure first ship (no chassis yet) gets starter visual (AstroEagle_01 or first family's ship 1)
-            if (IsServer && !_isAIControlled && !_playerSpawnSetupComplete && !_awaitingMapInstanceSpawnChoice && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
+            if (IsServer && !_isAIControlled && !_playerSpawnSetupComplete && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
                 GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
@@ -4058,8 +3961,13 @@ namespace TitanOrbit.Entities
                 // Feedback: show health delta as a floating popup at the ship position.
                 // (Health changes only during the alive->alive phase, not after health is already 0.)
                 const float minAbsHealthForPopup = 1f;
-                if (Mathf.Abs(deltaHealth) >= minAbsHealthForPopup)
-                    BroadcastFloatingCountFeedback(transform.position, FloatingCountChannel.HealthChange, deltaHealth, attackerTeam);
+                if (Mathf.Abs(deltaHealth) >= minAbsHealthForPopup && VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountChannel.HealthChange,
+                        deltaHealth,
+                        (int)attackerTeam
+                    );
 
                 // Any excess damage beyond what was needed to reach 0 is converted into gem expulsion (scaled and capped).
                 float excessDamage = Mathf.Max(0f, damage - healthBefore);
@@ -4228,7 +4136,12 @@ namespace TitanOrbit.Entities
                         if (planetNo != null && shipNo != null)
                             GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleDropValue, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
-                        BroadcastFloatingCountFeedback(planetPos, FloatingCountChannel.PeopleUnload, peopleDropValue, shipTeam.Value);
+                        if (VisualEffectsManager.Instance != null)
+                            VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                                planetPos,
+                                (int)FloatingCountChannel.PeopleUnload,
+                                peopleDropValue,
+                                (int)shipTeam.Value);
                         PlayPeopleUnloadSoundClientRpc(peopleDropValue);
                     }
                     else
@@ -4249,7 +4162,12 @@ namespace TitanOrbit.Entities
                             if (planetNo != null && shipNo != null)
                                 GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, maxReinforceRem, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
-                            BroadcastFloatingCountFeedback(planetPos, FloatingCountChannel.PeopleUnload, maxReinforceRem, shipTeam.Value);
+                            if (VisualEffectsManager.Instance != null)
+                                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                                    planetPos,
+                                    (int)FloatingCountChannel.PeopleUnload,
+                                    maxReinforceRem,
+                                    (int)shipTeam.Value);
                             PlayPeopleUnloadSoundClientRpc(maxReinforceRem);
                         }
                     }
@@ -4383,7 +4301,14 @@ namespace TitanOrbit.Entities
             if (GemSpawner.Instance != null && planetNo != null && shipNo != null)
                 GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, chunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
 
-            BroadcastFloatingCountFeedback(planetPos, FloatingCountChannel.PeopleUnload, chunk, shipTeam.Value);
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    planetPos,
+                    (int)FloatingCountChannel.PeopleUnload,
+                    chunk,
+                    (int)shipTeam.Value);
+            }
 
             PlayPeopleUnloadSoundClientRpc(chunk);
 
@@ -4974,7 +4899,12 @@ namespace TitanOrbit.Entities
                 {
                     Vector3 asteroidHitPos = contact.point;
                     asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
-                    BroadcastFloatingCountFeedback(asteroidHitPos, FloatingCountChannel.DamageAsteroid, asteroidCollisionDamage, shipTeam.Value);
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        asteroidHitPos,
+                        (int)FloatingCountChannel.DamageAsteroid,
+                        asteroidCollisionDamage,
+                        (int)shipTeam.Value
+                    );
                     VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
                         asteroidHitPos,
                         asteroid.RemainingHealth,
@@ -5106,7 +5036,12 @@ namespace TitanOrbit.Entities
 
                 Vector3 asteroidHitPos = hitWorldPos;
                 asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
-                BroadcastFloatingCountFeedback(asteroidHitPos, FloatingCountChannel.DamageAsteroid, damageThisPulse, shipTeam.Value);
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    asteroidHitPos,
+                    (int)FloatingCountChannel.DamageAsteroid,
+                    damageThisPulse,
+                    (int)shipTeam.Value
+                );
                 VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
                     asteroidHitPos,
                     asteroid.RemainingHealth,
@@ -5448,23 +5383,17 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || amount <= 0f) return;
 
-            BroadcastFloatingCountFeedback(worldPosition, FloatingCountChannel.PeopleLoad, amount, sourceTeam);
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    worldPosition,
+                    (int)FloatingCountChannel.PeopleLoad,
+                    amount,
+                    (int)sourceTeam
+                );
+            }
+
             PlayPeopleLoadSoundClientRpc(amount);
-        }
-
-        /// <summary>Server: show floating count on all clients via this ship's spawned NetworkObject.</summary>
-        public void BroadcastFloatingCountFeedback(Vector3 worldPosition, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
-        {
-            if (!IsServer) return;
-            ShowFloatingCountFeedbackClientRpc(worldPosition, (int)channel, signedAmount, (int)team);
-        }
-
-        [ClientRpc]
-        private void ShowFloatingCountFeedbackClientRpc(Vector3 worldPosition, int channelId, float signedAmount, int teamInt)
-        {
-            if (VisualEffectsManager.Instance == null) return;
-            var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
-            VisualEffectsManager.Instance.ShowFloatingCount(worldPosition, channel, signedAmount, (TeamManager.Team)teamInt);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -5561,7 +5490,10 @@ namespace TitanOrbit.Entities
                 if (moon == null || !moon.IsTeamFriendlyToThisMoon(shipTeam.Value)) continue;
                 Vector3 moonPos = moon.transform.position;
                 moonPos.y = 0f;
-                if (moon.IsShipInsideMoonDockZone(this, radiusMultiplier))
+                float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+                float r = moon.GetMoonDockSnapRadiusWorld() * radiusMultiplier;
+                float shipRadius = GetShipMoonDockRadiusXZ();
+                if (r > 0.0001f && dist <= r + shipRadius)
                     return true;
             }
             return false;

@@ -1,29 +1,57 @@
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.Rendering;
 
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Runtime world-space Canvas popup (same approach as <see cref="UI.PlanetStatsDisplay"/>).
-    /// Rises on the XZ play plane, fades in/out, faces upward for the top-down camera.
+    /// Runtime-created world-space popup: rises upward, fades in, then fades out.
     /// </summary>
     public class FloatingCountPopup : MonoBehaviour
     {
-        private const float MinPopupWorldY = 4f;
-        private static readonly Quaternion TopDownTextRotation = Quaternion.Euler(90f, 0f, 0f);
+        private const float MIN_POPUP_WORLD_Y = 4f;
+        private const int TextSortingOrder = 5001;
+        private const int IconSortingOrder = 5000;
+        private static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
-        private TextMeshProUGUI label;
-        private Image iconImage;
-        private Canvas canvas;
-        private RectTransform rootRect;
+        private TMP_Text tmpText;
+        private SpriteRenderer iconRenderer;
 
         private Color baseColor = Color.white;
         private float elapsed;
         private float lifetime;
         private float riseSpeed;
         private float lockedY;
+        /// <summary>Horizontal drift on the play plane (XZ), perpendicular to screen-up rise.</summary>
         private Vector3 lateralVelocity;
+
+        private void EnsureTextAndIcon()
+        {
+            if (tmpText == null)
+            {
+                Transform textT = transform.Find("Text");
+                GameObject textGo = textT != null ? textT.gameObject : new GameObject("Text");
+                if (textT == null)
+                    textGo.transform.SetParent(transform, false);
+
+                var text3d = textGo.GetComponent<TextMeshPro>();
+                if (text3d == null)
+                    text3d = textGo.AddComponent<TextMeshPro>();
+                tmpText = text3d;
+            }
+
+            if (iconRenderer == null)
+            {
+                Transform iconT = transform.Find("Icon");
+                GameObject iconGo = iconT != null ? iconT.gameObject : new GameObject("Icon");
+                if (iconT == null)
+                    iconGo.transform.SetParent(transform, false);
+
+                iconRenderer = iconGo.GetComponent<SpriteRenderer>();
+                if (iconRenderer == null)
+                    iconRenderer = iconGo.AddComponent<SpriteRenderer>();
+            }
+        }
 
         public void Initialize(
             string message,
@@ -38,22 +66,17 @@ namespace TitanOrbit.Systems
             float lateralDriftSpeedMax = 0f
         )
         {
-            if (UnityEngine.Camera.main == null)
-            {
-                Destroy(gameObject);
-                return;
-            }
+            EnsureTextAndIcon();
 
-            EnsureUi();
-
-            if (label == null)
+            if (tmpText == null)
             {
-                Debug.LogWarning("FloatingCountPopup: label missing; cannot initialize popup text.");
+                Debug.LogWarning("FloatingCountPopup: TMP_Text missing; cannot initialize popup text.");
                 Destroy(gameObject);
                 return;
             }
 
             lifetime = Mathf.Max(0.1f, duration);
+            // Minimum drift so a zero/missing inspector value never looks "stuck".
             this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
             lateralVelocity = Vector3.zero;
             if (lateralDriftSpeedMax > 0.0001f)
@@ -67,101 +90,79 @@ namespace TitanOrbit.Systems
                 float mag = Random.Range(lateralDriftSpeedMax * 0.35f, lateralDriftSpeedMax);
                 lateralVelocity = lateral * mag * (Random.value < 0.5f ? -1f : 1f);
             }
-
             elapsed = 0f;
-            lockedY = Mathf.Max(transform.position.y, MinPopupWorldY);
+            lockedY = Mathf.Max(transform.position.y, MIN_POPUP_WORLD_Y);
             Vector3 initPos = transform.position;
             initPos.y = lockedY;
             transform.position = initPos;
-            transform.rotation = TopDownTextRotation;
 
             baseColor = color;
             baseColor.a = 0f;
 
-            label.text = message;
+            // Text setup.
+            tmpText.text = message;
             if (font != null)
-                label.font = font;
-            label.fontSize = Mathf.Max(28f, fontSize * 8f);
-            label.fontStyle = FontStyles.Bold;
-            label.alignment = TextAlignmentOptions.Center;
-            label.enableWordWrapping = false;
-            label.richText = false;
-            label.color = baseColor;
-            label.raycastTarget = false;
-            ApplyOutline(label, Color.black, 0.28f);
-            label.ForceMeshUpdate();
+                tmpText.font = font;
+            tmpText.fontSize = Mathf.Max(1f, fontSize);
+            tmpText.transform.localScale = Vector3.one;
+            tmpText.alignment = TextAlignmentOptions.Center;
+            tmpText.enableWordWrapping = false;
+            tmpText.richText = false;
+            tmpText.color = baseColor;
+            ApplyReadableTextMaterial(tmpText);
+            // Ensure TMP generates its first mesh immediately (avoids "invisible for a few frames" issues).
+            tmpText.ForceMeshUpdate();
 
-            if (iconSprite != null && iconImage != null)
+            // Icon setup.
+            if (iconSprite != null)
             {
-                iconImage.sprite = iconSprite;
-                iconImage.color = baseColor;
-                iconImage.raycastTarget = false;
-                iconImage.enabled = true;
-                float iconPixels = Mathf.Max(20f, 40f * (iconScale / 0.1f));
-                var iconRect = iconImage.rectTransform;
-                iconRect.sizeDelta = new Vector2(iconPixels, iconPixels);
-                iconRect.anchoredPosition = new Vector2(-72f + iconLocalOffset.x * 120f, iconLocalOffset.z * 120f);
+                if (iconRenderer != null)
+                {
+                    iconRenderer.sprite = iconSprite;
+                    iconRenderer.color = baseColor;
+                    iconRenderer.transform.localPosition = iconLocalOffset;
+                    iconRenderer.transform.localScale = Vector3.one * Mathf.Max(0.0001f, iconScale);
+                    iconRenderer.enabled = true;
+                    iconRenderer.sortingOrder = IconSortingOrder;
+                }
             }
-            else if (iconImage != null)
+            else
             {
-                iconImage.enabled = false;
-            }
-
-            if (canvas != null)
-            {
-                canvas.worldCamera = UnityEngine.Camera.main;
+                if (iconRenderer != null)
+                    iconRenderer.enabled = false;
             }
         }
 
-        private void EnsureUi()
+        /// <summary>
+        /// Match planet population text: outline + high render queue so popups draw above planets/ships.
+        /// </summary>
+        private static void ApplyReadableTextMaterial(TMP_Text text)
         {
-            if (rootRect != null)
+            if (text == null)
                 return;
 
-            canvas = gameObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.WorldSpace;
-            canvas.worldCamera = UnityEngine.Camera.main;
-
-            rootRect = gameObject.AddComponent<RectTransform>();
-            rootRect.sizeDelta = new Vector2(280f, 72f);
-            rootRect.anchorMin = rootRect.anchorMax = new Vector2(0.5f, 0.5f);
-            rootRect.pivot = new Vector2(0.5f, 0.5f);
-            rootRect.localScale = new Vector3(0.0035f, 0.0035f, 0.0035f);
-
-            var scaler = gameObject.AddComponent<CanvasScaler>();
-            scaler.dynamicPixelsPerUnit = 10f;
-
-            var labelGo = new GameObject("Label");
-            labelGo.transform.SetParent(transform, false);
-            var labelRect = labelGo.AddComponent<RectTransform>();
-            labelRect.anchorMin = labelRect.anchorMax = new Vector2(0.5f, 0.5f);
-            labelRect.pivot = new Vector2(0.5f, 0.5f);
-            labelRect.sizeDelta = new Vector2(260f, 64f);
-            labelRect.anchoredPosition = Vector2.zero;
-
-            label = labelGo.AddComponent<TextMeshProUGUI>();
-
-            var iconGo = new GameObject("Icon");
-            iconGo.transform.SetParent(transform, false);
-            var iconRect = iconGo.AddComponent<RectTransform>();
-            iconRect.anchorMin = iconRect.anchorMax = new Vector2(0.5f, 0.5f);
-            iconRect.pivot = new Vector2(1f, 0.5f);
-            iconRect.anchoredPosition = new Vector2(-95f, 0f);
-            iconImage = iconGo.AddComponent<Image>();
-            iconImage.enabled = false;
-        }
-
-        private static void ApplyOutline(TextMeshProUGUI text, Color outlineColor, float outlineWidth)
-        {
-            if (text == null) return;
             Material mat = text.fontMaterial;
-            if (mat == null) return;
+            if (mat == null)
+                return;
+
             mat.EnableKeyword("OUTLINE_ON");
-            if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", outlineColor);
-            if (mat.HasProperty("_OutlineWidth")) mat.SetFloat("_OutlineWidth", Mathf.Clamp01(outlineWidth));
-            if (mat.HasProperty("_OutlineSoftness")) mat.SetFloat("_OutlineSoftness", 0.05f);
+            if (mat.HasProperty("_OutlineColor"))
+                mat.SetColor("_OutlineColor", new Color(0f, 0f, 0f, 0.85f));
+            if (mat.HasProperty("_OutlineWidth"))
+                mat.SetFloat("_OutlineWidth", 0.2f);
+            if (mat.HasProperty("_OutlineSoftness"))
+                mat.SetFloat("_OutlineSoftness", 0.08f);
+            mat.renderQueue = RenderQueueOverlay;
+
+            var renderer = text.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.sortingOrder = TextSortingOrder;
         }
 
+        /// <summary>
+        /// Direction that reads as "up" on screen but stays on the XZ play plane.
+        /// World +Y is nearly invisible from a top-down camera, so we use camera screen-up flattened to XZ.
+        /// </summary>
         private static Vector3 GetRiseDirectionOnPlayPlane(UnityEngine.Camera cam)
         {
             if (cam == null)
@@ -184,30 +185,35 @@ namespace TitanOrbit.Systems
                 return;
             }
 
-            if (canvas != null && canvas.worldCamera == null && UnityEngine.Camera.main != null)
-                canvas.worldCamera = UnityEngine.Camera.main;
-
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / lifetime);
 
             var cam = UnityEngine.Camera.main;
+            // Drift along screen-up on the ground plane (not world Y), plus optional lateral spread.
             transform.position += GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
             if (lateralVelocity.sqrMagnitude > 0f)
                 transform.position += lateralVelocity * Time.deltaTime;
-
             Vector3 pos = transform.position;
-            pos.y = lockedY;
+            pos.y = lockedY; // Keep elevated height so popup renders above planets/ships.
             transform.position = pos;
 
+            // Always face the main camera (billboard) so it's readable.
+            if (cam != null)
+            {
+                transform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
+            }
+
+            // Fade in first half, fade out second half.
             float alpha = t <= 0.5f ? (t * 2f) : (1f - (t - 0.5f) * 2f);
             alpha = Mathf.Clamp01(alpha);
 
             Color c = baseColor;
             c.a = alpha;
-            if (label != null)
-                label.color = c;
-            if (iconImage != null && iconImage.enabled)
-                iconImage.color = c;
+            if (tmpText != null)
+                tmpText.color = c;
+
+            if (iconRenderer != null && iconRenderer.enabled)
+                iconRenderer.color = c;
 
             if (elapsed >= lifetime)
                 Destroy(gameObject);
@@ -215,8 +221,7 @@ namespace TitanOrbit.Systems
 
         private void LateUpdate()
         {
-            transform.rotation = TopDownTextRotation;
-
+            // Enforce overlay height in case another system mutates transform after Update.
             Vector3 pos = transform.position;
             if (pos.y != lockedY)
             {
@@ -226,3 +231,4 @@ namespace TitanOrbit.Systems
         }
     }
 }
+
