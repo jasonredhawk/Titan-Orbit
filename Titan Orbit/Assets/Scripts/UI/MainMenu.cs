@@ -806,6 +806,16 @@ namespace TitanOrbit.UI
             try
             {
                 SetLobbyBrowserStatus("Joining selected lobby...");
+                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
+                if (!string.IsNullOrEmpty(pname))
+                {
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
+                    PlayerPrefs.Save();
+                }
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : pname;
+
                 bool ok = await NetworkGameManager.Instance.JoinLobbyByIdAsync(selectedLobbyId);
                 if (ok)
                 {

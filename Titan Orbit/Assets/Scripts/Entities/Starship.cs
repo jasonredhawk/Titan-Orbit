@@ -654,6 +654,8 @@ namespace TitanOrbit.Entities
         private float lastDepositSpawnTime = -999f;
         private float peopleLoadAccumulator;
         private float peopleUnloadAccumulator;
+        /// <summary>Server: orbit planet id used for the current transfer session; accumulators reset when this changes.</summary>
+        private ulong peopleTransferOrbitPlanetId;
         [Tooltip("Seconds the ship must stay in stable orbit without thrusting before people load/unload begins.")]
         [SerializeField, Min(0f)] private float peopleTransferStationaryHoldSeconds = 1f;
         private float peopleTransferStationaryTimer;
@@ -4050,6 +4052,21 @@ namespace TitanOrbit.Entities
             if (IsServer)
                 RefreshServerOrbitPlanetFromPosition();
 
+            ulong orbitPlanetId = 0;
+            if (currentOrbitPlanet != null)
+            {
+                var orbitNetObj = currentOrbitPlanet.GetComponent<NetworkObject>();
+                if (orbitNetObj != null)
+                    orbitPlanetId = orbitNetObj.NetworkObjectId;
+            }
+
+            if (orbitPlanetId != peopleTransferOrbitPlanetId)
+            {
+                peopleLoadAccumulator = 0f;
+                peopleUnloadAccumulator = 0f;
+                peopleTransferOrbitPlanetId = orbitPlanetId;
+            }
+
             if (currentOrbitPlanet == null)
             {
                 peopleLoadAccumulator = 0f;
@@ -4194,8 +4211,19 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
-                float amount = Mathf.Min(loadRate, peopleSpaceAvailable, available);
-                if (amount > 0f) peopleLoadAccumulator += amount;
+                // Cap accrued load credit to what can actually be sent this tick so surplus below
+                // one chunk (common right after a planet crosses 50%) cannot bank a burst.
+                if (available > 0.0001f && peopleSpaceAvailable > 0.0001f)
+                {
+                    float loadAccCap = Mathf.Min(peopleDropValue, available);
+                    float amount = Mathf.Min(loadRate, peopleSpaceAvailable, available);
+                    if (amount > 0f)
+                        peopleLoadAccumulator = Mathf.Min(loadAccCap, peopleLoadAccumulator + amount);
+                }
+                else
+                {
+                    peopleLoadAccumulator = 0f;
+                }
 
                 int loadSpawnCount = 0;
                 while (loadSpawnCount < maxPeopleProjectilesPerFixedStep
@@ -4243,6 +4271,7 @@ namespace TitanOrbit.Entities
             }
             else
             {
+                peopleLoadAccumulator = 0f;
                 ClearPeopleTransferIntentIfComplete(currentOrbitPlanet, false, false);
 
                 if (!ShouldUnloadPeopleToNeutralOrEnemyPlanet())

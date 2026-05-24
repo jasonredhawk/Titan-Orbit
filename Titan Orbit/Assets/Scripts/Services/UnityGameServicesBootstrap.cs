@@ -118,10 +118,23 @@ namespace TitanOrbit.Services
                 throw last;
         }
 
+        /// <summary>
+        /// WebGL is single-threaded; <see cref="SemaphoreSlim.WaitAsync"/> continuations can fail to resume on the main thread and stall forever.
+        /// </summary>
+        static async Task AcquireGuestSessionGateAsync()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            while (!EnsureGuestSessionGate.Wait(0))
+                await Task.Yield();
+#else
+            await EnsureGuestSessionGate.WaitAsync();
+#endif
+        }
+
         /// <summary>Initializes core UGS and anonymous auth; serialized so callers do not hit "already signing in".</summary>
         static async Task EnsureUnityServicesAndAnonymousAuthLockedAsync()
         {
-            await EnsureGuestSessionGate.WaitAsync();
+            await AcquireGuestSessionGateAsync();
             try
             {
                 await InitializeUnityServicesAsync();
@@ -141,6 +154,16 @@ namespace TitanOrbit.Services
         {
             try
             {
+                if (UnityServices.State == ServicesInitializationState.Initialized &&
+                    AuthenticationService.Instance.IsSignedIn &&
+                    AuthenticationService.Instance.IsAuthorized)
+                {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
+#endif
+                    return true;
+                }
+
                 await EnsureUnityServicesAndAnonymousAuthLockedAsync();
                 bool ok = AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
 #if UNITY_WEBGL && !UNITY_EDITOR
