@@ -50,12 +50,14 @@ namespace Shapes {
 		}
 		#endif
 
+		#if !UNITY_6000_0_OR_NEWER
 		[Obsolete( "This rendering path is for compatibility mode only (when Render Graph is disabled)", false )]
 		public override void Execute( ScriptableRenderContext context, ref RenderingData renderingData ) {
 			drawCommand.AppendToBuffer( cmdBuf );
 			context.ExecuteCommandBuffer( cmdBuf );
 			cmdBuf.Clear();
 		}
+		#endif
 
 		public override void FrameCleanup( CommandBuffer cmd ) {
 			DrawCommand.OnCommandRendered( drawCommand );

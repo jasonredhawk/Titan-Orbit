@@ -111,6 +111,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
   GlobalObjectIdHash: 2594608850
   InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
   ActiveSceneSynchronization: 0
@@ -118,6 +120,8 @@ MonoBehaviour:
   SpawnWithObservers: 1
   DontDestroyWithOwner: 0
   AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!114 &1742328809491729137
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -130,6 +134,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 62a6610011dbc754fa07b7757e3e010f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.HomePlanet
+  ShowTopMostFoldoutHeaderGroup: 1
   planetId: 0
   baseMaxPopulation: 100
   baseGrowthRate: 0.033333335
