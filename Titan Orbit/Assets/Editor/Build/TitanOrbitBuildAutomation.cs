@@ -16,6 +16,9 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
+            WebGLTextureImportBuildFix.ApplyWebGlTextureSubtarget();
+            WebGLTextureImportBuildFix.DisableWebGlCrunchOnGameplayTextures(log: true);
+
             BuildPipeline.BuildPlayer(
                 new BuildPlayerOptions
                 {

@@ -9,6 +9,10 @@ REM a new Unity build, the browser may still be serving an OLD .data.unityweb fr
 REM loading NEW .js/.wasm. Fix: rename the build output folder (e.g. TitanOrbitWeb2), update the
 REM site to load that folder, or clear site data for the origin. UnityCache "revalidated" in the
 REM console often means stale data was reused.
+REM Invisible ships/planets (game otherwise OK): rebuild after TitanOrbit WebGL texture fix
+REM (disable Crunch on WebGL imports) — see tools/gcs/README.md troubleshooting section.
+REM WASM LinkError / ERR_HTTP2_PROTOCOL_ERROR on .data.unityweb: rerun metadata after upload;
+REM use verify_webgl_build.ps1, purge Cloudflare cache, clear browser site data — see README.
 REM WebAssembly 2023 / BigInt (Player Settings) needs current Chrome/Edge/Firefox/Safari; very old
 REM browsers may fail to instantiate the module.
 REM

@@ -89,7 +89,63 @@ GCS behind a load balancer does **not** automatically map `/` to `index.html`. F
 
 After this, opening `https://titanorbit.io` loads the same game as `/index.html`.
 
+## Troubleshooting: site won't load (WASM / data errors)
+
+Chrome errors like:
+
+- `LinkError: WebAssembly.instantiate(): Import #… "JS_SystemInfo_GetLanguage": function import requires a callable`
+- `TitanOrbitWebGL.data.unityweb: net::ERR_HTTP2_PROTOCOL_ERROR`
+- `[UnityCache] Failed to load … data.unityweb … network error`
+
+usually mean **Build artifacts are mismatched or GCS is serving the wrong `Content-Encoding`** (not a game-code bug).
+
+**Most common causes**
+
+1. **`Content-Encoding: br` on files that are not Brotli-compressed on disk** (or the opposite). The browser then fails to decode `.data.unityweb` / `.framework.js.unityweb`, framework JS never runs, and WASM is missing imports like `JS_SystemInfo_GetLanguage`.
+2. **Mixed deploy** — new `loader.js` + old `wasm`/`framework` from cache or a partial upload. Upload the **entire** `TitanOrbitWebGL` folder from one build in a single `deploy_webgl_gcs.bat` run.
+3. **Wrong `SOURCE_DIR`** — `upload` uses `rsync --delete`; pointing at an empty or wrong folder can delete remote `Build\` files.
+4. **Cloudflare double-compression** — if Cloudflare also compresses `/Build/*`, disable auto compression for those paths or bypass cache after deploy.
+
+**Fix**
+
+1. Rebuild WebGL once in Unity (full production build).
+2. Preflight locally:
+   ```powershell
+   powershell -File "tools\gcs\verify_webgl_build.ps1" "BuildOutput\WebGL\production\TitanOrbitWebGL"
+   ```
+3. Redeploy (upload + metadata):
+   ```bat
+   deploy_webgl_gcs.bat "C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit\BuildOutput\WebGL\production\TitanOrbitWebGL"
+   ```
+   `set_webgl_gcs_metadata.bat` now detects Brotli vs plain per file instead of forcing `br` on every `.unityweb`.
+4. Purge **Cloudflare** cache for `titanorbit.io` (if used).
+5. In Chrome: **Site settings → Clear data** for `titanorbit.io`, then hard reload.
+
+**Verify in DevTools → Network** (reload once):
+
+| File | Should have |
+|------|-------------|
+| `TitanOrbitWebGL.loader.js` | `Content-Type: application/javascript`, **no** `Content-Encoding` |
+| `TitanOrbitWebGL.framework.js.unityweb` | `Content-Encoding: br` if the file is Brotli on disk (see verify script) |
+| `TitanOrbitWebGL.wasm.unityweb` | `Content-Encoding: br` + `Content-Type: application/wasm` when Brotli |
+| `TitanOrbitWebGL.data.unityweb` | `Content-Encoding: br` when Brotli |
+
+If `data.unityweb` shows `br` but the download size looks like the raw compressed file size and the request fails, metadata is wrong — rerun step 3.
+
+## Troubleshooting: ships/planets invisible after deploy
+
+If the game runs but **ship hulls, planets, moons, and asteroids have no surface** (thrusters, bullets, and UI still look fine), the WebGL build often has **Crunch texture compression** enabled on gameplay albedos. That breaks in many browsers (not magenta—just empty-looking meshes).
+
+**Fix (once per machine / after pulling this repo):**
+
+1. In Unity: **TitanOrbit → Build → Fix WebGL Texture Import (disable Crunch)** (or build via **TitanOrbit → Build → WebGL Production**, which applies the same fix automatically).
+2. Rebuild WebGL, then run `deploy_webgl_gcs.bat`.
+3. In the browser: clear **site data** for `titanorbit.io` (or hard refresh) so Unity’s cached `.data` file is not mixed with an older build.
+
+Also confirm **Build Settings → Web → Texture Compression** is **DXT** for desktop hosting (ASTC-only data on a desktop GPU shows the same symptom). The preprocess build script forces DXT when using the menu build.
+
 ## Related repo files
 
 - WebGL output path: `Assets/Editor/Build/TitanOrbitBuildAutomation.cs`
+- WebGL texture import fix: `Assets/Editor/Build/WebGLTextureImportBuildFix.cs`
 - VM/server upload scripts (Compute Engine): `tools/gce/`
