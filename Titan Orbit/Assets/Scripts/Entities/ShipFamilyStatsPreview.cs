@@ -127,7 +127,7 @@ namespace TitanOrbit.Entities
                 if (string.IsNullOrWhiteSpace(componentId))
                     continue;
 
-                if (shipFamily.TryResolveStatsForComponent(componentId, out var stats))
+                if (shipFamily.TryGetStatsForComponent(componentId, out var stats))
                 {
                     ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
                     totalStats.AddInPlace(scaled);

@@ -6295,7 +6295,7 @@ namespace TitanOrbit.Entities
                         }
                     }
                     // 2) If no match in preview list, get this weapon's stats from ShipFamilyDefinition and scale by transform (still per-component, not summed).
-                    if (!usedPerComponent && previewFamilyDef != null && wt != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryResolveStatsForComponent(componentId, out var defStats))
+                    if (!usedPerComponent && previewFamilyDef != null && wt != null && !string.IsNullOrEmpty(componentId) && previewFamilyDef.TryGetStatsForComponent(componentId, out var defStats))
                     {
                         ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(defStats, wt, componentId);
                         float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlFirePower;

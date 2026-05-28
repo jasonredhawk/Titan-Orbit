@@ -75,11 +75,6 @@ namespace TitanOrbit.Editor
                     ScanFolderAndPopulate(def);
                 }
 
-                if (GUILayout.Button("Generate/Sync Balance Profile From Folder"))
-                {
-                    GenerateOrSyncBalanceProfileFromFolder(def);
-                }
-
                 if (GUILayout.Button("Export Canonical Component Inventory (CSV)"))
                 {
                     ExportCanonicalComponentInventory(def);
@@ -269,7 +264,7 @@ namespace TitanOrbit.Editor
                     if (string.IsNullOrWhiteSpace(rest))
                         continue;
 
-                    string canonicalId = ShipFamilyComponentBalanceProfile.NormalizeComponentId(rest);
+                    string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
                     if (string.IsNullOrWhiteSpace(canonicalId))
                         continue;
 
@@ -311,15 +306,7 @@ namespace TitanOrbit.Editor
                     displayName = $"{type} {version}".Trim()
                 };
 
-                if (def.componentBalanceProfile != null &&
-                    def.componentBalanceProfile.TryGetStats(componentId, type, out ShipComponentAbilityStats profileStats))
-                {
-                    entry.stats = profileStats;
-                }
-                else
-                {
-                    entry.stats = SuggestStatsForComponent(componentId, type, version);
-                }
+                entry.stats = SuggestStatsForComponent(componentId, type, version);
                 def.components.Add(entry);
             }
 
@@ -691,106 +678,6 @@ namespace TitanOrbit.Editor
             return stats;
         }
 
-        private static void GenerateOrSyncBalanceProfileFromFolder(ShipFamilyDefinition def)
-        {
-            if (def == null) return;
-            string folder = EditorUtility.OpenFolderPanel("Select Prefab Folder", Application.dataPath, "");
-            if (string.IsNullOrEmpty(folder)) return;
-            if (!folder.StartsWith(Application.dataPath, StringComparison.OrdinalIgnoreCase))
-            {
-                EditorUtility.DisplayDialog("Invalid Folder", "Folder must be inside the project's Assets folder.", "OK");
-                return;
-            }
-            string familyId = string.IsNullOrWhiteSpace(def.familyId) ? string.Empty : def.familyId.Trim();
-            if (string.IsNullOrEmpty(familyId))
-            {
-                EditorUtility.DisplayDialog("Missing Family Id", "Please set familyId before syncing balance profile.", "OK");
-                return;
-            }
-
-            string relativeFolder = "Assets" + folder.Substring(Application.dataPath.Length);
-            var scan = ScanCanonicalComponents(relativeFolder, familyId);
-            if (scan.Count == 0)
-            {
-                EditorUtility.DisplayDialog("No Components", "No matching family components found in selected folder.", "OK");
-                return;
-            }
-
-            Undo.RecordObject(def, "Sync Ship Component Balance Profile");
-            if (def.componentBalanceProfile == null)
-            {
-                string defPath = AssetDatabase.GetAssetPath(def);
-                string dir = string.IsNullOrEmpty(defPath) ? "Assets" : Path.GetDirectoryName(defPath)?.Replace('\\', '/') ?? "Assets";
-                string profilePath = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{def.name}_ComponentBalanceProfile.asset");
-                var p = ScriptableObject.CreateInstance<ShipFamilyComponentBalanceProfile>();
-                p.profileId = string.IsNullOrWhiteSpace(def.familyId) ? def.name : def.familyId.Trim();
-                AssetDatabase.CreateAsset(p, profilePath);
-                def.componentBalanceProfile = p;
-            }
-
-            var profile = def.componentBalanceProfile;
-            Undo.RecordObject(profile, "Sync Ship Component Balance Profile");
-            profile.componentRules ??= new List<ShipFamilyComponentBalanceRule>();
-
-            for (int i = 0; i < scan.Count; i++)
-            {
-                var d = scan[i];
-                ShipFamilyComponentBalanceRule existing = null;
-                for (int r = 0; r < profile.componentRules.Count; r++)
-                {
-                    var rule = profile.componentRules[r];
-                    if (rule == null) continue;
-                    if (string.Equals(ShipFamilyComponentBalanceProfile.NormalizeComponentId(rule.componentId), d.canonicalId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        existing = rule;
-                        break;
-                    }
-                }
-
-                if (existing == null)
-                {
-                    existing = new ShipFamilyComponentBalanceRule
-                    {
-                        componentId = d.canonicalId,
-                        partType = d.partType,
-                        stats = SuggestStatsForComponent(d.canonicalId, d.partType, d.version),
-                        aliases = new List<string>()
-                    };
-                    profile.componentRules.Add(existing);
-                }
-                else
-                {
-                    if (string.IsNullOrWhiteSpace(existing.partType))
-                        existing.partType = d.partType;
-                    if (string.IsNullOrWhiteSpace(existing.componentId))
-                        existing.componentId = d.canonicalId;
-                }
-
-                existing.aliases ??= new List<string>();
-                foreach (string alias in d.aliases)
-                {
-                    if (string.IsNullOrWhiteSpace(alias)) continue;
-                    bool exists = false;
-                    for (int z = 0; z < existing.aliases.Count; z++)
-                    {
-                        if (string.Equals(existing.aliases[z], alias, StringComparison.OrdinalIgnoreCase))
-                        {
-                            exists = true;
-                            break;
-                        }
-                    }
-                    if (!exists) existing.aliases.Add(alias);
-                }
-            }
-
-            EnsureDefaultPartTypeRules(profile);
-            EditorUtility.SetDirty(profile);
-            EditorUtility.SetDirty(def);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            EditorGUIUtility.PingObject(profile);
-        }
-
         private static void ExportCanonicalComponentInventory(ShipFamilyDefinition def)
         {
             if (def == null) return;
@@ -858,7 +745,7 @@ namespace TitanOrbit.Editor
                     if (t == prefab.transform) continue; // Exclude prefab root (ship object), scan only child components.
                     if (!t.name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase)) continue;
                     string rest = t.name.Substring(familyId.Length + 1);
-                    string canonicalId = ShipFamilyComponentBalanceProfile.NormalizeComponentId(rest);
+                    string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
                     if (string.IsNullOrWhiteSpace(canonicalId)) continue;
                     string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
                     int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
@@ -873,36 +760,6 @@ namespace TitanOrbit.Editor
             var list = new List<CanonicalComponentScanData>(map.Values);
             list.Sort((a, b) => string.Compare(a.canonicalId, b.canonicalId, StringComparison.OrdinalIgnoreCase));
             return list;
-        }
-
-        private static void EnsureDefaultPartTypeRules(ShipFamilyComponentBalanceProfile profile)
-        {
-            if (profile == null) return;
-            profile.partTypeRules ??= new List<ShipFamilyPartTypeBalanceRule>();
-            string[] partTypes = { "Cockpit", "Wing", "Engine", "Thruster", "Fin", "Weapon", "Part", "Hull", "Utility", "Other" };
-            for (int i = 0; i < partTypes.Length; i++)
-            {
-                string type = partTypes[i];
-                bool exists = false;
-                for (int j = 0; j < profile.partTypeRules.Count; j++)
-                {
-                    var r = profile.partTypeRules[j];
-                    if (r == null || string.IsNullOrWhiteSpace(r.partType)) continue;
-                    if (string.Equals(r.partType.Trim(), type, StringComparison.OrdinalIgnoreCase))
-                    {
-                        exists = true;
-                        break;
-                    }
-                }
-                if (!exists)
-                {
-                    profile.partTypeRules.Add(new ShipFamilyPartTypeBalanceRule
-                    {
-                        partType = type,
-                        stats = SuggestStatsForComponent(type, type, 1)
-                    });
-                }
-            }
         }
 
         private sealed class CanonicalComponentScanData

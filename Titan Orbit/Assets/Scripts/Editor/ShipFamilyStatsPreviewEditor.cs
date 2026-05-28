@@ -54,7 +54,7 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space();
 
             EditorGUILayout.HelpBox(
-                "Stats use the assigned Ship Family: each child Family_ComponentId is resolved from the Components list first, then Component Balance Profile rules. " +
+                "Stats use the assigned Ship Family: each child Family_ComponentId is resolved from the Components list on that definition. " +
                 "If the ShipFamilyDefinition inspector is open too, this preview refreshes when you change that asset; otherwise re-select this prefab or tweak Ship Family to recalc.",
                 MessageType.None);
 

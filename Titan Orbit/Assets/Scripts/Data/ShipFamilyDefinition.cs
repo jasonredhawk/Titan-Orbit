@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using TitanOrbit.Core;
 
@@ -458,10 +459,7 @@ namespace TitanOrbit.Data
         public int bulletPrefabIndex = 0;
 
         [Header("Components")]
-        [Tooltip("Per-family balance profile used by editor auto-populate to assign component stats.")]
-        public ShipFamilyComponentBalanceProfile componentBalanceProfile;
-
-        [Tooltip("All components (cockpit, wings, engines, weapons, etc.) available for this family.")]
+        [Tooltip("All components (cockpit, wings, engines, weapons, etc.) and their ability stat modifiers for this family.")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
 
         [Header("Upgrade Tree (auto-generated, editable)")]
@@ -489,6 +487,23 @@ namespace TitanOrbit.Data
         private bool _lookupBuilt;
 
         [NonSerialized] private List<CardData> _runtimeProceduralCards;
+
+        private static readonly Regex CloneSuffixRegex = new Regex(@"\s+\(\d+\)$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Normalizes a transform suffix or component id (strips Unity clone suffixes and _Mirrored).
+        /// </summary>
+        public static string NormalizeComponentId(string rawId)
+        {
+            if (string.IsNullOrWhiteSpace(rawId))
+                return string.Empty;
+
+            string s = rawId.Trim();
+            s = CloneSuffixRegex.Replace(s, string.Empty);
+            if (s.EndsWith("_Mirrored", StringComparison.OrdinalIgnoreCase))
+                s = s.Substring(0, s.Length - "_Mirrored".Length);
+            return s.Trim();
+        }
 
         /// <summary>
         /// Cards for this family: <see cref="upgradeCardDeck"/> when assigned, otherwise a one-time procedural list per family asset.
@@ -529,7 +544,7 @@ namespace TitanOrbit.Data
                     if (string.IsNullOrWhiteSpace(entry.componentId)) continue;
                     string raw = entry.componentId.Trim();
                     _lookup[raw] = entry.stats;
-                    string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(raw);
+                    string canonical = NormalizeComponentId(raw);
                     if (!string.IsNullOrEmpty(canonical))
                         _lookup[canonical] = entry.stats;
                 }
@@ -553,36 +568,8 @@ namespace TitanOrbit.Data
             string raw = componentId.Trim();
             if (_lookup.TryGetValue(raw, out stats))
                 return true;
-            string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(raw);
+            string canonical = NormalizeComponentId(raw);
             return !string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats);
-        }
-
-        /// <summary>
-        /// Resolve stats for a transform suffix id: <see cref="components"/> first, then <see cref="componentBalanceProfile"/>
-        /// (exact id and part-type fallbacks). Matches editor scan/sync and keeps previews aligned with authored data.
-        /// </summary>
-        public bool TryResolveStatsForComponent(string componentId, out ShipComponentAbilityStats stats)
-        {
-            if (TryGetStatsForComponent(componentId, out stats))
-                return true;
-
-            if (componentBalanceProfile == null)
-            {
-                stats = default;
-                return false;
-            }
-
-            string trimmed = string.IsNullOrWhiteSpace(componentId) ? string.Empty : componentId.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                stats = default;
-                return false;
-            }
-
-            string normalized = ShipFamilyComponentBalanceProfile.NormalizeComponentId(trimmed);
-            string partTypeKey = string.IsNullOrEmpty(normalized) ? trimmed : normalized;
-            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(partTypeKey);
-            return componentBalanceProfile.TryGetStats(trimmed, partType, out stats);
         }
 
         /// <summary>
@@ -594,7 +581,7 @@ namespace TitanOrbit.Data
             if (components == null || string.IsNullOrWhiteSpace(componentId))
                 return false;
             string id = componentId.Trim();
-            string canonical = ShipFamilyComponentBalanceProfile.NormalizeComponentId(id);
+            string canonical = NormalizeComponentId(id);
             for (int i = 0; i < components.Count; i++)
             {
                 if (components[i] == null) continue;
@@ -605,7 +592,7 @@ namespace TitanOrbit.Data
                     return true;
                 }
                 if (!string.IsNullOrEmpty(canonical) &&
-                    string.Equals(ShipFamilyComponentBalanceProfile.NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
                 {
                     entry = components[i];
                     return true;
