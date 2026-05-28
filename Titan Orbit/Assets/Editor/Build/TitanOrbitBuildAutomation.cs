@@ -12,6 +12,8 @@ namespace TitanOrbit.Editor.Build
         private const string ServerWindowsBuildFolder = "BuildOutput/Server/headless-windows";
         /// <summary>Folder name must stay <c>TitanOrbitLinux1</c> so <c>tools/gce/*.bat</c> defaults and VM <c>REMOTE_DIR</c> match after upload.</summary>
         private const string ServerLinuxBuildFolder = "BuildOutput/Server/TitanOrbitLinux1";
+        private const string AndroidApkFolder = "BuildOutput/Android";
+        private const string AndroidApkFileName = "TitanOrbit.apk";
 
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
@@ -76,6 +78,43 @@ namespace TitanOrbit.Editor.Build
             }
         }
 
+        /// <summary>Android player APK at <c>BuildOutput/Android/TitanOrbit.apk</c>. Requires Android Build Support and JDK in Edit → Preferences → External Tools.</summary>
+        [MenuItem("TitanOrbit/Build/Android APK")]
+        public static void BuildAndroidApk()
+        {
+            if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
+            {
+                Debug.LogError("[TitanOrbitBuild] Android build target is not available. Install Android Build Support via Unity Hub for this editor version.");
+                return;
+            }
+
+            string apkPath = GetAndroidApkOutputPath();
+            bool previousBuildAppBundle = EditorUserBuildSettings.buildAppBundle;
+            EditorUserBuildSettings.buildAppBundle = false;
+            Debug.Log($"[TitanOrbitBuild] Android APK build started → {apkPath} (App Bundle disabled for this build).");
+
+            try
+            {
+                var options = new BuildPlayerOptions
+                {
+                    scenes = GetEnabledScenes(),
+                    locationPathName = apkPath,
+                    target = BuildTarget.Android,
+                    options = BuildOptions.None
+                };
+
+                BuildReport report = BuildPipeline.BuildPlayer(options);
+                if (report.summary.result == BuildResult.Succeeded)
+                    Debug.Log($"[TitanOrbitBuild] Android APK build OK.\nOutput: {apkPath}");
+                else
+                    Debug.LogError($"[TitanOrbitBuild] Android APK build failed: {report.summary.result} — {report.summary.totalErrors} error(s). See Console / Build steps. If JDK is missing, set it under Edit → Preferences → External Tools.");
+            }
+            finally
+            {
+                EditorUserBuildSettings.buildAppBundle = previousBuildAppBundle;
+            }
+        }
+
         private static string[] GetEnabledScenes()
         {
             var scenes = new System.Collections.Generic.List<string>();
@@ -109,6 +148,14 @@ namespace TitanOrbit.Editor.Build
             string dir = Path.Combine(root, ServerLinuxBuildFolder);
             Directory.CreateDirectory(dir);
             return Path.Combine(dir, "TitanOrbitServer");
+        }
+
+        private static string GetAndroidApkOutputPath()
+        {
+            string root = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
+            string dir = Path.Combine(root, AndroidApkFolder);
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, AndroidApkFileName);
         }
     }
 }

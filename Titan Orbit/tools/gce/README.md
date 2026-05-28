@@ -87,6 +87,15 @@ Or run **`tools/gce/emergency_stop_titanorbit_server.sh`** on the VM. After that
 
 **What it means:** **`systemd` is starting the player**, Unity prints the usual **`[UnityMemory] … boot.config`** lines, then the process **exits with code 1** within a fraction of a second. That is **not** the same as **`203/EXEC`** (wrong permissions / bad path). The next evidence is almost always in **`Player.log`** next to the binary, or in **`TitanOrbitDedicatedServer.log`** if managed code got far enough to append a line.
 
+**Intermittent “sometimes a game is created, sometimes not” on the same VM:** If serial shows **`Found startup-script in metadata`** around the same time as **`titanorbit-server`** restarts, a **metadata `startup-script` that reinstalls or chmods the build** can race the running player (partial extract → **`Failed to initialize IL2CPP`** or instant exit **1**). Check and remove one-shot scripts after they run:
+
+```bash
+gcloud compute instances describe titanorbitcp --project=titan-orbit --zone=us-central1-f \
+  --format="yaml(metadata.items)"
+```
+
+Remove **`startup-script`** from instance metadata when you no longer need it. Reinstall **`titanorbit-server.service`** from this repo so the unit **`After=google-startup-scripts.service`** (server starts only after metadata startup finishes).
+
 **Stop the log flood first** (optional but makes serial usable):
 
 ```bash

@@ -16,4 +16,20 @@ done
 EXE=./TitanOrbitServer.x86_64
 [ -x "$EXE" ] || EXE=./TitanOrbitServer
 [ -x "$EXE" ] || { echo "FATAL: no TitanOrbitServer binary in $BASE" >&2; exit 1; }
-exec "$EXE" "$@" -logFile /dev/stdout
+echo "TITANORBIT_START exe=$EXE pid=$$ user=$(id -un) cwd=$(pwd)" >&2
+set +e
+"$EXE" "$@" -logFile /dev/stdout
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+  echo "FATAL: TitanOrbitServer exited with code $rc (check journal above for IL2CPP / Player.log / TitanOrbitDedicatedServer.log)" >&2
+  if command -v ldd >/dev/null 2>&1; then
+    echo "=== ldd GameAssembly.so (missing system libs) ===" >&2
+    ldd ./GameAssembly.so 2>&1 | grep -F 'not found' >&2 || true
+  fi
+  if [ -f TitanOrbitDedicatedServer.log ]; then
+    echo "=== TitanOrbitDedicatedServer.log (last 15 lines) ===" >&2
+    tail -n 15 TitanOrbitDedicatedServer.log >&2 || true
+  fi
+fi
+exit "$rc"

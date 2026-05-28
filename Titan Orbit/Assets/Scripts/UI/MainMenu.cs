@@ -48,7 +48,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Transform lobbyListContainer;
         [SerializeField] private GameObject lobbyListRowPrefab;
         [SerializeField] private TextMeshProUGUI lobbyBrowserStatusText;
-        [SerializeField] private bool latestOnlyFilter = false;
+        [SerializeField] private bool latestOnlyFilter = true;
 
         private readonly List<NetworkGameManager.LobbySummary> cachedLobbySummaries = new List<NetworkGameManager.LobbySummary>();
         private readonly List<Button> lobbyRowButtons = new List<Button>();
@@ -824,7 +824,10 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    SetLobbyBrowserStatus("Join failed. Try refreshing the list.");
+                    SetLobbyBrowserStatus("Join failed — that match may have ended. Refreshing the list…");
+                    selectedLobbyId = null;
+                    selectedLobbyRowIndex = -1;
+                    await RefreshLobbyListAsync();
                 }
             }
             finally
@@ -867,10 +870,12 @@ namespace TitanOrbit.UI
                     var retryKind = NetworkGameManager.LastOpenLobbyQueryKind;
                     if (retryKind == NetworkGameManager.OpenLobbyQueryResultKind.Ok && retry.Count > 0)
                     {
-                        fetched = retry;
+                        fetched = NetworkGameManager.FilterToJoinableDedicatedLobbies(retry);
                         kind = retryKind;
                     }
                 }
+
+                fetched = NetworkGameManager.FilterToJoinableDedicatedLobbies(fetched);
 
                 if (fetched.Count > 0)
                 {

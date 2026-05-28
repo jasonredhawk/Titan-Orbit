@@ -1,7 +1,9 @@
 [Unit]
 Description=Titan Orbit Dedicated Headless Server
-After=network-online.target
+After=network-online.target google-startup-scripts.service
 Wants=network-online.target
+# Do not start while metadata startup-script is still extracting/replacing the build (race -> IL2CPP exit 1).
+Wants=google-startup-scripts.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

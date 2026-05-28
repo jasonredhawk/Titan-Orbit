@@ -949,6 +949,40 @@ namespace TitanOrbit.Networking
         /// <summary>
         /// Some hosts lag updating indexed lobby data (N1/N2). After the strict query returns nothing, re-query by game name only and filter in memory.
         /// </summary>
+        /// <summary>
+        /// Keeps only open dedicated lobbies that are still the active join target (IsLatest), or the newest few if index flags lag.
+        /// </summary>
+        public static List<LobbySummary> FilterToJoinableDedicatedLobbies(List<LobbySummary> lobbies)
+        {
+            if (lobbies == null || lobbies.Count == 0)
+                return lobbies ?? new List<LobbySummary>();
+
+            var open = new List<LobbySummary>();
+            for (int i = 0; i < lobbies.Count; i++)
+            {
+                LobbySummary l = lobbies[i];
+                if (l != null && l.IsOpen)
+                    open.Add(l);
+            }
+
+            if (open.Count == 0)
+                return open;
+
+            var latest = new List<LobbySummary>();
+            for (int i = 0; i < open.Count; i++)
+            {
+                if (open[i].IsLatest)
+                    latest.Add(open[i]);
+            }
+
+            if (latest.Count > 0)
+                return latest;
+
+            open.Sort((a, b) => b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds));
+            int keep = Mathf.Min(3, open.Count);
+            return open.GetRange(0, keep);
+        }
+
         private static bool LobbyPassesJoinBrowserFilters(Lobby lobby, bool latestOnly)
         {
             if (lobby?.Data == null) return true;

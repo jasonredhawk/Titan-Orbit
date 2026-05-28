@@ -1187,14 +1187,16 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
-            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger: true))
+            // Latched dock: stay docked until trigger exit / explicit undock — do not re-run landing gates every frame.
+            if (ship.GemMoonDocked)
             {
-                // Only undock if already docked; otherwise keep accumulating landing dwell (see Starship.ServerSetGemMoonDocked).
-                if (ship.GemMoonDocked)
-                    ship.ServerSetGemMoonDocked(false, null);
+                ship.ServerSetGemMoonDocked(true, planet);
                 return;
             }
+
+            // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
+            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger: true))
+                return;
 
             ship.ServerSetGemMoonDocked(true, planet);
         }
@@ -1244,15 +1246,8 @@ namespace TitanOrbit.Entities
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
 
-            float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float shipRadius = ship.GetShipMoonDockRadiusXZ();
-            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f + shipRadius;
-            // Only preserve an existing dock when Y-snap briefly leaves the trigger — never dock on exit alone.
-            bool shouldStayDocked = ship.GemMoonDocked
-                && keepDockRadiusWorld > 0.0001f
-                && xzDist <= keepDockRadiusWorld;
-
-            ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
+            bool remainDocked = ShouldShipRemainGemMoonDocked(ship);
+            ship.ServerSetGemMoonDocked(remainDocked, remainDocked ? planet : null);
         }
 
         /// <summary>True when <paramref name="team"/> owns this moon's planet (same rule as shield barrier friendlies).</summary>
@@ -1328,10 +1323,29 @@ namespace TitanOrbit.Entities
             return dist >= inner && dist <= outer;
         }
 
+        /// <summary>
+        /// XZ proximity check used when the dock trigger exits (Y-snap / NT lag) so docked ships are not flickered off.
+        /// </summary>
+        private bool ShouldShipRemainGemMoonDocked(Starship ship)
+        {
+            if (ship == null || !ship.GemMoonDocked) return false;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            Vector3 shipPos = ship.transform.position;
+            shipPos.y = 0f;
+
+            float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
+            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.25f + shipRadius;
+            return keepDockRadiusWorld > 0.0001f && xzDist <= keepDockRadiusWorld;
+        }
+
         private bool IsShipReadyToLandInMoonZone(Starship ship, bool overlapsDockTrigger = false)
         {
             if (ship == null) return false;
             if (planet == null) return false;
+            if (ship.GemMoonDocked) return true;
 
             // Players (and AI) can only dock/land on planets that are owned by their own team.
             TeamManager.Team planetTeam = planet.TeamOwnership;
@@ -1360,24 +1374,24 @@ namespace TitanOrbit.Entities
             // When the dock trigger already overlaps the ship, trust that instead of center-distance (large tier hulls).
             if (!overlapsDockTrigger && dist > zoneRadius + shipRadius) return false;
 
-            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
-            if (shipRb == null) return false;
-
-            Vector3 vel = shipRb.linearVelocity;
-            vel.y = 0f;
+            Vector3 vel = ship.GetPlanarVelocityForServerGameplayChecks();
             float speed = vel.magnitude;
 
-            const float maxLandingSpeed = 1.85f;
+            // Slightly looser caps when the dock trigger already overlaps — upgraded hulls coast faster leaving planet orbit.
+            float maxLandingSpeed = overlapsDockTrigger ? 2.15f : 1.85f;
             const float flyThroughMaxSpeed = 2.35f;
+            float flyThroughCap = overlapsDockTrigger ? 2.65f : flyThroughMaxSpeed;
 
-            if (speed > flyThroughMaxSpeed)
+            if (speed > flyThroughCap)
             {
                 ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
                 return false;
             }
 
             // Arcing through the shell at meaningful speed is pass-through, not landing intent.
-            if (speed > 0.25f)
+            // Inside the dock trigger without thrust = intentional landing; skip tangential rejection (orbit coast is mostly tangential).
+            bool coastingToLand = overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding;
+            if (!coastingToLand && speed > 0.25f)
             {
                 Vector3 awayFromMoon = ToroidalMap.ToroidalDirection(moonPos, shipPos);
                 awayFromMoon.y = 0f;

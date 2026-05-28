@@ -2267,30 +2267,7 @@ namespace TitanOrbit.Entities
 
             try
             {
-            // Owner-authoritative ships: server never runs player thrust/orbit integration, so rb.linearVelocity is stale.
-            // Population transfer and IsInStableOrbit use motion — estimate planar velocity from consecutive replicated positions.
-            if (IsServer && !_isAIControlled)
-            {
-                if (isDead.Value)
-                {
-                    _serverHasLastPlanarPoseForVelocity = false;
-                    _serverEstimatedPlanarVelocity = Vector3.zero;
-                }
-                else if (rb != null)
-                {
-                    // OwnerAuthoritativeNetworkTransform updates the root transform on the server; rb can lag one frame behind NT.
-                    Vector3 pos = transform.position;
-                    pos.y = 0f;
-                    if (_serverHasLastPlanarPoseForVelocity)
-                    {
-                        Vector3 delta = ToroidalMap.ShortestWorldOffsetXZ(_serverLastPlanarPoseForVelocity, pos);
-                        float dt = Time.fixedDeltaTime;
-                        _serverEstimatedPlanarVelocity = dt > 0.0001f ? delta / dt : Vector3.zero;
-                    }
-                    _serverLastPlanarPoseForVelocity = pos;
-                    _serverHasLastPlanarPoseForVelocity = true;
-                }
-            }
+            ServerTickEstimatedPlanarVelocity(Time.fixedDeltaTime);
 
             // Apply asteroid bounce before movement forces so thrust does not overwrite the rebound.
             if (_hasPendingAsteroidBounce)
@@ -2406,8 +2383,12 @@ namespace TitanOrbit.Entities
                 gemMoonUndockBlendElapsed = 0f;
             }
 
-            if (gemMoonDocked.Value && withinGemMoonBoundary)
-                gemMoonDockApproachElapsed += Time.fixedDeltaTime;
+            if (gemMoonDocked.Value)
+            {
+                // Keep approach progress while docked even if boundary flickers (large hull / toroidal edge).
+                if (withinGemMoonBoundary)
+                    gemMoonDockApproachElapsed += Time.fixedDeltaTime;
+            }
             else
                 gemMoonDockApproachElapsed = 0f;
 
@@ -3165,9 +3146,47 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Planar velocity for orbit-stability checks. Server uses pose deltas for player ships (owner simulates physics).
+        /// Server: estimate planar speed from replicated transform deltas (owner simulates physics).
+        /// Safe to call from physics triggers before <see cref="FixedUpdate"/> — uses <see cref="Time.fixedDeltaTime"/>.
         /// </summary>
-        private Vector3 GetPlanarVelocityForOrbitStableCheck()
+        private void ServerTickEstimatedPlanarVelocity(float deltaTime)
+        {
+            if (!IsServer || _isAIControlled || rb == null) return;
+
+            if (isDead.Value)
+            {
+                _serverHasLastPlanarPoseForVelocity = false;
+                _serverEstimatedPlanarVelocity = Vector3.zero;
+                return;
+            }
+
+            // OwnerAuthoritativeNetworkTransform updates the root transform on the server; rb can lag one frame behind NT.
+            Vector3 pos = transform.position;
+            pos.y = 0f;
+
+            // Owner dock snap replicates large per-frame deltas; treat as stationary for landing gates.
+            if (gemMoonDocked.Value)
+            {
+                _serverLastPlanarPoseForVelocity = pos;
+                _serverHasLastPlanarPoseForVelocity = true;
+                _serverEstimatedPlanarVelocity = Vector3.zero;
+                return;
+            }
+            if (_serverHasLastPlanarPoseForVelocity)
+            {
+                Vector3 delta = ToroidalMap.ShortestWorldOffsetXZ(_serverLastPlanarPoseForVelocity, pos);
+                float dt = Mathf.Max(0.0001f, deltaTime);
+                _serverEstimatedPlanarVelocity = delta / dt;
+            }
+            _serverLastPlanarPoseForVelocity = pos;
+            _serverHasLastPlanarPoseForVelocity = true;
+        }
+
+        /// <summary>
+        /// Planar velocity for server gameplay checks (orbit stability, gem-moon landing). Player ships simulate on the owner;
+        /// on the server <see cref="Rigidbody.linearVelocity"/> is stale — use pose deltas instead.
+        /// </summary>
+        public Vector3 GetPlanarVelocityForServerGameplayChecks()
         {
             if (rb == null) return Vector3.zero;
             if (IsServer && !_isAIControlled)
@@ -3176,6 +3195,11 @@ namespace TitanOrbit.Entities
             v.y = 0f;
             return v;
         }
+
+        /// <summary>
+        /// Planar velocity for orbit-stability checks. Server uses pose deltas for player ships (owner simulates physics).
+        /// </summary>
+        private Vector3 GetPlanarVelocityForOrbitStableCheck() => GetPlanarVelocityForServerGameplayChecks();
 
         /// <summary>True when the ship lies in the planet's orbit band (same ring math as <see cref="TryDetectOrbitZoneServer"/>).</summary>
         private static bool IsWorldPositionInPlanetOrbitShell(Planet planet, Vector3 shipWorldPos)
@@ -5109,7 +5133,9 @@ namespace TitanOrbit.Entities
             if (visual == null) return colliderR;
             Vector3 ls = visual.lossyScale;
             float hullScale = Mathf.Max(0.01f, Mathf.Max(ls.x, ls.y, ls.z));
-            return Mathf.Max(colliderR, colliderR * hullScale);
+            // Attribute upgrades can inflate visuals 2–3×; uncapped probe radius enters the moon shell while still at orbit speed.
+            float dockProbeHullScale = Mathf.Min(hullScale, 1.65f);
+            return Mathf.Max(colliderR, colliderR * dockProbeHullScale);
         }
 
         private float GetCollisionVfxShipMinRelativeSpeed()
@@ -5805,12 +5831,7 @@ namespace TitanOrbit.Entities
         {
             if (currentOrbitPlanet == planet)
             {
-                if (IsOwner && gemMoonDocked.Value)
-                {
-                    DetachFromGemMoonParent();
-                    SetRootColliderDocked(false);
-                    RequestUndockGemMoonServerRpc();
-                }
+                // Gem moons sit outside the planet orbit band — leaving orbit while docked is normal, not an undock signal.
                 currentOrbitPlanet = null;
                 hadGemsWhileInOrbitThisOrbit = false;
                 depositedAnyGemsThisOrbit = false;
