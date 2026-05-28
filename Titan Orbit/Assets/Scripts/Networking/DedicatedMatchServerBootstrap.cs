@@ -37,8 +37,14 @@ namespace TitanOrbit.Networking
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
         private static int _dbgWatchdogFailCount;
         private static string _activeLobbyId;
-        /// <summary>Relay drops idle hosts after ~60s with no peers; refresh the allocation before that when the match is empty.</summary>
-        private const int RelayRefreshWhenEmptyIntervalSeconds = 50;
+        private static int _matchMaxPlayers;
+        private static ushort _matchServerPort;
+        private static string _matchRelayProtocol;
+        private static bool _matchIsLatest;
+        private static DateTime? _emptySinceUtc;
+        private static bool _recreateEmptyMatchInProgress;
+        /// <summary>After this many seconds with zero connected players, close the lobby and publish a new one (same process).</summary>
+        private const int DefaultEmptyMatchRecreateSeconds = 30 * 60;
 
         /// <summary>Called from <see cref="Core.MatchManager"/> when a dedicated match ends so new players cannot join a finished game.</summary>
         public static void NotifyDedicatedMatchEnded()
@@ -473,7 +479,9 @@ namespace TitanOrbit.Networking
             ushort serverPort = (ushort)GetArgInt("serverPort", 7777);
             string relayProtocol = SanitizeRelayProtocolForSdk(GetArgString("relayProtocol", "dtls"));
             bool isLatest = GetArgBool("isLatest", true);
-            long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 20 * 60);
+            long ageThresholdSeconds = GetArgInt("ageThresholdSeconds", 30 * 60);
+            int emptyMatchRecreateSeconds = GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds);
+            emptyMatchRecreateSeconds = Mathf.Max(60, emptyMatchRecreateSeconds);
             int ugsInitTimeoutMs = GetArgInt("ugsInitTimeoutMs", 120000);
             int ugsSignInTimeoutMs = GetArgInt("ugsSignInTimeoutMs", 60000);
             int relayAllocTimeoutMs = GetArgInt("relayAllocTimeoutMs", 60000);
@@ -527,6 +535,8 @@ namespace TitanOrbit.Networking
             transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
             RelayProtocol relayProto = relayProtocol == "wss" ? RelayProtocol.WSS : RelayProtocol.DTLS;
             transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
+            // UTP heartbeats (HeartbeatTimeoutMS) keep the Relay allocation alive while waiting for joiners.
+            // Do not swap allocations on a timer — SetRelayServerData breaks the running match even without Shutdown().
             NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
             DeferredPlayerShipSpawn.Configure(NetworkManager.Singleton);
@@ -586,18 +596,22 @@ namespace TitanOrbit.Networking
                 " maxPlayers=" + maxPlayers + " relayJoinCodeLen=" + (joinCode != null ? joinCode.Length : 0));
 
             _activeLobbyId = createdLobby.Id;
-            _ = HeartbeatLoopAsync(createdLobby.Id);
-            _ = LobbyPresenceWatchdogAsync(createdLobby.Id);
-            _ = NetcodeHealthLoopAsync(createdLobby.Id);
-            _ = RelayKeepaliveLoopAsync(createdLobby.Id, maxPlayers, relayProtocol);
+            _matchMaxPlayers = maxPlayers;
+            _matchServerPort = serverPort;
+            _matchRelayProtocol = relayProtocol;
+            _matchIsLatest = isLatest;
+            _emptySinceUtc = DateTime.UtcNow;
+            _ = HeartbeatLoopAsync();
+            _ = LobbyPresenceWatchdogAsync();
+            _ = NetcodeHealthLoopAsync();
             _ = RotationLoopAsync(
-                createdLobby.Id,
                 createdAtEpochSeconds,
                 maxPlayers,
                 serverPort,
                 relayProtocol,
                 isLatest,
-                ageThresholdSeconds
+                ageThresholdSeconds,
+                emptyMatchRecreateSeconds
             );
         }
 
@@ -627,7 +641,7 @@ namespace TitanOrbit.Networking
         /// <summary>
         /// If the lobby disappears (expired, deleted, heartbeat loss), exit so systemd can restart and recreate a match.
         /// </summary>
-        private static async Task LobbyPresenceWatchdogAsync(string lobbyId)
+        private static async Task LobbyPresenceWatchdogAsync()
         {
             int consecutiveFailures = 0;
             const int threshold = 4;
@@ -638,6 +652,7 @@ namespace TitanOrbit.Networking
                 await Task.Delay(interval);
                 try
                 {
+                    string lobbyId = _activeLobbyId;
                     if (string.IsNullOrWhiteSpace(lobbyId))
                         continue;
                     await LobbyService.Instance.GetLobbyAsync(lobbyId);
@@ -662,7 +677,7 @@ namespace TitanOrbit.Networking
             }
         }
 
-        private static async Task HeartbeatLoopAsync(string lobbyId)
+        private static async Task HeartbeatLoopAsync()
         {
             // Lobbies require heartbeat pings to stay alive.
             // We match the existing NetworkGameManager heartbeat interval (15s).
@@ -672,6 +687,7 @@ namespace TitanOrbit.Networking
             {
                 try
                 {
+                    string lobbyId = _activeLobbyId;
                     if (!await EnsureUnityServicesInitializedAsync(
                             TimeSpan.FromMilliseconds(ugsInitTimeoutMs),
                             TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
@@ -693,7 +709,7 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>Exits when Netcode is no longer hosting so systemd can publish a fresh lobby + Relay allocation.</summary>
-        private static async Task NetcodeHealthLoopAsync(string lobbyId)
+        private static async Task NetcodeHealthLoopAsync()
         {
             while (true)
             {
@@ -704,7 +720,7 @@ namespace TitanOrbit.Networking
                     {
                         Debug.LogError(
                             "[DedicatedMatchServerBootstrap] Netcode server stopped listening; closing lobby and exiting.");
-                        await CloseLobbyAndExitAsync(lobbyId, "netcode_not_listening");
+                        await CloseLobbyAndExitAsync(_activeLobbyId, "netcode_not_listening");
                         return;
                     }
                 }
@@ -715,123 +731,174 @@ namespace TitanOrbit.Networking
             }
         }
 
-        /// <summary>
-        /// Relay removes allocations when the host has no peers for ~60s. Refresh join code + transport while the dedicated match is empty.
-        /// </summary>
-        private static async Task RelayKeepaliveLoopAsync(string lobbyId, int maxPlayers, string relayProtocol)
+        private static void TrackEmptyMatchTime(int playerCount)
         {
-            int relayAllocTimeoutMs = GetArgInt("relayAllocTimeoutMs", 60000);
-            int ugsInitTimeoutMs = GetArgInt("ugsInitTimeoutMs", 120000);
-            int ugsSignInTimeoutMs = GetArgInt("ugsSignInTimeoutMs", 60000);
-            var interval = TimeSpan.FromSeconds(RelayRefreshWhenEmptyIntervalSeconds);
-
-            while (true)
+            if (playerCount > 0)
             {
-                await Task.Delay(interval);
+                _emptySinceUtc = null;
+                return;
+            }
+
+            if (!_emptySinceUtc.HasValue)
+                _emptySinceUtc = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// After a long idle period with no players, delete the old UGS lobby and publish a new one (same server process).
+        /// </summary>
+        private static async Task<bool> RecreateEmptyMatchInProcessAsync(
+            int maxPlayers,
+            string relayProtocol,
+            bool isLatest,
+            TimeSpan relayTimeout,
+            int lobbyCreateTimeoutMs)
+        {
+            if (_recreateEmptyMatchInProgress)
+                return false;
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.ConnectedClients.Count > 0)
+                return false;
+
+            string oldLobbyId = _activeLobbyId;
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport == null || string.IsNullOrWhiteSpace(oldLobbyId))
+                return false;
+
+            _recreateEmptyMatchInProgress = true;
+            try
+            {
+                await CloseLobbyForNewJoinersAsync(oldLobbyId, "empty_match_recreate");
+
+                int maxConnections = Mathf.Max(1, maxPlayers - 1);
+                Allocation allocation = await WithTimeoutAsync(
+                    RelayService.Instance.CreateAllocationAsync(maxConnections),
+                    relayTimeout,
+                    "RelayService.CreateAllocationAsync(empty_recreate)");
+                string joinCode = await WithTimeoutAsync(
+                    RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId),
+                    relayTimeout,
+                    "RelayService.GetJoinCodeAsync(empty_recreate)");
+
+                RelayProtocol relayProto = relayProtocol == "wss" ? RelayProtocol.WSS : RelayProtocol.DTLS;
+                transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
+                transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
+                NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
+
+                if (NetworkManager.Singleton.IsListening)
+                    NetworkManager.Singleton.Shutdown();
+
+                bool started = NetworkManager.Singleton.StartServer();
+                if (!started)
+                    throw new InvalidOperationException("Netcode StartServer returned false after empty match recreate.");
+
+                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                string serverListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
+                Lobby newLobby = await WithTimeoutAsync(
+                    LobbyService.Instance.CreateLobbyAsync(
+                        GameNames.GetRandomRoomName(),
+                        maxPlayers,
+                        new CreateLobbyOptions
+                        {
+                            IsPrivate = false,
+                            Data = new Dictionary<string, DataObject>
+                            {
+                                { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
+                                { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
+                                { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
+                                { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
+                                {
+                                    LobbyCreatedAtEpochKey,
+                                    new DataObject(
+                                        DataObject.VisibilityOptions.Public,
+                                        createdAtEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                        DataObject.IndexOptions.N3
+                                    )
+                                },
+                                { LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, relayProtocol) },
+                                { LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) }
+                            }
+                        }),
+                    TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
+                    "LobbyService.CreateLobbyAsync(empty_recreate)");
+
                 try
                 {
-                    if (NetworkManager.Singleton == null || NetworkManager.Singleton.ConnectedClients.Count > 0)
-                        continue;
-
-                    if (!await EnsureUnityServicesInitializedAsync(
-                            TimeSpan.FromMilliseconds(ugsInitTimeoutMs),
-                            TimeSpan.FromMilliseconds(ugsSignInTimeoutMs)))
-                        continue;
-
-                    var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                    if (transport == null)
-                        continue;
-
-                    bool refreshed = await TryRefreshRelayAllocationAndLobbyAsync(
-                        lobbyId,
-                        maxPlayers,
-                        relayProtocol,
-                        transport,
-                        TimeSpan.FromMilliseconds(relayAllocTimeoutMs));
-                    if (refreshed)
-                    {
-                        Debug.Log("[DedicatedMatchServerBootstrap] Relay allocation refreshed while match was empty.");
-                        DedicatedServerFileLog.Append("relay", "Refreshed Relay allocation for empty lobby id=" + lobbyId);
-                    }
+                    await LobbyService.Instance.DeleteLobbyAsync(oldLobbyId);
                 }
-                catch (Exception e)
+                catch (Exception deleteEx)
                 {
-                    Debug.LogWarning("[DedicatedMatchServerBootstrap] RelayKeepaliveLoop error: " + e.Message);
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] Could not delete old lobby after empty recreate: " + deleteEx.Message);
                 }
+
+                _activeLobbyId = newLobby.Id;
+                _matchIsLatest = isLatest;
+                _emptySinceUtc = DateTime.UtcNow;
+                Debug.Log(
+                    "[DedicatedMatchServerBootstrap] Empty match recreated: new lobby " + newLobby.Id +
+                    " (replaced " + oldLobbyId + ").");
+                DedicatedServerFileLog.Append(
+                    "lobby",
+                    "Empty match recreated newLobbyId=" + newLobby.Id + " oldLobbyId=" + oldLobbyId);
+                return true;
+            }
+            finally
+            {
+                _recreateEmptyMatchInProgress = false;
             }
         }
 
-        private static async Task<bool> TryRefreshRelayAllocationAndLobbyAsync(
-            string lobbyId,
-            int maxPlayers,
-            string relayProtocol,
-            UnityTransport transport,
-            TimeSpan relayTimeout)
-        {
-            if (string.IsNullOrWhiteSpace(lobbyId) || transport == null || NetworkManager.Singleton == null)
-                return false;
-            if (NetworkManager.Singleton.ConnectedClients.Count > 0)
-                return false;
-
-            int maxConnections = Mathf.Max(1, maxPlayers - 1);
-            Allocation allocation = await WithTimeoutAsync(
-                RelayService.Instance.CreateAllocationAsync(maxConnections),
-                relayTimeout,
-                "RelayService.CreateAllocationAsync(refresh)");
-            string joinCode = await WithTimeoutAsync(
-                RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId),
-                relayTimeout,
-                "RelayService.GetJoinCodeAsync(refresh)");
-
-            RelayProtocol relayProto = relayProtocol == "wss" ? RelayProtocol.WSS : RelayProtocol.DTLS;
-            transport.UseWebSockets = string.Equals(relayProtocol, "wss", StringComparison.OrdinalIgnoreCase);
-            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
-            NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
-
-            if (NetworkManager.Singleton.IsListening)
-                NetworkManager.Singleton.Shutdown();
-
-            bool started = NetworkManager.Singleton.StartServer();
-            if (!started)
-                throw new InvalidOperationException("Netcode StartServer returned false after Relay refresh.");
-
-            await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
-            {
-                Data = new Dictionary<string, DataObject>
-                {
-                    { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) }
-                }
-            });
-            return true;
-        }
-
         private static async Task RotationLoopAsync(
-            string lobbyId,
             long createdAtEpochSeconds,
             int maxPlayers,
             ushort serverPort,
             string relayProtocol,
             bool initialIsLatest,
-            long ageThresholdSeconds)
+            long ageThresholdSeconds,
+            int emptyMatchRecreateSeconds)
         {
             bool isLatest = initialIsLatest;
             bool spawnedFromAge = false;
             bool spawnedFromFull = false;
+            int relayAllocTimeoutMs = GetArgInt("relayAllocTimeoutMs", 60000);
+            int lobbyCreateTimeoutMs = GetArgInt("lobbyCreateTimeoutMs", 60000);
 
             while (true)
             {
                 try
                 {
+                    string lobbyId = _activeLobbyId;
                     int connectedClients = NetworkManager.Singleton != null ? NetworkManager.Singleton.ConnectedClients.Count : 0;
                     // Dedicated server: ConnectedClients are Netcode players only (no listen-host +1).
                     int playerCount = connectedClients;
+                    TrackEmptyMatchTime(playerCount);
 
                     bool isFull = playerCount >= maxPlayers;
                     long nowEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     long ageSeconds = nowEpochSeconds - createdAtEpochSeconds;
 
-                    // Age-based rotation (only when this match is the "latest" free target).
-                    if (isLatest && !spawnedFromAge && ageSeconds >= ageThresholdSeconds && !isFull)
+                    // Idle empty lobby: replace lobby + relay after a long period with no joiners (same process; no extra VM processes).
+                    if (playerCount == 0 && _emptySinceUtc.HasValue && !string.IsNullOrWhiteSpace(lobbyId))
+                    {
+                        double emptySeconds = (DateTime.UtcNow - _emptySinceUtc.Value).TotalSeconds;
+                        if (emptySeconds >= emptyMatchRecreateSeconds)
+                        {
+                            bool recreated = await RecreateEmptyMatchInProcessAsync(
+                                maxPlayers,
+                                relayProtocol,
+                                isLatest,
+                                TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                                lobbyCreateTimeoutMs);
+                            if (recreated)
+                            {
+                                lobbyId = _activeLobbyId;
+                                createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                                spawnedFromAge = false;
+                            }
+                        }
+                    }
+
+                    // Age-based rotation when the lobby still has players but is not full (spawn a sibling process for the next "latest" slot).
+                    if (isLatest && !spawnedFromAge && playerCount > 0 && ageSeconds >= ageThresholdSeconds && !isFull)
                     {
                         spawnedFromAge = true;
                         isLatest = false;
