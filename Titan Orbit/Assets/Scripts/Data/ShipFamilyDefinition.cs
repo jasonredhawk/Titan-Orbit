@@ -197,7 +197,7 @@ namespace TitanOrbit.Data
             return ContainsIsolatedKeyword(id, "thruster");
         }
 
-        /// <summary>Engines and thrusters share the same propulsion aggregation rules (move speed + acceleration).</summary>
+        /// <summary>Engines and thrusters share propulsion aggregation (move speed + acceleration). Thrusters also contribute turn speed.</summary>
         public static bool IsPropulsionComponent(string componentId)
         {
             if (IsThrusterComponent(componentId) || IsEngineComponent(componentId))
@@ -603,8 +603,13 @@ namespace TitanOrbit.Data
             { "healthCap", "healthCapPerLevel", "healthRegen", "healthRegenPerLevel" };
         private static readonly string[] EnergyFields =
             { "energyCap", "energyCapPerLevel", "energyRegen", "energyRegenPerLevel" };
-        private static readonly string[] ThrusterMovementFields =
+        private static readonly string[] PropulsionMovementFields =
             { "moveSpeed", "moveSpeedPerLevel", "accelerationCap", "accelerationCapPerLevel" };
+        private static readonly string[] ThrusterMovementFields =
+        {
+            "moveSpeed", "moveSpeedPerLevel", "accelerationCap", "accelerationCapPerLevel",
+            "turnSpeed", "turnSpeedPerLevel"
+        };
         private static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerLevel" };
         private static readonly string[] CapacityFields =
             { "maxGems", "maxGemsPerLevel", "maxPeople", "maxPeoplePerLevel" };
@@ -622,11 +627,13 @@ namespace TitanOrbit.Data
                 case ShipComponentStatCategory.Energy:
                     return EnergyFields;
                 case ShipComponentStatCategory.Movement:
-                    if (partType == "Thruster" || partType == "Engine")
+                    if (partType == "Thruster")
                         return ThrusterMovementFields;
+                    if (partType == "Engine")
+                        return PropulsionMovementFields;
                     if (partType == "Fin" || partType == "Tail")
                         return TurnMovementFields;
-                    return ThrusterMovementFields;
+                    return PropulsionMovementFields;
                 case ShipComponentStatCategory.Capacity:
                     return CapacityFields;
                 default:
@@ -751,6 +758,42 @@ namespace TitanOrbit.Data
             GetSuggestedRammingPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
+    /// <summary>Scan/auto-populate turn speed for fins, tails, and thrusters (summed at runtime).</summary>
+    public static class ShipComponentTurnSpeedSuggestions
+    {
+        /// <summary>
+        /// After thrusters gained turn speed, typical summed totals rose ~37 vs the prior ~22 target.
+        /// Scale all turn-speed parts by this ratio so ship totals match the old feel.
+        /// </summary>
+        public const float ComponentTurnSpeedScale = 22f / 37f;
+
+        public const float FinTurnSpeedPerVersion = 7f;
+        public const float TailTurnSpeedPerVersion = 11f;
+        public const float ThrusterTurnSpeedV1 = 5f;
+        public const float ThrusterTurnSpeedPerVersion = 1f;
+
+        public static float GetSuggestedFinTurnSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return FinTurnSpeedPerVersion * v * ComponentTurnSpeedScale;
+        }
+
+        public static float GetSuggestedTailTurnSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return TailTurnSpeedPerVersion * v * ComponentTurnSpeedScale;
+        }
+
+        public static float GetSuggestedThrusterTurnSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return (ThrusterTurnSpeedV1 + (v - 1) * ThrusterTurnSpeedPerVersion) * ComponentTurnSpeedScale;
+        }
+
+        public static float GetSuggestedTurnSpeedPerLevel(float baseTurnSpeed) =>
+            baseTurnSpeed * ShipPropulsionAggregation.PerLevelFractionOfBase;
+    }
+
     /// <summary>
     /// One named component entry within a ship family, e.g. "Cockpit", "Wing1", "Weapon_1".
     /// </summary>
@@ -806,7 +849,8 @@ namespace TitanOrbit.Data
                 statCategories.Add(ShipComponentStatCategory.Energy);
             }
 
-            if (string.Equals(partType, "Engine", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(partType, "Engine", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partType, "Thruster", StringComparison.OrdinalIgnoreCase))
             {
                 if (statCategories.Contains(ShipComponentStatCategory.Energy))
                     statCategories.Remove(ShipComponentStatCategory.Energy);

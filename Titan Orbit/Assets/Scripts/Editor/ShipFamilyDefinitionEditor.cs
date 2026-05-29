@@ -21,6 +21,7 @@ namespace TitanOrbit.Editor
     public class ShipFamilyDefinitionEditor : UnityEditor.Editor
     {
         private ReorderableList _componentsList;
+        private ReorderableList _upgradeTreeList;
 
         private void OnEnable()
         {
@@ -30,6 +31,14 @@ namespace TitanOrbit.Editor
                 drawHeaderCallback = DrawComponentsListHeader,
                 drawElementCallback = DrawComponentsListElement,
                 elementHeightCallback = GetComponentsListElementHeight
+            };
+
+            SerializedProperty upgradeTreeProp = serializedObject.FindProperty("upgradeTree");
+            _upgradeTreeList = new ReorderableList(serializedObject, upgradeTreeProp, true, true, true, true)
+            {
+                drawHeaderCallback = DrawUpgradeTreeListHeader,
+                drawElementCallback = DrawUpgradeTreeListElement,
+                elementHeightCallback = GetUpgradeTreeListElementHeight
             };
         }
 
@@ -51,7 +60,25 @@ namespace TitanOrbit.Editor
             return ShipFamilyComponentEntryInspectorUI.GetHeight(element);
         }
 
-        private void DrawInspectorFieldsExceptComponents()
+        private static void DrawUpgradeTreeListHeader(Rect rect)
+        {
+            EditorGUI.LabelField(rect, "Upgrade Tree");
+        }
+
+        private void DrawUpgradeTreeListElement(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            SerializedProperty element = _upgradeTreeList.serializedProperty.GetArrayElementAtIndex(index);
+            var label = new GUIContent($"Element {index}");
+            ShipFamilyUpgradeTreeEntryInspectorUI.Draw(rect, element, label, target as ShipFamilyDefinition);
+        }
+
+        private float GetUpgradeTreeListElementHeight(int index)
+        {
+            SerializedProperty element = _upgradeTreeList.serializedProperty.GetArrayElementAtIndex(index);
+            return ShipFamilyUpgradeTreeEntryInspectorUI.GetHeight(element, element.isExpanded);
+        }
+
+        private void DrawInspectorFieldsExceptCustomLists()
         {
             SerializedProperty prop = serializedObject.GetIterator();
             bool enterChildren = true;
@@ -63,6 +90,11 @@ namespace TitanOrbit.Editor
                 if (prop.name == "components")
                 {
                     _componentsList.DoLayoutList();
+                    continue;
+                }
+                if (prop.name == "upgradeTree")
+                {
+                    _upgradeTreeList.DoLayoutList();
                     continue;
                 }
                 EditorGUILayout.PropertyField(prop, true);
@@ -97,7 +129,7 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space(6);
 
             EditorGUI.BeginChangeCheck();
-            DrawInspectorFieldsExceptComponents();
+            DrawInspectorFieldsExceptCustomLists();
             bool serializedChanged = EditorGUI.EndChangeCheck();
             serializedObject.ApplyModifiedProperties();
             if (serializedChanged && def != null)
@@ -748,13 +780,22 @@ namespace TitanOrbit.Editor
                 case ShipComponentStatCategory.Movement:
                     if (string.Equals(type, "Tail", StringComparison.OrdinalIgnoreCase))
                     {
-                        stats.turnSpeed = 11f * v;
-                        stats.turnSpeedPerLevel = PerLevelFromBase(stats.turnSpeed);
+                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTailTurnSpeed(version);
+                        stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
                     else if (string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase))
                     {
-                        stats.turnSpeed = 7f * v;
-                        stats.turnSpeedPerLevel = PerLevelFromBase(stats.turnSpeed);
+                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(version);
+                        stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
+                    }
+                    else if (string.Equals(type, "Thruster", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(version);
+                        stats.accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(version);
+                        stats.moveSpeedPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(version);
+                        stats.accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(version);
+                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedThrusterTurnSpeed(version);
+                        stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
                     else
                     {

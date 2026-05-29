@@ -134,15 +134,18 @@ If `data.unityweb` shows `br` but the download size looks like the raw compresse
 
 ## Troubleshooting: ships/planets invisible after deploy
 
-If the game runs but **ship hulls, planets, moons, and asteroids have no surface** (thrusters, bullets, and UI still look fine), the WebGL build often has **Crunch texture compression** enabled on gameplay albedos. That breaks in many browsers (not magenta—just empty-looking meshes).
+If the game runs but **ship hulls, planets, moons, and asteroids have no surface** (thrusters, bullets, and UI still look fine), two WebGL issues are usually involved:
+
+1. **GPU texture compression** (DXT/ASTC/Crunch) — albedos fail silently in the browser (not magenta).
+2. **SRP Batcher + MaterialPropertyBlock** — Space Graphics Toolkit planets/asteroids draw via `Graphics.DrawMesh` + MPB; URP batching on WebGL often makes those draws invisible.
 
 **Fix (once per machine / after pulling this repo):**
 
-1. In Unity: **TitanOrbit → Build → Fix WebGL Texture Import (disable Crunch)** (or build via **TitanOrbit → Build → WebGL Production**, which applies the same fix automatically).
-2. Rebuild WebGL, then run `deploy_webgl_gcs.bat`.
-3. In the browser: clear **site data** for `titanorbit.io` (or hard refresh) so Unity’s cached `.data` file is not mixed with an older build.
+1. In Unity: **TitanOrbit → Build → Fix WebGL Texture Import (disable Crunch)** — sets gameplay textures to **RGBA32 uncompressed** on WebGL, disables SRP Batcher on the WebGL pipeline asset, and includes the SGT Planet shader.
+2. Rebuild via **TitanOrbit → Build → WebGL Production** (applies the same fixes automatically).
+3. Run `deploy_webgl_gcs.bat`, purge Cloudflare cache, clear **site data** for `titanorbit.io`.
 
-Also confirm **Build Settings → Web → Texture Compression** is **DXT** for desktop hosting (ASTC-only data on a desktop GPU shows the same symptom). The preprocess build script forces DXT when using the menu build.
+Note: uncompressed WebGL imports increase `.data.unityweb` size; that is expected for reliable desktop browser rendering.
 
 ## Related repo files
 

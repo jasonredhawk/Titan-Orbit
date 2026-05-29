@@ -18,18 +18,24 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
-            WebGLTextureImportBuildFix.ApplyWebGlTextureSubtarget();
-            WebGLTextureImportBuildFix.DisableWebGlCrunchOnGameplayTextures(log: true);
+            WebGLTextureImportBuildFix.ApplyWebGlGameplayTextureImports(log: true);
 
-            BuildPipeline.BuildPlayer(
-                new BuildPlayerOptions
-                {
-                    scenes = GetEnabledScenes(),
-                    locationPathName = GetWebGlOutputPath(),
-                    target = BuildTarget.WebGL,
-                    options = BuildOptions.None
-                }
-            );
+            var options = new BuildPlayerOptions
+            {
+                scenes = GetEnabledScenes(),
+                locationPathName = GetWebGlOutputPath(),
+                target = BuildTarget.WebGL,
+                options = BuildOptions.None,
+                // Unity 6: subtarget on BuildPlayerOptions is required; EditorUserBuildSettings alone
+                // can leave the data file as ASTC while desktop browsers need DXT (invisible ship/planet meshes).
+                subtarget = (int)WebGLTextureSubtarget.DXT
+            };
+
+            Debug.Log("[TitanOrbitBuild] WebGL production build: texture subtarget=DXT (desktop browsers).");
+
+            BuildReport report = BuildPipeline.BuildPlayer(options);
+            if (report.summary.result != BuildResult.Succeeded)
+                Debug.LogError($"[TitanOrbitBuild] WebGL build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
         }
 
         [MenuItem("TitanOrbit/Build/Headless Server (Windows)")]

@@ -8183,20 +8183,19 @@ MonoBehaviour:
   planetsParent: {fileID: 0}
   asteroidsParent: {fileID: 0}
   homePlanetsParent: {fileID: 0}
-  batchDelaySeconds: 0
-  asteroidsPerBatch: 20
+  batchDelaySeconds: 0.05
+  asteroidsPerBatch: 33
   alwaysUseProgressiveGeneration: 1
-  targetProgressiveDurationSeconds: 4.5
-  accelerateAsteroidProgressive: 1
+  targetProgressiveDurationSeconds: 2.5
+  accelerateAsteroidProgressive: 0
   maxAsteroidDelayBatches: 8
-  joinPauseBeforeNeutralPlanetsSeconds: 0.45
-  joinHomePlanetStepSeconds: 0.08
-  joinNeutralPlanetStepSeconds: 0.1
-  joinAsteroidClusterBreakDistance: 42
-  joinAsteroidClusterGapSeconds: 0.22
-  joinAsteroidsPerClusterBurst: 5
+  joinPauseBeforeNeutralPlanetsSeconds: 0.05
+  joinHomePlanetStepSeconds: 0.05
+  joinNeutralPlanetStepSeconds: 0.05
+  joinAsteroidClusterGapSeconds: 0.05
+  joinAsteroidsPerClusterBurst: 33
   joinRevealMaxToroidalDistance: 7.5
-  joinRevealMaxWaitPerEntrySeconds: 8
+  joinRevealMaxWaitPerEntrySeconds: 0.05
 --- !u!1 &1207700297
 GameObject:
   m_ObjectHideFlags: 0

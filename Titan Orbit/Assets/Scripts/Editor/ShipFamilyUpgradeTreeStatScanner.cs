@@ -95,12 +95,166 @@ namespace TitanOrbit.Editor
         /// </summary>
         public static ShipComponentAbilityStats SumStatsUnderRoot(GameObject root, ShipFamilyDefinition def, string familyId)
         {
-            var total = new ShipComponentAbilityStats();
-            if (root == null || def == null || string.IsNullOrEmpty(familyId))
-                return total;
+            CollectStatsUnderRoot(root, def, familyId, out ShipComponentAbilityStats total, out var matchedIds, out var perComponentStats);
+            return SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel: 1);
+        }
 
-            var matchedIds = new List<string>();
-            var perComponentStats = new List<ShipComponentAbilityStats>();
+        /// <summary>Applies propulsion aggregation at the given ship level to an already-summed component total.</summary>
+        public static ShipComponentAbilityStats SumStatsAtShipLevel(
+            ShipComponentAbilityStats total,
+            IReadOnlyList<string> matchedIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int shipLevel)
+        {
+            return ShipPropulsionAggregation.ApplyPropulsionToSummedStats(total, matchedIds, perComponentStats, shipLevel);
+        }
+
+        /// <summary>Max stat upgrades for a tier = its <see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/> (matches max attribute upgrades at that ship level).</summary>
+        public static int GetMaxUpgradeCountForTier(int minHomePlanetLevel)
+        {
+            return Mathf.Max(0, minHomePlanetLevel);
+        }
+
+        public struct StatMinMax
+        {
+            public float min;
+            public float max;
+
+            public StatMinMax(float min, float max)
+            {
+                this.min = min;
+                this.max = max;
+            }
+        }
+
+        /// <summary>Min/max effective stats for upgrade-tree inspector (matches ship upgrade menu categories).</summary>
+        public struct UpgradeTreeStatPreview
+        {
+            public StatMinMax firePower;
+            public StatMinMax bulletSpeed;
+            public StatMinMax fireRate;
+            public StatMinMax ramPower;
+            public StatMinMax healthCap;
+            public StatMinMax healthRegen;
+            public StatMinMax energyCap;
+            public StatMinMax energyRegen;
+            public StatMinMax moveSpeed;
+            public StatMinMax turnSpeed;
+            public StatMinMax gemCap;
+            public StatMinMax peopleCap;
+            public StatMinMax powerScoreTotal;
+        }
+
+        public static bool TryGetUpgradeTreeStatPreview(
+            GameObject prefabAsset,
+            ShipFamilyDefinition def,
+            string familyId,
+            int minHomePlanetLevel,
+            out UpgradeTreeStatPreview preview)
+        {
+            preview = default;
+            if (prefabAsset == null || def == null || string.IsNullOrWhiteSpace(familyId))
+                return false;
+
+            if (!TryCollectSummedStats(prefabAsset, def, familyId.Trim(), out ShipComponentAbilityStats total, out var matchedIds, out var perComponentStats))
+                return false;
+
+            int maxUpgrades = GetMaxUpgradeCountForTier(minHomePlanetLevel);
+            ShipComponentAbilityStats atMinLevel = SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel: 1);
+
+            preview.firePower = RangeFromPerLevel(atMinLevel.firePower, atMinLevel.firePowerPerLevel, maxUpgrades);
+            preview.bulletSpeed = RangeFromPerLevel(atMinLevel.bulletSpeed, atMinLevel.bulletSpeedPerLevel, maxUpgrades);
+            preview.fireRate = RangeFromPerLevel(atMinLevel.fireRate, atMinLevel.fireRatePerLevel, maxUpgrades);
+            preview.ramPower = RangeFromPerLevel(atMinLevel.rammingPower, atMinLevel.rammingPowerPerLevel, maxUpgrades);
+            preview.healthCap = RangeFromPerLevel(atMinLevel.healthCap, atMinLevel.healthCapPerLevel, maxUpgrades);
+            preview.healthRegen = RangeFromPerLevel(atMinLevel.healthRegen, atMinLevel.healthRegenPerLevel, maxUpgrades);
+            preview.energyCap = RangeFromPerLevel(atMinLevel.energyCap, atMinLevel.energyCapPerLevel, maxUpgrades);
+            preview.energyRegen = RangeFromPerLevel(atMinLevel.energyRegen, atMinLevel.energyRegenPerLevel, maxUpgrades);
+            preview.gemCap = RangeFromPerLevel(atMinLevel.maxGems, atMinLevel.maxGemsPerLevel, maxUpgrades);
+            preview.peopleCap = RangeFromPerLevel(atMinLevel.maxPeople, atMinLevel.maxPeoplePerLevel, maxUpgrades);
+            // Propulsion at high ship levels applies a mobility penalty at runtime; use base + per-level × tier upgrades.
+            preview.moveSpeed = RangeFromPerLevel(atMinLevel.moveSpeed, atMinLevel.moveSpeedPerLevel, maxUpgrades);
+            preview.turnSpeed = RangeFromPerLevel(atMinLevel.turnSpeed, atMinLevel.turnSpeedPerLevel, maxUpgrades);
+            preview.powerScoreTotal = new StatMinMax(
+                ShipFamilyPowerScoreBreakdown.FromSummedShipStats(atMinLevel).Total,
+                ShipFamilyPowerScoreBreakdown.FromSummedShipStats(ApplyMaxEffectiveLevels(atMinLevel, maxUpgrades)).Total);
+            return true;
+        }
+
+        /// <summary>Inflates base stats by per-level × upgrade count. Per-level fields are kept so max power score retains the same weighted terms as min.</summary>
+        private static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
+        {
+            stats.firePower += stats.firePowerPerLevel * upgradeCount;
+            stats.bulletSpeed += stats.bulletSpeedPerLevel * upgradeCount;
+            stats.fireRate += stats.fireRatePerLevel * upgradeCount;
+            stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
+            stats.healthCap += stats.healthCapPerLevel * upgradeCount;
+            stats.healthRegen += stats.healthRegenPerLevel * upgradeCount;
+            stats.energyCap += stats.energyCapPerLevel * upgradeCount;
+            stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
+            stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
+            stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
+            stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
+            stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
+            stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;
+            return stats;
+        }
+
+        private static StatMinMax RangeFromPerLevel(float baseValue, float perLevel, int upgradeCount)
+        {
+            return new StatMinMax(baseValue, baseValue + perLevel * upgradeCount);
+        }
+
+        private static bool TryCollectSummedStats(
+            GameObject prefabAsset,
+            ShipFamilyDefinition def,
+            string familyId,
+            out ShipComponentAbilityStats total,
+            out List<string> matchedIds,
+            out List<ShipComponentAbilityStats> perComponentStats)
+        {
+            total = default;
+            matchedIds = null;
+            perComponentStats = null;
+
+            string path = AssetDatabase.GetAssetPath(prefabAsset);
+            GameObject root = !string.IsNullOrEmpty(path)
+                ? PrefabUtility.LoadPrefabContents(path)
+                : prefabAsset;
+
+            if (root == null)
+                return false;
+
+            bool loadedContents = !string.IsNullOrEmpty(path);
+            try
+            {
+#if UNITY_EDITOR
+                def.InvalidateComponentStatsLookup();
+#endif
+                CollectStatsUnderRoot(root, def, familyId, out total, out matchedIds, out perComponentStats);
+                return true;
+            }
+            finally
+            {
+                if (loadedContents)
+                    PrefabUtility.UnloadPrefabContents(root);
+            }
+        }
+
+        private static void CollectStatsUnderRoot(
+            GameObject root,
+            ShipFamilyDefinition def,
+            string familyId,
+            out ShipComponentAbilityStats total,
+            out List<string> matchedIds,
+            out List<ShipComponentAbilityStats> perComponentStats)
+        {
+            total = new ShipComponentAbilityStats();
+            matchedIds = new List<string>();
+            perComponentStats = new List<ShipComponentAbilityStats>();
+
+            if (root == null || def == null || string.IsNullOrEmpty(familyId))
+                return;
 
             var transforms = root.GetComponentsInChildren<Transform>(true);
             foreach (var t in transforms)
@@ -117,16 +271,14 @@ namespace TitanOrbit.Editor
                 if (string.IsNullOrWhiteSpace(componentId))
                     continue;
 
-                if (def.TryGetStatsForComponent(componentId, out var stats))
-                {
-                    ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
-                    matchedIds.Add(componentId);
-                    perComponentStats.Add(scaled);
-                    total.AddInPlace(scaled);
-                }
-            }
+                if (!def.TryGetStatsForComponent(componentId, out var stats))
+                    continue;
 
-            return ShipPropulsionAggregation.ApplyPropulsionToSummedStats(total, matchedIds, perComponentStats, shipLevel: 1);
+                ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
+                matchedIds.Add(componentId);
+                perComponentStats.Add(scaled);
+                total.AddInPlace(scaled);
+            }
         }
     }
 }

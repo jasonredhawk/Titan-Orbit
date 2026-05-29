@@ -80,36 +80,34 @@ namespace TitanOrbit.Generation
         [SerializeField] private Transform homePlanetsParent;
 
         [Header("Loading Screen")]
-        [Tooltip("Delay per batch during progressive generation (seconds). 0 = instant generation (no lag).")]
-        [SerializeField] private float batchDelaySeconds = 0f;
+        [Tooltip("Delay per home/neutral spawn and between asteroid batches during progressive generation (seconds). 0 = auto from target duration.")]
+        [SerializeField] private float batchDelaySeconds = 0.05f;
         [Tooltip("Asteroids per batch during progressive generation.")]
-        [SerializeField] private int asteroidsPerBatch = 20;
+        [SerializeField] private int asteroidsPerBatch = 33;
         [Tooltip("When enabled, world objects spawn progressively for loading-screen visualization even if batch delay is zero.")]
         [SerializeField] private bool alwaysUseProgressiveGeneration = true;
         [Tooltip("If progressive generation is enabled and batch delay is zero, auto-compute a small delay so generation remains visible.")]
         [SerializeField] private float targetProgressiveDurationSeconds = 2.5f;
         [Tooltip("Shortens asteroid pacing during progressive generation so loading remains visually active without feeling too slow.")]
-        [SerializeField] private bool accelerateAsteroidProgressive = true;
+        [SerializeField] private bool accelerateAsteroidProgressive = false;
         [Tooltip("Maximum number of asteroid delay points during progressive generation when acceleration is enabled.")]
         [SerializeField] private int maxAsteroidDelayBatches = 8;
 
         [Header("Join Client Build Animation")]
         [Tooltip("Real-time pause after home bases finish before neutral planets begin appearing.")]
-        [SerializeField] private float joinPauseBeforeNeutralPlanetsSeconds = 0.45f;
+        [SerializeField] private float joinPauseBeforeNeutralPlanetsSeconds = 0.05f;
         [Tooltip("Real-time delay between each home base preview spawn.")]
-        [SerializeField] private float joinHomePlanetStepSeconds = 0.08f;
+        [SerializeField] private float joinHomePlanetStepSeconds = 0.05f;
         [Tooltip("Real-time delay between each neutral planet preview spawn.")]
-        [SerializeField] private float joinNeutralPlanetStepSeconds = 0.1f;
-        [Tooltip("Toroidal distance above which consecutive blueprint asteroids are treated as a new cluster.")]
-        [SerializeField] private float joinAsteroidClusterBreakDistance = 42f;
-        [Tooltip("Real-time pause between asteroid cluster bursts during join playback.")]
-        [SerializeField] private float joinAsteroidClusterGapSeconds = 0.22f;
-        [Tooltip("Asteroids spawned per frame within the same cluster before yielding (keeps clusters readable without slowing the whole map).")]
-        [SerializeField] private int joinAsteroidsPerClusterBurst = 5;
+        [SerializeField] private float joinNeutralPlanetStepSeconds = 0.05f;
+        [Tooltip("Real-time pause after each asteroid batch during join playback.")]
+        [SerializeField] private float joinAsteroidClusterGapSeconds = 0.05f;
+        [Tooltip("Asteroids revealed per batch during join playback before the batch pause.")]
+        [SerializeField] private int joinAsteroidsPerClusterBurst = 33;
         [Tooltip("Toroidal distance when matching a blueprint row to a replicated map NetworkObject during join build.")]
         [SerializeField] private float joinRevealMaxToroidalDistance = 7.5f;
         [Tooltip("Max real seconds to wait for each replicated entity before falling back to a local preview.")]
-        [SerializeField] private float joinRevealMaxWaitPerEntrySeconds = 8f;
+        [SerializeField] private float joinRevealMaxWaitPerEntrySeconds = 0.05f;
 
         /// <summary>Scene MapGenerator instance (set on network spawn).</summary>
         public static MapGenerator Active { get; private set; }
@@ -481,7 +479,7 @@ namespace TitanOrbit.Generation
 
         /// <summary>
         /// Client-only: spawn non-networked preview copies from the replicated blueprint in server spawn order.
-        /// Homes appear first, a short pause, neutral planets one-by-one, then asteroid clusters in bursts.
+        /// Homes appear first, a short pause, neutral planets one-by-one, then asteroids in fixed-size batches.
         /// </summary>
         public IEnumerator CoPlayJoinLayout(Transform previewParent, System.Action<float> onProgress)
         {
@@ -505,11 +503,8 @@ namespace TitanOrbit.Generation
                 int totalSteps = Mathf.Max(1, entries.Length);
                 int neutralTemplateId = 0;
                 bool pausedBeforeNeutralPlanets = false;
-                int asteroidsInCurrentCluster = 0;
-                bool hasPreviousEntry = false;
-                MapLayoutEntry previousEntry = default;
-                int clusterBurst = Mathf.Max(1, joinAsteroidsPerClusterBurst);
-                float clusterBreak = Mathf.Max(8f, joinAsteroidClusterBreakDistance);
+                int asteroidsInCurrentBurst = 0;
+                int asteroidBurstSize = Mathf.Max(1, joinAsteroidsPerClusterBurst);
                 float revealMaxDist = Mathf.Max(1f, joinRevealMaxToroidalDistance);
                 float revealWaitCap = Mathf.Max(0.1f, joinRevealMaxWaitPerEntrySeconds);
 
@@ -524,18 +519,21 @@ namespace TitanOrbit.Generation
                             yield return new WaitForSecondsRealtime(joinPauseBeforeNeutralPlanetsSeconds);
                     }
 
-                    bool revealed = false;
-                    float revealStarted = Time.realtimeSinceStartup;
-                    while (!revealed && Time.realtimeSinceStartup - revealStarted < revealWaitCap)
+                    bool revealed = TryRevealOneMapEntityForBlueprintEntry(e, clientJoinRevealedIds, revealMaxDist);
+                    if (!revealed && e.Kind != MapLayoutKind.Asteroid)
                     {
-                        if (TryRevealOneMapEntityForBlueprintEntry(e, clientJoinRevealedIds, revealMaxDist))
+                        float revealStarted = Time.realtimeSinceStartup;
+                        while (!revealed && Time.realtimeSinceStartup - revealStarted < revealWaitCap)
                         {
-                            revealed = true;
-                            break;
-                        }
+                            if (TryRevealOneMapEntityForBlueprintEntry(e, clientJoinRevealedIds, revealMaxDist))
+                            {
+                                revealed = true;
+                                break;
+                            }
 
-                        SuppressUnrevealedMapRenderers();
-                        yield return null;
+                            SuppressUnrevealedMapRenderers();
+                            yield return null;
+                        }
                     }
 
                     if (!revealed && previewParent != null)
@@ -561,26 +559,14 @@ namespace TitanOrbit.Generation
                             break;
 
                         case MapLayoutKind.Asteroid:
-                        {
-                            bool newCluster = !hasPreviousEntry
-                                || previousEntry.Kind != MapLayoutKind.Asteroid
-                                || ToroidalMap.ToroidalDistance(previousEntry.Position, e.Position) > clusterBreak;
-
-                            if (newCluster)
+                            asteroidsInCurrentBurst++;
+                            if (asteroidsInCurrentBurst >= asteroidBurstSize)
                             {
-                                if (asteroidsInCurrentCluster > 0 && joinAsteroidClusterGapSeconds > 0f)
+                                asteroidsInCurrentBurst = 0;
+                                if (joinAsteroidClusterGapSeconds > 0f)
                                     yield return new WaitForSecondsRealtime(joinAsteroidClusterGapSeconds);
-                                asteroidsInCurrentCluster = 0;
                             }
-
-                            asteroidsInCurrentCluster++;
-                            previousEntry = e;
-                            hasPreviousEntry = true;
-
-                            if (asteroidsInCurrentCluster % clusterBurst == 0)
-                                yield return null;
                             break;
-                        }
                     }
 
                     SuppressUnrevealedMapRenderers();
@@ -877,7 +863,7 @@ namespace TitanOrbit.Generation
                             completed++;
                             loadingProgress.Value = (float)completed / totalSteps;
 
-                            if ((spawned % 12) == 0)
+                            if ((spawned % effectiveAsteroidsPerBatch) == 0)
                                 yield return null;
 
                             if (effectiveAsteroidDelay > 0f && spawned % effectiveAsteroidsPerBatch == 0)

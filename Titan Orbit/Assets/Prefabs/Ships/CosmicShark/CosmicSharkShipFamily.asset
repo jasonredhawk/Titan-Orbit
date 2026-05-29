@@ -28,10 +28,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -68,10 +68,10 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -100,10 +100,10 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 16
-      moveSpeedPerLevel: 4
-      accelerationCap: 8
-      accelerationCapPerLevel: 2
+      moveSpeed: 8
+      moveSpeedPerLevel: 1.6
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.8
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -124,10 +124,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -156,10 +156,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -196,10 +196,10 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -252,10 +252,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -284,10 +284,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 42
-      healthCapPerLevel: 10.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.375
+      healthCap: 6.75
+      healthCapPerLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerLevel: 0.06026786
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -304,63 +304,34 @@ MonoBehaviour:
       maxPeoplePerLevel: 2
     bulletPrefabIndex: -1
   upgradeTree:
-  - chassisId: CosmicShark_01
-    upgradeTreeShipName: Mouse
-    prefab: {fileID: 8939703252465728748, guid: 5760bc85eded69246bb370773ff9dcfa, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 36073e14b470ac54683106dad63c6d86, type: 3}
+  - chassisId: CosmicShark_15
+    upgradeTreeShipName: Pony
+    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e3de6583ec2225343ae5e01830d4e162, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 36073e14b470ac54683106dad63c6d86, type: 3}
+      sprite: {fileID: 21300000, guid: e3de6583ec2225343ae5e01830d4e162, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 7df2cadc2ee76bc48b2a985d8fa22020, type: 3}
+      sprite: {fileID: 21300000, guid: 08e6132e45032124e8e1eb069474f6c2, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 3326befa829e5b243b1465a7f302c5dc, type: 3}
+      sprite: {fileID: 21300000, guid: 49c782fb4f21b54469bbfd1e98f91693, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 129699e9bade6914c973b704a32bcf83, type: 3}
+      sprite: {fileID: 21300000, guid: c29db6f70ee82e44c9e98c95328dba9b, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: edf1f16325f0b324783e0644a5322c98, type: 3}
+      sprite: {fileID: 21300000, guid: b8d3b0b5a516dfb46807f81e8208ce51, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 86.70981
+    powerScore: 59.755882
     powerScoreBreakdown:
-      offense: 25.574833
-      defense: 22.986217
-      energy: 8.514001
-      mobility: 17.6
-      capacity: 12.034754
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_03
-    upgradeTreeShipName: Goldie
-    prefab: {fileID: 8127381702121887465, guid: 70c972c17dfe8be4ea1f86fca85962b7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f85e084f3882ea74598382518dfd868b, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f85e084f3882ea74598382518dfd868b, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 9efcc406e50073d4b99721ee28650535, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 85179c406dbaa164f97005433fa110e2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 8851207d1e2622648b8527b781d821e3, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 7c4a5f9eee2263a4c873c94af1da91ba, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 115.59816
-    powerScoreBreakdown:
-      offense: 29.7
-      defense: 37.767723
-      energy: 8.514001
-      mobility: 24.9
-      capacity: 14.716439
+      offense: 0
+      defense: 6.080893
+      energy: 0
+      mobility: 38.84
+      capacity: 14.834988
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_08
     upgradeTreeShipName: October
@@ -383,42 +354,71 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7464ced0f5d0db241adc0255d1cc0f0c, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 104.437294
+    powerScore: 68.569664
     powerScoreBreakdown:
       offense: 29.10818
-      defense: 25.370169
+      defense: 6.342542
       energy: 8.514001
-      mobility: 32.2
+      mobility: 15.360001
       capacity: 9.244942
     lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_02
-    upgradeTreeShipName: Sly
-    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 87353b02fa2368b4d85aede455bd323e, type: 3}
+  - chassisId: CosmicShark_01
+    upgradeTreeShipName: Mouse
+    prefab: {fileID: 8939703252465728748, guid: 5760bc85eded69246bb370773ff9dcfa, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 36073e14b470ac54683106dad63c6d86, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 87353b02fa2368b4d85aede455bd323e, type: 3}
+      sprite: {fileID: 21300000, guid: 36073e14b470ac54683106dad63c6d86, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 2528fee14ec6acd41ae7aa36554a6a0c, type: 3}
+      sprite: {fileID: 21300000, guid: 7df2cadc2ee76bc48b2a985d8fa22020, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: ef28f7870b869a64fad44d2888e40483, type: 3}
+      sprite: {fileID: 21300000, guid: 3326befa829e5b243b1465a7f302c5dc, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 3fae4257a5aa5384fad395e28abe0ba8, type: 3}
+      sprite: {fileID: 21300000, guid: 129699e9bade6914c973b704a32bcf83, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 3ae000ae5fd4c354bb30ae55476e0d95, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 116.13648
+      sprite: {fileID: 21300000, guid: edf1f16325f0b324783e0644a5322c98, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 60.5342
     powerScoreBreakdown:
-      offense: 33.356792
-      defense: 38.09441
+      offense: 25.574833
+      defense: 5.17061
       energy: 8.514001
-      mobility: 10.3
-      capacity: 25.871279
+      mobility: 9.240001
+      capacity: 12.034754
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_03
+    upgradeTreeShipName: Goldie
+    prefab: {fileID: 8127381702121887465, guid: 70c972c17dfe8be4ea1f86fca85962b7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f85e084f3882ea74598382518dfd868b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f85e084f3882ea74598382518dfd868b, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 9efcc406e50073d4b99721ee28650535, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 85179c406dbaa164f97005433fa110e2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8851207d1e2622648b8527b781d821e3, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 7c4a5f9eee2263a4c873c94af1da91ba, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 73.14157
+    powerScoreBreakdown:
+      offense: 29.7
+      defense: 7.911127
+      energy: 8.514001
+      mobility: 12.3
+      capacity: 14.716439
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_06
     upgradeTreeShipName: CEO
@@ -441,71 +441,42 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 10fb778370d6a004b930b2a07ebf902e, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 125.08887
+    powerScore: 72.782646
     powerScoreBreakdown:
       offense: 25.79056
-      defense: 29.627758
+      defense: 6.6415377
       energy: 8.514001
-      mobility: 49.8
+      mobility: 20.48
       capacity: 11.356547
     lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_05
-    upgradeTreeShipName: Booster
-    prefab: {fileID: 2962000161116380558, guid: c52adf8e5ff812e4ea913c537c916ffc, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ebc138fb4439fcc4cac003836a0501cb, type: 3}
+  - chassisId: CosmicShark_10
+    upgradeTreeShipName: Blitzer
+    prefab: {fileID: 1803513627421462803, guid: 04d98f6db36f1c445b93e627b9579c84, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e63423357107a2a459dc9cfa2eb2d709, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: ebc138fb4439fcc4cac003836a0501cb, type: 3}
+      sprite: {fileID: 21300000, guid: e63423357107a2a459dc9cfa2eb2d709, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: e28263b71045a2b4f8a45a65d338ad01, type: 3}
+      sprite: {fileID: 21300000, guid: 82640f9f6623fd6428cc48df6dc06f67, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 57dbb53500ca45f4b8c281556b67c274, type: 3}
+      sprite: {fileID: 21300000, guid: 859e7df0acc79e147af8091427c15b82, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c5bff7a42a6c35e438a65cfc7ae5cdcb, type: 3}
+      sprite: {fileID: 21300000, guid: 9d05db49192d6e54089b04afb7dc5fb7, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: e9c13ecbb485a424b82ae50547261823, type: 3}
+      sprite: {fileID: 21300000, guid: bf18e0e634e2aab45aa0d5bf8c9bdc28, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 129.11478
+    powerScore: 69.44194
     powerScoreBreakdown:
-      offense: 27.19926
-      defense: 28.054398
-      energy: 8.514001
-      mobility: 49.8
-      capacity: 15.547115
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_17
-    upgradeTreeShipName: Bruiser
-    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1a39b3effecd0be43878d3ac61f08b12, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 1a39b3effecd0be43878d3ac61f08b12, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 601b6ea6fc2edcf458a2e9bfb06d0c98, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 549119d89e15737468089db986e85142, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 05aadd6a034fa194793cb4af4d9801b5, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 7a5ead7bc9ef74c4cb7a08490a943286, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 143.09192
-    powerScoreBreakdown:
-      offense: 36.42498
-      defense: 33.868618
-      energy: 8.514001
-      mobility: 46.8
-      capacity: 17.484316
+      offense: 13.128944
+      defense: 7.390925
+      energy: 4.2570004
+      mobility: 21.500002
+      capacity: 23.165066
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_04
     upgradeTreeShipName: Donkey
@@ -528,13 +499,42 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4b39b2c87031d994ebdca5782e1f31c7, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 137.87962
+    powerScore: 80.27257
     powerScoreBreakdown:
       offense: 29.7
-      defense: 36.695538
+      defense: 8.4084835
       energy: 8.514001
-      mobility: 49.8
+      mobility: 20.48
       capacity: 13.170087
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_02
+    upgradeTreeShipName: Sly
+    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 87353b02fa2368b4d85aede455bd323e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 87353b02fa2368b4d85aede455bd323e, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2528fee14ec6acd41ae7aa36554a6a0c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ef28f7870b869a64fad44d2888e40483, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 3fae4257a5aa5384fad395e28abe0ba8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 3ae000ae5fd4c354bb30ae55476e0d95, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 81.91487
+    powerScoreBreakdown:
+      offense: 33.356792
+      defense: 7.9927993
+      energy: 8.514001
+      mobility: 6.1800003
+      capacity: 25.871279
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_07
     upgradeTreeShipName: Lander
@@ -557,71 +557,42 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: dd638fa4da37c954ab5ab5e5a473fcc9, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 141.10869
+    powerScore: 81.29771
     powerScoreBreakdown:
       offense: 29.109049
-      defense: 36.49026
+      defense: 8.039284
       energy: 8.514001
-      mobility: 49.8
+      mobility: 18.44
       capacity: 17.195375
     lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_10
-    upgradeTreeShipName: Blitzer
-    prefab: {fileID: 1803513627421462803, guid: 04d98f6db36f1c445b93e627b9579c84, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e63423357107a2a459dc9cfa2eb2d709, type: 3}
+  - chassisId: CosmicShark_05
+    upgradeTreeShipName: Booster
+    prefab: {fileID: 2962000161116380558, guid: c52adf8e5ff812e4ea913c537c916ffc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ebc138fb4439fcc4cac003836a0501cb, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: e63423357107a2a459dc9cfa2eb2d709, type: 3}
+      sprite: {fileID: 21300000, guid: ebc138fb4439fcc4cac003836a0501cb, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 82640f9f6623fd6428cc48df6dc06f67, type: 3}
+      sprite: {fileID: 21300000, guid: e28263b71045a2b4f8a45a65d338ad01, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 859e7df0acc79e147af8091427c15b82, type: 3}
+      sprite: {fileID: 21300000, guid: 57dbb53500ca45f4b8c281556b67c274, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 9d05db49192d6e54089b04afb7dc5fb7, type: 3}
+      sprite: {fileID: 21300000, guid: c5bff7a42a6c35e438a65cfc7ae5cdcb, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: bf18e0e634e2aab45aa0d5bf8c9bdc28, type: 3}
+      sprite: {fileID: 21300000, guid: e9c13ecbb485a424b82ae50547261823, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 136.49524
+    powerScore: 75.183174
     powerScoreBreakdown:
-      offense: 13.128944
-      defense: 38.844227
-      energy: 4.2570004
-      mobility: 57.1
-      capacity: 23.165066
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_16
-    upgradeTreeShipName: Tubby
-    prefab: {fileID: 4827229434723998829, guid: 472e64f6ffd0d764db400a50e67744ed, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3c19e7b47f6e2574cbfebf95732d48c6, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 3c19e7b47f6e2574cbfebf95732d48c6, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 34bd3cd4540ce8a4c830393b8dc4cdaa, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: ff6da7fba56f16e4582e6c7a979b2f57, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: bf37713939342eb42a7930933968481c, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 11410dd0cc3452441b6c4f4a24d8209c, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 219.06306
-    powerScoreBreakdown:
-      offense: 104.27581
-      defense: 53.114895
-      energy: 25.542002
-      mobility: 20.6
-      capacity: 15.530354
+      offense: 27.19926
+      defense: 5.4827957
+      energy: 8.514001
+      mobility: 18.44
+      capacity: 15.547115
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_09
     upgradeTreeShipName: Sprinter
@@ -644,13 +615,71 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0e37842573fd3374789358dfaad4e6fc, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 175.51196
+    powerScore: 116.85861
     powerScoreBreakdown:
       offense: 51.33194
-      defense: 38.28619
+      defense: 8.95284
       energy: 17.028002
-      mobility: 49.8
+      mobility: 20.48
       capacity: 19.065832
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_17
+    upgradeTreeShipName: Bruiser
+    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1a39b3effecd0be43878d3ac61f08b12, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1a39b3effecd0be43878d3ac61f08b12, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 601b6ea6fc2edcf458a2e9bfb06d0c98, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 549119d89e15737468089db986e85142, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 05aadd6a034fa194793cb4af4d9801b5, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 7a5ead7bc9ef74c4cb7a08490a943286, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 90.839645
+    powerScoreBreakdown:
+      offense: 36.42498
+      defense: 6.9363513
+      energy: 8.514001
+      mobility: 21.48
+      capacity: 17.484316
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_13
+    upgradeTreeShipName: Zam
+    prefab: {fileID: 3846000040908533939, guid: a8a9f43784a2cb4478a4ec9abc0fe84e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b69a28577a7f02044a644c8500921cb5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b69a28577a7f02044a644c8500921cb5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: e731708bab957ea448a92be895095ae2, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0650ea261cfae484ca7550128580c793, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 1b56856f0daf3c9498649f21124593e0, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: e9f8e4994321bb64095094f26ce85f9d, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 138.33452
+    powerScoreBreakdown:
+      offense: 51.163616
+      defense: 11.269809
+      energy: 17.028002
+      mobility: 24.56
+      capacity: 34.313095
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_12
     upgradeTreeShipName: G6
@@ -673,12 +702,12 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: aa0e05a435a2bdc4282577dd5974f73f, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 165.46147
+    powerScore: 89.675064
     powerScoreBreakdown:
       offense: 29.7
-      defense: 43.16747
+      defense: 9.261064
       energy: 8.514001
-      mobility: 64.4
+      mobility: 22.52
       capacity: 19.68
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_14
@@ -702,42 +731,42 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 087cadcfb11c0ca46814d1b48ba81e34, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 154.3496
+    powerScore: 86.43739
     powerScoreBreakdown:
       offense: 26.165222
-      defense: 36.39727
+      defense: 8.325079
       energy: 8.514001
-      mobility: 64.4
+      mobility: 24.56
       capacity: 18.873095
     lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_15
-    upgradeTreeShipName: Pony
-    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e3de6583ec2225343ae5e01830d4e162, type: 3}
+  - chassisId: CosmicShark_16
+    upgradeTreeShipName: Tubby
+    prefab: {fileID: 4827229434723998829, guid: 472e64f6ffd0d764db400a50e67744ed, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3c19e7b47f6e2574cbfebf95732d48c6, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: e3de6583ec2225343ae5e01830d4e162, type: 3}
+      sprite: {fileID: 21300000, guid: 3c19e7b47f6e2574cbfebf95732d48c6, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 08e6132e45032124e8e1eb069474f6c2, type: 3}
+      sprite: {fileID: 21300000, guid: 34bd3cd4540ce8a4c830393b8dc4cdaa, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 49c782fb4f21b54469bbfd1e98f91693, type: 3}
+      sprite: {fileID: 21300000, guid: ff6da7fba56f16e4582e6c7a979b2f57, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c29db6f70ee82e44c9e98c95328dba9b, type: 3}
+      sprite: {fileID: 21300000, guid: bf37713939342eb42a7930933968481c, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: b8d3b0b5a516dfb46807f81e8208ce51, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 153.48177
+      sprite: {fileID: 21300000, guid: 11410dd0cc3452441b6c4f4a24d8209c, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 166.86688
     powerScoreBreakdown:
-      offense: 0
-      defense: 30.446783
-      energy: 0
-      mobility: 108.2
-      capacity: 14.834988
+      offense: 104.27581
+      defense: 13.278724
+      energy: 25.542002
+      mobility: 8.24
+      capacity: 15.530354
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_11
     upgradeTreeShipName: Skater
@@ -760,12 +789,12 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 97335c1c0bdd2774499d8329f8e7baff, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 240.99014
+    powerScore: 180.8366
     powerScoreBreakdown:
       offense: 102.91444
-      defense: 27.084728
+      defense: 6.771182
       energy: 34.056
-      mobility: 64.4
+      mobility: 24.56
       capacity: 12.534972
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_18
@@ -789,12 +818,12 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5cda926dea4808546a71181f51da041a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 241.6622
+    powerScore: 162.09001
     powerScoreBreakdown:
       offense: 78.67872
-      defense: 50.155483
+      defense: 10.423307
       energy: 25.542002
-      mobility: 64.4
+      mobility: 24.56
       capacity: 22.88599
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_19
@@ -818,42 +847,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7d565d7dcec2b9344b97bab03af2aa04, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 274.43488
+    powerScore: 181.77567
     powerScoreBreakdown:
       offense: 79.99813
-      defense: 67.01172
+      defense: 14.192502
       energy: 25.542002
-      mobility: 64.4
+      mobility: 24.56
       capacity: 37.48303
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_13
-    upgradeTreeShipName: Zam
-    prefab: {fileID: 3846000040908533939, guid: a8a9f43784a2cb4478a4ec9abc0fe84e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b69a28577a7f02044a644c8500921cb5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b69a28577a7f02044a644c8500921cb5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: e731708bab957ea448a92be895095ae2, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 0650ea261cfae484ca7550128580c793, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 1b56856f0daf3c9498649f21124593e0, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: e9f8e4994321bb64095094f26ce85f9d, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 222.28862
-    powerScoreBreakdown:
-      offense: 51.163616
-      defense: 55.383907
-      energy: 17.028002
-      mobility: 64.4
-      capacity: 34.313095
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_20
     upgradeTreeShipName: Duet
@@ -876,12 +876,12 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2306616957aea65439d67711e3e42ee0, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 266.04617
+    powerScore: 157.5357
     powerScoreBreakdown:
       offense: 54.15814
-      defense: 65.482414
+      defense: 13.771944
       energy: 17.028002
-      mobility: 93.6
+      mobility: 36.800003
       capacity: 35.777626
     lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: 981f7374f7531204bbb9c9e11d5f4405, type: 2}

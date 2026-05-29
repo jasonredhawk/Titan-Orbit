@@ -34,7 +34,8 @@ namespace TitanOrbit.Entities
         private const float VisualScaleMaxMultiplier = 2.1f;
         private const float ShipCollectHullMultiplier = 0.42f;
         private const float ShipCollectExtraSlop = 0.3f;
-        private const float PlanetSurfaceReachFraction = 0.96f;
+        private const float PlanetSurfaceReachSlopFraction = 0.12f;
+        private const float PlanetSurfaceReachSlopMinWorld = 0.85f;
         private const float MinVisualTravelSeconds = 0.35f;
         private const float MinVisualTravelDistance = 0.75f;
         private const float ClientNetworkSnapDistance = 10f;
@@ -310,9 +311,10 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return false;
             worldPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(worldPos, planet.transform.position);
             float surfaceWorld = planet.PlanetSize * 0.5f;
-            return dist <= surfaceWorld * PlanetSurfaceReachFraction;
+            float slop = Mathf.Max(PlanetSurfaceReachSlopMinWorld, surfaceWorld * PlanetSurfaceReachSlopFraction);
+            Vector3 surfaceTarget = GetPlanetSurfaceMagnetTarget(planet, worldPos);
+            return ToroidalMap.ToroidalDistance(worldPos, surfaceTarget) <= slop;
         }
 
         private bool HasMinVisualTravel(Vector3 projectilePos)
