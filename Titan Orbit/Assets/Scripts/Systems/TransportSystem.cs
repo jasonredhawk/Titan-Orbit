@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Generation;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 
@@ -33,8 +34,12 @@ namespace TitanOrbit.Systems
         {
             if (ship == null || planet == null) return false;
 
-            float distance = Vector3.Distance(ship.transform.position, planet.transform.position);
-            return distance <= orbitRadius;
+            Vector3 shipPos = ship.transform.position;
+            shipPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipPos, planet.transform.position);
+            float inner = planet.PlanetSize * 0.5f;
+            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
+            return dist >= inner && dist <= outer;
         }
 
         [ServerRpc(RequireOwnership = false)]

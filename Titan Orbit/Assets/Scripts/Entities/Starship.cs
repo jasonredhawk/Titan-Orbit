@@ -268,8 +268,8 @@ namespace TitanOrbit.Entities
         [Tooltip("When excess ramming (above threshold) equals this value, restitution is halfway between max and min. Higher = need more investment before bounce dies off.")]
         [SerializeField, Min(0.01f), FormerlySerializedAs("asteroidRammingRestitutionReferencePower")]
         private float asteroidRammingRestitutionReferenceExcess = 14f;
-        [Tooltip("Continuous push into an asteroid: asteroid damage per second per Newton of thrust along the inward normal (no extra impact spike).")]
-        [SerializeField, Min(0f)] private float asteroidGrindPushToAsteroidDpsScale = 0.012f;
+        [Tooltip("Continuous push into an asteroid: asteroid DPS per Newton of thrust along the inward normal. Scaled with ship collision damage (same proportion).")]
+        [SerializeField, Min(0f)] private float asteroidGrindPushToAsteroidDpsScale = 0.003f;
         [Tooltip("Ignore grind below this push (N) to avoid jitter when nearly parallel to the surface.")]
         [SerializeField, Min(0f)] private float asteroidGrindMinPushNewtons = 8f;
         [Tooltip("Cap grind DPS to the asteroid so a stuck ship cannot melt a rock instantly.")]
@@ -280,10 +280,10 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0.01f)] private float asteroidGrindFeedbackForceFromPushScale = 2.75f;
         [Tooltip("Minimum impact force (N) required before showing a floating impact number on asteroid collisions.")]
         [SerializeField, Min(0f)] private float asteroidImpactForcePopupMin = 80f;
-        [Tooltip("Ship collision damage = impact force * this value. Lower this to heavily scale down collision damage.")]
-        [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.0025f;
-        [Tooltip("Asteroid collision damage = impact force * this value. Tune separately from ship damage.")]
-        [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.0015f;
+        [Tooltip("Ship collision damage = impact force × self ram multiplier × this value. Tuned for ~25 HP hulls from component stats.")]
+        [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.000625f;
+        [Tooltip("Asteroid collision damage = impact force × offense ram multiplier × this value. Same ÷4 as ship scale so impact/self damage ratio is unchanged.")]
+        [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.000375f;
         [Tooltip("Use global collision VFX tuning from VisualEffectsManager instead of local values below.")]
         [SerializeField] private bool useGlobalCollisionVfxTuning = true;
         [Tooltip("Minimum impact force (N) on asteroid hits before spawning weapon-style collision impact VFX.")]
@@ -493,7 +493,7 @@ namespace TitanOrbit.Entities
                 return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier * ENGINE_THRUST_VISIBILITY;
             }
         }
-        /// <summary>Max speed from best thruster base plus extra thruster moveSpeedPerLevel terms. Scaled by attr/cards.</summary>
+        /// <summary>Max speed from shared engine/thruster pool: best base move speed plus half the summed moveSpeedPerLevel from other propulsion parts.</summary>
         private float EffectiveMaxSpeed
         {
             get
@@ -645,9 +645,6 @@ namespace TitanOrbit.Entities
         private Vector3 moveDirection = Vector3.zero;
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone
-        private float lastOrbitDetectServerTime = -999f;
-        private float lastOrbitDetectClientTime = -999f;
-        private const float OrbitDetectInterval = 1.5f;
         private bool wasMovePressedLastFrame;
         private float depositAccumulator; // Accumulates toward next deposit chunk (shipLevel gems per chunk, 2 chunks/sec)
         private float lastDepositSpawnTime = -999f;
@@ -770,14 +767,22 @@ namespace TitanOrbit.Entities
             float impactImpulse = mass * deltaNormalSpeed;
             float dt = Time.fixedDeltaTime > 1e-6f ? Time.fixedDeltaTime : 0.02f;
             float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, dt);
-            float ramMul = GetRammingForceMultiplier();
-            asteroidDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToAsteroidDamageScale);
-            selfDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToShipDamageScale);
+            float offenseRam = GetRammingOffenseMultiplier();
+            float selfRam = GetRammingSelfDamageMultiplier();
+            asteroidDamage = Mathf.Max(0f, impactForceNewtons * offenseRam * asteroidImpactForceToAsteroidDamageScale);
+            selfDamage = Mathf.Max(0f, impactForceNewtons * selfRam * asteroidImpactForceToShipDamageScale);
         }
 
-        private float GetRammingForceMultiplier()
+        /// <summary>Ramming stat boosts damage to asteroids and grind DPS.</summary>
+        private float GetRammingOffenseMultiplier()
         {
             return 1f + Mathf.Max(0f, rammingPower) * 0.1f;
+        }
+
+        /// <summary>Self collision damage does not scale up with ramming investment (ramming is offense, not self-harm).</summary>
+        private float GetRammingSelfDamageMultiplier()
+        {
+            return 1f;
         }
 
         private float GetEffectiveAsteroidRestitution()
@@ -1684,12 +1689,6 @@ namespace TitanOrbit.Entities
             }
 
             wasMovePressedLastFrame = movePressed;
-            // If we're in orbit zone but trigger didn't fire (e.g. spawned there), detect it occasionally (avoid per-frame FindObjectsOfType cost).
-            if (currentOrbitPlanet == null && Time.time - lastOrbitDetectClientTime >= OrbitDetectInterval)
-            {
-                lastOrbitDetectClientTime = Time.time;
-                TryDetectOrbitZone();
-            }
         }
 
         private void LateUpdate()
@@ -2268,6 +2267,10 @@ namespace TitanOrbit.Entities
             {
             ServerTickEstimatedPlanarVelocity(Time.fixedDeltaTime);
 
+            // Toroidal orbit band (physics triggers fail across map wraps; owner + server need geometry, not OnTriggerEnter).
+            if (IsServer || IsLocalPlayerShip())
+                RefreshOrbitPlanetFromPosition();
+
             // Apply asteroid bounce before movement forces so thrust does not overwrite the rebound.
             if (_hasPendingAsteroidBounce)
             {
@@ -2326,13 +2329,6 @@ namespace TitanOrbit.Entities
             
             if (IsServer)
             {
-                // Server must detect orbit zone when ship spawns inside (OnTriggerEnter doesn't fire for objects that start inside).
-                // Avoid calling FindObjectsOfType<Planet>() every FixedUpdate by throttling checks.
-                if (currentOrbitPlanet == null && Time.time - lastOrbitDetectServerTime >= OrbitDetectInterval)
-                {
-                    lastOrbitDetectServerTime = Time.time;
-                    TryDetectOrbitZoneServer();
-                }
                 HandleDeath();
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
@@ -3002,10 +2998,13 @@ namespace TitanOrbit.Entities
             if (currentOrbitPlanet == null || rb == null) return;
 
             Vector3 planetPos = currentOrbitPlanet.transform.position;
-            Vector3 toShip = rb.position - planetPos;
-            toShip.y = 0f;
-            float dist = toShip.magnitude;
+            planetPos.y = 0f;
+            Vector3 shipPos = rb.position;
+            shipPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipPos, planetPos);
             if (dist < 0.01f) return;
+
+            Vector3 toShip = ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipPos);
 
             // Orbit zone: inner 0.5 to outer (local). Ship keeps whatever radius it entered.
             float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
@@ -3036,8 +3035,7 @@ namespace TitanOrbit.Entities
             if (inUndockGrace && transitionDur > 0.001f)
             {
                 float w = Mathf.Clamp01(graceRemaining / transitionDur); // 1 = start of grace, 0 = end
-                Vector3 flat = rb.position - gemMoonUndockCachedMoonPos;
-                flat.y = 0f;
+                Vector3 flat = ToroidalMap.ShortestWorldOffsetXZ(gemMoonUndockCachedMoonPos, rb.position);
                 Vector3 outwardDir = flat.sqrMagnitude > 0.0001f ? flat.normalized : tangent;
                 Vector3 outwardVel = outwardDir * (gemMoonUndockOutwardSpeed * w);
                 float handoff = 1f - w;
@@ -3200,7 +3198,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         private Vector3 GetPlanarVelocityForOrbitStableCheck() => GetPlanarVelocityForServerGameplayChecks();
 
-        /// <summary>True when the ship lies in the planet's orbit band (same ring math as <see cref="TryDetectOrbitZoneServer"/>).</summary>
+        /// <summary>True when the ship lies in the planet's orbit band (same ring math as <see cref="RefreshOrbitPlanetFromPosition"/>).</summary>
         private static bool IsWorldPositionInPlanetOrbitShell(Planet planet, Vector3 shipWorldPos)
         {
             if (planet == null) return false;
@@ -4042,10 +4040,12 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full; at/above 50%, only surplus above half loads onto ships. Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Load/unload rate and chunk size scale with ship level (ship level people/s, card-scaled). Transfer only after <see cref="CanAccumulatePeopleTransferDwell"/> for <see cref="peopleTransferStationaryHoldSeconds"/>.</summary>
-        /// <summary>Server: pick the orbit planet whose shell contains this ship (closest toroidal match). Avoids stale HomePlanet cache blocking hostile unload.</summary>
-        private void RefreshServerOrbitPlanetFromPosition()
+        /// <summary>Pick the orbit planet whose shell contains this ship (closest toroidal match). Used on server and local owner — physics triggers miss wrapped tiles.</summary>
+        private void RefreshOrbitPlanetFromPosition()
         {
-            if (!IsServer || rb == null)
+            if (rb == null)
+                return;
+            if (!IsServer && !IsLocalPlayerShip())
                 return;
 
             Vector3 p0 = rb.position;
@@ -4072,9 +4072,6 @@ namespace TitanOrbit.Entities
 
         private void TickOrbitPopulationTransfer()
         {
-            if (IsServer)
-                RefreshServerOrbitPlanetFromPosition();
-
             ulong orbitPlanetId = 0;
             if (currentOrbitPlanet != null)
             {
@@ -4931,9 +4928,10 @@ namespace TitanOrbit.Entities
                 asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
             }
 
-            float ramMul = GetRammingForceMultiplier();
-            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToShipDamageScale);
-            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * ramMul * asteroidImpactForceToAsteroidDamageScale);
+            float offenseRam = GetRammingOffenseMultiplier();
+            float selfRam = GetRammingSelfDamageMultiplier();
+            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * selfRam * asteroidImpactForceToShipDamageScale);
+            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * offenseRam * asteroidImpactForceToAsteroidDamageScale);
 
             if (shipCollisionDamage > 0.0001f)
             {
@@ -5024,8 +5022,9 @@ namespace TitanOrbit.Entities
             float pushN = AsteroidRammingBehavior.ComputeNormalPushNewtons(n, driveF);
             if (pushN < asteroidGrindMinPushNewtons) return;
 
-            float ramMul = GetRammingForceMultiplier();
-            float dps = pushN * ramMul * asteroidGrindPushToAsteroidDpsScale;
+            float offenseRam = GetRammingOffenseMultiplier();
+            float selfRam = GetRammingSelfDamageMultiplier();
+            float dps = pushN * offenseRam * asteroidGrindPushToAsteroidDpsScale;
             if (asteroidGrindMaxAsteroidDps > 0f)
                 dps = Mathf.Min(dps, asteroidGrindMaxAsteroidDps);
             float asteroidGrindDamage = dps * Time.fixedDeltaTime;
@@ -5034,13 +5033,14 @@ namespace TitanOrbit.Entities
             ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
             asteroid.TakeDamageServerRpc(asteroidGrindDamage, attackerShipId);
 
-            bool grindPulse = TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, ramMul, asteroidGrindDamage);
+            bool grindPulse = TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, offenseRam, asteroidGrindDamage);
 
             // Self-damage + gem expulsion while grinding (same throttle as feedback so per-frame hits do not dump all gems).
             if (grindPulse && asteroidImpactForceToShipDamageScale > 0f && asteroidImpactForceToAsteroidDamageScale > 0.0001f)
             {
                 float grindInterval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
-                float shipGrindDamage = dps * grindInterval * (asteroidImpactForceToShipDamageScale / asteroidImpactForceToAsteroidDamageScale);
+                float shipGrindDamage = pushN * selfRam * grindInterval * asteroidGrindPushToAsteroidDpsScale
+                    * (asteroidImpactForceToShipDamageScale / asteroidImpactForceToAsteroidDamageScale);
                 if (shipGrindDamage > 0.0001f)
                 {
                     float grindExpulsionIntensity = ComputeGemExpulsionIntensityFromGrindPush(pushN);
@@ -5740,7 +5740,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server-only: detect if ship is inside a planet's orbit zone (e.g. after spawning there). OnTriggerEnter doesn't fire for objects that start inside.</summary>
-        /// <summary>Server: true if the given XZ world position lies in any planet's orbit band (same ring math as <see cref="TryDetectOrbitZoneServer"/>).</summary>
+        /// <summary>Server: true if the given XZ world position lies in any planet's orbit band (same ring math as <see cref="RefreshOrbitPlanetFromPosition"/>).</summary>
         /// <remarks>
         /// Used by <see cref="FireServerRpc"/> instead of the cached <see cref="currentOrbitPlanet"/> field, which is not replicated
         /// and can disagree between dedicated server and owning client (blocking all shots while the client can still press fire).
@@ -5758,50 +5758,6 @@ namespace TitanOrbit.Entities
                     return true;
             }
             return false;
-        }
-
-        private bool TryBindOrbitPlanetFromShipWorldPositions()
-        {
-            if (!IsServer || rb == null) return false;
-            Vector3 p0 = rb.position;
-            Vector3 p1 = transform.position;
-            foreach (var planet in Planet.AllPlanets)
-            {
-                if (planet == null) continue;
-                if (IsWorldPositionInPlanetOrbitShell(planet, p0) || IsWorldPositionInPlanetOrbitShell(planet, p1))
-                {
-                    currentOrbitPlanet = planet;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private void TryDetectOrbitZoneServer()
-        {
-            if (!IsServer || rb == null || currentOrbitPlanet != null) return;
-            TryBindOrbitPlanetFromShipWorldPositions();
-        }
-
-        /// <summary>Owner-only: detect if we're inside a planet's orbit zone (e.g. after spawning there).</summary>
-        private void TryDetectOrbitZone()
-        {
-            if (rb == null || currentOrbitPlanet != null) return;
-            if (!IsLocalPlayerShip()) return;
-            foreach (var planet in Planet.AllPlanets)
-            {
-                if (planet == null) continue;
-                Vector3 toShip = rb.position - planet.transform.position;
-                toShip.y = 0f;
-                float dist = toShip.magnitude;
-                float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-                if (dist >= inner && dist <= outer)
-                {
-                    currentOrbitPlanet = planet;
-                    break;
-                }
-            }
         }
 
         /// <summary>True if this ship is the local player's ship (not AI or other players).</summary>
@@ -6089,7 +6045,7 @@ namespace TitanOrbit.Entities
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
                 rammingPower = Mathf.Max(0f, baseRammingPower + s.rammingPower + s.rammingPowerPerLevel * perLvl);
 
-                // Movement: thrusters only (engines are energy). Top speed = best thruster base + other thrusters' moveSpeedPerLevel; acceleration sums.
+                // Movement: engines and thrusters share one pool — best base once + half the sum of other parts' moveSpeedPerLevel; acceleration sums.
                 float moveVal = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(s.moveSpeed, perLvl));
                 ShipPropulsionAggregation.Result propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
                     matchedComponentIds,

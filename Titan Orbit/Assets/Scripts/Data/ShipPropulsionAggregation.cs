@@ -4,22 +4,76 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Thruster move speed and acceleration rules shared by <see cref="Entities.Starship"/> and editor previews.
-    /// Engines no longer contribute propulsion (energy only). Thrusters: one base move speed (best part) plus
-    /// each additional thruster's moveSpeedPerLevel; acceleration caps sum across all thrusters.
+    /// Engine and thruster move speed and acceleration rules shared by <see cref="Entities.Starship"/> and editor previews.
+    /// Engines and thrusters share one propulsion pool: the single best base <see cref="ShipComponentAbilityStats.moveSpeed"/>
+    /// plus half the sum of every other part's <see cref="ShipComponentAbilityStats.moveSpeedPerLevel"/>.
+    /// Example: 6 identical v1 parts (moveSpeed 6, moveSpeedPerLevel 1.2) → (6 + (5 × 1.2) / 2) × 0.8 ≈ 7.2 effective top speed.
+    /// Acceleration caps sum across all engines and thrusters (same global scale).
     /// </summary>
     public static class ShipPropulsionAggregation
     {
-        /// <summary>Per-level terms are ~25% of base (20–30% band). Used when balancing engine energy after scan.</summary>
+        /// <summary>Applied to aggregated top speed and acceleration at runtime (0.8 = 20% slower overall).</summary>
+        public const float OverallPropulsionSpeedMultiplier = 0.8f;
+
+        /// <summary>Per-level terms for non-propulsion stats (~25% of base). Used when balancing weapon energy after scan.</summary>
         public const float PerLevelFractionOfBase = 0.25f;
+
+        /// <summary>Engine/thruster moveSpeedPerLevel and accelerationCapPerLevel are this fraction of base (20%).</summary>
+        public const float PropulsionPerLevelFractionOfBase = 0.20f;
 
         /// <summary>Per level after 1, mobility loses this fraction of the base stat (matches Starship).</summary>
         public const float ShipLevelMobilityPenaltyFractionPerLevel = 0.11f;
+
+        /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
+        public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
+
+        /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
+        public const float SuggestedPropulsionMoveSpeedV1 = 6f;
+
+        /// <summary>Move speed added per version tier (v2 = 8, v3 = 10, …), before global propulsion scale.</summary>
+        public const float SuggestedPropulsionMoveSpeedPerVersion = 2f;
+
+        /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
+        public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed = 0.5f;
+
+        /// <summary>Engine/thruster move speed from version: v1=6, v2=8, v3=10, …</summary>
+        public static float GetSuggestedPropulsionMoveSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return SuggestedPropulsionMoveSpeedV1 + (v - 1) * SuggestedPropulsionMoveSpeedPerVersion;
+        }
+
+        /// <summary>Engine/thruster acceleration cap from version (half of move speed by default).</summary>
+        public static float GetSuggestedPropulsionAccelerationCap(int version)
+        {
+            return GetSuggestedPropulsionMoveSpeed(version) * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
+        }
+
+        /// <summary>moveSpeedPerLevel for scan/auto-populate (20% of base move speed for that version).</summary>
+        public static float GetSuggestedPropulsionMoveSpeedPerLevel(int version)
+        {
+            return GetSuggestedPropulsionMoveSpeed(version) * PropulsionPerLevelFractionOfBase;
+        }
+
+        /// <summary>accelerationCapPerLevel for scan/auto-populate (20% of base acceleration for that version).</summary>
+        public static float GetSuggestedPropulsionAccelerationCapPerLevel(int version)
+        {
+            return GetSuggestedPropulsionAccelerationCap(version) * PropulsionPerLevelFractionOfBase;
+        }
+
+        public static float ApplyOverallPropulsionSpeedScale(float value)
+        {
+            return value * OverallPropulsionSpeedMultiplier;
+        }
 
         public struct Result
         {
             public float topMoveSpeed;
             public float sumAcceleration;
+            /// <summary>Index into matched component lists for the part whose base moveSpeed was used once.</summary>
+            public int primaryIndex;
+            /// <summary>Effective extra top speed from non-primary parts (half the summed moveSpeedPerLevel).</summary>
+            public float extraMoveSpeedFromPerLevel;
         }
 
         public static float ApplyShipLevelMobilityScale(float baseStat, int levelsAfterFirst)
@@ -30,14 +84,14 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Computes thruster top speed and total acceleration from per-component stats at a ship level.
+        /// Computes shared engine/thruster top speed and total acceleration from per-component stats at a ship level.
         /// </summary>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel)
         {
-            var result = new Result();
+            var result = new Result { primaryIndex = -1 };
             if (componentIds == null || perComponentStats == null)
                 return result;
 
@@ -46,51 +100,107 @@ namespace TitanOrbit.Data
                 return result;
 
             int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
-            int primaryIndex = -1;
             float bestPrimaryMove = 0f;
 
             for (int i = 0; i < count; i++)
             {
-                if (!ShipComponentAbilityStats.IsThrusterComponent(componentIds[i]))
+                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
                     continue;
 
                 ShipComponentAbilityStats comp = perComponentStats[i];
                 if (comp.moveSpeed > bestPrimaryMove)
                 {
                     bestPrimaryMove = comp.moveSpeed;
-                    primaryIndex = i;
+                    result.primaryIndex = i;
                 }
             }
 
-            if (primaryIndex >= 0)
+            if (result.primaryIndex >= 0)
             {
                 float primaryMove = ApplyShipLevelMobilityScale(
-                    perComponentStats[primaryIndex].moveSpeed,
+                    perComponentStats[result.primaryIndex].moveSpeed,
                     levelsAfterFirst);
-                float extraMove = 0f;
 
+                float summedExtraPerLevel = 0f;
                 for (int i = 0; i < count; i++)
                 {
-                    if (!ShipComponentAbilityStats.IsThrusterComponent(componentIds[i]))
+                    if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
                         continue;
-                    if (i == primaryIndex)
+                    if (i == result.primaryIndex)
                         continue;
-                    extraMove += Mathf.Max(0f, perComponentStats[i].moveSpeedPerLevel);
+                    summedExtraPerLevel += Mathf.Max(0f, perComponentStats[i].moveSpeedPerLevel);
                 }
 
-                result.topMoveSpeed = Mathf.Max(0.1f, primaryMove + extraMove);
+                result.extraMoveSpeedFromPerLevel =
+                    summedExtraPerLevel * AdditionalPropulsionMoveSpeedPerLevelFactor;
+                result.topMoveSpeed = Mathf.Max(
+                    0.1f,
+                    primaryMove + result.extraMoveSpeedFromPerLevel);
             }
 
             for (int i = 0; i < count; i++)
             {
-                if (!ShipComponentAbilityStats.IsThrusterComponent(componentIds[i]))
+                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
                     continue;
 
                 ShipComponentAbilityStats comp = perComponentStats[i];
                 result.sumAcceleration += Mathf.Max(0f, comp.accelerationCap + comp.accelerationCapPerLevel * levelsAfterFirst);
             }
 
+            result.topMoveSpeed = ApplyOverallPropulsionSpeedScale(result.topMoveSpeed);
+            result.extraMoveSpeedFromPerLevel = ApplyOverallPropulsionSpeedScale(result.extraMoveSpeedFromPerLevel);
+            result.sumAcceleration = ApplyOverallPropulsionSpeedScale(result.sumAcceleration);
+
             return result;
+        }
+
+        /// <summary>
+        /// Replaces naively summed engine/thruster move stats in a total with the shared propulsion aggregation.
+        /// Call after summing all scaled component stats (preview, power score, etc.).
+        /// </summary>
+        public static ShipComponentAbilityStats ApplyPropulsionToSummedStats(
+            ShipComponentAbilityStats total,
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int shipLevel = 1)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return total;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            if (count == 0)
+                return total;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
+                    continue;
+
+                ShipComponentAbilityStats s = perComponentStats[i];
+                total.moveSpeed -= s.moveSpeed;
+                total.moveSpeedPerLevel -= s.moveSpeedPerLevel;
+                total.accelerationCap -= s.accelerationCap;
+                total.accelerationCapPerLevel -= s.accelerationCapPerLevel;
+            }
+
+            Result propulsion = ComputeThrusterPropulsion(componentIds, perComponentStats, shipLevel);
+            total.moveSpeed = Mathf.Max(0f, total.moveSpeed) + propulsion.topMoveSpeed;
+            total.accelerationCap = Mathf.Max(0f, total.accelerationCap) + propulsion.sumAcceleration;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
+                    continue;
+                total.accelerationCapPerLevel += perComponentStats[i].accelerationCapPerLevel;
+            }
+
+            if (propulsion.primaryIndex >= 0 && propulsion.primaryIndex < count)
+            {
+                total.moveSpeedPerLevel = Mathf.Max(0f, total.moveSpeedPerLevel)
+                    + perComponentStats[propulsion.primaryIndex].moveSpeedPerLevel;
+            }
+
+            return total;
         }
 
         /// <summary>
@@ -104,9 +214,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sets engine energy so total regen is slightly below summed weapon sustained drain.
+        /// Sets each weapon's energy stats so regen is slightly below that weapon's sustained fire drain.
         /// </summary>
-        public static void BalanceEngineEnergyForComponents(
+        public static void BalanceWeaponEnergyForComponents(
             IList<ShipFamilyComponentEntry> components,
             float regenToDrainRatio = 0.85f,
             float capacitySecondsAtFullDrain = 4f)
@@ -114,41 +224,31 @@ namespace TitanOrbit.Data
             if (components == null || components.Count == 0)
                 return;
 
-            float totalWeaponDrain = 0f;
-            var engineEntries = new List<ShipFamilyComponentEntry>();
-
             for (int i = 0; i < components.Count; i++)
             {
                 ShipFamilyComponentEntry entry = components[i];
                 if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
                     continue;
 
+                entry.EnsureStatCategories();
+                if (!entry.statCategories.Contains(ShipComponentStatCategory.Energy))
+                    continue;
+
                 string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
-                if (string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
-                    totalWeaponDrain += ComputeWeaponSustainedEnergyDrain(entry.stats);
+                if (!string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-                if (string.Equals(partType, "Engine", System.StringComparison.OrdinalIgnoreCase))
-                    engineEntries.Add(entry);
-            }
+                float weaponDrain = ComputeWeaponSustainedEnergyDrain(entry.stats);
+                if (weaponDrain <= 0f)
+                    continue;
 
-            if (engineEntries.Count == 0 || totalWeaponDrain <= 0f)
-                return;
-
-            float targetTotalRegen = totalWeaponDrain * regenToDrainRatio;
-            float targetTotalCap = totalWeaponDrain * capacitySecondsAtFullDrain;
-            float perEngineRegen = targetTotalRegen / engineEntries.Count;
-            float perEngineCap = targetTotalCap / engineEntries.Count;
-
-            for (int i = 0; i < engineEntries.Count; i++)
-            {
-                ShipFamilyComponentEntry entry = engineEntries[i];
-                entry.stats.energyRegen = perEngineRegen;
-                entry.stats.energyRegenPerLevel = perEngineRegen * PerLevelFractionOfBase;
-                entry.stats.energyCap = perEngineCap;
-                entry.stats.energyCapPerLevel = perEngineCap * PerLevelFractionOfBase;
+                entry.stats.energyRegen = weaponDrain * regenToDrainRatio;
+                entry.stats.energyRegenPerLevel = entry.stats.energyRegen * PerLevelFractionOfBase;
+                entry.stats.energyCap = weaponDrain * capacitySecondsAtFullDrain;
+                entry.stats.energyCapPerLevel = entry.stats.energyCap * PerLevelFractionOfBase;
                 entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(
                     entry.stats,
-                    entry.statCategory,
+                    entry.statCategories,
                     entry.componentId);
             }
         }

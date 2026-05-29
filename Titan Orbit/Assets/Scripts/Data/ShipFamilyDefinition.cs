@@ -174,8 +174,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// True if engine for mobility rules: isolated "engine" or "thrust", but not when id is a thruster (thruster contains "thrust" as substring).
-        /// Legacy prefix "Engine" still matches.
+        /// True if engine for propulsion rules: isolated "engine" or "thrust", but not when id is a thruster (thruster contains "thrust" as substring).
+        /// Engines use the same movement stats and aggregation as thrusters.
         /// </summary>
         public static bool IsEngineComponent(string componentId)
         {
@@ -195,6 +195,17 @@ namespace TitanOrbit.Data
             string id = componentId.TrimStart();
             if (id.StartsWith("Thruster", StringComparison.OrdinalIgnoreCase)) return true;
             return ContainsIsolatedKeyword(id, "thruster");
+        }
+
+        /// <summary>Engines and thrusters share the same propulsion aggregation rules (move speed + acceleration).</summary>
+        public static bool IsPropulsionComponent(string componentId)
+        {
+            if (IsThrusterComponent(componentId) || IsEngineComponent(componentId))
+                return true;
+
+            string partType = ResolvePartTypeForSuggestedStats(componentId);
+            return string.Equals(partType, "Engine", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, "Thruster", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -315,7 +326,7 @@ namespace TitanOrbit.Data
             scaled.rammingPower = stats.rammingPower;
             scaled.rammingPowerPerLevel = stats.rammingPowerPerLevel;
             // Do not scale engine/thruster move speed by part volume—designers tune these to match gameplay speeds.
-            if (IsThrusterComponent(componentId))
+            if (IsPropulsionComponent(componentId))
             {
                 scaled.moveSpeed = stats.moveSpeed;
                 scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
@@ -371,13 +382,13 @@ namespace TitanOrbit.Data
             return filtered;
         }
 
-        /// <summary>Keeps only the stat fields allowed for this component's category and part id.</summary>
+        /// <summary>Keeps only the stat fields allowed for this component's categories and part id.</summary>
         public static ShipComponentAbilityStats KeepOnlyAuthoringFields(
             ShipComponentAbilityStats stats,
-            ShipComponentStatCategory category,
+            IReadOnlyList<ShipComponentStatCategory> categories,
             string componentId)
         {
-            string[] allowed = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(category, componentId);
+            string[] allowed = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, componentId);
             var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
             var filtered = new ShipComponentAbilityStats();
 
@@ -410,9 +421,18 @@ namespace TitanOrbit.Data
 
             return filtered;
         }
+
+        /// <summary>Keeps only the stat fields allowed for a single category (convenience wrapper).</summary>
+        public static ShipComponentAbilityStats KeepOnlyAuthoringFields(
+            ShipComponentAbilityStats stats,
+            ShipComponentStatCategory category,
+            string componentId)
+        {
+            return KeepOnlyAuthoringFields(stats, new[] { category }, componentId);
+        }
     }
 
-    /// <summary>High-level stat bucket assigned to a ship part (one category per component).</summary>
+    /// <summary>High-level stat bucket assigned to a ship part (components may use one or more).</summary>
     public enum ShipComponentStatCategory
     {
         Offense = 0,
@@ -521,29 +541,57 @@ namespace TitanOrbit.Data
             return AliasToCanonical.TryGetValue(s, out string alias) ? alias : s;
         }
 
-        /// <summary>Default stat category from part keywords when scanning or migrating component entries.</summary>
-        public static ShipComponentStatCategory InferDefaultStatCategory(string componentId)
+        /// <summary>Default stat categories from part keywords when scanning or migrating component entries.</summary>
+        public static List<ShipComponentStatCategory> InferDefaultStatCategories(string componentId)
         {
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
             switch (partType)
             {
                 case "Cockpit":
-                    return ShipComponentStatCategory.Offense;
+                    return new List<ShipComponentStatCategory>
+                    {
+                        ShipComponentStatCategory.Offense,
+                        ShipComponentStatCategory.Health,
+                        ShipComponentStatCategory.Capacity
+                    };
                 case "Engine":
-                    return ShipComponentStatCategory.Energy;
-                case "Wing":
-                case "Arm":
-                    return ShipComponentStatCategory.Capacity;
+                case "Thruster":
                 case "Fin":
                 case "Tail":
-                case "Thruster":
-                    return ShipComponentStatCategory.Movement;
+                    return new List<ShipComponentStatCategory> { ShipComponentStatCategory.Movement };
+                case "Wing":
+                case "Arm":
+                    return new List<ShipComponentStatCategory>
+                    {
+                        ShipComponentStatCategory.Health,
+                        ShipComponentStatCategory.Capacity
+                    };
                 case "Weapon":
-                    return ShipComponentStatCategory.Offense;
+                    return new List<ShipComponentStatCategory>
+                    {
+                        ShipComponentStatCategory.Offense,
+                        ShipComponentStatCategory.Energy
+                    };
                 default:
-                    return ShipComponentStatCategory.Health;
+                    return new List<ShipComponentStatCategory> { ShipComponentStatCategory.Health };
             }
         }
+
+        /// <summary>First default category (legacy / CSV export).</summary>
+        public static ShipComponentStatCategory InferDefaultStatCategory(string componentId)
+        {
+            var categories = InferDefaultStatCategories(componentId);
+            return categories.Count > 0 ? categories[0] : ShipComponentStatCategory.Health;
+        }
+
+        private static readonly ShipComponentStatCategory[] CategoryDisplayOrder =
+        {
+            ShipComponentStatCategory.Offense,
+            ShipComponentStatCategory.Health,
+            ShipComponentStatCategory.Energy,
+            ShipComponentStatCategory.Movement,
+            ShipComponentStatCategory.Capacity
+        };
 
         private static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerLevel" };
         private static readonly string[] WeaponOffenseFields =
@@ -574,7 +622,7 @@ namespace TitanOrbit.Data
                 case ShipComponentStatCategory.Energy:
                     return EnergyFields;
                 case ShipComponentStatCategory.Movement:
-                    if (partType == "Thruster")
+                    if (partType == "Thruster" || partType == "Engine")
                         return ThrusterMovementFields;
                     if (partType == "Fin" || partType == "Tail")
                         return TurnMovementFields;
@@ -584,6 +632,63 @@ namespace TitanOrbit.Data
                 default:
                     return HealthFields;
             }
+        }
+
+        private static bool ContainsStatCategory(
+            IReadOnlyList<ShipComponentStatCategory> categories,
+            ShipComponentStatCategory category)
+        {
+            for (int i = 0; i < categories.Count; i++)
+            {
+                if (categories[i] == category)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Union of stat fields for all assigned categories (stable display order).</summary>
+        public static string[] GetAuthoringStatFieldNames(
+            IReadOnlyList<ShipComponentStatCategory> categories,
+            string componentId)
+        {
+            if (categories == null || categories.Count == 0)
+                return GetAuthoringStatFieldNames(ShipComponentStatCategory.Health, componentId);
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var ordered = new List<string>();
+            for (int i = 0; i < CategoryDisplayOrder.Length; i++)
+            {
+                ShipComponentStatCategory category = CategoryDisplayOrder[i];
+                if (!ContainsStatCategory(categories, category))
+                    continue;
+
+                string[] fields = GetAuthoringStatFieldNames(category, componentId);
+                for (int f = 0; f < fields.Length; f++)
+                {
+                    if (seen.Add(fields[f]))
+                        ordered.Add(fields[f]);
+                }
+            }
+
+            return ordered.ToArray();
+        }
+
+        /// <summary>True when any assigned category is offense and the part is a weapon (not cockpit).</summary>
+        public static bool ShouldShowBulletPrefabIndex(
+            IReadOnlyList<ShipComponentStatCategory> categories,
+            string componentId)
+        {
+            if (categories == null || categories.Count == 0)
+                return false;
+
+            for (int i = 0; i < categories.Count; i++)
+            {
+                if (ShouldShowBulletPrefabIndex(categories[i], componentId))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>True when the offense category component should expose bullet prefab index (weapons only).</summary>
@@ -598,6 +703,54 @@ namespace TitanOrbit.Data
         }
     }
 
+    /// <summary>Scan/auto-populate health caps and regen for all parts with a Health category (cockpit, wing, hull, part, …).</summary>
+    public static class ShipComponentHealthSuggestions
+    {
+        /// <summary>Health cap at version 1 (¼ of legacy 21).</summary>
+        public const float HealthCapV1 = 5.25f;
+
+        /// <summary>Health cap added per version tier (v2 = 6.75, v3 = 8.25, … — same curve for every health part).</summary>
+        public const float HealthCapPerVersion = 1.5f;
+
+        /// <summary>Health regen as a fraction of cap (legacy ratio 0.75 / 21).</summary>
+        public const float HealthRegenFractionOfCap = 0.75f / 21f;
+
+        /// <summary>Health cap from version: v1=5.25, v2=6.75, v3=8.25, v4=9.75, …</summary>
+        public static float GetSuggestedHealthCap(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return HealthCapV1 + (v - 1) * HealthCapPerVersion;
+        }
+
+        public static float GetSuggestedHealthRegen(int version) =>
+            GetSuggestedHealthCap(version) * HealthRegenFractionOfCap;
+
+        public static float GetSuggestedHealthCapPerLevel(int version) =>
+            GetSuggestedHealthCap(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+        public static float GetSuggestedHealthRegenPerLevel(int version) =>
+            GetSuggestedHealthRegen(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+    }
+
+    /// <summary>Scan/auto-populate cockpit ramming offense (scaled down with lower ship health).</summary>
+    public static class ShipComponentRammingSuggestions
+    {
+        /// <summary>Ramming power at version 1 (cockpit).</summary>
+        public const float RammingPowerV1 = 0.75f;
+
+        /// <summary>Ramming power added per version tier (v2 = 1.0, v3 = 1.25, …).</summary>
+        public const float RammingPowerPerVersion = 0.25f;
+
+        public static float GetSuggestedRammingPower(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return RammingPowerV1 + (v - 1) * RammingPowerPerVersion;
+        }
+
+        public static float GetSuggestedRammingPowerPerLevel(int version) =>
+            GetSuggestedRammingPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+    }
+
     /// <summary>
     /// One named component entry within a ship family, e.g. "Cockpit", "Wing1", "Weapon_1".
     /// </summary>
@@ -610,11 +763,92 @@ namespace TitanOrbit.Data
         [Tooltip("Optional friendly label for editor-only use.")]
         public string displayName;
 
-        [Tooltip("Only stats in this category are authored for this component.")]
-        public ShipComponentStatCategory statCategory = ShipComponentStatCategory.Health;
+        [SerializeField, HideInInspector]
+        private ShipComponentStatCategory statCategory = ShipComponentStatCategory.Health;
+
+        [Tooltip("Stat categories for this component. Weapons: Offense + Energy. Cockpits: Offense + Health + Capacity. Wings: Health + Capacity.")]
+        public List<ShipComponentStatCategory> statCategories = new List<ShipComponentStatCategory>();
 
         [Tooltip("Ability stat modifiers contributed by this component.")]
         public ShipComponentAbilityStats stats;
+
+        /// <summary>Ensures <see cref="statCategories"/> is populated (migrates legacy single category when needed).</summary>
+        public void EnsureStatCategories()
+        {
+            if (statCategories == null)
+                statCategories = new List<ShipComponentStatCategory>();
+
+            if (statCategories.Count > 0)
+            {
+                ApplyLegacyCategoryUpgrades();
+                DedupeStatCategories();
+                return;
+            }
+
+            statCategories.Add(statCategory);
+            ApplyLegacyCategoryUpgrades();
+
+            if (statCategories.Count == 0 && !string.IsNullOrWhiteSpace(componentId))
+                statCategories.AddRange(ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId));
+            else if (statCategories.Count == 0)
+                statCategories.Add(ShipComponentStatCategory.Health);
+
+            DedupeStatCategories();
+        }
+
+        private void ApplyLegacyCategoryUpgrades()
+        {
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            if (string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase) &&
+                statCategories.Contains(ShipComponentStatCategory.Offense) &&
+                !statCategories.Contains(ShipComponentStatCategory.Energy))
+            {
+                statCategories.Add(ShipComponentStatCategory.Energy);
+            }
+
+            if (string.Equals(partType, "Engine", StringComparison.OrdinalIgnoreCase))
+            {
+                if (statCategories.Contains(ShipComponentStatCategory.Energy))
+                    statCategories.Remove(ShipComponentStatCategory.Energy);
+                if (!statCategories.Contains(ShipComponentStatCategory.Movement))
+                    statCategories.Add(ShipComponentStatCategory.Movement);
+            }
+
+            if (string.Equals(partType, "Cockpit", StringComparison.OrdinalIgnoreCase))
+            {
+                EnsureStatCategory(ShipComponentStatCategory.Health);
+                EnsureStatCategory(ShipComponentStatCategory.Capacity);
+            }
+
+            if (string.Equals(partType, "Wing", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partType, "Arm", StringComparison.OrdinalIgnoreCase))
+            {
+                EnsureStatCategory(ShipComponentStatCategory.Health);
+                EnsureStatCategory(ShipComponentStatCategory.Capacity);
+            }
+        }
+
+        private void EnsureStatCategory(ShipComponentStatCategory category)
+        {
+            if (!statCategories.Contains(category))
+                statCategories.Add(category);
+        }
+
+        private void DedupeStatCategories()
+        {
+            if (statCategories == null || statCategories.Count <= 1)
+                return;
+
+            var seen = new HashSet<ShipComponentStatCategory>();
+            var deduped = new List<ShipComponentStatCategory>(statCategories.Count);
+            for (int i = 0; i < statCategories.Count; i++)
+            {
+                if (seen.Add(statCategories[i]))
+                    deduped.Add(statCategories[i]);
+            }
+
+            statCategories = deduped;
+        }
 
         [Tooltip("For weapons: index into CombatSystem's Bullet Prefab Bank. -1 = use family default (ShipFamilyDefinition.bulletPrefabIndex).")]
         public int bulletPrefabIndex = -1;
@@ -642,6 +876,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Heuristic category weights from summed ship stats (same formula as the upgrade-tree editor power breakdown).
+        /// Input stats must already include per-component localScale (see ShipFamilyUpgradeTreeStatScanner in the Editor assembly).
         /// Used to bias generated upgrade cards toward what the family's prefabs are strong in.
         /// </summary>
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
@@ -711,6 +946,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Editor: heuristic parts of powerScore (offense + defense + energy + mobility + capacity).")]
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
+
+        [Tooltip("When enabled, Resort Upgrade Tree keeps this entry at its list index and only re-sorts unlocked ships.")]
+        public bool lockedInUpgradeTree;
     }
 
     [Serializable]
@@ -814,7 +1052,7 @@ namespace TitanOrbit.Data
             _runtimeProceduralCards = null;
         }
 
-        /// <summary>Strips each component entry down to stats for its <see cref="ShipFamilyComponentEntry.statCategory"/> only.</summary>
+        /// <summary>Strips each component entry down to stats for its <see cref="ShipFamilyComponentEntry.statCategories"/> only.</summary>
         public void EnforceComponentStatCategories()
         {
             if (components == null)
@@ -825,14 +1063,16 @@ namespace TitanOrbit.Data
                 if (entry == null)
                     continue;
 
+                entry.EnsureStatCategories();
+
                 if (!string.IsNullOrWhiteSpace(entry.componentId) &&
-                    !HasNonZeroStats(ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategory, entry.componentId)) &&
+                    !HasNonZeroStats(ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategories, entry.componentId)) &&
                     HasNonZeroStats(entry.stats))
                 {
-                    entry.statCategory = ShipFamilyComponentPartKey.InferDefaultStatCategory(entry.componentId);
+                    entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
                 }
 
-                entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategory, entry.componentId);
+                entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategories, entry.componentId);
             }
         }
 

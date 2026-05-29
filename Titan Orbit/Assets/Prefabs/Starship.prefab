@@ -279,14 +279,14 @@ MonoBehaviour:
   asteroidRammingMinRestitution: 0
   asteroidRammingRestitutionThreshold: 6
   asteroidRammingRestitutionReferenceExcess: 14
-  asteroidGrindPushToAsteroidDpsScale: 0.012
+  asteroidGrindPushToAsteroidDpsScale: 0.003
   asteroidGrindMinPushNewtons: 8
   asteroidGrindMaxAsteroidDps: 120
   asteroidGrindFeedbackInterval: 0.1
   asteroidGrindFeedbackForceFromPushScale: 2.75
   asteroidImpactForcePopupMin: 80
-  asteroidImpactForceToShipDamageScale: 0.0025
-  asteroidImpactForceToAsteroidDamageScale: 0.0015
+  asteroidImpactForceToShipDamageScale: 0.000625
+  asteroidImpactForceToAsteroidDamageScale: 0.000375
   useGlobalCollisionVfxTuning: 1
   collisionWeaponVfxMinImpactForceN: 1000
   collisionWeaponVfxMaxImpactForceN: 20000

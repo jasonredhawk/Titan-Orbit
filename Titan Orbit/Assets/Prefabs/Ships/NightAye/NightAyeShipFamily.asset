@@ -17,6 +17,8 @@ MonoBehaviour:
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
+    statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -24,25 +26,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 3
-      healthRegen: 5
-      healthRegenPerLevel: 1
-      energyCap: 5
-      energyCapPerLevel: 1.5
-      energyRegen: 3
-      energyRegenPerLevel: 0.5
+      rammingPower: 2
+      rammingPowerPerLevel: 0.5
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 5
-      maxGemsPerLevel: 1
-      maxPeople: 5
+      maxGems: 8
+      maxGemsPerLevel: 2
+      maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
   - componentId: Engine
     displayName: Engine 1
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -50,8 +58,10 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 2
-      healthCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
       energyCap: 0
@@ -60,6 +70,8 @@ MonoBehaviour:
       energyRegenPerLevel: 0
       moveSpeed: 8
       moveSpeedPerLevel: 2
+      accelerationCap: 4
+      accelerationCapPerLevel: 1
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -69,6 +81,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Hood
     displayName: Hood 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -76,51 +90,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Hull
-    displayName: Hull 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 10
-      healthCapPerLevel: 2
-      healthRegen: 2
-      healthRegenPerLevel: 0.75
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 5
-      maxGemsPerLevel: 1.5
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
-  - componentId: Missile
-    displayName: Missile 1
+  - componentId: Hull
+    displayName: Hull 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -128,25 +122,63 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Missile
+    displayName: Weapon 1
+    statCategory: 1
+    statCategories: 0000000002000000
+    stats:
+      firePower: 3
+      firePowerPerLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerLevel: 3
+      fireRate: 1.2
+      fireRatePerLevel: 0.3
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 14.400001
+      energyCapPerLevel: 3.6000001
+      energyRegen: 3.0600002
+      energyRegenPerLevel: 0.76500005
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Spike
     displayName: Spike 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -154,25 +186,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: WingMain
     displayName: WingMain 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -180,25 +218,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: WingMini
     displayName: WingMini 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -206,25 +250,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: WingTip
     displayName: WingTip 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -232,25 +282,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: WingWide
     displayName: WingWide 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -258,80 +314,57 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   upgradeTree:
-  - chassisId: NightAye_01
+  - chassisId: NightAye_06
     upgradeTreeShipName: 
-    prefab: {fileID: 205462326752351772, guid: d1f020ad95eb059439f6df7cef25e240, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: a6cf4f52c93efbe4a98574fa515445c1, type: 3}
+    prefab: {fileID: 2613570878766228892, guid: 70ba1ae4195f2084fb23ed7f456e3fcc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d17a6b3ced36d204bbe6abcb1da028bb, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: a6cf4f52c93efbe4a98574fa515445c1, type: 3}
+      sprite: {fileID: 21300000, guid: d17a6b3ced36d204bbe6abcb1da028bb, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 12940fa245e21c542a187a61289d32dd, type: 3}
+      sprite: {fileID: 21300000, guid: c70ee4638c060114c88f60a64be75d8f, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: bc545043fd3a487428c3de6b02baeec1, type: 3}
+      sprite: {fileID: 21300000, guid: 165d908323f4a654d9ac401cb0634ba2, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: f7078ae74c0377549880396d24d695d8, type: 3}
+      sprite: {fileID: 21300000, guid: bac13417f95ea8246b141d53cd0a3e7a, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 85fee7ff4911e1d4db616f4f4f1f9429, type: 3}
+      sprite: {fileID: 21300000, guid: 603061d927ec40242a7c629f4b8bf4a4, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 30.043287
+    powerScore: 80.13112
     powerScoreBreakdown:
-      offense: 0
-      defense: 18.847239
-      energy: 4.485351
-      mobility: 0
-      capacity: 6.7106977
-  - chassisId: NightAye_02
-    upgradeTreeShipName: 
-    prefab: {fileID: 4646355584880552056, guid: f7bbdec9f9395264cba69b1a726e85c4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 6c95c80b2e0c0cb45b32e435e61871be, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 6c95c80b2e0c0cb45b32e435e61871be, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 7d8a852ac60980743ad5c658b46806c3, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 53a630805d63e8d43a5fc42306bfe023, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: ebd045795f475404c89bf05a47f05988, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 3307f1cbf1c4ad84794f3af61af1d0ec, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 32.32576
-    powerScoreBreakdown:
-      offense: 0
-      defense: 21.17885
-      energy: 4.7938886
-      mobility: 0
-      capacity: 6.3530197
+      offense: 18.493063
+      defense: 42.732227
+      energy: 4.6276784
+      mobility: 10.3
+      capacity: 3.978148
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_03
     upgradeTreeShipName: 
     prefab: {fileID: 2110330879717637906, guid: c63f719e3bab5ab40a5c35f5960bbb0d, type: 3}
@@ -353,41 +386,101 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 42aa2e1c0e08cf64997209c708114621, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 31.176125
+    powerScore: 82.00505
     powerScoreBreakdown:
-      offense: 0
-      defense: 19.588495
-      energy: 5.03143
+      offense: 23.434416
+      defense: 49.246433
+      energy: 6.0442
       mobility: 0
-      capacity: 6.5561996
-  - chassisId: NightAye_04
+      capacity: 3.28
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_09
     upgradeTreeShipName: 
-    prefab: {fileID: 6000305792406083698, guid: 67a30fa4a67414242ba1843abbbbc347, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e2b7be6a459acf3439090a8a600d237a, type: 3}
+    prefab: {fileID: 8464131047671935371, guid: 3b53cc556eab6374bb9173201c478410, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 86f3cb6568b233647bc29f0dd51e18fc, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: e2b7be6a459acf3439090a8a600d237a, type: 3}
+      sprite: {fileID: 21300000, guid: 86f3cb6568b233647bc29f0dd51e18fc, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 211eb950ce9329d4e94bdc65ed1796b3, type: 3}
+      sprite: {fileID: 21300000, guid: d7ad9173c58aa7745a7d9315910235af, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 8af15e6a14ed43441b63c5c77f370b20, type: 3}
+      sprite: {fileID: 21300000, guid: 4dae89950ad48ef44a332d18c32a5f60, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 4100d75b64c785249b443a130b420d0f, type: 3}
+      sprite: {fileID: 21300000, guid: b5b314ca246f43f4e8b1ef029ccdc2a3, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: fab4bb177ffdcd4408185af592287c33, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 32.55801
+      sprite: {fileID: 21300000, guid: 1243638ce86b13845bb7bb6e06b7d634, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 86.68146
     powerScoreBreakdown:
-      offense: 0
-      defense: 21.127445
-      energy: 4.7225995
+      offense: 21.027203
+      defense: 46.720123
+      energy: 5.3541317
+      mobility: 10.3
+      capacity: 3.28
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_13
+    upgradeTreeShipName: 
+    prefab: {fileID: 2055226092081737397, guid: fe9ad12fdaf8a63428a60c5aee3daff3, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fc7fe157beacff94985d7f28da4bc0c8, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: fc7fe157beacff94985d7f28da4bc0c8, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a9f1f2890d709634a98aa23f061c145a, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 5d254c3cdca8b574caf6d9a60fa00268, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 4377b9581e639c94d86359c4b8a8a4a8, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 317920225a3785843b6dd7b27a6f4a4c, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 102.09833
+    powerScoreBreakdown:
+      offense: 40.96
+      defense: 44.81813
+      energy: 11.0682
       mobility: 0
-      capacity: 6.7079663
+      capacity: 5.252002
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_07
+    upgradeTreeShipName: 
+    prefab: {fileID: 4948014033293804251, guid: 629421e301813104398320c703429b3e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 04e27e9488f213046b4e6e305da802ec, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 04e27e9488f213046b4e6e305da802ec, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1b411039c76358b45ad7236bd83bd547, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: aba4a78e86cca01478a827d3c14abbab, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 0287771568a68d447b38a2bd239b212d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c77f32b66cedd404a80c551b8c2ad013, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 93.22415
+    powerScoreBreakdown:
+      offense: 27.595001
+      defense: 54.604504
+      energy: 7.236901
+      mobility: 0
+      capacity: 3.7877443
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_05
     upgradeTreeShipName: 
     prefab: {fileID: 6461599893432504761, guid: fa68c6694f7cbb948a16623301833301, type: 3}
@@ -409,125 +502,72 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b1e09afb9cca24849be0ecf69a9e1a1e, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 35.477497
+    powerScore: 104.152306
     powerScoreBreakdown:
-      offense: 0
-      defense: 19.336077
-      energy: 4.3510656
-      mobility: 5.6
-      capacity: 6.1903543
-  - chassisId: NightAye_06
+      offense: 32.05
+      defense: 50.82831
+      energy: 8.514001
+      mobility: 10.3
+      capacity: 2.46
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_04
     upgradeTreeShipName: 
-    prefab: {fileID: 2613570878766228892, guid: 70ba1ae4195f2084fb23ed7f456e3fcc, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d17a6b3ced36d204bbe6abcb1da028bb, type: 3}
+    prefab: {fileID: 6000305792406083698, guid: 67a30fa4a67414242ba1843abbbbc347, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e2b7be6a459acf3439090a8a600d237a, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: d17a6b3ced36d204bbe6abcb1da028bb, type: 3}
+      sprite: {fileID: 21300000, guid: e2b7be6a459acf3439090a8a600d237a, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: c70ee4638c060114c88f60a64be75d8f, type: 3}
+      sprite: {fileID: 21300000, guid: 211eb950ce9329d4e94bdc65ed1796b3, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 165d908323f4a654d9ac401cb0634ba2, type: 3}
+      sprite: {fileID: 21300000, guid: 8af15e6a14ed43441b63c5c77f370b20, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: bac13417f95ea8246b141d53cd0a3e7a, type: 3}
+      sprite: {fileID: 21300000, guid: 4100d75b64c785249b443a130b420d0f, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 603061d927ec40242a7c629f4b8bf4a4, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 33.70091
-    powerScoreBreakdown:
-      offense: 0
-      defense: 16.957073
-      energy: 5.55852
-      mobility: 5.6
-      capacity: 5.5853157
-  - chassisId: NightAye_07
-    upgradeTreeShipName: 
-    prefab: {fileID: 4948014033293804251, guid: 629421e301813104398320c703429b3e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 04e27e9488f213046b4e6e305da802ec, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 04e27e9488f213046b4e6e305da802ec, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1b411039c76358b45ad7236bd83bd547, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: aba4a78e86cca01478a827d3c14abbab, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 0287771568a68d447b38a2bd239b212d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c77f32b66cedd404a80c551b8c2ad013, type: 3}
+      sprite: {fileID: 21300000, guid: fab4bb177ffdcd4408185af592287c33, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 36.901165
+    powerScore: 114.31623
     powerScoreBreakdown:
-      offense: 0
-      defense: 23.27948
-      energy: 5.6981993
+      offense: 42.445004
+      defense: 57.89111
+      energy: 11.493901
       mobility: 0
-      capacity: 7.9234867
-  - chassisId: NightAye_08
+      capacity: 2.486214
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_15
     upgradeTreeShipName: 
-    prefab: {fileID: 8022787448804327767, guid: f89e5fecf7039a5469d27e5fa34878f4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 498571b4726ffa84ba7b7794003c755b, type: 3}
+    prefab: {fileID: 1929616701542942549, guid: 70b621df8ca34744fb5aa409a6a1ab65, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 849ecbe59b1ccba4dada13a625c4a636, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 498571b4726ffa84ba7b7794003c755b, type: 3}
+      sprite: {fileID: 21300000, guid: 849ecbe59b1ccba4dada13a625c4a636, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: d21545511e2472449b3cec33fe302c92, type: 3}
+      sprite: {fileID: 21300000, guid: 9aca89cd6361ec64e8d9a0ecf38fcd6b, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 14db6f9c0f4275e4dab499ee58c01938, type: 3}
+      sprite: {fileID: 21300000, guid: a58c9018645af3b48bca4bdbc9e81466, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 5e70de7d95824fa48ad48bc5edb92648, type: 3}
+      sprite: {fileID: 21300000, guid: 5d26f1b6da4b8c544ad2ff9888b99e6f, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 04061b52a3640d84ca8c147c6b708b86, type: 3}
+      sprite: {fileID: 21300000, guid: 3775d37c3be531044977cf1734035353, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 39.454105
+    powerScore: 125.58608
     powerScoreBreakdown:
-      offense: 0
-      defense: 22.138968
-      energy: 4.8922606
-      mobility: 5.6
-      capacity: 6.822877
-  - chassisId: NightAye_09
-    upgradeTreeShipName: 
-    prefab: {fileID: 8464131047671935371, guid: 3b53cc556eab6374bb9173201c478410, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 86f3cb6568b233647bc29f0dd51e18fc, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 86f3cb6568b233647bc29f0dd51e18fc, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: d7ad9173c58aa7745a7d9315910235af, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 4dae89950ad48ef44a332d18c32a5f60, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: b5b314ca246f43f4e8b1ef029ccdc2a3, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 1243638ce86b13845bb7bb6e06b7d634, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 38.361435
-    powerScoreBreakdown:
-      offense: 0
-      defense: 20.875235
-      energy: 4.8606973
-      mobility: 5.6
-      capacity: 7.025504
+      offense: 54.325
+      defense: 42.78158
+      energy: 14.899501
+      mobility: 10.3
+      capacity: 3.28
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_10
     upgradeTreeShipName: 
     prefab: {fileID: 6432900422197720644, guid: df0f6ce3bfa988c4b8a629b50c9e8f20, type: 3}
@@ -549,41 +589,130 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 14f65faa8314f6943bbd121f8be70429, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 35.75475
+    powerScore: 109.70122
     powerScoreBreakdown:
-      offense: 0
-      defense: 18.3975
-      energy: 5.87675
-      mobility: 5.6
-      capacity: 5.8805
-  - chassisId: NightAye_11
+      offense: 42.445004
+      defense: 41.362312
+      energy: 11.493901
+      mobility: 10.3
+      capacity: 4.1
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_14
     upgradeTreeShipName: 
-    prefab: {fileID: 6931135617903157613, guid: db8aa7aa8eac820448d52e5fe677b078, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b5dfdd03f88d5dd4393fce2d944e0738, type: 3}
+    prefab: {fileID: 4515118764451790365, guid: ac23a329dfad6e547b33df8d2f05179f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1e0acbe880ad4304ebe6f9a48d7a3b82, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b5dfdd03f88d5dd4393fce2d944e0738, type: 3}
+      sprite: {fileID: 21300000, guid: 1e0acbe880ad4304ebe6f9a48d7a3b82, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: b5aac5d7435c548428b726d55c641e37, type: 3}
+      sprite: {fileID: 21300000, guid: 9d4aee71dea45004ca1611ae83cb01bb, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 41c9db1c3b66acf4e839331958ea5bd8, type: 3}
+      sprite: {fileID: 21300000, guid: b783dfd1e8a8b2849b688c5f084a12f7, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: b50b6e1517bc41a47a268a06713a0287, type: 3}
+      sprite: {fileID: 21300000, guid: 34054783554feae4daf91e3c95ec6d52, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: d7a9c08590b3a0147bd38ccd4ccf7f10, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 39.76078
+      sprite: {fileID: 21300000, guid: b7dc134d5889afe44a4ecc6d914d7608, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 113.83138
     powerScoreBreakdown:
-      offense: 0
-      defense: 25.569658
-      energy: 6.352188
+      offense: 14.124268
+      defense: 82.42383
+      energy: 3.3752904
+      mobility: 10.3
+      capacity: 3.608
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_01
+    upgradeTreeShipName: 
+    prefab: {fileID: 205462326752351772, guid: d1f020ad95eb059439f6df7cef25e240, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a6cf4f52c93efbe4a98574fa515445c1, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a6cf4f52c93efbe4a98574fa515445c1, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 12940fa245e21c542a187a61289d32dd, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: bc545043fd3a487428c3de6b02baeec1, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f7078ae74c0377549880396d24d695d8, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 85fee7ff4911e1d4db616f4f4f1f9429, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 142.30135
+    powerScoreBreakdown:
+      offense: 97.477196
+      defense: 14.274344
+      energy: 27.269798
       mobility: 0
-      capacity: 7.838932
+      capacity: 3.28
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_02
+    upgradeTreeShipName: 
+    prefab: {fileID: 4646355584880552056, guid: f7bbdec9f9395264cba69b1a726e85c4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6c95c80b2e0c0cb45b32e435e61871be, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6c95c80b2e0c0cb45b32e435e61871be, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 7d8a852ac60980743ad5c658b46806c3, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 53a630805d63e8d43a5fc42306bfe023, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: ebd045795f475404c89bf05a47f05988, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 3307f1cbf1c4ad84794f3af61af1d0ec, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 128.47404
+    powerScoreBreakdown:
+      offense: 46.34111
+      defense: 67.39015
+      energy: 12.610785
+      mobility: 0
+      capacity: 2.132
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_16
+    upgradeTreeShipName: 
+    prefab: {fileID: 7902693480938632516, guid: de88c8dc273bcfc4c99a355388665402, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 46c4c805158af1f49b62f0897b114efb, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 46c4c805158af1f49b62f0897b114efb, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: bb0b333f6da8d7944a5a9d2a7e432b27, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 0b2eaef17066ede4da7b2b72923b52d2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: b62281ecbf7086b48bccd730cf55900a, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 54863b8403281df41ada451f3ae19e57, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 130.07802
+    powerScoreBreakdown:
+      offense: 52.9625
+      defense: 57.376263
+      energy: 13.835251
+      mobility: 0
+      capacity: 5.904
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_12
     upgradeTreeShipName: 
     prefab: {fileID: 5367746316872930804, guid: 373164dafd962e2459d67ea4e45b802d, type: 3}
@@ -605,153 +734,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2db7dd18c2819634281ac9f682bbe509, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 46.685608
+    powerScore: 136.76122
     powerScoreBreakdown:
-      offense: 0
-      defense: 30.51593
-      energy: 6.476491
+      offense: 33.535
+      defense: 91.006516
+      energy: 8.9397
       mobility: 0
-      capacity: 9.693186
-  - chassisId: NightAye_13
-    upgradeTreeShipName: 
-    prefab: {fileID: 2055226092081737397, guid: fe9ad12fdaf8a63428a60c5aee3daff3, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: fc7fe157beacff94985d7f28da4bc0c8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: fc7fe157beacff94985d7f28da4bc0c8, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a9f1f2890d709634a98aa23f061c145a, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 5d254c3cdca8b574caf6d9a60fa00268, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 4377b9581e639c94d86359c4b8a8a4a8, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 317920225a3785843b6dd7b27a6f4a4c, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 40.489155
-    powerScoreBreakdown:
-      offense: 0
-      defense: 24.751081
-      energy: 6.944587
-      mobility: 0
-      capacity: 8.793486
-  - chassisId: NightAye_14
-    upgradeTreeShipName: 
-    prefab: {fileID: 4515118764451790365, guid: ac23a329dfad6e547b33df8d2f05179f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1e0acbe880ad4304ebe6f9a48d7a3b82, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 1e0acbe880ad4304ebe6f9a48d7a3b82, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 9d4aee71dea45004ca1611ae83cb01bb, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: b783dfd1e8a8b2849b688c5f084a12f7, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 34054783554feae4daf91e3c95ec6d52, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: b7dc134d5889afe44a4ecc6d914d7608, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 40.413727
-    powerScoreBreakdown:
-      offense: 0
-      defense: 21.858257
-      energy: 6.5905194
-      mobility: 5.6
-      capacity: 6.364951
-  - chassisId: NightAye_15
-    upgradeTreeShipName: 
-    prefab: {fileID: 1929616701542942549, guid: 70b621df8ca34744fb5aa409a6a1ab65, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 849ecbe59b1ccba4dada13a625c4a636, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 849ecbe59b1ccba4dada13a625c4a636, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 9aca89cd6361ec64e8d9a0ecf38fcd6b, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: a58c9018645af3b48bca4bdbc9e81466, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 5d26f1b6da4b8c544ad2ff9888b99e6f, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 3775d37c3be531044977cf1734035353, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 42.887794
-    powerScoreBreakdown:
-      offense: 0
-      defense: 24.064642
-      energy: 4.964277
-      mobility: 5.6
-      capacity: 8.258877
-  - chassisId: NightAye_16
-    upgradeTreeShipName: 
-    prefab: {fileID: 7902693480938632516, guid: de88c8dc273bcfc4c99a355388665402, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 46c4c805158af1f49b62f0897b114efb, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 46c4c805158af1f49b62f0897b114efb, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: bb0b333f6da8d7944a5a9d2a7e432b27, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0b2eaef17066ede4da7b2b72923b52d2, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: b62281ecbf7086b48bccd730cf55900a, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 54863b8403281df41ada451f3ae19e57, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 48.089344
-    powerScoreBreakdown:
-      offense: 0
-      defense: 29.631716
-      energy: 8.088406
-      mobility: 0
-      capacity: 10.369224
-  - chassisId: NightAye_17
-    upgradeTreeShipName: 
-    prefab: {fileID: 6194931999829949095, guid: 4a0ce2d2c7b87944cae89f4e7a926725, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4ab074eb1b969324b9585ffe31f561b6, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 4ab074eb1b969324b9585ffe31f561b6, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 08ac7e138a909c541b3bebb526c2e7bc, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 981acf249c07eae44a07112bf529aecf, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 5cbe15ca1a2af264ebcfca9d27bc46cb, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 31e53fb356f10f347b4989702242aa21, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 58.165524
-    powerScoreBreakdown:
-      offense: 0
-      defense: 34.698063
-      energy: 7.399846
-      mobility: 5.6
-      capacity: 10.467613
+      capacity: 3.28
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_18
     upgradeTreeShipName: 
     prefab: {fileID: 7884305391865318315, guid: 1d0b2e9a25b3a384d9942b49b1678ba5, type: 3}
@@ -772,42 +762,44 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: e88efa813b8f1b741ae4b467eb0270aa, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 55.01639
+    minHomePlanetLevel: 5
+    powerScore: 128.23709
     powerScoreBreakdown:
-      offense: 0
-      defense: 32.028168
-      energy: 6.529827
-      mobility: 5.6
-      capacity: 10.858396
-  - chassisId: NightAye_19
+      offense: 32.05
+      defense: 73.273094
+      energy: 8.514001
+      mobility: 10.3
+      capacity: 4.1
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_11
     upgradeTreeShipName: 
-    prefab: {fileID: 1770630216402682675, guid: 339ac83ea9219ba44abd0dedb446d606, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 162c8da4d93704748a01b66b9a21bb93, type: 3}
+    prefab: {fileID: 6931135617903157613, guid: db8aa7aa8eac820448d52e5fe677b078, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b5dfdd03f88d5dd4393fce2d944e0738, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 162c8da4d93704748a01b66b9a21bb93, type: 3}
+      sprite: {fileID: 21300000, guid: b5dfdd03f88d5dd4393fce2d944e0738, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: dd535abe8ea8638438bad03b6bae2e01, type: 3}
+      sprite: {fileID: 21300000, guid: b5aac5d7435c548428b726d55c641e37, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 849278c57da057e4484e7bcff1e1b7b0, type: 3}
+      sprite: {fileID: 21300000, guid: 41c9db1c3b66acf4e839331958ea5bd8, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: fec196f7b60257549987eb2a5c680e30, type: 3}
+      sprite: {fileID: 21300000, guid: b50b6e1517bc41a47a268a06713a0287, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: fd165276a9e38e1428417f42a49017d0, type: 3}
+      sprite: {fileID: 21300000, guid: d7a9c08590b3a0147bd38ccd4ccf7f10, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 52.66049
+    powerScore: 227.15096
     powerScoreBreakdown:
-      offense: 0
-      defense: 26.940258
-      energy: 6.531177
-      mobility: 11.2
-      capacity: 7.989052
+      offense: 131.842
+      defense: 54.907917
+      energy: 37.12104
+      mobility: 0
+      capacity: 3.28
+    lockedInUpgradeTree: 0
   - chassisId: NightAye_20
     upgradeTreeShipName: 
     prefab: {fileID: 6696932382339930592, guid: f1a1b92af1480044a9a0b6c6d385cd1e, type: 3}
@@ -829,13 +821,101 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e984449d056cac34997addac9b4d3fb1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 49.555508
+    powerScore: 226.7735
     powerScoreBreakdown:
-      offense: 0
-      defense: 25.356276
-      energy: 5.8074775
-      mobility: 11.2
-      capacity: 7.191755
+      offense: 107.784996
+      defense: 68.7038
+      energy: 30.224699
+      mobility: 17.6
+      capacity: 2.46
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_08
+    upgradeTreeShipName: 
+    prefab: {fileID: 8022787448804327767, guid: f89e5fecf7039a5469d27e5fa34878f4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 498571b4726ffa84ba7b7794003c755b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 498571b4726ffa84ba7b7794003c755b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d21545511e2472449b3cec33fe302c92, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 14db6f9c0f4275e4dab499ee58c01938, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5e70de7d95824fa48ad48bc5edb92648, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 04061b52a3640d84ca8c147c6b708b86, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 150.39136
+    powerScoreBreakdown:
+      offense: 62.94664
+      defense: 57.313683
+      energy: 17.371038
+      mobility: 10.3
+      capacity: 2.46
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_17
+    upgradeTreeShipName: 
+    prefab: {fileID: 6194931999829949095, guid: 4a0ce2d2c7b87944cae89f4e7a926725, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4ab074eb1b969324b9585ffe31f561b6, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 4ab074eb1b969324b9585ffe31f561b6, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 08ac7e138a909c541b3bebb526c2e7bc, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 981acf249c07eae44a07112bf529aecf, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5cbe15ca1a2af264ebcfca9d27bc46cb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 31e53fb356f10f347b4989702242aa21, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 171.11288
+    powerScoreBreakdown:
+      offense: 32.05
+      defense: 116.96888
+      energy: 8.514001
+      mobility: 10.3
+      capacity: 3.28
+    lockedInUpgradeTree: 0
+  - chassisId: NightAye_19
+    upgradeTreeShipName: 
+    prefab: {fileID: 1770630216402682675, guid: 339ac83ea9219ba44abd0dedb446d606, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 162c8da4d93704748a01b66b9a21bb93, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 162c8da4d93704748a01b66b9a21bb93, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: dd535abe8ea8638438bad03b6bae2e01, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 849278c57da057e4484e7bcff1e1b7b0, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: fec196f7b60257549987eb2a5c680e30, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: fd165276a9e38e1428417f42a49017d0, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 164.9259
+    powerScoreBreakdown:
+      offense: 46.9
+      defense: 84.37489
+      energy: 12.771001
+      mobility: 17.6
+      capacity: 3.28
+    lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: d859a03d987607f418fe624b4a90d435, type: 2}
   teamMaterials:
   - variantName: Red

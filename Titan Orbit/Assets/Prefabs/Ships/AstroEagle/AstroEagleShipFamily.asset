@@ -17,7 +17,8 @@ MonoBehaviour:
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
-    statCategory: 0
+    statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -25,12 +26,12 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 2
-      rammingPowerPerLevel: 0.5
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 0.75
+      rammingPowerPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -41,14 +42,15 @@ MonoBehaviour:
       accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      maxPeople: 4
+      maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
   - componentId: Cockpit_Base_1
     displayName: Cockpit 1
-    statCategory: 0
+    statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -56,12 +58,12 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 2
-      rammingPowerPerLevel: 0.5
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 0.75
+      rammingPowerPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -72,14 +74,15 @@ MonoBehaviour:
       accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      maxPeople: 4
+      maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
   - componentId: Cockpit_Base_2
     displayName: Cockpit 2
-    statCategory: 0
+    statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -87,12 +90,12 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 4
-      rammingPowerPerLevel: 1
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 1
+      rammingPowerPerLevel: 0.25
+      healthCap: 6.75
+      healthCapPerLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerLevel: 0.06026786
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -103,14 +106,15 @@ MonoBehaviour:
       accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 16
+      maxGemsPerLevel: 4
+      maxPeople: 8
+      maxPeoplePerLevel: 2
     bulletPrefabIndex: -1
   - componentId: Engine_1
     displayName: Engine 1
-    statCategory: 2
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -124,14 +128,14 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 7.2000003
-      energyCapPerLevel: 1.8000001
-      energyRegen: 1.5300001
-      energyRegenPerLevel: 0.38250002
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -141,7 +145,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Engine_2
     displayName: Engine 2
-    statCategory: 2
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -155,14 +160,14 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 7.2000003
-      energyCapPerLevel: 1.8000001
-      energyRegen: 1.5300001
-      energyRegenPerLevel: 0.38250002
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 8
+      moveSpeedPerLevel: 1.6
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.8
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -172,7 +177,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Fin
     displayName: Fin 1
-    statCategory: 3
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -194,8 +200,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
-      turnSpeed: 14
-      turnSpeedPerLevel: 3.5
+      turnSpeed: 7
+      turnSpeedPerLevel: 1.75
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -204,6 +210,7 @@ MonoBehaviour:
   - componentId: Part_1
     displayName: Part 1
     statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -213,10 +220,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -235,6 +242,7 @@ MonoBehaviour:
   - componentId: Part_2
     displayName: Part 2
     statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -244,10 +252,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 42
-      healthCapPerLevel: 10.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.375
+      healthCap: 6.75
+      healthCapPerLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerLevel: 0.06026786
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -265,7 +273,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Tail
     displayName: Tail 1
-    statCategory: 3
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -287,8 +296,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
-      turnSpeed: 22
-      turnSpeedPerLevel: 5.5
+      turnSpeed: 11
+      turnSpeedPerLevel: 2.75
       maxGems: 0
       maxGemsPerLevel: 0
       maxPeople: 0
@@ -296,7 +305,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Thruster
     displayName: Thruster 1
-    statCategory: 3
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -314,10 +324,10 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 10
-      moveSpeedPerLevel: 2.5
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -327,12 +337,13 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Weapon
     displayName: Weapon 1
-    statCategory: 0
+    statCategory: 1
+    statCategories: 0000000002000000
     stats:
       firePower: 3
-      firePowerPerLevel: 1
+      firePowerPerLevel: 0.75
       bulletSpeed: 12
-      bulletSpeedPerLevel: 4
+      bulletSpeedPerLevel: 3
       fireRate: 1.2
       fireRatePerLevel: 0.3
       rammingPower: 0
@@ -341,10 +352,10 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 14.400001
+      energyCapPerLevel: 3.6000001
+      energyRegen: 3.0600002
+      energyRegenPerLevel: 0.76500005
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
@@ -355,10 +366,11 @@ MonoBehaviour:
       maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
-    bulletPrefabIndex: 1
+    bulletPrefabIndex: -1
   - componentId: Wing_1
     displayName: Wing 1
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -368,10 +380,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 5.25
+      healthCapPerLevel: 1.3125
+      healthRegen: 0.18750001
+      healthRegenPerLevel: 0.046875004
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -384,12 +396,13 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      maxPeople: 4
+      maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
   - componentId: Wing_2
     displayName: Wing 2
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -399,10 +412,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 6.75
+      healthCapPerLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerLevel: 0.06026786
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -415,12 +428,13 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 16
       maxGemsPerLevel: 4
-      maxPeople: 4
-      maxPeoplePerLevel: 1
+      maxPeople: 8
+      maxPeoplePerLevel: 2
     bulletPrefabIndex: -1
   - componentId: Wing_3
     displayName: Wing 3
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -430,10 +444,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 8.25
+      healthCapPerLevel: 2.0625
+      healthRegen: 0.29464287
+      healthRegenPerLevel: 0.07366072
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -446,12 +460,13 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 24
       maxGemsPerLevel: 6
-      maxPeople: 6
-      maxPeoplePerLevel: 1.5
+      maxPeople: 12
+      maxPeoplePerLevel: 3
     bulletPrefabIndex: -1
   - componentId: Wing_4
     displayName: Wing 4
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -461,10 +476,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 9.75
+      healthCapPerLevel: 2.4375
+      healthRegen: 0.3482143
+      healthRegenPerLevel: 0.087053575
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -477,12 +492,13 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 32
       maxGemsPerLevel: 8
-      maxPeople: 8
-      maxPeoplePerLevel: 2
+      maxPeople: 16
+      maxPeoplePerLevel: 4
     bulletPrefabIndex: -1
   - componentId: Wing_5
     displayName: Wing 5
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -492,10 +508,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 11.25
+      healthCapPerLevel: 2.8125
+      healthRegen: 0.40178573
+      healthRegenPerLevel: 0.10044643
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -508,8 +524,8 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 40
       maxGemsPerLevel: 10
-      maxPeople: 10
-      maxPeoplePerLevel: 2.5
+      maxPeople: 20
+      maxPeoplePerLevel: 5
     bulletPrefabIndex: -1
   upgradeTree:
   - chassisId: AstroEagle_01
@@ -532,126 +548,15 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 78c6ec280f2677f47843997367108cd1, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 99.891685
-    powerScoreBreakdown:
-      offense: 17.3
-      defense: 12.994688
-      energy: 4.2570004
-      mobility: 59.7
-      capacity: 5.64
-  - chassisId: AstroEagle_04
-    upgradeTreeShipName: Whale
-    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 94.24627
+    powerScore: 81.72733
     powerScoreBreakdown:
-      offense: 63.84525
-      defense: 0
-      energy: 3.6610205
-      mobility: 11.7
-      capacity: 15.04
-  - chassisId: AstroEagle_10
-    upgradeTreeShipName: Turkey
-    prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 934d1ea0cb4a51048a9f83673f95b6c6, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 934d1ea0cb4a51048a9f83673f95b6c6, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: ed2b28620d4f25e48adb1429be17d2d0, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 1c4dff629c61d31489855422cfed80f6, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: a2ab117c1f50e9647876f531058451be, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 99.33425
-    powerScoreBreakdown:
-      offense: 41.35556
-      defense: 13.851963
+      offense: 15.39375
+      defense: 5.2265797
       energy: 4.2570004
-      mobility: 23.4
-      capacity: 16.469727
-  - chassisId: AstroEagle_05
-    upgradeTreeShipName: Stringray
-    prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f46af7d96524a0943ade2fa31dbed897, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f46af7d96524a0943ade2fa31dbed897, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: d2a5b7b826c35dc4a885a40794f3ea9f, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: e60f5737e52acef4499f8f587c882712, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 408969f21a991ec48b44006c4c1866c1, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 98.744026
-    powerScoreBreakdown:
-      offense: 33.097626
-      defense: 0
-      energy: 4.250785
-      mobility: 41.55
-      capacity: 19.845615
-  - chassisId: AstroEagle_13
-    upgradeTreeShipName: Hippo
-    prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b65a6ed62b073a64ba2b9c2ada0c8821, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b65a6ed62b073a64ba2b9c2ada0c8821, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: e09fd5917e606de4caf3b938070667f5, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c39a2b4c8f6a59744a7e7a08f44f7f00, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: e1272f6e78f4b9e4da55da49ab1889ef, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 122.79064
-    powerScoreBreakdown:
-      offense: 63.84525
-      defense: 0
-      energy: 2.1253924
-      mobility: 11.7
-      capacity: 45.12
+      mobility: 43.73
+      capacity: 13.12
+    lockedInUpgradeTree: 1
   - chassisId: AstroEagle_03
     upgradeTreeShipName: Sparrow
     prefab: {fileID: 1560147866539248, guid: 8be3f1654a841a349b6718d270d4841e, type: 3}
@@ -672,42 +577,15 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 1d52f0f31724db044b11d3584d1c549e, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 107.995895
+    minHomePlanetLevel: 2
+    powerScore: 82.57921
     powerScoreBreakdown:
-      offense: 22.4
-      defense: 24.48511
-      energy: 4.250785
-      mobility: 53.100002
-      capacity: 3.76
-  - chassisId: AstroEagle_08
-    upgradeTreeShipName: Slicer
-    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 131.28682
-    powerScoreBreakdown:
-      offense: 54.519375
-      defense: 19.5116
-      energy: 6.834911
-      mobility: 41.55
-      capacity: 8.870937
+      offense: 17.49375
+      defense: 9.170455
+      energy: 4.2570004
+      mobility: 33.29
+      capacity: 18.368002
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_06
     upgradeTreeShipName: Turtle
     prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
@@ -728,14 +606,189 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 132.08731
+    minHomePlanetLevel: 2
+    powerScore: 104.71605
     powerScoreBreakdown:
-      offense: 37.778267
-      defense: 40.906734
-      energy: 4.3323064
-      mobility: 41.55
-      capacity: 7.52
+      offense: 32.370766
+      defense: 13.374185
+      energy: 8.514001
+      mobility: 27.515001
+      capacity: 22.942093
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_02
+    upgradeTreeShipName: Bat
+    prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 91d111897a0b41245991225fe23521d8, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 91d111897a0b41245991225fe23521d8, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: f656929ffc4cd8343af2da0a20882c30, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 70778a837a0c8da4ab03d943fad91481, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 2d11a6170a32e884a8df2f4f875e7268, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 108.36433
+    powerScoreBreakdown:
+      offense: 33.073654
+      defense: 7.112151
+      energy: 8.514001
+      mobility: 38.940002
+      capacity: 20.724516
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_08
+    upgradeTreeShipName: Slicer
+    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 122.886734
+    powerScoreBreakdown:
+      offense: 48.493126
+      defense: 8.87806
+      energy: 8.514001
+      mobility: 33.635002
+      capacity: 23.366543
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_10
+    upgradeTreeShipName: Turkey
+    prefab: {fileID: 1490270677382122, guid: bc4087888cd2c3a40b80fa96af316897, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 934d1ea0cb4a51048a9f83673f95b6c6, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 934d1ea0cb4a51048a9f83673f95b6c6, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: ed2b28620d4f25e48adb1429be17d2d0, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1c4dff629c61d31489855422cfed80f6, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a2ab117c1f50e9647876f531058451be, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 113.46949
+    powerScoreBreakdown:
+      offense: 33.838776
+      defense: 11.394331
+      energy: 8.514001
+      mobility: 18.439999
+      capacity: 41.282387
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_05
+    upgradeTreeShipName: Stringray
+    prefab: {fileID: 1870660073976606, guid: 4451021a5d9919c418dcd810ea3e9323, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f46af7d96524a0943ade2fa31dbed897, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f46af7d96524a0943ade2fa31dbed897, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: d2a5b7b826c35dc4a885a40794f3ea9f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e60f5737e52acef4499f8f587c882712, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 408969f21a991ec48b44006c4c1866c1, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 110.883415
+    powerScoreBreakdown:
+      offense: 30.626772
+      defense: 6.3233786
+      energy: 8.514001
+      mobility: 27.515001
+      capacity: 37.904263
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_04
+    upgradeTreeShipName: Whale
+    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 127.623505
+    powerScoreBreakdown:
+      offense: 60.37229
+      defense: 6.1232142
+      energy: 17.028002
+      mobility: 11.3
+      capacity: 32.8
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_15
+    upgradeTreeShipName: DoubleDragon
+    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 123.81176
+    powerScoreBreakdown:
+      offense: 31.864323
+      defense: 10.843044
+      energy: 8.514001
+      mobility: 45.77
+      capacity: 26.82039
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_09
     upgradeTreeShipName: Feather
     prefab: {fileID: 5623887138846423697, guid: a727c87f8d9d96a4594c3a0c4ea59819, type: 3}
@@ -757,97 +810,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: bbf6e5d4ff0462744a2e4351d64e9339, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 126.699745
+    powerScore: 125.8581
     powerScoreBreakdown:
-      offense: 40.1
-      defense: 21.43125
-      energy: 2.1285002
-      mobility: 48
-      capacity: 15.04
-  - chassisId: AstroEagle_02
-    upgradeTreeShipName: Bat
-    prefab: {fileID: 1864696168862192, guid: 9c6bcfbe025b2f845a3a66c2d3c95781, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 91d111897a0b41245991225fe23521d8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 91d111897a0b41245991225fe23521d8, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: f656929ffc4cd8343af2da0a20882c30, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 70778a837a0c8da4ab03d943fad91481, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 2d11a6170a32e884a8df2f4f875e7268, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 137.07849
-    powerScoreBreakdown:
-      offense: 40.556152
-      defense: 14.238516
-      energy: 3.3630302
-      mobility: 71.1
-      capacity: 7.820798
-  - chassisId: AstroEagle_16
-    upgradeTreeShipName: Spider
-    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 155.59409
-    powerScoreBreakdown:
-      offense: 91.2711
-      defense: 30.57934
-      energy: 2.1254013
-      mobility: 11.7
-      capacity: 19.918245
-  - chassisId: AstroEagle_11
-    upgradeTreeShipName: Squid
-    prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 149.87975
-    powerScoreBreakdown:
-      offense: 70.8
-      defense: 21.43125
-      energy: 2.1285002
-      mobility: 48
-      capacity: 7.52
+      offense: 32.6375
+      defense: 15.914507
+      energy: 8.514001
+      mobility: 29.45
+      capacity: 39.34209
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_14
     upgradeTreeShipName: DoubleBarrel
     prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
@@ -869,69 +839,72 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 140.88252
+    powerScore: 126.276024
     powerScoreBreakdown:
-      offense: 37.75
-      defense: 38.099907
-      energy: 4.682618
-      mobility: 41.55
-      capacity: 18.8
-  - chassisId: AstroEagle_15
-    upgradeTreeShipName: DoubleDragon
-    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
+      offense: 32.34375
+      defense: 15.281173
+      energy: 8.514001
+      mobility: 27.515001
+      capacity: 42.622097
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_16
+    upgradeTreeShipName: Spider
+    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
+      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
+      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
+      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
+      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
+      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 162.34119
+    powerScore: 173.80588
     powerScoreBreakdown:
-      offense: 42.75594
-      defense: 23.085217
-      energy: 7.1960335
-      mobility: 83.1
-      capacity: 6.2040005
-  - chassisId: AstroEagle_21
-    upgradeTreeShipName: Tortoise
-    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+      offense: 86.946686
+      defense: 11.987903
+      energy: 25.542002
+      mobility: 11.3
+      capacity: 38.029285
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_11
+    upgradeTreeShipName: Squid
+    prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
+      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
+      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
+      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
+      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 154.31879
+    powerScore: 146.66585
     powerScoreBreakdown:
-      offense: 33.12366
-      defense: 20.204515
-      energy: 7.6430593
-      mobility: 64.95
-      capacity: 28.39756
+      offense: 62.3375
+      defense: 11.628257
+      energy: 17.028002
+      mobility: 29.45
+      capacity: 26.222092
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_12
     upgradeTreeShipName: Eagle
     prefab: {fileID: 8702785273099874958, guid: 5b14bf2ca37c365429274ce322e8859c, type: 3}
@@ -952,42 +925,15 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 45f089a901dedbf4c94bffe2d1c1ea38, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 172.61024
+    minHomePlanetLevel: 5
+    powerScore: 149.62692
     powerScoreBreakdown:
-      offense: 72.977165
-      defense: 31.720858
-      energy: 4.452222
-      mobility: 59.7
-      capacity: 3.76
-  - chassisId: AstroEagle_18
-    upgradeTreeShipName: Pancakes
-    prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1b332ee2f9dc1444e80c06413d68c660, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 1b332ee2f9dc1444e80c06413d68c660, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 437dfa9fccfae104d8f2659f10916ee2, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 237d370e7a4bc19458184598bb48906b, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: fc869be8a965cb244bfaa62d2cdf4cfb, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 172.64716
-    powerScoreBreakdown:
-      offense: 69.35337
-      defense: 16.356754
-      energy: 10.285764
-      mobility: 53.100002
-      capacity: 23.551258
+      offense: 59.75334
+      defense: 12.916071
+      energy: 17.028002
+      mobility: 36.59
+      capacity: 23.339502
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_07
     upgradeTreeShipName: Starship
     prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
@@ -1008,70 +954,44 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 168.10414
+    minHomePlanetLevel: 5
+    powerScore: 146.46564
     powerScoreBreakdown:
-      offense: 62.34148
-      defense: 16.14187
-      energy: 4.250785
-      mobility: 77.85
-      capacity: 7.52
-  - chassisId: AstroEagle_19
-    upgradeTreeShipName: Harvester
-    prefab: {fileID: 3509332871556794328, guid: c983ac63827991543b127ba08780d08e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: cfa04c60a6ea28e45aa329779bae6860, type: 3}
+      offense: 57.600697
+      defense: 6.9211383
+      energy: 17.028002
+      mobility: 45.665
+      capacity: 19.250803
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_21
+    upgradeTreeShipName: Tortoise
+    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: cfa04c60a6ea28e45aa329779bae6860, type: 3}
+      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 2be4bf86c11741c4a8f746c2da53b0ad, type: 3}
+      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: f1d85f349cc847e409fd84a40aadd510, type: 3}
+      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 7b3adc25a48daf8409997f4c5880d513, type: 3}
+      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
+      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 182.21954
+    powerScore: 145.619
     powerScoreBreakdown:
-      offense: 71.776
-      defense: 12.540958
-      energy: 8.664606
-      mobility: 64.95
-      capacity: 24.287985
-  - chassisId: AstroEagle_20
-    upgradeTreeShipName: Bee
-    prefab: {fileID: 2828997707732417688, guid: e7939c8492d27bc46b0e7b2e60d8ea8b, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b0f1efc580c820446817953d42427cf7, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b0f1efc580c820446817953d42427cf7, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 029de59a5ccb334479106ee9f3cad1f4, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 39123419251fa1e44b60a4dcec5dd75b, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 533e9a1bde5b2aa4f86b0a393e9b4b0e, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 224.97932
-    powerScoreBreakdown:
-      offense: 73.27773
-      defense: 21.08835
-      energy: 12.941994
-      mobility: 106.5
-      capacity: 11.171251
+      offense: 30.651655
+      defense: 11.833665
+      energy: 8.514001
+      mobility: 41.795
+      capacity: 52.82468
+    lockedInUpgradeTree: 0
   - chassisId: AstroEagle_17
     upgradeTreeShipName: Thumper
     prefab: {fileID: 1349471453543982, guid: 503149c1c10fa1943ae9257a4de06608, type: 3}
@@ -1093,13 +1013,130 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a18ea5542319bcd4697389d1757019c1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 214.74448
+    powerScore: 178.07228
     powerScoreBreakdown:
-      offense: 70.89526
-      defense: 12.828425
-      energy: 4.250785
-      mobility: 119.25
-      capacity: 7.52
+      offense: 62.42855
+      defense: 8.74722
+      energy: 17.028002
+      mobility: 63.575
+      capacity: 26.293512
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_20
+    upgradeTreeShipName: Bee
+    prefab: {fileID: 2828997707732417688, guid: e7939c8492d27bc46b0e7b2e60d8ea8b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b0f1efc580c820446817953d42427cf7, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b0f1efc580c820446817953d42427cf7, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 029de59a5ccb334479106ee9f3cad1f4, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 39123419251fa1e44b60a4dcec5dd75b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 533e9a1bde5b2aa4f86b0a393e9b4b0e, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 192.43419
+    powerScoreBreakdown:
+      offense: 61.98273
+      defense: 13.139519
+      energy: 17.028002
+      mobility: 63.109997
+      capacity: 37.173943
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_19
+    upgradeTreeShipName: Harvester
+    prefab: {fileID: 3509332871556794328, guid: c983ac63827991543b127ba08780d08e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: cfa04c60a6ea28e45aa329779bae6860, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: cfa04c60a6ea28e45aa329779bae6860, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2be4bf86c11741c4a8f746c2da53b0ad, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f1d85f349cc847e409fd84a40aadd510, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 7b3adc25a48daf8409997f4c5880d513, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 191.45761
+    powerScoreBreakdown:
+      offense: 63.27111
+      defense: 13.8866205
+      energy: 17.028002
+      mobility: 41.795
+      capacity: 55.476875
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_18
+    upgradeTreeShipName: Pancakes
+    prefab: {fileID: 1278899913612436, guid: ace2c26753e643a4d9f512e26b016c7b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1b332ee2f9dc1444e80c06413d68c660, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1b332ee2f9dc1444e80c06413d68c660, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 437dfa9fccfae104d8f2659f10916ee2, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 237d370e7a4bc19458184598bb48906b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: fc869be8a965cb244bfaa62d2cdf4cfb, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 191.16382
+    powerScoreBreakdown:
+      offense: 60.18672
+      defense: 14.011304
+      energy: 17.028002
+      mobility: 45.530003
+      capacity: 54.407787
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_13
+    upgradeTreeShipName: Hippo
+    prefab: {fileID: 1413902348143792, guid: 8c5e58353f272a949914704a08ac0991, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b65a6ed62b073a64ba2b9c2ada0c8821, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b65a6ed62b073a64ba2b9c2ada0c8821, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: e09fd5917e606de4caf3b938070667f5, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c39a2b4c8f6a59744a7e7a08f44f7f00, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: e1272f6e78f4b9e4da55da49ab1889ef, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 183.71213
+    powerScoreBreakdown:
+      offense: 60.37229
+      defense: 13.01183
+      energy: 17.028002
+      mobility: 11.3
+      capacity: 82
+    lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: 3c3b2eec102a55445a25ade9df76aa70, type: 2}
   teamMaterials:
   - variantName: 

@@ -32,12 +32,14 @@ namespace TitanOrbit.UI
         [Header("Transitions")]
         [SerializeField] private MainMenu mainMenu;
         [Tooltip("Minimum time to show loading screen (seconds) before team menu appears.")]
-        [SerializeField] private float minLoadingDisplayTime = 1f;
+        [SerializeField] private float minLoadingDisplayTime = 0.35f;
         [Tooltip("After the world reports ready, wait up to this long for Netcode (listening + client approved when joining) before giving up.")]
         [SerializeField] private float maxWaitNetcodeSeconds = 45f;
-        [Tooltip("When joining an existing match, stop waiting for replication after this many seconds (avoids soft-lock if counts mismatch).")]
-        [SerializeField] private float maxJoinWorldSyncSeconds = 18f;
-        [Tooltip("Joining clients: fraction of planets/asteroids replicated before we show team selection. Lower = faster but you may see a brief pop-in.")]
+        [Tooltip("When joining an existing match, stop waiting for replication after this many seconds (avoids soft-lock if counts mismatch). Only used when RequireReplicationBeforeTeamSelect is enabled.")]
+        [SerializeField] private float maxJoinWorldSyncSeconds = 8f;
+        [Tooltip("When enabled, joining clients wait for a fraction of live networked map objects before team selection. When disabled, team selection opens as soon as the layout replay finishes (recommended).")]
+        [SerializeField] private bool requireReplicationBeforeTeamSelect = false;
+        [Tooltip("Joining clients: fraction of planets/asteroids replicated before we show team selection (only if RequireReplicationBeforeTeamSelect).")]
         [SerializeField, Range(0.35f, 0.98f)] private float joinReplicationEnoughFraction = 0.62f;
         [Tooltip("Joining clients: loading bar fraction (0–1) reached when layout replay finishes; replication fills from here to 100% so the bar does not sit at 100% during sync.")]
         [SerializeField, Range(0.55f, 0.95f)] private float joinProgressEndAfterReplay = 0.78f;
@@ -214,19 +216,22 @@ namespace TitanOrbit.UI
                     // Blueprint replay: animate from ~0 through replayEnd as preview prefabs spawn.
                     progress = Mathf.Lerp(0.02f, replayEnd, Mathf.Clamp01(joinPlaybackProgress));
                 }
-                else
+                else if (requireReplicationBeforeTeamSelect)
                 {
-                    // Real networked objects: fill replayEnd → 1.0 from replication progress (was stuck at 100% with Max(1, rep)).
+                    // Optional: fill replayEnd → 1.0 from replication progress while waiting for live objects.
                     float rep = mapGen.GetClientWorldReplicationProgress();
                     float thresh = Mathf.Max(0.05f, joinReplicationEnoughFraction);
                     float repT = Mathf.Clamp01(rep / thresh);
                     progress = Mathf.Lerp(replayEnd, 1f, repT);
                 }
+                else
+                    progress = 1f;
 
                 float elapsedSync = Time.realtimeSinceStartup - loadingStartTime;
                 bool replicatedEnough = mapGen.GetClientWorldReplicationProgress() >= joinReplicationEnoughFraction;
                 bool syncTimedOut = mapGen.LoadingComplete && elapsedSync >= maxJoinWorldSyncSeconds;
-                complete = mapGen.LoadingComplete && joinPlaybackComplete && (replicatedEnough || syncTimedOut);
+                bool replicationGatePassed = !requireReplicationBeforeTeamSelect || replicatedEnough || syncTimedOut;
+                complete = mapGen.LoadingComplete && joinPlaybackComplete && replicationGatePassed;
             }
             else
             {
@@ -265,8 +270,10 @@ namespace TitanOrbit.UI
                     else
                         statusText.text = "Receiving map layout...";
                 }
-                else if (pureClient && mapGen != null && mapGen.LoadingComplete && joinPlaybackComplete)
+                else if (pureClient && mapGen != null && mapGen.LoadingComplete && joinPlaybackComplete && requireReplicationBeforeTeamSelect)
                     statusText.text = "Syncing world...";
+                else if (pureClient && mapGen != null && mapGen.LoadingComplete && joinPlaybackComplete)
+                    statusText.text = "Ready!";
                 else if (progress < 0.1f)
                     statusText.text = "Building home bases...";
                 else if (progress < 0.3f)
@@ -452,14 +459,6 @@ namespace TitanOrbit.UI
                 p => joinPlaybackProgress = Mathf.Clamp01(p));
 
             joinPlaybackProgress = 1f;
-
-            float hold = 0f;
-            const float holdMax = 2.5f;
-            while (joinPreviewRoot != null && mapGen != null && hold < holdMax && mapGen.GetClientWorldReplicationProgress() < 0.08f)
-            {
-                hold += Time.unscaledDeltaTime;
-                yield return null;
-            }
 
             mapGen?.EndClientJoinBuild();
             joinPlaybackComplete = true;

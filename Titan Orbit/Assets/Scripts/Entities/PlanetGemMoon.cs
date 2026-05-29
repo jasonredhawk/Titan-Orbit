@@ -121,8 +121,6 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _lastPlanetImpactTimeByInstanceId = new Dictionary<int, float>();
         private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
         private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
-        private static readonly Collider[] ShieldRepelOverlapBuffer = new Collider[32];
-
         [Header("Enemy Shield Barrier")]
         [Tooltip("When an enemy/non-friendly ship enters the shield area while the shield has points, push it outward to prevent passing through.")]
         [SerializeField] private float enemyShieldRepelMinSpeed = 8f;
@@ -489,6 +487,7 @@ namespace TitanOrbit.Entities
             {
                 TickMoonShieldRegen();
                 TickEnemyShieldRepelServer();
+                TickGemMoonDockingServer();
             }
             UpdateMatrixShieldVisual();
 
@@ -746,23 +745,38 @@ namespace TitanOrbit.Entities
             float radius = GetMoonShieldOuterRadiusWorld();
             if (radius <= 0.0001f) return;
 
-            Vector3 moonPos = transform.position;
-            moonPos.y = 0f;
-
-            int count = Physics.OverlapSphereNonAlloc(
-                moonPos,
-                radius,
-                ShieldRepelOverlapBuffer,
-                ~0,
-                QueryTriggerInteraction.Ignore);
-
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
             {
-                Collider col = ShieldRepelOverlapBuffer[i];
-                if (col == null) continue;
-                Starship ship = col.GetComponentInParent<Starship>();
+                Starship ship = Starship.AllStarships[i];
                 if (ship == null || ship.IsDead) continue;
                 TryRepelEnemyShipWithShield(ship);
+            }
+        }
+
+        /// <summary>
+        /// Server: toroidal dock-zone check — physics triggers miss ships on the other side of a map wrap.
+        /// </summary>
+        private void TickGemMoonDockingServer()
+        {
+            if (planet == null) return;
+
+            Vector3 moonPos = transform.position;
+            moonPos.y = 0f;
+            float zoneRadius = GetMoonDockSnapRadiusWorld();
+            if (zoneRadius <= 0.0001f) return;
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || ship.IsDead) continue;
+
+                Vector3 shipPos = ship.transform.position;
+                shipPos.y = 0f;
+                float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+                float shipRadius = ship.GetShipMoonDockRadiusXZ();
+                if (dist > zoneRadius + shipRadius) continue;
+
+                ProcessShipGemMoonDocking(ship, overlapsDockTrigger: true);
             }
         }
 
@@ -1170,6 +1184,14 @@ namespace TitanOrbit.Entities
             var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
 
+            ProcessShipGemMoonDocking(ship, overlapsDockTrigger: true);
+        }
+
+        private void ProcessShipGemMoonDocking(Starship ship, bool overlapsDockTrigger)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            if (planet == null || ship == null || ship.IsDead) return;
+
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
             if (ship.GemMoonDockIgnoreUntilServerTime > now)
             {
@@ -1195,7 +1217,7 @@ namespace TitanOrbit.Entities
             }
 
             // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
-            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger: true))
+            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger))
                 return;
 
             ship.ServerSetGemMoonDocked(true, planet);

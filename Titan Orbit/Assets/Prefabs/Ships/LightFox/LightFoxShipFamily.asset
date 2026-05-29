@@ -16,7 +16,9 @@ MonoBehaviour:
   bulletPrefabIndex: 0
   components:
   - componentId: Body
-    displayName: Body 1
+    displayName: Hull 1
+    statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -24,25 +26,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
+      maxGems: 0
+      maxGemsPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Cockpit
     displayName: Cockpit 1
+    statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -50,25 +58,63 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 3
-      healthRegen: 5
-      healthRegenPerLevel: 1
-      energyCap: 5
-      energyCapPerLevel: 1.5
-      energyRegen: 3
-      energyRegenPerLevel: 0.5
+      rammingPower: 2
+      rammingPowerPerLevel: 0.5
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 5
-      maxGemsPerLevel: 1
-      maxPeople: 5
+      maxGems: 8
+      maxGemsPerLevel: 2
+      maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
+  - componentId: CockpitCover
+    displayName: CockpitCover 1
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
   - componentId: Engine1
-    displayName: Engine1 1
+    displayName: Engine 1
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -76,84 +122,8 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2
-    displayName: Engine2 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2_Mirrored
-    displayName: Engine2 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Weapon
-    displayName: Weapon 1
-    stats:
-      firePower: 5
-      firePowerPerLevel: 1.5
-      bulletSpeed: 5
-      bulletSpeedPerLevel: 1
-      fireRate: 1.5
-      fireRatePerLevel: 0.25
+      rammingPower: 0
+      rammingPowerPerLevel: 0
       healthCap: 0
       healthCapPerLevel: 0
       healthRegen: 0
@@ -162,8 +132,74 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
+      moveSpeed: 8
+      moveSpeedPerLevel: 2
+      accelerationCap: 4
+      accelerationCapPerLevel: 1
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine2
+    displayName: Engine 2
+    statCategory: 1
+    statCategories: 03000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 16
+      moveSpeedPerLevel: 4
+      accelerationCap: 8
+      accelerationCapPerLevel: 2
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Weapon
+    displayName: Weapon 1
+    statCategory: 1
+    statCategories: 0000000002000000
+    stats:
+      firePower: 3
+      firePowerPerLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerLevel: 3
+      fireRate: 1.2
+      fireRatePerLevel: 0.3
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 14.400001
+      energyCapPerLevel: 3.6000001
+      energyRegen: 3.0600002
+      energyRegenPerLevel: 0.76500005
       moveSpeed: 0
       moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -173,6 +209,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
   - componentId: Wing_1
     displayName: Wing 1
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -180,25 +218,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 21
+      healthCapPerLevel: 5.25
+      healthRegen: 0.75
+      healthRegenPerLevel: 0.1875
       energyCap: 0
       energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 8
       maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeople: 4
+      maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
   - componentId: Wing_2
     displayName: Wing 2
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -206,597 +250,31 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 10
-      healthCapPerLevel: 3
-      healthRegen: 3
-      healthRegenPerLevel: 1
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 42
+      healthCapPerLevel: 10.5
+      healthRegen: 1.5
+      healthRegenPerLevel: 0.375
       energyCap: 0
       energyCapPerLevel: 0
-      energyRegen: 3
-      energyRegenPerLevel: 1
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 8
-      turnSpeedPerLevel: 2
-      maxGems: 20
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 16
       maxGemsPerLevel: 4
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4
-    displayName: Wing 4
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 20
-      healthCapPerLevel: 6
-      healthRegen: 6
-      healthRegenPerLevel: 2
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 6
-      energyRegenPerLevel: 2
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 16
-      turnSpeedPerLevel: 4
-      maxGems: 40
-      maxGemsPerLevel: 8
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Body (1)
-    displayName: Body (1) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (1)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: CockpitCover (1)
-    displayName: CockpitCover (1) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_3 (1)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_3 (2)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine1 (1)
-    displayName: Engine1 (1) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Weapon (1)
-    displayName: Weapon (1) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_1 (1)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_2 (1)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2 (1)
-    displayName: Engine2 (1) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2 (2)
-    displayName: Engine2 (2) 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2_Mirrored (1)
-    displayName: Engine2 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine2_Mirrored (2)
-    displayName: Engine2 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (2)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (3)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (4)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (5)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (6)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (7)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing_4 (8)
-    displayName: Wing 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.5
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 1.5
-      energyRegenPerLevel: 0.5
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 4
-      turnSpeedPerLevel: 1
-      maxGems: 10
-      maxGemsPerLevel: 2
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: CockpitCover
-    displayName: CockpitCover 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      healthCap: 5
-      healthCapPerLevel: 1
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 3
-      energyCapPerLevel: 0.5
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 3
-      maxGemsPerLevel: 0.5
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeople: 8
+      maxPeoplePerLevel: 2
     bulletPrefabIndex: -1
   - componentId: Wing_3
     displayName: Wing 3
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -804,22 +282,58 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      healthCap: 15
-      healthCapPerLevel: 4.5
-      healthRegen: 4.5
-      healthRegenPerLevel: 1.5
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 63
+      healthCapPerLevel: 15.75
+      healthRegen: 2.25
+      healthRegenPerLevel: 0.5625
       energyCap: 0
       energyCapPerLevel: 0
-      energyRegen: 4.5
-      energyRegenPerLevel: 1.5
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
-      turnSpeed: 12
-      turnSpeedPerLevel: 3
-      maxGems: 30
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 24
       maxGemsPerLevel: 6
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeople: 12
+      maxPeoplePerLevel: 3
+    bulletPrefabIndex: -1
+  - componentId: Wing_4
+    displayName: Wing 4
+    statCategory: 1
+    statCategories: 0100000004000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 84
+      healthCapPerLevel: 21
+      healthRegen: 3
+      healthRegenPerLevel: 0.75
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 32
+      maxGemsPerLevel: 8
+      maxPeople: 16
+      maxPeoplePerLevel: 4
     bulletPrefabIndex: -1
   upgradeTree:
   - chassisId: LightFox_01
@@ -843,41 +357,43 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58956baa2098fe943b7e0187388c7ba3, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 81.82095
+    powerScore: 104.15852
     powerScoreBreakdown:
-      offense: 0
-      defense: 32.52707
-      energy: 15.395622
-      mobility: 26.400002
-      capacity: 7.4982643
-  - chassisId: LightFox_02
+      offense: 2.35
+      defense: 41.449673
+      energy: 0
+      mobility: 35.2
+      capacity: 25.158854
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_06
     upgradeTreeShipName: 
-    prefab: {fileID: 3277353922622260429, guid: 78f1c9e1e0bf8bc40ad7b0a2ba14cfc3, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 148f05c96a072494ebc3e9b5c322989b, type: 3}
+    prefab: {fileID: 6266737575637564450, guid: 3c81199475d235d4f9f31c27dd659492, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b18f243879304d24b8f4f602f931f6c4, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 148f05c96a072494ebc3e9b5c322989b, type: 3}
+      sprite: {fileID: 21300000, guid: b18f243879304d24b8f4f602f931f6c4, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 2a258cc5d5b4e544a88f4586797f74dd, type: 3}
+      sprite: {fileID: 21300000, guid: 9159eeab616a3064aa3dfdc38c209159, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 0ac26bcd60d902f4e9ecf0f2870df3aa, type: 3}
+      sprite: {fileID: 21300000, guid: fca0ba13be155d14b9f670017d3bd692, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 3c1213a2daf778746b90f5f62735e9fa, type: 3}
+      sprite: {fileID: 21300000, guid: c7e089643c603ed4aa16fad8d7bf9644, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: bc9498dde1d41ac4eb4bf9a6af93f8a2, type: 3}
+      sprite: {fileID: 21300000, guid: 314962c9d7f0b0f428c94a50f0debb45, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 100.11157
+    powerScore: 122.98926
     powerScoreBreakdown:
-      offense: 46.433537
-      defense: 23.659063
-      energy: 10.747162
-      mobility: 13.200001
-      capacity: 6.0718126
+      offense: 14.099999
+      defense: 69.678375
+      energy: 0
+      mobility: 10.3
+      capacity: 28.910885
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_03
     upgradeTreeShipName: 
     prefab: {fileID: 5331084075648262337, guid: 7e67fca87f274db4380c19d1fe76e0fd, type: 3}
@@ -899,13 +415,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 65e602185d8b28546bcb27da458900ee, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 126.083916
+    powerScore: 125.874855
     powerScoreBreakdown:
-      offense: 0
-      defense: 42.501053
-      energy: 19.883772
-      mobility: 52.800003
-      capacity: 10.899091
+      offense: 4.7
+      defense: 54.560616
+      energy: 0
+      mobility: 35.2
+      capacity: 31.414236
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_04
     upgradeTreeShipName: 
     prefab: {fileID: 4423530417920759267, guid: 64ffea1bbb70f904f9498605aa653004, type: 3}
@@ -927,13 +444,43 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 15fde840f6b6f9342929a409db86d813, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 128.36928
+    powerScore: 137.96739
     powerScoreBreakdown:
-      offense: 31.75
-      defense: 39.064335
-      energy: 18.74512
-      mobility: 29.7
-      capacity: 9.109822
+      offense: 32.05
+      defense: 48.791023
+      energy: 8.514001
+      mobility: 17.6
+      capacity: 31.012362
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_02
+    upgradeTreeShipName: 
+    prefab: {fileID: 3277353922622260429, guid: 78f1c9e1e0bf8bc40ad7b0a2ba14cfc3, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 148f05c96a072494ebc3e9b5c322989b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 148f05c96a072494ebc3e9b5c322989b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 2a258cc5d5b4e544a88f4586797f74dd, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 0ac26bcd60d902f4e9ecf0f2870df3aa, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 3c1213a2daf778746b90f5f62735e9fa, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: bc9498dde1d41ac4eb4bf9a6af93f8a2, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 180.03586
+    powerScoreBreakdown:
+      offense: 53.56339
+      defense: 28.644464
+      energy: 17.028002
+      mobility: 64.4
+      capacity: 16.4
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_05
     upgradeTreeShipName: 
     prefab: {fileID: 2863557176192491936, guid: d54b8d95185eb9542a910e30efdaa1c6, type: 3}
@@ -955,97 +502,43 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 29a53d78b35ef0240b92e29d36946372, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 134.64557
+    powerScore: 134.89677
     powerScoreBreakdown:
-      offense: 15.875
-      defense: 49.552193
-      energy: 23.196161
-      mobility: 33
-      capacity: 13.02222
-  - chassisId: LightFox_06
+      offense: 19.55
+      defense: 57.010757
+      energy: 4.2570004
+      mobility: 17.6
+      capacity: 36.479023
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_12
     upgradeTreeShipName: 
-    prefab: {fileID: 6266737575637564450, guid: 3c81199475d235d4f9f31c27dd659492, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b18f243879304d24b8f4f602f931f6c4, type: 3}
+    prefab: {fileID: 6942315726038376939, guid: 36d73149f24f2694893843d2ea525361, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: da3c5f75e964f2247a18bd1547ae42bb, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b18f243879304d24b8f4f602f931f6c4, type: 3}
+      sprite: {fileID: 21300000, guid: da3c5f75e964f2247a18bd1547ae42bb, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 9159eeab616a3064aa3dfdc38c209159, type: 3}
+      sprite: {fileID: 21300000, guid: 92413a3e34582c44f8cdd61534230180, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: fca0ba13be155d14b9f670017d3bd692, type: 3}
+      sprite: {fileID: 21300000, guid: f72d7aae4449a954ba21a76da777c41b, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: c7e089643c603ed4aa16fad8d7bf9644, type: 3}
+      sprite: {fileID: 21300000, guid: 7061bfc8e2930464b9260d4236e8338b, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 314962c9d7f0b0f428c94a50f0debb45, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 135.9028
-    powerScoreBreakdown:
-      offense: 0
-      defense: 65.88867
-      energy: 26.242249
-      mobility: 19.800001
-      capacity: 23.971876
-  - chassisId: LightFox_07
-    upgradeTreeShipName: 
-    prefab: {fileID: 3633612392537133831, guid: c1ef043ce483c69449f981f8d6ec44af, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 0292eff4b3ae26448847f2d507ebfde4, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 0292eff4b3ae26448847f2d507ebfde4, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: e83a236fa9c75c2438e52eb0892c2fe0, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0f18508c9a3888c4ea527d733f203185, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 9d23b41a29361fa46816b7bf29c6c821, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 424f3530f28f86e4d990ebd7f0fc31f3, type: 3}
+      sprite: {fileID: 21300000, guid: 357501848e485204aa3a1c61271f640d, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 206.16058
+    powerScore: 248.58008
     powerScoreBreakdown:
-      offense: 31.75
-      defense: 71.80536
-      energy: 35.57801
-      mobility: 52.800003
-      capacity: 14.227211
-  - chassisId: LightFox_08
-    upgradeTreeShipName: 
-    prefab: {fileID: 8181937531592381419, guid: 83ea96580d94ce64c9fece6546de30aa, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: a52572670323a1543ae7468912b7f828, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: a52572670323a1543ae7468912b7f828, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 3cfc2826ec606ec408d229288ccf4a60, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 9b0f1a644c6edc3438dafb4fc4b8fbd2, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: a241a0dea76641f45be0dd045a6c5ce7, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 027c63146f23850458c152c2d6b514e3, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 155.08702
-    powerScoreBreakdown:
-      offense: 22.88121
-      defense: 56.03292
-      energy: 25.592134
-      mobility: 36.3
-      capacity: 14.28076
+      offense: 57.843746
+      defense: 93.426765
+      energy: 17.028002
+      mobility: 17.6
+      capacity: 62.681572
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_09
     upgradeTreeShipName: 
     prefab: {fileID: 4190659095009633533, guid: 8adb105ccd2ecbf41b6a467e7dea767c, type: 3}
@@ -1067,13 +560,43 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 551c13712988a1c47a6c4d7cb3728f21, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 190.08823
+    powerScore: 214.04987
     powerScoreBreakdown:
-      offense: 31.75
-      defense: 61.706493
-      energy: 29.427217
-      mobility: 52.800003
-      capacity: 14.4045105
+      offense: 34.4
+      defense: 72.97382
+      energy: 8.514001
+      mobility: 49.8
+      capacity: 48.362034
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_08
+    upgradeTreeShipName: 
+    prefab: {fileID: 8181937531592381419, guid: 83ea96580d94ce64c9fece6546de30aa, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a52572670323a1543ae7468912b7f828, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a52572670323a1543ae7468912b7f828, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 3cfc2826ec606ec408d229288ccf4a60, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9b0f1a644c6edc3438dafb4fc4b8fbd2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: a241a0dea76641f45be0dd045a6c5ce7, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 027c63146f23850458c152c2d6b514e3, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 203.88535
+    powerScoreBreakdown:
+      offense: 30.306032
+      defense: 68.59434
+      energy: 8.514001
+      mobility: 57.1
+      capacity: 39.37097
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_10
     upgradeTreeShipName: 
     prefab: {fileID: 4469498711654625144, guid: 50b056c4da724b04fb7321d04be166e4, type: 3}
@@ -1095,13 +618,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 8f31da71e9d37b74286110649a244c5f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 213.01056
+    powerScore: 240.34274
     powerScoreBreakdown:
-      offense: 0
-      defense: 78.973495
-      energy: 39.88767
-      mobility: 79.200005
-      capacity: 14.949393
+      offense: 2.35
+      defense: 102.05579
+      energy: 0
+      mobility: 64.4
+      capacity: 71.53694
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_11
     upgradeTreeShipName: 
     prefab: {fileID: 7499296511118316086, guid: 6671cc6b94b1357479b6fb2386df6fad, type: 3}
@@ -1123,97 +647,101 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 56b06add6181bc841a5467531befbc75, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 236.64163
+    powerScore: 254.30142
     powerScoreBreakdown:
-      offense: 63.256447
-      defense: 70.79483
-      energy: 34.708664
-      mobility: 52.800003
-      capacity: 15.081684
-  - chassisId: LightFox_12
+      offense: 61.66574
+      defense: 98.44332
+      energy: 17.028002
+      mobility: 17.6
+      capacity: 59.56435
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_18
     upgradeTreeShipName: 
-    prefab: {fileID: 6942315726038376939, guid: 36d73149f24f2694893843d2ea525361, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: da3c5f75e964f2247a18bd1547ae42bb, type: 3}
+    prefab: {fileID: 8651908265826929457, guid: 41157b662f9c1e64b80ab1e4b0d03b60, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4ad14f31bc39e464bb94e5695e3f7844, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: da3c5f75e964f2247a18bd1547ae42bb, type: 3}
+      sprite: {fileID: 21300000, guid: 4ad14f31bc39e464bb94e5695e3f7844, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 92413a3e34582c44f8cdd61534230180, type: 3}
+      sprite: {fileID: 21300000, guid: 3cee0eb23d69f9543b2860302fa18867, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: f72d7aae4449a954ba21a76da777c41b, type: 3}
+      sprite: {fileID: 21300000, guid: 836062da49e6a624788e9d73cd402770, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 7061bfc8e2930464b9260d4236e8338b, type: 3}
+      sprite: {fileID: 21300000, guid: 3cedec221064014419e391ab08304542, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 357501848e485204aa3a1c61271f640d, type: 3}
+      sprite: {fileID: 21300000, guid: 868141935c78cdd418aabecae4d5d3a9, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 232.99077
+    powerScore: 381.5405
     powerScoreBreakdown:
-      offense: 51.50895
-      defense: 73.211296
-      energy: 36.269978
-      mobility: 56.100002
-      capacity: 15.9005375
-  - chassisId: LightFox_13
+      offense: 61.75
+      defense: 174.60207
+      energy: 17.028002
+      mobility: 17.6
+      capacity: 110.56042
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_07
     upgradeTreeShipName: 
-    prefab: {fileID: 1206674002754747634, guid: 2050e9b46b6769a4188d22438d844aa1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3796a2fa9c845a04fb2a79b130c66544, type: 3}
+    prefab: {fileID: 3633612392537133831, guid: c1ef043ce483c69449f981f8d6ec44af, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0292eff4b3ae26448847f2d507ebfde4, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 3796a2fa9c845a04fb2a79b130c66544, type: 3}
+      sprite: {fileID: 21300000, guid: 0292eff4b3ae26448847f2d507ebfde4, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 9dd8cbb33c00dfd46b3d04e2672b73c8, type: 3}
+      sprite: {fileID: 21300000, guid: e83a236fa9c75c2438e52eb0892c2fe0, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: d9ef115e49c28d746b16749866579181, type: 3}
+      sprite: {fileID: 21300000, guid: 0f18508c9a3888c4ea527d733f203185, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 572952c88da985046ad80b426f36f9b6, type: 3}
+      sprite: {fileID: 21300000, guid: 9d23b41a29361fa46816b7bf29c6c821, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 168e77ced05de484aa3117ff1daf2730, type: 3}
+      sprite: {fileID: 21300000, guid: 424f3530f28f86e4d990ebd7f0fc31f3, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 218.17033
+    powerScore: 252.76395
     powerScoreBreakdown:
-      offense: 15.875
-      defense: 82.613396
-      energy: 41.391716
-      mobility: 62.7
-      capacity: 15.590227
-  - chassisId: LightFox_14
+      offense: 32.05
+      defense: 100.06933
+      energy: 8.514001
+      mobility: 49.8
+      capacity: 62.330612
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_19
     upgradeTreeShipName: 
-    prefab: {fileID: 3085242288196147234, guid: b9ee12e8fc0fc2d4b90a9e085d3bb3ef, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3fae96bc66e80a84f8e428f2e223cc15, type: 3}
+    prefab: {fileID: 121624132954172375, guid: 5e245cc8fd4ede746a421a6a396bcfc2, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2f9f806e1f6cc3c4cba2ef540994050c, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 3fae96bc66e80a84f8e428f2e223cc15, type: 3}
+      sprite: {fileID: 21300000, guid: 2f9f806e1f6cc3c4cba2ef540994050c, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: df371a9e53124d449ac6b50c1ec32639, type: 3}
+      sprite: {fileID: 21300000, guid: 14b05d3654e191346ba5a1e549ab3ab0, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: dcf636bc5fdacca49928e21f2b30cdf3, type: 3}
+      sprite: {fileID: 21300000, guid: fa13fa18a7133c34fb4dc2175efc5113, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 4a1bb4d566dbdf246b169302776ab7ce, type: 3}
+      sprite: {fileID: 21300000, guid: 64fd886cfea172a4080ed48ef57aabb1, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: e6b457b78717cec48abbd1d17fd0012a, type: 3}
+      sprite: {fileID: 21300000, guid: 1eb7b5e1e87639d438ee3ddae06cbc79, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 352.09366
+    powerScore: 374.9175
     powerScoreBreakdown:
-      offense: 31.75
-      defense: 123.07654
-      energy: 62.957813
-      mobility: 112.200005
-      capacity: 22.109293
+      offense: 36.075
+      defense: 166.76991
+      energy: 8.514001
+      mobility: 42.5
+      capacity: 121.05861
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_15
     upgradeTreeShipName: 
     prefab: {fileID: 6677385026494544622, guid: 3939e2a9e3ff1074d8225c6ec623fcaf, type: 3}
@@ -1235,13 +763,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 678d15120e690544191e52df7676cf9d, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 272.76614
+    powerScore: 286.93597
     powerScoreBreakdown:
-      offense: 25.020882
-      defense: 87.62199
-      energy: 44.84017
-      mobility: 99
-      capacity: 16.283113
+      offense: 28.583284
+      defense: 118.51093
+      energy: 8.514001
+      mobility: 49.8
+      capacity: 81.52777
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_16
     upgradeTreeShipName: 
     prefab: {fileID: 6716314167041442546, guid: 3e10a6f618c148d42be9158f30d57e3a, type: 3}
@@ -1263,13 +792,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0479c5f6b2f3d7047adce90182fa5f71, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 532.3117
+    powerScore: 611.09
     powerScoreBreakdown:
-      offense: 198.39825
-      defense: 134.99155
-      energy: 69.37935
-      mobility: 105.600006
-      capacity: 23.942577
+      offense: 180.40335
+      defense: 178.15091
+      energy: 17.028002
+      mobility: 108.2
+      capacity: 127.30778
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_17
     upgradeTreeShipName: 
     prefab: {fileID: 2744212632668800486, guid: c45f586a8c11576499d858a6035432eb, type: 3}
@@ -1291,69 +821,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 53e243861b1376a4a846bd28872af187, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 404.6344
+    powerScore: 460.04718
     powerScoreBreakdown:
-      offense: 72.84138
-      defense: 117.76632
-      energy: 60.580517
-      mobility: 132
-      capacity: 21.446196
-  - chassisId: LightFox_18
-    upgradeTreeShipName: 
-    prefab: {fileID: 8651908265826929457, guid: 41157b662f9c1e64b80ab1e4b0d03b60, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4ad14f31bc39e464bb94e5695e3f7844, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 4ad14f31bc39e464bb94e5695e3f7844, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 3cee0eb23d69f9543b2860302fa18867, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 836062da49e6a624788e9d73cd402770, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 3cedec221064014419e391ab08304542, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 868141935c78cdd418aabecae4d5d3a9, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 392.9419
-    powerScoreBreakdown:
-      offense: 63.5
-      defense: 116.65107
-      energy: 60.11373
-      mobility: 132
-      capacity: 20.677088
-  - chassisId: LightFox_19
-    upgradeTreeShipName: 
-    prefab: {fileID: 121624132954172375, guid: 5e245cc8fd4ede746a421a6a396bcfc2, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 2f9f806e1f6cc3c4cba2ef540994050c, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 2f9f806e1f6cc3c4cba2ef540994050c, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 14b05d3654e191346ba5a1e549ab3ab0, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: fa13fa18a7133c34fb4dc2175efc5113, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 64fd886cfea172a4080ed48ef57aabb1, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 1eb7b5e1e87639d438ee3ddae06cbc79, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 356.16998
-    powerScoreBreakdown:
-      offense: 38.95741
-      defense: 124.61604
-      energy: 65.064224
-      mobility: 105.600006
-      capacity: 21.932297
+      offense: 66.98707
+      defense: 156.9285
+      energy: 17.028002
+      mobility: 108.2
+      capacity: 110.90361
+    lockedInUpgradeTree: 0
   - chassisId: LightFox_20
     upgradeTreeShipName: 
     prefab: {fileID: 3222921891032399508, guid: 19fdb387096a3c84694f9563254bd0f7, type: 3}
@@ -1375,13 +850,72 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b8c75a61eb5e5fb468069b6469c84af4, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 402.99774
+    powerScore: 427.47543
     powerScoreBreakdown:
-      offense: 31.75
-      defense: 148.6075
-      energy: 77.30575
-      mobility: 118.8
-      capacity: 26.5345
+      offense: 32.05
+      defense: 201.23944
+      energy: 8.514001
+      mobility: 42.5
+      capacity: 143.172
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_14
+    upgradeTreeShipName: 
+    prefab: {fileID: 3085242288196147234, guid: b9ee12e8fc0fc2d4b90a9e085d3bb3ef, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3fae96bc66e80a84f8e428f2e223cc15, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 3fae96bc66e80a84f8e428f2e223cc15, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: df371a9e53124d449ac6b50c1ec32639, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: dcf636bc5fdacca49928e21f2b30cdf3, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 4a1bb4d566dbdf246b169302776ab7ce, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: e6b457b78717cec48abbd1d17fd0012a, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 405.35617
+    powerScoreBreakdown:
+      offense: 32.05
+      defense: 170.89697
+      energy: 8.514001
+      mobility: 79
+      capacity: 114.8952
+    lockedInUpgradeTree: 0
+  - chassisId: LightFox_13
+    upgradeTreeShipName: 
+    prefab: {fileID: 1206674002754747634, guid: 2050e9b46b6769a4188d22438d844aa1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3796a2fa9c845a04fb2a79b130c66544, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 3796a2fa9c845a04fb2a79b130c66544, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 9dd8cbb33c00dfd46b3d04e2672b73c8, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d9ef115e49c28d746b16749866579181, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 572952c88da985046ad80b426f36f9b6, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 168e77ced05de484aa3117ff1daf2730, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 577.2709
+    powerScoreBreakdown:
+      offense: 32.05
+      defense: 247.87614
+      energy: 8.514001
+      mobility: 108.2
+      capacity: 180.63072
+    lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: e84ce97799bcf284fb7518adce7e7fa0, type: 2}
   teamMaterials:
   - variantName: Red

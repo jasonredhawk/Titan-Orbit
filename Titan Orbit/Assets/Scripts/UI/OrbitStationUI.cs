@@ -1463,6 +1463,19 @@ namespace TitanOrbit.UI
             bool canBuyAny = CardShopSystem.Instance != null
                 && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, storePlanet, out _, out _, out _);
 
+            bool canSwapHullAtCurrentSlot = CardShopSystem.Instance != null
+                && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, currentLevel, currentBranch, out _);
+
+            string slotChassisId = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, currentLevel, currentBranch)
+                : null;
+            bool hasAlternateHullAtSlot = !string.IsNullOrEmpty(slotChassisId)
+                && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase);
+            int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
+            bool storePlanetLevelBlocksSwap = hasAlternateHullAtSlot && storePlanetLevel < currentLevel;
+            bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
+            bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
+
             if (shipTreeHintText != null)
             {
                 if (canBuyAny && available != null && available.Count > 0)
@@ -1478,14 +1491,24 @@ namespace TitanOrbit.UI
                         if (i > 0) sb.Append(" · ");
                         sb.Append(nm);
                     }
+                    if (canSwapHullAtCurrentSlot)
+                        sb.Append("  ·  Click your ship to swap hull (free).");
+                    else if (storePlanetLevelBlocksSwap)
+                        sb.Append($"  ·  Planet must reach level {currentLevel} to swap.");
                     shipTreeHintText.text = sb.ToString();
                 }
+                else if (canSwapHullAtCurrentSlot)
+                    shipTreeHintText.text = "Click your ship to swap to this moon's hull at your tier (free).";
+                else if (storePlanetLevelBlocksSwap)
+                    shipTreeHintText.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
+                else if (upgradeBlockedByStoreLevel)
+                    shipTreeHintText.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
                 else if (nextLevel <= 7 && homeLevel < nextLevel)
                     shipTreeHintText.text = $"Locked — raise home planet to level {nextLevel}.";
                 else if (canBuyAny)
                     shipTreeHintText.text = $"Next tier costs {nextCost:F0}g.";
                 else
-                    shipTreeHintText.text = "Green: your path. Blue: affordable choices.";
+                    shipTreeHintText.text = "Green: your ship. Blue: affordable upgrades. Cyan: free hull swap.";
             }
 
             for (int v = 0; v < shipTreeNodes.Count; v++)
@@ -1494,7 +1517,9 @@ namespace TitanOrbit.UI
                 if (view == null || view.Button == null) continue;
 
                 bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
-                bool tierBlockedByPlanet = view.Level > homeLevel;
+                bool tierBlockedByHome = view.Level > homeLevel;
+                bool tierBlockedByStore = view.Level > storePlanetLevel;
+                bool tierBlocked = tierBlockedByHome || tierBlockedByStore;
                 bool isNextChoice = false;
                 if (view.Level == nextLevel)
                 {
@@ -1506,12 +1531,16 @@ namespace TitanOrbit.UI
                 bool ladderOk = CardShopSystem.Instance != null
                     && !string.IsNullOrEmpty(CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex));
                 bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
-                view.Button.interactable = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlockedByPlanet && canApplyPurchase;
+                bool canSwapHull = isCurrent && !tierBlockedByHome && CardShopSystem.Instance != null
+                    && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, view.Level, view.BranchIndex, out _);
+                view.Button.interactable = canSwapHull
+                    || (isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlocked && canApplyPurchase);
                 var img = view.Button.GetComponent<Image>();
                 if (img != null)
                 {
-                    if (isCurrent) img.color = new Color(0.26f, 0.62f, 0.36f, 0.98f);
-                    else if (tierBlockedByPlanet) img.color = new Color(0.1f, 0.11f, 0.14f, 0.92f);
+                    if (canSwapHull) img.color = new Color(0.28f, 0.68f, 0.82f, 0.98f);
+                    else if (isCurrent) img.color = new Color(0.26f, 0.62f, 0.36f, 0.98f);
+                    else if (tierBlocked) img.color = new Color(0.1f, 0.11f, 0.14f, 0.92f);
                     else if (isNextChoice) img.color = new Color(0.25f, 0.48f, 0.78f, 0.98f);
                     else img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
                 }
@@ -1539,7 +1568,13 @@ namespace TitanOrbit.UI
                 }
                 if (view.PriceText != null)
                 {
-                    if (view.Level == 1)
+                    if (canSwapHull)
+                        view.PriceText.text = "Free";
+                    else if (isCurrent && storePlanetLevelBlocksSwap)
+                        view.PriceText.text = $"Planet Lv {currentLevel}+";
+                    else if (isNextChoice && tierBlockedByStore && !tierBlockedByHome)
+                        view.PriceText.text = $"Planet Lv {view.Level}+";
+                    else if (view.Level == 1)
                         view.PriceText.text = "—";
                     else
                         view.PriceText.text = $"{tree.GetGemCostForLevel(view.Level):F0}g";
@@ -2358,12 +2393,23 @@ namespace TitanOrbit.UI
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
-            if (nodeLevel != currentShip.ShipLevel + 1) return;
             var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
-            CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, targetBranchIndex);
-            pendingGemsRequest = true;
-            if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+
+            if (nodeLevel == currentShip.ShipLevel + 1)
+            {
+                CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, targetBranchIndex);
+                pendingGemsRequest = true;
+                if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
+
+            if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
+            {
+                if (!CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, nodeLevel, targetBranchIndex, out _))
+                    return;
+                CardShopSystem.Instance.SwapShipAtSameTreeSlotServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, nodeLevel, targetBranchIndex);
+            }
         }
 
         private void CreateSectionLabel(Transform parent, string name, string text, ref float y)

@@ -1621,9 +1621,7 @@ namespace TitanOrbit.AI
         private bool TryEnterOrbitZoneForPlanet(Planet planet)
         {
             if (planet == null || starship == null || starship.CurrentOrbitPlanet != null) return false;
-            Vector3 toShip = rb.position - planet.transform.position;
-            toShip.y = 0f;
-            float dist = toShip.magnitude;
+            float dist = ToroidalMap.ToroidalDistance(rb.position, planet.transform.position);
             float inner = planet.PlanetSize * 0.5f;
             float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
             if (dist >= inner && dist <= outer)

@@ -5638,9 +5638,10 @@ MonoBehaviour:
   loadingCameraHeight: 200
   loadingCameraFitMargin: 1.08
   mainMenu: {fileID: 1536533385}
-  minLoadingDisplayTime: 1
+  minLoadingDisplayTime: 0.35
   maxWaitNetcodeSeconds: 45
-  maxJoinWorldSyncSeconds: 45
+  maxJoinWorldSyncSeconds: 8
+  requireReplicationBeforeTeamSelect: 0
   joinReplicationEnoughFraction: 0.62
   joinProgressEndAfterReplay: 0.78
   loadingBackdropImageAlpha: 0.28

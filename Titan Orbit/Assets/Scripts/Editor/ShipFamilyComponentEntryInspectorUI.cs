@@ -39,7 +39,7 @@ namespace TitanOrbit.Editor
 
             SerializedProperty componentIdProp = element.FindPropertyRelative("componentId");
             SerializedProperty displayNameProp = element.FindPropertyRelative("displayName");
-            SerializedProperty statCategoryProp = element.FindPropertyRelative("statCategory");
+            SerializedProperty statCategoriesProp = element.FindPropertyRelative("statCategories");
             SerializedProperty statsProp = element.FindPropertyRelative("stats");
             SerializedProperty bulletPrefabIndexProp = element.FindPropertyRelative("bulletPrefabIndex");
             string componentId = componentIdProp.stringValue ?? string.Empty;
@@ -66,28 +66,26 @@ namespace TitanOrbit.Editor
             y = DrawStandardProperty(new Rect(position.x, y, width, line), componentIdProp, gap);
             y = DrawStandardProperty(new Rect(position.x, y, width, line), displayNameProp, gap);
 
+            float statCategoriesHeight = EditorGUI.GetPropertyHeight(statCategoriesProp, true);
             EditorGUI.BeginChangeCheck();
-            y = DrawStandardProperty(new Rect(position.x, y, width, line), statCategoryProp, gap);
+            EditorGUI.PropertyField(
+                new Rect(position.x, y, width, statCategoriesHeight),
+                statCategoriesProp,
+                true);
+            y += statCategoriesHeight + gap;
             componentId = componentIdProp.stringValue ?? string.Empty;
-            var statCategory = (ShipComponentStatCategory)statCategoryProp.enumValueIndex;
+            var statCategories = ReadStatCategories(statCategoriesProp);
             if (EditorGUI.EndChangeCheck())
             {
-                FilterStatsProperty(statsProp, statCategory, componentId);
+                FilterStatsProperty(statsProp, statCategories, componentId);
             }
 
             EditorGUI.LabelField(new Rect(position.x, y, width, line), "Stats", EditorStyles.boldLabel);
             y += line + gap;
 
-            string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(statCategory, componentId);
-            for (int i = 0; i < fields.Length; i++)
-            {
-                SerializedProperty field = statsProp.FindPropertyRelative(fields[i]);
-                if (field == null)
-                    continue;
-                y = DrawFloatProperty(new Rect(position.x, y, width, line), field, gap);
-            }
+            y = DrawStatsByCategory(new Rect(position.x, y, width, line), statsProp, statCategories, componentId, line, gap);
 
-            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategory, componentId))
+            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
                 DrawStandardProperty(new Rect(position.x, y, width, line), bulletPrefabIndexProp, gap);
 
             EditorGUI.EndProperty();
@@ -99,18 +97,90 @@ namespace TitanOrbit.Editor
 
             height += line + gap; // componentId
             height += line + gap; // displayName
-            height += line + gap; // statCategory
+
+            SerializedProperty statCategoriesProp = element.FindPropertyRelative("statCategories");
+            height += EditorGUI.GetPropertyHeight(statCategoriesProp, true) + gap;
             height += line + gap; // Stats label
 
             string componentId = element.FindPropertyRelative("componentId").stringValue ?? string.Empty;
-            var statCategory = (ShipComponentStatCategory)element.FindPropertyRelative("statCategory").enumValueIndex;
-            string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(statCategory, componentId);
-            height += (line + gap) * fields.Length;
+            var statCategories = ReadStatCategories(statCategoriesProp);
+            height += GetStatsByCategoryHeight(statCategories, componentId, line, gap);
 
-            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategory, componentId))
+            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
                 height += line + gap; // bulletPrefabIndex
 
             return height;
+        }
+
+        private static float DrawStatsByCategory(
+            Rect rect,
+            SerializedProperty statsProp,
+            List<ShipComponentStatCategory> statCategories,
+            string componentId,
+            float line,
+            float gap)
+        {
+            float y = rect.y;
+            float width = rect.width;
+
+            if (statCategories == null || statCategories.Count == 0)
+                return y;
+
+            for (int c = 0; c < statCategories.Count; c++)
+            {
+                ShipComponentStatCategory category = statCategories[c];
+                EditorGUI.LabelField(new Rect(rect.x, y, width, line), category.ToString(), EditorStyles.miniBoldLabel);
+                y += line;
+
+                string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(category, componentId);
+                for (int i = 0; i < fields.Length; i++)
+                {
+                    SerializedProperty field = statsProp.FindPropertyRelative(fields[i]);
+                    if (field == null)
+                        continue;
+                    y = DrawFloatProperty(new Rect(rect.x, y, width, line), field, gap);
+                }
+
+                y += gap;
+            }
+
+            return y;
+        }
+
+        private static float GetStatsByCategoryHeight(
+            List<ShipComponentStatCategory> statCategories,
+            string componentId,
+            float line,
+            float gap)
+        {
+            if (statCategories == null || statCategories.Count == 0)
+                return 0f;
+
+            float height = 0f;
+            for (int c = 0; c < statCategories.Count; c++)
+            {
+                height += line; // category header
+                string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(statCategories[c], componentId);
+                height += (line + gap) * fields.Length;
+                height += gap;
+            }
+
+            return height;
+        }
+
+        private static List<ShipComponentStatCategory> ReadStatCategories(SerializedProperty statCategoriesProp)
+        {
+            var categories = new List<ShipComponentStatCategory>();
+            if (statCategoriesProp == null || !statCategoriesProp.isArray)
+                return categories;
+
+            for (int i = 0; i < statCategoriesProp.arraySize; i++)
+            {
+                SerializedProperty item = statCategoriesProp.GetArrayElementAtIndex(i);
+                categories.Add((ShipComponentStatCategory)item.enumValueIndex);
+            }
+
+            return categories;
         }
 
         private static float DrawStandardProperty(Rect rect, SerializedProperty prop, float gap)
@@ -132,13 +202,16 @@ namespace TitanOrbit.Editor
             return rect.y + rect.height + gap;
         }
 
-        private static void FilterStatsProperty(SerializedProperty statsProp, ShipComponentStatCategory category, string componentId)
+        private static void FilterStatsProperty(
+            SerializedProperty statsProp,
+            List<ShipComponentStatCategory> categories,
+            string componentId)
         {
             if (statsProp == null)
                 return;
 
             var allowed = new HashSet<string>(
-                ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(category, componentId),
+                ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, componentId),
                 StringComparer.Ordinal);
 
             SerializedProperty child = statsProp.Copy();
