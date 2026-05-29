@@ -227,14 +227,29 @@ namespace TitanOrbit.Data
             string s = componentIdRest.Trim();
             if (ContainsIsolatedKeyword(s, "cockpit")) return "Cockpit";
             if (ContainsIsolatedKeyword(s, "thruster")) return "Thruster";
+            if (ContainsIsolatedKeyword(s, "thrustcover")) return "Thruster";
             if (ContainsIsolatedKeyword(s, "weapon")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "gun")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "machinegun")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "missile")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "ammunition")) return "Weapon";
+            if (ContainsIsolatedKeyword(s, "barrel")) return "Weapon";
             if (ContainsIsolatedKeyword(s, "engine")) return "Engine";
-            if (ContainsIsolatedKeyword(s, "thrust")) return "Engine";
             if (ContainsIsolatedKeyword(s, "wing")) return "Wing";
+            if (ContainsIsolatedKeyword(s, "wingholder")) return "Wing";
+            if (ContainsIsolatedKeyword(s, "arm")) return "Arm";
             if (ContainsIsolatedKeyword(s, "fin")) return "Fin";
-            if (ContainsIsolatedKeyword(s, "tail")) return "Fin";
+            if (ContainsIsolatedKeyword(s, "tail")) return "Tail";
             if (ContainsIsolatedKeyword(s, "hull")) return "Hull";
+            if (ContainsIsolatedKeyword(s, "mainbody")) return "Hull";
+            if (ContainsIsolatedKeyword(s, "body")) return "Hull";
+            if (ContainsIsolatedKeyword(s, "armor")) return "Hull";
             if (ContainsIsolatedKeyword(s, "part")) return "Part";
+            if (ContainsIsolatedKeyword(s, "core")) return "Core";
+            if (ContainsIsolatedKeyword(s, "solar")) return "Solar";
+            if (ContainsIsolatedKeyword(s, "sensor")) return "Sensor";
+            if (ContainsIsolatedKeyword(s, "track")) return "Engine";
+            if (ContainsIsolatedKeyword(s, "thrust")) return "Engine";
 
             string[] parts = s.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
@@ -300,7 +315,7 @@ namespace TitanOrbit.Data
             scaled.rammingPower = stats.rammingPower;
             scaled.rammingPowerPerLevel = stats.rammingPowerPerLevel;
             // Do not scale engine/thruster move speed by part volume—designers tune these to match gameplay speeds.
-            if (IsEngineComponent(componentId) || IsThrusterComponent(componentId))
+            if (IsThrusterComponent(componentId))
             {
                 scaled.moveSpeed = stats.moveSpeed;
                 scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
@@ -308,6 +323,278 @@ namespace TitanOrbit.Data
                 scaled.accelerationCapPerLevel = stats.accelerationCapPerLevel;
             }
             return scaled;
+        }
+
+        /// <summary>Zeroes all stat fields outside <paramref name="category"/> so each component contributes to one category only.</summary>
+        public static ShipComponentAbilityStats KeepOnlyCategory(ShipComponentAbilityStats stats, ShipComponentStatCategory category)
+        {
+            var filtered = new ShipComponentAbilityStats();
+            switch (category)
+            {
+                case ShipComponentStatCategory.Offense:
+                    filtered.firePower = stats.firePower;
+                    filtered.firePowerPerLevel = stats.firePowerPerLevel;
+                    filtered.bulletSpeed = stats.bulletSpeed;
+                    filtered.bulletSpeedPerLevel = stats.bulletSpeedPerLevel;
+                    filtered.fireRate = stats.fireRate;
+                    filtered.fireRatePerLevel = stats.fireRatePerLevel;
+                    filtered.rammingPower = stats.rammingPower;
+                    filtered.rammingPowerPerLevel = stats.rammingPowerPerLevel;
+                    break;
+                case ShipComponentStatCategory.Health:
+                    filtered.healthCap = stats.healthCap;
+                    filtered.healthCapPerLevel = stats.healthCapPerLevel;
+                    filtered.healthRegen = stats.healthRegen;
+                    filtered.healthRegenPerLevel = stats.healthRegenPerLevel;
+                    break;
+                case ShipComponentStatCategory.Energy:
+                    filtered.energyCap = stats.energyCap;
+                    filtered.energyCapPerLevel = stats.energyCapPerLevel;
+                    filtered.energyRegen = stats.energyRegen;
+                    filtered.energyRegenPerLevel = stats.energyRegenPerLevel;
+                    break;
+                case ShipComponentStatCategory.Movement:
+                    filtered.moveSpeed = stats.moveSpeed;
+                    filtered.moveSpeedPerLevel = stats.moveSpeedPerLevel;
+                    filtered.accelerationCap = stats.accelerationCap;
+                    filtered.accelerationCapPerLevel = stats.accelerationCapPerLevel;
+                    filtered.turnSpeed = stats.turnSpeed;
+                    filtered.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+                    break;
+                case ShipComponentStatCategory.Capacity:
+                    filtered.maxGems = stats.maxGems;
+                    filtered.maxGemsPerLevel = stats.maxGemsPerLevel;
+                    filtered.maxPeople = stats.maxPeople;
+                    filtered.maxPeoplePerLevel = stats.maxPeoplePerLevel;
+                    break;
+            }
+            return filtered;
+        }
+
+        /// <summary>Keeps only the stat fields allowed for this component's category and part id.</summary>
+        public static ShipComponentAbilityStats KeepOnlyAuthoringFields(
+            ShipComponentAbilityStats stats,
+            ShipComponentStatCategory category,
+            string componentId)
+        {
+            string[] allowed = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(category, componentId);
+            var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
+            var filtered = new ShipComponentAbilityStats();
+
+            if (allowedSet.Contains("firePower")) filtered.firePower = stats.firePower;
+            if (allowedSet.Contains("firePowerPerLevel")) filtered.firePowerPerLevel = stats.firePowerPerLevel;
+            if (allowedSet.Contains("bulletSpeed")) filtered.bulletSpeed = stats.bulletSpeed;
+            if (allowedSet.Contains("bulletSpeedPerLevel")) filtered.bulletSpeedPerLevel = stats.bulletSpeedPerLevel;
+            if (allowedSet.Contains("fireRate")) filtered.fireRate = stats.fireRate;
+            if (allowedSet.Contains("fireRatePerLevel")) filtered.fireRatePerLevel = stats.fireRatePerLevel;
+            if (allowedSet.Contains("rammingPower")) filtered.rammingPower = stats.rammingPower;
+            if (allowedSet.Contains("rammingPowerPerLevel")) filtered.rammingPowerPerLevel = stats.rammingPowerPerLevel;
+            if (allowedSet.Contains("healthCap")) filtered.healthCap = stats.healthCap;
+            if (allowedSet.Contains("healthCapPerLevel")) filtered.healthCapPerLevel = stats.healthCapPerLevel;
+            if (allowedSet.Contains("healthRegen")) filtered.healthRegen = stats.healthRegen;
+            if (allowedSet.Contains("healthRegenPerLevel")) filtered.healthRegenPerLevel = stats.healthRegenPerLevel;
+            if (allowedSet.Contains("energyCap")) filtered.energyCap = stats.energyCap;
+            if (allowedSet.Contains("energyCapPerLevel")) filtered.energyCapPerLevel = stats.energyCapPerLevel;
+            if (allowedSet.Contains("energyRegen")) filtered.energyRegen = stats.energyRegen;
+            if (allowedSet.Contains("energyRegenPerLevel")) filtered.energyRegenPerLevel = stats.energyRegenPerLevel;
+            if (allowedSet.Contains("moveSpeed")) filtered.moveSpeed = stats.moveSpeed;
+            if (allowedSet.Contains("moveSpeedPerLevel")) filtered.moveSpeedPerLevel = stats.moveSpeedPerLevel;
+            if (allowedSet.Contains("accelerationCap")) filtered.accelerationCap = stats.accelerationCap;
+            if (allowedSet.Contains("accelerationCapPerLevel")) filtered.accelerationCapPerLevel = stats.accelerationCapPerLevel;
+            if (allowedSet.Contains("turnSpeed")) filtered.turnSpeed = stats.turnSpeed;
+            if (allowedSet.Contains("turnSpeedPerLevel")) filtered.turnSpeedPerLevel = stats.turnSpeedPerLevel;
+            if (allowedSet.Contains("maxGems")) filtered.maxGems = stats.maxGems;
+            if (allowedSet.Contains("maxGemsPerLevel")) filtered.maxGemsPerLevel = stats.maxGemsPerLevel;
+            if (allowedSet.Contains("maxPeople")) filtered.maxPeople = stats.maxPeople;
+            if (allowedSet.Contains("maxPeoplePerLevel")) filtered.maxPeoplePerLevel = stats.maxPeoplePerLevel;
+
+            return filtered;
+        }
+    }
+
+    /// <summary>High-level stat bucket assigned to a ship part (one category per component).</summary>
+    public enum ShipComponentStatCategory
+    {
+        Offense = 0,
+        Health = 1,
+        Energy = 2,
+        Movement = 3,
+        Capacity = 4
+    }
+
+    /// <summary>Parses component ids into mapping keys and provides default stat-category inference.</summary>
+    public static class ShipFamilyComponentPartKey
+    {
+        private static readonly Regex TrailingDigitsRegex = new Regex(@"\d+$", RegexOptions.Compiled);
+
+        /// <summary>Related part names that share the same mapping key (e.g. ThrustCover → Thruster, WingHolder → Wing).</summary>
+        private static readonly Dictionary<string, string> AliasToCanonical =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ThrustCover", "Thruster" },
+                { "WingHolder", "Wing" },
+                { "Gun", "Weapon" },
+                { "Machinegun", "Weapon" },
+                { "Missile", "Weapon" },
+                { "Missile_Launcher", "Weapon" },
+                { "Barrel", "Weapon" },
+                { "Ammunition", "Weapon" },
+                { "EngineComp1", "Engine" },
+                { "EngineComp2", "Engine" },
+                { "Engine_1", "Engine" },
+                { "Engine_2", "Engine" },
+                { "Engine1", "Engine" },
+                { "Engine2", "Engine" },
+                { "Thrusters", "Thruster" },
+                { "Thrusters_Big", "Thruster" },
+                { "Tiny_Thrusters", "Thruster" },
+                { "Thruster_Place", "Thruster" },
+                { "Small_Wing", "Wing" },
+                { "Tiny_Wing", "Wing" },
+                { "WingMain", "Wing" },
+                { "WingMini", "Wing" },
+                { "WingTip", "Wing" },
+                { "WingWide", "Wing" },
+                { "Cockpit_Base", "Cockpit" },
+                { "Cockpit_Base_1", "Cockpit" },
+                { "Cockpit_Base_2", "Cockpit" },
+                { "CockpitCover", "Cockpit" },
+                { "MainBody1", "MainBody" },
+                { "MainBody2", "MainBody" },
+                { "MainBody3", "MainBody" },
+                { "MainBody4", "MainBody" },
+                { "Body_01", "Body" },
+                { "Body_02", "Body" },
+                { "Body_03", "Body" },
+                { "Body1", "Body" },
+                { "Body2", "Body" },
+                { "Armor_01", "Armor" },
+                { "Armor_02", "Armor" },
+                { "Part_1", "Part" },
+                { "Part_2", "Part" },
+                { "Acc", "Part" },
+                { "Wing_01", "Wing" },
+                { "Wing_02", "Wing" },
+                { "Wing_03", "Wing" },
+                { "Wing_1", "Wing" },
+                { "Wing_2", "Wing" },
+                { "Wing_3", "Wing" },
+                { "Wing_4", "Wing" },
+                { "Wing_5", "Wing" },
+                { "Wing1", "Wing" },
+                { "Wing2", "Wing" },
+                { "Wing3", "Wing" },
+                { "Wing4", "Wing" },
+            };
+
+        /// <summary>Strips version suffixes: Wing1 → Wing, Wing_3 → Wing, MainBody4 → MainBody.</summary>
+        public static string GetBasePartKey(string componentId)
+        {
+            string s = ShipFamilyDefinition.NormalizeComponentId(componentId);
+            if (string.IsNullOrEmpty(s))
+                return string.Empty;
+
+            if (AliasToCanonical.TryGetValue(s, out string alias))
+                return alias;
+
+            string[] segments = s.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2 && TrailingDigitsRegex.IsMatch(segments[segments.Length - 1]))
+            {
+                var trimmed = new List<string>(segments.Length - 1);
+                for (int i = 0; i < segments.Length - 1; i++)
+                    trimmed.Add(segments[i]);
+                string joined = string.Join("_", trimmed);
+                if (!string.IsNullOrEmpty(joined))
+                    return joined;
+            }
+
+            string withoutDigits = TrailingDigitsRegex.Replace(s, string.Empty);
+            return string.IsNullOrEmpty(withoutDigits) ? s : withoutDigits;
+        }
+
+        /// <summary>Returns the canonical related-part key when one exists (ThrustCover → Thruster).</summary>
+        public static string ResolveAliasKey(string componentId)
+        {
+            string s = ShipFamilyDefinition.NormalizeComponentId(componentId);
+            if (string.IsNullOrEmpty(s))
+                return string.Empty;
+            return AliasToCanonical.TryGetValue(s, out string alias) ? alias : s;
+        }
+
+        /// <summary>Default stat category from part keywords when scanning or migrating component entries.</summary>
+        public static ShipComponentStatCategory InferDefaultStatCategory(string componentId)
+        {
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            switch (partType)
+            {
+                case "Cockpit":
+                    return ShipComponentStatCategory.Offense;
+                case "Engine":
+                    return ShipComponentStatCategory.Energy;
+                case "Wing":
+                case "Arm":
+                    return ShipComponentStatCategory.Capacity;
+                case "Fin":
+                case "Tail":
+                case "Thruster":
+                    return ShipComponentStatCategory.Movement;
+                case "Weapon":
+                    return ShipComponentStatCategory.Offense;
+                default:
+                    return ShipComponentStatCategory.Health;
+            }
+        }
+
+        private static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerLevel" };
+        private static readonly string[] WeaponOffenseFields =
+        {
+            "firePower", "firePowerPerLevel", "bulletSpeed", "bulletSpeedPerLevel",
+            "fireRate", "fireRatePerLevel"
+        };
+        private static readonly string[] HealthFields =
+            { "healthCap", "healthCapPerLevel", "healthRegen", "healthRegenPerLevel" };
+        private static readonly string[] EnergyFields =
+            { "energyCap", "energyCapPerLevel", "energyRegen", "energyRegenPerLevel" };
+        private static readonly string[] ThrusterMovementFields =
+            { "moveSpeed", "moveSpeedPerLevel", "accelerationCap", "accelerationCapPerLevel" };
+        private static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerLevel" };
+        private static readonly string[] CapacityFields =
+            { "maxGems", "maxGemsPerLevel", "maxPeople", "maxPeoplePerLevel" };
+
+        /// <summary>Stat fields shown and stored for a component based on category and part id.</summary>
+        public static string[] GetAuthoringStatFieldNames(ShipComponentStatCategory category, string componentId)
+        {
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            switch (category)
+            {
+                case ShipComponentStatCategory.Offense:
+                    return partType == "Cockpit" ? RammingOffenseFields : WeaponOffenseFields;
+                case ShipComponentStatCategory.Health:
+                    return HealthFields;
+                case ShipComponentStatCategory.Energy:
+                    return EnergyFields;
+                case ShipComponentStatCategory.Movement:
+                    if (partType == "Thruster")
+                        return ThrusterMovementFields;
+                    if (partType == "Fin" || partType == "Tail")
+                        return TurnMovementFields;
+                    return ThrusterMovementFields;
+                case ShipComponentStatCategory.Capacity:
+                    return CapacityFields;
+                default:
+                    return HealthFields;
+            }
+        }
+
+        /// <summary>True when the offense category component should expose bullet prefab index (weapons only).</summary>
+        public static bool ShouldShowBulletPrefabIndex(ShipComponentStatCategory category, string componentId)
+        {
+            if (category != ShipComponentStatCategory.Offense)
+                return false;
+            return !string.Equals(
+                ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId),
+                "Cockpit",
+                StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -322,6 +609,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Optional friendly label for editor-only use.")]
         public string displayName;
+
+        [Tooltip("Only stats in this category are authored for this component.")]
+        public ShipComponentStatCategory statCategory = ShipComponentStatCategory.Health;
 
         [Tooltip("Ability stat modifiers contributed by this component.")]
         public ShipComponentAbilityStats stats;
@@ -519,8 +809,48 @@ namespace TitanOrbit.Data
 
         private void OnValidate()
         {
+            EnforceComponentStatCategories();
             InvalidateComponentStatsLookup();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>Strips each component entry down to stats for its <see cref="ShipFamilyComponentEntry.statCategory"/> only.</summary>
+        public void EnforceComponentStatCategories()
+        {
+            if (components == null)
+                return;
+            for (int i = 0; i < components.Count; i++)
+            {
+                var entry = components[i];
+                if (entry == null)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(entry.componentId) &&
+                    !HasNonZeroStats(ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategory, entry.componentId)) &&
+                    HasNonZeroStats(entry.stats))
+                {
+                    entry.statCategory = ShipFamilyComponentPartKey.InferDefaultStatCategory(entry.componentId);
+                }
+
+                entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(entry.stats, entry.statCategory, entry.componentId);
+            }
+        }
+
+        private static bool HasNonZeroStats(ShipComponentAbilityStats stats)
+        {
+            return stats.firePower != 0f || stats.firePowerPerLevel != 0f ||
+                   stats.bulletSpeed != 0f || stats.bulletSpeedPerLevel != 0f ||
+                   stats.fireRate != 0f || stats.fireRatePerLevel != 0f ||
+                   stats.rammingPower != 0f || stats.rammingPowerPerLevel != 0f ||
+                   stats.healthCap != 0f || stats.healthCapPerLevel != 0f ||
+                   stats.healthRegen != 0f || stats.healthRegenPerLevel != 0f ||
+                   stats.energyCap != 0f || stats.energyCapPerLevel != 0f ||
+                   stats.energyRegen != 0f || stats.energyRegenPerLevel != 0f ||
+                   stats.moveSpeed != 0f || stats.moveSpeedPerLevel != 0f ||
+                   stats.accelerationCap != 0f || stats.accelerationCapPerLevel != 0f ||
+                   stats.turnSpeed != 0f || stats.turnSpeedPerLevel != 0f ||
+                   stats.maxGems != 0f || stats.maxGemsPerLevel != 0f ||
+                   stats.maxPeople != 0f || stats.maxPeoplePerLevel != 0f;
         }
 
         /// <summary>

@@ -8,8 +8,8 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// All starship prefabs should have this component on the root. Starship.cs reads it at runtime to get
     /// summed ability stats (health, energy, fire power, etc.) from the ShipFamilyDefinition and component scales.
-    /// Engines and thrusters both use authored move speed (max among parts for top speed) and acceleration cap (summed for thrust).
-    /// Thrusters also contribute turn speed in the family definition. Engine/thruster move, acceleration, and turn values are not scaled by part size.
+    /// Engines contribute energy only at runtime. Thrusters: top speed uses one base move speed (best thruster)
+    /// plus each additional thruster's moveSpeedPerLevel; acceleration caps sum across all thrusters.
     /// Attach to the prefab root; assign Ship Family to the matching ShipFamilyDefinition (e.g. AstroEagle).
     /// Child names must follow Family_ComponentId (e.g. AstroEagle_Cockpit, AstroEagle_Weapon_1).
     /// </summary>
@@ -35,27 +35,31 @@ namespace TitanOrbit.Entities
         [Tooltip("Scaled stats per matched component; same order as Matched Component Ids.")]
         [SerializeField] private List<ShipComponentAbilityStats> perComponentStats = new List<ShipComponentAbilityStats>();
 
-        [Header("Propulsion preview (engines + thrusters, ship level 1 base)")]
-        [Tooltip("Sum of engine + thruster Acceleration Cap — matches Starship thrust numerator (stacked before F/m).")]
+        [Header("Propulsion preview (thrusters only, ship level 1 base)")]
+        [Tooltip("Sum of thruster Acceleration Cap — matches Starship thrust numerator (stacked before F/m).")]
         [SerializeField] private float previewSumPropulsionAcceleration;
-        [Tooltip("Sum of engine + thruster Acceleration Cap / Level (per-level terms, ship level 1 adds 0).")]
+        [Tooltip("Sum of thruster Acceleration Cap / Level (per-level terms, ship level 1 adds 0).")]
         [SerializeField] private float previewSumPropulsionAccelerationPerLevel;
-        [Tooltip("Sum of engine + thruster Move Speed — contributes to totals; max single part sets top speed cap.")]
-        [SerializeField] private float previewSumPropulsionMoveSpeed;
-        [Tooltip("Best single engine Move Speed, or best thruster if no engine — matches in-game max speed cap.")]
+        [Tooltip("Extra move speed from non-primary thrusters (each contributes moveSpeedPerLevel).")]
+        [SerializeField] private float previewExtraThrusterMoveSpeed;
+        [Tooltip("Primary thruster base move speed — first term in top speed cap.")]
+        [SerializeField] private float previewPrimaryThrusterMoveSpeed;
+        [Tooltip("Top speed cap: primary thruster move speed + extra thruster moveSpeedPerLevel terms.")]
         [SerializeField] private float previewTopSpeedMoveSpeed;
 
         public ShipComponentAbilityStats TotalStats => totalStats;
         public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
         public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
         public IReadOnlyList<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
-        /// <summary>Sum of engine + thruster <see cref="ShipComponentAbilityStats.accelerationCap"/> (level 1). Matches Starship propulsion thrust stacking.</summary>
+        /// <summary>Sum of thruster <see cref="ShipComponentAbilityStats.accelerationCap"/> (level 1). Matches Starship propulsion thrust stacking.</summary>
         public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
-        /// <summary>Sum of engine + thruster <see cref="ShipComponentAbilityStats.accelerationCapPerLevel"/>.</summary>
+        /// <summary>Sum of thruster <see cref="ShipComponentAbilityStats.accelerationCapPerLevel"/>.</summary>
         public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
-        /// <summary>Sum of engine + thruster moveSpeed (level 1 base, before per-level mobility curve).</summary>
-        public float PreviewSumPropulsionMoveSpeed => previewSumPropulsionMoveSpeed;
-        /// <summary>Max move speed among engines, else best thruster — same basis as speedometer max.</summary>
+        /// <summary>Non-primary thruster moveSpeedPerLevel sum (level 1).</summary>
+        public float PreviewExtraThrusterMoveSpeed => previewExtraThrusterMoveSpeed;
+        /// <summary>Primary thruster base move speed before extras.</summary>
+        public float PreviewPrimaryThrusterMoveSpeed => previewPrimaryThrusterMoveSpeed;
+        /// <summary>Top speed cap from thruster aggregation (matches speedometer max).</summary>
         public float PreviewTopSpeedMoveSpeed => previewTopSpeedMoveSpeed;
         /// <summary>Ship family definition used for stats (so runtime can apply the same stats from prefab).</summary>
         public ShipFamilyDefinition ShipFamily => shipFamily;
@@ -83,7 +87,7 @@ namespace TitanOrbit.Entities
         /// Each component's contribution is scaled by transform: non-weapons use average scale (x+y+z)/3 for most stats;
         /// engine/thruster move speed, acceleration cap, and turn speed use authored values only (see <see cref="ShipComponentAbilityStats.ScaleStatsByTransform"/>).
         /// Weapons: fire power scales by average(x,y); fire rate scales by 1/z (smaller z = faster); bullet speed is not scaled by transform.
-        /// Propulsion preview fields mirror <c>Starship.ApplyChassisComponentStats</c> for engine/thruster parts at ship level 1.
+        /// Propulsion preview fields mirror <c>Starship.ApplyChassisComponentStats</c> for thruster parts at ship level 1.
         /// </summary>
         public void RecalculateFromChildren()
         {
@@ -93,7 +97,8 @@ namespace TitanOrbit.Entities
             perComponentStats.Clear();
             previewSumPropulsionAcceleration = 0f;
             previewSumPropulsionAccelerationPerLevel = 0f;
-            previewSumPropulsionMoveSpeed = 0f;
+            previewExtraThrusterMoveSpeed = 0f;
+            previewPrimaryThrusterMoveSpeed = 0f;
             previewTopSpeedMoveSpeed = 0f;
 
             if (shipFamily == null)
@@ -137,28 +142,38 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            float maxEngine = 0f;
-            float maxThruster = 0f;
+            ShipPropulsionAggregation.Result propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
+                matchedComponentIds,
+                perComponentStats,
+                shipLevel: 1);
+            previewTopSpeedMoveSpeed = propulsion.topMoveSpeed;
+            previewSumPropulsionAcceleration = propulsion.sumAcceleration;
+
+            int primaryIndex = -1;
+            float bestPrimaryMove = 0f;
             for (int k = 0; k < matchedComponentIds.Count; k++)
             {
                 string cid = matchedComponentIds[k];
+                if (!ShipComponentAbilityStats.IsThrusterComponent(cid))
+                    continue;
                 ShipComponentAbilityStats ps = perComponentStats[k];
-                if (ShipComponentAbilityStats.IsEngineComponent(cid))
+                previewSumPropulsionAccelerationPerLevel += ps.accelerationCapPerLevel;
+                if (ps.moveSpeed > bestPrimaryMove)
                 {
-                    previewSumPropulsionMoveSpeed += ps.moveSpeed;
-                    previewSumPropulsionAcceleration += ps.accelerationCap;
-                    previewSumPropulsionAccelerationPerLevel += ps.accelerationCapPerLevel;
-                    maxEngine = Mathf.Max(maxEngine, ps.moveSpeed);
-                }
-                else if (ShipComponentAbilityStats.IsThrusterComponent(cid))
-                {
-                    previewSumPropulsionMoveSpeed += ps.moveSpeed;
-                    previewSumPropulsionAcceleration += ps.accelerationCap;
-                    previewSumPropulsionAccelerationPerLevel += ps.accelerationCapPerLevel;
-                    maxThruster = Mathf.Max(maxThruster, ps.moveSpeed);
+                    bestPrimaryMove = ps.moveSpeed;
+                    primaryIndex = k;
                 }
             }
-            previewTopSpeedMoveSpeed = maxEngine > 0f ? maxEngine : maxThruster;
+
+            previewPrimaryThrusterMoveSpeed = bestPrimaryMove;
+            for (int k = 0; k < matchedComponentIds.Count; k++)
+            {
+                if (!ShipComponentAbilityStats.IsThrusterComponent(matchedComponentIds[k]))
+                    continue;
+                if (k == primaryIndex)
+                    continue;
+                previewExtraThrusterMoveSpeed += Mathf.Max(0f, perComponentStats[k].moveSpeedPerLevel);
+            }
         }
     }
 }

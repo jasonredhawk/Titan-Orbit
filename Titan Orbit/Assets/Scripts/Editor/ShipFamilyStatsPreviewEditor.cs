@@ -116,26 +116,31 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField("Move Speed / Level (sum)", total.moveSpeedPerLevel);
                 if (preview != null)
                 {
-                    EditorGUILayout.LabelField("Propulsion (engines + thrusters only)", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.LabelField("Propulsion (thrusters only)", EditorStyles.miniBoldLabel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap (sum)",
-                            "Sum of Acceleration Cap on Engine/* and Thruster/* — matches Starship thrust stacking at ship level 1 (before mass divides force)."),
+                            "Sum of Acceleration Cap on thruster parts — matches Starship thrust stacking at ship level 1 (before mass divides force)."),
                         preview.PreviewSumPropulsionAcceleration);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap / Level (sum)",
-                            "Sum of per-level acceleration on engine and thruster parts."),
+                            "Sum of per-level acceleration on thruster parts."),
                         preview.PreviewSumPropulsionAccelerationPerLevel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
-                            "Move Speed (sum)",
-                            "Sum of Move Speed on engine and thruster parts (informational; cap uses max part below)."),
-                        preview.PreviewSumPropulsionMoveSpeed);
+                            "Primary thruster Move Speed",
+                            "Best thruster base move speed — counted once toward top speed cap."),
+                        preview.PreviewPrimaryThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
-                            "Top speed cap (best part)",
-                            "Max Move Speed among engines, or among thrusters if no engine — matches in-game max speed / speedometer."),
+                            "Extra thruster Move Speed / Level",
+                            "Sum of moveSpeedPerLevel from non-primary thrusters (each additional thruster adds this)."),
+                        preview.PreviewExtraThrusterMoveSpeed);
+                    EditorGUILayout.FloatField(
+                        new GUIContent(
+                            "Top speed cap",
+                            "Primary thruster move speed + extra thruster moveSpeedPerLevel terms — matches in-game max speed / speedometer."),
                         preview.PreviewTopSpeedMoveSpeed);
                 }
                 EditorGUILayout.FloatField(
@@ -179,9 +184,9 @@ namespace TitanOrbit.Editor
                     if (isWeapon)
                         label += " [weapon: xy=power, 1/z=rate]";
                     if (isEngine)
-                        label += " [engine: move & accel not scaled]";
+                        label += " [engine: energy]";
                     else if (isThruster)
-                        label += " [thruster: move, accel & turn not scaled]";
+                        label += " [thruster: base speed once + move/level extras; accel sums]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)

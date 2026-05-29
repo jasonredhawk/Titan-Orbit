@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -19,6 +20,55 @@ namespace TitanOrbit.Editor
     [CustomEditor(typeof(ShipFamilyDefinition))]
     public class ShipFamilyDefinitionEditor : UnityEditor.Editor
     {
+        private ReorderableList _componentsList;
+
+        private void OnEnable()
+        {
+            SerializedProperty componentsProp = serializedObject.FindProperty("components");
+            _componentsList = new ReorderableList(serializedObject, componentsProp, true, true, true, true)
+            {
+                drawHeaderCallback = DrawComponentsListHeader,
+                drawElementCallback = DrawComponentsListElement,
+                elementHeightCallback = GetComponentsListElementHeight
+            };
+        }
+
+        private static void DrawComponentsListHeader(Rect rect)
+        {
+            EditorGUI.LabelField(rect, "Components");
+        }
+
+        private void DrawComponentsListElement(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            SerializedProperty element = _componentsList.serializedProperty.GetArrayElementAtIndex(index);
+            var label = new GUIContent($"Element {index}");
+            ShipFamilyComponentEntryInspectorUI.Draw(rect, element, label);
+        }
+
+        private float GetComponentsListElementHeight(int index)
+        {
+            SerializedProperty element = _componentsList.serializedProperty.GetArrayElementAtIndex(index);
+            return ShipFamilyComponentEntryInspectorUI.GetHeight(element);
+        }
+
+        private void DrawInspectorFieldsExceptComponents()
+        {
+            SerializedProperty prop = serializedObject.GetIterator();
+            bool enterChildren = true;
+            while (prop.NextVisible(enterChildren))
+            {
+                enterChildren = false;
+                if (prop.name == "m_Script")
+                    continue;
+                if (prop.name == "components")
+                {
+                    _componentsList.DoLayoutList();
+                    continue;
+                }
+                EditorGUILayout.PropertyField(prop, true);
+            }
+        }
+
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
@@ -47,7 +97,7 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space(6);
 
             EditorGUI.BeginChangeCheck();
-            DrawDefaultInspector();
+            DrawInspectorFieldsExceptComponents();
             bool serializedChanged = EditorGUI.EndChangeCheck();
             serializedObject.ApplyModifiedProperties();
             if (serializedChanged && def != null)
@@ -63,9 +113,9 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Auto Populate From Prefab Folder", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Scans all prefabs in a folder for child names like 'AstroEagle_Engine_2'. " +
-                "Family = prefix (AstroEagle), Type = Engine, Version = 2. " +
-                "Each unique 'Type[_Version]' becomes a component entry with suggested stats.",
+                "Scans all prefabs in the family folder for child names like 'GalaxyRaptor_Wing2' or 'AstroEagle_Engine_2'. " +
+                "Each unique component id becomes an entry with a Stat Category (Offense, Health, Energy, Movement, Capacity). " +
+                "Only stats for that category are shown and stored on each component.",
                 MessageType.Info);
 
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
@@ -211,7 +261,8 @@ namespace TitanOrbit.Editor
 
         private static void ScanFolderAndPopulate(ShipFamilyDefinition def)
         {
-            string folder = EditorUtility.OpenFolderPanel("Select Prefab Folder", Application.dataPath, "");
+            string startPath = Path.Combine(Application.dataPath, "Prefabs/Ships/" + def.familyId);
+            string folder = EditorUtility.OpenFolderPanel("Select Prefab Folder", startPath, "");
             if (string.IsNullOrEmpty(folder))
                 return;
 
@@ -224,14 +275,6 @@ namespace TitanOrbit.Editor
 
             string relativeFolder = "Assets" + folder.Substring(Application.dataPath.Length);
 
-            string[] guids = AssetDatabase.FindAssets("t:GameObject", new[] { relativeFolder });
-            if (guids == null || guids.Length == 0)
-            {
-                EditorUtility.DisplayDialog("No Prefabs Found",
-                    $"No prefabs found under folder:\n{relativeFolder}", "OK");
-                return;
-            }
-
             string familyId = def.familyId != null ? def.familyId.Trim() : string.Empty;
             if (string.IsNullOrEmpty(familyId))
             {
@@ -240,46 +283,8 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // canonical componentId -> canonical metadata
-            var componentMap = new Dictionary<string, CanonicalComponentScanData>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (prefab == null) continue;
-
-                var transforms = prefab.GetComponentsInChildren<Transform>(true);
-                foreach (var t in transforms)
-                {
-                    if (t == null) continue;
-                    if (t == prefab.transform) continue; // Exclude prefab root (ship object), scan only child components.
-                    string name = t.name;
-                    if (string.IsNullOrEmpty(name)) continue;
-
-                    if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string rest = name.Substring(familyId.Length + 1); // everything after "Family_"
-                    if (string.IsNullOrWhiteSpace(rest))
-                        continue;
-
-                    string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
-                    if (string.IsNullOrWhiteSpace(canonicalId))
-                        continue;
-
-                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
-                    int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
-                    if (!componentMap.TryGetValue(canonicalId, out CanonicalComponentScanData data))
-                    {
-                        data = new CanonicalComponentScanData(canonicalId, type, version);
-                        componentMap[canonicalId] = data;
-                    }
-                    data.aliases.Add(rest);
-                }
-            }
-
-            if (componentMap.Count == 0)
+            var scan = ScanCanonicalComponents(relativeFolder, familyId);
+            if (scan.Count == 0)
             {
                 EditorUtility.DisplayDialog("No Components Detected",
                     $"No child transforms with names starting with '{familyId}_' were found in prefabs under:\n{relativeFolder}",
@@ -294,25 +299,36 @@ namespace TitanOrbit.Editor
             else
                 def.components.Clear();
 
-            foreach (var kvp in componentMap)
+            foreach (var data in scan)
             {
-                string componentId = kvp.Key;
-                string type = kvp.Value.partType;
-                int version = kvp.Value.version;
+                string componentId = data.canonicalId;
+                string type = data.partType;
+                int version = data.version;
+                ShipComponentStatCategory category = ShipFamilyComponentPartKey.InferDefaultStatCategory(componentId);
 
                 var entry = new ShipFamilyComponentEntry
                 {
                     componentId = componentId,
-                    displayName = $"{type} {version}".Trim()
+                    displayName = $"{type} {version}".Trim(),
+                    statCategory = category,
+                    stats = SuggestStatsForComponent(componentId, type, version, category)
                 };
-
-                entry.stats = SuggestStatsForComponent(componentId, type, version);
                 def.components.Add(entry);
             }
 
+            ShipPropulsionAggregation.BalanceEngineEnergyForComponents(def.components);
+
+            def.EnforceComponentStatCategories();
+            def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
+            EditorUtility.DisplayDialog(
+                "Scan Complete",
+                $"Found {scan.Count} unique component(s).\n" +
+                "Each component has a Stat Category; only stats for that category are stored.",
+                "OK");
         }
 
         /// <summary>First integer in the suffix (e.g. Wing_3_L → 3, Weapon1 → 1); 1 if none.</summary>
@@ -582,100 +598,84 @@ namespace TitanOrbit.Editor
             return a.capacity.CompareTo(b.capacity);
         }
 
-        private static ShipComponentAbilityStats SuggestStatsForComponent(string componentId, string type, int version)
+        /// <summary>Per-level stat terms are ~25% of the base value (within the 20–30% design band).</summary>
+        private static float PerLevelFromBase(float baseValue) =>
+            baseValue * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+        private static float PerLevelPeopleFromBase(float maxPeople) =>
+            Mathf.Max(0, Mathf.RoundToInt(PerLevelFromBase(maxPeople)));
+
+        private static ShipComponentAbilityStats SuggestStatsForComponent(
+            string componentId,
+            string type,
+            int version,
+            ShipComponentStatCategory category)
         {
-            // Rebalanced heuristics:
-            // - Weapons own offense + energy.
-            // - Engines and thrusters both contribute move speed + acceleration (matches runtime: max speed from best part, thrust from sum).
-            //   Thrusters also add turn speed; engines do not.
-            // - Wings drive gem capacity; cockpits drive people + base ramming.
             float v = Mathf.Max(1, version);
             var stats = new ShipComponentAbilityStats();
 
-            switch (type)
+            switch (category)
             {
-                case "Cockpit":
-                    stats.healthCap = 10f * v;
-                    stats.healthCapPerLevel = 2f * v;
-                    stats.healthRegen = 0.35f * v;
-                    stats.healthRegenPerLevel = 0.08f * v;
-                    stats.maxPeople = 8f * v;
-                    stats.maxPeoplePerLevel = 1.6f * v;
-                    stats.rammingPower = 2f * v;
-                    stats.rammingPowerPerLevel = 0.5f * v;
+                case ShipComponentStatCategory.Offense:
+                    if (string.Equals(type, "Cockpit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.rammingPower = 2f * v;
+                        stats.rammingPowerPerLevel = PerLevelFromBase(stats.rammingPower);
+                    }
+                    else
+                    {
+                        stats.firePower = 3f * v;
+                        stats.bulletSpeed = 12f * v;
+                        stats.fireRate = 1.2f * v;
+                        stats.firePowerPerLevel = PerLevelFromBase(stats.firePower);
+                        stats.bulletSpeedPerLevel = PerLevelFromBase(stats.bulletSpeed);
+                        stats.fireRatePerLevel = PerLevelFromBase(stats.fireRate);
+                    }
                     break;
 
-                case "Wing":
+                case ShipComponentStatCategory.Health:
+                    stats.healthCap = 21f * v;
+                    stats.healthRegen = 0.75f * v;
+                    stats.healthCapPerLevel = PerLevelFromBase(stats.healthCap);
+                    stats.healthRegenPerLevel = PerLevelFromBase(stats.healthRegen);
+                    break;
+
+                case ShipComponentStatCategory.Energy:
+                    stats.energyCap = 20f * v;
+                    stats.energyRegen = 2.5f * v;
+                    stats.energyCapPerLevel = PerLevelFromBase(stats.energyCap);
+                    stats.energyRegenPerLevel = PerLevelFromBase(stats.energyRegen);
+                    break;
+
+                case ShipComponentStatCategory.Movement:
+                    if (string.Equals(type, "Tail", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.turnSpeed = 22f * v;
+                        stats.turnSpeedPerLevel = PerLevelFromBase(stats.turnSpeed);
+                    }
+                    else if (string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.turnSpeed = 14f * v;
+                        stats.turnSpeedPerLevel = PerLevelFromBase(stats.turnSpeed);
+                    }
+                    else
+                    {
+                        stats.moveSpeed = 8f * v;
+                        stats.accelerationCap = 4f * v;
+                        stats.moveSpeedPerLevel = PerLevelFromBase(stats.moveSpeed);
+                        stats.accelerationCapPerLevel = PerLevelFromBase(stats.accelerationCap);
+                    }
+                    break;
+
+                case ShipComponentStatCategory.Capacity:
                     stats.maxGems = 8f * v;
-                    stats.maxGemsPerLevel = 1.6f * v;
-                    stats.turnSpeed = 2.5f * v;
-                    stats.turnSpeedPerLevel = 0.75f * v;
-                    stats.healthCap = 4f * v;
-                    stats.healthCapPerLevel = 1.1f * v;
-                    stats.healthRegen = 0.12f * v;
-                    stats.healthRegenPerLevel = 0.03f * v;
-                    break;
-
-                case "Engine":
-                    stats.moveSpeed = 5f * v;
-                    stats.moveSpeedPerLevel = 0.8f * v;
-                    stats.accelerationCap = 4f * v;
-                    stats.accelerationCapPerLevel = 0.9f * v;
-                    stats.healthCap = 2f * v;
-                    stats.healthCapPerLevel = 0.5f * v;
-                    break;
-
-                case "Thruster":
-                    stats.moveSpeed = 5f * v;
-                    stats.moveSpeedPerLevel = 0.8f * v;
-                    stats.accelerationCap = 4f * v;
-                    stats.accelerationCapPerLevel = 0.9f * v;
-                    stats.turnSpeed = 2f * v;
-                    stats.turnSpeedPerLevel = 0.6f * v;
-                    stats.healthCap = 2f * v;
-                    stats.healthCapPerLevel = 0.5f * v;
-                    break;
-
-                case "Fin":
-                    stats.turnSpeed = 3f * v;
-                    stats.turnSpeedPerLevel = 0.8f * v;
-                    stats.healthCap = 1.5f * v;
-                    stats.healthCapPerLevel = 0.35f * v;
-                    break;
-
-                case "Weapon":
-                    stats.firePower = 3f * v;
-                    stats.firePowerPerLevel = 1f * v;
-                    stats.bulletSpeed = 8f * v;
-                    stats.bulletSpeedPerLevel = 2f * v;
-                    stats.fireRate = 1.2f * v;
-                    stats.fireRatePerLevel = 0.2f * v;
-                    stats.energyCap = 6f * v;
-                    stats.energyCapPerLevel = 1.5f * v;
-                    stats.energyRegen = 1.5f * v;
-                    stats.energyRegenPerLevel = 0.35f * v;
-                    stats.healthCap = 1f * v;
-                    break;
-
-                case "Part":
-                case "Hull":
-                    stats.healthCap = 7f * v;
-                    stats.healthCapPerLevel = 1.6f * v;
-                    stats.healthRegen = 0.25f * v;
-                    stats.healthRegenPerLevel = 0.06f * v;
-                    stats.maxGems = 2f * v;
-                    stats.maxGemsPerLevel = 0.4f * v;
-                    stats.maxPeople = 1f * v;
-                    stats.maxPeoplePerLevel = 0.2f * v;
-                    break;
-
-                default:
-                    stats.healthCap = 2f * v;
-                    stats.healthCapPerLevel = 0.5f * v;
+                    stats.maxPeople = 4f * v;
+                    stats.maxGemsPerLevel = PerLevelFromBase(stats.maxGems);
+                    stats.maxPeoplePerLevel = PerLevelPeopleFromBase(stats.maxPeople);
                     break;
             }
 
-            return stats;
+            return ShipComponentAbilityStats.KeepOnlyAuthoringFields(stats, category, componentId);
         }
 
         private static void ExportCanonicalComponentInventory(ShipFamilyDefinition def)
@@ -707,12 +707,13 @@ namespace TitanOrbit.Editor
             string dir = string.IsNullOrEmpty(assetPath) ? "Assets" : Path.GetDirectoryName(assetPath)?.Replace('\\', '/') ?? "Assets";
             string file = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{def.familyId}_ComponentInventory.csv");
             var sb = new StringBuilder();
-            sb.AppendLine("CanonicalId,PartType,Version,Aliases");
+            sb.AppendLine("CanonicalId,PartType,Version,StatCategory,Aliases");
             for (int i = 0; i < scan.Count; i++)
             {
                 var d = scan[i];
                 string aliases = string.Join("|", d.aliases);
-                sb.AppendLine($"{EscapeCsv(d.canonicalId)},{EscapeCsv(d.partType)},{d.version},{EscapeCsv(aliases)}");
+                ShipComponentStatCategory category = ShipFamilyComponentPartKey.InferDefaultStatCategory(d.canonicalId);
+                sb.AppendLine($"{EscapeCsv(d.canonicalId)},{EscapeCsv(d.partType)},{d.version},{category},{EscapeCsv(aliases)}");
             }
             File.WriteAllText(file, sb.ToString(), Encoding.UTF8);
             AssetDatabase.ImportAsset(file);
@@ -736,30 +737,56 @@ namespace TitanOrbit.Editor
             foreach (string guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
-                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (prefab == null) continue;
-                var transforms = prefab.GetComponentsInChildren<Transform>(true);
-                foreach (var t in transforms)
+                if (string.IsNullOrEmpty(path) || !path.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                GameObject root = PrefabUtility.LoadPrefabContents(path);
+                if (root == null)
+                    continue;
+
+                try
                 {
-                    if (t == null || string.IsNullOrEmpty(t.name)) continue;
-                    if (t == prefab.transform) continue; // Exclude prefab root (ship object), scan only child components.
-                    if (!t.name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase)) continue;
-                    string rest = t.name.Substring(familyId.Length + 1);
-                    string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
-                    if (string.IsNullOrWhiteSpace(canonicalId)) continue;
-                    string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
-                    int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
-                    if (!map.TryGetValue(canonicalId, out CanonicalComponentScanData data))
-                    {
-                        data = new CanonicalComponentScanData(canonicalId, type, version);
-                        map[canonicalId] = data;
-                    }
-                    data.aliases.Add(rest);
+                    CollectComponentsFromPrefabHierarchy(root, root.transform, familyId, map);
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(root);
                 }
             }
             var list = new List<CanonicalComponentScanData>(map.Values);
             list.Sort((a, b) => string.Compare(a.canonicalId, b.canonicalId, StringComparison.OrdinalIgnoreCase));
             return list;
+        }
+
+        private static void CollectComponentsFromPrefabHierarchy(
+            GameObject prefabRoot,
+            Transform rootTransform,
+            string familyId,
+            Dictionary<string, CanonicalComponentScanData> map)
+        {
+            var transforms = prefabRoot.GetComponentsInChildren<Transform>(true);
+            foreach (var t in transforms)
+            {
+                if (t == null || t == rootTransform) continue;
+                string name = t.name;
+                if (string.IsNullOrEmpty(name)) continue;
+                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string rest = name.Substring(familyId.Length + 1);
+                if (string.IsNullOrWhiteSpace(rest)) continue;
+
+                string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
+                if (string.IsNullOrWhiteSpace(canonicalId)) continue;
+
+                string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
+                int version = ExtractFirstVersionNumberFromComponentRest(canonicalId);
+                if (!map.TryGetValue(canonicalId, out CanonicalComponentScanData data))
+                {
+                    data = new CanonicalComponentScanData(canonicalId, type, version);
+                    map[canonicalId] = data;
+                }
+                data.aliases.Add(rest);
+            }
         }
 
         private sealed class CanonicalComponentScanData

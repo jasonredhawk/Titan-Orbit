@@ -472,16 +472,15 @@ namespace TitanOrbit.Entities
 
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
         /// <summary>Per level after 1, mobility loses this fraction of the <em>base</em> stat: base − (base × this) × (level − 1).</summary>
-        private const float ShipLevelMobilityPenaltyFractionPerLevel = 0.11f;
+        private const float ShipLevelMobilityPenaltyFractionPerLevel = ShipPropulsionAggregation.ShipLevelMobilityPenaltyFractionPerLevel;
 
         /// <summary>Ship-level mobility: moveSpeed − (moveSpeed × 0.11) × (level−1); same pattern for rotation and per-part move.</summary>
         private static float ApplyShipLevelMobilityScale(float baseStat, float perLvlAfterOne)
         {
-            if (perLvlAfterOne <= 0f || baseStat <= 0f) return baseStat;
-            return baseStat - (baseStat * ShipLevelMobilityPenaltyFractionPerLevel) * perLvlAfterOne;
+            return ShipPropulsionAggregation.ApplyShipLevelMobilityScale(baseStat, Mathf.RoundToInt(perLvlAfterOne));
         }
 
-        /// <summary>Engine thrust force. More engines = more force; heavier ship = less acceleration (F/m).</summary>
+        /// <summary>Thruster acceleration force (sum of acceleration caps). More thrusters = more force; heavier ship = less acceleration (F/m).</summary>
         private float EffectiveEngineThrust
         {
             get
@@ -494,7 +493,7 @@ namespace TitanOrbit.Entities
                 return baseWithCards * attrScale * FriendlyTerritoryMovementMultiplier * ENGINE_THRUST_VISIBILITY;
             }
         }
-        /// <summary>Max speed from best engine (single highest move speed among engines). Scaled by attr/cards.</summary>
+        /// <summary>Max speed from best thruster base plus extra thruster moveSpeedPerLevel terms. Scaled by attr/cards.</summary>
         private float EffectiveMaxSpeed
         {
             get
@@ -6090,36 +6089,19 @@ namespace TitanOrbit.Entities
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
                 rammingPower = Mathf.Max(0f, baseRammingPower + s.rammingPower + s.rammingPowerPerLevel * perLvl);
 
-                // Movement: proportional penalty per level (see ApplyShipLevelMobilityScale).
+                // Movement: thrusters only (engines are energy). Top speed = best thruster base + other thrusters' moveSpeedPerLevel; acceleration sums.
                 float moveVal = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(s.moveSpeed, perLvl));
-                // Top speed is non-cumulative (max movement component). Acceleration is cumulative.
-                float sumAccelerationCap = 0f;
-                float maxEngineMoveSpeed = 0f;
-                float maxThrusterMoveSpeed = 0f;
-                if (matchedComponentIds != null && perComponentStats != null)
-                {
-                    for (int k = 0; k < matchedComponentIds.Count && k < perComponentStats.Count; k++)
-                    {
-                        string cid = matchedComponentIds[k];
-                        ShipComponentAbilityStats comp = perComponentStats[k];
-                        float partSpeed = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(comp.moveSpeed, perLvl));
-                        float partAcceleration = Mathf.Max(0f, comp.accelerationCap + comp.accelerationCapPerLevel * perLvl);
-                        if (ShipComponentAbilityStats.IsEngineComponent(cid))
-                        {
-                            sumAccelerationCap += partAcceleration;
-                            if (partSpeed > maxEngineMoveSpeed) maxEngineMoveSpeed = partSpeed;
-                        }
-                        else if (ShipComponentAbilityStats.IsThrusterComponent(cid))
-                        {
-                            sumAccelerationCap += partAcceleration;
-                            if (partSpeed > maxThrusterMoveSpeed) maxThrusterMoveSpeed = partSpeed;
-                        }
-                    }
-                }
+                ShipPropulsionAggregation.Result propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
+                    matchedComponentIds,
+                    perComponentStats,
+                    level);
                 float accelFallback = Mathf.Max(0f, s.accelerationCap + s.accelerationCapPerLevel * perLvl);
-                componentEngineThrust = Mathf.Max(0f, sumAccelerationCap > 0f ? sumAccelerationCap : (accelFallback > 0f ? accelFallback : moveVal));
-                float capFromParts = maxEngineMoveSpeed > 0f ? maxEngineMoveSpeed : maxThrusterMoveSpeed;
-                componentEngineMaxSpeed = Mathf.Max(0.1f, capFromParts > 0f ? capFromParts : engineThrust * 0.5f);
+                componentEngineThrust = Mathf.Max(0f, propulsion.sumAcceleration > 0f
+                    ? propulsion.sumAcceleration
+                    : (accelFallback > 0f ? accelFallback : moveVal));
+                componentEngineMaxSpeed = Mathf.Max(0.1f, propulsion.topMoveSpeed > 0f
+                    ? propulsion.topMoveSpeed
+                    : (moveVal > 0f ? moveVal : engineThrust * 0.5f));
 
                 componentMass =
                     stats.engineScaleTotal +
