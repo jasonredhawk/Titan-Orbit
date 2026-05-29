@@ -37,6 +37,13 @@ namespace TitanOrbit.Entities
         [Tooltip("When enabled, neutral regular planets roll a random starting level in [minStartingLevel, maxStartingLevel]. When disabled they start at level 1.")]
         [SerializeField] private bool randomizeNeutralStartingLevel = true;
 
+        /// <summary>When set before network spawn (e.g. by MapGenerator), overrides random starting level.</summary>
+        private int templateStartingLevel = -1;
+
+        public bool RandomizeNeutralStartingLevel => randomizeNeutralStartingLevel;
+        public int MinStartingLevel => minStartingLevel;
+        public int MaxStartingLevel => maxStartingLevel;
+
         [Header("Visual")]
         [SerializeField] private Renderer planetRenderer;
         [Tooltip("When set, planet is drawn by SGT Planet (CW asset); team materials are applied to this.")]
@@ -298,6 +305,16 @@ namespace TitanOrbit.Entities
         {
             if (IsSpawned) return; // Only allow setting before network spawn
             planetId = id;
+        }
+
+        /// <summary>
+        /// Server-side setup helper: assign a starting level before network spawn.
+        /// MapGenerator uses this to spread neutral planet levels evenly across the map.
+        /// </summary>
+        public void SetTemplateStartingLevel(int level)
+        {
+            if (IsSpawned) return;
+            templateStartingLevel = level;
         }
         public float CurrentPopulation => currentPopulation.Value;
         public float MaxPopulation => maxPopulation.Value * (1f + Mathf.Max(0f, connectionMaxPopulationBonusFraction));
@@ -943,6 +960,9 @@ namespace TitanOrbit.Entities
         protected virtual int GetInitialPlanetLevel()
         {
             // Only regular planets use this implementation; HomePlanet overrides.
+            if (templateStartingLevel >= 1)
+                return Mathf.Clamp(templateStartingLevel, 1, GetMaxLevel());
+
             if (!randomizeNeutralStartingLevel)
                 return 1;
 

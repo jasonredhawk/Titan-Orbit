@@ -155,6 +155,8 @@ namespace TitanOrbit.Generation
         private System.Collections.Generic.List<Vector3> homePlanetPositions = new System.Collections.Generic.List<Vector3>();
         private int nextPlanetId = 1;
         private bool hasGenerated;
+        /// <summary>Pre-shuffled starting levels for neutral planets this map (even spread across min..max).</summary>
+        private readonly List<int> neutralPlanetStartingLevels = new List<int>();
 
         private const int MinSupportedTeams = 2;
         private const int MaxSupportedTeams = 5;
@@ -812,6 +814,7 @@ namespace TitanOrbit.Generation
             }
             BootTrace.Mark("MapGenerator.GenerateMapProgressive - after home planets");
 
+            BuildNeutralPlanetStartingLevels();
             for (int i = 0; i < numberOfNeutralPlanetsThisMap; i++)
             {
                 if (planetPrefab != null)
@@ -924,6 +927,7 @@ namespace TitanOrbit.Generation
             GenerateHomePlanets();
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - after home planets");
             SyncTeamManagerActiveTeamCountFromGeneratedHomes();
+            BuildNeutralPlanetStartingLevels();
             GenerateNeutralPlanets();
             BootTrace.Mark("MapGenerator.GenerateMapImmediate - after neutral planets");
             GenerateAsteroids();
@@ -1057,6 +1061,48 @@ namespace TitanOrbit.Generation
             }
         }
 
+        /// <summary>
+        /// Builds a shuffled list of starting levels so neutral planets are evenly spread from min to max
+        /// instead of each rolling independently (which can cluster many planets at the same level).
+        /// </summary>
+        private void BuildNeutralPlanetStartingLevels()
+        {
+            neutralPlanetStartingLevels.Clear();
+            int count = numberOfNeutralPlanetsThisMap;
+            if (count <= 0 || planetPrefab == null)
+                return;
+
+            Planet template = planetPrefab.GetComponent<Planet>();
+            if (template == null || !template.RandomizeNeutralStartingLevel)
+            {
+                for (int i = 0; i < count; i++)
+                    neutralPlanetStartingLevels.Add(1);
+                return;
+            }
+
+            int minLevel = Mathf.Max(1, template.MinStartingLevel);
+            int maxStarting = Mathf.Max(minLevel, template.MaxStartingLevel);
+            int levelSpan = maxStarting - minLevel + 1;
+            int basePerLevel = count / levelSpan;
+            int remainder = count % levelSpan;
+
+            for (int level = minLevel; level <= maxStarting; level++)
+            {
+                int levelIndex = level - minLevel;
+                int planetsAtLevel = basePerLevel + (levelIndex < remainder ? 1 : 0);
+                for (int i = 0; i < planetsAtLevel; i++)
+                    neutralPlanetStartingLevels.Add(level);
+            }
+
+            for (int i = neutralPlanetStartingLevels.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                int tmp = neutralPlanetStartingLevels[i];
+                neutralPlanetStartingLevels[i] = neutralPlanetStartingLevels[j];
+                neutralPlanetStartingLevels[j] = tmp;
+            }
+        }
+
         private void GenerateSingleNeutralPlanet(int index)
         {
             if (planetPrefab == null) return;
@@ -1073,6 +1119,8 @@ namespace TitanOrbit.Generation
             if (planet != null)
             {
                 planet.SetTemplatePlanetId(nextPlanetId);
+                if (index >= 0 && index < neutralPlanetStartingLevels.Count)
+                    planet.SetTemplateStartingLevel(neutralPlanetStartingLevels[index]);
                 nextPlanetId++;
             }
 
