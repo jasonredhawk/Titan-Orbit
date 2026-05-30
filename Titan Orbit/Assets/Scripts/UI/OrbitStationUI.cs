@@ -17,7 +17,7 @@ namespace TitanOrbit.UI
     /// Combined orbit station UI: ship loadout grids (stacked vertically) at top, orbit actions and store below.
     /// Single left-anchored panel. Optional Shift Sci-Fi UI sprites/font assignable in inspector.
     /// </summary>
-    public class OrbitStationUI : MonoBehaviour
+    public partial class OrbitStationUI : MonoBehaviour
     {
         [Header("Shift Sci-Fi UI (optional)")]
         [Tooltip("Assign Shift UI panel/sprite for sci-fi look.")]
@@ -27,6 +27,10 @@ namespace TitanOrbit.UI
         [SerializeField] private SpinCardShiftVisuals spinCardShiftVisuals;
         [Tooltip("e.g. Rajdhani from Shift UI/Fonts.")]
         [SerializeField] private TMP_FontAsset fontAsset;
+
+        [Header("Ship upgrade tree")]
+        [Tooltip("Prefab with ShipUpgradeTreeUI (hint, legend, nodes). Create via Titan Orbit/UI/Create Ship Upgrade Tree Prefab.")]
+        [SerializeField] private ShipUpgradeTreeUI shipUpgradeTreePrefab;
 
         private SpinCardShiftVisuals _cachedSpinCardShiftVisuals;
         private bool _spinCardShiftResolveAttempted;
@@ -100,11 +104,10 @@ namespace TitanOrbit.UI
         private Button[] chassisButtons;
         private TextMeshProUGUI[] chassisLabels;
         private ShipUnlockEntry[] shipUnlockEntries;
+        private ShipUpgradeTreeUI shipUpgradeTree;
         private RectTransform shipTreeCenterRow;
         private RectTransform shipTreeCanvas;
         private TextMeshProUGUI shipTreeHintText;
-        private readonly List<GameObject> shipTreeVisuals = new List<GameObject>();
-        private readonly List<ShipTreeNodeView> shipTreeNodes = new List<ShipTreeNodeView>();
         /// <summary>When unchanged, only update labels/colors — full rebuild was causing visible blinking every store refresh.</summary>
         private string _shipTreeStructureKey = "";
         private const int MaxShipTreeColumns = 7;
@@ -115,9 +118,13 @@ namespace TitanOrbit.UI
         private const float ShipTreeNodeHeight = 188f;
         /// <summary>Vertical distance between node centers; must exceed <see cref="ShipTreeNodeHeight"/> so rows do not overlap.</summary>
         private const float ShipTreeLevelSpacing = ShipTreeNodeHeight + 44f;
-        private const string ShipTreeStructureKey = "full8_fixed_vlayout_powerbreakdown_v4_basis6col_centered";
-        private const string MoonDockShipTreeStructureKey = "moon_hlayout_compact_v1";
+        private const string ShipTreeStructureKey = "vertical_tree_prefab_v1";
+        private const string MoonDockShipTreeStructureKey = "moon_hlayout_prefab_v1";
         private float _cachedShipTreeBasisWidth = -999f;
+        private int _cachedShipTreeWidthBucket = -1;
+        private float _shipTreeLayoutCheckAccum;
+        private const float ShipTreeLayoutCheckInterval = 0.25f;
+        private const float ShipTreeLayoutWidthChangeThreshold = 12f;
         private HorizontalLayoutGroup _cardSpinRowLayout;
         private Button cardSpinButton;
         private TextMeshProUGUI cardSpinButtonLabel;
@@ -152,41 +159,10 @@ namespace TitanOrbit.UI
         /// <summary>Extra empty space below the divider so the card grid sits clearly below loadout (destroyed on restore).</summary>
         private GameObject _moonDockCardsBelowDividerSpacer;
 
-        private const float MoonHorizontalShipTreeNodeHeight = 118f;
-        /// <summary>Preview square size for moon horizontal nodes; kept at legacy 144×0.56 so row height can shrink without shrinking the image.</summary>
-        private const float MoonHorizontalShipPreviewImageBox = 144f * 0.56f;
-        /// <summary>Vertical tree compact styling threshold (legacy ~moon row + padding); independent of <see cref="MoonHorizontalShipTreeNodeHeight"/>.</summary>
-        private const float ShipTreeCompactLayoutMaxHeight = 148f;
-        private const float MoonHorizontalBranchGapY = 8f;
-        private const float MoonHorizontalLevelColGap = 12f;
-        private static readonly Color ShipTreeConnectorDim = new Color(0.45f, 0.62f, 0.85f, 0.55f);
-        private static readonly Color ShipTreeConnectorPath = new Color(0.35f, 0.98f, 0.62f, 0.92f);
-        private static readonly string[] ShipTreePowerCategoryLetters = { "O", "D", "E", "M", "C" };
         private readonly List<int> _shipTreeNextTargets = new List<int>(4);
         private StoreItemType[] itemTypes;
         private Button[] itemButtons;
         private TextMeshProUGUI[] itemLabels;
-
-        private class ShipTreeNodeView
-        {
-            public int Level;
-            public int BranchIndex;
-            public ShipUpgradeNode Node;
-            public Button Button;
-            public TextMeshProUGUI LevelNumberText;
-            public TextMeshProUGUI ShipNameText;
-            public Image PreviewImage;
-            public TextMeshProUGUI PriceText;
-            public RectTransform Rect;
-            /// <summary>Node button width (for scaling the power bar track vs max power in tree).</summary>
-            public float NodeButtonWidth;
-            /// <summary>Moon horizontal layout: power bar uses this width (left column), not full node width.</summary>
-            public float PowerBarTrackWidth;
-            public RectTransform PowerBarRow;
-            public Image[] PowerBarSegments;
-            public TextMeshProUGUI[] PowerStatLabels;
-            public TextMeshProUGUI[] PowerStatValues;
-        }
 
         private float _cardsContentHeight;
         private float _shipsContentHeight;
@@ -294,6 +270,7 @@ namespace TitanOrbit.UI
         private void OnRectTransformDimensionsChange()
         {
             _cachedShipTreeBasisWidth = -999f;
+            _cachedShipTreeWidthBucket = -1;
         }
 
         private void Update()
@@ -321,7 +298,14 @@ namespace TitanOrbit.UI
                 (_moonDockLayoutActive && moonDockCenterBackdrop != null && moonDockCenterBackdrop.activeSelf) ||
                 (rootPanel != null && rootPanel.activeSelf));
             if (treeUiOpen)
-                CheckShipTreeLayoutBasisChanged();
+            {
+                _shipTreeLayoutCheckAccum += Time.deltaTime;
+                if (_shipTreeLayoutCheckAccum >= ShipTreeLayoutCheckInterval)
+                {
+                    _shipTreeLayoutCheckAccum = 0f;
+                    CheckShipTreeLayoutBasisChanged();
+                }
+            }
         }
 
         private void ApplyStoreScrollFallback()
@@ -809,66 +793,10 @@ namespace TitanOrbit.UI
             chassisLabels = new TextMeshProUGUI[MaxShipCards];
             shipUnlockEntries = new ShipUnlockEntry[MaxShipCards];
             float shipY = 0f;
-            CreateSectionHeaderPair(shipsTabContent.transform, "Ship upgrade tree", "Each tier splits into branches. Stats on the left — ship preview and price on the right.", ref shipY);
+            CreateSectionHeaderPair(shipsTabContent.transform, "Ship upgrade tree", "Each tier splits into branches — ship preview and price on the right.", ref shipY);
             shipY -= 6f;
 
-            var hintGo = new GameObject("ShipTreeHint");
-            hintGo.transform.SetParent(shipsTabContent.transform, false);
-            var hintRect = hintGo.AddComponent<RectTransform>();
-            hintRect.anchorMin = new Vector2(0f, 1f);
-            hintRect.anchorMax = new Vector2(1f, 1f);
-            hintRect.pivot = new Vector2(0.5f, 1f);
-            hintRect.anchoredPosition = new Vector2(0f, shipY);
-            hintRect.sizeDelta = new Vector2(-24f, 52f);
-            shipTreeHintText = hintGo.AddComponent<TextMeshProUGUI>();
-            shipTreeHintText.text = "";
-            shipTreeHintText.fontSize = 13f;
-            shipTreeHintText.color = new Color(0.78f, 0.88f, 0.98f, 0.96f);
-            shipTreeHintText.alignment = TextAlignmentOptions.TopLeft;
-            shipTreeHintText.enableWordWrapping = true;
-            shipTreeHintText.raycastTarget = false;
-            if (fontAsset != null) shipTreeHintText.font = fontAsset;
-            shipY -= 58f;
-
-            var rowGo = new GameObject("ShipTreeCenterRow");
-            rowGo.transform.SetParent(shipsTabContent.transform, false);
-            shipTreeCenterRow = rowGo.AddComponent<RectTransform>();
-            shipTreeCenterRow.anchorMin = new Vector2(0f, 0.5f);
-            shipTreeCenterRow.anchorMax = new Vector2(1f, 0.5f);
-            shipTreeCenterRow.pivot = new Vector2(0.5f, 0.5f);
-            shipTreeCenterRow.anchoredPosition = Vector2.zero;
-            shipTreeCenterRow.sizeDelta = new Vector2(0f, 560f);
-            var rowLe = rowGo.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 560f;
-            rowLe.flexibleWidth = 1f;
-            rowLe.minHeight = 400f;
-            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
-            rowHlg.childAlignment = TextAnchor.UpperLeft;
-            rowHlg.childControlWidth = true;
-            rowHlg.childControlHeight = true;
-            rowHlg.childForceExpandWidth = false;
-            rowHlg.childForceExpandHeight = true;
-            rowHlg.spacing = 0f;
-            rowHlg.padding = new RectOffset(8, 12, 0, 0);
-
-            var treeGo = new GameObject("ShipUpgradeTreeCanvas");
-            treeGo.transform.SetParent(rowGo.transform, false);
-            shipTreeCanvas = treeGo.AddComponent<RectTransform>();
-            shipTreeCanvas.anchorMin = new Vector2(0.5f, 0.5f);
-            shipTreeCanvas.anchorMax = new Vector2(0.5f, 0.5f);
-            shipTreeCanvas.pivot = new Vector2(0.5f, 0.5f);
-            shipTreeCanvas.anchoredPosition = Vector2.zero;
-            float treeInitW = Mathf.Max(200f, Mathf.Max(PanelWidth, SlotPanelWidthConst) - 56f);
-            shipTreeCanvas.sizeDelta = new Vector2(treeInitW, 560f);
-            var treeLe = treeGo.AddComponent<LayoutElement>();
-            treeLe.preferredWidth = treeInitW;
-            treeLe.flexibleWidth = 0f;
-            treeLe.minWidth = 100f;
-            var treeBg = treeGo.AddComponent<Image>();
-            treeBg.color = new Color(0f, 0f, 0f, 0f);
-            treeBg.raycastTarget = true; // Keep hit target for scroll forwarding; no visible panel behind the tree
-            treeGo.AddComponent<ScrollRectForwarder>();
-            shipY -= 568f;
+            EnsureShipUpgradeTreeInstance(shipsTabContent.transform);
 
             shipsRowsContainer = null;
             shipPreviewsRoot = new GameObject("ShipPreviewsRoot").transform;
@@ -1115,15 +1043,25 @@ namespace TitanOrbit.UI
         /// <summary>Width available for laying out the ship tree (row / ships tab / orbit, widest reliable source).</summary>
         private float GetShipTreeLayoutBasisWidth()
         {
-            if (_moonDockLayoutActive && _moonDockShipTreeHorizontal && moonDockCenterShipsHost != null && moonDockCenterShipsHost.gameObject.activeInHierarchy)
+            if (_moonDockLayoutActive && _moonDockShipTreeHorizontal)
             {
-                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
-                Canvas.ForceUpdateCanvases();
-                float w = moonDockCenterShipsHost.rect.width;
-                if (w > 80f) return Mathf.Max(120f, w - 48f);
-                var trRoot = transform as RectTransform;
-                if (trRoot != null && trRoot.rect.width > 80f)
-                    return Mathf.Max(400f, trRoot.rect.width * 0.88f - 48f);
+                if (shipUpgradeTree != null)
+                {
+                    var treeRt = (RectTransform)shipUpgradeTree.transform;
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(treeRt);
+                    Canvas.ForceUpdateCanvases();
+                    if (treeRt.rect.width > 80f)
+                        return treeRt.rect.width;
+                }
+
+                if (moonDockCenterShipsHost != null && moonDockCenterShipsHost.gameObject.activeInHierarchy)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
+                    Canvas.ForceUpdateCanvases();
+                    float w = moonDockCenterShipsHost.rect.width;
+                    if (w > 80f)
+                        return Mathf.Max(120f, w - 24f);
+                }
             }
             if (shipTreeCenterRow != null && shipTreeCenterRow.rect.width > 8f)
                 return shipTreeCenterRow.rect.width;
@@ -1186,11 +1124,12 @@ namespace TitanOrbit.UI
         private void CheckShipTreeLayoutBasisChanged()
         {
             if (shipTreeCanvas == null || shipsTabContent == null) return;
-            LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
             float b = GetShipTreeLayoutBasisWidth();
-            if (Mathf.Abs(b - _cachedShipTreeBasisWidth) < 0.5f) return;
+            int bucket = Mathf.RoundToInt(b / 32f);
+            if (bucket == _cachedShipTreeWidthBucket)
+                return;
+            _cachedShipTreeWidthBucket = bucket;
             _cachedShipTreeBasisWidth = b;
-            _shipTreeStructureKey = "";
             if (UpgradeSystem.Instance != null && currentShip != null && currentPlanet != null && CardShopSystem.Instance != null)
                 RefreshShipsTab(false);
         }
@@ -1212,35 +1151,35 @@ namespace TitanOrbit.UI
             if (shipsTabContent == null) return;
             if (_moonDockShipTreeHorizontal && _moonDockLayoutActive)
             {
-                float moonTreeH = shipTreeCanvas != null ? shipTreeCanvas.sizeDelta.y : 0f;
-                if (moonTreeH < 1f) moonTreeH = ComputeShipTreeCanvasContentHeight();
-                // Header: title + subtitle + status block + tree row; bottom slack for connectors / last row
-                const float header = 132f;
-                float moonPreferred = header + moonTreeH + 48f;
                 var shipsLayoutElQuick = shipsTabContent.GetComponent<LayoutElement>();
                 if (shipsLayoutElQuick != null)
                 {
-                    shipsLayoutElQuick.preferredHeight = moonPreferred;
-                    shipsLayoutElQuick.minHeight = moonPreferred;
+                    shipsLayoutElQuick.flexibleHeight = 1f;
+                    shipsLayoutElQuick.minHeight = 280f;
                 }
-                _shipsContentHeight = moonPreferred;
                 return;
             }
             var shipsRt = shipsTabContent.GetComponent<RectTransform>();
             LayoutRebuilder.ForceRebuildLayoutImmediate(shipsRt);
-            if (shipTreeCenterRow != null)
+            if (shipUpgradeTree != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)shipUpgradeTree.transform);
+            else if (shipTreeCenterRow != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
             if (shipTreeCanvas != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCanvas);
             Canvas.ForceUpdateCanvases();
 
-            float treeH = shipTreeCanvas != null ? shipTreeCanvas.sizeDelta.y : 0f;
+            float treeH = 0f;
+            if (shipUpgradeTree != null)
+                treeH = ((RectTransform)shipUpgradeTree.transform).rect.height;
+            if (treeH < 1f && shipTreeCanvas != null)
+                treeH = shipTreeCanvas.sizeDelta.y;
             if (treeH < 1f)
                 treeH = ComputeShipTreeCanvasContentHeight();
 
-            // Analytic floor: title row (22) + gap (4) + hint row (24) + tree row (treeH) + extra for connectors / rounding
-            const float analyticHeaderAndGap = 50f;
-            const float analyticBottomSlack = 96f;
+            // Section title + hint + legend (compact) + tree block
+            const float analyticHeaderAndGap = 88f;
+            const float analyticBottomSlack = 40f;
             float analytic = analyticHeaderAndGap + treeH + analyticBottomSlack;
 
             // Measured: union axis-aligned bounds of each top-level child in ships-tab space (includes connectors under canvas)
@@ -1302,14 +1241,14 @@ namespace TitanOrbit.UI
             if (_moonDockLayoutActive && _moonDockShipTreeHorizontal) return;
             if (activeStoreTab != 1 || storeScrollRect == null || storeContentRoot == null || storeScrollRect.viewport == null)
                 return;
-            if (currentShip == null || shipTreeNodes == null || shipTreeNodes.Count == 0) return;
+            if (currentShip == null || shipUpgradeTree == null || shipUpgradeTree.Nodes.Count == 0) return;
 
-            ShipTreeNodeView target = null;
+            ShipUpgradeTreeNodeUI target = null;
             int curL = currentShip.ShipLevel;
             int curB = currentShip.BranchIndex;
-            for (int i = 0; i < shipTreeNodes.Count; i++)
+            for (int i = 0; i < shipUpgradeTree.Nodes.Count; i++)
             {
-                var v = shipTreeNodes[i];
+                var v = shipUpgradeTree.Nodes[i];
                 if (v != null && v.Level == curL && v.BranchIndex == curB)
                 {
                     target = v;
@@ -1347,27 +1286,28 @@ namespace TitanOrbit.UI
         /// <param name="scrollToActiveShipNode">When true, scrolls the store viewport to the current ship node (e.g. opening the panel on Ships tab). Avoid true on periodic refreshes so manual scrolling is not overridden.</param>
         private void RefreshShipsTab(bool scrollToActiveShipNode = false)
         {
-            if (shipTreeCanvas == null) return;
-            ApplyShipTreeCanvasWidth();
+            if (shipUpgradeTree == null)
+                return;
 
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
+            ApplyShipUpgradeTreeContainerLayout();
+            if (shipsTabContent != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
+            if (moonDockCenterShipsHost != null && _moonDockLayoutActive)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
+
+            if (!IsTreeDataAvailable())
             {
                 _shipTreeStructureKey = "";
-                ClearShipTreeVisuals();
-                if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
+                shipUpgradeTree.Clear();
+                if (shipUpgradeTree.Hint != null)
+                    shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
                 UpdateShipsTabContentHeight();
                 return;
             }
 
             string expectedStructureKey = _moonDockShipTreeHorizontal ? MoonDockShipTreeStructureKey : ShipTreeStructureKey;
-            if (shipTreeNodes.Count == 0 || _shipTreeStructureKey != expectedStructureKey)
-            {
-                BuildShipUpgradeTreeVisualFull();
-                _shipTreeStructureKey = expectedStructureKey;
-            }
-            else
-                UpdateShipUpgradeTreeVisualState();
+            shipUpgradeTree.RebuildIfNeeded(_moonDockShipTreeHorizontal, expectedStructureKey);
+            _shipTreeStructureKey = expectedStructureKey;
 
             UpdateShipsTabContentHeight();
             ApplyMoonDockShipTreeRowLayout();
@@ -1385,13 +1325,16 @@ namespace TitanOrbit.UI
             if (hlg == null) return;
             if (_moonDockLayoutActive && _moonDockShipTreeHorizontal)
             {
-                // Moon dock horizontal tree is intentionally left-aligned.
-                shipTreeCenterRow.anchorMin = new Vector2(0f, 1f);
-                shipTreeCenterRow.anchorMax = new Vector2(1f, 1f);
-                shipTreeCenterRow.pivot = new Vector2(0.5f, 1f);
+                shipTreeCenterRow.anchorMin = Vector2.zero;
+                shipTreeCenterRow.anchorMax = Vector2.one;
+                shipTreeCenterRow.pivot = new Vector2(0.5f, 0.5f);
+                shipTreeCenterRow.offsetMin = Vector2.zero;
+                shipTreeCenterRow.offsetMax = Vector2.zero;
                 shipTreeCenterRow.anchoredPosition = Vector2.zero;
-                hlg.childAlignment = TextAnchor.UpperLeft;
-                hlg.padding = new RectOffset(12, 12, 0, 0);
+                hlg.childAlignment = TextAnchor.MiddleCenter;
+                hlg.padding = new RectOffset(0, 0, 0, 0);
+                hlg.childForceExpandWidth = true;
+                hlg.childControlWidth = true;
                 return;
             }
 
@@ -1445,971 +1388,6 @@ namespace TitanOrbit.UI
             if (currentShip != null && currentShip.CurrentShipData != null && !string.IsNullOrEmpty(currentShip.CurrentShipData.shipName))
                 return currentShip.CurrentShipData.shipName.Trim();
             return "Starter";
-        }
-
-        private void UpdateShipUpgradeTreeVisualState()
-        {
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || shipTreeNodes.Count == 0) return;
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (storePlanet == null) return;
-
-            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
-            int currentLevel = currentShip.ShipLevel;
-            int currentBranch = currentShip.BranchIndex;
-            int nextLevel = currentLevel + 1;
-            float nextCost = tree.GetGemCostForLevel(nextLevel);
-            var available = tree.GetAvailableUpgrades(currentLevel, currentBranch);
-            bool canBuyAny = CardShopSystem.Instance != null
-                && CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, storePlanet, out _, out _, out _);
-
-            bool canSwapHullAtCurrentSlot = CardShopSystem.Instance != null
-                && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, currentLevel, currentBranch, out _);
-
-            string slotChassisId = CardShopSystem.Instance != null
-                ? CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, currentLevel, currentBranch)
-                : null;
-            bool hasAlternateHullAtSlot = !string.IsNullOrEmpty(slotChassisId)
-                && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase);
-            int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
-            bool storePlanetLevelBlocksSwap = hasAlternateHullAtSlot && storePlanetLevel < currentLevel;
-            bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
-            bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
-
-            if (shipTreeHintText != null)
-            {
-                if (canBuyAny && available != null && available.Count > 0)
-                {
-                    var sb = new System.Text.StringBuilder();
-                    sb.Append("Next: ").Append(nextCost.ToString("F0")).Append("g  ·  ");
-                    UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _shipTreeNextTargets);
-                    for (int i = 0; i < _shipTreeNextTargets.Count; i++)
-                    {
-                        int bi = _shipTreeNextTargets[i];
-                        ShipUpgradeNode hintNode = tree.GetNodeForBranch(nextLevel, bi);
-                        string nm = GetShipDisplayName(hintNode, nextLevel, bi);
-                        if (i > 0) sb.Append(" · ");
-                        sb.Append(nm);
-                    }
-                    if (canSwapHullAtCurrentSlot)
-                        sb.Append("  ·  Click your ship to swap hull (free).");
-                    else if (storePlanetLevelBlocksSwap)
-                        sb.Append($"  ·  Planet must reach level {currentLevel} to swap.");
-                    shipTreeHintText.text = sb.ToString();
-                }
-                else if (canSwapHullAtCurrentSlot)
-                    shipTreeHintText.text = "Click your ship to swap to this moon's hull at your tier (free).";
-                else if (storePlanetLevelBlocksSwap)
-                    shipTreeHintText.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
-                else if (upgradeBlockedByStoreLevel)
-                    shipTreeHintText.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
-                else if (nextLevel <= 7 && homeLevel < nextLevel)
-                    shipTreeHintText.text = $"Locked — raise home planet to level {nextLevel}.";
-                else if (canBuyAny)
-                    shipTreeHintText.text = $"Next tier costs {nextCost:F0}g.";
-                else
-                    shipTreeHintText.text = "Green: your ship. Blue: affordable upgrades. Cyan: free hull swap.";
-            }
-
-            for (int v = 0; v < shipTreeNodes.Count; v++)
-            {
-                var view = shipTreeNodes[v];
-                if (view == null || view.Button == null) continue;
-
-                bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
-                bool tierBlockedByHome = view.Level > homeLevel;
-                bool tierBlockedByStore = view.Level > storePlanetLevel;
-                bool tierBlocked = tierBlockedByHome || tierBlockedByStore;
-                bool isNextChoice = false;
-                if (view.Level == nextLevel)
-                {
-                    UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _shipTreeNextTargets);
-                    isNextChoice = _shipTreeNextTargets.Contains(view.BranchIndex);
-                }
-
-                // Purchasable if this store's family defines a hull at this ladder slot and/or legacy UpgradeTree has ShipData (server prefers ladder when both exist).
-                bool ladderOk = CardShopSystem.Instance != null
-                    && !string.IsNullOrEmpty(CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex));
-                bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
-                bool canSwapHull = isCurrent && !tierBlockedByHome && CardShopSystem.Instance != null
-                    && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, view.Level, view.BranchIndex, out _);
-                view.Button.interactable = canSwapHull
-                    || (isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlocked && canApplyPurchase);
-                var img = view.Button.GetComponent<Image>();
-                if (img != null)
-                {
-                    if (canSwapHull) img.color = new Color(0.28f, 0.68f, 0.82f, 0.98f);
-                    else if (isCurrent) img.color = new Color(0.26f, 0.62f, 0.36f, 0.98f);
-                    else if (tierBlocked) img.color = new Color(0.1f, 0.11f, 0.14f, 0.92f);
-                    else if (isNextChoice) img.color = new Color(0.25f, 0.48f, 0.78f, 0.98f);
-                    else img.color = new Color(0.19f, 0.23f, 0.31f, 0.94f);
-                }
-
-                if (view.PreviewImage != null)
-                {
-                    Sprite sp = ResolveShipTreePreviewSprite(view.Level, view.BranchIndex);
-                    view.PreviewImage.sprite = sp;
-                    view.PreviewImage.color = sp != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
-                }
-
-                if (view.LevelNumberText != null)
-                {
-                    if (view.PowerBarTrackWidth > 0.01f)
-                        view.LevelNumberText.text = view.Level == 1 ? "Lv 1" : $"Lv {view.Level}";
-                    else
-                        view.LevelNumberText.text = view.Level == 1 ? "1" : view.Level.ToString();
-                }
-                if (view.ShipNameText != null)
-                {
-                    if (view.Level == 1)
-                        view.ShipNameText.text = GetStarterShipDisplayName();
-                    else
-                        view.ShipNameText.text = GetShipDisplayName(view.Node, view.Level, view.BranchIndex);
-                }
-                if (view.PriceText != null)
-                {
-                    if (canSwapHull)
-                        view.PriceText.text = "Free";
-                    else if (isCurrent && storePlanetLevelBlocksSwap)
-                        view.PriceText.text = $"Planet Lv {currentLevel}+";
-                    else if (isNextChoice && tierBlockedByStore && !tierBlockedByHome)
-                        view.PriceText.text = $"Planet Lv {view.Level}+";
-                    else if (view.Level == 1)
-                        view.PriceText.text = "—";
-                    else
-                        view.PriceText.text = $"{tree.GetGemCostForLevel(view.Level):F0}g";
-                }
-
-                float maxPowerTree = ComputeMaxPowerScoreAcrossTree();
-                ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPowerTree);
-            }
-        }
-
-        private void BuildShipUpgradeTreeVisualFull()
-        {
-            ClearShipTreeVisuals();
-            if (shipTreeCanvas == null)
-                return;
-
-            if (_moonDockShipTreeHorizontal)
-            {
-                BuildShipUpgradeTreeVisualFullHorizontal();
-                return;
-            }
-
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
-            {
-                if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
-                return;
-            }
-
-            // Vertical tree: center the canvas in the row (moon horizontal sets left/top anchors instead).
-            if (shipTreeCanvas != null)
-            {
-                shipTreeCanvas.anchorMin = new Vector2(0.5f, 0.5f);
-                shipTreeCanvas.anchorMax = new Vector2(0.5f, 0.5f);
-                shipTreeCanvas.pivot = new Vector2(0.5f, 0.5f);
-                shipTreeCanvas.anchoredPosition = Vector2.zero;
-            }
-
-            ApplyShipTreeCanvasWidth();
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
-            if (shipTreeCenterRow != null)
-                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCanvas);
-            Canvas.ForceUpdateCanvases();
-
-            const int maxLevel = 7;
-            float margin = ShipTreeCanvasInnerMargin;
-            ComputeShipTreeGeometry(out _, out float nodeW, out float innerW);
-            innerW = Mathf.Max(120f, innerW);
-            nodeW = Mathf.Max(52f, nodeW);
-            float nodeHeight = ShipTreeNodeHeight;
-            float contentHeight = Mathf.Max(160f, margin * 2f + (maxLevel - 1) * ShipTreeLevelSpacing + nodeHeight);
-            shipTreeCanvas.sizeDelta = new Vector2(shipTreeCanvas.sizeDelta.x, contentHeight);
-            if (shipTreeCenterRow != null)
-            {
-                shipTreeCenterRow.sizeDelta = new Vector2(0f, contentHeight);
-                var rowLe = shipTreeCenterRow.GetComponent<LayoutElement>();
-                if (rowLe != null) rowLe.preferredHeight = contentHeight;
-            }
-
-            float maxPowerTree = ComputeMaxPowerScoreAcrossTree();
-
-            var nodesByLevel = new Dictionary<int, List<ShipTreeNodeView>>();
-            for (int level = 1; level <= maxLevel; level++)
-            {
-                int count = UpgradeTree.GetShipCountForLevel(level);
-                var views = new List<ShipTreeNodeView>(count);
-                float useW = nodeW;
-                float rowW = count * useW + (count - 1) * ShipTreeColGap;
-                float startX = margin + (innerW - rowW) * 0.5f;
-                float y = margin + (level - 1) * ShipTreeLevelSpacing;
-                for (int b = 0; b < count; b++)
-                {
-                    ShipUpgradeNode node = level == 1 ? null : tree.GetNodeForBranch(level, b);
-                    var view = CreateShipTreeNode(level, b, node, useW, nodeHeight, maxPowerTree);
-                    views.Add(view);
-                    float x = startX + useW * 0.5f + b * (useW + ShipTreeColGap);
-                    view.Rect.anchorMin = new Vector2(0f, 0f);
-                    view.Rect.anchorMax = new Vector2(0f, 0f);
-                    view.Rect.pivot = new Vector2(0.5f, 0.5f);
-                    view.Rect.anchoredPosition = new Vector2(x, y);
-                }
-                nodesByLevel[level] = views;
-            }
-
-            for (int level = 2; level <= maxLevel; level++)
-            {
-                if (!nodesByLevel.TryGetValue(level, out var levelViews)) continue;
-                if (!nodesByLevel.TryGetValue(level - 1, out var previousViews)) continue;
-                foreach (var prevView in previousViews)
-                {
-                    int p = prevView.BranchIndex;
-                    foreach (var nextView in levelViews)
-                    {
-                        int j = nextView.BranchIndex;
-                        if (UpgradeTree.IsValidUpgradeStep(level - 1, p, level, j))
-                            DrawTreeConnector(prevView.Rect.anchoredPosition, nextView.Rect.anchoredPosition);
-                    }
-                }
-            }
-
-            UpdateShipUpgradeTreeVisualState();
-        }
-
-        /// <summary>Edges (fromLevel, fromBranch, toLevel, toBranch) on the player&apos;s current upgrade path (reconstructed backward from current tier).</summary>
-        private bool TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges)
-        {
-            edges = new HashSet<(int, int, int, int)>();
-            if (currentShip == null) return false;
-            int L = currentShip.ShipLevel;
-            int B = currentShip.BranchIndex;
-            if (L < 1) return false;
-            while (L > 1)
-            {
-                int prevL = L - 1;
-                int parentB = -1;
-                int countP = UpgradeTree.GetShipCountForLevel(prevL);
-                for (int p = 0; p < countP; p++)
-                {
-                    if (UpgradeTree.IsValidUpgradeStep(prevL, p, L, B))
-                    {
-                        parentB = p;
-                        break;
-                    }
-                }
-                if (parentB < 0)
-                {
-                    edges.Clear();
-                    return false;
-                }
-                edges.Add((prevL, parentB, L, B));
-                L = prevL;
-                B = parentB;
-            }
-            return true;
-        }
-
-        private void ClearShipTreeVisuals()
-        {
-            for (int i = 0; i < shipTreeVisuals.Count; i++)
-            {
-                if (shipTreeVisuals[i] != null) Destroy(shipTreeVisuals[i]);
-            }
-            shipTreeVisuals.Clear();
-            shipTreeNodes.Clear();
-        }
-
-        private ShipTreeNodeView CreateShipTreeNode(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float maxPowerAcrossTree)
-        {
-            var go = new GameObject($"ShipTreeNode_{level}_{branchIndex}");
-            go.transform.SetParent(shipTreeCanvas, false);
-            var rect = go.AddComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(width, height);
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.1f, 0.14f, 0.22f, 0.98f);
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-
-            var vlg = go.AddComponent<VerticalLayoutGroup>();
-            vlg.padding = new RectOffset(8, 8, 6, 8);
-            vlg.spacing = 4;
-            vlg.childAlignment = TextAnchor.UpperCenter;
-            vlg.childControlWidth = true;
-            vlg.childControlHeight = true;
-            vlg.childForceExpandWidth = true;
-            vlg.childForceExpandHeight = false;
-
-            var btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
-            var colors = btn.colors;
-            colors.fadeDuration = 0f;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.04f, 1.06f, 1.08f, 1f);
-            colors.pressedColor = new Color(0.88f, 0.9f, 0.94f, 1f);
-            colors.selectedColor = Color.white;
-            colors.disabledColor = new Color(0.55f, 0.55f, 0.58f, 0.72f);
-            btn.colors = colors;
-            int targetBranch = branchIndex;
-            btn.onClick.AddListener(() => OnUpgradeTreeNodeClicked(level, targetBranch));
-
-            var headerGo = new GameObject("Header");
-            headerGo.transform.SetParent(go.transform, false);
-            var headerHlg = headerGo.AddComponent<HorizontalLayoutGroup>();
-            headerHlg.padding = new RectOffset(0, 0, 0, 0);
-            headerHlg.spacing = 4;
-            headerHlg.childAlignment = TextAnchor.UpperLeft;
-            headerHlg.childControlWidth = true;
-            headerHlg.childControlHeight = true;
-            headerHlg.childForceExpandWidth = false;
-            headerHlg.childForceExpandHeight = true;
-            var headerLe = headerGo.AddComponent<LayoutElement>();
-            headerLe.minHeight = 26f;
-            headerLe.preferredHeight = 36f;
-            headerLe.flexibleHeight = 0f;
-
-            var levelGo = new GameObject("Level");
-            levelGo.transform.SetParent(headerGo.transform, false);
-            var levelTmp = levelGo.AddComponent<TextMeshProUGUI>();
-            levelTmp.text = level.ToString();
-            levelTmp.fontSize = 15;
-            levelTmp.fontStyle = FontStyles.Bold;
-            levelTmp.alignment = TextAlignmentOptions.TopLeft;
-            levelTmp.enableWordWrapping = false;
-            levelTmp.color = new Color(0.55f, 0.78f, 1f, 1f);
-            levelTmp.raycastTarget = false;
-            if (fontAsset != null) levelTmp.font = fontAsset;
-            var levelLe = levelGo.AddComponent<LayoutElement>();
-            levelLe.preferredWidth = 26f;
-            levelLe.minWidth = 22f;
-            levelLe.flexibleWidth = 0f;
-
-            var nameGo = new GameObject("ShipName");
-            nameGo.transform.SetParent(headerGo.transform, false);
-            var nameTmp = nameGo.AddComponent<TextMeshProUGUI>();
-            nameTmp.fontSize = 14;
-            nameTmp.lineSpacing = -2f;
-            nameTmp.alignment = TextAlignmentOptions.TopLeft;
-            nameTmp.enableWordWrapping = true;
-            nameTmp.overflowMode = TextOverflowModes.Ellipsis;
-            nameTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
-            nameTmp.raycastTarget = false;
-            if (fontAsset != null) nameTmp.font = fontAsset;
-            var nameLe = nameGo.AddComponent<LayoutElement>();
-            nameLe.flexibleWidth = 1f;
-            nameLe.minWidth = 52f;
-            nameLe.minHeight = 18f;
-            nameLe.preferredHeight = 36f;
-            nameLe.flexibleHeight = 0f;
-
-            var previewGo = new GameObject("Preview");
-            previewGo.transform.SetParent(go.transform, false);
-            var previewImg = previewGo.AddComponent<Image>();
-            previewImg.preserveAspect = true;
-            previewImg.raycastTarget = false;
-            previewImg.maskable = true;
-            var previewLe = previewGo.AddComponent<LayoutElement>();
-            previewLe.minHeight = 44f;
-            previewLe.preferredHeight = 52f;
-            previewLe.flexibleHeight = 1f;
-            previewLe.flexibleWidth = 1f;
-
-            var barRowGo = new GameObject("PowerBar");
-            barRowGo.transform.SetParent(go.transform, false);
-            var barRowRect = barRowGo.GetComponent<RectTransform>();
-            var barRowLe = barRowGo.AddComponent<LayoutElement>();
-            barRowLe.preferredHeight = 10f;
-            barRowLe.flexibleHeight = 0f;
-            barRowLe.minHeight = 10f;
-            barRowLe.flexibleWidth = 0f;
-            var barHlg = barRowGo.AddComponent<HorizontalLayoutGroup>();
-            barHlg.padding = new RectOffset(0, 0, 0, 0);
-            barHlg.spacing = 1;
-            barHlg.childAlignment = TextAnchor.MiddleCenter;
-            barHlg.childControlWidth = true;
-            barHlg.childControlHeight = true;
-            barHlg.childForceExpandWidth = false;
-            barHlg.childForceExpandHeight = true;
-            var powerBarSegments = new Image[5];
-            for (int pi = 0; pi < 5; pi++)
-            {
-                var segGo = new GameObject("Seg_" + pi);
-                segGo.transform.SetParent(barRowGo.transform, false);
-                var segImg = segGo.AddComponent<Image>();
-                segImg.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
-                segImg.raycastTarget = false;
-                var segLe = segGo.AddComponent<LayoutElement>();
-                segLe.flexibleWidth = 1f;
-                segLe.minWidth = 3f;
-                segLe.preferredHeight = 10f;
-                powerBarSegments[pi] = segImg;
-            }
-
-            var statsRowGo = new GameObject("PowerStats");
-            statsRowGo.transform.SetParent(go.transform, false);
-            var statsRowLe = statsRowGo.AddComponent<LayoutElement>();
-            statsRowLe.preferredHeight = 34f;
-            statsRowLe.flexibleHeight = 0f;
-            statsRowLe.minHeight = 34f;
-            var statsHlg = statsRowGo.AddComponent<HorizontalLayoutGroup>();
-            statsHlg.padding = new RectOffset(0, 0, 0, 0);
-            statsHlg.spacing = 0;
-            statsHlg.childAlignment = TextAnchor.UpperCenter;
-            statsHlg.childControlWidth = true;
-            statsHlg.childControlHeight = true;
-            statsHlg.childForceExpandWidth = true;
-            statsHlg.childForceExpandHeight = true;
-            var powerLabels = new TextMeshProUGUI[5];
-            var powerValues = new TextMeshProUGUI[5];
-            for (int pi = 0; pi < 5; pi++)
-            {
-                var cellGo = new GameObject("Stat_" + pi);
-                cellGo.transform.SetParent(statsRowGo.transform, false);
-                var cellVlg = cellGo.AddComponent<VerticalLayoutGroup>();
-                cellVlg.spacing = 0;
-                cellVlg.childAlignment = TextAnchor.UpperCenter;
-                cellVlg.childControlWidth = true;
-                cellVlg.childControlHeight = true;
-                cellVlg.childForceExpandWidth = true;
-                cellVlg.childForceExpandHeight = false;
-                var cellLe = cellGo.AddComponent<LayoutElement>();
-                cellLe.flexibleWidth = 1f;
-                cellLe.minWidth = 18f;
-
-                var letterGo = new GameObject("L");
-                letterGo.transform.SetParent(cellGo.transform, false);
-                var letterTmp = letterGo.AddComponent<TextMeshProUGUI>();
-                letterTmp.text = ShipTreePowerCategoryLetters[pi];
-                letterTmp.fontSize = 6.5f;
-                letterTmp.alignment = TextAlignmentOptions.Center;
-                letterTmp.enableWordWrapping = false;
-                letterTmp.color = new Color(0.55f, 0.62f, 0.72f, 1f);
-                letterTmp.raycastTarget = false;
-                if (fontAsset != null) letterTmp.font = fontAsset;
-                var letterLe = letterGo.AddComponent<LayoutElement>();
-                letterLe.preferredHeight = 10f;
-                letterLe.flexibleHeight = 0f;
-
-                var valGo = new GameObject("V");
-                valGo.transform.SetParent(cellGo.transform, false);
-                var valTmp = valGo.AddComponent<TextMeshProUGUI>();
-                valTmp.text = "—";
-                valTmp.fontSize = 8f;
-                valTmp.fontStyle = FontStyles.Bold;
-                valTmp.alignment = TextAlignmentOptions.Center;
-                valTmp.enableWordWrapping = false;
-                valTmp.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
-                valTmp.raycastTarget = false;
-                if (fontAsset != null) valTmp.font = fontAsset;
-                var valLe = valGo.AddComponent<LayoutElement>();
-                valLe.preferredHeight = 14f;
-                valLe.flexibleHeight = 0f;
-
-                powerLabels[pi] = letterTmp;
-                powerValues[pi] = valTmp;
-            }
-
-            var priceGo = new GameObject("Price");
-            priceGo.transform.SetParent(go.transform, false);
-            var priceTmp = priceGo.AddComponent<TextMeshProUGUI>();
-            priceTmp.fontSize = 10;
-            priceTmp.alignment = TextAlignmentOptions.Center;
-            priceTmp.enableWordWrapping = false;
-            priceTmp.color = new Color(0.55f, 0.88f, 0.72f, 1f);
-            priceTmp.raycastTarget = false;
-            if (fontAsset != null) priceTmp.font = fontAsset;
-            var priceLe = priceGo.AddComponent<LayoutElement>();
-            priceLe.preferredHeight = 18f;
-            priceLe.flexibleHeight = 0f;
-
-            Sprite initialPreview = ResolveShipTreePreviewSprite(level, branchIndex);
-            previewImg.sprite = initialPreview;
-            previewImg.color = initialPreview != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
-
-            if (height <= ShipTreeCompactLayoutMaxHeight)
-            {
-                levelTmp.fontSize = 14f;
-                nameTmp.fontSize = 13f;
-                nameTmp.lineSpacing = -3f;
-                headerLe.preferredHeight = 30f;
-                headerLe.minHeight = 24f;
-                previewLe.minHeight = 22f;
-                previewLe.preferredHeight = 26f;
-                previewLe.flexibleHeight = 0f;
-                barRowLe.preferredHeight = 7f;
-                barRowLe.minHeight = 7f;
-                statsRowLe.preferredHeight = 20f;
-                statsRowLe.minHeight = 20f;
-                priceLe.preferredHeight = 13f;
-                priceTmp.fontSize = 8f;
-                vlg.padding = new RectOffset(5, 5, 3, 4);
-                vlg.spacing = 2f;
-                for (int pi = 0; pi < 5; pi++)
-                {
-                    if (powerLabels[pi] != null) powerLabels[pi].fontSize = 5.5f;
-                    if (powerValues[pi] != null) powerValues[pi].fontSize = 6.5f;
-                }
-            }
-
-            shipTreeVisuals.Add(go);
-            var view = new ShipTreeNodeView
-            {
-                Level = level,
-                BranchIndex = branchIndex,
-                Node = node,
-                Button = btn,
-                LevelNumberText = levelTmp,
-                ShipNameText = nameTmp,
-                PreviewImage = previewImg,
-                PriceText = priceTmp,
-                Rect = rect,
-                NodeButtonWidth = width,
-                PowerBarTrackWidth = 0f,
-                PowerBarRow = barRowRect,
-                PowerBarSegments = powerBarSegments,
-                PowerStatLabels = powerLabels,
-                PowerStatValues = powerValues
-            };
-            shipTreeNodes.Add(view);
-            ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(level, branchIndex), maxPowerAcrossTree);
-            return view;
-        }
-
-        /// <summary>Moon horizontal tree: left = level, name (2 lines), power bar + stats; right = preview top-right + price below.</summary>
-        private ShipTreeNodeView CreateShipTreeNodeMoonHorizontal(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float maxPowerAcrossTree)
-        {
-            float previewColW = Mathf.Clamp(width * 0.43f, 64f, 108f);
-            float powerTrackW = Mathf.Max(48f, width - previewColW - 26f);
-
-            var go = new GameObject($"ShipTreeNode_H_{level}_{branchIndex}");
-            go.transform.SetParent(shipTreeCanvas, false);
-            var rect = go.AddComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(width, height);
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.1f, 0.14f, 0.22f, 0.98f);
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-
-            var rootHlg = go.AddComponent<HorizontalLayoutGroup>();
-            rootHlg.padding = new RectOffset(4, 6, 4, 4);
-            rootHlg.spacing = 5;
-            rootHlg.childAlignment = TextAnchor.UpperLeft;
-            rootHlg.childControlWidth = true;
-            rootHlg.childControlHeight = true;
-            rootHlg.childForceExpandWidth = false;
-            rootHlg.childForceExpandHeight = true;
-
-            var btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
-            var colors = btn.colors;
-            colors.fadeDuration = 0f;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.04f, 1.06f, 1.08f, 1f);
-            colors.pressedColor = new Color(0.88f, 0.9f, 0.94f, 1f);
-            colors.selectedColor = Color.white;
-            colors.disabledColor = new Color(0.55f, 0.55f, 0.58f, 0.72f);
-            btn.colors = colors;
-            int targetBranch = branchIndex;
-            btn.onClick.AddListener(() => OnUpgradeTreeNodeClicked(level, targetBranch));
-
-            var leftGo = new GameObject("LeftColumn");
-            leftGo.transform.SetParent(go.transform, false);
-            var leftVlg = leftGo.AddComponent<VerticalLayoutGroup>();
-            leftVlg.padding = new RectOffset(0, 0, 0, 0);
-            leftVlg.spacing = 2;
-            leftVlg.childAlignment = TextAnchor.UpperLeft;
-            leftVlg.childControlWidth = true;
-            leftVlg.childControlHeight = true;
-            leftVlg.childForceExpandWidth = true;
-            leftVlg.childForceExpandHeight = false;
-            var leftLe = leftGo.AddComponent<LayoutElement>();
-            leftLe.flexibleWidth = 1f;
-            leftLe.flexibleHeight = 1f;
-            leftLe.minWidth = 40f;
-
-            var levelLineGo = new GameObject("LevelLine");
-            levelLineGo.transform.SetParent(leftGo.transform, false);
-            var levelTmp = levelLineGo.AddComponent<TextMeshProUGUI>();
-            levelTmp.text = level == 1 ? "Lv 1" : $"Lv {level}";
-            levelTmp.fontSize = 14;
-            levelTmp.fontStyle = FontStyles.Bold;
-            levelTmp.alignment = TextAlignmentOptions.TopLeft;
-            levelTmp.enableWordWrapping = false;
-            levelTmp.color = new Color(0.55f, 0.78f, 1f, 1f);
-            levelTmp.raycastTarget = false;
-            if (fontAsset != null) levelTmp.font = fontAsset;
-            var levelLineLe = levelLineGo.AddComponent<LayoutElement>();
-            levelLineLe.preferredHeight = 17f;
-            levelLineLe.flexibleHeight = 0f;
-
-            var nameLineGo = new GameObject("ShipName");
-            nameLineGo.transform.SetParent(leftGo.transform, false);
-            nameLineGo.AddComponent<RectMask2D>();
-            var nameTmp = nameLineGo.AddComponent<TextMeshProUGUI>();
-            nameTmp.fontSize = 16;
-            nameTmp.lineSpacing = -6f;
-            nameTmp.alignment = TextAlignmentOptions.TopLeft;
-            nameTmp.enableWordWrapping = true;
-            nameTmp.overflowMode = TextOverflowModes.Overflow;
-            nameTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
-            nameTmp.raycastTarget = false;
-            if (fontAsset != null) nameTmp.font = fontAsset;
-            var nameLineLe = nameLineGo.AddComponent<LayoutElement>();
-            nameLineLe.preferredHeight = 40f;
-            nameLineLe.minHeight = 34f;
-            nameLineLe.flexibleHeight = 0f;
-            nameLineLe.flexibleWidth = 1f;
-
-            var barRowGo = new GameObject("PowerBar");
-            barRowGo.transform.SetParent(leftGo.transform, false);
-            var barRowRect = barRowGo.GetComponent<RectTransform>();
-            var barRowLe = barRowGo.AddComponent<LayoutElement>();
-            barRowLe.preferredHeight = 8f;
-            barRowLe.minHeight = 8f;
-            barRowLe.flexibleHeight = 0f;
-            var barHlg = barRowGo.AddComponent<HorizontalLayoutGroup>();
-            barHlg.spacing = 1;
-            barHlg.childAlignment = TextAnchor.MiddleLeft;
-            barHlg.childControlWidth = true;
-            barHlg.childControlHeight = true;
-            barHlg.childForceExpandWidth = false;
-            barHlg.childForceExpandHeight = true;
-            var powerBarSegments = new Image[5];
-            for (int pi = 0; pi < 5; pi++)
-            {
-                var segGo = new GameObject("Seg_" + pi);
-                segGo.transform.SetParent(barRowGo.transform, false);
-                var segImg = segGo.AddComponent<Image>();
-                segImg.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
-                segImg.raycastTarget = false;
-                var segLe = segGo.AddComponent<LayoutElement>();
-                segLe.flexibleWidth = 1f;
-                segLe.minWidth = 3f;
-                segLe.preferredHeight = 8f;
-                powerBarSegments[pi] = segImg;
-            }
-
-            var statsRowGo = new GameObject("PowerStats");
-            statsRowGo.transform.SetParent(leftGo.transform, false);
-            var statsRowLe = statsRowGo.AddComponent<LayoutElement>();
-            statsRowLe.preferredHeight = 22f;
-            statsRowLe.minHeight = 20f;
-            statsRowLe.flexibleHeight = 0f;
-            var statsHlg = statsRowGo.AddComponent<HorizontalLayoutGroup>();
-            statsHlg.spacing = 0;
-            statsHlg.childAlignment = TextAnchor.UpperCenter;
-            statsHlg.childControlWidth = true;
-            statsHlg.childControlHeight = true;
-            statsHlg.childForceExpandWidth = true;
-            statsHlg.childForceExpandHeight = true;
-            var powerLabels = new TextMeshProUGUI[5];
-            var powerValues = new TextMeshProUGUI[5];
-            for (int pi = 0; pi < 5; pi++)
-            {
-                var cellGo = new GameObject("Stat_" + pi);
-                cellGo.transform.SetParent(statsRowGo.transform, false);
-                var cellVlg = cellGo.AddComponent<VerticalLayoutGroup>();
-                cellVlg.spacing = 0;
-                cellVlg.childAlignment = TextAnchor.UpperCenter;
-                cellVlg.childControlWidth = true;
-                cellVlg.childControlHeight = true;
-                cellVlg.childForceExpandWidth = true;
-                cellVlg.childForceExpandHeight = false;
-                var cellLe = cellGo.AddComponent<LayoutElement>();
-                cellLe.flexibleWidth = 1f;
-                cellLe.minWidth = 14f;
-
-                var letterGo = new GameObject("L");
-                letterGo.transform.SetParent(cellGo.transform, false);
-                var letterTmp = letterGo.AddComponent<TextMeshProUGUI>();
-                letterTmp.text = ShipTreePowerCategoryLetters[pi];
-                letterTmp.fontSize = 6.5f;
-                letterTmp.alignment = TextAlignmentOptions.Center;
-                letterTmp.enableWordWrapping = false;
-                letterTmp.color = new Color(0.55f, 0.62f, 0.72f, 1f);
-                letterTmp.raycastTarget = false;
-                if (fontAsset != null) letterTmp.font = fontAsset;
-                var letterLe = letterGo.AddComponent<LayoutElement>();
-                letterLe.preferredHeight = 9f;
-                letterLe.flexibleHeight = 0f;
-
-                var valGo = new GameObject("V");
-                valGo.transform.SetParent(cellGo.transform, false);
-                var valTmp = valGo.AddComponent<TextMeshProUGUI>();
-                valTmp.text = "—";
-                valTmp.fontSize = 8f;
-                valTmp.fontStyle = FontStyles.Bold;
-                valTmp.alignment = TextAlignmentOptions.Center;
-                valTmp.enableWordWrapping = false;
-                valTmp.color = ShipAbilityCategoryColors.PowerBreakdownOdEmc[pi];
-                valTmp.raycastTarget = false;
-                if (fontAsset != null) valTmp.font = fontAsset;
-                var valLe = valGo.AddComponent<LayoutElement>();
-                valLe.preferredHeight = 12f;
-                valLe.flexibleHeight = 0f;
-
-                powerLabels[pi] = letterTmp;
-                powerValues[pi] = valTmp;
-            }
-
-            var leftFillGo = new GameObject("LeftFill");
-            leftFillGo.transform.SetParent(leftGo.transform, false);
-            var leftFillLe = leftFillGo.AddComponent<LayoutElement>();
-            leftFillLe.flexibleHeight = 1f;
-            leftFillLe.minHeight = 0f;
-
-            TextMeshProUGUI priceTmp = null;
-
-            var previewColGo = new GameObject("PreviewColumn");
-            previewColGo.transform.SetParent(go.transform, false);
-            var previewColLe = previewColGo.AddComponent<LayoutElement>();
-            previewColLe.preferredWidth = previewColW;
-            previewColLe.minWidth = previewColW;
-            previewColLe.flexibleWidth = 0f;
-            previewColLe.flexibleHeight = 1f;
-            var previewColVlg = previewColGo.AddComponent<VerticalLayoutGroup>();
-            previewColVlg.padding = new RectOffset(0, 0, 0, 0);
-            previewColVlg.spacing = 3;
-            previewColVlg.childAlignment = TextAnchor.UpperRight;
-            previewColVlg.childControlWidth = true;
-            previewColVlg.childControlHeight = true;
-            previewColVlg.childForceExpandWidth = true;
-            previewColVlg.childForceExpandHeight = false;
-
-            var previewImageArea = new GameObject("PreviewImageArea");
-            previewImageArea.transform.SetParent(previewColGo.transform, false);
-            var previewImageAreaLe = previewImageArea.AddComponent<LayoutElement>();
-            previewImageAreaLe.flexibleHeight = 1f;
-            previewImageAreaLe.minHeight = MoonHorizontalShipPreviewImageBox;
-            var previewAreaHlg = previewImageArea.AddComponent<HorizontalLayoutGroup>();
-            previewAreaHlg.childAlignment = TextAnchor.UpperRight;
-            previewAreaHlg.padding = new RectOffset(0, 0, 0, 0);
-            previewAreaHlg.spacing = 0;
-            previewAreaHlg.childControlWidth = false;
-            previewAreaHlg.childControlHeight = true;
-            previewAreaHlg.childForceExpandWidth = false;
-            previewAreaHlg.childForceExpandHeight = true;
-
-            var previewAreaSpacer = new GameObject("Spacer");
-            previewAreaSpacer.transform.SetParent(previewImageArea.transform, false);
-            var previewAreaSpacerLe = previewAreaSpacer.AddComponent<LayoutElement>();
-            previewAreaSpacerLe.flexibleWidth = 1f;
-            previewAreaSpacerLe.minWidth = 0f;
-
-            float imgBox = Mathf.Min(previewColW - 2f, MoonHorizontalShipPreviewImageBox);
-            imgBox = Mathf.Max(56f, imgBox);
-
-            var previewHolder = new GameObject("Preview");
-            previewHolder.transform.SetParent(previewImageArea.transform, false);
-            var previewHolderRt = previewHolder.AddComponent<RectTransform>();
-            previewHolderRt.sizeDelta = new Vector2(imgBox, imgBox);
-            var previewHolderLe = previewHolder.AddComponent<LayoutElement>();
-            previewHolderLe.preferredWidth = imgBox;
-            previewHolderLe.preferredHeight = imgBox;
-            previewHolderLe.minWidth = imgBox;
-            previewHolderLe.minHeight = imgBox;
-            previewHolderLe.flexibleWidth = 0f;
-            previewHolderLe.flexibleHeight = 0f;
-            var previewImg = previewHolder.AddComponent<Image>();
-            previewImg.preserveAspect = true;
-            previewImg.raycastTarget = false;
-            previewImg.maskable = true;
-
-            var priceGo = new GameObject("Price");
-            priceGo.transform.SetParent(previewColGo.transform, false);
-            priceTmp = priceGo.AddComponent<TextMeshProUGUI>();
-            priceTmp.fontSize = 12;
-            priceTmp.alignment = TextAlignmentOptions.BottomRight;
-            priceTmp.enableWordWrapping = false;
-            priceTmp.color = new Color(0.55f, 0.88f, 0.72f, 1f);
-            priceTmp.raycastTarget = false;
-            if (fontAsset != null) priceTmp.font = fontAsset;
-            var priceLe = priceGo.AddComponent<LayoutElement>();
-            priceLe.preferredHeight = 19f;
-            priceLe.minHeight = 16f;
-            priceLe.flexibleHeight = 0f;
-
-            Sprite initialPreview = ResolveShipTreePreviewSprite(level, branchIndex);
-            previewImg.sprite = initialPreview;
-            previewImg.color = initialPreview != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
-
-            shipTreeVisuals.Add(go);
-            var view = new ShipTreeNodeView
-            {
-                Level = level,
-                BranchIndex = branchIndex,
-                Node = node,
-                Button = btn,
-                LevelNumberText = levelTmp,
-                ShipNameText = nameTmp,
-                PreviewImage = previewImg,
-                PriceText = priceTmp,
-                Rect = rect,
-                NodeButtonWidth = width,
-                PowerBarTrackWidth = powerTrackW,
-                PowerBarRow = barRowRect,
-                PowerBarSegments = powerBarSegments,
-                PowerStatLabels = powerLabels,
-                PowerStatValues = powerValues
-            };
-            shipTreeNodes.Add(view);
-            ApplyPowerBreakdownToNodeView(view, GetPowerBreakdownForTreeNode(level, branchIndex), maxPowerAcrossTree);
-            return view;
-        }
-
-        private ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
-        {
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null)
-                return default;
-            if (level <= 1)
-                return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
-        }
-
-        /// <summary>Strongest ship’s total power (O+D+E+M+C) in the visible tree — used as the width scale for stacked segments.</summary>
-        private float ComputeMaxPowerScoreAcrossTree()
-        {
-            float max = 0f;
-            for (int level = 1; level <= 7; level++)
-            {
-                int count = UpgradeTree.GetShipCountForLevel(level);
-                for (int b = 0; b < count; b++)
-                {
-                    var bd = GetPowerBreakdownForTreeNode(level, b);
-                    float t = bd.Total;
-                    if (t > max) max = t;
-                }
-            }
-            return Mathf.Max(max, 0.001f);
-        }
-
-        /// <summary>
-        /// Stacked bar: segment i width = nodeWidth × (stat[i] / strongestShipTotal). Sum of segments = nodeWidth × (thisShipTotal / strongest) — absolute stats, not within-ship %.
-        /// </summary>
-        private static void ApplyPowerBreakdownToNodeView(ShipTreeNodeView view, ShipFamilyPowerScoreBreakdown b, float strongestShipTotalPower)
-        {
-            if (view == null) return;
-            float[] vals = { b.offense, b.defense, b.energy, b.mobility, b.capacity };
-            float total = b.Total;
-            bool hasData = total > 0.01f;
-            float nodeW = view.PowerBarTrackWidth > 0.01f
-                ? view.PowerBarTrackWidth
-                : (view.NodeButtonWidth > 1f ? view.NodeButtonWidth : (view.Rect != null ? view.Rect.sizeDelta.x : 100f));
-            float maxDen = Mathf.Max(strongestShipTotalPower, 0.001f);
-
-            float gapPx = 1f;
-            if (view.PowerBarRow != null)
-            {
-                var barHlg = view.PowerBarRow.GetComponent<HorizontalLayoutGroup>();
-                if (barHlg != null) gapPx = barHlg.spacing;
-            }
-
-            float sumSegW = 0f;
-            for (int i = 0; i < 5; i++)
-            {
-                if (view.PowerStatValues != null && i < view.PowerStatValues.Length && view.PowerStatValues[i] != null)
-                {
-                    view.PowerStatValues[i].text = hasData ? vals[i].ToString("F0") : "—";
-                    view.PowerStatValues[i].color = hasData ? ShipAbilityCategoryColors.PowerBreakdownOdEmc[i] : new Color(0.45f, 0.48f, 0.55f, 0.85f);
-                }
-                if (view.PowerBarSegments != null && i < view.PowerBarSegments.Length && view.PowerBarSegments[i] != null)
-                {
-                    var seg = view.PowerBarSegments[i];
-                    var le = seg.GetComponent<LayoutElement>();
-                    float segW;
-                    if (hasData)
-                    {
-                        segW = nodeW * vals[i] / maxDen;
-                        if (vals[i] > 0.01f && segW > 0f && segW < 1f)
-                            segW = 1f;
-                    }
-                    else
-                        segW = Mathf.Max(2f, nodeW * 0.18f);
-
-                    if (le != null)
-                    {
-                        le.preferredWidth = segW;
-                        le.flexibleWidth = 0f;
-                        le.minWidth = 0f;
-                    }
-                    sumSegW += segW;
-                    seg.color = hasData
-                        ? ShipAbilityCategoryColors.PowerBreakdownOdEmc[i]
-                        : new Color(0.22f, 0.25f, 0.3f, 0.55f);
-                }
-            }
-
-            if (view.PowerBarRow != null)
-            {
-                var barLe = view.PowerBarRow.GetComponent<LayoutElement>();
-                if (barLe != null)
-                {
-                    barLe.preferredWidth = sumSegW + 4f * gapPx;
-                    barLe.flexibleWidth = 0f;
-                }
-                LayoutRebuilder.ForceRebuildLayoutImmediate(view.PowerBarRow);
-            }
-        }
-
-        private void DrawTreeConnector(Vector2 from, Vector2 to)
-        {
-            DrawTreeConnector(from, to, ShipTreeConnectorDim, 2f);
-        }
-
-        private void DrawTreeConnector(Vector2 from, Vector2 to, Color color, float thickness)
-        {
-            var go = new GameObject("ShipTreeConnector");
-            go.transform.SetParent(shipTreeCanvas, false);
-            var rect = go.AddComponent<RectTransform>();
-            Vector2 delta = to - from;
-            float length = delta.magnitude;
-            rect.sizeDelta = new Vector2(length, Mathf.Max(1.5f, thickness));
-            rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(0f, 0f);
-            rect.pivot = new Vector2(0f, 0.5f);
-            rect.anchoredPosition = from;
-            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
-            rect.localRotation = Quaternion.Euler(0f, 0f, angle);
-            var img = go.AddComponent<Image>();
-            img.color = color;
-            img.raycastTarget = false;
-            go.transform.SetAsFirstSibling();
-            shipTreeVisuals.Add(go);
-        }
-
-        /// <summary>Moon horizontal tree: anchor lines at the preview column (under the ship image), not the card center.</summary>
-        private static Vector2 GetMoonHorizontalTreeConnectorAnchor(ShipTreeNodeView view)
-        {
-            float w = view.NodeButtonWidth > 1f ? view.NodeButtonWidth : (view.Rect != null ? view.Rect.rect.width : 100f);
-            float previewColW = Mathf.Clamp(w * 0.43f, 64f, 108f);
-            const float padR = 6f;
-            float cx = view.Rect.anchoredPosition.x + w * 0.5f - padR - previewColW * 0.5f;
-            float cy = view.Rect.anchoredPosition.y;
-            return new Vector2(cx, cy);
-        }
-
-        private void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)
-        {
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
-            var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();
-            if (planetNo == null || !planetNo.IsSpawned) return;
-
-            if (nodeLevel == currentShip.ShipLevel + 1)
-            {
-                CardShopSystem.Instance.PurchaseShipLevelUpgradeServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, targetBranchIndex);
-                pendingGemsRequest = true;
-                if (HomePlanetStoreSystem.Instance != null) HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
-                return;
-            }
-
-            if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
-            {
-                if (!CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, nodeLevel, targetBranchIndex, out _))
-                    return;
-                CardShopSystem.Instance.SwapShipAtSameTreeSlotServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, nodeLevel, targetBranchIndex);
-            }
         }
 
         private void CreateSectionLabel(Transform parent, string name, string text, ref float y)
@@ -3014,7 +1992,7 @@ namespace TitanOrbit.UI
                 }
                 if (cardSpinButton != null) cardSpinButton.gameObject.SetActive(false);
                 if (!_moonDockLayoutActive || _moonDockCenterView == MoonDockCenterView.Ships)
-                    RefreshShipsTab();
+                    RefreshShipTreeVisualStateOnly();
                 return;
             }
             int homeLevel = currentHomePlanet != null ? currentHomePlanet.HomePlanetLevel : 1;
@@ -3190,7 +2168,7 @@ namespace TitanOrbit.UI
             }
 
             if (!_moonDockLayoutActive || _moonDockCenterView == MoonDockCenterView.Ships)
-                RefreshShipsTab();
+                RefreshShipTreeVisualStateOnly();
         }
 
         private void BuildShipsTabByLevel(List<ShipUnlockEntry> unlocked, float contributedGems)
@@ -3818,7 +2796,7 @@ namespace TitanOrbit.UI
             shipsHostVlg.childControlWidth = true;
             shipsHostVlg.childControlHeight = true;
             shipsHostVlg.childForceExpandWidth = true;
-            shipsHostVlg.childForceExpandHeight = false;
+            shipsHostVlg.childForceExpandHeight = true;
             shipsHostVlg.padding = new RectOffset(12, 12, 10, 22);
             shipsHostVlg.spacing = 4f;
 
@@ -4047,6 +3025,14 @@ namespace TitanOrbit.UI
             shipsTabLe.flexibleHeight = 1f;
             shipsTabLe.minHeight = 320f;
 
+            var shipsRt = shipsTabContent.GetComponent<RectTransform>();
+            shipsRt.anchorMin = Vector2.zero;
+            shipsRt.anchorMax = Vector2.one;
+            shipsRt.pivot = new Vector2(0.5f, 0.5f);
+            shipsRt.offsetMin = Vector2.zero;
+            shipsRt.offsetMax = Vector2.zero;
+            shipsRt.sizeDelta = Vector2.zero;
+
             _moonDockReparentDone = true;
         }
 
@@ -4183,115 +3169,6 @@ namespace TitanOrbit.UI
             Canvas.ForceUpdateCanvases();
             if (_cardSpinRowLayout != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_cardSpinRowLayout.GetComponent<RectTransform>());
-        }
-
-        private void BuildShipUpgradeTreeVisualFullHorizontal()
-        {
-            ClearShipTreeVisuals();
-            if (shipTreeCanvas == null) return;
-
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree == null || currentShip == null || GetShipUpgradeStorePlanet() == null || CardShopSystem.Instance == null)
-            {
-                if (shipTreeHintText != null) shipTreeHintText.text = "Upgrade tree unavailable.";
-                return;
-            }
-
-            // Top-left canvas: matches HorizontalLayoutGroup UpperLeft so the tree fills from the panel's left edge.
-            shipTreeCanvas.anchorMin = new Vector2(0f, 1f);
-            shipTreeCanvas.anchorMax = new Vector2(0f, 1f);
-            shipTreeCanvas.pivot = new Vector2(0f, 1f);
-            shipTreeCanvas.anchoredPosition = Vector2.zero;
-
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipsTabContent.GetComponent<RectTransform>());
-            if (moonDockCenterShipsHost != null)
-                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
-            Canvas.ForceUpdateCanvases();
-
-            float basis = GetShipTreeLayoutBasisWidth();
-            const int maxLevel = 7;
-            float margin = ShipTreeCanvasInnerMargin;
-            float innerW = Mathf.Max(240f, basis - 2f * margin);
-            float colGap = MoonHorizontalLevelColGap;
-            float nodeW = (innerW - (maxLevel - 1) * colGap) / maxLevel;
-            nodeW = Mathf.Clamp(nodeW, 74f, 210f);
-            float nodeH = MoonHorizontalShipTreeNodeHeight;
-            float branchGapY = MoonHorizontalBranchGapY;
-
-            int maxNodesInAnyColumn = 1;
-            for (int L = 1; L <= maxLevel; L++)
-                maxNodesInAnyColumn = Mathf.Max(maxNodesInAnyColumn, UpgradeTree.GetShipCountForLevel(L));
-            float maxColStackH = maxNodesInAnyColumn * nodeH + (maxNodesInAnyColumn - 1) * branchGapY;
-
-            float canvasW = margin * 2f + maxLevel * nodeW + (maxLevel - 1) * colGap;
-            float canvasH = margin * 2f + maxColStackH;
-
-            shipTreeCanvas.sizeDelta = new Vector2(canvasW, canvasH);
-            var treeLayoutEl = shipTreeCanvas.GetComponent<LayoutElement>();
-            if (treeLayoutEl != null)
-            {
-                treeLayoutEl.preferredWidth = canvasW;
-                treeLayoutEl.minWidth = canvasW;
-                treeLayoutEl.flexibleWidth = 0f;
-            }
-            if (shipTreeCenterRow != null)
-            {
-                shipTreeCenterRow.sizeDelta = new Vector2(0f, canvasH);
-                var rowLe = shipTreeCenterRow.GetComponent<LayoutElement>();
-                if (rowLe != null) rowLe.preferredHeight = canvasH;
-            }
-
-            float maxPowerTree = ComputeMaxPowerScoreAcrossTree();
-            TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> pathEdges);
-
-            var nodesByLevel = new Dictionary<int, List<ShipTreeNodeView>>();
-            for (int level = 1; level <= maxLevel; level++)
-            {
-                int count = UpgradeTree.GetShipCountForLevel(level);
-                var views = new List<ShipTreeNodeView>(count);
-                float colCenterX = margin + nodeW * 0.5f + (level - 1) * (nodeW + colGap);
-                float stackH = count * nodeH + (count - 1) * branchGapY;
-                float yBase = margin + (maxColStackH - stackH) * 0.5f + nodeH * 0.5f;
-                for (int b = 0; b < count; b++)
-                {
-                    ShipUpgradeNode node = level == 1 ? null : tree.GetNodeForBranch(level, b);
-                    var view = CreateShipTreeNodeMoonHorizontal(level, b, node, nodeW, nodeH, maxPowerTree);
-                    views.Add(view);
-                    // Match vertical tree: branch 0 = left → top; higher branch = right → bottom (was reversed as bottom/top).
-                    float y = yBase + (count - 1 - b) * (nodeH + branchGapY);
-                    view.Rect.anchorMin = new Vector2(0f, 0f);
-                    view.Rect.anchorMax = new Vector2(0f, 0f);
-                    view.Rect.pivot = new Vector2(0.5f, 0.5f);
-                    view.Rect.anchoredPosition = new Vector2(colCenterX, y);
-                }
-                nodesByLevel[level] = views;
-            }
-
-            for (int level = 2; level <= maxLevel; level++)
-            {
-                if (!nodesByLevel.TryGetValue(level, out var levelViews)) continue;
-                if (!nodesByLevel.TryGetValue(level - 1, out var previousViews)) continue;
-                foreach (var prevView in previousViews)
-                {
-                    int p = prevView.BranchIndex;
-                    foreach (var nextView in levelViews)
-                    {
-                        int j = nextView.BranchIndex;
-                        if (!UpgradeTree.IsValidUpgradeStep(level - 1, p, level, j)) continue;
-                        bool onPath = pathEdges != null && pathEdges.Contains((level - 1, p, level, j));
-                        DrawTreeConnector(
-                            GetMoonHorizontalTreeConnectorAnchor(prevView),
-                            GetMoonHorizontalTreeConnectorAnchor(nextView),
-                            onPath ? ShipTreeConnectorPath : ShipTreeConnectorDim,
-                            onPath ? 3.5f : 2f);
-                    }
-                }
-            }
-
-            UpdateShipUpgradeTreeVisualState();
-
-            if (shipTreeCenterRow != null)
-                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(shipTreeCenterRow);
         }
 
         private Planet GetShipUpgradeStorePlanet()

@@ -279,10 +279,23 @@ namespace TitanOrbit.Systems
             if (prefab == null || totalValue <= 0f) return;
 
             float intensity = Mathf.Clamp01(expulsionIntensity);
+            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity);
+
+            // Ram/grind paired hull damage: one physical gem per value unit (remainder as a final gem).
+            if (intensity <= 0.001f)
+            {
+                int wholeGems = Mathf.FloorToInt(totalValue);
+                float remainder = totalValue - wholeGems;
+                for (int i = 0; i < wholeGems; i++)
+                    SpawnGemFromShip(prefab, shipPosition, 1f, 1f, expelledByShipId, launchSpeedMul);
+                if (remainder > 0.1f)
+                    SpawnGemFromShip(prefab, shipPosition, remainder, 1f, expelledByShipId, launchSpeedMul);
+                return;
+            }
+
             float remaining = totalValue;
             int maxGems = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(5f, 1f, intensity)));
             maxGems = Mathf.Min(maxGems, Mathf.Max(1, Mathf.CeilToInt(totalValue)));
-            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity);
 
             for (int i = 0; i < maxGems && remaining > 0.1f; i++)
             {

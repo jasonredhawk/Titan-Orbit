@@ -730,6 +730,10 @@ namespace TitanOrbit.Editor
             if (source.turnSpeedPerLevel != 0f) target.turnSpeedPerLevel = source.turnSpeedPerLevel;
             if (source.maxGems != 0f) target.maxGems = source.maxGems;
             if (source.maxGemsPerLevel != 0f) target.maxGemsPerLevel = source.maxGemsPerLevel;
+            if (source.tractorBeamDistance != 0f) target.tractorBeamDistance = source.tractorBeamDistance;
+            if (source.tractorBeamDistancePerLevel != 0f) target.tractorBeamDistancePerLevel = source.tractorBeamDistancePerLevel;
+            if (source.tractorBeamPower != 0f) target.tractorBeamPower = source.tractorBeamPower;
+            if (source.tractorBeamPowerPerLevel != 0f) target.tractorBeamPowerPerLevel = source.tractorBeamPowerPerLevel;
             if (source.maxPeople != 0f) target.maxPeople = source.maxPeople;
             if (source.maxPeoplePerLevel != 0f) target.maxPeoplePerLevel = source.maxPeoplePerLevel;
             return target;
@@ -811,6 +815,14 @@ namespace TitanOrbit.Editor
                     stats.maxPeople = 4f * v;
                     stats.maxGemsPerLevel = PerLevelFromBase(stats.maxGems);
                     stats.maxPeoplePerLevel = PerLevelPeopleFromBase(stats.maxPeople);
+                    if (string.Equals(type, "Wing", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(type, "Arm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.tractorBeamDistance = ShipComponentTractorBeamSuggestions.GetSuggestedTractorDistance(version);
+                        stats.tractorBeamPower = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPower(version);
+                        stats.tractorBeamDistancePerLevel = ShipComponentTractorBeamSuggestions.GetSuggestedTractorDistancePerLevel(version);
+                        stats.tractorBeamPowerPerLevel = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPowerPerLevel(version);
+                    }
                     break;
             }
 

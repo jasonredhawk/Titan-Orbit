@@ -53,6 +53,14 @@ namespace TitanOrbit.Data
         [Header("Capacity")]
         public float maxGems;              // Gem Capacity
         public float maxGemsPerLevel;      // Gem Capacity gained per ship level
+        [Tooltip("Wing tractor beam reach (m) in normal space. Orbit zones apply a multiplier at runtime.")]
+        public float tractorBeamDistance;
+        [Tooltip("Tractor reach gained per ship level.")]
+        public float tractorBeamDistancePerLevel;
+        [Tooltip("Wing tractor beam pull speed (m/s) toward the ship.")]
+        public float tractorBeamPower;
+        [Tooltip("Tractor pull speed gained per ship level.")]
+        public float tractorBeamPowerPerLevel;
         public float maxPeople;            // People Capacity
         public float maxPeoplePerLevel;    // People Capacity gained per ship level
 
@@ -84,6 +92,10 @@ namespace TitanOrbit.Data
                 rammingPowerPerLevel = a.rammingPowerPerLevel + b.rammingPowerPerLevel,
                 maxGems = a.maxGems + b.maxGems,
                 maxGemsPerLevel = a.maxGemsPerLevel + b.maxGemsPerLevel,
+                tractorBeamDistance = a.tractorBeamDistance + b.tractorBeamDistance,
+                tractorBeamDistancePerLevel = a.tractorBeamDistancePerLevel + b.tractorBeamDistancePerLevel,
+                tractorBeamPower = a.tractorBeamPower + b.tractorBeamPower,
+                tractorBeamPowerPerLevel = a.tractorBeamPowerPerLevel + b.tractorBeamPowerPerLevel,
                 maxPeople = a.maxPeople + b.maxPeople,
                 maxPeoplePerLevel = a.maxPeoplePerLevel + b.maxPeoplePerLevel
             };
@@ -115,6 +127,10 @@ namespace TitanOrbit.Data
             rammingPowerPerLevel += other.rammingPowerPerLevel;
             maxGems += other.maxGems;
             maxGemsPerLevel += other.maxGemsPerLevel;
+            tractorBeamDistance += other.tractorBeamDistance;
+            tractorBeamDistancePerLevel += other.tractorBeamDistancePerLevel;
+            tractorBeamPower += other.tractorBeamPower;
+            tractorBeamPowerPerLevel += other.tractorBeamPowerPerLevel;
             maxPeople += other.maxPeople;
             maxPeoplePerLevel += other.maxPeoplePerLevel;
         }
@@ -148,6 +164,10 @@ namespace TitanOrbit.Data
                 rammingPowerPerLevel = s.rammingPowerPerLevel * factor,
                 maxGems = s.maxGems * factor,
                 maxGemsPerLevel = s.maxGemsPerLevel * factor,
+                tractorBeamDistance = s.tractorBeamDistance * factor,
+                tractorBeamDistancePerLevel = s.tractorBeamDistancePerLevel * factor,
+                tractorBeamPower = s.tractorBeamPower * factor,
+                tractorBeamPowerPerLevel = s.tractorBeamPowerPerLevel * factor,
                 maxPeople = s.maxPeople * factor,
                 maxPeoplePerLevel = s.maxPeoplePerLevel * factor
             };
@@ -314,6 +334,10 @@ namespace TitanOrbit.Data
                     rammingPowerPerLevel = stats.rammingPowerPerLevel,
                     maxGems = stats.maxGems,
                     maxGemsPerLevel = stats.maxGemsPerLevel,
+                    tractorBeamDistance = stats.tractorBeamDistance,
+                    tractorBeamDistancePerLevel = stats.tractorBeamDistancePerLevel,
+                    tractorBeamPower = stats.tractorBeamPower,
+                    tractorBeamPowerPerLevel = stats.tractorBeamPowerPerLevel,
                     maxPeople = stats.maxPeople,
                     maxPeoplePerLevel = stats.maxPeoplePerLevel
                 };
@@ -375,6 +399,10 @@ namespace TitanOrbit.Data
                 case ShipComponentStatCategory.Capacity:
                     filtered.maxGems = stats.maxGems;
                     filtered.maxGemsPerLevel = stats.maxGemsPerLevel;
+                    filtered.tractorBeamDistance = stats.tractorBeamDistance;
+                    filtered.tractorBeamDistancePerLevel = stats.tractorBeamDistancePerLevel;
+                    filtered.tractorBeamPower = stats.tractorBeamPower;
+                    filtered.tractorBeamPowerPerLevel = stats.tractorBeamPowerPerLevel;
                     filtered.maxPeople = stats.maxPeople;
                     filtered.maxPeoplePerLevel = stats.maxPeoplePerLevel;
                     break;
@@ -416,6 +444,10 @@ namespace TitanOrbit.Data
             if (allowedSet.Contains("turnSpeedPerLevel")) filtered.turnSpeedPerLevel = stats.turnSpeedPerLevel;
             if (allowedSet.Contains("maxGems")) filtered.maxGems = stats.maxGems;
             if (allowedSet.Contains("maxGemsPerLevel")) filtered.maxGemsPerLevel = stats.maxGemsPerLevel;
+            if (allowedSet.Contains("tractorBeamDistance")) filtered.tractorBeamDistance = stats.tractorBeamDistance;
+            if (allowedSet.Contains("tractorBeamDistancePerLevel")) filtered.tractorBeamDistancePerLevel = stats.tractorBeamDistancePerLevel;
+            if (allowedSet.Contains("tractorBeamPower")) filtered.tractorBeamPower = stats.tractorBeamPower;
+            if (allowedSet.Contains("tractorBeamPowerPerLevel")) filtered.tractorBeamPowerPerLevel = stats.tractorBeamPowerPerLevel;
             if (allowedSet.Contains("maxPeople")) filtered.maxPeople = stats.maxPeople;
             if (allowedSet.Contains("maxPeoplePerLevel")) filtered.maxPeoplePerLevel = stats.maxPeoplePerLevel;
 
@@ -613,6 +645,13 @@ namespace TitanOrbit.Data
         private static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerLevel" };
         private static readonly string[] CapacityFields =
             { "maxGems", "maxGemsPerLevel", "maxPeople", "maxPeoplePerLevel" };
+        private static readonly string[] WingCapacityFields =
+        {
+            "maxGems", "maxGemsPerLevel",
+            "tractorBeamDistance", "tractorBeamDistancePerLevel",
+            "tractorBeamPower", "tractorBeamPowerPerLevel",
+            "maxPeople", "maxPeoplePerLevel"
+        };
 
         /// <summary>Stat fields shown and stored for a component based on category and part id.</summary>
         public static string[] GetAuthoringStatFieldNames(ShipComponentStatCategory category, string componentId)
@@ -635,6 +674,8 @@ namespace TitanOrbit.Data
                         return TurnMovementFields;
                     return PropulsionMovementFields;
                 case ShipComponentStatCategory.Capacity:
+                    if (partType == "Wing" || partType == "Arm")
+                        return WingCapacityFields;
                     return CapacityFields;
                 default:
                     return HealthFields;
@@ -756,6 +797,40 @@ namespace TitanOrbit.Data
 
         public static float GetSuggestedRammingPowerPerLevel(int version) =>
             GetSuggestedRammingPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+    }
+
+    /// <summary>Scan/auto-populate wing tractor beam reach and pull speed (Capacity category).</summary>
+    public static class ShipComponentTractorBeamSuggestions
+    {
+        /// <summary>Tractor reach (m) at wing version 1 in normal space.</summary>
+        public const float TractorDistanceV1 = 3f;
+
+        /// <summary>Tractor reach added per wing version tier (v2 = 6m, v3 = 9m, …).</summary>
+        public const float TractorDistancePerVersion = 3f;
+
+        /// <summary>Authored tractor pull speed (m/s) at wing version 1; scaled down at runtime.</summary>
+        public const float TractorPowerV1 = 4f;
+
+        /// <summary>Authored tractor pull speed added per wing version tier.</summary>
+        public const float TractorPowerPerVersion = 4f;
+
+        public static float GetSuggestedTractorDistance(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return TractorDistanceV1 + (v - 1) * TractorDistancePerVersion;
+        }
+
+        public static float GetSuggestedTractorPower(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return TractorPowerV1 + (v - 1) * TractorPowerPerVersion;
+        }
+
+        public static float GetSuggestedTractorDistancePerLevel(int version) =>
+            GetSuggestedTractorDistance(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+        public static float GetSuggestedTractorPowerPerLevel(int version) =>
+            GetSuggestedTractorPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
     /// <summary>Scan/auto-populate turn speed for fins, tails, and thrusters (summed at runtime).</summary>
@@ -899,7 +974,8 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Heuristic breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity).
+    /// Heuristic breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity),
+    /// plus per-stat contributions for the ten ship-upgrade-menu stats shown in the orbit ship tree.
     /// Populated when building the upgrade tree from folder in the editor.
     /// </summary>
     [Serializable]
@@ -916,7 +992,86 @@ namespace TitanOrbit.Data
         [Tooltip("Weighted capacity contribution (gems, people, per-level terms).")]
         public float capacity;
 
+        [Tooltip("Fire Power weighted contribution (upgrade menu stat).")]
+        public float firePower;
+        [Tooltip("Bullet Speed weighted contribution (upgrade menu stat).")]
+        public float bulletSpeed;
+        [Tooltip("Health Cap weighted contribution (upgrade menu stat).")]
+        public float healthCap;
+        [Tooltip("Health Regen weighted contribution (upgrade menu stat).")]
+        public float healthRegen;
+        [Tooltip("Energy Cap weighted contribution (upgrade menu stat).")]
+        public float energyCap;
+        [Tooltip("Energy Regen weighted contribution (upgrade menu stat).")]
+        public float energyRegen;
+        [Tooltip("Move Speed weighted contribution (upgrade menu stat).")]
+        public float moveSpeed;
+        [Tooltip("Turn Speed weighted contribution (upgrade menu stat).")]
+        public float turnSpeed;
+        [Tooltip("Gem Cap weighted contribution (upgrade menu stat).")]
+        public float gemCap;
+        [Tooltip("People Cap weighted contribution (upgrade menu stat).")]
+        public float peopleCap;
+
         public float Total => offense + defense + energy + mobility + capacity;
+
+        /// <summary>Sum of the ten upgrade-menu stat contributions used by orbit ship-tree power bars.</summary>
+        public float DisplayTotal =>
+            firePower + bulletSpeed + healthCap + healthRegen + energyCap + energyRegen +
+            moveSpeed + turnSpeed + gemCap + peopleCap;
+
+        public bool HasDisplayStats => DisplayTotal > 0.01f;
+
+        /// <summary>Upgrade-menu stat power values for UI bars (falls back to splitting legacy O/D/E/M/C pairs).</summary>
+        public float GetDisplayStatValue(int statIndex)
+        {
+            if (HasDisplayStats)
+            {
+                switch (statIndex)
+                {
+                    case 0: return firePower;
+                    case 1: return bulletSpeed;
+                    case 2: return healthCap;
+                    case 3: return healthRegen;
+                    case 4: return energyCap;
+                    case 5: return energyRegen;
+                    case 6: return moveSpeed;
+                    case 7: return turnSpeed;
+                    case 8: return gemCap;
+                    case 9: return peopleCap;
+                }
+
+                return 0f;
+            }
+
+            float halfCategory = 0.5f;
+            switch (statIndex)
+            {
+                case 0:
+                case 1: return offense * halfCategory;
+                case 2:
+                case 3: return defense * halfCategory;
+                case 4:
+                case 5: return energy * halfCategory;
+                case 6:
+                case 7: return mobility * halfCategory;
+                case 8:
+                case 9: return capacity * halfCategory;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>Total power represented by <see cref="GetDisplayStatValue"/> (handles legacy breakdown data).</summary>
+        public float GetDisplayTotalForUi()
+        {
+            if (HasDisplayStats)
+                return DisplayTotal;
+
+            float total = 0f;
+            for (int i = 0; i < 10; i++)
+                total += GetDisplayStatValue(i);
+            return total;
+        }
 
         /// <summary>
         /// Heuristic category weights from summed ship stats (same formula as the upgrade-tree editor power breakdown).
@@ -925,39 +1080,45 @@ namespace TitanOrbit.Data
         /// </summary>
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
         {
+            float firePowerScore = s.firePower * 2.0f + s.firePowerPerLevel * 1.0f;
+            float bulletSpeedScore = s.bulletSpeed * 0.5f + s.bulletSpeedPerLevel * 0.25f;
+            float healthCapScore = s.healthCap * 0.03f + s.healthCapPerLevel * 0.5f;
+            float healthRegenScore = s.healthRegen * 1.0f + s.healthRegenPerLevel * 1.5f;
+            float energyCapScore = s.energyCap * 0.01f + s.energyCapPerLevel * 0.25f;
+            float energyRegenScore = s.energyRegen * 0.8f + s.energyRegenPerLevel * 1.0f;
+            float moveSpeedScore = s.moveSpeed * 0.5f + s.moveSpeedPerLevel * 0.8f;
+            float turnSpeedScore = s.turnSpeed * 0.6f + s.turnSpeedPerLevel * 0.9f;
+            // Capacity: normalize gem counts (often 50–500) vs people (often 2–20) so bar segments stay proportional.
+            float gemCapScore = s.maxGems * 0.06f + s.maxGemsPerLevel * 0.5f;
+            float peopleCapScore = s.maxPeople * 0.5f + s.maxPeoplePerLevel * 0.8f;
+
             return new ShipFamilyPowerScoreBreakdown
             {
+                firePower = firePowerScore,
+                bulletSpeed = bulletSpeedScore,
+                healthCap = healthCapScore,
+                healthRegen = healthRegenScore,
+                energyCap = energyCapScore,
+                energyRegen = energyRegenScore,
+                moveSpeed = moveSpeedScore,
+                turnSpeed = turnSpeedScore,
+                gemCap = gemCapScore,
+                peopleCap = peopleCapScore,
                 offense =
-                    s.firePower * 2.0f +
-                    s.firePowerPerLevel * 1.0f +
-                    s.bulletSpeed * 0.5f +
-                    s.bulletSpeedPerLevel * 0.25f +
+                    firePowerScore +
+                    bulletSpeedScore +
                     s.fireRate * 1.0f +
                     s.fireRatePerLevel * 0.5f +
                     s.rammingPower * 0.9f +
                     s.rammingPowerPerLevel * 1.1f,
-                defense =
-                    s.healthCap * 0.03f +
-                    s.healthCapPerLevel * 0.5f +
-                    s.healthRegen * 1.0f +
-                    s.healthRegenPerLevel * 1.5f,
-                energy =
-                    s.energyCap * 0.01f +
-                    s.energyCapPerLevel * 0.25f +
-                    s.energyRegen * 0.8f +
-                    s.energyRegenPerLevel * 1.0f,
+                defense = healthCapScore + healthRegenScore,
+                energy = energyCapScore + energyRegenScore,
                 mobility =
-                    s.moveSpeed * 0.5f +
-                    s.moveSpeedPerLevel * 0.8f +
+                    moveSpeedScore +
+                    turnSpeedScore +
                     s.accelerationCap * 0.9f +
-                    s.accelerationCapPerLevel * 1.1f +
-                    s.turnSpeed * 0.6f +
-                    s.turnSpeedPerLevel * 0.9f,
-                capacity =
-                    s.maxGems * 0.01f +
-                    s.maxGemsPerLevel * 0.2f +
-                    s.maxPeople * 0.5f +
-                    s.maxPeoplePerLevel * 0.8f
+                    s.accelerationCapPerLevel * 1.1f,
+                capacity = gemCapScore + peopleCapScore
             };
         }
     }
@@ -1134,6 +1295,8 @@ namespace TitanOrbit.Data
                    stats.accelerationCap != 0f || stats.accelerationCapPerLevel != 0f ||
                    stats.turnSpeed != 0f || stats.turnSpeedPerLevel != 0f ||
                    stats.maxGems != 0f || stats.maxGemsPerLevel != 0f ||
+                   stats.tractorBeamDistance != 0f || stats.tractorBeamDistancePerLevel != 0f ||
+                   stats.tractorBeamPower != 0f || stats.tractorBeamPowerPerLevel != 0f ||
                    stats.maxPeople != 0f || stats.maxPeoplePerLevel != 0f;
         }
 

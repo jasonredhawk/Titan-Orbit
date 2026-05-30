@@ -7,45 +7,143 @@ namespace TitanOrbit.Entities
     /// <summary>Shared reach and pull strength for gem tractor beams (server physics + client Shapes visuals).</summary>
     public static class GemTractorBeamSettings
     {
-        /// <summary>Max toroidal distance (m) for magnetic pull; gems beyond this are not pulled and cut off if the ship moves away.</summary>
+        /// <summary>Legacy reference: wing v1 maxGems (8) maps to this reach in normal space.</summary>
         public const float SearchRadiusNormal = 3f;
         public const float SearchRadiusOrbit = 4.5f;
+        /// <summary>Legacy reference: wing v1 maxGems (8) maps to this pull speed in normal space.</summary>
         public const float AttractionSpeedNormal = 10f;
         public const float AttractionSpeedOrbit = 16f;
-        public const float AttractionAccelerationFactor = 4f;
+        /// <summary>Scales authored tractor power into slower in-game pull speeds.</summary>
+        public const float GameplayPullSpeedScale = 0.38f;
+
+        public const float MinGameplayPullSpeed = 0.75f;
+        public const float MaxGameplayPullSpeed = 5.5f;
+
+        /// <summary>MaxGems → search radius (m). Wing1 with maxGems=8 → 3m in normal space.</summary>
+        public const float MaxGemsToSearchRadius = SearchRadiusNormal / 8f;
+        /// <summary>MaxGems → pull speed (m/s). Wing1 with maxGems=8 → 10 m/s in normal space.</summary>
+        public const float MaxGemsToAttractionSpeed = AttractionSpeedNormal / 8f;
 
         /// <summary>Min speed toward ship (m/s) before a gem counts as actively tractor-pulled.</summary>
         public const float ActivePullTowardSpeedThreshold = 0.22f;
 
         private static int pullSetCacheFrame = -1;
         private static float pullSetCachePhysicsFixedTime = -1f;
-        private static readonly Dictionary<int, HashSet<int>> pullSetByShipInstanceId = new Dictionary<int, HashSet<int>>(32);
+        private static readonly Dictionary<int, MagneticPullState> pullStateByShipInstanceId = new Dictionary<int, MagneticPullState>(32);
         private static readonly List<GemPullCandidate> pullCandidateScratch = new List<GemPullCandidate>(64);
+
+        private sealed class MagneticPullState
+        {
+            public readonly HashSet<int> gemIds = new HashSet<int>();
+            public readonly Dictionary<int, int> gemIdToWingIndex = new Dictionary<int, int>();
+        }
 
         private struct GemPullCandidate
         {
             public Gem gem;
+            public int wingIndex;
             public float dist;
             public bool inFlight;
         }
 
-        public static void GetAttractionParams(bool inOrbitZone, out float searchRadius, out float attractionSpeed)
+        /// <summary>Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.</summary>
+        public static void GetTractorBeamFromMaxGems(float effectiveMaxGems, bool inOrbitZone, out float searchRadius, out float attractionSpeed)
         {
-            searchRadius = inOrbitZone ? SearchRadiusOrbit : SearchRadiusNormal;
-            attractionSpeed = inOrbitZone ? AttractionSpeedOrbit : AttractionSpeedNormal;
+            float gems = Mathf.Max(0f, effectiveMaxGems);
+            searchRadius = gems * MaxGemsToSearchRadius;
+            attractionSpeed = gems * MaxGemsToAttractionSpeed;
+
+            ApplyOrbitTractorMultipliers(inOrbitZone, ref searchRadius, ref attractionSpeed);
+            searchRadius = Mathf.Max(0.5f, searchRadius);
+            attractionSpeed = ScaleToGameplayPullSpeed(attractionSpeed);
         }
 
-        public static bool IsWithinReach(Vector3 gemPos, Vector3 shipPos, bool inOrbitZone)
+        public static float ScaleToGameplayPullSpeed(float authoredPullSpeed)
         {
-            GetAttractionParams(inOrbitZone, out float searchRadius, out _);
-            return ToroidalMap.ToroidalDistance(gemPos, shipPos) <= searchRadius;
+            float speed = Mathf.Max(0f, authoredPullSpeed) * GameplayPullSpeedScale;
+            return Mathf.Clamp(speed, MinGameplayPullSpeed, MaxGameplayPullSpeed);
+        }
+
+        public static void ApplyOrbitTractorMultipliers(bool inOrbitZone, ref float searchRadius, ref float attractionSpeed)
+        {
+            if (!inOrbitZone)
+                return;
+            searchRadius *= SearchRadiusOrbit / SearchRadiusNormal;
+            attractionSpeed *= AttractionSpeedOrbit / AttractionSpeedNormal;
+        }
+
+        /// <summary>Resolves authored tractor stats, falling back to maxGems conversion when distance/power are unset.</summary>
+        public static void GetTractorBeamFromStats(
+            float tractorBeamDistance,
+            float tractorBeamDistancePerLevel,
+            float tractorBeamPower,
+            float tractorBeamPowerPerLevel,
+            float maxGems,
+            float maxGemsPerLevel,
+            int shipLevel,
+            bool inOrbitZone,
+            out float searchRadius,
+            out float attractionSpeed)
+        {
+            int perLvl = Mathf.Max(0, shipLevel - 1);
+            searchRadius = tractorBeamDistance + tractorBeamDistancePerLevel * perLvl;
+            attractionSpeed = tractorBeamPower + tractorBeamPowerPerLevel * perLvl;
+
+            if (searchRadius <= 0f && attractionSpeed <= 0f)
+            {
+                float effectiveMaxGems = Mathf.Max(0f, maxGems + maxGemsPerLevel * perLvl);
+                GetTractorBeamFromMaxGems(effectiveMaxGems, inOrbitZone, out searchRadius, out attractionSpeed);
+                return;
+            }
+
+            ApplyOrbitTractorMultipliers(inOrbitZone, ref searchRadius, ref attractionSpeed);
+            searchRadius = Mathf.Max(0.5f, searchRadius);
+            attractionSpeed = ScaleToGameplayPullSpeed(attractionSpeed);
+        }
+
+        /// <summary>Constant linear pull speed (m/s) after the deploy animation completes.</summary>
+        public static float GetGameplayPullSpeed(Starship ship, Gem gem) =>
+            GetAttractionSpeedForGem(ship, gem);
+
+        public static bool ShouldApplyGemPullPhysics(Starship ship, Gem gem)
+        {
+            if (!CanShipMagneticallyPull(ship, gem))
+                return false;
+            if (!IsWithinMagneticPullRange(ship, gem))
+                return false;
+            return GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem);
+        }
+
+        public static void GetAttractionParams(bool inOrbitZone, out float searchRadius, out float attractionSpeed)
+        {
+            GetTractorBeamFromMaxGems(8f, inOrbitZone, out searchRadius, out attractionSpeed);
+        }
+
+        public static bool IsWithinReach(Vector3 gemPos, Vector3 beamOrigin, bool inOrbitZone, float searchRadius)
+        {
+            return ToroidalMap.ToroidalDistance(gemPos, beamOrigin) <= searchRadius;
         }
 
         public static bool IsWithinMagneticPullRange(Starship ship, Gem gem)
         {
             if (ship == null || gem == null)
                 return false;
-            return IsWithinReach(GetGemPosition(gem), GetShipPosition(ship), ship.IsInOrbit);
+
+            if (!CanShipMagneticallyPull(ship, gem))
+                return false;
+
+            var wings = ship.WingTractorBeams;
+            if (wings == null || wings.Count == 0)
+            {
+                GetTractorBeamFromMaxGems(8f, ship.IsInOrbit, out float searchRadius, out _);
+                return IsWithinReach(GetGemPosition(gem), GetShipPosition(ship), ship.IsInOrbit, searchRadius);
+            }
+
+            int wingIndex = GetAssignedWingIndex(ship, gem);
+            if (wingIndex < 0)
+                return false;
+
+            return IsGemWithinAssignedWingRange(ship, gem, wingIndex);
         }
 
         /// <summary>Server: rebuild pull-set budgets every physics step so range cut-off tracks ship movement.</summary>
@@ -54,34 +152,85 @@ namespace TitanOrbit.Entities
             if (pullSetCachePhysicsFixedTime == Time.fixedTime)
                 return;
             pullSetCachePhysicsFixedTime = Time.fixedTime;
-            pullSetByShipInstanceId.Clear();
+            pullStateByShipInstanceId.Clear();
             pullSetCacheFrame = -1;
         }
 
         /// <summary>
-        /// True when this gem is in the ship's magnetic pull budget (only enough gems to fill remaining capacity are selected).
+        /// True when this gem is assigned to one of the ship's wing tractor beams (one gem per wing max).
         /// </summary>
         public static bool CanShipMagneticallyPull(Starship ship, Gem gem)
         {
             if (!PassesBasicMagneticPullEligibility(ship, gem))
                 return false;
 
-            return GetMagneticPullSet(ship).Contains(gem.GetInstanceID());
+            return GetMagneticPullState(ship).gemIds.Contains(gem.GetInstanceID());
         }
 
-        /// <summary>True when the ship is pulling and the gem is visibly moving toward it.</summary>
+        /// <summary>Pull speed for this gem from its assigned wing's Max Gems stats.</summary>
+        public static float GetAttractionSpeedForGem(Starship ship, Gem gem)
+        {
+            if (ship == null || gem == null)
+                return AttractionSpeedNormal;
+
+            int wingIndex = GetAssignedWingIndex(ship, gem);
+            var wings = ship.WingTractorBeams;
+            if (wingIndex >= 0 && wings != null && wingIndex < wings.Count)
+            {
+                wings[wingIndex].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out _, out float speed);
+                return speed;
+            }
+
+            GetTractorBeamFromMaxGems(8f, ship.IsInOrbit, out _, out float fallback);
+            return fallback;
+        }
+
+        /// <summary>World origin for the beam line (wing transform when assigned).</summary>
+        public static Vector3 GetBeamOrigin(Starship ship, Gem gem)
+        {
+            if (ship == null)
+                return Vector3.zero;
+
+            int wingIndex = GetAssignedWingIndex(ship, gem);
+            var wings = ship.WingTractorBeams;
+            if (wingIndex >= 0 && wings != null && wingIndex < wings.Count && wings[wingIndex].wingTransform != null)
+                return wings[wingIndex].GetWorldPosition();
+
+            return GetShipPosition(ship);
+        }
+
+        public static int GetAssignedWingIndex(Starship ship, Gem gem)
+        {
+            if (ship == null || gem == null)
+                return -1;
+
+            if (GetMagneticPullState(ship).gemIdToWingIndex.TryGetValue(gem.GetInstanceID(), out int wingIndex))
+                return wingIndex;
+            return -1;
+        }
+
+        /// <summary>True when deploy finished and the gem is moving toward the ship at pull speed.</summary>
         public static bool IsActivelyBeingPulledToward(Starship ship, Gem gem)
         {
-            if (!CanShipMagneticallyPull(ship, gem))
-                return false;
-            if (!IsWithinMagneticPullRange(ship, gem))
+            if (!ShouldApplyGemPullPhysics(ship, gem))
                 return false;
 
-            return GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold;
+            return GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
         }
 
         public static bool ShouldShowTractorBeam(Starship ship, Gem gem) =>
             IsActivelyBeingPulledToward(ship, gem);
+
+        /// <summary>
+        /// Looser visual-only gate: show while the gem is in the ship's pull budget and range,
+        /// without requiring a noisy per-frame speed threshold (avoids beam pop/flicker).
+        /// </summary>
+        public static bool IsEligibleForBeamVisual(Starship ship, Gem gem)
+        {
+            if (!CanShipMagneticallyPull(ship, gem))
+                return false;
+            return IsWithinMagneticPullRange(ship, gem);
+        }
 
         public static bool IsPulledByAnyShip(Gem gem)
         {
@@ -112,51 +261,158 @@ namespace TitanOrbit.Entities
                 return false;
             if (gem == null || !gem.IsSpawned || gem.IsInPool || gem.IsDepositGem || gem.Value <= 0f)
                 return false;
-            if (!gem.IsCollectibleByShip(ship))
-                return false;
-
-            Vector3 shipPos = GetShipPosition(ship);
-            Vector3 gemPos = GetGemPosition(gem);
-            return IsWithinReach(gemPos, shipPos, ship.IsInOrbit);
+            return gem.IsCollectibleByShip(ship);
         }
 
-        private static HashSet<int> GetMagneticPullSet(Starship ship)
+        private static MagneticPullState GetMagneticPullState(Starship ship)
         {
             if (pullSetCacheFrame != Time.frameCount)
             {
                 pullSetCacheFrame = Time.frameCount;
-                pullSetByShipInstanceId.Clear();
+                pullStateByShipInstanceId.Clear();
             }
 
             int shipId = ship.GetInstanceID();
-            if (pullSetByShipInstanceId.TryGetValue(shipId, out HashSet<int> cached))
+            if (pullStateByShipInstanceId.TryGetValue(shipId, out MagneticPullState cached))
                 return cached;
 
-            HashSet<int> built = BuildMagneticPullSet(ship);
-            pullSetByShipInstanceId[shipId] = built;
+            MagneticPullState built = BuildMagneticPullState(ship);
+            pullStateByShipInstanceId[shipId] = built;
             return built;
         }
 
-        /// <summary>
-        /// Picks the minimum nearby gems (by value) needed to fill remaining capacity: in-flight pulls first, then closest idle gems.
-        /// </summary>
-        private static HashSet<int> BuildMagneticPullSet(Starship ship)
+        private static bool IsGemWithinAssignedWingRange(Starship ship, Gem gem, int wingIndex)
         {
-            var set = new HashSet<int>();
+            var wings = ship.WingTractorBeams;
+            if (wings == null || wingIndex < 0 || wingIndex >= wings.Count)
+                return false;
+
+            wings[wingIndex].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out float searchRadius, out _);
+            Vector3 gemPos = GetGemPosition(gem);
+            Vector3 wingPos = wings[wingIndex].GetWorldPosition();
+            return IsWithinReach(gemPos, wingPos, ship.IsInOrbit, searchRadius);
+        }
+
+        /// <summary>
+        /// Assigns at most one gem per wing tractor beam. Wing count limits simultaneous pulls.
+        /// </summary>
+        private static MagneticPullState BuildMagneticPullState(Starship ship)
+        {
+            var state = new MagneticPullState();
             if (!IsShipEligibleForMagneticPull(ship))
-                return set;
+                return state;
 
-            float capacityLeft = Mathf.Max(0f, ship.GemCapacity - ship.CurrentGems);
-            if (capacityLeft <= 0f)
-                return set;
-
-            Vector3 shipPos = GetShipPosition(ship);
-            bool inOrbit = ship.IsInOrbit;
-            GetAttractionParams(inOrbit, out float searchRadius, out _);
+            var wings = ship.WingTractorBeams;
+            int wingCount = wings != null ? wings.Count : 0;
+            if (wingCount <= 0)
+            {
+                BuildFallbackSingleBeamPullSet(ship, state);
+                return state;
+            }
 
             var gems = Gem.AllGems;
             if (gems == null || gems.Count == 0)
-                return set;
+                return state;
+
+            pullCandidateScratch.Clear();
+            for (int wi = 0; wi < wingCount; wi++)
+            {
+                if (wings[wi].wingTransform == null)
+                    continue;
+
+                wings[wi].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out float searchRadius, out _);
+                Vector3 wingPos = wings[wi].GetWorldPosition();
+
+                for (int gi = 0; gi < gems.Count; gi++)
+                {
+                    Gem gem = gems[gi];
+                    if (!PassesBasicMagneticPullEligibility(ship, gem))
+                        continue;
+
+                    Vector3 gemPos = GetGemPosition(gem);
+                    float dist = ToroidalMap.ToroidalDistance(gemPos, wingPos);
+                    if (dist > searchRadius)
+                        continue;
+
+                    bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem) &&
+                                    GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
+                    pullCandidateScratch.Add(new GemPullCandidate
+                    {
+                        gem = gem,
+                        wingIndex = wi,
+                        dist = dist,
+                        inFlight = inFlight
+                    });
+                }
+            }
+
+            if (pullCandidateScratch.Count == 0)
+                return state;
+
+            var assignedGemIds = new HashSet<int>();
+            var wingHasGem = new bool[wingCount];
+
+            // Keep in-flight gems on their wing (closest first per wing).
+            pullCandidateScratch.Sort((a, b) =>
+            {
+                if (a.inFlight != b.inFlight)
+                    return a.inFlight ? -1 : 1;
+                if (a.wingIndex != b.wingIndex)
+                    return a.wingIndex.CompareTo(b.wingIndex);
+                return a.dist.CompareTo(b.dist);
+            });
+
+            for (int i = 0; i < pullCandidateScratch.Count; i++)
+            {
+                if (!pullCandidateScratch[i].inFlight)
+                    break;
+
+                GemPullCandidate c = pullCandidateScratch[i];
+                int gemId = c.gem.GetInstanceID();
+                if (assignedGemIds.Contains(gemId) || wingHasGem[c.wingIndex])
+                    continue;
+
+                assignedGemIds.Add(gemId);
+                wingHasGem[c.wingIndex] = true;
+                state.gemIds.Add(gemId);
+                state.gemIdToWingIndex[gemId] = c.wingIndex;
+            }
+
+            pullCandidateScratch.Sort((a, b) =>
+            {
+                if (a.wingIndex != b.wingIndex)
+                    return a.wingIndex.CompareTo(b.wingIndex);
+                return a.dist.CompareTo(b.dist);
+            });
+
+            for (int i = 0; i < pullCandidateScratch.Count; i++)
+            {
+                GemPullCandidate c = pullCandidateScratch[i];
+                if (wingHasGem[c.wingIndex])
+                    continue;
+
+                int gemId = c.gem.GetInstanceID();
+                if (assignedGemIds.Contains(gemId))
+                    continue;
+
+                assignedGemIds.Add(gemId);
+                wingHasGem[c.wingIndex] = true;
+                state.gemIds.Add(gemId);
+                state.gemIdToWingIndex[gemId] = c.wingIndex;
+            }
+
+            return state;
+        }
+
+        /// <summary>Ships without wing components: one beam at ship center using default wing-tier stats.</summary>
+        private static void BuildFallbackSingleBeamPullSet(Starship ship, MagneticPullState state)
+        {
+            GetTractorBeamFromMaxGems(8f, ship.IsInOrbit, out float searchRadius, out _);
+            Vector3 origin = GetShipPosition(ship);
+
+            var gems = Gem.AllGems;
+            if (gems == null || gems.Count == 0)
+                return;
 
             pullCandidateScratch.Clear();
             for (int i = 0; i < gems.Count; i++)
@@ -166,20 +422,18 @@ namespace TitanOrbit.Entities
                     continue;
 
                 Vector3 gemPos = GetGemPosition(gem);
-                float dist = ToroidalMap.ToroidalDistance(gemPos, shipPos);
+                float dist = ToroidalMap.ToroidalDistance(gemPos, origin);
                 if (dist > searchRadius)
                     continue;
 
-                bool inFlight = GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold;
-                pullCandidateScratch.Add(new GemPullCandidate { gem = gem, dist = dist, inFlight = inFlight });
+                bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem) &&
+                                GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
+                pullCandidateScratch.Add(new GemPullCandidate { gem = gem, wingIndex = 0, dist = dist, inFlight = inFlight });
             }
 
             if (pullCandidateScratch.Count == 0)
-                return set;
+                return;
 
-            float reserved = 0f;
-
-            // Keep gems already moving toward the ship (closest first) up to the remaining capacity budget.
             pullCandidateScratch.Sort((a, b) =>
             {
                 if (a.inFlight != b.inFlight)
@@ -187,35 +441,10 @@ namespace TitanOrbit.Entities
                 return a.dist.CompareTo(b.dist);
             });
 
-            for (int i = 0; i < pullCandidateScratch.Count; i++)
-            {
-                if (!pullCandidateScratch[i].inFlight)
-                    break;
-                if (reserved >= capacityLeft)
-                    break;
-
-                Gem gem = pullCandidateScratch[i].gem;
-                set.Add(gem.GetInstanceID());
-                reserved += gem.Value;
-            }
-
-            // Pull additional closest gems until the budget is met.
-            pullCandidateScratch.Sort((a, b) => a.dist.CompareTo(b.dist));
-            for (int i = 0; i < pullCandidateScratch.Count; i++)
-            {
-                if (reserved >= capacityLeft)
-                    break;
-
-                Gem gem = pullCandidateScratch[i].gem;
-                int gemId = gem.GetInstanceID();
-                if (set.Contains(gemId))
-                    continue;
-
-                set.Add(gemId);
-                reserved += gem.Value;
-            }
-
-            return set;
+            Gem chosen = pullCandidateScratch[0].gem;
+            int gemId = chosen.GetInstanceID();
+            state.gemIds.Add(gemId);
+            state.gemIdToWingIndex[gemId] = 0;
         }
 
         private static float GetTowardShipSpeed(Starship ship, Gem gem)

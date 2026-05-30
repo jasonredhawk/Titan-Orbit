@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Shapes;
 using TitanOrbit.Core;
@@ -6,7 +7,7 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Draws thin Shapes lines from ships to gems only while they are actively moving toward the ship (tractor pull).
+    /// Draws filled cone-shaped tractor beams from ships to gems while they are magnetically pulled.
     /// </summary>
     [ExecuteAlways]
     public class GemTractorBeamVisual : ImmediateModeShapeDrawer
@@ -15,14 +16,22 @@ namespace TitanOrbit.Entities
 
         [Header("Beam")]
         [SerializeField] private float heightAboveGem = 0.28f;
-        [SerializeField] private float lineThickness = 0.032f;
-        [SerializeField] private float pulseThicknessAmplitude = 0.006f;
-        [SerializeField] private float pulseSpeed = 8f;
+        [SerializeField] private float pulseWidthAmplitude = 0.06f;
+        [SerializeField] private float pulseAlphaAmplitude = 0.14f;
+        [Tooltip("Radians per second for the breathing pulse (~2 = one full cycle every ~3s).")]
+        [SerializeField] private float pulseSpeed = 2f;
         [SerializeField] private float alphaAtShip = 0.72f;
         [SerializeField] private float alphaAtGem = 0.16f;
         [SerializeField] private Color bonusBeamTint = new Color(1f, 0.92f, 0.35f, 1f);
         [Tooltip("Skip scene view / reflection cameras (same as other world Shapes drawers).")]
         [SerializeField] private bool gameplayCamerasOnly = true;
+        [Tooltip("Softens the wide end of the beam (0 = sharp triangle, 1 = fully rounded).")]
+        [SerializeField] [Range(0f, 1f)] private float beamRoundness = 0.08f;
+        [Tooltip("Scales how wide the beam is at the gem relative to the gem's visual size.")]
+        [SerializeField] private float gemEndWidthScale = 1.05f;
+
+        private static readonly Dictionary<int, float> smoothedGemDiameterById = new Dictionary<int, float>(64);
+        private const float GemDiameterSmoothing = 10f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureInstanceExists()
@@ -52,6 +61,8 @@ namespace TitanOrbit.Entities
             if (instance == this)
                 instance = null;
             GemTractorBeamMotionTracker.Clear();
+            GemTractorBeamVisibilityTracker.Clear();
+            smoothedGemDiameterById.Clear();
             base.OnDisable();
         }
 
@@ -60,6 +71,7 @@ namespace TitanOrbit.Entities
             if (!Application.isPlaying)
                 return;
             GemTractorBeamMotionTracker.LateUpdateTick();
+            GemTractorBeamVisibilityTracker.LateUpdateTick();
         }
 
         public override void DrawShapes(UnityEngine.Camera cam)
@@ -78,14 +90,16 @@ namespace TitanOrbit.Entities
             Vector3 camPos = cam.transform.position;
             float mapW = ToroidalMap.GetMapWidth();
             float mapH = ToroidalMap.GetMapHeight();
-            float pulse = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseThicknessAmplitude;
-            float thickness = lineThickness * pulse;
+            // Slow breathing pulse: remap sin to 0..1, then ease so peaks/troughs linger briefly.
+            float pulseWave = Mathf.SmoothStep(0f, 1f, (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f);
+            float pulsedAlphaAtShip = Mathf.Clamp01(alphaAtShip + (pulseWave * 2f - 1f) * pulseAlphaAmplitude);
+            float widthPulse = 1f + (pulseWave * 2f - 1f) * pulseWidthAmplitude;
 
             using (Draw.Command(cam))
             {
                 Draw.ResetAllDrawStates();
                 Draw.ThicknessSpace = ThicknessSpace.Meters;
-                Draw.LineGeometry = LineGeometry.Volumetric3D;
+                Draw.LineGeometry = LineGeometry.Flat2D;
                 Draw.BlendMode = ShapesBlendMode.Transparent;
 
                 for (int si = 0; si < ships.Count; si++)
@@ -93,9 +107,6 @@ namespace TitanOrbit.Entities
                     Starship ship = ships[si];
                     if (!IsShipEligibleForBeam(ship))
                         continue;
-
-                    Vector3 shipPos = GetWorldPosition(ship);
-                    Vector3 shipDisplay = ToroidalMap.GetDisplayPosition(shipPos, camPos);
 
                     Color teamBase = ship.ShipTeam != TeamManager.Team.None
                         ? TeamManager.GetTeamColor(ship.ShipTeam)
@@ -106,24 +117,31 @@ namespace TitanOrbit.Entities
                         Gem gem = gems[gi];
                         if (!IsGemEligibleForBeam(gem))
                             continue;
-                        if (!GemTractorBeamSettings.ShouldShowTractorBeam(ship, gem))
+
+                        float beamVisibility = GemTractorBeamVisibilityTracker.GetVisibility(ship, gem);
+                        if (beamVisibility <= 0.001f)
                             continue;
 
+                        Vector3 beamOrigin = GemTractorBeamSettings.GetBeamOrigin(ship, gem);
+                        Vector3 shipDisplay = ToroidalMap.GetDisplayPosition(beamOrigin, camPos);
+
                         Vector3 gemPos = GetWorldPosition(gem);
-                        Vector2 gemOff = ToroidalMap.ShortestOffsetXZ(shipPos, gemPos);
+                        Vector2 gemOff = ToroidalMap.ShortestOffsetXZ(beamOrigin, gemPos);
                         Vector3 gemDisplay = shipDisplay + new Vector3(gemOff.x, 0f, gemOff.y);
 
-                        float beamY = Mathf.Max(shipPos.y, gemPos.y) + heightAboveGem;
+                        float beamY = Mathf.Max(beamOrigin.y, gemPos.y) + heightAboveGem;
                         shipDisplay.y = beamY;
                         gemDisplay.y = beamY;
 
                         Color beamColor = gem.IsBonusGem
                             ? Color.Lerp(teamBase, bonusBeamTint, 0.55f)
                             : teamBase;
-                        Color colorShip = new Color(beamColor.r, beamColor.g, beamColor.b, alphaAtShip);
-                        Color colorGem = new Color(beamColor.r, beamColor.g, beamColor.b, alphaAtGem);
+                        Color colorShip = new Color(beamColor.r, beamColor.g, beamColor.b, pulsedAlphaAtShip * beamVisibility);
+                        Color colorGem = new Color(beamColor.r, beamColor.g, beamColor.b, alphaAtGem * beamVisibility);
 
-                        DrawBeamWithWraps(shipDisplay, gemDisplay, mapW, mapH, thickness, colorShip, colorGem);
+                        float widthAtGem = GetSmoothedGemVisualDiameter(gem) * gemEndWidthScale * widthPulse;
+                        DrawBeamWithWraps(shipDisplay, gemDisplay, mapW, mapH, widthAtGem,
+                            colorShip, colorGem);
                     }
                 }
             }
@@ -165,9 +183,9 @@ namespace TitanOrbit.Entities
         }
 
         private void DrawBeamWithWraps(Vector3 shipDisplay, Vector3 gemDisplay, float mapW, float mapH,
-            float thickness, Color colorShip, Color colorGem)
+            float widthAtGem, Color colorShip, Color colorGem)
         {
-            DrawBeamSegment(shipDisplay, gemDisplay, thickness, colorShip, colorGem);
+            DrawConeBeamSegment(shipDisplay, gemDisplay, widthAtGem, colorShip, colorGem);
 
             Vector3[] offsets = {
                 new Vector3(mapW, 0f, 0f),
@@ -176,13 +194,66 @@ namespace TitanOrbit.Entities
                 new Vector3(0f, 0f, -mapH)
             };
             foreach (var off in offsets)
-                DrawBeamSegment(shipDisplay + off, gemDisplay + off, thickness, colorShip, colorGem);
+            {
+                DrawConeBeamSegment(shipDisplay + off, gemDisplay + off, widthAtGem, colorShip, colorGem);
+            }
         }
 
-        private static void DrawBeamSegment(Vector3 shipDisplay, Vector3 gemDisplay, float thickness,
+        private void DrawConeBeamSegment(Vector3 shipDisplay, Vector3 gemDisplay, float widthAtGem,
             Color colorShip, Color colorGem)
         {
-            Draw.Line(shipDisplay, gemDisplay, thickness, LineEndCap.Round, colorShip, colorGem);
+            Vector3 dir = gemDisplay - shipDisplay;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                return;
+
+            dir.Normalize();
+            Vector3 perp = new Vector3(-dir.z, 0f, dir.x);
+            float halfGem = widthAtGem * 0.5f;
+            Vector3 gemLeft = gemDisplay - perp * halfGem;
+            Vector3 gemRight = gemDisplay + perp * halfGem;
+
+            // Apex at ship, wide base at gem — single filled triangle cone.
+            if (beamRoundness > 0.001f)
+            {
+                Draw.Triangle(shipDisplay, gemLeft, gemRight, beamRoundness, colorShip, colorGem, colorGem);
+                return;
+            }
+
+            Draw.Triangle(shipDisplay, gemLeft, gemRight, colorShip, colorGem, colorGem);
+        }
+
+        private static float GetSmoothedGemVisualDiameter(Gem gem)
+        {
+            if (gem == null)
+                return 0f;
+
+            int gemId = gem.GetInstanceID();
+            float raw = GetGemVisualDiameter(gem);
+            if (!smoothedGemDiameterById.TryGetValue(gemId, out float smoothed))
+            {
+                smoothedGemDiameterById[gemId] = raw;
+                return raw;
+            }
+
+            smoothed = Mathf.Lerp(smoothed, raw, Time.deltaTime * GemDiameterSmoothing);
+            smoothedGemDiameterById[gemId] = smoothed;
+            return smoothed;
+        }
+
+        private static float GetGemVisualDiameter(Gem gem)
+        {
+            if (gem == null)
+                return 0f;
+
+            var renderer = gem.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                Vector3 extents = renderer.bounds.extents;
+                return Mathf.Max(extents.x, extents.z) * 2f;
+            }
+
+            return gem.transform.lossyScale.x;
         }
     }
 }

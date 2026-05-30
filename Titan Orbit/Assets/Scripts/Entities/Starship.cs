@@ -209,6 +209,7 @@ namespace TitanOrbit.Entities
         private List<Transform> wingScaleTransforms = new List<Transform>();
         private List<Vector3> wingBaseScales = new List<Vector3>();
         private List<Vector3> wingBasePositions = new List<Vector3>();
+        private readonly List<WingTractorBeamSlot> wingTractorBeams = new List<WingTractorBeamSlot>();
         private List<Transform> weaponScaleTransforms = new List<Transform>();
         private List<Vector3> weaponBaseScales = new List<Vector3>();
         private List<Vector3> weaponBasePositions = new List<Vector3>();
@@ -311,6 +312,10 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<ulong, float> _toroidalShipPairLastSoundTime = new Dictionary<ulong, float>();
         /// <summary>Per-asteroid instance: next Time.time allowed for grind VFX/sound/floating damage.</summary>
         private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
+        /// <summary>Server: fractional gem value expelled but not yet spawned (SpawnGemsFromShip uses ≥1 chunks).</summary>
+        private float _pendingGemExpulsionSpawnTotal;
+        /// <summary>0 = many ~1-value gems so hull damage and expelled gem value match 1:1 (ram/grind).</summary>
+        private const float PairedHullDamageGemExpulsionIntensity = 0f;
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
 
@@ -731,6 +736,9 @@ namespace TitanOrbit.Entities
 
         /// <summary>Base gem capacity without card bonuses. Comes from ShipFamilyDefinition (via chassis components).</summary>
         public float BaseGemCapacity => Mathf.Max(0f, gemCapacity);
+
+        /// <summary>One gem tractor beam per wing; reach and pull strength come from each wing's Max Gems Capacity stats.</summary>
+        public IReadOnlyList<WingTractorBeamSlot> WingTractorBeams => wingTractorBeams;
 
         /// <summary>Horizontal speed in the play plane (XZ), units/sec. Matches movement clamp / HUD speedometer.</summary>
         public float CurrentHorizontalSpeed
@@ -2757,15 +2765,10 @@ namespace TitanOrbit.Entities
             GemTractorBeamSettings.BeginPhysicsPullUpdate();
 
             Vector3 shipPos = rb != null ? rb.position : transform.position;
-            bool inOrbitZone = currentOrbitPlanet != null;
-            GemTractorBeamSettings.GetAttractionParams(inOrbitZone, out _, out float attractionSpeed);
-            float accel = attractionSpeed * Time.fixedDeltaTime * GemTractorBeamSettings.AttractionAccelerationFactor;
 
             foreach (var gem in TitanOrbit.Entities.Gem.AllGems)
             {
-                if (!GemTractorBeamSettings.CanShipMagneticallyPull(this, gem))
-                    continue;
-                if (!GemTractorBeamSettings.IsWithinMagneticPullRange(this, gem))
+                if (!GemTractorBeamSettings.ShouldApplyGemPullPhysics(this, gem))
                     continue;
                 if (!gem.CanShipCollect(this))
                     continue;
@@ -2773,14 +2776,16 @@ namespace TitanOrbit.Entities
                 Rigidbody gemRb = gem.GetComponent<Rigidbody>();
                 if (gemRb == null) continue;
 
+                float pullSpeed = GemTractorBeamSettings.GetGameplayPullSpeed(this, gem);
+
                 Vector3 gemPos = gemRb.position;
                 Vector3 toShip = TitanOrbit.Generation.ToroidalMap.ToroidalDirection(gemPos, shipPos);
                 toShip.y = 0f;
                 if (toShip.sqrMagnitude < 0.0001f) continue;
                 toShip.Normalize();
 
-                Vector3 targetVel = toShip * attractionSpeed;
-                gemRb.linearVelocity = Vector3.MoveTowards(gemRb.linearVelocity, targetVel, accel);
+                // Constant linear speed toward the ship until collected.
+                gemRb.linearVelocity = toShip * pullSpeed;
                 gemRb.linearDamping = 0f;
             }
         }
@@ -3947,6 +3952,7 @@ namespace TitanOrbit.Entities
             const float deathThreshold = 0.001f;
             if (currentHealth.Value > deathThreshold || currentGems.Value > deathThreshold)
                 return;
+            FlushRemainingPendingGemExpulsionOnServer();
             SuppressGemCollectionForRespawnDelay();
             // Do not invoke DieServerRpc() from server logic: NGO ServerRpc send path is for client→server;
             // run death immediately on the authoritative host/dedicated process.
@@ -3954,8 +3960,26 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public void TakeDamageServerRpc(float damage, TeamManager.Team attackerTeam, ulong attackerShipNetworkId = 0, float gemExpulsionIntensity = 0.5f)
+        public void TakeDamageServerRpc(
+            float damage,
+            TeamManager.Team attackerTeam,
+            ulong attackerShipNetworkId = 0,
+            float gemExpulsionIntensity = 0.5f,
+            float gemExpulsionPerHullDamage = 0f)
         {
+            ApplyDamageOnServer(damage, attackerTeam, attackerShipNetworkId, gemExpulsionIntensity, gemExpulsionPerHullDamage);
+        }
+
+        /// <summary>Server: apply hull damage and gem expulsion. Bullets use legacy 50% rules after hull is 0.
+        /// Ram/grind pass <paramref name="gemExpulsionPerHullDamage"/> for 1:1 gem value on excess/post-zero damage only.</summary>
+        private void ApplyDamageOnServer(
+            float damage,
+            TeamManager.Team attackerTeam,
+            ulong attackerShipNetworkId,
+            float gemExpulsionIntensity,
+            float gemExpulsionPerHullDamage)
+        {
+            if (!IsServer) return;
             // Block friendly fire only when both have valid teams and they match
             if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
             if (isDead.Value) return;
@@ -3964,25 +3988,22 @@ namespace TitanOrbit.Entities
             if (damage > 0.0001f)
                 lastHullDamageServerTime = Time.time;
 
-            // Gem expulsion tuning: how quickly gems are lost once health hits 0.
-            // Lower values = slower gem loss; higher values = faster loss.
-            // Rough target: about 50% of damage value comes out as gems, with caps so a single hit doesn't dump everything.
-            const float GemExpulsionPerDamage = 0.5f;              // gems expelled per 1 damage
-            const float MaxLethalExpulsionFraction = 0.6f;         // at most 60% of current gems on the lethal hit
-            const float MaxPostDeathExpulsionFraction = 0.4f;      // at most 40% of current gems per hit after death
+            // Legacy bullet tuning: ~50% of damage as gems after hull is 0, with per-hit caps.
+            const float LegacyGemExpulsionPerDamage = 0.5f;
+            const float MaxLethalExpulsionFraction = 0.6f;
+            const float MaxPostDeathExpulsionFraction = 0.4f;
+
+            bool ramGrindGemExpulsion = gemExpulsionPerHullDamage > 0f;
 
             float healthBefore = currentHealth.Value;
-            bool wasAlive = healthBefore > 0f;
+            bool wasAlive = healthBefore > 0.001f;
 
-            if (wasAlive)
+            if (wasAlive && damage > 0.0001f)
             {
-                // Phase 1: Reduce health until it reaches zero
                 float newHealth = Mathf.Max(0f, healthBefore - damage);
                 float deltaHealth = newHealth - healthBefore;
                 currentHealth.Value = newHealth;
 
-                // Feedback: show health delta as a floating popup at the ship position.
-                // (Health changes only during the alive->alive phase, not after health is already 0.)
                 const float minAbsHealthForPopup = 1f;
                 if (Mathf.Abs(deltaHealth) >= minAbsHealthForPopup && VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
@@ -3991,45 +4012,88 @@ namespace TitanOrbit.Entities
                         deltaHealth,
                         (int)attackerTeam
                     );
-
-                // Any excess damage beyond what was needed to reach 0 is converted into gem expulsion (scaled and capped).
-                float excessDamage = Mathf.Max(0f, damage - healthBefore);
-                if (excessDamage > 0f && currentGems.Value > 0f)
-                {
-                    float desired = excessDamage * GemExpulsionPerDamage;
-                    float maxForThisHit = currentGems.Value * MaxLethalExpulsionFraction;
-                    float gemsToExpel = Mathf.Min(desired, maxForThisHit);
-                    if (gemsToExpel > 0f)
-                    {
-                        currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
-                        if (GemSpawner.Instance != null)
-                        {
-                            ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
-                            Vector3 expelPos = rb != null ? rb.position : transform.position;
-                            GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, gemsToExpel, myId, gemExpulsionIntensity);
-                        }
-                    }
-                }
             }
-            else
+
+            float gemsToExpel = 0f;
+            if (currentGems.Value > 0.0001f)
             {
-                // Phase 2: Health is already zero - incoming damage drains gems and expels them, but at a throttled rate.
-                float desired = damage * GemExpulsionPerDamage;
-                float maxForThisHit = currentGems.Value * MaxPostDeathExpulsionFraction;
-                float gemsToExpel = Mathf.Min(desired, maxForThisHit);
-                if (gemsToExpel > 0f)
+                if (ramGrindGemExpulsion)
                 {
-                    currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
-                    if (GemSpawner.Instance != null)
+                    // Ram/grind: no gems until hull is 0; then 1:1 gem value with damage (excess on the breaking hit).
+                    if (wasAlive)
                     {
-                        ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
-                        Vector3 expelPos = rb != null ? rb.position : transform.position;
-                        GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, gemsToExpel, myId, gemExpulsionIntensity);
+                        float excessDamage = Mathf.Max(0f, damage - healthBefore);
+                        if (excessDamage > 0f)
+                            gemsToExpel = excessDamage * gemExpulsionPerHullDamage;
+                    }
+                    else
+                        gemsToExpel = damage * gemExpulsionPerHullDamage;
+                }
+                else if (wasAlive)
+                {
+                    float excessDamage = Mathf.Max(0f, damage - healthBefore);
+                    if (excessDamage > 0f)
+                    {
+                        float desired = excessDamage * LegacyGemExpulsionPerDamage;
+                        float maxForThisHit = currentGems.Value * MaxLethalExpulsionFraction;
+                        gemsToExpel = Mathf.Min(desired, maxForThisHit);
                     }
                 }
+                else
+                {
+                    float desired = damage * LegacyGemExpulsionPerDamage;
+                    float maxForThisHit = currentGems.Value * MaxPostDeathExpulsionFraction;
+                    gemsToExpel = Mathf.Min(desired, maxForThisHit);
+                }
+
+                gemsToExpel = Mathf.Min(gemsToExpel, currentGems.Value);
+            }
+
+            if (gemsToExpel > 0.0001f)
+            {
+                float spawnIntensity = ramGrindGemExpulsion
+                    ? PairedHullDamageGemExpulsionIntensity
+                    : gemExpulsionIntensity;
+                ExpelGemsFromShipOnServer(gemsToExpel, spawnIntensity);
             }
 
             TryDieIfHullAndGemsDepleted(attackerShipNetworkId);
+        }
+
+        /// <summary>Server: deduct carried gems and spawn physical gems when accumulated value reaches ≥1.</summary>
+        private void ExpelGemsFromShipOnServer(float gemsToExpel, float gemExpulsionIntensity)
+        {
+            if (!IsServer || gemsToExpel <= 0.0001f || currentGems.Value <= 0f) return;
+
+            gemsToExpel = Mathf.Min(gemsToExpel, currentGems.Value);
+            currentGems.Value = Mathf.Max(0f, currentGems.Value - gemsToExpel);
+            _pendingGemExpulsionSpawnTotal += gemsToExpel;
+            FlushPendingGemExpulsionSpawnOnServer(gemExpulsionIntensity);
+        }
+
+        private void FlushPendingGemExpulsionSpawnOnServer(float gemExpulsionIntensity)
+        {
+            if (!IsServer || _pendingGemExpulsionSpawnTotal < 1f || GemSpawner.Instance == null) return;
+
+            float spawnTotal = _pendingGemExpulsionSpawnTotal;
+            _pendingGemExpulsionSpawnTotal = 0f;
+
+            ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
+            Vector3 expelPos = rb != null ? rb.position : transform.position;
+            GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, spawnTotal, myId, gemExpulsionIntensity);
+        }
+
+        /// <summary>Server: spawn any fractional gem value still pending when the ship is destroyed.</summary>
+        private void FlushRemainingPendingGemExpulsionOnServer(float gemExpulsionIntensity = 0.5f)
+        {
+            if (!IsServer || _pendingGemExpulsionSpawnTotal <= 0.0001f || GemSpawner.Instance == null) return;
+
+            float spawnTotal = _pendingGemExpulsionSpawnTotal;
+            _pendingGemExpulsionSpawnTotal = 0f;
+
+            ulong myId = GetComponent<NetworkObject>()?.NetworkObjectId ?? 0;
+            Vector3 expelPos = rb != null ? rb.position : transform.position;
+            GemSpawner.Instance.SpawnGemsFromShipOnServer(expelPos, spawnTotal, myId, gemExpulsionIntensity);
         }
 
         private void HandleDeath()
@@ -4935,9 +4999,13 @@ namespace TitanOrbit.Entities
 
             if (shipCollisionDamage > 0.0001f)
             {
-                // Self-inflicted collision damage: Team.None bypasses friendly-fire checks.
-                float expulsionIntensity = ComputeGemExpulsionIntensityFromImpactForce(impactForceNewtons);
-                TakeDamageServerRpc(shipCollisionDamage, TeamManager.Team.None, 0, expulsionIntensity);
+                // Self-inflicted collision damage: Team.None bypasses friendly-fire checks. Gems after hull is 0, 1:1 with damage.
+                TakeDamageServerRpc(
+                    shipCollisionDamage,
+                    TeamManager.Team.None,
+                    0,
+                    PairedHullDamageGemExpulsionIntensity,
+                    gemExpulsionPerHullDamage: 1f);
             }
 
             if (asteroidCollisionDamage > 0.0001f)
@@ -5033,45 +5101,36 @@ namespace TitanOrbit.Entities
             ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
             asteroid.TakeDamageServerRpc(asteroidGrindDamage, attackerShipId);
 
-            bool grindPulse = TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, offenseRam, asteroidGrindDamage);
+            TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, offenseRam, asteroidGrindDamage);
 
-            // Self-damage + gem expulsion while grinding (same throttle as feedback so per-frame hits do not dump all gems).
-            if (grindPulse && asteroidImpactForceToShipDamageScale > 0f && asteroidImpactForceToAsteroidDamageScale > 0.0001f)
+            // Continuous self-damage while grinding; gems only after hull is 0 (1:1 with chip damage).
+            if (asteroidImpactForceToShipDamageScale > 0f && asteroidImpactForceToAsteroidDamageScale > 0.0001f)
             {
-                float grindInterval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
-                float shipGrindDamage = pushN * selfRam * grindInterval * asteroidGrindPushToAsteroidDpsScale
+                float dt = Time.fixedDeltaTime;
+                float shipGrindDamage = pushN * selfRam * dt * asteroidGrindPushToAsteroidDpsScale
                     * (asteroidImpactForceToShipDamageScale / asteroidImpactForceToAsteroidDamageScale);
                 if (shipGrindDamage > 0.0001f)
                 {
-                    float grindExpulsionIntensity = ComputeGemExpulsionIntensityFromGrindPush(pushN);
-                    TakeDamageServerRpc(shipGrindDamage, TeamManager.Team.None, 0, grindExpulsionIntensity);
+                    TakeDamageServerRpc(
+                        shipGrindDamage,
+                        TeamManager.Team.None,
+                        0,
+                        PairedHullDamageGemExpulsionIntensity,
+                        gemExpulsionPerHullDamage: 1f);
                 }
             }
         }
 
-        /// <summary>0 = many small expelled gems (grind); 1 = few large gems (hard asteroid impact).</summary>
-        private static float ComputeGemExpulsionIntensityFromImpactForce(float impactForceNewtons)
-        {
-            return Mathf.Clamp01(Mathf.InverseLerp(120f, 900f, impactForceNewtons));
-        }
-
-        private float ComputeGemExpulsionIntensityFromGrindPush(float pushNewtons)
-        {
-            float t = Mathf.InverseLerp(asteroidGrindMinPushNewtons, asteroidGrindMinPushNewtons + 100f, pushNewtons);
-            return Mathf.Clamp01(t) * 0.3f;
-        }
-
         /// <summary>Throttled VFX, sound, and floating numbers while grinding an asteroid (same flavor as collision enter).</summary>
-        /// <returns>True when this call opened a new feedback pulse (used to pace grind self-damage / gem expulsion).</returns>
-        private bool TryPlayAsteroidGrindFeedback(Asteroid asteroid, Vector3 hitWorldPos, Vector3 asteroidOutwardNormalXZ, float pushNewtons, float ramMul, float damageThisPulse)
+        private void TryPlayAsteroidGrindFeedback(Asteroid asteroid, Vector3 hitWorldPos, Vector3 asteroidOutwardNormalXZ, float pushNewtons, float ramMul, float damageThisPulse)
         {
-            if (asteroid == null) return false;
+            if (asteroid == null) return;
 
             int id = asteroid.GetInstanceID();
             float now = Time.time;
             float interval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
             if (_asteroidGrindFeedbackNextTimeByInstance.TryGetValue(id, out float nextOk) && now < nextOk)
-                return false;
+                return;
             _asteroidGrindFeedbackNextTimeByInstance[id] = now + interval;
 
             float equivForce = Mathf.Max(pushNewtons * ramMul * Mathf.Max(0.01f, asteroidGrindFeedbackForceFromPushScale), 30f);
@@ -5101,8 +5160,6 @@ namespace TitanOrbit.Entities
                     (int)shipTeam.Value
                 );
             }
-
-            return true;
         }
 
         private static ulong ToroidalShipPairKey(int instanceIdA, int instanceIdB)
@@ -6123,6 +6180,7 @@ namespace TitanOrbit.Entities
             wingScaleTransforms.Clear();
             wingBaseScales.Clear();
             wingBasePositions.Clear();
+            wingTractorBeams.Clear();
             weaponScaleTransforms.Clear();
             weaponBaseScales.Clear();
             weaponBasePositions.Clear();
@@ -6330,6 +6388,8 @@ namespace TitanOrbit.Entities
                     if (t != null) { wingScaleTransforms.Add(t); wingBaseScales.Add(t.localScale); wingBasePositions.Add(t.localPosition); }
                 }
             }
+
+            BuildWingTractorBeams(stats.wingTransforms, prefix, previewFamilyDef, matchedComponentIds, perComponentStats, level);
             if (stats.engineTransforms != null)
             {
                 foreach (Transform t in stats.engineTransforms)
@@ -6388,6 +6448,97 @@ namespace TitanOrbit.Entities
                         if (ps != null) thrusterParticleSystems.Add(ps);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// One tractor beam per wing transform. Pull reach and strength use each wing's Max Gems Capacity from ShipFamilyDefinition.
+        /// </summary>
+        private void BuildWingTractorBeams(
+            List<Transform> wingTransforms,
+            string familyPrefix,
+            ShipFamilyDefinition previewFamilyDef,
+            System.Collections.Generic.IReadOnlyList<string> matchedComponentIds,
+            System.Collections.Generic.IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int shipLevel)
+        {
+            wingTractorBeams.Clear();
+            if (wingTransforms == null || wingTransforms.Count == 0)
+                return;
+
+            string lookupFamilyId = (previewFamilyDef != null && !string.IsNullOrEmpty(previewFamilyDef.familyId))
+                ? previewFamilyDef.familyId.Trim()
+                : familyPrefix;
+
+            for (int i = 0; i < wingTransforms.Count; i++)
+            {
+                Transform wt = wingTransforms[i];
+                if (wt == null)
+                    continue;
+
+                string componentId = "";
+                if (!string.IsNullOrEmpty(wt.name))
+                {
+                    if (!string.IsNullOrEmpty(lookupFamilyId) &&
+                        wt.name.StartsWith(lookupFamilyId + "_", System.StringComparison.OrdinalIgnoreCase))
+                        componentId = wt.name.Substring(lookupFamilyId.Length + 1);
+                    else
+                        componentId = wt.name;
+                }
+
+                ShipComponentAbilityStats wingStats = default;
+                wingStats.maxGems = 8f;
+                bool resolved = false;
+
+                if (matchedComponentIds != null && perComponentStats != null && !string.IsNullOrEmpty(componentId))
+                {
+                    for (int k = 0; k < matchedComponentIds.Count; k++)
+                    {
+                        if (string.Equals(matchedComponentIds[k], componentId, System.StringComparison.OrdinalIgnoreCase) &&
+                            k < perComponentStats.Count)
+                        {
+                            wingStats = perComponentStats[k];
+                            resolved = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!resolved && previewFamilyDef != null && !string.IsNullOrEmpty(componentId) &&
+                    previewFamilyDef.TryGetStatsForComponent(componentId, out var defStats))
+                {
+                    wingStats = ShipComponentAbilityStats.ScaleStatsByTransform(defStats, wt, componentId);
+                    resolved = true;
+                }
+
+                if (!resolved && previewFamilyDef != null && previewFamilyDef.components != null)
+                {
+                    int wingEntryCounter = -1;
+                    for (int e = 0; e < previewFamilyDef.components.Count; e++)
+                    {
+                        var entry = previewFamilyDef.components[e];
+                        if (entry == null || string.IsNullOrEmpty(entry.componentId))
+                            continue;
+                        string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
+                        if (!string.Equals(partType, "Wing", System.StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        wingEntryCounter++;
+                        if (wingEntryCounter != i)
+                            continue;
+
+                        wingStats = ShipComponentAbilityStats.ScaleStatsByTransform(entry.stats, wt, entry.componentId);
+                        break;
+                    }
+                }
+
+                wingTractorBeams.Add(new WingTractorBeamSlot(
+                    wt,
+                    wingStats.tractorBeamDistance,
+                    wingStats.tractorBeamDistancePerLevel,
+                    wingStats.tractorBeamPower,
+                    wingStats.tractorBeamPowerPerLevel,
+                    wingStats.maxGems,
+                    wingStats.maxGemsPerLevel));
             }
         }
 
