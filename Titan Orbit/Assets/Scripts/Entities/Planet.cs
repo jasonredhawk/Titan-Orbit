@@ -1016,12 +1016,11 @@ namespace TitanOrbit.Entities
             {
                 Vector3 popupPos = popupWorldPosition ?? transform.position;
                 popupPos.y = 0f;
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
                     popupPos,
-                    (int)FloatingCountChannel.GemDeposit,
+                    FloatingCountChannel.GemDeposit,
                     delta,
-                    (int)depositingTeam
-                );
+                    depositingTeam);
             }
             if (delta > 0.0001f)
             {

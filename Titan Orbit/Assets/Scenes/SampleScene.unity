@@ -2615,8 +2615,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipSpeedometerHUD
   speedometerEnabled: 1
   placement: 0
-  panelWidth: 340
-  panelHeight: 100
+  panelWidth: 544
+  panelHeight: 160
   accelerationBarSmoothing: 5
   horizontalMargin: 20
   verticalMargin: 24
@@ -4080,11 +4080,11 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomEnabled: 0
+  galacticZoomEnabled: 1
   galacticZoomDistance: 90
-  galacticZoomOutDuration: 4
+  galacticZoomOutDuration: 60
   galacticZoomInDuration: 2
-  spaceBackground: {fileID: 0}
+  spaceBackground: {fileID: 252336435}
   collisionCameraShakeEnabled: 1
   collisionShakeMaxTranslation: {x: 0.45, y: 0.45, z: 0.45}
   collisionShakeFrequency: 25
@@ -8383,16 +8383,14 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    damageAsteroid: 0
-    damageShipOrDrone: 0
+    damageAsteroid: 1
+    damageShipOrDrone: 1
     damageMoon: 1
     healthChange: 0
     peopleLoad: 1
     peopleUnload: 1
-    healing: 0
-    healthRegen: 0
-    energy: 0
-    upgrades: 1
+    asteroidStatsOverlay: 1
+    asteroidImpactForce: 0
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}

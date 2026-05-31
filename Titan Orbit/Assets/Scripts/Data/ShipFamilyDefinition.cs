@@ -20,9 +20,9 @@ namespace TitanOrbit.Data
         public float bulletSpeedPerLevel;  // Bullet Speed gained per ship level
         public float fireRate;             // Bullets per second
         public float fireRatePerLevel;     // Fire rate gained per ship level
-        [Tooltip("Ramming / collision offense: base ramming power used in force and damage calculations.")]
+        [Tooltip("Ramming / collision offense: base ramming power (authored small; high mass already amplifies damage).")]
         public float rammingPower;
-        [Tooltip("Ramming power gained per ship level.")]
+        [Tooltip("Ramming power gained per ship level (authored small). See ShipComponentRammingSuggestions.")]
         public float rammingPowerPerLevel;
 
         [Header("Health")]
@@ -780,14 +780,34 @@ namespace TitanOrbit.Data
             GetSuggestedHealthRegen(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
-    /// <summary>Scan/auto-populate cockpit ramming offense (scaled down with lower ship health).</summary>
+    /// <summary>Scan/auto-populate cockpit ramming offense (kept low — damage also scales sublinearly with ship mass).</summary>
     public static class ShipComponentRammingSuggestions
     {
-        /// <summary>Ramming power at version 1 (cockpit).</summary>
+        /// <summary>Global tuning on effective ram damage (impact, grind, HUD rating). Does not affect bounce/restitution.</summary>
+        public const float GlobalDamageMultiplier = 3f;
+
+        /// <summary>Ramming power at version 1 (cockpit). Moderate — hull mass amplifies via sublinear massFactor.</summary>
         public const float RammingPowerV1 = 0.75f;
 
-        /// <summary>Ramming power added per version tier (v2 = 1.0, v3 = 1.25, …).</summary>
-        public const float RammingPowerPerVersion = 0.25f;
+        /// <summary>Ramming power added per version tier (v2, v3, …).</summary>
+        public const float RammingPowerPerVersion = 0.12f;
+
+        /// <summary>Per-level ramming power as a fraction of base when scanning family assets.</summary>
+        public const float RammingPerLevelFractionOfBase = 0.25f;
+
+        /// <summary>Reference mass where massFactor = 1 (typical light level-1 hull). Heavier ships scale sublinearly above this.</summary>
+        public const float ReferenceRamMass = 5f;
+
+        /// <summary>Mass exponent for ram damage (&lt; 1 = sublinear; mass 30 → ~2.45× not 6× vs ref. 5).</summary>
+        public const float MassDamageExponent = 0.5f;
+
+        /// <summary>Damage multiplier added per summed base rammingPower point (cockpit + parts at level 1).</summary>
+        public const float OffenseMultiplierPerBasePower = 0.14f;
+
+        /// <summary>
+        /// Extra damage multiplier per (summed rammingPowerPerLevel × levels after 1). Primary driver for level-up ramming feel.
+        /// </summary>
+        public const float OffenseMultiplierPerLevelPower = 0.52f;
 
         public static float GetSuggestedRammingPower(int version)
         {
@@ -796,7 +816,55 @@ namespace TitanOrbit.Data
         }
 
         public static float GetSuggestedRammingPowerPerLevel(int version) =>
-            GetSuggestedRammingPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase;
+
+        /// <summary>Summed family ramming stat = bullet-comparable rating before massFactor (excludes ship prefab baseRammingPower).</summary>
+        public static float ComputeDamageRatingFromFamilyPower(float summedFamilyRammingPower)
+        {
+            return Mathf.Max(0.05f, summedFamilyRammingPower) * GlobalDamageMultiplier;
+        }
+
+        /// <summary>Sublinear mass contribution so level-3 bulk (~30 mass) does not multiply damage 6× vs a level-1 hull.</summary>
+        public static float ComputeMassDamageFactor(float mass)
+        {
+            float ratio = Mathf.Max(0.1f, mass / Mathf.Max(0.5f, ReferenceRamMass));
+            return Mathf.Pow(ratio, MassDamageExponent);
+        }
+
+        /// <summary>Maps summed family ramming stats + ship level to asteroid/grind offense multiplier.</summary>
+        public static float ComputeOffenseMultiplier(float summedBasePower, float summedPowerPerLevel, int shipLevel)
+        {
+            float perLvl = Mathf.Max(0, shipLevel - 1);
+            float basePart = 1f + Mathf.Max(0f, summedBasePower) * OffenseMultiplierPerBasePower;
+            float levelPart = 1f + Mathf.Max(0f, summedPowerPerLevel) * perLvl * OffenseMultiplierPerLevelPower;
+            return basePart * levelPart;
+        }
+
+        /// <summary>Head-on speed (m/s) where impact damage equals rating × massFactor (massFactor = 1 at reference mass).</summary>
+        public const float ReferenceImpactSpeed = 10f;
+
+        /// <summary>Engine push (N) into the rock where one grind pulse deals full rating × massFactor × interval damage.</summary>
+        public const float ReferenceGrindPushNewtons = 80f;
+
+        /// <summary>Self hull chip damage vs asteroid damage on the same hit (legacy force-scale ratio preserved).</summary>
+        public const float SelfToAsteroidDamageRatio = 0.000625f / 0.000375f;
+
+        /// <summary>Impact: rating × massFactor × speed factor. At ref. mass and speed, damage ≈ rating.</summary>
+        public static float ComputeImpactDamage(float ramDamageRating, float mass, float inboundNormalSpeed, float restitution)
+        {
+            float deltaNormalSpeed = (1f + Mathf.Clamp01(restitution)) * Mathf.Max(0f, inboundNormalSpeed);
+            float speedFactor = deltaNormalSpeed / Mathf.Max(0.1f, ReferenceImpactSpeed);
+            float massFactor = ComputeMassDamageFactor(mass);
+            return Mathf.Max(0f, ramDamageRating * massFactor * speedFactor);
+        }
+
+        /// <summary>Grind pulse: rating × massFactor × push factor × interval.</summary>
+        public static float ComputeGrindDamagePerPulse(float ramDamageRating, float mass, float pushNewtons, float pulseInterval)
+        {
+            float pushFactor = pushNewtons / Mathf.Max(1f, ReferenceGrindPushNewtons);
+            float massFactor = ComputeMassDamageFactor(mass);
+            return Mathf.Max(0f, ramDamageRating * massFactor * pushFactor * pulseInterval);
+        }
     }
 
     /// <summary>Scan/auto-populate wing tractor beam reach and pull speed (Capacity category).</summary>
@@ -1149,6 +1217,9 @@ namespace TitanOrbit.Data
         [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger). Sum of power score breakdown categories.")]
         public float powerScore;
 
+        [Tooltip("Chassis component mass from this tier's prefab (sum of part scale factors). Matches Starship componentMass / speedometer MASS at level 1 with empty cargo.")]
+        public float componentMass;
+
         [Tooltip("Editor: heuristic parts of powerScore (offense + defense + energy + mobility + capacity).")]
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
 
@@ -1194,6 +1265,20 @@ namespace TitanOrbit.Data
         [Header("Components")]
         [Tooltip("All components (cockpit, wings, engines, weapons, etc.) and their ability stat modifiers for this family.")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
+
+        [Header("Mass")]
+        [Tooltip("Sum of chassis part scale factors on Mass Reference Prefab (or first upgrade-tree prefab). Matches Starship componentMass before hullMassScale (~0.7 on ship prefab) and level HP bulk.")]
+        [SerializeField] private float totalComponentMass;
+        [Tooltip("Prefab used to compute Total Component Mass. When unset, Recalculate uses the first upgrade-tree entry with a prefab.")]
+        [SerializeField] private GameObject massReferencePrefab;
+        [Tooltip("Typical Starship hullMassScale — HUD movement mass ≈ totalComponentMass × this at level 1 with empty cargo.")]
+        public const float DefaultHullMassScale = 0.7f;
+
+        /// <summary>Chassis mass from reference prefab part scales (see <see cref="ChassisComponentStats.ComputeComponentMass"/>).</summary>
+        public float TotalComponentMass => totalComponentMass;
+
+        /// <summary>Reference prefab for <see cref="totalComponentMass"/>; optional.</summary>
+        public GameObject MassReferencePrefab => massReferencePrefab;
 
         [Header("Upgrade Tree (auto-generated, editable)")]
         [Tooltip("Chassis variants for this family, ordered by power and annotated with minimum planet level.")]
@@ -1376,6 +1461,87 @@ namespace TitanOrbit.Data
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Component mass from a ship prefab hierarchy (direct-child part scales + weapons).
+        /// Same formula as <see cref="Entities.Starship"/> and the speedometer MASS line at level 1 with no gems.
+        /// </summary>
+        public float ComputeComponentMassFromPrefab(GameObject prefab)
+        {
+            if (prefab == null)
+                return 0f;
+
+            string prefix = !string.IsNullOrWhiteSpace(familyId)
+                ? familyId.Trim()
+                : DeriveFamilyPrefixFromPrefabName(prefab.name);
+            return ChassisComponentStats.ComputeComponentMassFromTransform(prefab.transform, prefix);
+        }
+
+        /// <summary>HUD-style hull mass at level 1 with empty cargo: component mass × <see cref="DefaultHullMassScale"/>.</summary>
+        public float ComputeHudHullMassFromPrefab(GameObject prefab) =>
+            Mathf.Max(0.5f, ComputeComponentMassFromPrefab(prefab) * DefaultHullMassScale);
+
+        /// <summary>HUD-style hull mass from <see cref="totalComponentMass"/>.</summary>
+        public float ComputeHudHullMassFromTotal() =>
+            Mathf.Max(0.5f, totalComponentMass * DefaultHullMassScale);
+
+        /// <summary>
+        /// Refreshes <see cref="totalComponentMass"/> from <see cref="massReferencePrefab"/> or the first upgrade-tree prefab.
+        /// Also updates <see cref="ShipFamilyChassisTierEntry.componentMass"/> on tiers that have prefabs.
+        /// </summary>
+        public void RecalculateTotalComponentMass()
+        {
+            GameObject reference = massReferencePrefab;
+            if (reference == null && upgradeTree != null)
+            {
+                for (int i = 0; i < upgradeTree.Count; i++)
+                {
+                    if (upgradeTree[i]?.prefab != null)
+                    {
+                        reference = upgradeTree[i].prefab;
+                        break;
+                    }
+                }
+            }
+
+            totalComponentMass = reference != null ? ComputeComponentMassFromPrefab(reference) : 0f;
+
+            if (upgradeTree == null)
+                return;
+
+            string prefix = !string.IsNullOrWhiteSpace(familyId) ? familyId.Trim() : string.Empty;
+            for (int i = 0; i < upgradeTree.Count; i++)
+            {
+                ShipFamilyChassisTierEntry tier = upgradeTree[i];
+                if (tier == null || tier.prefab == null)
+                    continue;
+
+                string tierPrefix = !string.IsNullOrEmpty(prefix)
+                    ? prefix
+                    : DeriveFamilyPrefixFromPrefabName(tier.prefab.name);
+                tier.componentMass = ChassisComponentStats.ComputeComponentMassFromTransform(tier.prefab.transform, tierPrefix);
+            }
+        }
+
+        private static string DeriveFamilyPrefixFromPrefabName(string prefabName)
+        {
+            if (string.IsNullOrEmpty(prefabName))
+                return "AstroEagle";
+
+            string name = prefabName;
+            int cloneIdx = name.IndexOf("(Clone)", System.StringComparison.Ordinal);
+            if (cloneIdx > 0)
+                name = name.Substring(0, cloneIdx).TrimEnd();
+
+            int i = name.Length - 1;
+            while (i >= 0 && char.IsDigit(name[i]))
+                i--;
+
+            if (i < name.Length - 1)
+                name = name.Substring(0, i + 1);
+
+            return string.IsNullOrEmpty(name) ? "AstroEagle" : name;
         }
 
         /// <summary>Returns the configured material list for the given team, or null when not configured.</summary>

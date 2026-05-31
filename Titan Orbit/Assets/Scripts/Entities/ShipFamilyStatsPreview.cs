@@ -47,7 +47,15 @@ namespace TitanOrbit.Entities
         [Tooltip("Top speed cap: primary thruster move speed + extra thruster moveSpeedPerLevel terms.")]
         [SerializeField] private float previewTopSpeedMoveSpeed;
 
+        [Header("Mass preview")]
+        [Tooltip("Chassis component mass from direct-child part scales + weapons — matches Starship / speedometer MASS.")]
+        [SerializeField] private float previewComponentMass;
+        [Tooltip("Estimated HUD hull mass at level 1, empty cargo (component mass × ShipFamilyDefinition.DefaultHullMassScale).")]
+        [SerializeField] private float previewHudHullMass;
+
         public ShipComponentAbilityStats TotalStats => totalStats;
+        public float PreviewComponentMass => previewComponentMass;
+        public float PreviewHudHullMass => previewHudHullMass;
         public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
         public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
         public IReadOnlyList<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
@@ -100,6 +108,8 @@ namespace TitanOrbit.Entities
             previewExtraThrusterMoveSpeed = 0f;
             previewPrimaryThrusterMoveSpeed = 0f;
             previewTopSpeedMoveSpeed = 0f;
+            previewComponentMass = 0f;
+            previewHudHullMass = 0f;
 
             if (shipFamily == null)
                 return;
@@ -165,6 +175,9 @@ namespace TitanOrbit.Entities
                     continue;
                 previewSumPropulsionAccelerationPerLevel += perComponentStats[k].accelerationCapPerLevel;
             }
+
+            previewComponentMass = ChassisComponentStats.ComputeComponentMassFromTransform(transform, familyId);
+            previewHudHullMass = Mathf.Max(0.5f, previewComponentMass * ShipFamilyDefinition.DefaultHullMassScale);
         }
     }
 }

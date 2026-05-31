@@ -162,6 +162,22 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField("Max Gems / Level", total.maxGemsPerLevel);
                 EditorGUILayout.FloatField("Max People", total.maxPeople);
                 EditorGUILayout.FloatField("Max People / Level", total.maxPeoplePerLevel);
+
+                if (preview != null)
+                {
+                    EditorGUILayout.Space(2);
+                    EditorGUILayout.LabelField("Mass", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.FloatField(
+                        new GUIContent(
+                            "Component Mass",
+                            "Sum of part scale factors on this prefab — matches speedometer MASS (before hullMassScale and gems)."),
+                        preview.PreviewComponentMass);
+                    EditorGUILayout.FloatField(
+                        new GUIContent(
+                            "HUD Hull Mass (est.)",
+                            "Component mass × 0.7 — typical movement mass at level 1 with empty cargo."),
+                        preview.PreviewHudHullMass);
+                }
             }
 
             EditorGUILayout.Space();

@@ -42,6 +42,40 @@ namespace TitanOrbit.Editor
             };
         }
 
+        private static void DrawMassSummary(ShipFamilyDefinition def)
+        {
+            if (def == null)
+                return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Ship Mass (component scales)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Total mass is the sum of average localScale (x+y+z)/3 per chassis part on the reference prefab — " +
+                "same as Starship componentMass and the speedometer MASS line (before gems). " +
+                "Typical HUD hull mass ≈ total × 0.7 (hullMassScale on the ship prefab).",
+                MessageType.None);
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.FloatField("Total Component Mass", def.TotalComponentMass);
+                EditorGUILayout.FloatField(
+                    "HUD Hull Mass (est.)",
+                    def.ComputeHudHullMassFromTotal());
+            }
+
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
+            {
+                if (GUILayout.Button("Recalculate Mass From Reference / Upgrade Tree"))
+                {
+                    Undo.RecordObject(def, "Recalculate Ship Family Mass");
+                    def.RecalculateTotalComponentMass();
+                    EditorUtility.SetDirty(def);
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
         private static void DrawComponentsListHeader(Rect rect)
         {
             EditorGUI.LabelField(rect, "Components");
@@ -97,6 +131,8 @@ namespace TitanOrbit.Editor
                     _upgradeTreeList.DoLayoutList();
                     continue;
                 }
+                if (prop.name == "totalComponentMass")
+                    continue;
                 EditorGUILayout.PropertyField(prop, true);
             }
         }
@@ -138,6 +174,8 @@ namespace TitanOrbit.Editor
             if (def == null)
                 return;
 
+            DrawMassSummary(def);
+
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
                 "Bullet Prefab Index: index into CombatSystem's Bullet Prefab Bank (0 = first). The list of bullets lives only on CombatSystem; change the index here to pick which bullet this family uses.",
@@ -155,6 +193,8 @@ namespace TitanOrbit.Editor
                 if (GUILayout.Button("Scan Folder And Auto-Populate Components"))
                 {
                     ScanFolderAndPopulate(def);
+                    def.RecalculateTotalComponentMass();
+                    EditorUtility.SetDirty(def);
                 }
 
                 if (GUILayout.Button("Export Canonical Component Inventory (CSV)"))
@@ -170,6 +210,11 @@ namespace TitanOrbit.Editor
                 if (GUILayout.Button("Resort Upgrade Tree & Recalculate Power Scores"))
                 {
                     ResortUpgradeTreeAndRecalculateStats(def);
+                }
+
+                if (GUILayout.Button("Rebalance Cockpit Ramming Stats (Lower For Heavy Ships)"))
+                {
+                    RebalanceRammingStatsOnDefinition(def, interactive: true);
                 }
 
                 if (GUILayout.Button("Add Ship Family Stats Preview To All Upgrade Tree Prefabs"))
@@ -188,6 +233,10 @@ namespace TitanOrbit.Editor
                 }
             }
 
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox(
+                "Rebalance Cockpit Ramming: sets rammingPower / rammingPowerPerLevel on cockpit entries to current ShipComponentRammingSuggestions (low values for mass-heavy ships). Run after changing ram tuning or if rams one-shot your hull.",
+                MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
                 "Resort Upgrade Tree: recomputes power scores from prefabs and reorders unlocked tiers (power + orbit layout). Entries with Lock In Upgrade Tree enabled stay at their list index.",
@@ -476,12 +525,14 @@ namespace TitanOrbit.Editor
                     prefab = prefab,
                     minHomePlanetLevel = currentLevel,
                     powerScore = power,
-                    powerScoreBreakdown = breakdown
+                    powerScoreBreakdown = breakdown,
+                    componentMass = def.ComputeComponentMassFromPrefab(prefab)
                 };
                 def.upgradeTree.Add(entry);
                 assignedAtThisLevel++;
             }
 
+            def.RecalculateTotalComponentMass();
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -536,6 +587,7 @@ namespace TitanOrbit.Editor
                 float power = breakdown.Total;
                 tier.powerScore = power;
                 tier.powerScoreBreakdown = breakdown;
+                tier.componentMass = def.ComputeComponentMassFromPrefab(tier.prefab);
 
                 if (!tier.lockedInUpgradeTree)
                     unlockedWithPrefab.Add((tier, power, breakdown));
@@ -603,6 +655,7 @@ namespace TitanOrbit.Editor
                 newTree.Add(trailingNoPrefab[i]);
 
             def.upgradeTree = newTree;
+            def.RecalculateTotalComponentMass();
 
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
@@ -1128,6 +1181,82 @@ namespace TitanOrbit.Editor
                 names.Push(root.name);
 
             return string.Join("/", names);
+        }
+
+        /// <summary>Reset cockpit rammingPower fields to current low suggestions (version-aware).</summary>
+        public static int RebalanceRammingStatsOnDefinition(ShipFamilyDefinition def, bool interactive)
+        {
+            if (def == null || def.components == null) return 0;
+
+            int updated = 0;
+            Undo.RecordObject(def, "Rebalance Ramming Stats");
+
+            for (int i = 0; i < def.components.Count; i++)
+            {
+                var entry = def.components[i];
+                if (entry == null) continue;
+                string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
+                if (!string.Equals(type, "Cockpit", StringComparison.OrdinalIgnoreCase)) continue;
+                if (entry.stats.rammingPower == 0f && entry.stats.rammingPowerPerLevel == 0f)
+                    continue;
+
+                int version = ExtractFirstVersionNumberFromComponentRest(entry.componentId);
+                float power = ShipComponentRammingSuggestions.GetSuggestedRammingPower(version);
+                float perLevel = ShipComponentRammingSuggestions.GetSuggestedRammingPowerPerLevel(version);
+
+                if (!Mathf.Approximately(entry.stats.rammingPower, power)
+                    || !Mathf.Approximately(entry.stats.rammingPowerPerLevel, perLevel))
+                {
+                    entry.stats.rammingPower = power;
+                    entry.stats.rammingPowerPerLevel = perLevel;
+                    updated++;
+                }
+            }
+
+            if (updated > 0)
+            {
+                EditorUtility.SetDirty(def);
+                ShipFamilyStatsPreviewLiveRefresh.OnShipFamilyDefinitionSerializedChanged(def);
+            }
+
+            if (interactive)
+            {
+                EditorUtility.DisplayDialog(
+                    "Rebalance Ramming",
+                    updated > 0
+                        ? $"Updated ramming stats on {updated} cockpit component(s) in '{def.name}'."
+                        : $"No cockpit ramming stats needed changes on '{def.name}'.",
+                    "OK");
+            }
+
+            return updated;
+        }
+
+        [MenuItem("Titan Orbit/Ships/Rebalance Ramming On All Ship Families")]
+        private static void RebalanceRammingOnAllShipFamilies()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:ShipFamilyDefinition");
+            int families = 0;
+            int totalUpdated = 0;
+            foreach (string guid in guids)
+            {
+                var def = AssetDatabase.LoadAssetAtPath<ShipFamilyDefinition>(AssetDatabase.GUIDToAssetPath(guid));
+                if (def == null) continue;
+                int n = RebalanceRammingStatsOnDefinition(def, interactive: false);
+                if (n > 0)
+                {
+                    families++;
+                    totalUpdated += n;
+                }
+            }
+
+            AssetDatabase.SaveAssets();
+            EditorUtility.DisplayDialog(
+                "Rebalance Ramming",
+                totalUpdated > 0
+                    ? $"Updated {totalUpdated} cockpit entries across {families} ShipFamilyDefinition asset(s)."
+                    : "All ship families already use current ramming suggestions (no changes).",
+                "OK");
         }
 
         private readonly struct TeamMaterialSpec

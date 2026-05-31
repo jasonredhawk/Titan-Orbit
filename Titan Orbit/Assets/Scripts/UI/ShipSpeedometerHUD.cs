@@ -22,14 +22,16 @@ namespace TitanOrbit.UI
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
+        private const float HudLayoutScale = 1.6f;
+
         [Header("Enable")]
         [Tooltip("When off, no UI is created and nothing is shown. Toggle in the inspector without removing the component.")]
         [SerializeField] private bool speedometerEnabled = true;
 
         [Header("Layout")]
         [SerializeField] private SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
-        [SerializeField] private float panelWidth = 380f;
-        [SerializeField] private float panelHeight = 138f;
+        [SerializeField] private float panelWidth = 380f * HudLayoutScale;
+        [SerializeField] private float panelHeight = 138f * HudLayoutScale;
         [Tooltip("How quickly the accelerometer value catches up to measured acceleration (lower = smoother bar and ACC text).")]
         [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")] private float accelerationBarSmoothing = 5f;
         [Tooltip("Inset from the left or right screen edge, depending on placement.")]
@@ -99,7 +101,7 @@ namespace TitanOrbit.UI
             bg.color = backgroundColor;
             bg.raycastTarget = false;
 
-            const float pad = 8f;
+            float pad = 8f * HudLayoutScale;
             const float labelNormH = 0.44f;
             const float speedNormTop = 1f;
             const float speedNormBottom = 0.73f;
@@ -115,8 +117,8 @@ namespace TitanOrbit.UI
             RectTransform sliderRect = sliderGo.AddComponent<RectTransform>();
             sliderRect.anchorMin = new Vector2(0f, speedNormBottom);
             sliderRect.anchorMax = new Vector2(1f, speedNormTop);
-            sliderRect.offsetMin = new Vector2(pad, 2f);
-            sliderRect.offsetMax = new Vector2(-pad, -4f);
+            sliderRect.offsetMin = new Vector2(pad, 2f * HudLayoutScale);
+            sliderRect.offsetMax = new Vector2(-pad, -4f * HudLayoutScale);
 
             speedSlider = sliderGo.AddComponent<Slider>();
             speedSlider.minValue = 0f;
@@ -164,7 +166,7 @@ namespace TitanOrbit.UI
             speedTickRect.anchorMax = new Vector2(1f, speedTickNormTop);
             speedTickRect.offsetMin = new Vector2(pad, 0f);
             speedTickRect.offsetMax = new Vector2(-pad, 0f);
-            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 9f);
+            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 9f * HudLayoutScale);
 
             GameObject accelRoot = new GameObject("AccelBar");
             accelRoot.transform.SetParent(rootPanel.transform, false);
@@ -181,7 +183,7 @@ namespace TitanOrbit.UI
             accelTickRect.anchorMax = new Vector2(1f, accelTickNormTop);
             accelTickRect.offsetMin = new Vector2(pad, 0f);
             accelTickRect.offsetMax = new Vector2(-pad, 0f);
-            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 9f);
+            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 9f * HudLayoutScale);
 
             GameObject accelTrack = new GameObject("Track");
             accelTrack.transform.SetParent(accelRoot.transform, false);
@@ -222,7 +224,7 @@ namespace TitanOrbit.UI
             cl.anchorMin = new Vector2(0.5f, 0.1f);
             cl.anchorMax = new Vector2(0.5f, 0.9f);
             cl.pivot = new Vector2(0.5f, 0.5f);
-            cl.sizeDelta = new Vector2(1.5f, 0f);
+            cl.sizeDelta = new Vector2(1.5f * HudLayoutScale, 0f);
             Image cli = centerLine.AddComponent<Image>();
             cli.color = new Color(1f, 1f, 1f, 0.28f);
             cli.raycastTarget = false;
@@ -232,12 +234,12 @@ namespace TitanOrbit.UI
             RectTransform lr = labelGo.AddComponent<RectTransform>();
             lr.anchorMin = new Vector2(0f, 0f);
             lr.anchorMax = new Vector2(1f, labelNormH);
-            lr.offsetMin = new Vector2(10f, 4f);
-            lr.offsetMax = new Vector2(-10f, -2f);
+            lr.offsetMin = new Vector2(10f * HudLayoutScale, 4f * HudLayoutScale);
+            lr.offsetMax = new Vector2(-10f * HudLayoutScale, -2f * HudLayoutScale);
             speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
             speedLabel.text = "—";
-            speedLabel.fontSize = 12f;
-            speedLabel.lineSpacing = -3f;
+            speedLabel.fontSize = 12f * HudLayoutScale;
+            speedLabel.lineSpacing = -3f * HudLayoutScale;
             speedLabel.richText = true;
             if (TMP_Settings.defaultFontAsset != null) speedLabel.font = TMP_Settings.defaultFontAsset;
             speedLabel.color = textColor;
@@ -259,7 +261,7 @@ namespace TitanOrbit.UI
                 rt.anchorMin = new Vector2(x, 0f);
                 rt.anchorMax = new Vector2(x, 1f);
                 rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(52f, 0f);
+                rt.sizeDelta = new Vector2(52f * HudLayoutScale, 0f);
                 rt.anchoredPosition = Vector2.zero;
                 var tmp = go.AddComponent<TextMeshProUGUI>();
                 tmp.text = "—";
@@ -472,7 +474,10 @@ namespace TitanOrbit.UI
             string line2 = $"ACC {accSign}{Mathf.Abs(smoothedHorizontalAccel):0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
 
             ship.GetHudAsteroidRamDamageEstimate(cur, out float ramAst, out float ramSelf);
-            string line3 = $"RAM →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(head-on @ spd)</color>";
+            float ramRating = ship.GetHudRamDamageRating();
+            float ramMass = ship.GetHudRamEffectiveMass();
+            float massFactor = ship.GetHudRamMassDamageFactor();
+            string line3 = $"RAM {ramRating:0.##}×m{massFactor:0.##} →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(mass {ramMass:0.#})</color>";
 
             string line4;
             if (ship.TryGetHudPrimaryBulletStats(out float dmgPerHit, out float sps, out float dps))

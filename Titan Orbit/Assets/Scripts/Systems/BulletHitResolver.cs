@@ -16,6 +16,76 @@ namespace TitanOrbit.Systems
     {
         public const float FixedY = 0f;
 
+        /// <summary>Damage popup metadata for a bullet hit, spawned client-side at impact VFX.</summary>
+        public readonly struct BulletHitPopupInfo
+        {
+            public readonly bool Show;
+            public readonly FloatingCountChannel Channel;
+            public readonly float Damage;
+
+            public BulletHitPopupInfo(bool show, FloatingCountChannel channel, float damage)
+            {
+                Show = show;
+                Channel = channel;
+                Damage = damage;
+            }
+
+            public static BulletHitPopupInfo None => default;
+            public bool HasPopup => Show && Damage > 0.0001f;
+        }
+
+        private static float GetAppliedBulletDamage(float damage)
+        {
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                return 999999f;
+            return damage;
+        }
+
+        /// <summary>Which floating-count channel to use for a bullet-damage popup on this collider, if any.</summary>
+        public static bool TryGetBulletDamageChannel(Collider other, TeamManager.Team ownerTeam, out FloatingCountChannel channel)
+        {
+            channel = default;
+            if (other == null) return false;
+
+            if (other.GetComponentInParent<Asteroid>() is Asteroid asteroid && !asteroid.IsDestroyed)
+            {
+                channel = FloatingCountChannel.DamageAsteroid;
+                return true;
+            }
+
+            PlanetGemMoon moon = other.GetComponentInParent<PlanetGemMoon>();
+            if (moon != null)
+            {
+                if (moon.IsTeamFriendlyToThisMoon(ownerTeam)) return false;
+                channel = FloatingCountChannel.DamageMoon;
+                return true;
+            }
+
+            Starship ship = other.GetComponentInParent<Starship>();
+            if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
+            {
+                channel = FloatingCountChannel.DamageShipOrDrone;
+                return true;
+            }
+
+            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+            {
+                channel = FloatingCountChannel.DamageShipOrDrone;
+                return true;
+            }
+
+            return false;
+        }
+
+        public static void SpawnBulletDamagePopupLocal(Vector3 position, BulletHitPopupInfo popup, TeamManager.Team ownerTeam)
+        {
+            if (!popup.HasPopup || VisualEffectsManager.Instance == null) return;
+            Vector3 pos = position;
+            pos.y = 0f;
+            VisualEffectsManager.Instance.SpawnFloatingCountLocal(pos, popup.Channel, popup.Damage, ownerTeam);
+        }
+
         /// <summary>True when the collider belongs to the firing ship's NetworkObject hierarchy.</summary>
         public static bool IsColliderOnFiringShipNetworkObject(Collider col, ulong ownerShipNetworkId)
         {
@@ -35,15 +105,18 @@ namespace TitanOrbit.Systems
             TeamManager.Team ownerTeam,
             ulong ownerShipNetworkId,
             Vector3 impactWorldPos,
-            out Vector3 finalImpactPos)
+            out Vector3 finalImpactPos,
+            out BulletHitPopupInfo popupInfo)
         {
             finalImpactPos = impactWorldPos;
+            popupInfo = BulletHitPopupInfo.None;
             if (other == null) return false;
 
             Asteroid asteroid = other.GetComponentInParent<Asteroid>();
             if (asteroid != null && !asteroid.IsDestroyed)
             {
                 ApplyAsteroidHit(asteroid, damage, ownerTeam, ownerShipNetworkId, impactWorldPos);
+                popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageAsteroid, GetAppliedBulletDamage(damage));
                 return true;
             }
 
@@ -52,6 +125,7 @@ namespace TitanOrbit.Systems
             {
                 if (moon.IsTeamFriendlyToThisMoon(ownerTeam)) return false;
                 ApplyMoonHit(moon, damage, ownerTeam, impactWorldPos);
+                popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageMoon, GetAppliedBulletDamage(damage));
                 return true;
             }
 
@@ -63,6 +137,7 @@ namespace TitanOrbit.Systems
             if (ship != null && !ship.IsDead && ship.ShipTeam != ownerTeam)
             {
                 ApplyShipHit(ship, damage, ownerTeam, ownerShipNetworkId, impactWorldPos);
+                popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageShipOrDrone, GetAppliedBulletDamage(damage));
                 return true;
             }
 
@@ -70,6 +145,7 @@ namespace TitanOrbit.Systems
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 ApplyDroneHit(drone, damage, ownerTeam, ownerShipNetworkId, impactWorldPos);
+                popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageShipOrDrone, GetAppliedBulletDamage(damage));
                 return true;
             }
 
@@ -227,19 +303,12 @@ namespace TitanOrbit.Systems
 
         public static void ApplyAsteroidHit(Asteroid asteroid, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
-            float appliedDamage = damage;
-            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
-                appliedDamage = 999999f;
+            float appliedDamage = GetAppliedBulletDamage(damage);
             asteroid.ApplyDamageFromBulletServer(appliedDamage, ownerShipNetworkId);
 
             if (VisualEffectsManager.Instance != null)
             {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    impactWorldPos,
-                    (int)FloatingCountChannel.DamageAsteroid,
-                    appliedDamage,
-                    (int)ownerTeam);
-                VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
+                VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextFromServerAuthority(
                     impactWorldPos,
                     asteroid.RemainingHealth,
                     asteroid.RemainingGems,
@@ -249,39 +318,18 @@ namespace TitanOrbit.Systems
 
         public static void ApplyMoonHit(PlanetGemMoon moon, float damage, TeamManager.Team ownerTeam, Vector3 impactWorldPos)
         {
-            float appliedDamage = damage;
-            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
-                appliedDamage = 999999f;
+            float appliedDamage = GetAppliedBulletDamage(damage);
             moon.TakeDamageServer(appliedDamage, ownerTeam);
-
-            if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    impactWorldPos,
-                    (int)FloatingCountChannel.DamageMoon,
-                    appliedDamage,
-                    (int)ownerTeam);
         }
 
         public static void ApplyShipHit(Starship ship, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
             ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
-            if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    impactWorldPos,
-                    (int)FloatingCountChannel.DamageShipOrDrone,
-                    damage,
-                    (int)ownerTeam);
         }
 
         public static void ApplyDroneHit(DroneBase drone, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
             drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
-            if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    impactWorldPos,
-                    (int)FloatingCountChannel.DamageShipOrDrone,
-                    damage,
-                    (int)ownerTeam);
         }
 
         /// <summary>
@@ -297,8 +345,10 @@ namespace TitanOrbit.Systems
             float damage,
             TeamManager.Team ownerTeam,
             ulong ownerShipNetworkId,
-            out Vector3 impactPos)
+            out Vector3 impactPos,
+            out BulletHitPopupInfo popupInfo)
         {
+            popupInfo = BulletHitPopupInfo.None;
             impactPos = to;
             if (Asteroid.AllAsteroids == null || Asteroid.AllAsteroids.Count == 0)
                 return false;
@@ -346,6 +396,7 @@ namespace TitanOrbit.Systems
             if (bestAsteroid == null) return false;
 
             ApplyAsteroidHit(bestAsteroid, damage, ownerTeam, ownerShipNetworkId, bestImpact);
+            popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageAsteroid, GetAppliedBulletDamage(damage));
             impactPos = bestImpact;
             return true;
         }
@@ -361,8 +412,10 @@ namespace TitanOrbit.Systems
             float damage,
             TeamManager.Team ownerTeam,
             ulong ownerShipNetworkId,
-            out Vector3 impactPos)
+            out Vector3 impactPos,
+            out BulletHitPopupInfo popupInfo)
         {
+            popupInfo = BulletHitPopupInfo.None;
             impactPos = to;
             int moonCount = PlanetGemMoon.ActiveMoonCount;
             if (moonCount == 0) return false;
@@ -411,6 +464,7 @@ namespace TitanOrbit.Systems
             if (bestMoon == null) return false;
 
             ApplyMoonHit(bestMoon, damage, ownerTeam, bestImpact);
+            popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageMoon, GetAppliedBulletDamage(damage));
             impactPos = bestImpact;
             return true;
         }

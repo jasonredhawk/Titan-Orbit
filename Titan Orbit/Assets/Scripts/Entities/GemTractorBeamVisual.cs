@@ -29,8 +29,8 @@ namespace TitanOrbit.Entities
         [SerializeField] private bool gameplayCamerasOnly = true;
         [Tooltip("Softens the wide end of the beam (0 = sharp triangle, 1 = fully rounded).")]
         [SerializeField] [Range(0f, 1f)] private float beamRoundness = 0.08f;
-        [Tooltip("Scales how wide the beam is at the gem relative to the gem's visual size.")]
-        [SerializeField] private float gemEndWidthScale = 1.05f;
+        [Tooltip("Beam width at the gem as a fraction of the gem's visual diameter (cone base span).")]
+        [SerializeField] [Range(0.25f, 1f)] private float gemEndWidthScale = 0.58f;
 
         private static readonly Dictionary<int, float> smoothedGemDiameterById = new Dictionary<int, float>(64);
         private const float GemDiameterSmoothing = 10f;
@@ -128,47 +128,74 @@ namespace TitanOrbit.Entities
                         if (beamVisibility <= 0.001f)
                             continue;
 
-                        Vector3 beamOrigin = GemTractorBeamSettings.GetBeamOrigin(ship, gem);
-                        Vector3 gemPos = GetWorldPosition(gem);
-                        Vector3 shipDisplay = ToroidalMap.GetDisplayPosition(beamOrigin, camPos);
-                        Vector2 gemOff = ToroidalMap.ShortestOffsetXZ(beamOrigin, gemPos);
-                        Vector3 gemDisplay = shipDisplay + new Vector3(gemOff.x, 0f, gemOff.y);
-
-                        float beamY = Mathf.Max(beamOrigin.y, gemPos.y) + heightAboveGem;
-                        shipDisplay.y = beamY;
-                        gemDisplay.y = beamY;
-
-                        Color beamColor = gem.IsBonusGem
-                            ? Color.Lerp(teamBase, bonusBeamTint, 0.55f)
-                            : teamBase;
-
-                        float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ship, gem);
-                        float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ship, gem);
-
-                        Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extension);
-
-                        if (extension < 1f - 0.0001f)
+                        var assignedWings = GemTractorBeamSettings.GetAssignedWingIndices(ship, gem);
+                        if (assignedWings.Count == 0)
                         {
-                            float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ship, gem)
-                                ? 1f
-                                : Mathf.Max(beamVisibility, 0.85f);
-                            Color extendColor = new Color(beamColor.r, beamColor.g, beamColor.b, alphaExtendLine * extendVis);
-                            DrawExtendLineWithWraps(shipDisplay, tipDisplay, mapW, mapH, extendColor);
+                            DrawTractorBeamForOrigin(ship, gem, camPos, mapW, mapH, teamBase, beamVisibility, pulsedAlphaAtShip, widthPulse,
+                                GemTractorBeamSettings.GetBeamOrigin(ship, gem));
                             continue;
                         }
 
-                        float widthAtGem = GetSmoothedGemVisualDiameter(gem) * gemEndWidthScale * widthPulse;
-                        float thinWidth = Mathf.Max(extendLineThickness, GemTractorBeamDeployTracker.ExtendLineThickness);
-                        float currentWidth = Mathf.Lerp(thinWidth, widthAtGem, widthExpand);
-
-                        Color colorShip = new Color(beamColor.r, beamColor.g, beamColor.b, pulsedAlphaAtShip * beamVisibility);
-                        Color colorGem = new Color(beamColor.r, beamColor.g, beamColor.b, alphaAtGem * beamVisibility);
-
-                        Draw.LineGeometry = LineGeometry.Flat2D;
-                        DrawConeBeamWithWraps(shipDisplay, gemDisplay, mapW, mapH, currentWidth, colorShip, colorGem);
+                        for (int wi = 0; wi < assignedWings.Count; wi++)
+                        {
+                            Vector3 beamOrigin = GemTractorBeamSettings.GetWingBeamOrigin(ship, assignedWings[wi]);
+                            DrawTractorBeamForOrigin(ship, gem, camPos, mapW, mapH, teamBase, beamVisibility, pulsedAlphaAtShip, widthPulse, beamOrigin);
+                        }
                     }
                 }
             }
+        }
+
+        private void DrawTractorBeamForOrigin(
+            Starship ship,
+            Gem gem,
+            Vector3 camPos,
+            float mapW,
+            float mapH,
+            Color teamBase,
+            float beamVisibility,
+            float pulsedAlphaAtShip,
+            float widthPulse,
+            Vector3 beamOrigin)
+        {
+            Vector3 gemPos = GetWorldPosition(gem);
+            Vector3 shipDisplay = ToroidalMap.GetDisplayPosition(beamOrigin, camPos);
+            Vector2 gemOff = ToroidalMap.ShortestOffsetXZ(beamOrigin, gemPos);
+            Vector3 gemDisplay = shipDisplay + new Vector3(gemOff.x, 0f, gemOff.y);
+
+            float beamY = Mathf.Max(beamOrigin.y, gemPos.y) + heightAboveGem;
+            shipDisplay.y = beamY;
+            gemDisplay.y = beamY;
+
+            Color beamColor = gem.IsBonusGem
+                ? Color.Lerp(teamBase, bonusBeamTint, 0.55f)
+                : teamBase;
+
+            float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ship, gem);
+            float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ship, gem);
+
+            Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extension);
+
+            if (extension < 1f - 0.0001f)
+            {
+                float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ship, gem)
+                    ? 1f
+                    : Mathf.Max(beamVisibility, 0.85f);
+                Color extendColor = new Color(beamColor.r, beamColor.g, beamColor.b, alphaExtendLine * extendVis);
+                DrawExtendLineWithWraps(shipDisplay, tipDisplay, mapW, mapH, extendColor);
+                return;
+            }
+
+            float gemDiameter = GetSmoothedGemVisualDiameter(gem);
+            float widthAtGem = gemDiameter * gemEndWidthScale * widthPulse;
+            float thinWidth = Mathf.Max(extendLineThickness, GemTractorBeamDeployTracker.ExtendLineThickness);
+            float currentWidth = Mathf.Lerp(thinWidth, widthAtGem, widthExpand);
+
+            Color colorShip = new Color(beamColor.r, beamColor.g, beamColor.b, pulsedAlphaAtShip * beamVisibility);
+            Color colorGem = new Color(beamColor.r, beamColor.g, beamColor.b, alphaAtGem * beamVisibility);
+
+            Draw.LineGeometry = LineGeometry.Flat2D;
+            DrawConeBeamWithWraps(shipDisplay, gemDisplay, mapW, mapH, currentWidth, colorShip, colorGem);
         }
 
         private static bool IsGameplayCamera(UnityEngine.Camera cam)

@@ -237,7 +237,8 @@ namespace TitanOrbit.Entities
 
                 if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam))
                 {
-                    PlayOwnerPredictedImpact(hit.point);
+                    BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out FloatingCountChannel channel);
+                    PlayOwnerPredictedImpact(hit.point, new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch));
                     return true;
                 }
 
@@ -254,7 +255,9 @@ namespace TitanOrbit.Entities
                     from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
             {
                 toroidalImpact.y = 0f;
-                PlayOwnerPredictedImpact(toroidalImpact);
+                PlayOwnerPredictedImpact(
+                    toroidalImpact,
+                    new BulletHitResolver.BulletHitPopupInfo(true, FloatingCountChannel.DamageAsteroid, damageForImpactPitch));
                 return true;
             }
 
@@ -262,7 +265,9 @@ namespace TitanOrbit.Entities
                     from, to, OwnerPredictedBulletRadius, ownerTeam, out Vector3 moonImpact))
             {
                 moonImpact.y = 0f;
-                PlayOwnerPredictedImpact(moonImpact);
+                PlayOwnerPredictedImpact(
+                    moonImpact,
+                    new BulletHitResolver.BulletHitPopupInfo(true, FloatingCountChannel.DamageMoon, damageForImpactPitch));
                 return true;
             }
 
@@ -285,7 +290,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private void PlayOwnerPredictedImpact(Vector3 position)
+        private void PlayOwnerPredictedImpact(Vector3 position, BulletHitResolver.BulletHitPopupInfo popupInfo = default)
         {
             position.y = 0f;
             float pitch = BulletHitResolver.GetImpactSoundPitch(damageForImpactPitch);
@@ -312,6 +317,8 @@ namespace TitanOrbit.Entities
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
+
+            BulletHitResolver.SpawnBulletDamagePopupLocal(position, popupInfo, ownerTeam);
         }
 
         /// <summary>

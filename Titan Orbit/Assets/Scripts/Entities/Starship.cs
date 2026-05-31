@@ -246,6 +246,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>Mass from chassis components (Engine, Thruster, Wing, Cockpit, Part, etc.). Used when chassis applied.</summary>
         private float componentMass = 0f;
+        /// <summary>Level-1 summed healthCap for the current hull (no per-level bonus). Ramming mass scales with MaxHealth / this.</summary>
+        private float _chassisReferenceHealth = 25f;
         /// <summary>Thrust force from engine components. Applied via AddForce; acceleration = thrust/mass.</summary>
         private float componentEngineThrust = 0f;
         /// <summary>Max speed from chassis: best single engine (or best thruster if no engines). Not summed across engines.</summary>
@@ -281,9 +283,9 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0.01f)] private float asteroidGrindFeedbackForceFromPushScale = 2.75f;
         [Tooltip("Minimum impact force (N) required before showing a floating impact number on asteroid collisions.")]
         [SerializeField, Min(0f)] private float asteroidImpactForcePopupMin = 80f;
-        [Tooltip("Ship collision damage = impact force × self ram multiplier × this value. Tuned for ~25 HP hulls from component stats.")]
+        [Tooltip("Legacy ratio anchor for self vs asteroid ram chip damage (see ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio).")]
         [SerializeField, Min(0f)] private float asteroidImpactForceToShipDamageScale = 0.000625f;
-        [Tooltip("Asteroid collision damage = impact force × offense ram multiplier × this value. Same ÷4 as ship scale so impact/self damage ratio is unchanged.")]
+        [Tooltip("Legacy ratio anchor for self vs asteroid ram chip damage (see ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio).")]
         [SerializeField, Min(0f)] private float asteroidImpactForceToAsteroidDamageScale = 0.000375f;
         [Tooltip("Use global collision VFX tuning from VisualEffectsManager instead of local values below.")]
         [SerializeField] private bool useGlobalCollisionVfxTuning = true;
@@ -314,8 +316,6 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
         /// <summary>Server: fractional gem value expelled but not yet spawned (SpawnGemsFromShip uses ≥1 chunks).</summary>
         private float _pendingGemExpulsionSpawnTotal;
-        /// <summary>0 = many ~1-value gems so hull damage and expelled gem value match 1:1 (ram/grind).</summary>
-        private const float PairedHullDamageGemExpulsionIntensity = 0f;
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
         private float lastHullDamageServerTime = -999f;
 
@@ -372,10 +372,12 @@ namespace TitanOrbit.Entities
         [SerializeField] private float peopleCapacity = 10f;
 
         [Header("Mass (affects momentum and ramming)")]
-        [Tooltip("Base mass when no chassis. Chassis components override with component weights. Mass is not scaled by ship level or cards.")]
+        [Tooltip("Base mass when no chassis. Chassis components override with component weights. Effective mass also scales with hull bulk (ship level HP and attribute upgrades).")]
         [SerializeField] private float baseMass = 1f;
         [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
         [SerializeField] private float massPerGem = 0.008f;
+        [Tooltip("Extra multiplier on gem cargo mass for ramming/grind damage only (full hold hits harder). Movement uses base massPerGem.")]
+        [SerializeField, Min(1f)] private float rammingGemMassScale = 2.5f;
         [Tooltip("Multiplies chassis component mass (or baseMass when no chassis). Does not scale gem load.")]
         [SerializeField] private float hullMassScale = 0.7f;
         [Tooltip("Base collision ramming power before level/component modifiers.")]
@@ -386,6 +388,10 @@ namespace TitanOrbit.Entities
         [SerializeField] private float energyRegenRate = 5f;
         private const float ENERGY_PER_SHOT = 1f;
         private float rammingPower = 1f;
+        /// <summary>Summed rammingPower from ShipFamilyDefinition (level 1, no per-level bonus).</summary>
+        private float _summedRammingPowerBase;
+        /// <summary>Summed rammingPowerPerLevel from ShipFamilyDefinition — scales offense each ship level.</summary>
+        private float _summedRammingPowerPerLevel;
 
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
@@ -631,17 +637,80 @@ namespace TitanOrbit.Entities
         public float EditorMaxPeople => PeopleCapacity;
 #endif
 
-        /// <summary>Chassis or fallback base mass after hullMassScale (excludes gem load). Used with EffectiveMaxSpeed for ramming baseline.</summary>
+        /// <summary>Chassis or fallback base mass after hullMassScale (excludes gem load and hull-bulk scaling).</summary>
         private float ScaledHullMassReference => (componentMass > 0f ? componentMass : baseMass) * hullMassScale;
 
-        /// <summary>Mass from components + gems. Not scaled by ship level or cards.</summary>
+        /// <summary>
+        /// Hull bulk for ramming: level-up HP (healthCapPerLevel), bigger chassis prefabs, and attribute/card max-health upgrades
+        /// all increase MaxHealth but componentMass only tracks prefab part scales — this aligns impact mass with hull size.
+        /// </summary>
+        private float GetRammingBulkScale() => MaxHealth / Mathf.Max(1f, _chassisReferenceHealth);
+
+        /// <summary>Movement mass: hull bulk + gem cargo (base massPerGem).</summary>
         private float EffectiveMass
         {
             get
             {
-                return Mathf.Max(0.5f, ScaledHullMassReference + currentGems.Value * massPerGem);
+                float bulkScale = GetRammingBulkScale();
+                return Mathf.Max(0.5f, ScaledHullMassReference * bulkScale + currentGems.Value * massPerGem);
             }
         }
+
+        /// <summary>
+        /// Ramming mass multiplier: hull (level/components/HP) + gem cargo (boosted). Used as explicit × mass in ram damage
+        /// (ram rating 3 × mass 5 → 15 at reference speed).
+        /// </summary>
+        private float GetRammingMassForDamage()
+        {
+            float bulkScale = GetRammingBulkScale();
+            float hullMass = ScaledHullMassReference * bulkScale;
+            float gemMass = currentGems.Value * massPerGem * Mathf.Max(1f, rammingGemMassScale);
+            return Mathf.Max(0.5f, hullMass + gemMass);
+        }
+
+        /// <summary>Mass used for asteroid impact impulse and damage (includes gem cargo).</summary>
+        private float GetRammingImpactMass() => Mathf.Max(0.01f, GetRammingMassForDamage());
+
+        /// <summary>Bullet-comparable ram rating from ShipFamilyDefinition only (prefab baseRammingPower affects bounce, not damage).</summary>
+        private float GetRammingDamageRating()
+        {
+            float perLvl = Mathf.Max(0, ShipLevel - 1);
+            float familyPower = _summedRammingPowerBase + _summedRammingPowerPerLevel * perLvl;
+            return ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyPower);
+        }
+
+        /// <summary>HUD: sublinear mass factor applied to ram damage (1 at ~5 mass, ~2.8 at 30 mass).</summary>
+        public float GetHudRamMassDamageFactor() =>
+            ShipComponentRammingSuggestions.ComputeMassDamageFactor(GetRammingMassForDamage());
+
+        private void ComputeRamImpactDamage(float inboundNormalSpeed, float restitution, out float asteroidDamage, out float selfDamage)
+        {
+            float mass = GetRammingMassForDamage();
+            float rating = GetRammingDamageRating();
+            float baseDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(rating, mass, inboundNormalSpeed, restitution);
+            asteroidDamage = baseDamage;
+            selfDamage = baseDamage * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio;
+        }
+
+        private float ComputeRamGrindAsteroidDamage(float pushNewtons, float pulseInterval)
+        {
+            return ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
+                GetRammingDamageRating(),
+                GetRammingMassForDamage(),
+                pushNewtons,
+                pulseInterval);
+        }
+
+        private float ComputeRamGrindSelfDamage(float pushNewtons, float pulseInterval)
+        {
+            return ComputeRamGrindAsteroidDamage(pushNewtons, pulseInterval) * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio;
+        }
+
+        /// <summary>HUD: effective ram mass (hull + boosted gem cargo).</summary>
+        public float GetHudRamEffectiveMass() => GetRammingMassForDamage();
+
+        /// <summary>HUD: ram damage rating before × mass (same scale as bullet damage per hit).</summary>
+        public float GetHudRamDamageRating() => GetRammingDamageRating();
 
         private float lastRocketTime = -999f;
         private float lastMineTime = -999f;
@@ -764,33 +833,22 @@ namespace TitanOrbit.Entities
         public float MaxBrakingDeceleration => brakeDeceleration;
 
         /// <summary>
-        /// HUD: asteroid ram outcome using the same impulse → force → damage path as asteroid <see cref="OnCollisionEnter"/>,
-        /// assuming <paramref name="inboundNormalSpeed"/> is your speed component into the surface (head-on: use <see cref="CurrentHorizontalSpeed"/>).
+        /// HUD: asteroid ram outcome — ram rating × mass × speed factor (head-on: use <see cref="CurrentHorizontalSpeed"/>).
         /// </summary>
         public void GetHudAsteroidRamDamageEstimate(float inboundNormalSpeed, out float asteroidDamage, out float selfDamage)
         {
-            float e = GetEffectiveAsteroidRestitution();
-            float deltaNormalSpeed = (1f + e) * Mathf.Max(0f, inboundNormalSpeed);
-            float mass = Mathf.Max(0.01f, CurrentMass);
-            float impactImpulse = mass * deltaNormalSpeed;
-            float dt = Time.fixedDeltaTime > 1e-6f ? Time.fixedDeltaTime : 0.02f;
-            float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, dt);
-            float offenseRam = GetRammingOffenseMultiplier();
-            float selfRam = GetRammingSelfDamageMultiplier();
-            asteroidDamage = Mathf.Max(0f, impactForceNewtons * offenseRam * asteroidImpactForceToAsteroidDamageScale);
-            selfDamage = Mathf.Max(0f, impactForceNewtons * selfRam * asteroidImpactForceToShipDamageScale);
+            ComputeRamImpactDamage(inboundNormalSpeed, GetEffectiveAsteroidRestitution(), out asteroidDamage, out selfDamage);
         }
 
-        /// <summary>Ramming stat boosts damage to asteroids and grind DPS.</summary>
-        private float GetRammingOffenseMultiplier()
+        private void RefreshTotalRammingPower()
         {
-            return 1f + Mathf.Max(0f, rammingPower) * 0.1f;
+            rammingPower = GetTotalRammingPower();
         }
 
-        /// <summary>Self collision damage does not scale up with ramming investment (ramming is offense, not self-harm).</summary>
-        private float GetRammingSelfDamageMultiplier()
+        private float GetTotalRammingPower()
         {
-            return 1f;
+            float perLvl = Mathf.Max(0, ShipLevel - 1);
+            return Mathf.Max(0f, baseRammingPower + _summedRammingPowerBase + _summedRammingPowerPerLevel * perLvl);
         }
 
         private float GetEffectiveAsteroidRestitution()
@@ -798,7 +856,7 @@ namespace TitanOrbit.Entities
             return AsteroidRammingBehavior.ComputeRestitution(
                 asteroidCollisionNormalSpeedRetention,
                 asteroidRammingMinRestitution,
-                Mathf.Max(0f, rammingPower),
+                GetTotalRammingPower(),
                 asteroidRammingRestitutionThreshold,
                 asteroidRammingRestitutionReferenceExcess);
         }
@@ -4048,12 +4106,7 @@ namespace TitanOrbit.Entities
             }
 
             if (gemsToExpel > 0.0001f)
-            {
-                float spawnIntensity = ramGrindGemExpulsion
-                    ? PairedHullDamageGemExpulsionIntensity
-                    : gemExpulsionIntensity;
-                ExpelGemsFromShipOnServer(gemsToExpel, spawnIntensity);
-            }
+                ExpelGemsFromShipOnServer(gemsToExpel, gemExpulsionIntensity);
 
             TryDieIfHullAndGemsDepleted(attackerShipNetworkId);
         }
@@ -4906,6 +4959,22 @@ namespace TitanOrbit.Entities
                 TakeDamageServerRpc(damage, TeamManager.Team.None, 0, gemExpulsionIntensity, gemExpulsionPerHullDamage);
         }
 
+        /// <summary>Harder asteroid impacts → higher intensity → fewer, larger expelled gem chunks.</summary>
+        private float ComputeRamImpactGemExpulsionIntensity(float impactForceNewtons, float damage)
+        {
+            float forceT = Mathf.InverseLerp(35f, 900f, impactForceNewtons);
+            float damageT = Mathf.InverseLerp(1f, 25f, damage);
+            return Mathf.Clamp01(Mathf.Max(forceT, damageT) * 0.85f + 0.15f);
+        }
+
+        /// <summary>Grinding chip damage → lower intensity than impacts → more, smaller gem chunks.</summary>
+        private float ComputeRamGrindGemExpulsionIntensity(float pushNewtons, float damage)
+        {
+            float pushT = Mathf.InverseLerp(asteroidGrindMinPushNewtons, asteroidGrindMinPushNewtons * 10f, pushNewtons);
+            float damageT = Mathf.InverseLerp(0.5f, 10f, damage);
+            return Mathf.Clamp01(Mathf.Max(pushT, damageT) * 0.22f + 0.04f);
+        }
+
         private void ApplyAsteroidRamDamage(Asteroid asteroid, float damage, ulong attackerShipId)
         {
             if (asteroid == null || damage <= 0.0001f) return;
@@ -5003,7 +5072,7 @@ namespace TitanOrbit.Entities
             // Normal impulse approximation from the scripted bounce response:
             // Jn = m * (1 + e) * |vn|, force ~= Jn / dt.
             float deltaNormalSpeed = (1f + e) * Mathf.Abs(vn);
-            float impactImpulse = rb.mass * deltaNormalSpeed;
+            float impactImpulse = GetRammingImpactMass() * deltaNormalSpeed;
             float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
 
             float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
@@ -5022,17 +5091,16 @@ namespace TitanOrbit.Entities
                 asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
             }
 
-            float offenseRam = GetRammingOffenseMultiplier();
-            float selfRam = GetRammingSelfDamageMultiplier();
-            float shipCollisionDamage = Mathf.Max(0f, impactForceNewtons * selfRam * asteroidImpactForceToShipDamageScale);
-            float asteroidCollisionDamage = Mathf.Max(0f, impactForceNewtons * offenseRam * asteroidImpactForceToAsteroidDamageScale);
+            float inboundSpeed = deltaNormalSpeed / Mathf.Max(0.01f, 1f + e);
+            ComputeRamImpactDamage(inboundSpeed, e, out float asteroidCollisionDamage, out float shipCollisionDamage);
 
             if (shipCollisionDamage > 0.0001f)
             {
                 // Self-inflicted collision damage: Team.None bypasses friendly-fire checks. Gems after hull is 0, 1:1 with damage.
+                float expulsionIntensity = ComputeRamImpactGemExpulsionIntensity(impactForceNewtons, shipCollisionDamage);
                 ApplyShipRamDamage(
                     shipCollisionDamage,
-                    PairedHullDamageGemExpulsionIntensity,
+                    expulsionIntensity,
                     gemExpulsionPerHullDamage: 1f);
             }
 
@@ -5098,32 +5166,32 @@ namespace TitanOrbit.Entities
             if (pushN < asteroidGrindMinPushNewtons) return;
             if (!TryConsumeAsteroidGrindPulse(asteroid)) return;
 
-            float offenseRam = GetRammingOffenseMultiplier();
-            float selfRam = GetRammingSelfDamageMultiplier();
             float pulseInterval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
-            float dps = pushN * offenseRam * asteroidGrindPushToAsteroidDpsScale;
+            float asteroidGrindDamage = ComputeRamGrindAsteroidDamage(pushN, pulseInterval);
             if (asteroidGrindMaxAsteroidDps > 0f)
-                dps = Mathf.Min(dps, asteroidGrindMaxAsteroidDps);
-            float asteroidGrindDamage = dps * pulseInterval;
+            {
+                float capped = asteroidGrindMaxAsteroidDps * pulseInterval;
+                asteroidGrindDamage = Mathf.Min(asteroidGrindDamage, capped);
+            }
             if (asteroidGrindDamage <= 0.0001f) return;
 
             ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
             ApplyAsteroidRamDamage(asteroid, asteroidGrindDamage, attackerShipId);
 
-            TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, offenseRam, asteroidGrindDamage);
+            float grindFeedbackRam = GetRammingDamageRating() * GetRammingMassForDamage();
+            TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, grindFeedbackRam, asteroidGrindDamage);
 
             // Continuous self-damage while grinding; gems only after hull is 0 (1:1 with chip damage).
-            if (asteroidImpactForceToShipDamageScale > 0f && asteroidImpactForceToAsteroidDamageScale > 0.0001f)
+            float shipGrindDamage = ComputeRamGrindSelfDamage(pushN, pulseInterval);
+            if (asteroidGrindMaxAsteroidDps > 0f)
+                shipGrindDamage = Mathf.Min(shipGrindDamage, asteroidGrindDamage * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio);
+            if (shipGrindDamage > 0.0001f)
             {
-                float shipGrindDamage = pushN * selfRam * pulseInterval * asteroidGrindPushToAsteroidDpsScale
-                    * (asteroidImpactForceToShipDamageScale / asteroidImpactForceToAsteroidDamageScale);
-                if (shipGrindDamage > 0.0001f)
-                {
-                    ApplyShipRamDamage(
-                        shipGrindDamage,
-                        PairedHullDamageGemExpulsionIntensity,
-                        gemExpulsionPerHullDamage: 1f);
-                }
+                float expulsionIntensity = ComputeRamGrindGemExpulsionIntensity(pushN, shipGrindDamage);
+                ApplyShipRamDamage(
+                    shipGrindDamage,
+                    expulsionIntensity,
+                    gemExpulsionPerHullDamage: 1f);
             }
         }
 
@@ -5918,6 +5986,7 @@ namespace TitanOrbit.Entities
                     componentMass = 0f;
                     engineThrust = data.baseMovementSpeed;
                     maxHealth = data.baseMaxHealth;
+                    _chassisReferenceHealth = Mathf.Max(1f, data.baseMaxHealth);
                     healthRegenRate = data.baseHealthRegenRate;
                     rotationSpeed = data.baseRotationSpeed;
                     rotationSpeedFromShipFamilyDefinition = false;
@@ -6116,14 +6185,13 @@ namespace TitanOrbit.Entities
 
             int level = ShipLevel;
             bool usePreviewStats = previewStats.HasValue && previewFamilyDef != null;
-            float weaponScaleTotal = 0f;
-            for (int w = 0; w < stats.weaponScales.Count; w++) weaponScaleTotal += stats.weaponScales[w];
 
             if (usePreviewStats)
             {
                 ShipComponentAbilityStats s = previewStats.Value;
                 float perLvl = Mathf.Max(0, level - 1);
 
+                _chassisReferenceHealth = Mathf.Max(1f, s.healthCap);
                 maxHealth = Mathf.Max(1f, s.healthCap + s.healthCapPerLevel * perLvl);
                 healthRegenRate = Mathf.Max(0f, s.healthRegen + s.healthRegenPerLevel * perLvl);
                 energyCapacity = Mathf.Max(1f, s.energyCap + s.energyCapPerLevel * perLvl);
@@ -6132,7 +6200,9 @@ namespace TitanOrbit.Entities
                 rotationSpeedFromShipFamilyDefinition = true;
                 gemCapacity = Mathf.Max(0f, s.maxGems + s.maxGemsPerLevel * perLvl);
                 peopleCapacity = Mathf.Max(0f, s.maxPeople + s.maxPeoplePerLevel * perLvl);
-                rammingPower = Mathf.Max(0f, baseRammingPower + s.rammingPower + s.rammingPowerPerLevel * perLvl);
+                _summedRammingPowerBase = Mathf.Max(0f, s.rammingPower);
+                _summedRammingPowerPerLevel = Mathf.Max(0f, s.rammingPowerPerLevel);
+                RefreshTotalRammingPower();
 
                 // Movement: engines and thrusters share one pool — best base once + half the sum of other parts' moveSpeedPerLevel; acceleration sums.
                 float moveVal = Mathf.Max(0.1f, ApplyShipLevelMobilityScale(s.moveSpeed, perLvl));
@@ -6148,16 +6218,7 @@ namespace TitanOrbit.Entities
                     ? propulsion.topMoveSpeed
                     : (moveVal > 0f ? moveVal : engineThrust * 0.5f));
 
-                componentMass =
-                    stats.engineScaleTotal +
-                    stats.thrusterScaleTotal +
-                    stats.wingScaleTotal +
-                    stats.cockpitScaleTotal +
-                    stats.partScaleTotal +
-                    stats.tailScaleTotal +
-                    stats.finScaleTotal +
-                    weaponScaleTotal;
-                componentMass = Mathf.Max(0.5f, componentMass);
+                componentMass = stats.ComputeComponentMass();
             }
             else
             {
@@ -6175,16 +6236,7 @@ namespace TitanOrbit.Entities
                 if (componentEngineMaxSpeed < legacyBaseMaxSpeed)
                     componentEngineMaxSpeed = legacyBaseMaxSpeed;
 
-                componentMass =
-                    stats.engineScaleTotal +
-                    stats.thrusterScaleTotal +
-                    stats.wingScaleTotal +
-                    stats.cockpitScaleTotal +
-                    stats.partScaleTotal +
-                    stats.tailScaleTotal +
-                    stats.finScaleTotal +
-                    weaponScaleTotal;
-                componentMass = Mathf.Max(0.5f, componentMass);
+                componentMass = stats.ComputeComponentMass();
 
                 float turnVal = stats.thrusterScaleTotal + stats.tailScaleTotal + stats.wingScaleTotal + stats.finScaleTotal;
                 float healthVal = stats.cockpitScaleTotal + stats.partScaleTotal;
@@ -6193,10 +6245,13 @@ namespace TitanOrbit.Entities
                 float peopleVal = stats.cockpitScaleTotal + stats.partScaleTotal;
                 float energyCapVal = stats.cockpitCannonScaleTotal;
                 float energyRegenVal = stats.cockpitCannonScaleTotal;
-                rammingPower = Mathf.Max(0f, baseRammingPower + stats.cockpitScaleTotal);
+                _summedRammingPowerBase = Mathf.Max(0f, stats.cockpitScaleTotal);
+                _summedRammingPowerPerLevel = 0f;
+                RefreshTotalRammingPower();
 
                 rotationSpeed = Mathf.Max(1f, turnVal);
                 rotationSpeedFromShipFamilyDefinition = false;
+                _chassisReferenceHealth = Mathf.Max(1f, healthVal);
                 maxHealth = Mathf.Max(1f, healthVal);
                 healthRegenRate = Mathf.Max(0f, healthRegenVal);
                 gemCapacity = Mathf.Max(0f, gemVal);
@@ -6262,7 +6317,6 @@ namespace TitanOrbit.Entities
 
             // Bullets (Weapon only): one cannon per component with "Weapon" in the name; fire from each weapon position.
             int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
-            if (weaponScaleTotal <= 0f && weaponCount > 0) weaponScaleTotal = weaponCount;
             if (weaponCount > 0)
             {
                 var baseBullet = (data != null && data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)

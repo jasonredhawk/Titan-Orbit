@@ -125,6 +125,9 @@ namespace TitanOrbit.Systems
             public float Pitch;
             public uint Sequence;
             public ulong OwnerShipNetworkId;
+            public float Damage;
+            public int DamageChannelId;
+            public bool ShowDamagePopup;
         }
 
         private ServerBullet[] serverBullets;
@@ -351,9 +354,9 @@ namespace TitanOrbit.Systems
                 if (hit.collider == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, b.OwnerShipNetworkId)) continue;
 
-                if (BulletHitResolver.TryHit(hit.collider, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, hit.point, out Vector3 impactPos))
+                if (BulletHitResolver.TryHit(hit.collider, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, hit.point, out Vector3 impactPos, out BulletHitResolver.BulletHitPopupInfo popup))
                 {
-                    DespawnWithImpact(slot, impactPos);
+                    DespawnWithImpact(slot, impactPos, popup);
                     return;
                 }
 
@@ -369,15 +372,15 @@ namespace TitanOrbit.Systems
             if (TryOverlapFallbackHit(slot)) return;
 
             // Toroidal asteroid sweep: bullet and asteroid may sit in different toroidal tiles.
-            if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact))
+            if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup))
             {
-                DespawnWithImpact(slot, toroidalImpact);
+                DespawnWithImpact(slot, toroidalImpact, asteroidPopup);
                 return;
             }
 
-            if (BulletHitResolver.TryToroidalGemMoonSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 moonImpact))
+            if (BulletHitResolver.TryToroidalGemMoonSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 moonImpact, out BulletHitResolver.BulletHitPopupInfo moonPopup))
             {
-                DespawnWithImpact(slot, moonImpact);
+                DespawnWithImpact(slot, moonImpact, moonPopup);
                 return;
             }
         }
@@ -407,9 +410,9 @@ namespace TitanOrbit.Systems
             if (bestIdx < 0) return false;
             Collider chosen = s_overlapHits[bestIdx];
             Vector3 impact = chosen.ClosestPoint(b.Position);
-            if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact))
+            if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup))
             {
-                DespawnWithImpact(slot, finalImpact);
+                DespawnWithImpact(slot, finalImpact, popup);
                 return true;
             }
             return false;
@@ -428,9 +431,9 @@ namespace TitanOrbit.Systems
                 if (asteroid != null && !asteroid.IsDestroyed)
                 {
                     Vector3 impact = c.ClosestPoint(b.Position);
-                    if (BulletHitResolver.TryHit(c, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact))
+                    if (BulletHitResolver.TryHit(c, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup))
                     {
-                        DespawnWithImpact(slot, finalImpact);
+                        DespawnWithImpact(slot, finalImpact, popup);
                         return;
                     }
                 }
@@ -453,7 +456,7 @@ namespace TitanOrbit.Systems
             }
         }
 
-        private void DespawnWithImpact(int slot, Vector3 impactPos)
+        private void DespawnWithImpact(int slot, Vector3 impactPos, BulletHitResolver.BulletHitPopupInfo popupInfo = default)
         {
             ref ServerBullet b = ref serverBullets[slot];
             Vector3 fixedImpact = impactPos;
@@ -466,6 +469,9 @@ namespace TitanOrbit.Systems
                 Pitch = BulletHitResolver.GetImpactSoundPitch(b.Damage),
                 Sequence = b.Sequence,
                 OwnerShipNetworkId = b.OwnerShipNetworkId,
+                Damage = popupInfo.Damage,
+                DamageChannelId = (int)popupInfo.Channel,
+                ShowDamagePopup = popupInfo.HasPopup,
             });
             ReleaseSlot(slot);
         }
@@ -500,7 +506,16 @@ namespace TitanOrbit.Systems
             for (int i = 0; i < pendingImpacts.Count; i++)
             {
                 PendingImpact p = pendingImpacts[i];
-                SpawnBulletImpactClientRpc(p.Position, p.BankIndex, p.TeamByte, p.Pitch, p.Sequence, p.OwnerShipNetworkId);
+                SpawnBulletImpactClientRpc(
+                    p.Position,
+                    p.BankIndex,
+                    p.TeamByte,
+                    p.Pitch,
+                    p.Sequence,
+                    p.OwnerShipNetworkId,
+                    p.Damage,
+                    p.DamageChannelId,
+                    p.ShowDamagePopup);
             }
             pendingImpacts.Clear();
         }
@@ -521,17 +536,30 @@ namespace TitanOrbit.Systems
         }
 
         [ClientRpc]
-        private void SpawnBulletImpactClientRpc(Vector3 position, int impactPrefabBankIndex, byte teamByte, float pitch, uint sequence, ulong bulletOwnerShipNetworkId)
+        private void SpawnBulletImpactClientRpc(
+            Vector3 position,
+            int impactPrefabBankIndex,
+            byte teamByte,
+            float pitch,
+            uint sequence,
+            ulong bulletOwnerShipNetworkId,
+            float damage,
+            int damageChannelId,
+            bool showDamagePopup)
         {
             ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
-            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound from the server RPC.
+            TeamManager.Team team = (TeamManager.Team)teamByte;
+            var popup = showDamagePopup
+                ? new BulletHitResolver.BulletHitPopupInfo(true, (FloatingCountChannel)Mathf.Clamp(damageChannelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex), damage)
+                : BulletHitResolver.BulletHitPopupInfo.None;
+
+            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound/damage from the server RPC.
             if (localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
             {
                 ClientBulletTracer.DespawnBySequence(sequence);
                 return;
             }
 
-            TeamManager.Team team = (TeamManager.Team)teamByte;
             ClientBulletTracer.DespawnBySequence(sequence);
 
             if (Application.isMobilePlatform)
@@ -549,6 +577,8 @@ namespace TitanOrbit.Systems
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
+
+            BulletHitResolver.SpawnBulletDamagePopupLocal(position, popup, team);
         }
 
         /// <summary>

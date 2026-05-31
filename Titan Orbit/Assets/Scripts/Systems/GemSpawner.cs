@@ -281,32 +281,55 @@ namespace TitanOrbit.Systems
             float intensity = Mathf.Clamp01(expulsionIntensity);
             float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity);
 
-            // Ram/grind paired hull damage: one physical gem per value unit (remainder as a final gem).
-            if (intensity <= 0.001f)
+            List<float> chunks = BuildShipExpulsionGemChunks(totalValue, intensity);
+            for (int i = 0; i < chunks.Count; i++)
             {
-                int wholeGems = Mathf.FloorToInt(totalValue);
-                float remainder = totalValue - wholeGems;
-                for (int i = 0; i < wholeGems; i++)
-                    SpawnGemFromShip(prefab, shipPosition, 1f, 1f, expelledByShipId, launchSpeedMul);
-                if (remainder > 0.1f)
-                    SpawnGemFromShip(prefab, shipPosition, remainder, 1f, expelledByShipId, launchSpeedMul);
-                return;
+                float gemValue = chunks[i];
+                if (gemValue <= 0.001f) continue;
+                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul);
+            }
+        }
+
+        /// <summary>
+        /// Randomly partitions gem value into chunks. Low intensity (grind) → many small gems;
+        /// high intensity (hard impact) → few large gems. Sum equals <paramref name="totalValue"/> exactly.
+        /// </summary>
+        private static List<float> BuildShipExpulsionGemChunks(float totalValue, float intensity)
+        {
+            var chunks = new List<float>(16);
+            if (totalValue <= 0.001f) return chunks;
+
+            intensity = Mathf.Clamp01(intensity);
+            int maxPossibleGems = Mathf.Max(1, Mathf.FloorToInt(totalValue));
+
+            int minGems = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(totalValue * 0.25f, 1f, intensity)), 1, maxPossibleGems);
+            int maxGems = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(totalValue, 2f, intensity)), minGems, maxPossibleGems);
+            int gemCount = Random.Range(minGems, maxGems + 1);
+
+            if (gemCount <= 1)
+            {
+                chunks.Add(totalValue);
+                return chunks;
             }
 
             float remaining = totalValue;
-            int maxGems = Mathf.Max(1, Mathf.RoundToInt(Mathf.Lerp(5f, 1f, intensity)));
-            maxGems = Mathf.Min(maxGems, Mathf.Max(1, Mathf.CeilToInt(totalValue)));
+            int gemsLeft = gemCount;
+            float chunkSkew = Mathf.Lerp(0.35f, 2.5f, intensity);
 
-            for (int i = 0; i < maxGems && remaining > 0.1f; i++)
+            for (int i = 0; i < gemCount - 1; i++)
             {
-                bool last = i == maxGems - 1;
-                float maxChunk = Mathf.Lerp(Mathf.Min(3f, remaining), Mathf.Min(remaining, 50f), intensity);
-                float minChunk = Mathf.Lerp(1f, Mathf.Max(2f, remaining * 0.35f), intensity);
-                float gemValue = last ? remaining : Random.Range(minChunk, maxChunk);
-                gemValue = Mathf.Clamp(gemValue, 1f, Mathf.Min(50f, remaining));
-                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul);
-                remaining -= gemValue;
+                gemsLeft--;
+                float minChunk = 1f;
+                float maxChunk = Mathf.Max(minChunk, remaining - gemsLeft);
+                float t = Mathf.Pow(Random.value, 1f / chunkSkew);
+                float chunk = Mathf.Lerp(minChunk, maxChunk, t);
+                chunk = Mathf.Clamp(chunk, minChunk, maxChunk);
+                chunks.Add(chunk);
+                remaining -= chunk;
             }
+
+            chunks.Add(remaining);
+            return chunks;
         }
 
         /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value = amount passed in; size shows value.</summary>

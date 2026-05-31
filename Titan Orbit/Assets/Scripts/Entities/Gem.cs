@@ -28,19 +28,21 @@ namespace TitanOrbit.Entities
         [Tooltip("Game value mapped to the smallest visual size. Matches Asteroid.MAX_GEM_VALUE lower bound.")]
         [SerializeField] private float minGemValue = 1f;
         [Tooltip("Game value mapped to the largest visual size. Matches Asteroid.MAX_GEM_VALUE upper bound.")]
-        [SerializeField] private float maxGemValue = 70f;
-        [Tooltip("World localScale used when value <= minGemValue. Larger than the legacy minimum so value-1 gems are clearly visible.")]
-        [SerializeField] private float scaleAtMinValue = 0.45f;
+        [SerializeField] private float maxGemValue = 100f;
+        [Tooltip("World localScale used when value <= minGemValue.")]
+        [SerializeField] private float scaleAtMinValue = 1f;
         [Tooltip("World localScale used when value >= maxGemValue.")]
-        [SerializeField] private float scaleAtMaxValue = 1.2f;
+        [SerializeField] private float scaleAtMaxValue = 3.5f;
         [Tooltip("Pickup radius multiplier at minGemValue.")]
         [SerializeField] private float pickupRadiusMinMul = 1f;
         [Tooltip("Pickup radius multiplier at maxGemValue.")]
-        [SerializeField] private float pickupRadiusMaxMul = 1.5f;
+        [SerializeField] private float pickupRadiusMaxMul = 2f;
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
+        [Tooltip("After tractor pickup credits gems, the gem glides to ship center and despawn when within this distance.")]
+        [SerializeField] private float tractorAbsorbCompleteRadius = 0.12f;
         [Tooltip("Minimum ship hull radius used by center-distance pickup checks when collider bounds are unavailable.")]
         [SerializeField] private float shipProximitySlop = 0.35f;
         [Tooltip("Scales ship collider radius contribution for proximity collection (lower = tighter pickup).")]
@@ -67,6 +69,8 @@ namespace TitanOrbit.Entities
         /// <summary>Server-only pickup gate: used only for hull-expelled gems so the victim ship cannot instantly re-collect.</summary>
         private ulong serverNoImmediatePickupShipId;
         private float serverNoImmediatePickupUntilTime;
+        /// <summary>Server-only: gems credited; gem keeps gliding to ship center before despawn (tractor beam pickup).</summary>
+        private ulong serverAbsorbTargetShipId;
         private bool serverInitializedBeforeSpawn;
         private Rigidbody rb;
         private NetworkTransform networkTransform;
@@ -219,7 +223,7 @@ namespace TitanOrbit.Entities
             effectivePickupRadius = pickupRadius * Mathf.Lerp(pickupRadiusMinMul, pickupRadiusMaxMul, tValue) * lifetimeRemaining;
         }
 
-        /// <summary>Linear 0..1 ramp from <see cref="minGemValue"/> to <see cref="maxGemValue"/>; clamps outside the range so deposits >70 still hit max.</summary>
+        /// <summary>Linear 0..1 ramp from <see cref="minGemValue"/> to <see cref="maxGemValue"/>; clamps outside the range so deposits >100 still hit max.</summary>
         private float ComputeValueT(float gemValue)
         {
             float lo = Mathf.Min(minGemValue, maxGemValue);
@@ -227,6 +231,9 @@ namespace TitanOrbit.Entities
             if (hi - lo <= 0.0001f) return 0f;
             return Mathf.InverseLerp(lo, hi, Mathf.Clamp(gemValue, lo, hi));
         }
+
+        /// <summary>0 = smallest value gem, 1 = largest value gem (matches visual scale). Used by tractor beam pull speed.</summary>
+        public float GetValueSizeT() => ComputeValueT(value.Value);
 
         public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0, bool bonusGem = false)
         {
@@ -395,6 +402,75 @@ namespace TitanOrbit.Entities
         {
             serverNoImmediatePickupShipId = 0;
             serverNoImmediatePickupUntilTime = 0f;
+            ClearServerAbsorbState();
+        }
+
+        private void ClearServerAbsorbState()
+        {
+            serverAbsorbTargetShipId = 0;
+        }
+
+        private static Starship FindShipByNetworkObjectId(ulong networkObjectId)
+        {
+            if (networkObjectId == 0) return null;
+            foreach (var ship in Starship.AllStarships)
+            {
+                if (ship == null) continue;
+                var shipNo = ship.NetworkObject;
+                if (shipNo != null && shipNo.NetworkObjectId == networkObjectId)
+                    return ship;
+            }
+            return null;
+        }
+
+        private void DespawnCollectedGem()
+        {
+            value.Value = 0f;
+            ClearServerAbsorbState();
+            if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                return;
+            var no = GetComponent<NetworkObject>();
+            if (no != null) no.Despawn();
+        }
+
+        /// <summary>Server: after tractor pickup credits gems, glide toward ship center then despawn.</summary>
+        private void ServerTickTractorAbsorbGlide()
+        {
+            Starship ship = FindShipByNetworkObjectId(serverAbsorbTargetShipId);
+            if (ship == null || !ship.IsSpawned || ship.IsDead)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            Vector3 gemPos = rb != null ? rb.position : transform.position;
+            gemPos.y = 0f;
+            Vector3 shipPos = ship.transform.position;
+            var shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null) shipPos = shipRb.position;
+            shipPos.y = 0f;
+
+            float dist = ToroidalMap.ToroidalDistance(gemPos, shipPos);
+            if (dist <= tractorAbsorbCompleteRadius)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            if (rb == null)
+                return;
+
+            Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, shipPos);
+            toShip.y = 0f;
+            if (toShip.sqrMagnitude < 0.0001f)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            float pullSpeed = GemTractorBeamSettings.GetGameplayPullSpeed(ship, this);
+            rb.linearVelocity = toShip.normalized * pullSpeed;
+            rb.linearDamping = 0f;
         }
 
         private float GetServerTime()
@@ -438,6 +514,7 @@ namespace TitanOrbit.Entities
         public bool CanShipCollect(Starship ship)
         {
             if (!IsServer || ship == null) return false;
+            if (serverAbsorbTargetShipId != 0) return false;
             if (IsShipTemporarilyBlockedFromPickup(ship)) return false;
             return IsCollectibleByShip(ship);
         }
@@ -602,13 +679,17 @@ namespace TitanOrbit.Entities
                 ScoreSystem.Instance.AwardMining(ship, toAdd);
 
             if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, ship.ShipTeam);
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
+                    gemPos, FloatingCountChannel.GemPickup, toAdd, ship.ShipTeam);
 
-            value.Value = 0f;
-            if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+            // Tractor-pulled gems credit immediately but keep gliding to ship center before despawn.
+            if (GemTractorBeamSettings.IsPulledByAnyShip(this))
+            {
+                serverAbsorbTargetShipId = GetShipNetworkObjectId(ship);
                 return;
-            var no = GetComponent<NetworkObject>();
-            if (no != null) no.Despawn();
+            }
+
+            DespawnCollectedGem();
         }
 
         private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
@@ -683,6 +764,20 @@ namespace TitanOrbit.Entities
             // displays at the copy closest to the local player's camera for a seamless view.
 
             if (!IsServer) return;
+
+            if (serverAbsorbTargetShipId != 0)
+            {
+                float absorbElapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+                if (absorbElapsed >= lifetimeSeconds)
+                {
+                    DespawnCollectedGem();
+                    return;
+                }
+
+                ServerTickTractorAbsorbGlide();
+                return;
+            }
+
             if (value.Value <= 0) return;
 
             float elapsedTime = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
