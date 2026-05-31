@@ -66,6 +66,18 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// World-space planet label from this planet's <see cref="ShipFamilyDefinition.familyId"/> (CamelCase split for display).
+        /// </summary>
+        public string GetPlanetDisplayNameFromFamilyId(int planetId)
+        {
+            ShipFamilyEntry entry = GetFamilyForPlanet(planetId);
+            string familyId = entry?.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
+            if (string.IsNullOrWhiteSpace(familyId))
+                return string.Empty;
+            return Core.DisplayNameFormatting.SplitCamelCase(familyId.Trim());
+        }
+
+        /// <summary>
         /// Resolves <see cref="ShipFamilyDefinition"/> from a chassis id prefix (e.g. <c>AstroEagle_01</c> → AstroEagle family).
         /// </summary>
         public ShipFamilyDefinition GetShipFamilyDefinitionForChassisId(string chassisId)

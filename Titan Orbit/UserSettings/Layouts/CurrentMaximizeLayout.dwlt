@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 15001
+  controlID: 31086
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -46,8 +46,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Game\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 310
-    y: 79
+    x: 311
+    y: 24
     width: 1080
     height: 765
   m_SerializedDataModeController:
@@ -96,7 +96,7 @@ MonoBehaviour:
     m_HSlider: 0
     m_VSlider: 0
     m_IgnoreScrollWheelUntilClicked: 0
-    m_EnableMouseInput: 1
+    m_EnableMouseInput: 0
     m_EnableSliderZoomHorizontal: 0
     m_EnableSliderZoomVertical: 0
     m_UniformScale: 1
@@ -152,7 +152,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 15002
+  controlID: 31087
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -178,7 +178,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 14976
+  controlID: 31088
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -204,7 +204,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 14977
+  controlID: 31089
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -225,8 +225,8 @@ MonoBehaviour:
     y: 0
     width: 310
     height: 791
-  m_MinSize: {x: 200, y: 200}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 201, y: 226}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 7}
   m_Panes:
   - {fileID: 7}
@@ -277,39 +277,20 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -8527676
-      - m_Data: -8442808
-      - m_Data: -8442436
-      - m_Data: -8442292
-      - m_Data: -8233976
-      - m_Data: -8233604
-      - m_Data: -8233466
-      - m_Data: -8184610
-      - m_Data: -8184238
-      - m_Data: -8184094
-      - m_Data: -8153068
-      - m_Data: -8152696
-      - m_Data: -8152552
-      - m_Data: -8150890
-      - m_Data: -8080352
-      - m_Data: -8079980
-      - m_Data: -8079836
-      - m_Data: -8015940
-      - m_Data: -8015568
-      - m_Data: -8015424
-      - m_Data: -8013574
-      - m_Data: -8011026
-      - m_Data: -8010654
-      - m_Data: -8010506
-      - m_Data: -5567800
-      - m_Data: -5567368
-      - m_Data: -5567220
-      - m_Data: -1547458
-      - m_Data: -1547026
-      - m_Data: -1546878
-      - m_Data: -1676
-      - m_Data: 2691982
-      - m_Data: 2726460
+      - m_Data: -38739884
+      - m_Data: -38739452
+      - m_Data: -38739308
+      - m_Data: -37726224
+      - m_Data: -37725788
+      - m_Data: -37725648
+      - m_Data: -4934174
+      - m_Data: -4933802
+      - m_Data: -4933654
+      - m_Data: -4860
+      - m_Data: -4488
+      - m_Data: -4340
+      - m_Data: -1364
+      - m_Data: 10130396
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1067,7 +1048,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Scripts/Camera
+    - Assets/Prefabs/Ships/GalaxyRaptor
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1077,27 +1058,26 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scripts/Camera
+  - Assets/Prefabs/Ships/GalaxyRaptor
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 687}
+    scrollPos: {x: 0, y: 268}
     m_SelectedIDs:
-    - m_Data: 2692352
+    - m_Data: 186394
     m_LastClickedID:
-      m_Data: 2692352
+      m_Data: 186394
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 68892
-    - m_Data: 68894
-    - m_Data: 68896
-    - m_Data: 68898
-    - m_Data: 68900
-    - m_Data: 68902
-    - m_Data: 215176
+    - m_Data: 178780
+    - m_Data: 178782
+    - m_Data: 178784
+    - m_Data: 178786
+    - m_Data: 178788
+    - m_Data: 178790
     - m_Data: 1000000000
     - m_Data: 2147483647
     m_RenameOverlay:
@@ -1133,12 +1113,12 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 68892
-    - m_Data: 68894
-    - m_Data: 68896
-    - m_Data: 68898
-    - m_Data: 68900
-    - m_Data: 68902
+    - m_Data: 178780
+    - m_Data: 178782
+    - m_Data: 178784
+    - m_Data: 178786
+    - m_Data: 178788
+    - m_Data: 178790
     - m_Data: 1000000000
     - m_Data: 2147483647
     m_RenameOverlay:
@@ -1169,10 +1149,10 @@ MonoBehaviour:
       m_ResourceFile: 
   m_ListAreaState:
     m_SelectedInstanceIDs:
-    - m_Data: 2740190
+    - m_Data: 64882
     m_LastClickedEntityId:
-      m_Data: 2740190
-    m_HadKeyboardFocusLastEvent: 0
+      m_Data: 64882
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 54664
     - m_Data: 275120
@@ -1216,7 +1196,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 0}
+    m_ScrollPosition: {x: 0, y: 227}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -1331,8 +1311,8 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
-    m_Data: 2740190
-  m_LastVerticalScrollValue: 162
+    m_Data: 64882
+  m_LastVerticalScrollValue: 2513
   m_GlobalObjectId: 
   m_InspectorMode: 0
   m_LockTracker:

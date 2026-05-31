@@ -76,6 +76,29 @@ namespace TitanOrbit.Editor
             EditorGUILayout.EndVertical();
         }
 
+        private static void DrawDefaultFallbackStatsSummary(ShipFamilyDefinition def)
+        {
+            if (def == null)
+                return;
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Default Stat Fallbacks", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "When summed ship stats from components are zero (missing weapon, fin, engine, etc.), " +
+                "each zero field is replaced by the matching value here. Edit per family or reset to the global baseline.",
+                MessageType.None);
+
+            if (GUILayout.Button("Reset Default Fallback Stats to Baseline"))
+            {
+                Undo.RecordObject(def, "Reset Default Fallback Stats");
+                def.ResetDefaultFallbackStatsToBaseline();
+                EditorUtility.SetDirty(def);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
         private static void DrawComponentsListHeader(Rect rect)
         {
             EditorGUI.LabelField(rect, "Components");
@@ -175,6 +198,7 @@ namespace TitanOrbit.Editor
                 return;
 
             DrawMassSummary(def);
+            DrawDefaultFallbackStatsSummary(def);
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(

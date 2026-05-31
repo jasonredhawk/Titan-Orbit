@@ -131,6 +131,14 @@ namespace TitanOrbit.Systems
             return "AstroEagle_01";
         }
 
+        /// <summary>Planet floating label from <see cref="ShipFamilyDefinition.familyId"/> (CamelCase split).</summary>
+        public string GetPlanetFamilyDisplayName(int planetId)
+        {
+            return planetShipFamilyConfig != null
+                ? planetShipFamilyConfig.GetPlanetDisplayNameFromFamilyId(planetId)
+                : string.Empty;
+        }
+
         /// <summary>
         /// Chassis ID at (level, branch) from the <em>store planet's</em> ship family ladder (same layout as <see cref="UpgradeTree"/>).
         /// Players keep their tree position (level + branch); a captured planet's family supplies the hull at that slot (e.g. 3.3 → 4.3/4.4 there).

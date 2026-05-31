@@ -18,6 +18,7 @@ MonoBehaviour:
   - componentId: Acc
     displayName: Acc 1
     statCategory: 1
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -27,10 +28,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -43,12 +44,17 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Barrel
     displayName: Weapon 1
-    statCategory: 0
+    statCategory: 1
+    statCategories: 0000000002000000
     stats:
       firePower: 3
       firePowerPerLevel: 0.75
@@ -62,10 +68,10 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 14.400001
+      energyCapPerLevel: 3.6000001
+      energyRegen: 3.0600002
+      energyRegenPerLevel: 0.76500005
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
@@ -74,43 +80,17 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
   - componentId: Cockpit
     displayName: Cockpit 1
-    statCategory: 0
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 2
-      rammingPowerPerLevel: 0.5
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Cylinder
-    displayName: Cylinder 1
     statCategory: 1
+    statCategories: 000000000100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -118,291 +98,12 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Detail
-    displayName: Detail 1
-    statCategory: 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Engine
-    displayName: Engine 1
-    statCategory: 2
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 28.800001
-      energyCapPerLevel: 7.2000003
-      energyRegen: 6.1200004
-      energyRegenPerLevel: 1.5300001
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Gun
-    displayName: Weapon 1
-    statCategory: 0
-    stats:
-      firePower: 3
-      firePowerPerLevel: 0.75
-      bulletSpeed: 12
-      bulletSpeedPerLevel: 3
-      fireRate: 1.2
-      fireRatePerLevel: 0.3
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: MainBody1
-    displayName: Hull 1
-    statCategory: 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: MainBody2
-    displayName: Hull 2
-    statCategory: 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 42
-      healthCapPerLevel: 10.5
-      healthRegen: 1.5
-      healthRegenPerLevel: 0.375
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: MainBody3
-    displayName: Hull 3
-    statCategory: 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 63
-      healthCapPerLevel: 15.75
-      healthRegen: 2.25
-      healthRegenPerLevel: 0.5625
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: MainBody4
-    displayName: Hull 4
-    statCategory: 1
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 84
-      healthCapPerLevel: 21
-      healthRegen: 3
-      healthRegenPerLevel: 0.75
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: ThrustCover
-    displayName: Thruster 1
-    statCategory: 3
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
-    bulletPrefabIndex: -1
-  - componentId: Wing1
-    displayName: Wing 1
-    statCategory: 4
-    stats:
-      firePower: 0
-      firePowerPerLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerLevel: 0
-      fireRate: 0
-      fireRatePerLevel: 0
-      rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      rammingPower: 1
+      rammingPowerPerLevel: 0.25
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -415,12 +116,89 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
-  - componentId: Wing2
-    displayName: Wing 2
-    statCategory: 4
+  - componentId: Cylinder
+    displayName: Cylinder 1
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Detail
+    displayName: Detail 1
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Engine
+    displayName: Engine 1
+    statCategory: 1
+    statCategories: 03000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -434,6 +212,294 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Gun
+    displayName: Weapon 1
+    statCategory: 1
+    statCategories: 0000000002000000
+    stats:
+      firePower: 3
+      firePowerPerLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerLevel: 3
+      fireRate: 1.2
+      fireRatePerLevel: 0.3
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 14.400001
+      energyCapPerLevel: 3.6000001
+      energyRegen: 3.0600002
+      energyRegenPerLevel: 0.76500005
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: MainBody1
+    displayName: Hull 1
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: MainBody2
+    displayName: Hull 2
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 8.1
+      healthCapPerLevel: 2.025
+      healthRegen: 0.28928575
+      healthRegenPerLevel: 0.07232144
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: MainBody3
+    displayName: Hull 3
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 9.9
+      healthCapPerLevel: 2.475
+      healthRegen: 0.35357144
+      healthRegenPerLevel: 0.08839286
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: MainBody4
+    displayName: Hull 4
+    statCategory: 1
+    statCategories: 01000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 11.7
+      healthCapPerLevel: 2.925
+      healthRegen: 0.41785714
+      healthRegenPerLevel: 0.104464285
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: ThrustCover
+    displayName: Thruster 1
+    statCategory: 1
+    statCategories: 03000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
+      turnSpeed: 3.7459462
+      turnSpeedPerLevel: 0.93648654
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    bulletPrefabIndex: -1
+  - componentId: Wing1
+    displayName: Wing 1
+    statCategory: 1
+    statCategories: 0100000004000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
+      moveSpeed: 0
+      moveSpeedPerLevel: 0
+      accelerationCap: 0
+      accelerationCapPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
+      maxPeople: 4
+      maxPeoplePerLevel: 1
+    bulletPrefabIndex: -1
+  - componentId: Wing2
+    displayName: Wing 2
+    statCategory: 1
+    statCategories: 0100000004000000
+    stats:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 8.1
+      healthCapPerLevel: 2.025
+      healthRegen: 0.28928575
+      healthRegenPerLevel: 0.07232144
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -446,12 +512,17 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 16
       maxGemsPerLevel: 4
+      tractorBeamDistance: 6
+      tractorBeamDistancePerLevel: 1.5
+      tractorBeamPower: 8
+      tractorBeamPowerPerLevel: 2
       maxPeople: 8
       maxPeoplePerLevel: 2
     bulletPrefabIndex: -1
   - componentId: Wing3
     displayName: Wing 3
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -461,10 +532,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 9.9
+      healthCapPerLevel: 2.475
+      healthRegen: 0.35357144
+      healthRegenPerLevel: 0.08839286
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -477,12 +548,17 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 24
       maxGemsPerLevel: 6
+      tractorBeamDistance: 9
+      tractorBeamDistancePerLevel: 2.25
+      tractorBeamPower: 12
+      tractorBeamPowerPerLevel: 3
       maxPeople: 12
       maxPeoplePerLevel: 3
     bulletPrefabIndex: -1
   - componentId: Wing4
     displayName: Wing 4
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -492,10 +568,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 11.7
+      healthCapPerLevel: 2.925
+      healthRegen: 0.41785714
+      healthRegenPerLevel: 0.104464285
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -508,12 +584,17 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 32
       maxGemsPerLevel: 8
+      tractorBeamDistance: 12
+      tractorBeamDistancePerLevel: 3
+      tractorBeamPower: 16
+      tractorBeamPowerPerLevel: 4
       maxPeople: 16
       maxPeoplePerLevel: 4
     bulletPrefabIndex: -1
   - componentId: WingHolder
     displayName: Wing 1
-    statCategory: 4
+    statCategory: 1
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -523,10 +604,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 0
-      healthCapPerLevel: 0
-      healthRegen: 0
-      healthRegenPerLevel: 0
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -539,10 +620,56 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
       maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
+  totalComponentMass: 4.01935
+  massReferencePrefab: {fileID: 0}
   upgradeTree:
+  - chassisId: GalaxyRaptor_06
+    upgradeTreeShipName: 
+    prefab: {fileID: 1483421972891814399, guid: af53100e1ce08ef4591ec86ca5c43d72, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: bf994f44eb9d6d84dbf602a363cdea33, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: bf994f44eb9d6d84dbf602a363cdea33, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 6292c832b8282ca4dae05ea89778be33, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d2779e5d93b7cb14d8ed8c297157ccbc, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8a6a3530309ce0449b3ca59396c42c3a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 1e1f26c70620b524cad95c2c73701670, type: 3}
+    minHomePlanetLevel: 1
+    powerScore: 107.7084
+    componentMass: 4.01935
+    powerScoreBreakdown:
+      offense: 41.79421
+      defense: 24.508873
+      energy: 11.644173
+      mobility: 12.3
+      capacity: 17.46114
+      firePower: 18.463276
+      bulletSpeed: 18.463276
+      healthCap: 18.612162
+      healthRegen: 5.896711
+      energyCap: 2.8556533
+      energyRegen: 8.78852
+      moveSpeed: 3.84
+      turnSpeed: 0
+      gemCap: 6.0379643
+      peopleCap: 11.423176
+    lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_01
     upgradeTreeShipName: 
     prefab: {fileID: 6948212410107959493, guid: 2a34f4a1adce0e142b89761df33a596f, type: 3}
@@ -563,14 +690,25 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 47f71ec4c7ab91143bda15e43f7abf09, type: 3}
-    minHomePlanetLevel: 1
-    powerScore: 149.08525
+    minHomePlanetLevel: 2
+    powerScore: 111.77581
+    componentMass: 3.0774
     powerScoreBreakdown:
-      offense: 39.23369
-      defense: 64.85283
-      energy: 17.686985
-      mobility: 10.3
-      capacity: 17.011753
+      offense: 38.058685
+      defense: 21.275135
+      energy: 10.573325
+      mobility: 15.390406
+      capacity: 26.478262
+      firePower: 16.765312
+      bulletSpeed: 16.765312
+      healthCap: 16.156446
+      healthRegen: 5.118689
+      energyCap: 2.5930352
+      energyRegen: 7.98029
+      moveSpeed: 3.84
+      turnSpeed: 3.0904057
+      gemCap: 9.156034
+      peopleCap: 17.322227
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_03
     upgradeTreeShipName: 
@@ -593,42 +731,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1fbd20276cc54554cb10e2e4014cffd0, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 173.57915
+    powerScore: 162.4216
+    componentMass: 3.32895
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 55.72125
-      energy: 19.828682
-      mobility: 0
-      capacity: 36.27922
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_02
-    upgradeTreeShipName: 
-    prefab: {fileID: 6647990366789616294, guid: 561309e6c89d1214489413b9a368e2c5, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 07a19ae1e37bfef4c97a9a435ff769cb, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 07a19ae1e37bfef4c97a9a435ff769cb, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 64f17e71eb30b3b468d81771a8106bc5, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 255b24a5f7509254d8d8c4e5bf346d42, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: d1c2ff7a4630812439e66a03d2648439, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 8b0c9314bd884b048b6ae26842ebbb8e, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 157.012
-    powerScoreBreakdown:
-      offense: 38.27707
-      defense: 33.621346
-      energy: 15.404312
-      mobility: 0
-      capacity: 69.70927
+      offense: 60.575
+      defense: 23.958637
+      energy: 17.028002
+      mobility: 9.240001
+      capacity: 51.619957
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 18.19431
+      healthRegen: 5.764327
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 3.6000001
+      turnSpeed: 0
+      gemCap: 17.849892
+      peopleCap: 33.770065
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_15
     upgradeTreeShipName: 
@@ -651,100 +771,104 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b1fd0ba25a1e578429cf1fc856674a56, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 200.35493
+    powerScore: 166.11546
+    componentMass: 5.80314
     powerScoreBreakdown:
-      offense: 91.94975
-      defense: 53.354816
-      energy: 40.89394
-      mobility: 10.3
-      capacity: 3.8564303
+      offense: 90.77475
+      defense: 12.712864
+      energy: 25.685265
+      mobility: 27.630407
+      capacity: 9.312172
+      firePower: 40.727158
+      bulletSpeed: 40.727158
+      healthCap: 9.654213
+      healthRegen: 3.0586505
+      energyCap: 6.2991343
+      energyRegen: 19.38613
+      moveSpeed: 4.8
+      turnSpeed: 3.0904057
+      gemCap: 3.2200966
+      peopleCap: 6.092075
     lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_06
+  - chassisId: GalaxyRaptor_08
     upgradeTreeShipName: 
-    prefab: {fileID: 1483421972891814399, guid: af53100e1ce08ef4591ec86ca5c43d72, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: bf994f44eb9d6d84dbf602a363cdea33, type: 3}
+    prefab: {fileID: 5351978450880291435, guid: ead7e69abecdb43439102955b26f59c1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 83af2bbfd95331e47a66ab71f3711e9e, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: bf994f44eb9d6d84dbf602a363cdea33, type: 3}
+      sprite: {fileID: 21300000, guid: 83af2bbfd95331e47a66ab71f3711e9e, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 6292c832b8282ca4dae05ea89778be33, type: 3}
+      sprite: {fileID: 21300000, guid: b0a9238f50b683748bf7ff1dd25e4e9e, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: d2779e5d93b7cb14d8ed8c297157ccbc, type: 3}
+      sprite: {fileID: 21300000, guid: a2f73a7d6ebdc564f967dae09c590a9f, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 8a6a3530309ce0449b3ca59396c42c3a, type: 3}
+      sprite: {fileID: 21300000, guid: f3a9e3e6547dd884791af92cf2ed0f1d, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 1e1f26c70620b524cad95c2c73701670, type: 3}
+      sprite: {fileID: 21300000, guid: f8d2e289514bbcf418f2f49706ebbc44, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 175.53104
+    powerScore: 168.36111
+    componentMass: 3.5832381
     powerScoreBreakdown:
-      offense: 42.969208
-      defense: 96.75365
-      energy: 25.706749
-      mobility: 0
-      capacity: 10.101435
+      offense: 30.875
+      defense: 37.155853
+      energy: 8.514001
+      mobility: 24.600811
+      capacity: 67.215454
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 28.216343
+      healthRegen: 8.939508
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.32
+      turnSpeed: 6.1808114
+      gemCap: 23.242725
+      peopleCap: 43.972725
     lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_09
+  - chassisId: GalaxyRaptor_02
     upgradeTreeShipName: 
-    prefab: {fileID: 3287457765946424422, guid: d4d599f5a93fe784f9362453c3e1b972, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: bf6239ce05c7f104c9342b02bd01d4b8, type: 3}
+    prefab: {fileID: 6647990366789616294, guid: 561309e6c89d1214489413b9a368e2c5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 07a19ae1e37bfef4c97a9a435ff769cb, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: bf6239ce05c7f104c9342b02bd01d4b8, type: 3}
+      sprite: {fileID: 21300000, guid: 07a19ae1e37bfef4c97a9a435ff769cb, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: bcb16dd01c0f7054bb8365135b9ad55f, type: 3}
+      sprite: {fileID: 21300000, guid: 64f17e71eb30b3b468d81771a8106bc5, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: e381ac0b4a59b5b4980e7e34fddf8ac1, type: 3}
+      sprite: {fileID: 21300000, guid: 255b24a5f7509254d8d8c4e5bf346d42, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 0021edb340ba7fd4f8d14ccd8f7c66ee, type: 3}
+      sprite: {fileID: 21300000, guid: d1c2ff7a4630812439e66a03d2648439, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: a447ed2eac8a2a34baf52eebe8775162, type: 3}
+      sprite: {fileID: 21300000, guid: 8b0c9314bd884b048b6ae26842ebbb8e, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 198.76459
+    powerScore: 181.27795
+    componentMass: 2.8092918
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 50.899822
-      energy: 34.056004
-      mobility: 0
-      capacity: 52.058758
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_05
-    upgradeTreeShipName: 
-    prefab: {fileID: 3086048336993431180, guid: 7f3dc8d8b6bfd1e4d98311d3cb215608, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 11ea90f0e9ea1e94aa78ccc7dc4fea8d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 11ea90f0e9ea1e94aa78ccc7dc4fea8d, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: f339961e78bfe064fbfa59ba9dcc78d9, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 89948d6bf33c59048a9509c8209f3bb8, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ddb81eeb0f9001b48a6545aa38c5a1f6, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 3276179605580f847a08003673e725b3, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 228.7995
-    powerScoreBreakdown:
-      offense: 61.75
-      defense: 87.82701
-      energy: 18.896482
-      mobility: 0
-      capacity: 60.326
+      offense: 37.10207
+      defense: 29.394695
+      energy: 10.299093
+      mobility: 9.240001
+      capacity: 95.242096
+      firePower: 16.330486
+      bulletSpeed: 16.330486
+      healthCap: 22.32248
+      healthRegen: 7.072216
+      energyCap: 2.5257819
+      energyRegen: 7.773311
+      moveSpeed: 3.6000001
+      turnSpeed: 0
+      gemCap: 32.93418
+      peopleCap: 62.30791
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_14
     upgradeTreeShipName: 
@@ -767,13 +891,104 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: ae18e916bd03319408f5f51ed68380d8, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 232.25748
+    powerScore: 206.50706
+    componentMass: 8.626339
     powerScoreBreakdown:
-      offense: 70.657776
-      defense: 39.803833
-      energy: 66.73503
-      mobility: 0
-      capacity: 55.06083
+      offense: 69.48277
+      defense: 20.742125
+      energy: 19.581562
+      mobility: 21.480001
+      capacity: 75.220604
+      firePower: 31.048988
+      bulletSpeed: 31.048988
+      healthCap: 15.751675
+      healthRegen: 4.99045
+      energyCap: 4.802243
+      energyRegen: 14.779319
+      moveSpeed: 4.5600004
+      turnSpeed: 0
+      gemCap: 26.010862
+      peopleCap: 49.20974
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_09
+    upgradeTreeShipName: 
+    prefab: {fileID: 3287457765946424422, guid: d4d599f5a93fe784f9362453c3e1b972, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: bf6239ce05c7f104c9342b02bd01d4b8, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: bf6239ce05c7f104c9342b02bd01d4b8, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: bcb16dd01c0f7054bb8365135b9ad55f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e381ac0b4a59b5b4980e7e34fddf8ac1, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 0021edb340ba7fd4f8d14ccd8f7c66ee, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: a447ed2eac8a2a34baf52eebe8775162, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 191.12361
+    componentMass: 5
+    powerScoreBreakdown:
+      offense: 60.575
+      defense: 25.950266
+      energy: 17.028002
+      mobility: 15.360001
+      capacity: 72.21034
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 19.706764
+      healthRegen: 6.243501
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 4.0800004
+      turnSpeed: 0
+      gemCap: 24.96993
+      peopleCap: 47.24041
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_05
+    upgradeTreeShipName: 
+    prefab: {fileID: 3086048336993431180, guid: 7f3dc8d8b6bfd1e4d98311d3cb215608, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 11ea90f0e9ea1e94aa78ccc7dc4fea8d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 11ea90f0e9ea1e94aa78ccc7dc4fea8d, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: f339961e78bfe064fbfa59ba9dcc78d9, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 89948d6bf33c59048a9509c8209f3bb8, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ddb81eeb0f9001b48a6545aa38c5a1f6, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 3276179605580f847a08003673e725b3, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 202.2637
+    componentMass: 3.21946
+    powerScoreBreakdown:
+      offense: 60.575
+      defense: 32.422626
+      energy: 17.028002
+      mobility: 9.240001
+      capacity: 82.99807
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 24.621906
+      healthRegen: 7.8007216
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 3.6000001
+      turnSpeed: 0
+      gemCap: 28.700268
+      peopleCap: 54.297802
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_10
     upgradeTreeShipName: 
@@ -796,42 +1011,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c05df1980030f4c4090e78e9b2875a6d, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 200.41678
+    powerScore: 184.63818
+    componentMass: 4.202912
     powerScoreBreakdown:
-      offense: 37.124065
-      defense: 68.549034
-      energy: 27.269594
-      mobility: 0
-      capacity: 67.47408
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_13
-    upgradeTreeShipName: 
-    prefab: {fileID: 4879572490782050543, guid: ccb98f2856af19a4e899941944792e60, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 36332e985bfa2d341ad954dc256ca017, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 36332e985bfa2d341ad954dc256ca017, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 5b2c17905860ea34b9b26be60c48dc88, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 644d3fa38cbedf049a9f655d186bcc60, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 986865fd0369f064c9dfd48a8233a0d3, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 307849084e97f874baa03cf4d0897d34, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 211.20528
-    powerScoreBreakdown:
-      offense: 61.82336
-      defense: 38.57625
-      energy: 33.067707
-      mobility: 0
-      capacity: 77.73796
+      offense: 35.949062
+      defense: 31.035095
+      energy: 9.968566
+      mobility: 15.360001
+      capacity: 92.325455
+      firePower: 15.806393
+      bulletSpeed: 15.806393
+      healthCap: 23.568209
+      healthRegen: 7.466887
+      energyCap: 2.4447222
+      energyRegen: 7.523844
+      moveSpeed: 4.0800004
+      turnSpeed: 0
+      gemCap: 31.925623
+      peopleCap: 60.39983
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_17
     upgradeTreeShipName: 
@@ -854,42 +1051,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1dad9ed8d36d613449f02c7f67e973a0, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 294.80722
+    powerScore: 261.6904
+    componentMass: 7.61224
     powerScoreBreakdown:
-      offense: 88.39085
-      defense: 120.015
-      energy: 24.12723
-      mobility: 0
-      capacity: 62.27413
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_08
-    upgradeTreeShipName: 
-    prefab: {fileID: 5351978450880291435, guid: ead7e69abecdb43439102955b26f59c1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 83af2bbfd95331e47a66ab71f3711e9e, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 83af2bbfd95331e47a66ab71f3711e9e, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: b0a9238f50b683748bf7ff1dd25e4e9e, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: a2f73a7d6ebdc564f967dae09c590a9f, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f3a9e3e6547dd884791af92cf2ed0f1d, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: f8d2e289514bbcf418f2f49706ebbc44, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 244.19142
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 121.545044
-      energy: 21.828943
-      mobility: 20.6
-      capacity: 48.16744
+      offense: 82.515854
+      defense: 43.19242
+      energy: 21.970379
+      mobility: 12.3
+      capacity: 101.71174
+      firePower: 34.83675
+      bulletSpeed: 34.83675
+      healthCap: 32.800545
+      healthRegen: 10.391877
+      energyCap: 5.388084
+      energyRegen: 16.582294
+      moveSpeed: 3.84
+      turnSpeed: 0
+      gemCap: 35.17135
+      peopleCap: 66.54039
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_20
     upgradeTreeShipName: 
@@ -912,42 +1091,104 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0ba3b70725612de4594d4e5150799009, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 272.54462
+    powerScore: 225.51016
+    componentMass: 6.4350767
     powerScoreBreakdown:
-      offense: 68.25578
-      defense: 67.58434
-      energy: 47.711975
-      mobility: 31.431053
-      capacity: 57.56145
+      offense: 67.08078
+      defense: 30.147654
+      energy: 18.892992
+      mobility: 30.720812
+      capacity: 78.66793
+      firePower: 29.957174
+      bulletSpeed: 29.957174
+      healthCap: 22.89428
+      healthRegen: 7.253374
+      energyCap: 4.6333766
+      energyRegen: 14.259616
+      moveSpeed: 4.8
+      turnSpeed: 6.1808114
+      gemCap: 27.202929
+      peopleCap: 51.465
     lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_04
+  - chassisId: GalaxyRaptor_18
     upgradeTreeShipName: 
-    prefab: {fileID: 2100191600605463484, guid: 7720ef37117942743acd498d301a3bfe, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 5f8e4a4a839c4564ba7be4645d126b08, type: 3}
+    prefab: {fileID: 4748381415767794104, guid: d258e53142a746747bd2f2d24f9254c7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0dafb5af0b543e046bc0e692073ed91a, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 5f8e4a4a839c4564ba7be4645d126b08, type: 3}
+      sprite: {fileID: 21300000, guid: 0dafb5af0b543e046bc0e692073ed91a, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 384f2b2fca98e434b8057cc17e0f1c4f, type: 3}
+      sprite: {fileID: 21300000, guid: 29e4908088b831d48b7a6296b934e093, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: cdc67957c76830742b36b767f1f35f7a, type: 3}
+      sprite: {fileID: 21300000, guid: 7ec7b45b59ff5a14d83536e8392d0b18, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 0eddc099f6c2c084396f5b9ed1e29fe5, type: 3}
+      sprite: {fileID: 21300000, guid: 70ac1e212485ded498e610bee3d5c228, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 2509049c88b082c4a91e1963005851ab, type: 3}
+      sprite: {fileID: 21300000, guid: 4cd948630ea78ac4181962aa81877f20, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 295.95892
+    powerScore: 257.8944
+    componentMass: 4.57697
     powerScoreBreakdown:
-      offense: 73.9662
-      defense: 98.58375
-      energy: 9.502476
-      mobility: 28.295498
-      capacity: 85.610985
+      offense: 60.575
+      defense: 42.68649
+      energy: 17.028002
+      mobility: 39.961624
+      capacity: 97.643295
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 32.416336
+      healthRegen: 10.270152
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 5.04
+      turnSpeed: 12.361623
+      gemCap: 33.764503
+      peopleCap: 63.87879
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_13
+    upgradeTreeShipName: 
+    prefab: {fileID: 4879572490782050543, guid: ccb98f2856af19a4e899941944792e60, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 36332e985bfa2d341ad954dc256ca017, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 36332e985bfa2d341ad954dc256ca017, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 5b2c17905860ea34b9b26be60c48dc88, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 644d3fa38cbedf049a9f655d186bcc60, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 986865fd0369f064c9dfd48a8233a0d3, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 307849084e97f874baa03cf4d0897d34, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 231.66077
+    componentMass: 4.8839216
+    powerScoreBreakdown:
+      offense: 60.648357
+      defense: 29.824804
+      energy: 17.04903
+      mobility: 18.42
+      capacity: 105.71857
+      firePower: 27.033344
+      bulletSpeed: 27.033344
+      healthCap: 22.649107
+      healthRegen: 7.175697
+      energyCap: 4.1811576
+      energyRegen: 12.867873
+      moveSpeed: 4.32
+      turnSpeed: 0
+      gemCap: 36.55689
+      peopleCap: 69.16168
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_12
     upgradeTreeShipName: 
@@ -970,13 +1211,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 23106c74a7b7b764994928f823add9ae, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 280.7231
+    powerScore: 224.85081
+    componentMass: 3.8910887
     powerScoreBreakdown:
-      offense: 32.05
-      defense: 113.721405
-      energy: 26.20475
-      mobility: 24.984709
-      capacity: 83.76226
+      offense: 30.875
+      defense: 45.02077
+      energy: 8.514001
+      mobility: 27.660812
+      capacity: 112.78023
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 34.189
+      healthRegen: 10.831773
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.5600004
+      turnSpeed: 6.1808114
+      gemCap: 38.99877
+      peopleCap: 73.781456
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_07
     upgradeTreeShipName: 
@@ -999,42 +1251,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 20460bc75d9c84144b30be37deb19f27, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 377.18152
+    powerScore: 339.17352
+    componentMass: 3.2890549
     powerScoreBreakdown:
-      offense: 174.20607
-      defense: 122.29243
-      energy: 20.716164
-      mobility: 18.916424
-      capacity: 41.05043
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_19
-    upgradeTreeShipName: 
-    prefab: {fileID: 9201083247382314166, guid: 399469de77579624fb8a7a83937930a1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c40563cd8c209eb4394417443ba600a7, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: c40563cd8c209eb4394417443ba600a7, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: fe6552db1515f7f4185b8822346d0c20, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b278d1504986cc343bf3292ae0f9cba1, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 223c2ebef81d2dc429c28b6663526069, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 0dcad8e2ad4251943957ff34540bb7db, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 335.61816
-    powerScoreBreakdown:
-      offense: 67.40843
-      defense: 141.69656
-      energy: 43.543182
-      mobility: 0
-      capacity: 82.97
+      offense: 173.03107
+      defense: 38.107323
+      energy: 49.26541
+      mobility: 21.540812
+      capacity: 57.22892
+      firePower: 78.116394
+      bulletSpeed: 78.116394
+      healthCap: 28.938892
+      healthRegen: 9.16843
+      energyCap: 12.082004
+      energyRegen: 37.183407
+      moveSpeed: 4.0800004
+      turnSpeed: 6.1808114
+      gemCap: 19.789438
+      peopleCap: 37.43948
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_16
     upgradeTreeShipName: 
@@ -1057,42 +1291,104 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f5f747be6a9a28248b51b6d4686c7000, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 321.6064
+    powerScore: 312.14297
+    componentMass: 6.6395273
     powerScoreBreakdown:
-      offense: 96.15
-      defense: 95.585075
-      energy: 24.53369
-      mobility: 22.393745
-      capacity: 82.94389
+      offense: 92.625
+      defense: 48.119423
+      energy: 25.542002
+      mobility: 21.540812
+      capacity: 124.315735
+      firePower: 40.5
+      bulletSpeed: 40.5
+      healthCap: 36.542133
+      healthRegen: 11.577288
+      energyCap: 6.264
+      energyRegen: 19.278002
+      moveSpeed: 4.0800004
+      turnSpeed: 6.1808114
+      gemCap: 42.987682
+      peopleCap: 81.32805
     lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_18
+  - chassisId: GalaxyRaptor_04
     upgradeTreeShipName: 
-    prefab: {fileID: 4748381415767794104, guid: d258e53142a746747bd2f2d24f9254c7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 0dafb5af0b543e046bc0e692073ed91a, type: 3}
+    prefab: {fileID: 2100191600605463484, guid: 7720ef37117942743acd498d301a3bfe, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5f8e4a4a839c4564ba7be4645d126b08, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 0dafb5af0b543e046bc0e692073ed91a, type: 3}
+      sprite: {fileID: 21300000, guid: 5f8e4a4a839c4564ba7be4645d126b08, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 29e4908088b831d48b7a6296b934e093, type: 3}
+      sprite: {fileID: 21300000, guid: 384f2b2fca98e434b8057cc17e0f1c4f, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 7ec7b45b59ff5a14d83536e8392d0b18, type: 3}
+      sprite: {fileID: 21300000, guid: cdc67957c76830742b36b767f1f35f7a, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 70ac1e212485ded498e610bee3d5c228, type: 3}
+      sprite: {fileID: 21300000, guid: 0eddc099f6c2c084396f5b9ed1e29fe5, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 4cd948630ea78ac4181962aa81877f20, type: 3}
+      sprite: {fileID: 21300000, guid: 2509049c88b082c4a91e1963005851ab, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 338.0727
+    powerScore: 265.52524
+    componentMass: 2.1160998
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 125.54533
-      energy: 30.454323
-      mobility: 48.77359
-      capacity: 71.54944
+      offense: 72.79121
+      defense: 37.731346
+      energy: 20.52998
+      mobility: 18.480812
+      capacity: 115.9919
+      firePower: 32.552822
+      bulletSpeed: 32.552822
+      healthCap: 28.653374
+      healthRegen: 9.0779705
+      energyCap: 5.034836
+      energyRegen: 15.495144
+      moveSpeed: 3.84
+      turnSpeed: 6.1808114
+      gemCap: 40.10935
+      peopleCap: 75.882545
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_19
+    upgradeTreeShipName: 
+    prefab: {fileID: 9201083247382314166, guid: 399469de77579624fb8a7a83937930a1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c40563cd8c209eb4394417443ba600a7, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: c40563cd8c209eb4394417443ba600a7, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fe6552db1515f7f4185b8822346d0c20, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: b278d1504986cc343bf3292ae0f9cba1, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 223c2ebef81d2dc429c28b6663526069, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 0dcad8e2ad4251943957ff34540bb7db, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 274.19086
+    componentMass: 7.041525
+    powerScoreBreakdown:
+      offense: 65.05843
+      defense: 50.10174
+      energy: 17.976418
+      mobility: 24.54
+      capacity: 116.51425
+      firePower: 28.503834
+      bulletSpeed: 28.503834
+      healthCap: 38.047516
+      healthRegen: 12.054227
+      energyCap: 4.408593
+      energyRegen: 13.567824
+      moveSpeed: 4.8
+      turnSpeed: 0
+      gemCap: 40.289974
+      peopleCap: 76.22427
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_11
     upgradeTreeShipName: 
@@ -1115,13 +1411,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1c21ba37dfe59b1448c98c4bf9e88a99, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 382.2248
+    powerScore: 325.27258
+    componentMass: 5.260951
     powerScoreBreakdown:
-      offense: 72.76128
-      defense: 133.34953
-      energy: 37.480293
-      mobility: 20.79931
-      capacity: 117.83437
+      offense: 71.58627
+      defense: 51.465958
+      energy: 20.184566
+      mobility: 24.600811
+      capacity: 157.43497
+      firePower: 32.005123
+      bulletSpeed: 32.005123
+      healthCap: 39.083508
+      healthRegen: 12.382451
+      energyCap: 4.950126
+      energyRegen: 15.234441
+      moveSpeed: 4.32
+      turnSpeed: 6.1808114
+      gemCap: 54.44013
+      peopleCap: 102.994835
     lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: 3e2988e242bd5cb49b887e9bfb9ac8ff, type: 2}
   teamMaterials:

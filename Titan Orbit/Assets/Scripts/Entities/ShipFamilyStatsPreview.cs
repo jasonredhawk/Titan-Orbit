@@ -161,6 +161,7 @@ namespace TitanOrbit.Entities
                 matchedComponentIds,
                 perComponentStats,
                 shipLevel: 1);
+            totalStats = shipFamily.ApplyStatFallbacks(totalStats);
 
             previewTopSpeedMoveSpeed = propulsion.topMoveSpeed;
             previewSumPropulsionAcceleration = propulsion.sumAcceleration;

@@ -1,12 +1,14 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using TitanOrbit.Core;
 using TitanOrbit.Entities;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// World-space planet stats: single population number (no progress bars or gem row).
+    /// World-space planet stats: family name plus population numbers (no progress bars or gem row).
     /// </summary>
     public class PlanetStatsDisplay : MonoBehaviour
     {
@@ -14,6 +16,7 @@ namespace TitanOrbit.UI
         private Planet planet;
         private Canvas canvas;
         private RectTransform rootRect;
+        private TextMeshProUGUI planetNameText;
         private TextMeshProUGUI popValueText;
         private TextMeshProUGUI popMaxText;
         private const float RefreshInterval = 0.2f;
@@ -50,7 +53,7 @@ namespace TitanOrbit.UI
                 rt = go.AddComponent<RectTransform>();
             if (rt == null) return;
 
-            rt.sizeDelta = new Vector2(380f, 130f);
+            rt.sizeDelta = new Vector2(380f, 230f);
             // Make the rect anchor/pivot the true center so our number stays centered.
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -59,6 +62,20 @@ namespace TitanOrbit.UI
             var scaler = go.AddComponent<CanvasScaler>();
             if (scaler != null)
                 scaler.dynamicPixelsPerUnit = 10f;
+
+            planetNameText = AddText(rt, string.Empty, 34);
+            planetNameText.color = ResolvePlanetTitleColor();
+            planetNameText.alignment = TextAlignmentOptions.Center;
+            var nameRect = planetNameText.GetComponent<RectTransform>();
+            if (nameRect != null)
+            {
+                nameRect.anchorMin = new Vector2(0.5f, 0.5f);
+                nameRect.anchorMax = new Vector2(0.5f, 0.5f);
+                nameRect.pivot = new Vector2(0.5f, 0.5f);
+                nameRect.anchoredPosition = new Vector2(0f, 92f);
+                nameRect.sizeDelta = new Vector2(360f, 40f);
+            }
+            ApplyOutline(planetNameText, Color.black, 0.25f);
 
             popValueText = AddText(rt, "0", 90);
             popValueText.color = new Color(1f, 0.92f, 0.25f); // yellow
@@ -69,8 +86,8 @@ namespace TitanOrbit.UI
                 popRect.anchorMin = new Vector2(0.5f, 0.5f);
                 popRect.anchorMax = new Vector2(0.5f, 0.5f);
                 popRect.pivot = new Vector2(0.5f, 0.5f);
-                popRect.anchoredPosition = new Vector2(0f, 20f);
-                popRect.sizeDelta = new Vector2(220f, 110f);
+                popRect.anchoredPosition = new Vector2(0f, -6f);
+                popRect.sizeDelta = new Vector2(220f, 78f);
             }
             ApplyOutline(popValueText, Color.black, 0.25f);
 
@@ -83,9 +100,8 @@ namespace TitanOrbit.UI
                 maxRect.anchorMin = new Vector2(0.5f, 0.5f);
                 maxRect.anchorMax = new Vector2(0.5f, 0.5f);
                 maxRect.pivot = new Vector2(0.5f, 0.5f);
-                // Under the primary number, close but non-overlapping.
-                maxRect.anchoredPosition = new Vector2(0f, -35f);
-                maxRect.sizeDelta = new Vector2(130f, 55f);
+                maxRect.anchoredPosition = new Vector2(0f, -88f);
+                maxRect.sizeDelta = new Vector2(130f, 52f);
             }
             ApplyOutline(popMaxText, Color.black, 0.25f);
 
@@ -151,6 +167,13 @@ namespace TitanOrbit.UI
             lastRefresh = Time.time;
 
             float curPop = planet.CurrentPopulation;
+            if (planetNameText != null)
+            {
+                string displayName = ResolvePlanetDisplayName();
+                planetNameText.text = displayName;
+                planetNameText.color = ResolvePlanetTitleColor();
+                planetNameText.gameObject.SetActive(!string.IsNullOrEmpty(displayName));
+            }
             if (popValueText != null)
                 popValueText.text = Mathf.RoundToInt(curPop).ToString();
             if (popMaxText != null)
@@ -158,6 +181,22 @@ namespace TitanOrbit.UI
 
             if (canvas != null && canvas.worldCamera == null)
                 canvas.worldCamera = UnityEngine.Camera.main;
+        }
+
+        private string ResolvePlanetDisplayName()
+        {
+            if (planet == null)
+                return string.Empty;
+            if (CardShopSystem.Instance != null)
+                return CardShopSystem.Instance.GetPlanetFamilyDisplayName(planet.PlanetId);
+            return string.Empty;
+        }
+
+        private Color ResolvePlanetTitleColor()
+        {
+            if (planet == null)
+                return Color.white;
+            return TeamManager.GetTeamColor(planet.TeamOwnership);
         }
 
         public void Refresh()

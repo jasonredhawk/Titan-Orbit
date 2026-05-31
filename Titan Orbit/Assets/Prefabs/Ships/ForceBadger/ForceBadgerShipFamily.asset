@@ -13,6 +13,37 @@ MonoBehaviour:
   m_Name: ForceBadgerShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: ForceBadger
+  defaultFallbackStats:
+    firePower: 3
+    firePowerPerLevel: 0.75
+    bulletSpeed: 12
+    bulletSpeedPerLevel: 3
+    fireRate: 1.2
+    fireRatePerLevel: 0.3
+    rammingPower: 1
+    rammingPowerPerLevel: 0.25
+    healthCap: 6.3
+    healthCapPerLevel: 1.575
+    healthRegen: 0.22500002
+    healthRegenPerLevel: 0.056250006
+    energyCap: 20
+    energyCapPerLevel: 5
+    energyRegen: 2.5
+    energyRegenPerLevel: 0.625
+    moveSpeed: 4.8
+    moveSpeedPerLevel: 0.96000004
+    accelerationCap: 2.4
+    accelerationCapPerLevel: 0.6
+    turnSpeed: 7.9081087
+    turnSpeedPerLevel: 1.9770272
+    maxGems: 8
+    maxGemsPerLevel: 2
+    tractorBeamDistance: 3
+    tractorBeamDistancePerLevel: 0.75
+    tractorBeamPower: 4
+    tractorBeamPowerPerLevel: 1
+    maxPeople: 4
+    maxPeoplePerLevel: 1
   bulletPrefabIndex: 0
   components:
   - componentId: Cockpit
@@ -26,12 +57,12 @@ MonoBehaviour:
       bulletSpeedPerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
-      rammingPower: 2
-      rammingPowerPerLevel: 0.5
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      rammingPower: 1
+      rammingPowerPerLevel: 0.25
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -44,6 +75,10 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
@@ -68,14 +103,18 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -104,10 +143,14 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
-      turnSpeed: 14
-      turnSpeedPerLevel: 3.5
+      turnSpeed: 4.1621623
+      turnSpeedPerLevel: 1.0405406
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -124,10 +167,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -140,6 +183,10 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -156,10 +203,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -172,6 +219,10 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -200,10 +251,14 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
-      turnSpeed: 22
-      turnSpeedPerLevel: 5.5
+      turnSpeed: 6.5405407
+      turnSpeedPerLevel: 1.6351352
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -228,14 +283,18 @@ MonoBehaviour:
       energyCapPerLevel: 0
       energyRegen: 0
       energyRegenPerLevel: 0
-      moveSpeed: 8
-      moveSpeedPerLevel: 2
-      accelerationCap: 4
-      accelerationCapPerLevel: 1
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
+      turnSpeed: 3.7459462
+      turnSpeedPerLevel: 0.93648654
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -268,6 +327,10 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 0
       maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
       maxPeople: 0
       maxPeoplePerLevel: 0
     bulletPrefabIndex: -1
@@ -284,10 +347,10 @@ MonoBehaviour:
       fireRatePerLevel: 0
       rammingPower: 0
       rammingPowerPerLevel: 0
-      healthCap: 21
-      healthCapPerLevel: 5.25
-      healthRegen: 0.75
-      healthRegenPerLevel: 0.1875
+      healthCap: 6.3
+      healthCapPerLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerLevel: 0.056250006
       energyCap: 0
       energyCapPerLevel: 0
       energyRegen: 0
@@ -300,39 +363,16 @@ MonoBehaviour:
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
       maxPeople: 4
       maxPeoplePerLevel: 1
     bulletPrefabIndex: -1
+  totalComponentMass: 11.025713
+  massReferencePrefab: {fileID: 0}
   upgradeTree:
-  - chassisId: ForceBadger_03
-    upgradeTreeShipName: 
-    prefab: {fileID: 4391627003011600428, guid: 6a61c697bfaa5ef499dbd88e9eda37f4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ad348110fdea5fc44a4a0b55fc24b2c2, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: ad348110fdea5fc44a4a0b55fc24b2c2, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: aed3f88176392074da315683d1b6212a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 2cdd9ae629b774b40adbc5388f3b6b1a, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 7bf9a0aa83eb7b54b9be2cb1af077339, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: b79d1a1ed1ab41843aca0da328b7e8a9, type: 3}
-    minHomePlanetLevel: 1
-    powerScore: 107.95749
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 21.243448
-      energy: 8.514001
-      mobility: 43.05
-      capacity: 3.1000428
-    lockedInUpgradeTree: 0
   - chassisId: ForceBadger_10
     upgradeTreeShipName: 
     prefab: {fileID: 1095357900978940793, guid: b406929852369e440a45d5f7f412a4e8, type: 3}
@@ -353,14 +393,65 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: e6a7419a0ec4a8041b8675eb3a6b3064, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 111.3875
+    minHomePlanetLevel: 1
+    powerScore: 69.71152
+    componentMass: 11.025713
     powerScoreBreakdown:
-      offense: 17.2
-      defense: 24.150002
+      offense: 16.025
+      defense: 7.245001
       energy: 4.2570004
-      mobility: 47.3
-      capacity: 18.480492
+      mobility: 18.06973
+      capacity: 24.114788
+      firePower: 6.75
+      bulletSpeed: 6.75
+      healthCap: 5.50189
+      healthRegen: 1.7431105
+      energyCap: 1.044
+      energyRegen: 3.2130003
+      moveSpeed: 3.6000001
+      turnSpeed: 8.829731
+      gemCap: 8.338758
+      peopleCap: 15.77603
+    lockedInUpgradeTree: 0
+  - chassisId: ForceBadger_03
+    upgradeTreeShipName: 
+    prefab: {fileID: 4391627003011600428, guid: 6a61c697bfaa5ef499dbd88e9eda37f4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ad348110fdea5fc44a4a0b55fc24b2c2, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ad348110fdea5fc44a4a0b55fc24b2c2, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: aed3f88176392074da315683d1b6212a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2cdd9ae629b774b40adbc5388f3b6b1a, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 7bf9a0aa83eb7b54b9be2cb1af077339, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: b79d1a1ed1ab41843aca0da328b7e8a9, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 70.59357
+    componentMass: 9.20711
+    powerScoreBreakdown:
+      offense: 30.875
+      defense: 6.3730345
+      energy: 8.514001
+      mobility: 20.786352
+      capacity: 4.045178
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 4.8397145
+      healthRegen: 1.53332
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 3.84
+      turnSpeed: 8.486352
+      gemCap: 1.3987998
+      peopleCap: 2.646378
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_01
     upgradeTreeShipName: 
@@ -383,13 +474,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1e8e3af606c03d44683bd8ab6dc128a6, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 113.6499
+    powerScore: 70.740074
+    componentMass: 9.210876
     powerScoreBreakdown:
-      offense: 2.35
-      defense: 20.814676
-      energy: 0
-      mobility: 85
-      capacity: 5.4852295
+      offense: 16.025
+      defense: 6.244403
+      energy: 4.075
+      mobility: 37.238113
+      capacity: 7.1575556
+      firePower: 6.75
+      bulletSpeed: 6.75
+      healthCap: 4.742031
+      healthRegen: 1.5023719
+      energyCap: 1.45
+      energyRegen: 2.625
+      moveSpeed: 4.0800004
+      turnSpeed: 21.87811
+      gemCap: 2.4750426
+      peopleCap: 4.682513
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_04
     upgradeTreeShipName: 
@@ -412,42 +514,104 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f4617bd398dcdfd41acd57d2f70d1fe0, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 120.346214
+    powerScore: 74.23525
+    componentMass: 7.40282
     powerScoreBreakdown:
-      offense: 32.05
-      defense: 25.30096
+      offense: 30.875
+      defense: 7.590289
       energy: 8.514001
-      mobility: 46.600002
-      capacity: 7.88125
+      mobility: 16.971891
+      capacity: 10.28407
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 5.7641044
+      healthRegen: 1.826185
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 3.3600001
+      turnSpeed: 10.791892
+      gemCap: 3.5561738
+      peopleCap: 6.727896
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_11
+  - chassisId: ForceBadger_15
     upgradeTreeShipName: 
-    prefab: {fileID: 2492948685127979694, guid: 5a7b5e383ab9584408c13367f0d3c5cc, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ce83057887f0d1e4abe873bc5db17626, type: 3}
+    prefab: {fileID: 4111185735759285355, guid: 23626ad0c0734ac49ab22c243b9a1221, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c1c5b57cd9d3fed48866b00c40c7101a, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: ce83057887f0d1e4abe873bc5db17626, type: 3}
+      sprite: {fileID: 21300000, guid: c1c5b57cd9d3fed48866b00c40c7101a, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: b38e4cbeaae8c144d82db91a0ed76fbe, type: 3}
+      sprite: {fileID: 21300000, guid: 762f62a4df1c9164f81956b17f2a1476, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: a06fcb634ce89614cbf74454433f5f31, type: 3}
+      sprite: {fileID: 21300000, guid: bad8c33f44aae494aadbc60e58c9ee31, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 7a5cac0e2a6d8bc4b831d5ad742d11bb, type: 3}
+      sprite: {fileID: 21300000, guid: 42561e85f010cac4893a8b0bbadda8e5, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 0cb50d6c65733044383a6869c61929b5, type: 3}
+      sprite: {fileID: 21300000, guid: a27b6585035a79a4baa81119d179046f, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 117.91268
+    powerScore: 80.3843
+    componentMass: 11.84727
     powerScoreBreakdown:
-      offense: 33.937466
-      defense: 22.841213
-      energy: 8.514001
-      mobility: 39.5
-      capacity: 13.12
+      offense: 16.025
+      defense: 10.77176
+      energy: 4.2570004
+      mobility: 36.490543
+      capacity: 12.84
+      firePower: 6.75
+      bulletSpeed: 6.75
+      healthCap: 8.180129
+      healthRegen: 2.591631
+      energyCap: 1.044
+      energyRegen: 3.2130003
+      moveSpeed: 4.5600004
+      turnSpeed: 15.010542
+      gemCap: 4.44
+      peopleCap: 8.4
+    lockedInUpgradeTree: 0
+  - chassisId: ForceBadger_06
+    upgradeTreeShipName: 
+    prefab: {fileID: 1340269927485462586, guid: 6e70b1b32a1939640b642aaf18b513af, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 25617b91607e48a4a8cdedf2925fe09e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 25617b91607e48a4a8cdedf2925fe09e, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: e5c1fdc7b209bf947bafa871bf40b146, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 4dfd46f9911bd7845951327daed76748, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 1a2db2a463f1c0f43b2f829af489099d, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 7c9b0a780c2519c48834802dce3c6667, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 75.18656
+    componentMass: 11.776554
+    powerScoreBreakdown:
+      offense: 16.025
+      defense: 6.0771227
+      energy: 4.2570004
+      mobility: 36.943787
+      capacity: 11.883652
+      firePower: 6.75
+      bulletSpeed: 6.75
+      healthCap: 4.614998
+      healthRegen: 1.4621251
+      energyCap: 1.044
+      energyRegen: 3.2130003
+      moveSpeed: 4.0800004
+      turnSpeed: 21.583784
+      gemCap: 4.1093
+      peopleCap: 7.7743516
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_08
     upgradeTreeShipName: 
@@ -469,72 +633,25 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 2482984b4afb24140a2c59720d799f91, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 131.9808
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 19.047997
-      energy: 8.514001
-      mobility: 66.15
-      capacity: 6.218805
-    lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_14
-    upgradeTreeShipName: 
-    prefab: {fileID: 4426889034956034690, guid: c26ee810c96753c468a613b10cb91941, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1a736d8992a7d884391b0a0b83d626b3, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 1a736d8992a7d884391b0a0b83d626b3, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: c8a693f85966b6c45881cad98b95415e, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: ad626f3fb25de344b95346084b0bf6ee, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 7764fa9283cacdb44accfac997fc859b, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ab99fd01e8ba70a44b031f176ad15b08, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 144.52518
+    powerScore: 80.8721
+    componentMass: 9.408184
     powerScoreBreakdown:
-      offense: 27.947392
-      defense: 32.080868
+      offense: 30.875
+      defense: 5.7143993
       energy: 8.514001
-      mobility: 64.95
-      capacity: 11.032922
-    lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_09
-    upgradeTreeShipName: 
-    prefab: {fileID: 1622943304897293935, guid: 1e542fa7465014c44be47a061637438e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 388d2bb1efb3c274f87a4fa4d513c09b, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 388d2bb1efb3c274f87a4fa4d513c09b, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 5d6d921be59a52d4b88ac21118eb99b1, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 14d94ff48f5f7a34f82642754277be51, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f074c6a46b439ec40bf9bc2d8e7e1b36, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 00b8256af14fff941983180502174ac7, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 147.80608
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 16.792028
-      energy: 8.514001
-      mobility: 87.35
-      capacity: 3.1000428
+      mobility: 27.65392
+      capacity: 8.114782
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 4.339544
+      healthRegen: 1.3748555
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 3.84
+      turnSpeed: 15.35392
+      gemCap: 2.806046
+      peopleCap: 5.308736
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_05
     upgradeTreeShipName: 
@@ -557,100 +674,144 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 035a616dc61f08043852bfb2292d6248, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 147.79057
+    powerScore: 81.228035
+    componentMass: 9.946653
     powerScoreBreakdown:
-      offense: 32.05
-      defense: 17.76573
+      offense: 30.875
+      defense: 5.329719
       energy: 8.514001
-      mobility: 83.6
-      capacity: 5.8608484
+      mobility: 28.861622
+      capacity: 7.6476927
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 4.0474157
+      healthRegen: 1.2823035
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 3.6000001
+      turnSpeed: 19.621622
+      gemCap: 2.644529
+      peopleCap: 5.0031633
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_15
+  - chassisId: ForceBadger_09
     upgradeTreeShipName: 
-    prefab: {fileID: 4111185735759285355, guid: 23626ad0c0734ac49ab22c243b9a1221, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c1c5b57cd9d3fed48866b00c40c7101a, type: 3}
+    prefab: {fileID: 1622943304897293935, guid: 1e542fa7465014c44be47a061637438e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 388d2bb1efb3c274f87a4fa4d513c09b, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: c1c5b57cd9d3fed48866b00c40c7101a, type: 3}
+      sprite: {fileID: 21300000, guid: 388d2bb1efb3c274f87a4fa4d513c09b, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 762f62a4df1c9164f81956b17f2a1476, type: 3}
+      sprite: {fileID: 21300000, guid: 5d6d921be59a52d4b88ac21118eb99b1, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: bad8c33f44aae494aadbc60e58c9ee31, type: 3}
+      sprite: {fileID: 21300000, guid: 14d94ff48f5f7a34f82642754277be51, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 42561e85f010cac4893a8b0bbadda8e5, type: 3}
+      sprite: {fileID: 21300000, guid: f074c6a46b439ec40bf9bc2d8e7e1b36, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: a27b6585035a79a4baa81119d179046f, type: 3}
+      sprite: {fileID: 21300000, guid: 00b8256af14fff941983180502174ac7, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 143.70287
+    powerScore: 84.20787
+    componentMass: 10.310386
     powerScoreBreakdown:
-      offense: 17.2
-      defense: 35.905865
-      energy: 4.2570004
-      mobility: 76.5
-      capacity: 9.84
+      offense: 30.875
+      defense: 5.037608
+      energy: 8.514001
+      mobility: 35.736084
+      capacity: 4.045178
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 3.8255851
+      healthRegen: 1.2120231
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.32
+      turnSpeed: 17.316084
+      gemCap: 1.3987998
+      peopleCap: 2.646378
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_07
+  - chassisId: ForceBadger_02
     upgradeTreeShipName: 
-    prefab: {fileID: 5710075403279697268, guid: ea0b37f1a82f903459a3b7ede14a9726, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 55db8e7a9c763cb4190768846837638e, type: 3}
+    prefab: {fileID: 7851285274831131130, guid: eb978740a9e78484ab3931373ab143f5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c6c99d20b7fa8f44293dc116c70649f1, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 55db8e7a9c763cb4190768846837638e, type: 3}
+      sprite: {fileID: 21300000, guid: c6c99d20b7fa8f44293dc116c70649f1, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: d99be7095ab72a64b8f42c80c61eca25, type: 3}
+      sprite: {fileID: 21300000, guid: 7e45471516f5b7a439a7dc33228eeec8, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 8e33d2ded1c243944a2b7183ae46a76f, type: 3}
+      sprite: {fileID: 21300000, guid: 42fbfcc50094bd9479779d7a9b713cf4, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c5a0f3c44c3dd74469e9d0978bd0e09b, type: 3}
+      sprite: {fileID: 21300000, guid: 79ce77c5da630624fba8b3fb7fe5664a, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 075f20b3600f942459a5f8312eeda31c, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 167.1755
+      sprite: {fileID: 21300000, guid: f087c6fae8c696344b9902e20798ae19, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 90.00434
+    componentMass: 12.163958
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 25.7175
-      energy: 17.028002
-      mobility: 59.4
-      capacity: 3.28
+      offense: 30.875
+      defense: 1.2858751
+      energy: 8.514001
+      mobility: 45.049465
+      capacity: 4.2799997
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 0.97650003
+      healthRegen: 0.30937505
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 3.6000001
+      turnSpeed: 35.809464
+      gemCap: 1.48
+      peopleCap: 2.8
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_16
+  - chassisId: ForceBadger_11
     upgradeTreeShipName: 
-    prefab: {fileID: 1690775562596911980, guid: 111cdc75f016d094fb06b06c1d084be7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 044344131c1feb0499a34a87b419397d, type: 3}
+    prefab: {fileID: 2492948685127979694, guid: 5a7b5e383ab9584408c13367f0d3c5cc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ce83057887f0d1e4abe873bc5db17626, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 044344131c1feb0499a34a87b419397d, type: 3}
+      sprite: {fileID: 21300000, guid: ce83057887f0d1e4abe873bc5db17626, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: abc7a0e2ddc9c9e4e95a721a9980bcd7, type: 3}
+      sprite: {fileID: 21300000, guid: b38e4cbeaae8c144d82db91a0ed76fbe, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: d82594a1dbb3fca4dba23b924b7a56ae, type: 3}
+      sprite: {fileID: 21300000, guid: a06fcb634ce89614cbf74454433f5f31, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: ec1d721603ca24742957dcd4b6142c04, type: 3}
+      sprite: {fileID: 21300000, guid: 7a5cac0e2a6d8bc4b831d5ad742d11bb, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 73e55b79894475342925c84a2470aa3c, type: 3}
+      sprite: {fileID: 21300000, guid: 0cb50d6c65733044383a6869c61929b5, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 173.34363
+    powerScore: 95.29005
+    componentMass: 12.577176
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 28.823904
-      energy: 17.028002
-      mobility: 57.65
-      capacity: 8.091718
+      offense: 35.112465
+      defense: 6.8523636
+      energy: 8.514001
+      mobility: 27.691217
+      capacity: 17.119999
+      firePower: 18.463276
+      bulletSpeed: 13.5
+      healthCap: 5.2037196
+      healthRegen: 1.6486442
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.32
+      turnSpeed: 9.271217
+      gemCap: 5.92
+      peopleCap: 11.2
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_18
     upgradeTreeShipName: 
@@ -673,71 +834,224 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 605d524dd283d4c44a7b19d86b1f2c8d, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 157.34894
+    powerScore: 97.51209
+    componentMass: 12.94378
     powerScoreBreakdown:
-      offense: 32.05
-      defense: 49.082916
+      offense: 30.875
+      defense: 14.724876
       energy: 8.514001
-      mobility: 50.35
-      capacity: 17.35202
+      mobility: 20.755947
+      capacity: 22.64227
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 11.182146
+      healthRegen: 3.5427308
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.0800004
+      turnSpeed: 5.395946
+      gemCap: 7.82957
+      peopleCap: 14.812699
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_19
+  - chassisId: ForceBadger_13
     upgradeTreeShipName: 
-    prefab: {fileID: 699227885572774470, guid: 396e2635c8cd61345b978c1a1537bafb, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: fc8845b2aa55144449c8c629fd6c1477, type: 3}
+    prefab: {fileID: 6925218009357168764, guid: 1cf76c64de787ce4d91e9edf600485d8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d65d306508bec664795ec5f862645f0a, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: fc8845b2aa55144449c8c629fd6c1477, type: 3}
+      sprite: {fileID: 21300000, guid: d65d306508bec664795ec5f862645f0a, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: d6a4f8ca911009345ae519d5bd39af8d, type: 3}
+      sprite: {fileID: 21300000, guid: a58f75a5b61de654f90db34af874a2ac, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 98fd1bf0848cb294dafde6974af5a73f, type: 3}
+      sprite: {fileID: 21300000, guid: 95e374f1a339aea4eafe07177df23494, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 178622040d15ba443b807230dccc9ccc, type: 3}
+      sprite: {fileID: 21300000, guid: e6d40920a8cb42e4fa21fdb6b6fbfcb7, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 1b2669e5dd7ce2246af4b36092728009, type: 3}
+      sprite: {fileID: 21300000, guid: 7b0da39824375174fbcb27366f19520d, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 169.094
+    powerScore: 103.64287
+    componentMass: 11.248353
     powerScoreBreakdown:
-      offense: 34.903248
-      defense: 33.432747
+      offense: 30.875
+      defense: 6.7767544
       energy: 8.514001
-      mobility: 76.5
-      capacity: 15.744
+      mobility: 47.31284
+      capacity: 10.164272
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 5.1463017
+      healthRegen: 1.6304529
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.32
+      turnSpeed: 28.892841
+      gemCap: 3.5147483
+      peopleCap: 6.649524
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_06
+  - chassisId: ForceBadger_14
     upgradeTreeShipName: 
-    prefab: {fileID: 1340269927485462586, guid: 6e70b1b32a1939640b642aaf18b513af, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 25617b91607e48a4a8cdedf2925fe09e, type: 3}
+    prefab: {fileID: 4426889034956034690, guid: c26ee810c96753c468a613b10cb91941, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1a736d8992a7d884391b0a0b83d626b3, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 25617b91607e48a4a8cdedf2925fe09e, type: 3}
+      sprite: {fileID: 21300000, guid: 1a736d8992a7d884391b0a0b83d626b3, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: e5c1fdc7b209bf947bafa871bf40b146, type: 3}
+      sprite: {fileID: 21300000, guid: c8a693f85966b6c45881cad98b95415e, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 4dfd46f9911bd7845951327daed76748, type: 3}
+      sprite: {fileID: 21300000, guid: ad626f3fb25de344b95346084b0bf6ee, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 1a2db2a463f1c0f43b2f829af489099d, type: 3}
+      sprite: {fileID: 21300000, guid: 7764fa9283cacdb44accfac997fc859b, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7c9b0a780c2519c48834802dce3c6667, type: 3}
+      sprite: {fileID: 21300000, guid: ab99fd01e8ba70a44b031f176ad15b08, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 155.62117
+    powerScore: 98.544846
+    componentMass: 11.052294
     powerScoreBreakdown:
-      offense: 17.2
-      defense: 20.257074
-      energy: 4.2570004
-      mobility: 104.8
-      capacity: 9.107098
+      offense: 26.772392
+      defense: 9.62426
+      energy: 8.514001
+      mobility: 39.23757
+      capacity: 14.396617
+      firePower: 6.4184537
+      bulletSpeed: 13.5
+      healthCap: 7.3087115
+      healthRegen: 2.3155484
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.5600004
+      turnSpeed: 17.75757
+      gemCap: 4.9782696
+      peopleCap: 9.418347
+    lockedInUpgradeTree: 0
+  - chassisId: ForceBadger_20
+    upgradeTreeShipName: 
+    prefab: {fileID: 6041038873886263187, guid: 5f6878b85bd605f4f8e1e0a04fe9f42e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 220c8fa86bed72d40b740d1f4952c8d5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 220c8fa86bed72d40b740d1f4952c8d5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: b49e6d57b91247a47a48cdfa41320016, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 800958f4dce783046b79f2d6c72c2cff, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 56b28fd2bc066e54894fd42a14534a0c, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 4c45c5d08f625b440b55877d6f8b206e, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 106.55522
+    componentMass: 14.588552
+    powerScoreBreakdown:
+      offense: 26.750738
+      defense: 8.194402
+      energy: 8.514001
+      mobility: 50.256084
+      capacity: 12.84
+      firePower: 6.1144066
+      bulletSpeed: 13.5
+      healthCap: 6.22287
+      healthRegen: 1.9715316
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.32
+      turnSpeed: 31.836084
+      gemCap: 4.44
+      peopleCap: 8.4
+    lockedInUpgradeTree: 0
+  - chassisId: ForceBadger_07
+    upgradeTreeShipName: 
+    prefab: {fileID: 5710075403279697268, guid: ea0b37f1a82f903459a3b7ede14a9726, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 55db8e7a9c763cb4190768846837638e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 55db8e7a9c763cb4190768846837638e, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: d99be7095ab72a64b8f42c80c61eca25, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 8e33d2ded1c243944a2b7183ae46a76f, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c5a0f3c44c3dd74469e9d0978bd0e09b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 075f20b3600f942459a5f8312eeda31c, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 113.24571
+    componentMass: 9.25155
+    powerScoreBreakdown:
+      offense: 60.575
+      defense: 7.71525
+      energy: 17.028002
+      mobility: 23.647463
+      capacity: 4.2799997
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 5.8589997
+      healthRegen: 1.8562502
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 3.1680002
+      turnSpeed: 17.659462
+      gemCap: 1.48
+      peopleCap: 2.8
+    lockedInUpgradeTree: 0
+  - chassisId: ForceBadger_16
+    upgradeTreeShipName: 
+    prefab: {fileID: 1690775562596911980, guid: 111cdc75f016d094fb06b06c1d084be7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 044344131c1feb0499a34a87b419397d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 044344131c1feb0499a34a87b419397d, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: abc7a0e2ddc9c9e4e95a721a9980bcd7, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d82594a1dbb3fca4dba23b924b7a56ae, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ec1d721603ca24742957dcd4b6142c04, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 73e55b79894475342925c84a2470aa3c, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 123.71523
+    componentMass: 13.007496
+    powerScoreBreakdown:
+      offense: 60.575
+      defense: 8.647171
+      energy: 17.028002
+      mobility: 26.906351
+      capacity: 10.558705
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 6.566705
+      healthRegen: 2.0804656
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 4.32
+      turnSpeed: 8.486352
+      gemCap: 3.651141
+      peopleCap: 6.907564
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_17
     upgradeTreeShipName: 
@@ -760,42 +1074,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 70962d034fa6ea843a3cdee3f8eb632f, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 198.36324
+    powerScore: 140.271
+    componentMass: 16.21842
     powerScoreBreakdown:
-      offense: 61.75
-      defense: 37.902687
+      offense: 60.575
+      defense: 11.370808
       energy: 17.028002
-      mobility: 58.850002
-      capacity: 22.832539
-    lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_13
-    upgradeTreeShipName: 
-    prefab: {fileID: 6925218009357168764, guid: 1cf76c64de787ce4d91e9edf600485d8, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d65d306508bec664795ec5f862645f0a, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: d65d306508bec664795ec5f862645f0a, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: a58f75a5b61de654f90db34af874a2ac, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 95e374f1a339aea4eafe07177df23494, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: e6d40920a8cb42e4fa21fdb6b6fbfcb7, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 7b0da39824375174fbcb27366f19520d, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 176.44263
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 22.589178
-      energy: 8.514001
-      mobility: 105.5
-      capacity: 7.7894425
+      mobility: 21.503515
+      capacity: 29.793678
+      firePower: 27
+      bulletSpeed: 27
+      healthCap: 8.635049
+      healthRegen: 2.7357588
+      energyCap: 4.176
+      energyRegen: 12.852001
+      moveSpeed: 3.6000001
+      turnSpeed: 12.2635145
+      gemCap: 10.302486
+      peopleCap: 19.491192
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_12
     upgradeTreeShipName: 
@@ -818,71 +1114,64 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: bb0235ff8d662614cb00794170e13afc, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 190.1757
+    powerScore: 107.87261
+    componentMass: 15.185272
     powerScoreBreakdown:
-      offense: 32.05
-      defense: 27.99073
+      offense: 30.875
+      defense: 8.397221
       energy: 8.514001
-      mobility: 109.75
-      capacity: 11.8709755
+      mobility: 44.59622
+      capacity: 15.490175
+      firePower: 13.5
+      bulletSpeed: 13.5
+      healthCap: 6.3768916
+      healthRegen: 2.0203285
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.0800004
+      turnSpeed: 29.236217
+      gemCap: 5.3564157
+      peopleCap: 10.1337595
     lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_20
+  - chassisId: ForceBadger_19
     upgradeTreeShipName: 
-    prefab: {fileID: 6041038873886263187, guid: 5f6878b85bd605f4f8e1e0a04fe9f42e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 220c8fa86bed72d40b740d1f4952c8d5, type: 3}
+    prefab: {fileID: 699227885572774470, guid: 396e2635c8cd61345b978c1a1537bafb, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fc8845b2aa55144449c8c629fd6c1477, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 220c8fa86bed72d40b740d1f4952c8d5, type: 3}
+      sprite: {fileID: 21300000, guid: fc8845b2aa55144449c8c629fd6c1477, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: b49e6d57b91247a47a48cdfa41320016, type: 3}
+      sprite: {fileID: 21300000, guid: d6a4f8ca911009345ae519d5bd39af8d, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 800958f4dce783046b79f2d6c72c2cff, type: 3}
+      sprite: {fileID: 21300000, guid: 98fd1bf0848cb294dafde6974af5a73f, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 56b28fd2bc066e54894fd42a14534a0c, type: 3}
+      sprite: {fileID: 21300000, guid: 178622040d15ba443b807230dccc9ccc, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 4c45c5d08f625b440b55877d6f8b206e, type: 3}
+      sprite: {fileID: 21300000, guid: 1b2669e5dd7ce2246af4b36092728009, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 188.99442
+    powerScore: 115.487434
+    componentMass: 16.341873
     powerScoreBreakdown:
-      offense: 27.925737
-      defense: 27.314672
+      offense: 33.72825
+      defense: 10.029825
       energy: 8.514001
-      mobility: 115.4
-      capacity: 9.84
-    lockedInUpgradeTree: 0
-  - chassisId: ForceBadger_02
-    upgradeTreeShipName: 
-    prefab: {fileID: 7851285274831131130, guid: eb978740a9e78484ab3931373ab143f5, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c6c99d20b7fa8f44293dc116c70649f1, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: c6c99d20b7fa8f44293dc116c70649f1, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 7e45471516f5b7a439a7dc33228eeec8, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 42fbfcc50094bd9479779d7a9b713cf4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 79ce77c5da630624fba8b3fb7fe5664a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: f087c6fae8c696344b9902e20798ae19, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 186.18025
-    powerScoreBreakdown:
-      offense: 32.05
-      defense: 4.28625
-      energy: 8.514001
-      mobility: 138.05
-      capacity: 3.28
+      mobility: 42.671356
+      capacity: 20.544
+      firePower: 16.895924
+      bulletSpeed: 13.5
+      healthCap: 7.6167006
+      healthRegen: 2.413125
+      energyCap: 2.088
+      energyRegen: 6.4260006
+      moveSpeed: 4.5600004
+      turnSpeed: 21.191355
+      gemCap: 7.104
+      peopleCap: 13.440001
     lockedInUpgradeTree: 0
   upgradeCardDeck: {fileID: 11400000, guid: 7aca0ee741ba3f74ca57c8c3f09df508, type: 2}
   teamMaterials:

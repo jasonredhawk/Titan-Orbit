@@ -657,19 +657,40 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Ramming mass multiplier: hull (level/components/HP) + gem cargo (boosted). Used as explicit × mass in ram damage
-        /// (ram rating 3 × mass 5 → 15 at reference speed).
+        /// Hull mass at this ship level (components × HP bulk, no gems). Ram damage massFactor uses this as baseline
+        /// so level-3 bulk (~40) does not multiply self/impact damage vs level-1 (~9).
         /// </summary>
-        private float GetRammingMassForDamage()
+        private float GetRammingHullMassBaseline()
         {
             float bulkScale = GetRammingBulkScale();
-            float hullMass = ScaledHullMassReference * bulkScale;
+            return Mathf.Max(0.5f, ScaledHullMassReference * bulkScale);
+        }
+
+        /// <summary>Ramming mass: hull baseline + gem cargo (boosted). Movement uses the same hull baseline.</summary>
+        private float GetRammingMassForDamage()
+        {
+            float hullMass = GetRammingHullMassBaseline();
             float gemMass = currentGems.Value * massPerGem * Mathf.Max(1f, rammingGemMassScale);
             return Mathf.Max(0.5f, hullMass + gemMass);
         }
 
-        /// <summary>Mass used for asteroid impact impulse and damage (includes gem cargo).</summary>
+        /// <summary>Mass used for asteroid impact impulse (includes gem cargo).</summary>
         private float GetRammingImpactMass() => Mathf.Max(0.01f, GetRammingMassForDamage());
+
+        /// <summary>HUD: mass factor vs this ship's hull baseline (≈1 empty, &gt;1 with gems).</summary>
+        public float GetHudRamMassDamageFactor()
+        {
+            float baseline = GetRammingHullMassBaseline();
+            return ShipComponentRammingSuggestions.ComputeMassDamageFactor(GetRammingMassForDamage(), baseline);
+        }
+
+        /// <summary>HUD: softer self-damage mass factor.</summary>
+        public float GetHudRamSelfMassDamageFactor()
+        {
+            return ShipComponentRammingSuggestions.ComputeSelfMassDamageFactor(
+                GetRammingMassForDamage(),
+                GetRammingHullMassBaseline());
+        }
 
         /// <summary>Bullet-comparable ram rating from ShipFamilyDefinition only (prefab baseRammingPower affects bounce, not damage).</summary>
         private float GetRammingDamageRating()
@@ -679,17 +700,23 @@ namespace TitanOrbit.Entities
             return ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyPower);
         }
 
-        /// <summary>HUD: sublinear mass factor applied to ram damage (1 at ~5 mass, ~2.8 at 30 mass).</summary>
-        public float GetHudRamMassDamageFactor() =>
-            ShipComponentRammingSuggestions.ComputeMassDamageFactor(GetRammingMassForDamage());
-
         private void ComputeRamImpactDamage(float inboundNormalSpeed, float restitution, out float asteroidDamage, out float selfDamage)
         {
             float mass = GetRammingMassForDamage();
+            float baseline = GetRammingHullMassBaseline();
             float rating = GetRammingDamageRating();
-            float baseDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(rating, mass, inboundNormalSpeed, restitution);
-            asteroidDamage = baseDamage;
-            selfDamage = baseDamage * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio;
+            float offenseMassFactor = ShipComponentRammingSuggestions.ComputeMassDamageFactor(mass, baseline);
+            float selfMassFactor = ShipComponentRammingSuggestions.ComputeSelfMassDamageFactor(mass, baseline);
+
+            float deltaNormalSpeed = (1f + Mathf.Clamp01(restitution)) * Mathf.Max(0f, inboundNormalSpeed);
+            float speedFactor = deltaNormalSpeed / Mathf.Max(0.1f, ShipComponentRammingSuggestions.ReferenceImpactSpeed);
+
+            asteroidDamage = Mathf.Max(0f, rating * offenseMassFactor * speedFactor);
+            selfDamage = Mathf.Max(0f, rating * selfMassFactor * speedFactor * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio);
+
+            float selfCap = MaxHealth * ShipComponentRammingSuggestions.MaxSelfImpactDamageFractionOfMaxHealth;
+            if (selfCap > 0f)
+                selfDamage = Mathf.Min(selfDamage, selfCap);
         }
 
         private float ComputeRamGrindAsteroidDamage(float pushNewtons, float pulseInterval)
@@ -697,13 +724,23 @@ namespace TitanOrbit.Entities
             return ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
                 GetRammingDamageRating(),
                 GetRammingMassForDamage(),
+                GetRammingHullMassBaseline(),
                 pushNewtons,
                 pulseInterval);
         }
 
         private float ComputeRamGrindSelfDamage(float pushNewtons, float pulseInterval)
         {
-            return ComputeRamGrindAsteroidDamage(pushNewtons, pulseInterval) * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio;
+            float mass = GetRammingMassForDamage();
+            float baseline = GetRammingHullMassBaseline();
+            float rating = GetRammingDamageRating();
+            float pushFactor = pushNewtons / Mathf.Max(1f, ShipComponentRammingSuggestions.ReferenceGrindPushNewtons);
+            float selfMassFactor = ShipComponentRammingSuggestions.ComputeSelfMassDamageFactor(mass, baseline);
+            float damage = rating * selfMassFactor * pushFactor * pulseInterval * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio;
+            float selfCap = MaxHealth * ShipComponentRammingSuggestions.MaxSelfImpactDamageFractionOfMaxHealth;
+            if (selfCap > 0f)
+                damage = Mathf.Min(damage, selfCap);
+            return damage;
         }
 
         /// <summary>HUD: effective ram mass (hull + boosted gem cargo).</summary>

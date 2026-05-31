@@ -33,6 +33,7 @@ namespace TitanOrbit.Editor.Build
         static WebGLTextureImportBuildFix()
         {
             ApplyWebGlTextureSubtarget();
+            BuildPlayerWindow.RegisterBuildPlayerHandler(OnBuildPlayerFromWindow);
         }
 
         public void OnPreprocessBuild(BuildReport report)
@@ -40,34 +41,60 @@ namespace TitanOrbit.Editor.Build
             if (report.summary.platform != BuildTarget.WebGL)
                 return;
 
+            PrepareWebGlBuild(log: true);
+        }
+
+        /// <summary>
+        /// Intercepts File → Build and Build Profile builds so WebGL always uses DXT + RGBA32 gameplay imports.
+        /// Direct calls to <see cref="BuildPipeline.BuildPlayer"/> (e.g. production menu) are unchanged.
+        /// </summary>
+        static void OnBuildPlayerFromWindow(BuildPlayerOptions options)
+        {
+            if (options.target == BuildTarget.WebGL)
+            {
+                PrepareWebGlBuild(log: true);
+                options.subtarget = (int)WebGLTextureSubtarget.DXT;
+            }
+
+            BuildReport report = BuildPipeline.BuildPlayer(options);
+            if (report.summary.result != BuildResult.Succeeded)
+            {
+                Debug.LogError(
+                    $"[WebGLTextureImportBuildFix] Build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
+            }
+        }
+
+        internal static void PrepareWebGlBuild(bool log)
+        {
             ApplyWebGlTextureSubtarget();
             EnsureSgtPlanetShaderIncluded();
             DisableSrpBatcherOnWebGlPipelineAsset();
 
-            int fixedCount = ApplyWebGlGameplayTextureImports(log: true);
-            Debug.Log(
-                fixedCount > 0
-                    ? $"[WebGLTextureImportBuildFix] Updated WebGL import settings for {fixedCount} texture(s). Continuing WebGL build."
-                    : "[WebGLTextureImportBuildFix] Gameplay textures already use WebGL RGBA32 (uncompressed). Continuing WebGL build.");
+            int fixedCount = ApplyWebGlGameplayTextureImports(log: log);
+            if (log)
+            {
+                Debug.Log(
+                    fixedCount > 0
+                        ? $"[WebGLTextureImportBuildFix] Updated WebGL import settings for {fixedCount} texture(s). Continuing WebGL build."
+                        : "[WebGLTextureImportBuildFix] Gameplay textures already use WebGL RGBA32 (uncompressed). Continuing WebGL build.");
+            }
 
             if (EditorUserBuildSettings.webGLBuildSubtarget != WebGLTextureSubtarget.DXT)
             {
-                Debug.LogWarning(
-                    "[WebGLTextureImportBuildFix] WebGL texture subtarget is not DXT. Use TitanOrbit → Build → WebGL Production.");
+                throw new BuildFailedException(
+                    "[WebGLTextureImportBuildFix] WebGL texture subtarget must be DXT for desktop browsers. " +
+                    "Use TitanOrbit → Build → WebGL Production or Fix WebGL Texture Import.");
             }
         }
 
         [MenuItem("TitanOrbit/Build/Fix WebGL Texture Import (disable Crunch)")]
         public static void FixFromMenu()
         {
-            EnsureSgtPlanetShaderIncluded();
-            DisableSrpBatcherOnWebGlPipelineAsset();
-            int n = ApplyWebGlGameplayTextureImports(log: true);
+            PrepareWebGlBuild(log: true);
             EditorUtility.DisplayDialog(
                 "WebGL textures",
-                n > 0
-                    ? $"Updated and reimported {n} gameplay texture(s) for WebGL (RGBA32 uncompressed, no Crunch)."
-                    : "Gameplay textures already configured for WebGL (RGBA32 uncompressed, no Crunch).",
+                "Gameplay textures configured for WebGL (RGBA32 uncompressed, no Crunch). " +
+                "SRP Batcher disabled on WebGL pipeline. Build subtarget set to DXT.",
                 "OK");
         }
 

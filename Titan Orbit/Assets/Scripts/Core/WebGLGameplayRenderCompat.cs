@@ -10,14 +10,21 @@ namespace TitanOrbit.Core
     /// </summary>
     internal static class WebGLGameplayRenderCompat
     {
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        static void Apply()
-        {
-            if (Application.platform != RuntimePlatform.WebGLPlayer)
-                return;
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ApplyEarly() => DisableSrpBatcherForWebGl();
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ApplyBeforeSceneLoad() => DisableSrpBatcherForWebGl();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void ApplyAfterSceneLoad() => DisableSrpBatcherForWebGl();
+
+        static void DisableSrpBatcherForWebGl()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
             // Same mitigation documented on ScrollingSpaceBackground (MPB + SRP Batcher on GLES/WebGL).
             GraphicsSettings.useScriptableRenderPipelineBatching = false;
+#endif
         }
     }
 }

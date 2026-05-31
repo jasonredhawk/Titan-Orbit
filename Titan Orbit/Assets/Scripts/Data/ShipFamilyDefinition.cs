@@ -173,6 +173,66 @@ namespace TitanOrbit.Data
             };
         }
 
+        /// <summary>True when every ability stat field is exactly zero.</summary>
+        public bool IsAllZero()
+        {
+            return firePower == 0f && firePowerPerLevel == 0f &&
+                   bulletSpeed == 0f && bulletSpeedPerLevel == 0f &&
+                   fireRate == 0f && fireRatePerLevel == 0f &&
+                   rammingPower == 0f && rammingPowerPerLevel == 0f &&
+                   healthCap == 0f && healthCapPerLevel == 0f &&
+                   healthRegen == 0f && healthRegenPerLevel == 0f &&
+                   energyCap == 0f && energyCapPerLevel == 0f &&
+                   energyRegen == 0f && energyRegenPerLevel == 0f &&
+                   moveSpeed == 0f && moveSpeedPerLevel == 0f &&
+                   accelerationCap == 0f && accelerationCapPerLevel == 0f &&
+                   turnSpeed == 0f && turnSpeedPerLevel == 0f &&
+                   maxGems == 0f && maxGemsPerLevel == 0f &&
+                   tractorBeamDistance == 0f && tractorBeamDistancePerLevel == 0f &&
+                   tractorBeamPower == 0f && tractorBeamPowerPerLevel == 0f &&
+                   maxPeople == 0f && maxPeoplePerLevel == 0f;
+        }
+
+        /// <summary>
+        /// Replaces any exactly-zero field with the corresponding value from <paramref name="defaults"/>.
+        /// Used after summing component stats so missing parts do not leave critical stats at zero.
+        /// </summary>
+        public ShipComponentAbilityStats WithZeroStatFallbacks(ShipComponentAbilityStats defaults)
+        {
+            var result = this;
+            if (result.firePower == 0f) result.firePower = defaults.firePower;
+            if (result.firePowerPerLevel == 0f) result.firePowerPerLevel = defaults.firePowerPerLevel;
+            if (result.bulletSpeed == 0f) result.bulletSpeed = defaults.bulletSpeed;
+            if (result.bulletSpeedPerLevel == 0f) result.bulletSpeedPerLevel = defaults.bulletSpeedPerLevel;
+            if (result.fireRate == 0f) result.fireRate = defaults.fireRate;
+            if (result.fireRatePerLevel == 0f) result.fireRatePerLevel = defaults.fireRatePerLevel;
+            if (result.rammingPower == 0f) result.rammingPower = defaults.rammingPower;
+            if (result.rammingPowerPerLevel == 0f) result.rammingPowerPerLevel = defaults.rammingPowerPerLevel;
+            if (result.healthCap == 0f) result.healthCap = defaults.healthCap;
+            if (result.healthCapPerLevel == 0f) result.healthCapPerLevel = defaults.healthCapPerLevel;
+            if (result.healthRegen == 0f) result.healthRegen = defaults.healthRegen;
+            if (result.healthRegenPerLevel == 0f) result.healthRegenPerLevel = defaults.healthRegenPerLevel;
+            if (result.energyCap == 0f) result.energyCap = defaults.energyCap;
+            if (result.energyCapPerLevel == 0f) result.energyCapPerLevel = defaults.energyCapPerLevel;
+            if (result.energyRegen == 0f) result.energyRegen = defaults.energyRegen;
+            if (result.energyRegenPerLevel == 0f) result.energyRegenPerLevel = defaults.energyRegenPerLevel;
+            if (result.moveSpeed == 0f) result.moveSpeed = defaults.moveSpeed;
+            if (result.moveSpeedPerLevel == 0f) result.moveSpeedPerLevel = defaults.moveSpeedPerLevel;
+            if (result.accelerationCap == 0f) result.accelerationCap = defaults.accelerationCap;
+            if (result.accelerationCapPerLevel == 0f) result.accelerationCapPerLevel = defaults.accelerationCapPerLevel;
+            if (result.turnSpeed == 0f) result.turnSpeed = defaults.turnSpeed;
+            if (result.turnSpeedPerLevel == 0f) result.turnSpeedPerLevel = defaults.turnSpeedPerLevel;
+            if (result.maxGems == 0f) result.maxGems = defaults.maxGems;
+            if (result.maxGemsPerLevel == 0f) result.maxGemsPerLevel = defaults.maxGemsPerLevel;
+            if (result.tractorBeamDistance == 0f) result.tractorBeamDistance = defaults.tractorBeamDistance;
+            if (result.tractorBeamDistancePerLevel == 0f) result.tractorBeamDistancePerLevel = defaults.tractorBeamDistancePerLevel;
+            if (result.tractorBeamPower == 0f) result.tractorBeamPower = defaults.tractorBeamPower;
+            if (result.tractorBeamPowerPerLevel == 0f) result.tractorBeamPowerPerLevel = defaults.tractorBeamPowerPerLevel;
+            if (result.maxPeople == 0f) result.maxPeople = defaults.maxPeople;
+            if (result.maxPeoplePerLevel == 0f) result.maxPeoplePerLevel = defaults.maxPeoplePerLevel;
+            return result;
+        }
+
         /// <summary>Scale factor from transform: arithmetic mean of localScale x, y, z (same idea as <see cref="ChassisComponentStats.GetScaleFactor"/>). (1,1,1)=1.</summary>
         public static float GetNormalizedScaleFromTransform(Transform t)
         {
@@ -754,16 +814,16 @@ namespace TitanOrbit.Data
     /// <summary>Scan/auto-populate health caps and regen for all parts with a Health category (cockpit, wing, hull, part, …).</summary>
     public static class ShipComponentHealthSuggestions
     {
-        /// <summary>Health cap at version 1 (¼ of legacy 21).</summary>
-        public const float HealthCapV1 = 5.25f;
+        /// <summary>Health cap at version 1 (+20% vs prior 5.25).</summary>
+        public const float HealthCapV1 = 6.3f;
 
-        /// <summary>Health cap added per version tier (v2 = 6.75, v3 = 8.25, … — same curve for every health part).</summary>
-        public const float HealthCapPerVersion = 1.5f;
+        /// <summary>Health cap added per version tier (v2 = 8.1, v3 = 9.9, v4 = 11.7, … — same curve for every health part).</summary>
+        public const float HealthCapPerVersion = 1.8f;
 
         /// <summary>Health regen as a fraction of cap (legacy ratio 0.75 / 21).</summary>
         public const float HealthRegenFractionOfCap = 0.75f / 21f;
 
-        /// <summary>Health cap from version: v1=5.25, v2=6.75, v3=8.25, v4=9.75, …</summary>
+        /// <summary>Health cap from version: v1=6.3, v2=8.1, v3=9.9, v4=11.7, …</summary>
         public static float GetSuggestedHealthCap(int version)
         {
             int v = Mathf.Max(1, version);
@@ -786,8 +846,8 @@ namespace TitanOrbit.Data
         /// <summary>Global tuning on effective ram damage (impact, grind, HUD rating). Does not affect bounce/restitution.</summary>
         public const float GlobalDamageMultiplier = 3f;
 
-        /// <summary>Ramming power at version 1 (cockpit). Moderate — hull mass amplifies via sublinear massFactor.</summary>
-        public const float RammingPowerV1 = 0.75f;
+        /// <summary>Ramming power at version 1 (cockpit). Hull mass amplifies via sublinear massFactor.</summary>
+        public const float RammingPowerV1 = 1f;
 
         /// <summary>Ramming power added per version tier (v2, v3, …).</summary>
         public const float RammingPowerPerVersion = 0.12f;
@@ -795,11 +855,20 @@ namespace TitanOrbit.Data
         /// <summary>Per-level ramming power as a fraction of base when scanning family assets.</summary>
         public const float RammingPerLevelFractionOfBase = 0.25f;
 
-        /// <summary>Reference mass where massFactor = 1 (typical light level-1 hull). Heavier ships scale sublinearly above this.</summary>
+        /// <summary>Reference mass when no per-ship baseline is supplied (legacy fallback only).</summary>
         public const float ReferenceRamMass = 5f;
 
-        /// <summary>Mass exponent for ram damage (&lt; 1 = sublinear; mass 30 → ~2.45× not 6× vs ref. 5).</summary>
-        public const float MassDamageExponent = 0.5f;
+        /// <summary>Mass exponent for ram damage (&lt; 1 = gems/cargo add less than linear weight).</summary>
+        public const float MassDamageExponent = 0.45f;
+
+        /// <summary>Softer mass curve for self chip damage (heavy ships should not one-shot themselves).</summary>
+        public const float SelfMassDamageExponent = 0.28f;
+
+        /// <summary>Self hull chip vs asteroid on the same hit (was ~1.67 from legacy force scales).</summary>
+        public const float SelfToAsteroidDamageRatio = 1.35f;
+
+        /// <summary>Max self damage from a single ram impact as a fraction of <see cref="Entities.Starship.MaxHealth"/>.</summary>
+        public const float MaxSelfImpactDamageFractionOfMaxHealth = 0.22f;
 
         /// <summary>Damage multiplier added per summed base rammingPower point (cockpit + parts at level 1).</summary>
         public const float OffenseMultiplierPerBasePower = 0.14f;
@@ -824,12 +893,16 @@ namespace TitanOrbit.Data
             return Mathf.Max(0.05f, summedFamilyRammingPower) * GlobalDamageMultiplier;
         }
 
-        /// <summary>Sublinear mass contribution so level-3 bulk (~30 mass) does not multiply damage 6× vs a level-1 hull.</summary>
-        public static float ComputeMassDamageFactor(float mass)
+        /// <summary>Sublinear mass vs this ship's own hull baseline (≈1 with no gem cargo, any level).</summary>
+        public static float ComputeMassDamageFactor(float mass, float hullBaselineMass, float exponent = MassDamageExponent)
         {
-            float ratio = Mathf.Max(0.1f, mass / Mathf.Max(0.5f, ReferenceRamMass));
-            return Mathf.Pow(ratio, MassDamageExponent);
+            float ratio = Mathf.Max(0.1f, mass / Mathf.Max(0.5f, hullBaselineMass));
+            return Mathf.Pow(ratio, Mathf.Max(0.05f, exponent));
         }
+
+        /// <summary>Legacy: fixed reference mass (prefer per-ship baseline overload).</summary>
+        public static float ComputeMassDamageFactor(float mass) =>
+            ComputeMassDamageFactor(mass, ReferenceRamMass);
 
         /// <summary>Maps summed family ramming stats + ship level to asteroid/grind offense multiplier.</summary>
         public static float ComputeOffenseMultiplier(float summedBasePower, float summedPowerPerLevel, int shipLevel)
@@ -846,25 +919,35 @@ namespace TitanOrbit.Data
         /// <summary>Engine push (N) into the rock where one grind pulse deals full rating × massFactor × interval damage.</summary>
         public const float ReferenceGrindPushNewtons = 80f;
 
-        /// <summary>Self hull chip damage vs asteroid damage on the same hit (legacy force-scale ratio preserved).</summary>
-        public const float SelfToAsteroidDamageRatio = 0.000625f / 0.000375f;
-
-        /// <summary>Impact: rating × massFactor × speed factor. At ref. mass and speed, damage ≈ rating.</summary>
-        public static float ComputeImpactDamage(float ramDamageRating, float mass, float inboundNormalSpeed, float restitution)
+        /// <summary>Impact: rating × massFactor × speed factor. massFactor ≈ 1 at hull baseline (level-invariant).</summary>
+        public static float ComputeImpactDamage(
+            float ramDamageRating,
+            float mass,
+            float hullBaselineMass,
+            float inboundNormalSpeed,
+            float restitution)
         {
             float deltaNormalSpeed = (1f + Mathf.Clamp01(restitution)) * Mathf.Max(0f, inboundNormalSpeed);
             float speedFactor = deltaNormalSpeed / Mathf.Max(0.1f, ReferenceImpactSpeed);
-            float massFactor = ComputeMassDamageFactor(mass);
+            float massFactor = ComputeMassDamageFactor(mass, hullBaselineMass);
             return Mathf.Max(0f, ramDamageRating * massFactor * speedFactor);
         }
 
         /// <summary>Grind pulse: rating × massFactor × push factor × interval.</summary>
-        public static float ComputeGrindDamagePerPulse(float ramDamageRating, float mass, float pushNewtons, float pulseInterval)
+        public static float ComputeGrindDamagePerPulse(
+            float ramDamageRating,
+            float mass,
+            float hullBaselineMass,
+            float pushNewtons,
+            float pulseInterval)
         {
             float pushFactor = pushNewtons / Mathf.Max(1f, ReferenceGrindPushNewtons);
-            float massFactor = ComputeMassDamageFactor(mass);
+            float massFactor = ComputeMassDamageFactor(mass, hullBaselineMass);
             return Mathf.Max(0f, ramDamageRating * massFactor * pushFactor * pulseInterval);
         }
+
+        public static float ComputeSelfMassDamageFactor(float mass, float hullBaselineMass) =>
+            ComputeMassDamageFactor(mass, hullBaselineMass, SelfMassDamageExponent);
     }
 
     /// <summary>Scan/auto-populate wing tractor beam reach and pull speed (Capacity category).</summary>
@@ -912,8 +995,9 @@ namespace TitanOrbit.Data
 
         public const float FinTurnSpeedPerVersion = 7f;
         public const float TailTurnSpeedPerVersion = 11f;
-        public const float ThrusterTurnSpeedV1 = 5f;
-        public const float ThrusterTurnSpeedPerVersion = 1f;
+        /// <summary>Per-version turn speed for thrusters (~90% of fin; below fin and tail at the same version).</summary>
+        public const float ThrusterTurnSpeedV1 = 6.3f;
+        public const float ThrusterTurnSpeedPerVersion = 6.3f;
 
         public static float GetSuggestedFinTurnSpeed(int version)
         {
@@ -1249,6 +1333,67 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
+    /// Baseline ship-level stat totals used when a family has no authored default fallbacks.
+    /// Values match v1 component scan suggestions for a minimal functional ship (one weapon, cockpit, thruster, fin, wing).
+    /// </summary>
+    public static class ShipFamilyDefaultFallbackStats
+    {
+        public static ShipComponentAbilityStats CreateBaseline()
+        {
+            const int v = 1;
+            float weaponFirePower = 3f * v;
+            float weaponBulletSpeed = 12f * v;
+            float weaponFireRate = 1.2f * v;
+            float energyCap = 20f * v;
+            float energyRegen = 2.5f * v;
+            float maxGems = 8f * v;
+            float maxPeople = 4f * v;
+            float perLevel = ShipPropulsionAggregation.PerLevelFractionOfBase;
+            float moveSpeed = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
+                ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(v));
+            float accelerationCap = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
+                ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(v));
+            float turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(v)
+                + ShipComponentTurnSpeedSuggestions.GetSuggestedThrusterTurnSpeed(v);
+
+            return new ShipComponentAbilityStats
+            {
+                firePower = weaponFirePower,
+                firePowerPerLevel = weaponFirePower * perLevel,
+                bulletSpeed = weaponBulletSpeed,
+                bulletSpeedPerLevel = weaponBulletSpeed * perLevel,
+                fireRate = weaponFireRate,
+                fireRatePerLevel = weaponFireRate * perLevel,
+                rammingPower = ShipComponentRammingSuggestions.GetSuggestedRammingPower(v),
+                rammingPowerPerLevel = ShipComponentRammingSuggestions.GetSuggestedRammingPowerPerLevel(v),
+                healthCap = ShipComponentHealthSuggestions.GetSuggestedHealthCap(v),
+                healthCapPerLevel = ShipComponentHealthSuggestions.GetSuggestedHealthCapPerLevel(v),
+                healthRegen = ShipComponentHealthSuggestions.GetSuggestedHealthRegen(v),
+                healthRegenPerLevel = ShipComponentHealthSuggestions.GetSuggestedHealthRegenPerLevel(v),
+                energyCap = energyCap,
+                energyCapPerLevel = energyCap * perLevel,
+                energyRegen = energyRegen,
+                energyRegenPerLevel = energyRegen * perLevel,
+                moveSpeed = moveSpeed,
+                moveSpeedPerLevel = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
+                    ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(v)),
+                accelerationCap = accelerationCap,
+                accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(v),
+                turnSpeed = turnSpeed,
+                turnSpeedPerLevel = turnSpeed * perLevel,
+                maxGems = maxGems,
+                maxGemsPerLevel = maxGems * perLevel,
+                tractorBeamDistance = ShipComponentTractorBeamSuggestions.GetSuggestedTractorDistance(v),
+                tractorBeamDistancePerLevel = ShipComponentTractorBeamSuggestions.GetSuggestedTractorDistancePerLevel(v),
+                tractorBeamPower = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPower(v),
+                tractorBeamPowerPerLevel = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPowerPerLevel(v),
+                maxPeople = maxPeople,
+                maxPeoplePerLevel = Mathf.Max(0f, Mathf.RoundToInt(maxPeople * perLevel))
+            };
+        }
+    }
+
+    /// <summary>
     /// ScriptableObject describing all component stats for a single ship family (e.g. AstroEagle).
     /// Child GameObjects named "Family_ComponentId" can be mapped to entries here.
     /// </summary>
@@ -1257,6 +1402,10 @@ namespace TitanOrbit.Data
     {
         [Tooltip("Ship family identifier prefix used in child names. Example: 'AstroEagle' for objects named 'AstroEagle_Cockpit'.")]
         public string familyId;
+
+        [Header("Default Stat Fallbacks")]
+        [Tooltip("Ship-level totals used when summed component stats for a stat are zero (e.g. missing weapon → fire power fallback). Leave all zero to use the global baseline.")]
+        public ShipComponentAbilityStats defaultFallbackStats;
 
         [Header("Bullets")]
         [Tooltip("Index into CombatSystem's Bullet Prefab Bank (CombatSystem.bulletPrefabBank). 0 = first prefab. Weapon components can override per-cannon via ShipFamilyComponentEntry.bulletPrefabIndex. Same list/order on all builds for networking.")]
@@ -1338,8 +1487,41 @@ namespace TitanOrbit.Data
         private void OnValidate()
         {
             EnforceComponentStatCategories();
+            EnsureDefaultFallbackStats();
             InvalidateComponentStatsLookup();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>
+        /// Effective default fallbacks: authored <see cref="defaultFallbackStats"/> when any field is set, otherwise the global baseline.
+        /// </summary>
+        public ShipComponentAbilityStats GetEffectiveDefaultFallbackStats()
+        {
+            return defaultFallbackStats.IsAllZero()
+                ? ShipFamilyDefaultFallbackStats.CreateBaseline()
+                : defaultFallbackStats;
+        }
+
+        /// <summary>
+        /// Applies <see cref="GetEffectiveDefaultFallbackStats"/> to any zero fields in summed ship stats.
+        /// </summary>
+        public ShipComponentAbilityStats ApplyStatFallbacks(ShipComponentAbilityStats summedStats)
+        {
+            return summedStats.WithZeroStatFallbacks(GetEffectiveDefaultFallbackStats());
+        }
+
+        /// <summary>Populates <see cref="defaultFallbackStats"/> from the global baseline when unset.</summary>
+        public void EnsureDefaultFallbackStats()
+        {
+            if (!defaultFallbackStats.IsAllZero())
+                return;
+            defaultFallbackStats = ShipFamilyDefaultFallbackStats.CreateBaseline();
+        }
+
+        /// <summary>Resets <see cref="defaultFallbackStats"/> to the global baseline values.</summary>
+        public void ResetDefaultFallbackStatsToBaseline()
+        {
+            defaultFallbackStats = ShipFamilyDefaultFallbackStats.CreateBaseline();
         }
 
         /// <summary>Strips each component entry down to stats for its <see cref="ShipFamilyComponentEntry.statCategories"/> only.</summary>

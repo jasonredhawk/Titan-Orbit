@@ -96,7 +96,7 @@ namespace TitanOrbit.Editor
         public static ShipComponentAbilityStats SumStatsUnderRoot(GameObject root, ShipFamilyDefinition def, string familyId)
         {
             CollectStatsUnderRoot(root, def, familyId, out ShipComponentAbilityStats total, out var matchedIds, out var perComponentStats);
-            return SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel: 1);
+            return SumStatsAtShipLevelWithFallbacks(total, matchedIds, perComponentStats, shipLevel: 1, def);
         }
 
         /// <summary>Applies propulsion aggregation at the given ship level to an already-summed component total.</summary>
@@ -107,6 +107,17 @@ namespace TitanOrbit.Editor
             int shipLevel)
         {
             return ShipPropulsionAggregation.ApplyPropulsionToSummedStats(total, matchedIds, perComponentStats, shipLevel);
+        }
+
+        private static ShipComponentAbilityStats SumStatsAtShipLevelWithFallbacks(
+            ShipComponentAbilityStats total,
+            IReadOnlyList<string> matchedIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int shipLevel,
+            ShipFamilyDefinition def)
+        {
+            ShipComponentAbilityStats summed = SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel);
+            return def != null ? def.ApplyStatFallbacks(summed) : summed;
         }
 
         /// <summary>Max stat upgrades for a tier = its <see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/> (matches max attribute upgrades at that ship level).</summary>
@@ -160,7 +171,7 @@ namespace TitanOrbit.Editor
                 return false;
 
             int maxUpgrades = GetMaxUpgradeCountForTier(minHomePlanetLevel);
-            ShipComponentAbilityStats atMinLevel = SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel: 1);
+            ShipComponentAbilityStats atMinLevel = SumStatsAtShipLevelWithFallbacks(total, matchedIds, perComponentStats, shipLevel: 1, def);
 
             preview.firePower = RangeFromPerLevel(atMinLevel.firePower, atMinLevel.firePowerPerLevel, maxUpgrades);
             preview.bulletSpeed = RangeFromPerLevel(atMinLevel.bulletSpeed, atMinLevel.bulletSpeedPerLevel, maxUpgrades);
