@@ -48,7 +48,6 @@ namespace TitanOrbit.UI
                 return;
 
             bool fillContainer = _moonDockLayoutActive && _moonDockShipTreeHorizontal;
-            ApplyMoonDockShipsTabPresentation(fillContainer);
 
             var treeRt = (RectTransform)shipUpgradeTree.transform;
             var treeLe = shipUpgradeTree.GetComponent<LayoutElement>();
@@ -110,19 +109,6 @@ namespace TitanOrbit.UI
                 treeVlg.childControlHeight = true;
                 treeVlg.childForceExpandHeight = fillContainer;
             }
-        }
-
-        private void ApplyMoonDockShipsTabPresentation(bool moonDockFullTree)
-        {
-            if (shipsTabContent == null)
-                return;
-
-            var title = shipsTabContent.transform.Find("SectionHeaderTitle");
-            var sub = shipsTabContent.transform.Find("SectionHeaderSub");
-            if (title != null)
-                title.gameObject.SetActive(!moonDockFullTree);
-            if (sub != null)
-                sub.gameObject.SetActive(!moonDockFullTree);
         }
 
         internal void RefreshShipTreeVisualStateOnly()
@@ -230,6 +216,7 @@ namespace TitanOrbit.UI
             bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
             bool canSwapHull = isCurrent && !tierBlockedByHome
                 && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, view.Level, view.BranchIndex, out _);
+            bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlocked && canApplyPurchase;
 
             string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
                 currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
@@ -237,7 +224,7 @@ namespace TitanOrbit.UI
                 && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase)
                 && storePlanetLevel < currentLevel;
 
-            view.SetInteractable(canSwapHull || (isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlocked && canApplyPurchase));
+            view.SetInteractable(canSwapHull || canPurchase);
             view.EnsureStableButtonRendering();
             if (canSwapHull) view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
             else if (isCurrent) view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
@@ -274,7 +261,14 @@ namespace TitanOrbit.UI
 
         private void UpdateShipTreeHintText()
         {
-            if (shipUpgradeTree?.Hint == null || currentShip == null)
+            if (shipUpgradeTree == null)
+                return;
+
+            shipUpgradeTree.EnsurePanelHeader();
+            if (shipUpgradeTree.Title != null)
+                shipUpgradeTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+
+            if (shipUpgradeTree.Hint == null || currentShip == null)
                 return;
 
             UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
@@ -289,9 +283,6 @@ namespace TitanOrbit.UI
             int currentLevel = currentShip.ShipLevel;
             int currentBranch = currentShip.BranchIndex;
             int nextLevel = currentLevel + 1;
-            float nextCost = tree.GetGemCostForLevel(nextLevel);
-            var available = tree.GetAvailableUpgrades(currentLevel, currentBranch);
-            bool canBuyAny = CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, storePlanet, out _, out _, out _);
             bool canSwapHullAtCurrentSlot = CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
                 currentShip, storePlanet, currentLevel, currentBranch, out _);
             string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
@@ -303,27 +294,7 @@ namespace TitanOrbit.UI
             bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
             bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
 
-            if (canBuyAny && available != null && available.Count > 0)
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.Append("Next: ").Append(nextCost.ToString("F0")).Append("g  ·  ");
-                UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _shipTreeNextTargets);
-                for (int i = 0; i < _shipTreeNextTargets.Count; i++)
-                {
-                    int bi = _shipTreeNextTargets[i];
-                    ShipUpgradeNode hintNode = tree.GetNodeForBranch(nextLevel, bi);
-                    string nm = GetShipDisplayName(hintNode, nextLevel, bi);
-                    if (i > 0) sb.Append(" · ");
-                    sb.Append(nm);
-                }
-
-                if (canSwapHullAtCurrentSlot)
-                    sb.Append("  ·  Click your ship to swap hull (free).");
-                else if (storePlanetLevelBlocksSwap)
-                    sb.Append($"  ·  Planet must reach level {currentLevel} to swap.");
-                shipUpgradeTree.Hint.text = sb.ToString();
-            }
-            else if (canSwapHullAtCurrentSlot)
+            if (canSwapHullAtCurrentSlot)
                 shipUpgradeTree.Hint.text = "Click your ship to swap to this moon's hull at your tier (free).";
             else if (storePlanetLevelBlocksSwap)
                 shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
@@ -331,10 +302,8 @@ namespace TitanOrbit.UI
                 shipUpgradeTree.Hint.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
             else if (nextLevel <= 7 && homeLevel < nextLevel)
                 shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
-            else if (canBuyAny)
-                shipUpgradeTree.Hint.text = $"Next tier costs {nextCost:F0}g.";
             else
-                shipUpgradeTree.Hint.text = "Green: your ship. Blue: affordable upgrades. Cyan: free hull swap.";
+                shipUpgradeTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
         }
 
         internal ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)

@@ -118,22 +118,6 @@ namespace TitanOrbit.Editor
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
 
-            var title = CreateTmp("SectionHeaderTitle", root.transform, 22, FontStyles.Bold, TextAlignmentOptions.Left);
-            title.text = "Ship upgrade tree";
-            title.color = new Color(0.94f, 0.96f, 1f, 1f);
-            title.enableWordWrapping = false;
-            var titleLe = title.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 34f;
-            titleLe.flexibleHeight = 0f;
-
-            var subtitle = CreateTmp("SectionHeaderSub", root.transform, 13, FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            subtitle.text = "Each tier splits into branches — ship preview and price on the right.";
-            subtitle.color = new Color(0.78f, 0.86f, 0.96f, 0.98f);
-            subtitle.enableWordWrapping = true;
-            var subLe = subtitle.gameObject.AddComponent<LayoutElement>();
-            subLe.preferredHeight = 44f;
-            subLe.flexibleHeight = 0f;
-
             var treeGo = (GameObject)PrefabUtility.InstantiatePrefab(treePrefabAsset.gameObject, root.transform);
             treeGo.name = "ShipUpgradeTree";
             var treeLe = treeGo.GetComponent<LayoutElement>();
@@ -176,16 +160,23 @@ namespace TitanOrbit.Editor
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
 
+            var title = CreateTmp("Title", root.transform, 22, FontStyles.Bold, TextAlignmentOptions.Left);
+            title.text = ShipUpgradeTreeUI.PanelTitleText;
+            title.color = new Color(0.94f, 0.96f, 1f, 1f);
+            title.enableWordWrapping = false;
+            var titleLe = title.gameObject.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 34f;
+            titleLe.minHeight = 28f;
+            titleLe.flexibleHeight = 0f;
+
             var hint = CreateTmp("Hint", root.transform, 13, FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            hint.text = "Upgrade tree hint.";
+            hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
             hint.enableWordWrapping = true;
             hint.color = new Color(0.78f, 0.88f, 0.98f, 0.96f);
             var hintLe = hint.gameObject.AddComponent<LayoutElement>();
             hintLe.preferredHeight = 26f;
             hintLe.minHeight = 22f;
             hintLe.flexibleHeight = 0f;
-
-            var legendGo = BuildLegend(root.transform);
 
             var centerRow = new GameObject("CenterRow");
             centerRow.transform.SetParent(root.transform, false);
@@ -218,146 +209,14 @@ namespace TitanOrbit.Editor
 
             var treeUi = root.AddComponent<ShipUpgradeTreeUI>();
             var so = new SerializedObject(treeUi);
+            so.FindProperty("titleText").objectReferenceValue = title;
             so.FindProperty("hintText").objectReferenceValue = hint;
-            so.FindProperty("legend").objectReferenceValue = legendGo.GetComponent<ShipUpgradeTreeLegendUI>();
             so.FindProperty("centerRow").objectReferenceValue = centerRt;
             so.FindProperty("nodesCanvas").objectReferenceValue = canvasRt;
             so.FindProperty("nodePrefab").objectReferenceValue = nodePrefab;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return root;
-        }
-
-        private static GameObject BuildLegend(Transform parent)
-        {
-            var legendGo = new GameObject("Legend");
-            legendGo.transform.SetParent(parent, false);
-            var legendLe = legendGo.AddComponent<LayoutElement>();
-            legendLe.preferredHeight = 56f;
-            legendLe.minHeight = 52f;
-            legendLe.flexibleHeight = 0f;
-
-            var rootVlg = legendGo.AddComponent<VerticalLayoutGroup>();
-            rootVlg.spacing = 4f;
-            rootVlg.childAlignment = TextAnchor.UpperLeft;
-            rootVlg.childControlWidth = true;
-            rootVlg.childControlHeight = true;
-            rootVlg.childForceExpandWidth = true;
-            rootVlg.childForceExpandHeight = false;
-
-            var row0 = new GameObject("Row0");
-            row0.transform.SetParent(legendGo.transform, false);
-            var row0Hlg = row0.AddComponent<HorizontalLayoutGroup>();
-            row0Hlg.spacing = 10f;
-            row0Hlg.childAlignment = TextAnchor.MiddleLeft;
-            row0Hlg.childControlWidth = true;
-            row0Hlg.childControlHeight = true;
-            row0Hlg.childForceExpandWidth = true;
-            row0Hlg.childForceExpandHeight = true;
-            var row0Le = row0.AddComponent<LayoutElement>();
-            row0Le.flexibleWidth = 1f;
-            row0Le.preferredHeight = 26f;
-            row0Le.minHeight = 22f;
-
-            var row1 = new GameObject("Row1");
-            row1.transform.SetParent(legendGo.transform, false);
-            var row1Hlg = row1.AddComponent<HorizontalLayoutGroup>();
-            row1Hlg.spacing = 10f;
-            row1Hlg.childAlignment = TextAnchor.MiddleCenter;
-            row1Hlg.childControlWidth = true;
-            row1Hlg.childControlHeight = true;
-            row1Hlg.childForceExpandWidth = true;
-            row1Hlg.childForceExpandHeight = true;
-            var row1Le = row1.AddComponent<LayoutElement>();
-            row1Le.flexibleWidth = 1f;
-            row1Le.preferredHeight = 26f;
-            row1Le.minHeight = 22f;
-
-            var pairs = new ShipUpgradeTreeLegendPairUI[ShipAbilityCategoryColors.PowerBreakdownPairCount];
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                var row = i < 3 ? row0.transform : row1.transform;
-                pairs[i] = BuildLegendPair(row, i);
-            }
-
-            var legendUi = legendGo.AddComponent<ShipUpgradeTreeLegendUI>();
-            var so = new SerializedObject(legendUi);
-            so.FindProperty("pairs").arraySize = pairs.Length;
-            for (int i = 0; i < pairs.Length; i++)
-                so.FindProperty("pairs").GetArrayElementAtIndex(i).objectReferenceValue = pairs[i];
-            so.ApplyModifiedPropertiesWithoutUndo();
-
-            return legendGo;
-        }
-
-        private static ShipUpgradeTreeLegendPairUI BuildLegendPair(Transform parent, int pairIndex)
-        {
-            var go = new GameObject($"Pair_{pairIndex}");
-            go.transform.SetParent(parent, false);
-            var le = go.AddComponent<LayoutElement>();
-            le.flexibleWidth = 1f;
-            le.minWidth = 64f;
-
-            var vlg = go.AddComponent<VerticalLayoutGroup>();
-            vlg.spacing = 1f;
-            vlg.childAlignment = TextAnchor.UpperLeft;
-            vlg.childControlWidth = true;
-            vlg.childControlHeight = true;
-            vlg.childForceExpandWidth = true;
-            vlg.childForceExpandHeight = false;
-
-            var title = CreateTmp("CategoryTitle", go.transform, 12, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
-            title.enableWordWrapping = false;
-            var titleLe = title.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 14f;
-            titleLe.flexibleHeight = 0f;
-
-            var row = new GameObject("SwatchRow");
-            row.transform.SetParent(go.transform, false);
-            var rowHlg = row.AddComponent<HorizontalLayoutGroup>();
-            rowHlg.spacing = 4f;
-            rowHlg.childAlignment = TextAnchor.MiddleLeft;
-            rowHlg.childControlWidth = false;
-            rowHlg.childControlHeight = true;
-            var rowLe = row.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 12f;
-            rowLe.flexibleHeight = 0f;
-
-            var swatchA = CreateSwatch(row.transform);
-            var swatchB = CreateSwatch(row.transform);
-
-            var statLine = CreateTmp("StatLine", go.transform, 10, FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            statLine.enableWordWrapping = true;
-            statLine.overflowMode = TextOverflowModes.Ellipsis;
-            statLine.color = new Color(0.78f, 0.84f, 0.92f, 1f);
-            var statLe = statLine.gameObject.AddComponent<LayoutElement>();
-            statLe.flexibleWidth = 1f;
-            statLe.preferredHeight = 14f;
-            statLe.minHeight = 12f;
-
-            var pairUi = go.AddComponent<ShipUpgradeTreeLegendPairUI>();
-            var so = new SerializedObject(pairUi);
-            so.FindProperty("categoryTitle").objectReferenceValue = title;
-            so.FindProperty("toneASwatch").objectReferenceValue = swatchA;
-            so.FindProperty("toneBSwatch").objectReferenceValue = swatchB;
-            so.FindProperty("statLine").objectReferenceValue = statLine;
-            so.ApplyModifiedPropertiesWithoutUndo();
-            pairUi.Configure(pairIndex);
-            return pairUi;
-        }
-
-        private static Image CreateSwatch(Transform parent)
-        {
-            var go = new GameObject("Swatch");
-            go.transform.SetParent(parent, false);
-            var img = go.AddComponent<Image>();
-            img.raycastTarget = false;
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = 10f;
-            le.preferredHeight = 10f;
-            le.minWidth = 10f;
-            le.minHeight = 10f;
-            return img;
         }
 
         private static GameObject BuildNodeTemplate()
@@ -442,11 +301,11 @@ namespace TitanOrbit.Editor
             nameLe.minHeight = 22f;
             nameLe.flexibleHeight = 0f;
 
-            var price = CreateTmp("Price", left.transform, 11, FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            price.color = new Color(0.55f, 0.88f, 0.72f, 1f);
-            price.enableWordWrapping = false;
-            var priceLe = price.gameObject.AddComponent<LayoutElement>();
-            priceLe.preferredHeight = 14f;
+            var price = BuildPriceButton(left.transform);
+            var priceLe = price.button.GetComponent<LayoutElement>();
+            priceLe.preferredHeight = 16f;
+            priceLe.minHeight = 16f;
+            priceLe.minWidth = 40f;
             priceLe.flexibleHeight = 0f;
 
             var previewCol = new GameObject("PreviewColumn");
@@ -483,9 +342,10 @@ namespace TitanOrbit.Editor
             so.FindProperty("layoutWidth").floatValue = nodeWidth;
             so.FindProperty("layoutHeight").floatValue = nodeHeight;
             so.FindProperty("button").objectReferenceValue = btn;
+            so.FindProperty("priceButton").objectReferenceValue = price.button;
             so.FindProperty("levelText").objectReferenceValue = level;
             so.FindProperty("shipNameText").objectReferenceValue = name;
-            so.FindProperty("priceText").objectReferenceValue = price;
+            so.FindProperty("priceText").objectReferenceValue = price.label;
             so.FindProperty("previewImage").objectReferenceValue = previewImg;
             so.FindProperty("powerBar").objectReferenceValue = powerBarGo.GetComponent<ShipUpgradeTreePowerBarUI>();
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -552,6 +412,58 @@ namespace TitanOrbit.Editor
             so.FindProperty("pairGap").floatValue = 4f;
             so.ApplyModifiedPropertiesWithoutUndo();
             return barRow;
+        }
+
+        private static (Button button, TextMeshProUGUI label) BuildPriceButton(Transform parent)
+        {
+            var priceGo = new GameObject("Price");
+            priceGo.transform.SetParent(parent, false);
+            priceGo.AddComponent<LayoutElement>();
+
+            var borderGo = new GameObject("Border", typeof(RectTransform));
+            borderGo.transform.SetParent(priceGo.transform, false);
+            var borderRt = (RectTransform)borderGo.transform;
+            borderRt.anchorMin = Vector2.zero;
+            borderRt.anchorMax = Vector2.one;
+            borderRt.offsetMin = Vector2.zero;
+            borderRt.offsetMax = Vector2.zero;
+            var borderImg = borderGo.AddComponent<Image>();
+            borderImg.color = new Color(0.24f, 0.26f, 0.3f, 0.9f);
+            borderImg.raycastTarget = false;
+
+            var bgGo = new GameObject("Background", typeof(RectTransform));
+            bgGo.transform.SetParent(priceGo.transform, false);
+            var bgRt = (RectTransform)bgGo.transform;
+            bgRt.anchorMin = Vector2.zero;
+            bgRt.anchorMax = Vector2.one;
+            bgRt.offsetMin = new Vector2(1f, 1f);
+            bgRt.offsetMax = new Vector2(-1f, -1f);
+            var priceImg = bgGo.AddComponent<Image>();
+            priceImg.color = new Color(0.1f, 0.11f, 0.13f, 0.95f);
+
+            var priceBtn = priceGo.AddComponent<Button>();
+            priceBtn.targetGraphic = priceImg;
+            priceBtn.transition = Selectable.Transition.None;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(priceGo.transform, false);
+            var labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = new Vector2(4f, 0f);
+            labelRt.offsetMax = new Vector2(-4f, 0f);
+
+            var label = labelGo.AddComponent<TextMeshProUGUI>();
+            label.fontSize = 11;
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(0.46f, 0.5f, 0.54f, 1f);
+            label.enableWordWrapping = false;
+            label.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                label.font = TMP_Settings.defaultFontAsset;
+
+            return (priceBtn, label);
         }
 
         private static TextMeshProUGUI CreateTmp(

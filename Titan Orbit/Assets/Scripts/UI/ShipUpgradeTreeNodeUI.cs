@@ -28,7 +28,8 @@ namespace TitanOrbit.UI
             public const float NameHeight = 26f;
             public const float NameMinHeight = 22f;
             public const float PriceFontSize = 11f;
-            public const float PriceHeight = 14f;
+            public const float PriceHeight = 16f;
+            public const float PriceMinWidth = 40f;
             public const float PreviewColWidth = 56f;
             public const float PreviewSize = 56f;
             public const float PreviewMinHeight = 48f;
@@ -43,6 +44,7 @@ namespace TitanOrbit.UI
         [SerializeField] private float layoutHeight = 100f;
 
         [SerializeField] private Button button;
+        [SerializeField] private Button priceButton;
         [SerializeField] private TextMeshProUGUI levelText;
         [SerializeField] private TextMeshProUGUI shipNameText;
         [SerializeField] private TextMeshProUGUI priceText;
@@ -58,6 +60,7 @@ namespace TitanOrbit.UI
         public float PowerBarTrackWidth { get; private set; }
         public bool UsesMoonHorizontalLayout => moonHorizontalLayout;
         public Button Button => button;
+        public Button PriceButton => priceButton;
         public TextMeshProUGUI LevelNumberText => levelText;
         public TextMeshProUGUI ShipNameText => shipNameText;
         public TextMeshProUGUI PriceText => priceText;
@@ -79,6 +82,9 @@ namespace TitanOrbit.UI
         private LayoutElement _levelLe;
         private LayoutElement _nameLe;
         private LayoutElement _priceLe;
+        private Image _priceButtonImage;
+        private Image _priceButtonBorder;
+        private bool _priceButtonEnsured;
         private LayoutElement _previewColLe;
         private LayoutElement _previewImgLe;
         private LayoutElement _powerBarLe;
@@ -167,7 +173,10 @@ namespace TitanOrbit.UI
                 _levelLe = levelText.GetComponent<LayoutElement>();
             if (shipNameText != null)
                 _nameLe = shipNameText.GetComponent<LayoutElement>();
-            if (priceText != null)
+            EnsurePriceButton();
+            if (priceButton != null)
+                _priceLe = priceButton.GetComponent<LayoutElement>();
+            else if (priceText != null)
                 _priceLe = priceText.GetComponent<LayoutElement>();
 
             if (previewImage != null)
@@ -218,6 +227,8 @@ namespace TitanOrbit.UI
             if (_nameLe != null)
                 _nameLe.minHeight = ScalePx(RefLayout.NameMinHeight, hScale);
             ApplyTextScale(priceText, _priceLe, RefLayout.PriceFontSize, RefLayout.PriceHeight, fontScale, hScale);
+            if (_priceLe != null)
+                _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
 
             float previewColW = ScalePx(RefLayout.PreviewColWidth, wScale);
             if (_previewColLe != null)
@@ -302,11 +313,241 @@ namespace TitanOrbit.UI
             powerBar.ApplyBreakdown(breakdown, strongestShipTotal, track);
         }
 
+        private static readonly Color PriceEnabledFill = new Color(0.14f, 0.46f, 0.24f, 1f);
+        private static readonly Color PriceEnabledBorder = new Color(0.38f, 0.88f, 0.48f, 1f);
+        private static readonly Color PriceEnabledText = new Color(0.96f, 1f, 0.97f, 1f);
+        private static readonly Color PriceDisabledFill = new Color(0.1f, 0.11f, 0.13f, 0.95f);
+        private static readonly Color PriceDisabledBorder = new Color(0.24f, 0.26f, 0.3f, 0.9f);
+        private static readonly Color PriceDisabledText = new Color(0.46f, 0.5f, 0.54f, 1f);
+        private const float PriceBorderInset = 1f;
+
+        private void EnsurePriceButton()
+        {
+            Transform priceRoot = ResolvePriceRootTransform();
+            if (priceRoot == null)
+                return;
+
+            if (_priceButtonEnsured && priceButton != null && _priceButtonImage != null
+                && _priceButtonBorder != null && priceText != null)
+                return;
+
+            MigratePriceTextOffRoot(priceRoot);
+            ResolvePriceTextReference(priceRoot);
+
+            _priceButtonBorder = FindOrCreatePriceBorderImage(priceRoot);
+            _priceButtonImage = FindOrCreatePriceBackgroundImage(priceRoot);
+            if (_priceButtonImage == null)
+                return;
+
+            _priceButtonImage.raycastTarget = true;
+            EnsurePriceLabelOnTop(priceRoot);
+
+            priceButton = priceRoot.GetComponent<Button>();
+            if (priceButton == null)
+            {
+                priceButton = priceRoot.gameObject.AddComponent<Button>();
+                priceButton.transition = Selectable.Transition.None;
+            }
+            else
+            {
+                priceButton.transition = Selectable.Transition.None;
+            }
+
+            priceButton.targetGraphic = _priceButtonImage;
+
+            if (priceText != null)
+            {
+                priceText.alignment = TextAlignmentOptions.Center;
+                priceText.raycastTarget = false;
+                priceText.fontStyle = FontStyles.Bold;
+            }
+
+            _priceButtonEnsured = true;
+        }
+
+        private void MigratePriceTextOffRoot(Transform priceRoot)
+        {
+            var rootTmp = priceRoot.GetComponent<TextMeshProUGUI>();
+            if (rootTmp == null)
+                return;
+
+            Transform labelTransform = priceRoot.Find("Label");
+            GameObject labelGo;
+            if (labelTransform != null)
+            {
+                labelGo = labelTransform.gameObject;
+            }
+            else
+            {
+                labelGo = new GameObject("Label", typeof(RectTransform));
+                labelGo.transform.SetParent(priceRoot, false);
+            }
+
+            StretchRectToFill(labelGo.transform as RectTransform);
+
+            var labelTmp = labelGo.GetComponent<TextMeshProUGUI>();
+            if (labelTmp == null)
+            {
+                labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+                CopyTextMeshSettings(rootTmp, labelTmp);
+            }
+
+            labelTmp.text = rootTmp.text;
+            priceText = labelTmp;
+
+            if (Application.isPlaying)
+                Destroy(rootTmp);
+            else
+                DestroyImmediate(rootTmp);
+        }
+
+        private static void CopyTextMeshSettings(TextMeshProUGUI from, TextMeshProUGUI to)
+        {
+            to.font = from.font;
+            to.fontSize = from.fontSize;
+            to.fontStyle = FontStyles.Bold;
+            to.color = from.color;
+            to.alignment = TextAlignmentOptions.Center;
+            to.enableWordWrapping = false;
+            to.richText = false;
+            to.raycastTarget = false;
+        }
+
+        private void EnsurePriceLabelOnTop(Transform priceRoot)
+        {
+            Transform label = priceRoot.Find("Label");
+            if (label != null)
+                label.SetAsLastSibling();
+        }
+
+        private static Image FindOrCreatePriceBorderImage(Transform priceRoot)
+        {
+            const string borderName = "Border";
+            Transform border = priceRoot.Find(borderName);
+            if (border == null)
+            {
+                var borderGo = new GameObject(borderName, typeof(RectTransform));
+                borderGo.transform.SetParent(priceRoot, false);
+                border = borderGo.transform;
+            }
+
+            border.SetAsFirstSibling();
+            StretchRectToFill(border as RectTransform);
+
+            if (!border.TryGetComponent(out Image image))
+            {
+                image = border.gameObject.AddComponent<Image>();
+                image.raycastTarget = false;
+            }
+
+            return image;
+        }
+
+        private Transform ResolvePriceRootTransform()
+        {
+            if (priceButton != null)
+                return priceButton.transform;
+
+            if (priceText != null)
+            {
+                Transform t = priceText.transform;
+                if (t.name == "Label" && t.parent != null)
+                    return t.parent;
+                if (t.name == "Price")
+                    return t;
+                if (t.parent != null && t.parent.name == "Price")
+                    return t.parent;
+            }
+
+            return transform.Find("ContentRow/LeftColumn/Price");
+        }
+
+        private void ResolvePriceTextReference(Transform priceRoot)
+        {
+            if (priceText != null)
+                return;
+
+            priceText = priceRoot.GetComponent<TextMeshProUGUI>();
+            if (priceText != null)
+                return;
+
+            Transform label = priceRoot.Find("Label");
+            if (label != null)
+                priceText = label.GetComponentInChildren<TextMeshProUGUI>(true);
+        }
+
+        /// <summary>
+        /// Price may already have an Image (new prefabs) or only TMP on the root (legacy).
+        /// Unity allows one Graphic per GameObject, so legacy prefabs get a stretched Background child.
+        /// </summary>
+        private static Image FindOrCreatePriceBackgroundImage(Transform priceRoot)
+        {
+            if (priceRoot.TryGetComponent(out Image legacyRootImage))
+            {
+                if (Application.isPlaying)
+                    Object.Destroy(legacyRootImage);
+                else
+                    Object.DestroyImmediate(legacyRootImage);
+            }
+
+            const string backgroundName = "Background";
+            Transform background = priceRoot.Find(backgroundName);
+            if (background != null && background.TryGetComponent(out Image childImage))
+                return childImage;
+
+            var bgGo = background != null
+                ? background.gameObject
+                : new GameObject(backgroundName, typeof(RectTransform));
+            if (background == null)
+            {
+                bgGo.transform.SetParent(priceRoot, false);
+                background = bgGo.transform;
+            }
+
+            StretchRectToFill(background as RectTransform);
+            background.SetSiblingIndex(1);
+
+            var bgRt = background as RectTransform;
+            if (bgRt != null)
+            {
+                bgRt.offsetMin = new Vector2(PriceBorderInset, PriceBorderInset);
+                bgRt.offsetMax = new Vector2(-PriceBorderInset, -PriceBorderInset);
+            }
+
+            if (!bgGo.TryGetComponent(out Image image))
+            {
+                image = bgGo.AddComponent<Image>();
+                image.color = PriceDisabledFill;
+            }
+
+            return image;
+        }
+
+        private static void StretchRectToFill(RectTransform rt)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+        }
+
         public void EnsureStableButtonRendering()
         {
-            if (button == null)
-                return;
-            button.transition = Selectable.Transition.None;
+            if (button != null)
+            {
+                button.transition = Selectable.Transition.None;
+                button.interactable = false;
+                var rootGraphic = button.targetGraphic;
+                if (rootGraphic != null)
+                    rootGraphic.raycastTarget = false;
+            }
+
+            EnsurePriceButton();
+            if (priceButton != null)
+                priceButton.transition = Selectable.Transition.None;
         }
 
         public void SetButtonBackgroundColor(Color color)
@@ -321,7 +562,27 @@ namespace TitanOrbit.UI
 
         public void SetLevelLabel(string text) { if (levelText != null) levelText.text = text; }
         public void SetShipName(string text) { if (shipNameText != null) shipNameText.text = text; }
-        public void SetPrice(string text) { if (priceText != null) priceText.text = text; }
+        public void SetPrice(string text)
+        {
+            EnsurePriceButton();
+            if (priceText != null)
+                priceText.text = text;
+        }
+
+        public void SetPriceButtonStyle(bool clickable)
+        {
+            EnsurePriceButton();
+            Color fill = clickable ? PriceEnabledFill : PriceDisabledFill;
+            Color border = clickable ? PriceEnabledBorder : PriceDisabledBorder;
+            Color label = clickable ? PriceEnabledText : PriceDisabledText;
+
+            if (_priceButtonBorder != null)
+                _priceButtonBorder.color = border;
+            if (_priceButtonImage != null)
+                _priceButtonImage.color = fill;
+            if (priceText != null)
+                priceText.color = label;
+        }
         public void SetPreview(Sprite sprite)
         {
             if (previewImage == null) return;
@@ -330,14 +591,27 @@ namespace TitanOrbit.UI
         }
 
         public void SetButtonColors(Color normal) => SetButtonBackgroundColor(normal);
-        public void SetInteractable(bool on) { if (button != null) button.interactable = on; }
+        public void SetInteractable(bool on)
+        {
+            EnsurePriceButton();
+            if (priceButton != null)
+                priceButton.interactable = on;
+            SetPriceButtonStyle(on);
+        }
 
         public void SetClickHandler(UnityEngine.Events.UnityAction handler)
         {
             if (button == null) return;
             button.onClick.RemoveAllListeners();
+        }
+
+        public void SetPriceClickHandler(UnityEngine.Events.UnityAction handler)
+        {
+            EnsurePriceButton();
+            if (priceButton == null) return;
+            priceButton.onClick.RemoveAllListeners();
             if (handler != null)
-                button.onClick.AddListener(handler);
+                priceButton.onClick.AddListener(handler);
         }
     }
 }

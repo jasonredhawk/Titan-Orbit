@@ -1126,43 +1126,45 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Heuristic breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity),
-    /// plus per-stat contributions for the ten ship-upgrade-menu stats shown in the orbit ship tree.
+    /// Breakdown of <see cref="ShipFamilyChassisTierEntry.powerScore"/> (offense + defense + energy + mobility + capacity),
+    /// plus the ten ship-upgrade-menu stats shown in the orbit ship tree power bar.
     /// Populated when building the upgrade tree from folder in the editor.
     /// </summary>
     [Serializable]
     public struct ShipFamilyPowerScoreBreakdown
     {
-        [Tooltip("Weighted offense contribution (fire power, bullet speed, fire rate, per-level terms).")]
+        public const int DisplayStatCount = 10;
+
+        [Tooltip("Offense category total (fire power, bullet speed, fire rate, ramming).")]
         public float offense;
-        [Tooltip("Weighted defense contribution (health cap/regen, per-level terms).")]
+        [Tooltip("Defense category total (health cap, health regen).")]
         public float defense;
-        [Tooltip("Weighted energy contribution (energy cap/regen, per-level terms).")]
+        [Tooltip("Energy category total (energy cap, energy regen).")]
         public float energy;
-        [Tooltip("Weighted mobility contribution (move speed, turn speed, per-level terms).")]
+        [Tooltip("Mobility category total (move speed, turn speed, acceleration).")]
         public float mobility;
-        [Tooltip("Weighted capacity contribution (gems, people, per-level terms).")]
+        [Tooltip("Capacity category total (gems, people).")]
         public float capacity;
 
-        [Tooltip("Fire Power weighted contribution (upgrade menu stat).")]
+        [Tooltip("Fire Power (upgrade menu stat, level-1 effective value).")]
         public float firePower;
-        [Tooltip("Bullet Speed weighted contribution (upgrade menu stat).")]
+        [Tooltip("Bullet Speed (upgrade menu stat, level-1 effective value).")]
         public float bulletSpeed;
-        [Tooltip("Health Cap weighted contribution (upgrade menu stat).")]
+        [Tooltip("Health Cap (upgrade menu stat, level-1 effective value).")]
         public float healthCap;
-        [Tooltip("Health Regen weighted contribution (upgrade menu stat).")]
+        [Tooltip("Health Regen (upgrade menu stat, level-1 effective value).")]
         public float healthRegen;
-        [Tooltip("Energy Cap weighted contribution (upgrade menu stat).")]
+        [Tooltip("Energy Cap (upgrade menu stat, level-1 effective value).")]
         public float energyCap;
-        [Tooltip("Energy Regen weighted contribution (upgrade menu stat).")]
+        [Tooltip("Energy Regen (upgrade menu stat, level-1 effective value).")]
         public float energyRegen;
-        [Tooltip("Move Speed weighted contribution (upgrade menu stat).")]
+        [Tooltip("Move Speed (upgrade menu stat, level-1 effective value).")]
         public float moveSpeed;
-        [Tooltip("Turn Speed weighted contribution (upgrade menu stat).")]
+        [Tooltip("Turn Speed (upgrade menu stat, level-1 effective value).")]
         public float turnSpeed;
-        [Tooltip("Gem Cap weighted contribution (upgrade menu stat).")]
+        [Tooltip("Gem Cap (upgrade menu stat, level-1 effective value).")]
         public float gemCap;
-        [Tooltip("People Cap weighted contribution (upgrade menu stat).")]
+        [Tooltip("People Cap (upgrade menu stat, level-1 effective value).")]
         public float peopleCap;
 
         public float Total => offense + defense + energy + mobility + capacity;
@@ -1216,61 +1218,35 @@ namespace TitanOrbit.Data
         /// <summary>Total power represented by <see cref="GetDisplayStatValue"/> (handles legacy breakdown data).</summary>
         public float GetDisplayTotalForUi()
         {
-            if (HasDisplayStats)
-                return DisplayTotal;
-
             float total = 0f;
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < DisplayStatCount; i++)
                 total += GetDisplayStatValue(i);
             return total;
         }
 
         /// <summary>
-        /// Heuristic category weights from summed ship stats (same formula as the upgrade-tree editor power breakdown).
+        /// Category and per-stat breakdown from summed ship stats (level-1 effective values, no heuristic scaling).
         /// Input stats must already include per-component localScale (see ShipFamilyUpgradeTreeStatScanner in the Editor assembly).
-        /// Used to bias generated upgrade cards toward what the family's prefabs are strong in.
         /// </summary>
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
         {
-            float firePowerScore = s.firePower * 2.0f + s.firePowerPerLevel * 1.0f;
-            float bulletSpeedScore = s.bulletSpeed * 0.5f + s.bulletSpeedPerLevel * 0.25f;
-            float healthCapScore = s.healthCap * 0.03f + s.healthCapPerLevel * 0.5f;
-            float healthRegenScore = s.healthRegen * 1.0f + s.healthRegenPerLevel * 1.5f;
-            float energyCapScore = s.energyCap * 0.01f + s.energyCapPerLevel * 0.25f;
-            float energyRegenScore = s.energyRegen * 0.8f + s.energyRegenPerLevel * 1.0f;
-            float moveSpeedScore = s.moveSpeed * 0.5f + s.moveSpeedPerLevel * 0.8f;
-            float turnSpeedScore = s.turnSpeed * 0.6f + s.turnSpeedPerLevel * 0.9f;
-            // Capacity: normalize gem counts (often 50–500) vs people (often 2–20) so bar segments stay proportional.
-            float gemCapScore = s.maxGems * 0.06f + s.maxGemsPerLevel * 0.5f;
-            float peopleCapScore = s.maxPeople * 0.5f + s.maxPeoplePerLevel * 0.8f;
-
             return new ShipFamilyPowerScoreBreakdown
             {
-                firePower = firePowerScore,
-                bulletSpeed = bulletSpeedScore,
-                healthCap = healthCapScore,
-                healthRegen = healthRegenScore,
-                energyCap = energyCapScore,
-                energyRegen = energyRegenScore,
-                moveSpeed = moveSpeedScore,
-                turnSpeed = turnSpeedScore,
-                gemCap = gemCapScore,
-                peopleCap = peopleCapScore,
-                offense =
-                    firePowerScore +
-                    bulletSpeedScore +
-                    s.fireRate * 1.0f +
-                    s.fireRatePerLevel * 0.5f +
-                    s.rammingPower * 0.9f +
-                    s.rammingPowerPerLevel * 1.1f,
-                defense = healthCapScore + healthRegenScore,
-                energy = energyCapScore + energyRegenScore,
-                mobility =
-                    moveSpeedScore +
-                    turnSpeedScore +
-                    s.accelerationCap * 0.9f +
-                    s.accelerationCapPerLevel * 1.1f,
-                capacity = gemCapScore + peopleCapScore
+                firePower = s.firePower,
+                bulletSpeed = s.bulletSpeed,
+                healthCap = s.healthCap,
+                healthRegen = s.healthRegen,
+                energyCap = s.energyCap,
+                energyRegen = s.energyRegen,
+                moveSpeed = s.moveSpeed,
+                turnSpeed = s.turnSpeed,
+                gemCap = s.maxGems,
+                peopleCap = s.maxPeople,
+                offense = s.firePower + s.bulletSpeed + s.fireRate + s.rammingPower,
+                defense = s.healthCap + s.healthRegen,
+                energy = s.energyCap + s.energyRegen,
+                mobility = s.moveSpeed + s.turnSpeed + s.accelerationCap,
+                capacity = s.maxGems + s.maxPeople
             };
         }
     }
@@ -1304,7 +1280,7 @@ namespace TitanOrbit.Data
         [Tooltip("Chassis component mass from this tier's prefab (sum of part scale factors). Matches Starship componentMass / speedometer MASS at level 1 with empty cargo.")]
         public float componentMass;
 
-        [Tooltip("Editor: heuristic parts of powerScore (offense + defense + energy + mobility + capacity).")]
+        [Tooltip("Editor: category totals and per-stat values for powerScore (offense + defense + energy + mobility + capacity).")]
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
 
         [Tooltip("When enabled, Resort Upgrade Tree keeps this entry at its list index and only re-sorts unlocked ships.")]

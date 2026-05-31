@@ -29,7 +29,7 @@ namespace TitanOrbit.UI
         [SerializeField] private TMP_FontAsset fontAsset;
 
         [Header("Ship upgrade tree")]
-        [Tooltip("Prefab with ShipUpgradeTreeUI (hint, legend, nodes). Create via Titan Orbit/UI/Create Ship Upgrade Tree Prefab.")]
+        [Tooltip("Prefab with ShipUpgradeTreeUI (hint, nodes). Create via Titan Orbit/UI/Create Ship Upgrade Tree Prefab.")]
         [SerializeField] private ShipUpgradeTreeUI shipUpgradeTreePrefab;
 
         private SpinCardShiftVisuals _cachedSpinCardShiftVisuals;
@@ -57,8 +57,6 @@ namespace TitanOrbit.UI
         private RectTransform storeContentRoot;
         private GameObject cardsTabContent;
         private GameObject shipsTabContent;
-        private Button tabCardsButton;
-        private Button tabShipsButton;
         private int activeStoreTab = 0; // 0 = Cards, 1 = Ships
         private const int MaxStoreShips = 80;
         private const int MaxShipCards = 20;
@@ -138,9 +136,6 @@ namespace TitanOrbit.UI
         private enum MoonDockCenterView { None, Cards, Ships }
         private MoonDockCenterView _moonDockCenterView = MoonDockCenterView.None;
 
-        private GameObject moonDockRightRail;
-        private Button moonDockBtnCards;
-        private Button moonDockBtnShips;
         private GameObject moonDockCenterBackdrop;
         private RectTransform moonDockCenterCardsHost;
         private ScrollRect moonDockCardsScroll;
@@ -592,7 +587,7 @@ namespace TitanOrbit.UI
                     slotDeleteButtons[i].onClick.AddListener(() => ShowCardRemoveConfirm(idx));
             }
 
-            // —— Store Panel (tabs: Cards | Ships) ——
+            // —— Store Panel ——
             float storePanelTop = slotPanelHeight + 8f;
             storePanel = new GameObject("StorePanel");
             storePanel.transform.SetParent(rootPanel.transform, false);
@@ -611,29 +606,6 @@ namespace TitanOrbit.UI
             storeY -= 4f;
             const float StoreBlockShiftUpPx = 14f; // Tighter header: tabs + scroll start higher in the store panel
             storeY += StoreBlockShiftUpPx;
-
-            // Tab strip
-            var tabStripGo = new GameObject("TabStrip");
-            tabStripGo.transform.SetParent(storePanel.transform, false);
-            var tabStripRect = tabStripGo.AddComponent<RectTransform>();
-            tabStripRect.anchorMin = new Vector2(0f, 1f);
-            tabStripRect.anchorMax = new Vector2(1f, 1f);
-            tabStripRect.pivot = new Vector2(0.5f, 1f);
-            tabStripRect.anchoredPosition = new Vector2(0f, storeY);
-            tabStripRect.sizeDelta = new Vector2(-24f, 36f);
-            storeY -= 40f;
-            var tabStripLayout = tabStripGo.AddComponent<HorizontalLayoutGroup>();
-            tabStripLayout.spacing = 12f;
-            tabStripLayout.childAlignment = TextAnchor.MiddleLeft;
-            tabStripLayout.childControlWidth = true;
-            tabStripLayout.childControlHeight = true;
-            tabStripLayout.childForceExpandWidth = false;
-            tabStripLayout.childForceExpandHeight = true;
-
-            tabCardsButton = CreateTabButton(tabStripGo.transform, "Cards");
-            tabShipsButton = CreateTabButton(tabStripGo.transform, "Ships");
-            tabCardsButton.onClick.AddListener(() => { activeStoreTab = 0; RefreshStoreTabVisibility(); });
-            tabShipsButton.onClick.AddListener(() => { activeStoreTab = 1; RefreshStoreTabVisibility(); });
 
             // Scroll + content for store
             var scrollViewGo = new GameObject("StoreScrollView");
@@ -792,10 +764,6 @@ namespace TitanOrbit.UI
             chassisButtons = new Button[MaxShipCards];
             chassisLabels = new TextMeshProUGUI[MaxShipCards];
             shipUnlockEntries = new ShipUnlockEntry[MaxShipCards];
-            float shipY = 0f;
-            CreateSectionHeaderPair(shipsTabContent.transform, "Ship upgrade tree", "Each tier splits into branches — ship preview and price on the right.", ref shipY);
-            shipY -= 6f;
-
             EnsureShipUpgradeTreeInstance(shipsTabContent.transform);
 
             shipsRowsContainer = null;
@@ -867,42 +835,9 @@ namespace TitanOrbit.UI
             EnsureMoonDockChromeExists();
         }
 
-        private Button CreateTabButton(Transform parent, string label)
-        {
-            var go = new GameObject("Tab_" + label);
-            go.transform.SetParent(parent, false);
-            var rect = go.AddComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(120f, 32f);
-            var layoutEl = go.AddComponent<UnityEngine.UI.LayoutElement>();
-            layoutEl.minWidth = 100f;
-            layoutEl.preferredWidth = 120f;
-            layoutEl.flexibleWidth = 0f;
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.2f, 0.28f, 0.4f, 0.95f);
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-            var btn = go.AddComponent<Button>();
-            var textGo = new GameObject("Text");
-            textGo.transform.SetParent(go.transform, false);
-            var textRect = textGo.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(4f, 2f);
-            textRect.offsetMax = new Vector2(-4f, -2f);
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 14;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.overflowMode = TextOverflowModes.Overflow;
-            tmp.enableWordWrapping = false;
-            tmp.raycastTarget = false;
-            if (fontAsset != null) tmp.font = fontAsset;
-            return btn;
-        }
-
         private void RefreshStoreTabVisibility()
         {
-            if (cardsTabContent == null || shipsTabContent == null || tabCardsButton == null || tabShipsButton == null) return;
+            if (cardsTabContent == null || shipsTabContent == null) return;
 
             if (_moonDockLayoutActive)
             {
@@ -913,10 +848,6 @@ namespace TitanOrbit.UI
                     shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
                 if (activeStoreTab == 1)
                     EnsureShipsTabPopulated();
-                var cardsImgM = tabCardsButton.GetComponent<Image>();
-                var shipsImgM = tabShipsButton.GetComponent<Image>();
-                if (cardsImgM != null) cardsImgM.color = activeStoreTab == 0 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
-                if (shipsImgM != null) shipsImgM.color = activeStoreTab == 1 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
                 return;
             }
 
@@ -952,10 +883,6 @@ namespace TitanOrbit.UI
                         ScrollStoreToCurrentShipTreeNode();
                 }
             }
-            var cardsImg = tabCardsButton.GetComponent<Image>();
-            var shipsImg = tabShipsButton.GetComponent<Image>();
-            if (cardsImg != null) cardsImg.color = activeStoreTab == 0 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
-            if (shipsImg != null) shipsImg.color = activeStoreTab == 1 ? new Color(0.25f, 0.4f, 0.6f, 0.98f) : new Color(0.2f, 0.28f, 0.4f, 0.95f);
         }
 
         private void EnsureShipsTabPopulated()
@@ -1177,7 +1104,7 @@ namespace TitanOrbit.UI
             if (treeH < 1f)
                 treeH = ComputeShipTreeCanvasContentHeight();
 
-            // Section title + hint + legend (compact) + tree block
+            // Section title + hint + tree block
             const float analyticHeaderAndGap = 88f;
             const float analyticBottomSlack = 40f;
             float analytic = analyticHeaderAndGap + treeH + analyticBottomSlack;
@@ -2701,31 +2628,11 @@ namespace TitanOrbit.UI
 
         private void EnsureMoonDockChromeExists()
         {
-            if (_moonDockChromeReady && moonDockRightRail != null)
+            if (_moonDockChromeReady && moonDockCenterBackdrop != null)
             {
                 EnsureMoonDockCloseButtonExists();
                 return;
             }
-
-            moonDockRightRail = new GameObject("MoonDockRightRail");
-            moonDockRightRail.transform.SetParent(transform, false);
-            var railRt = moonDockRightRail.AddComponent<RectTransform>();
-            railRt.anchorMin = new Vector2(1f, 0.22f);
-            railRt.anchorMax = new Vector2(1f, 0.78f);
-            railRt.pivot = new Vector2(1f, 0.5f);
-            railRt.anchoredPosition = new Vector2(-16f, 0f);
-            railRt.sizeDelta = new Vector2(136f, 220f);
-            var railVlg = moonDockRightRail.AddComponent<VerticalLayoutGroup>();
-            railVlg.spacing = 14f;
-            railVlg.childAlignment = TextAnchor.MiddleCenter;
-            railVlg.childControlWidth = true;
-            railVlg.childControlHeight = false;
-            railVlg.padding = new RectOffset(10, 10, 10, 10);
-
-            moonDockBtnCards = CreateMoonDockRailButton(moonDockRightRail.transform, "Cards");
-            moonDockBtnShips = CreateMoonDockRailButton(moonDockRightRail.transform, "Ships");
-            moonDockBtnCards.onClick.AddListener(() => SetMoonDockCenterView(MoonDockCenterView.Cards));
-            moonDockBtnShips.onClick.AddListener(() => SetMoonDockCenterView(MoonDockCenterView.Ships));
 
             moonDockCenterBackdrop = new GameObject("MoonDockCenterBackdrop");
             moonDockCenterBackdrop.transform.SetParent(transform, false);
@@ -2741,7 +2648,7 @@ namespace TitanOrbit.UI
             cardsScrollGo.transform.SetParent(moonDockCenterBackdrop.transform, false);
             var cardsScrollRt = cardsScrollGo.AddComponent<RectTransform>();
             cardsScrollRt.anchorMin = new Vector2(0.04f, 0.06f);
-            cardsScrollRt.anchorMax = new Vector2(0.88f, 0.94f);
+            cardsScrollRt.anchorMax = new Vector2(0.96f, 0.94f);
             cardsScrollRt.offsetMin = cardsScrollRt.offsetMax = Vector2.zero;
             moonDockCardsScroll = cardsScrollGo.AddComponent<ScrollRect>();
             moonDockCardsScroll.horizontal = false;
@@ -2803,7 +2710,6 @@ namespace TitanOrbit.UI
             EnsureMoonDockCloseButtonExists();
 
             _moonDockChromeReady = true;
-            moonDockRightRail.SetActive(false);
             moonDockCenterBackdrop.SetActive(false);
         }
 
@@ -2844,38 +2750,6 @@ namespace TitanOrbit.UI
             if (fontAsset != null) tmp.font = fontAsset;
         }
 
-        private Button CreateMoonDockRailButton(Transform parent, string label)
-        {
-            var go = new GameObject("MoonDock_" + label);
-            go.transform.SetParent(parent, false);
-            var rect = go.AddComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(118f, 46f);
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = 118f;
-            le.preferredHeight = 46f;
-            le.minHeight = 46f;
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.22f, 0.32f, 0.48f, 0.96f);
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-            var btn = go.AddComponent<Button>();
-            var textGo = new GameObject("Text");
-            textGo.transform.SetParent(go.transform, false);
-            var tr = textGo.AddComponent<RectTransform>();
-            tr.anchorMin = Vector2.zero;
-            tr.anchorMax = Vector2.one;
-            tr.offsetMin = new Vector2(6f, 4f);
-            tr.offsetMax = new Vector2(-6f, -4f);
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 17;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.raycastTarget = false;
-            if (fontAsset != null) tmp.font = fontAsset;
-            return btn;
-        }
-
         private void EnterMoonDockLayout()
         {
             EnsureMoonDockChromeExists();
@@ -2894,7 +2768,6 @@ namespace TitanOrbit.UI
             }
 
             if (rootPanel != null) rootPanel.SetActive(false);
-            if (moonDockRightRail != null) moonDockRightRail.SetActive(false);
 
             ReparentMoonDockContent();
 
@@ -2915,7 +2788,6 @@ namespace TitanOrbit.UI
             _moonDockCenterView = MoonDockCenterView.None;
             _shipTreeStructureKey = "";
 
-            if (moonDockRightRail != null) moonDockRightRail.SetActive(false);
             if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.SetActive(false);
 
             RestoreMoonDockParents();
@@ -2984,8 +2856,6 @@ namespace TitanOrbit.UI
             {
                 var storeLabel = storePanel.transform.Find("Store");
                 if (storeLabel != null) storeLabel.gameObject.SetActive(false);
-                var tabStrip = storePanel.transform.Find("TabStrip");
-                if (tabStrip != null) tabStrip.gameObject.SetActive(false);
                 var scroll = storePanel.transform.Find("StoreScrollView");
                 if (scroll != null) scroll.gameObject.SetActive(false);
                 var sb = storePanel.transform.Find("StoreScrollbar");
@@ -3085,8 +2955,6 @@ namespace TitanOrbit.UI
             {
                 var storeLabel = storePanel.transform.Find("Store");
                 if (storeLabel != null) storeLabel.gameObject.SetActive(true);
-                var tabStrip = storePanel.transform.Find("TabStrip");
-                if (tabStrip != null) tabStrip.gameObject.SetActive(true);
                 var scroll = storePanel.transform.Find("StoreScrollView");
                 if (scroll != null) scroll.gameObject.SetActive(true);
                 var sb = storePanel.transform.Find("StoreScrollbar");
@@ -3115,13 +2983,11 @@ namespace TitanOrbit.UI
             if (!show)
             {
                 ApplyShipTreeHudObscuring(false);
-                if (moonDockRightRail != null) moonDockRightRail.SetActive(false);
                 return;
             }
 
             bool cards = view == MoonDockCenterView.Cards;
             ApplyShipTreeHudObscuring(show);
-            if (moonDockRightRail != null) moonDockRightRail.SetActive(show);
             if (moonDockCardsScroll != null) moonDockCardsScroll.gameObject.SetActive(cards);
             if (moonDockCenterShipsHost != null) moonDockCenterShipsHost.gameObject.SetActive(!cards);
 

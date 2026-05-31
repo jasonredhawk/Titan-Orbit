@@ -73,6 +73,8 @@ namespace TitanOrbit.UI
         private float _dbgLastLobbyRefreshRealtime = -1f;
         private int _dbgLobbyRefreshCount;
 
+        private const float LobbyScreenContentWidth = 540f;
+
         private RectTransform _authMainCardRt;
         private Image _authMainCardBg;
         private TextMeshProUGUI _authMainHeadline;
@@ -970,11 +972,24 @@ namespace TitanOrbit.UI
                 GameObject row = Instantiate(lobbyListRowPrefab, lobbyListContainer);
                 row.SetActive(true);
                 var button = row.GetComponent<Button>();
-                var label = row.GetComponentInChildren<TextMeshProUGUI>();
-                if (label != null)
+                var nameLabel = row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
+                var playersLabel = row.transform.Find("LobbyRowPlayers")?.GetComponent<TextMeshProUGUI>();
+                if (nameLabel != null || playersLabel != null)
                 {
                     string latestTag = summary.IsLatest ? "  ·  Latest" : "";
-                    label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                    if (nameLabel != null)
+                        nameLabel.text = $"<b>{summary.Name}</b>{latestTag}";
+                    if (playersLabel != null)
+                        playersLabel.text = $"{summary.CurrentPlayers}/{summary.MaxPlayers}";
+                }
+                else
+                {
+                    var label = row.GetComponentInChildren<TextMeshProUGUI>();
+                    if (label != null)
+                    {
+                        string latestTag = summary.IsLatest ? "  ·  Latest" : "";
+                        label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                    }
                 }
                 if (button != null)
                 {
@@ -1113,29 +1128,37 @@ namespace TitanOrbit.UI
             lobbyScreenBackButton = CreateMenuButton("LobbyBackButton", "Back", Vector2.zero, new Vector2(120f, 44f), topBar.GetComponent<RectTransform>(), isPrimary: false);
             lobbyScreenBackButton.onClick.AddListener(HideLobbyScreen);
 
-            var titleGo = CreateLabel("LobbyScreenTitle", "Online", Vector2.zero, 26f, topBar.transform, raycastTarget: false);
-            var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.flexibleWidth = 1f;
-            titleLe.minWidth = 80f;
-
             var body = new GameObject("LobbyBody", typeof(RectTransform), typeof(VerticalLayoutGroup));
             body.transform.SetParent(lobbyScreenRoot.transform, false);
-            lobbyScreenBodyRect = body.GetComponent<RectTransform>();
-            lobbyScreenBodyRect.anchorMin = Vector2.zero;
-            lobbyScreenBodyRect.anchorMax = Vector2.one;
-            lobbyScreenBodyRect.offsetMin = new Vector2(24f, 24f);
-            lobbyScreenBodyRect.offsetMax = new Vector2(-24f, -64f);
+            var bodyRect = body.GetComponent<RectTransform>();
+            bodyRect.anchorMin = Vector2.zero;
+            bodyRect.anchorMax = Vector2.one;
+            bodyRect.offsetMin = new Vector2(24f, 24f);
+            bodyRect.offsetMax = new Vector2(-24f, -64f);
             var bodyV = body.GetComponent<VerticalLayoutGroup>();
             bodyV.spacing = 14f;
             bodyV.padding = new RectOffset(0, 0, 8, 8);
             bodyV.childAlignment = TextAnchor.UpperCenter;
             bodyV.childControlWidth = true;
             bodyV.childControlHeight = true;
-            bodyV.childForceExpandWidth = true;
+            bodyV.childForceExpandWidth = false;
             bodyV.childForceExpandHeight = false;
 
+            var contentColumn = new GameObject("LobbyContentColumn", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            contentColumn.transform.SetParent(body.transform, false);
+            lobbyScreenBodyRect = contentColumn.GetComponent<RectTransform>();
+            ApplyLobbyContentColumnLayout(contentColumn.GetComponent<LayoutElement>());
+            var columnV = contentColumn.GetComponent<VerticalLayoutGroup>();
+            columnV.spacing = 12f;
+            columnV.padding = new RectOffset(0, 0, 0, 0);
+            columnV.childAlignment = TextAnchor.UpperCenter;
+            columnV.childControlWidth = true;
+            columnV.childControlHeight = true;
+            columnV.childForceExpandWidth = false;
+            columnV.childForceExpandHeight = false;
+
             if (hostOnlineButton == null)
-                hostOnlineButton = CreateMenuButton("QuickJoinDedicatedButton", "Quick join", Vector2.zero, new Vector2(360f, 48f), lobbyScreenBodyRect, isPrimary: true);
+                hostOnlineButton = CreateMenuButton("QuickJoinDedicatedButton", "Quick join", Vector2.zero, new Vector2(LobbyScreenContentWidth, 48f), lobbyScreenBodyRect, isPrimary: true);
             else
                 hostOnlineButton.transform.SetParent(lobbyScreenBodyRect, false);
 
@@ -1145,7 +1168,7 @@ namespace TitanOrbit.UI
                     "WebGlBrowserHostButton",
                     "Host match (browser)",
                     Vector2.zero,
-                    new Vector2(360f, 48f),
+                    new Vector2(LobbyScreenContentWidth, 48f),
                     lobbyScreenBodyRect,
                     isPrimary: false);
                 _webGlBrowserHostButton.onClick.AddListener(OnWebGlBrowserHostRelayClicked);
@@ -1164,11 +1187,12 @@ namespace TitanOrbit.UI
             joinH.childAlignment = TextAnchor.MiddleCenter;
             joinH.childControlWidth = true;
             joinH.childControlHeight = true;
-            joinH.childForceExpandWidth = true;
+            joinH.childForceExpandWidth = false;
             joinH.childForceExpandHeight = false;
             var joinRowLe = joinRow.AddComponent<LayoutElement>();
             joinRowLe.minHeight = 52f;
             joinRowLe.preferredHeight = 56f;
+            ApplyLobbyContentColumnLayout(joinRowLe);
 
             if (joinCodeInputField != null)
             {
@@ -1534,66 +1558,82 @@ namespace TitanOrbit.UI
             }
         }
 
+        private static void ApplyLobbyContentColumnLayout(LayoutElement layoutElement)
+        {
+            if (layoutElement == null)
+                return;
+            layoutElement.preferredWidth = LobbyScreenContentWidth;
+            layoutElement.minWidth = Mathf.Min(300f, LobbyScreenContentWidth);
+            layoutElement.flexibleWidth = 0f;
+        }
+
         private void BuildLobbyBrowserPanel(RectTransform parent)
         {
-            lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image));
+            lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image), typeof(Outline));
             lobbyBrowserRoot.transform.SetParent(parent, false);
             var rootRect = lobbyBrowserRoot.GetComponent<RectTransform>();
             rootRect.anchorMin = new Vector2(0f, 1f);
             rootRect.anchorMax = new Vector2(1f, 1f);
             rootRect.pivot = new Vector2(0.5f, 1f);
-            rootRect.sizeDelta = new Vector2(0f, 420f);
+            rootRect.sizeDelta = new Vector2(LobbyScreenContentWidth, 380f);
             rootRect.anchoredPosition = Vector2.zero;
 
             var rootImage = lobbyBrowserRoot.GetComponent<Image>();
-            rootImage.color = new Color(0.035f, 0.065f, 0.11f, 0.98f);
+            rootImage.color = new Color(0.05f, 0.08f, 0.13f, 0.98f);
             rootImage.raycastTarget = false;
+            var rootOutline = lobbyBrowserRoot.GetComponent<Outline>();
+            rootOutline.effectColor = new Color(0.28f, 0.48f, 0.72f, 0.45f);
+            rootOutline.effectDistance = new Vector2(1.5f, -1.5f);
 
             var rootVlg = lobbyBrowserRoot.AddComponent<VerticalLayoutGroup>();
-            rootVlg.spacing = 12f;
-            rootVlg.padding = new RectOffset(16, 16, 14, 16);
-            rootVlg.childAlignment = TextAnchor.UpperCenter;
+            rootVlg.spacing = 10f;
+            rootVlg.padding = new RectOffset(14, 14, 12, 12);
+            rootVlg.childAlignment = TextAnchor.UpperLeft;
             rootVlg.childControlWidth = true;
             rootVlg.childControlHeight = true;
-            rootVlg.childForceExpandWidth = true;
+            rootVlg.childForceExpandWidth = false;
             rootVlg.childForceExpandHeight = false;
 
             var rootLe = lobbyBrowserRoot.AddComponent<LayoutElement>();
+            ApplyLobbyContentColumnLayout(rootLe);
             rootLe.minHeight = 220f;
-            rootLe.preferredHeight = 360f;
+            rootLe.preferredHeight = 340f;
             rootLe.flexibleHeight = 1f;
 
-            var titleObj = CreateLabel("LobbyBrowserTitle", "Open matches", Vector2.zero, 32f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var titleObj = CreateLabel("LobbyBrowserTitle", "Open matches", Vector2.zero, 22f, lobbyBrowserRoot.transform, raycastTarget: false);
             var titleRect = titleObj.GetComponent<RectTransform>();
             titleRect.anchorMin = new Vector2(0f, 1f);
             titleRect.anchorMax = new Vector2(1f, 1f);
-            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0f, 1f);
             titleRect.sizeDelta = Vector2.zero;
             titleRect.anchoredPosition = Vector2.zero;
             var titleTmp = titleObj.GetComponent<TextMeshProUGUI>();
             titleTmp.enableWordWrapping = false;
+            titleTmp.alignment = TextAlignmentOptions.Left;
             titleTmp.fontStyle = FontStyles.Bold;
-            titleTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
-            titleTmp.outlineWidth = 0.15f;
-            titleTmp.outlineColor = new Color32(20, 40, 70, 200);
+            titleTmp.color = new Color(0.92f, 0.95f, 1f, 1f);
             var titleLe = titleObj.AddComponent<LayoutElement>();
-            titleLe.minHeight = 36f;
-            titleLe.preferredHeight = 40f;
+            titleLe.minHeight = 28f;
+            titleLe.preferredHeight = 30f;
+            ApplyLobbyContentColumnLayout(titleLe);
 
             var statusObj = CreateLabel("LobbyBrowserStatusText", "Select a lobby to join.", Vector2.zero, 20f, lobbyBrowserRoot.transform, raycastTarget: false);
             var statusRect = statusObj.GetComponent<RectTransform>();
             statusRect.anchorMin = new Vector2(0f, 1f);
             statusRect.anchorMax = new Vector2(1f, 1f);
-            statusRect.pivot = new Vector2(0.5f, 1f);
+            statusRect.pivot = new Vector2(0f, 1f);
             statusRect.sizeDelta = Vector2.zero;
             statusRect.anchoredPosition = Vector2.zero;
             lobbyBrowserStatusText = statusObj.GetComponent<TextMeshProUGUI>();
             lobbyBrowserStatusText.enableWordWrapping = true;
-            lobbyBrowserStatusText.color = new Color(0.75f, 0.86f, 0.98f, 0.95f);
+            lobbyBrowserStatusText.alignment = TextAlignmentOptions.Left;
+            lobbyBrowserStatusText.fontSize = 17f;
+            lobbyBrowserStatusText.color = new Color(0.68f, 0.78f, 0.9f, 0.92f);
             lobbyBrowserStatusText.overflowMode = TextOverflowModes.Ellipsis;
             var statusLe = statusObj.AddComponent<LayoutElement>();
-            statusLe.minHeight = 32f;
-            statusLe.preferredHeight = 40f;
+            statusLe.minHeight = 24f;
+            statusLe.preferredHeight = 30f;
+            ApplyLobbyContentColumnLayout(statusLe);
 
             var scrollRootObj = new GameObject("LobbyListScrollRect", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
             scrollRootObj.transform.SetParent(lobbyBrowserRoot.transform, false);
@@ -1609,8 +1649,10 @@ namespace TitanOrbit.UI
             scrollLe.flexibleHeight = 1f;
 
             var scrollBg = scrollRootObj.GetComponent<Image>();
-            scrollBg.color = new Color(0.055f, 0.09f, 0.145f, 0.98f);
+            scrollBg.color = new Color(0.04f, 0.065f, 0.1f, 0.98f);
             scrollBg.raycastTarget = true;
+            var scrollLeWidth = scrollLe;
+            ApplyLobbyContentColumnLayout(scrollLeWidth);
 
             var viewportObj = new GameObject("LobbyListViewport", typeof(RectTransform), typeof(Image), typeof(Mask));
             viewportObj.transform.SetParent(scrollRootObj.transform, false);
@@ -1637,13 +1679,13 @@ namespace TitanOrbit.UI
             lobbyListContainer = contentObj.transform;
 
             var vlg = contentObj.GetComponent<VerticalLayoutGroup>();
-            vlg.spacing = 14f;
-            vlg.padding = new RectOffset(16, 16, 16, 16);
+            vlg.spacing = 8f;
+            vlg.padding = new RectOffset(8, 8, 8, 8);
             vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlHeight = true;
             vlg.childControlWidth = true;
             vlg.childForceExpandHeight = false;
-            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandWidth = false;
 
             var fitter = contentObj.GetComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -1672,16 +1714,17 @@ namespace TitanOrbit.UI
             footerLe.preferredHeight = 56f;
 
             var hlg = footerObj.GetComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 16f;
-            hlg.padding = new RectOffset(8, 8, 6, 8);
+            hlg.spacing = 12f;
+            hlg.padding = new RectOffset(0, 0, 4, 0);
             hlg.childAlignment = TextAnchor.MiddleCenter;
             hlg.childControlHeight = true;
             hlg.childControlWidth = true;
             hlg.childForceExpandHeight = false;
-            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandWidth = false;
+            ApplyLobbyContentColumnLayout(footerLe);
 
-            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh list", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: false);
-            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join selected", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: true);
+            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: false);
+            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: true);
 
             lobbyListRowPrefab = CreateLobbyRowPrefab();
             if (lobbyListRowPrefab != null)
@@ -1771,45 +1814,77 @@ namespace TitanOrbit.UI
             if (lobbyBrowserRoot == null)
                 return null;
 
-            var rowObj = new GameObject("LobbyListRowPrefab", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            var rowObj = new GameObject("LobbyListRowPrefab", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement), typeof(HorizontalLayoutGroup));
             rowObj.transform.SetParent(lobbyBrowserRoot.transform, false);
 
             var rect = rowObj.GetComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(860f, 72f);
+            rect.sizeDelta = new Vector2(LobbyScreenContentWidth - 32f, 60f);
 
             var image = rowObj.GetComponent<Image>();
-            image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+            image.color = new Color(0.1f, 0.15f, 0.24f, 0.98f);
             image.raycastTarget = true;
 
             var btn = rowObj.GetComponent<Button>();
             var colors = btn.colors;
             colors.normalColor = image.color;
-            colors.highlightedColor = new Color(0.16f, 0.26f, 0.42f, 1f);
-            colors.pressedColor = new Color(0.09f, 0.14f, 0.24f, 1f);
+            colors.highlightedColor = new Color(0.15f, 0.24f, 0.38f, 1f);
+            colors.pressedColor = new Color(0.08f, 0.12f, 0.2f, 1f);
             colors.selectedColor = new Color(0.18f, 0.38f, 0.62f, 0.98f);
             colors.disabledColor = new Color(0.12f, 0.2f, 0.32f, 0.95f);
             btn.colors = colors;
             btn.transition = Selectable.Transition.ColorTint;
 
-            var layoutElement = rowObj.GetComponent<LayoutElement>();
-            layoutElement.minHeight = 72f;
-            layoutElement.preferredHeight = 72f;
+            var rowHlg = rowObj.GetComponent<HorizontalLayoutGroup>();
+            rowHlg.padding = new RectOffset(14, 14, 8, 8);
+            rowHlg.spacing = 12f;
+            rowHlg.childAlignment = TextAnchor.MiddleLeft;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = false;
+            rowHlg.childForceExpandHeight = false;
 
-            var textObj = CreateLabel("LobbyRowLabel", "Lobby", Vector2.zero, 30f, rowObj.transform, raycastTarget: false);
-            if (textObj != null)
+            var layoutElement = rowObj.GetComponent<LayoutElement>();
+            layoutElement.minHeight = 56f;
+            layoutElement.preferredHeight = 60f;
+            layoutElement.preferredWidth = LobbyScreenContentWidth - 32f;
+            layoutElement.flexibleWidth = 0f;
+
+            var nameObj = CreateLabel("LobbyRowName", "Lobby", Vector2.zero, 20f, rowObj.transform, raycastTarget: false);
+            if (nameObj != null)
             {
-                var textRect = textObj.GetComponent<RectTransform>();
-                textRect.anchorMin = Vector2.zero;
-                textRect.anchorMax = Vector2.one;
-                textRect.offsetMin = new Vector2(20f, 10f);
-                textRect.offsetMax = new Vector2(-20f, -10f);
-                var tmp = textObj.GetComponent<TextMeshProUGUI>();
-                if (tmp != null)
-                {
-                    tmp.alignment = TextAlignmentOptions.MidlineLeft;
-                    tmp.enableWordWrapping = true;
-                    tmp.richText = true;
-                }
+                var nameRect = nameObj.GetComponent<RectTransform>();
+                nameRect.anchorMin = Vector2.zero;
+                nameRect.anchorMax = Vector2.one;
+                nameRect.offsetMin = Vector2.zero;
+                nameRect.offsetMax = Vector2.zero;
+                var nameTmp = nameObj.GetComponent<TextMeshProUGUI>();
+                nameTmp.alignment = TextAlignmentOptions.MidlineLeft;
+                nameTmp.enableWordWrapping = false;
+                nameTmp.richText = true;
+                nameTmp.overflowMode = TextOverflowModes.Ellipsis;
+                var nameLe = nameObj.AddComponent<LayoutElement>();
+                nameLe.flexibleWidth = 1f;
+                nameLe.minWidth = 120f;
+                nameLe.preferredHeight = 44f;
+            }
+
+            var playersObj = CreateLabel("LobbyRowPlayers", "0/0", Vector2.zero, 18f, rowObj.transform, raycastTarget: false);
+            if (playersObj != null)
+            {
+                var playersRect = playersObj.GetComponent<RectTransform>();
+                playersRect.anchorMin = Vector2.zero;
+                playersRect.anchorMax = Vector2.one;
+                playersRect.offsetMin = Vector2.zero;
+                playersRect.offsetMax = Vector2.zero;
+                var playersTmp = playersObj.GetComponent<TextMeshProUGUI>();
+                playersTmp.alignment = TextAlignmentOptions.MidlineRight;
+                playersTmp.enableWordWrapping = false;
+                playersTmp.color = new Color(0.72f, 0.84f, 0.96f, 0.95f);
+                var playersLe = playersObj.AddComponent<LayoutElement>();
+                playersLe.preferredWidth = 72f;
+                playersLe.minWidth = 56f;
+                playersLe.flexibleWidth = 0f;
+                playersLe.preferredHeight = 44f;
             }
 
             return rowObj;

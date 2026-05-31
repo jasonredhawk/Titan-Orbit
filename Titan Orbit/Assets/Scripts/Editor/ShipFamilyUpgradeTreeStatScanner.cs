@@ -192,7 +192,7 @@ namespace TitanOrbit.Editor
             return true;
         }
 
-        /// <summary>Inflates base stats by per-level × upgrade count. Per-level fields are kept so max power score retains the same weighted terms as min.</summary>
+        /// <summary>Inflates base stats by per-level × upgrade count for max-level power score preview.</summary>
         private static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
         {
             stats.firePower += stats.firePowerPerLevel * upgradeCount;

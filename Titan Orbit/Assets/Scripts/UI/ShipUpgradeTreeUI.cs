@@ -12,11 +12,14 @@ using UnityEditor;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Prefab-driven ship upgrade tree (hint, legend, nodes canvas). Assign on a GameObject under the ships tab;
+    /// Prefab-driven ship upgrade tree (hint, nodes canvas). Assign on a GameObject under the ships tab;
     /// <see cref="OrbitStationUI"/> binds runtime state. Optional <see cref="previewFamily"/> fills the editor preview.
     /// </summary>
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
+        public const string PanelTitleText = "Ship Upgrade Tree";
+        public const string PanelDefaultSubtitle = "Green: your ship. Blue: affordable upgrades. Cyan: free hull swap.";
+
         private const float CanvasInnerMargin = 8f;
         private const float MoonNodeHeight = 100f;
         private const float MoonMinNodeWidth = 74f;
@@ -24,7 +27,6 @@ namespace TitanOrbit.UI
         private const float MoonBranchGapY = 8f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
-        private const float MoonChromeHeightLegend = 56f;
         private const float VerticalNodeHeight = 188f;
         private const float VerticalLevelSpacing = VerticalNodeHeight + 44f;
         private const float VerticalColGap = 6f;
@@ -33,8 +35,8 @@ namespace TitanOrbit.UI
         private static readonly Vector3[] ConnectorCornerBuffer = new Vector3[4];
 
         [Header("Template references (edit on prefab)")]
+        [SerializeField] private TextMeshProUGUI titleText;
         [SerializeField] private TextMeshProUGUI hintText;
-        [SerializeField] private ShipUpgradeTreeLegendUI legend;
         [SerializeField] private RectTransform centerRow;
         [SerializeField] private RectTransform nodesCanvas;
         [SerializeField] private ShipUpgradeTreeNodeUI nodePrefab;
@@ -51,14 +53,58 @@ namespace TitanOrbit.UI
         private readonly List<int> _nextTargets = new List<int>(4);
         private string _structureKey = string.Empty;
 
+        public TextMeshProUGUI Title => titleText;
         public TextMeshProUGUI Hint => hintText;
         public RectTransform CenterRow => centerRow;
         public RectTransform NodesCanvas => nodesCanvas;
         public IReadOnlyList<ShipUpgradeTreeNodeUI> Nodes => _nodes;
 
+        private void Awake()
+        {
+            EnsurePanelHeader();
+        }
+
         public void BindStation(OrbitStationUI station)
         {
             _station = station;
+            EnsurePanelHeader();
+        }
+
+        /// <summary>Creates a title row on older prefabs that only had a dynamic hint line.</summary>
+        public void EnsurePanelHeader()
+        {
+            if (titleText == null)
+            {
+                var existing = transform.Find("Title");
+                if (existing != null)
+                    titleText = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (titleText != null)
+            {
+                titleText.text = PanelTitleText;
+                return;
+            }
+
+            var titleGo = new GameObject("Title", typeof(RectTransform));
+            titleGo.transform.SetParent(transform, false);
+            titleGo.transform.SetAsFirstSibling();
+
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.text = PanelTitleText;
+            titleText.fontSize = 22;
+            titleText.fontStyle = FontStyles.Bold;
+            titleText.alignment = TextAlignmentOptions.Left;
+            titleText.color = new Color(0.94f, 0.96f, 1f, 1f);
+            titleText.enableWordWrapping = false;
+            titleText.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                titleText.font = TMP_Settings.defaultFontAsset;
+
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 34f;
+            titleLe.minHeight = 28f;
+            titleLe.flexibleHeight = 0f;
         }
 
         public void RebuildIfNeeded(bool moonHorizontal, string structureKey)
@@ -73,7 +119,6 @@ namespace TitanOrbit.UI
             string layoutKey = moonHorizontal ? $"{structureKey}_wb{widthBucket}" : structureKey;
             if (_structureKey == layoutKey && _nodes.Count > 0 && !HasOrphanNodesCanvasChildren())
             {
-                ApplyLegendLayout(moonHorizontal);
                 RefreshVisualState();
                 return;
             }
@@ -91,29 +136,7 @@ namespace TitanOrbit.UI
             else
                 BuildVertical();
 
-            if (legend != null)
-            {
-                legend.gameObject.SetActive(true);
-                legend.RefreshStaticLabels();
-                ApplyLegendLayout(moonHorizontal);
-            }
-
             RefreshVisualState();
-        }
-
-        private void ApplyLegendLayout(bool moonHorizontal)
-        {
-            if (legend == null)
-                return;
-
-            float basis = moonHorizontal ? GetMoonContainerSizeForLegend() : (transform as RectTransform)?.rect.width ?? 900f;
-            legend.ApplyResponsiveLayout(basis);
-        }
-
-        private float GetMoonContainerSizeForLegend()
-        {
-            GetMoonContainerSize(out float width, out _);
-            return width;
         }
 
         public void Clear()
@@ -158,7 +181,7 @@ namespace TitanOrbit.UI
             _station.RefreshShipUpgradeTreeNodeStates(_nodes, ComputeMaxDisplayPower());
         }
 
-        /// <summary>Editor: populate all tier slots, connectors, and legend. Uses <paramref name="family"/> when assigned.</summary>
+        /// <summary>Editor: populate all tier slots and connectors. Uses <paramref name="family"/> when assigned.</summary>
         public void EditorPreviewFromFamily(ShipFamilyDefinition family)
         {
             previewFamily = family;
@@ -233,13 +256,6 @@ namespace TitanOrbit.UI
                 hintText.text = family != null
                     ? $"Editor preview: {family.name}. Runtime uses live planet/ship state."
                     : "Assign Preview Family to fill names, previews, and power bars.";
-            }
-
-            if (legend != null)
-            {
-                legend.gameObject.SetActive(true);
-                legend.RefreshStaticLabels();
-                ApplyLegendLayout(moonHorizontal: true);
             }
         }
 
@@ -410,7 +426,7 @@ namespace TitanOrbit.UI
 
             view.BindSlot(level, branch, node, w, h, trackW);
             view.EnsureStableButtonRendering();
-            view.SetClickHandler(() => _station.OnUpgradeTreeNodeClicked(level, branch));
+            view.SetPriceClickHandler(() => _station.OnUpgradeTreeNodeClicked(level, branch));
             _station.PopulateTreeNode(view, ComputeMaxDisplayPower());
             _nodes.Add(view);
             _visuals.Add(view.gameObject);
@@ -510,8 +526,6 @@ namespace TitanOrbit.UI
             float h = treeRt.rect.height;
             if (hintText != null)
                 h -= MoonChromeHeightHint;
-            if (legend != null && legend.gameObject.activeSelf)
-                h -= MoonChromeHeightLegend;
             return Mathf.Max(160f, h - 12f);
         }
 
@@ -645,8 +659,6 @@ namespace TitanOrbit.UI
         {
             if (hintText != null)
                 hintText.text = "Upgrade tree unavailable.";
-            if (legend != null)
-                legend.gameObject.SetActive(false);
         }
 
         private void ApplyCenterRowHeight(float h)
