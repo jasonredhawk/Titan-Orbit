@@ -202,8 +202,15 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnFloatingCountServerRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
+            SpawnFloatingCountFromServerAuthority(position, channelId, signedAmount, teamInt);
+        }
+
+        /// <summary>Server path without queuing a ServerRpc (collision/grind on host).</summary>
+        public void SpawnFloatingCountFromServerAuthority(Vector3 position, int channelId, float signedAmount, int teamInt)
+        {
+            if (!IsServer) return;
             // Host is server+client: ClientRpc alone can miss local delivery on in-scene managers in some NGO setups.
-            if (IsServer && IsClient)
+            if (IsClient)
                 SpawnFloatingCountPopupLocal(
                     position,
                     (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex),
@@ -228,6 +235,12 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnAsteroidStatsFloatingTextServerRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
+            SpawnAsteroidStatsFloatingTextFromServerAuthority(position, remainingHealth, remainingGems, teamInt);
+        }
+
+        public void SpawnAsteroidStatsFloatingTextFromServerAuthority(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
+        {
+            if (!IsServer) return;
             SpawnAsteroidStatsFloatingTextClientRpc(position, remainingHealth, remainingGems, teamInt);
         }
 
@@ -250,6 +263,12 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnImpactForceFloatingTextServerRpc(Vector3 position, float impactForceNewtons)
         {
+            SpawnImpactForceFloatingTextFromServerAuthority(position, impactForceNewtons);
+        }
+
+        public void SpawnImpactForceFloatingTextFromServerAuthority(Vector3 position, float impactForceNewtons)
+        {
+            if (!IsServer) return;
             SpawnImpactForceFloatingTextClientRpc(position, impactForceNewtons);
         }
 

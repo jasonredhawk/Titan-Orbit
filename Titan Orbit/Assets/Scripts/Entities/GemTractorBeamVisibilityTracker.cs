@@ -51,8 +51,14 @@ namespace TitanOrbit.Entities
                     bool wantsVisible = GemTractorBeamSettings.IsEligibleForBeamVisual(ship, gem);
                     visibilityByPair.TryGetValue(key, out float visibility);
 
-                    float fadeSpeed = wantsVisible ? FadeInPerSecond : FadeOutPerSecond;
-                    visibility = Mathf.MoveTowards(visibility, wantsVisible ? 1f : 0f, fadeSpeed * dt);
+                    // Deploy extend line must be fully visible immediately (no slow fade-in).
+                    if (wantsVisible && GemTractorBeamDeployTracker.IsInDeployAnimation(ship, gem))
+                        visibility = 1f;
+                    else
+                    {
+                        float fadeSpeed = wantsVisible ? FadeInPerSecond : FadeOutPerSecond;
+                        visibility = Mathf.MoveTowards(visibility, wantsVisible ? 1f : 0f, fadeSpeed * dt);
+                    }
 
                     if (visibility > 0.001f)
                         visibilityByPair[key] = visibility;

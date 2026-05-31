@@ -31,6 +31,8 @@ namespace TitanOrbit.Entities
         private static float pullSetCachePhysicsFixedTime = -1f;
         private static readonly Dictionary<int, MagneticPullState> pullStateByShipInstanceId = new Dictionary<int, MagneticPullState>(32);
         private static readonly List<GemPullCandidate> pullCandidateScratch = new List<GemPullCandidate>(64);
+        /// <summary>Guards reentrant GetMagneticPullState while BuildMagneticPullState is running.</summary>
+        private static readonly HashSet<int> buildingPullStateForShipIds = new HashSet<int>();
 
         private sealed class MagneticPullState
         {
@@ -124,12 +126,40 @@ namespace TitanOrbit.Entities
             return ToroidalMap.ToroidalDistance(gemPos, beamOrigin) <= searchRadius;
         }
 
+        /// <summary>Range check for deploy seeding / EnsureDeployState — does not require pull-set assignment.</summary>
+        public static bool IsWithinCandidateMagneticPullRange(Starship ship, Gem gem)
+        {
+            if (ship == null || gem == null)
+                return false;
+
+            var wings = ship.WingTractorBeams;
+            Vector3 gemPos = GetGemPosition(gem);
+            if (wings == null || wings.Count == 0)
+            {
+                GetTractorBeamFromMaxGems(8f, ship.IsInOrbit, out float searchRadius, out _);
+                return IsWithinReach(gemPos, GetShipPosition(ship), ship.IsInOrbit, searchRadius);
+            }
+
+            for (int wi = 0; wi < wings.Count; wi++)
+            {
+                if (wings[wi].wingTransform == null)
+                    continue;
+                wings[wi].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out float searchRadius, out _);
+                Vector3 wingPos = wings[wi].GetWorldPosition();
+                if (IsWithinReach(gemPos, wingPos, ship.IsInOrbit, searchRadius))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>True when an assigned gem is still inside its wing (or fallback) reach.</summary>
         public static bool IsWithinMagneticPullRange(Starship ship, Gem gem)
         {
             if (ship == null || gem == null)
                 return false;
 
-            if (!CanShipMagneticallyPull(ship, gem))
+            if (!PassesBasicMagneticPullEligibility(ship, gem))
                 return false;
 
             var wings = ship.WingTractorBeams;
@@ -149,6 +179,8 @@ namespace TitanOrbit.Entities
         /// <summary>Server: rebuild pull-set budgets every physics step so range cut-off tracks ship movement.</summary>
         public static void BeginPhysicsPullUpdate()
         {
+            GemTractorBeamDeployTracker.LateUpdateTick();
+
             if (pullSetCachePhysicsFixedTime == Time.fixedTime)
                 return;
             pullSetCachePhysicsFixedTime = Time.fixedTime;
@@ -255,7 +287,7 @@ namespace TitanOrbit.Entities
             return true;
         }
 
-        private static bool PassesBasicMagneticPullEligibility(Starship ship, Gem gem)
+        public static bool PassesBasicMagneticPullEligibility(Starship ship, Gem gem)
         {
             if (!IsShipEligibleForMagneticPull(ship))
                 return false;
@@ -276,9 +308,20 @@ namespace TitanOrbit.Entities
             if (pullStateByShipInstanceId.TryGetValue(shipId, out MagneticPullState cached))
                 return cached;
 
-            MagneticPullState built = BuildMagneticPullState(ship);
-            pullStateByShipInstanceId[shipId] = built;
-            return built;
+            if (buildingPullStateForShipIds.Contains(shipId))
+                return new MagneticPullState();
+
+            buildingPullStateForShipIds.Add(shipId);
+            try
+            {
+                MagneticPullState built = BuildMagneticPullState(ship);
+                pullStateByShipInstanceId[shipId] = built;
+                return built;
+            }
+            finally
+            {
+                buildingPullStateForShipIds.Remove(shipId);
+            }
         }
 
         private static bool IsGemWithinAssignedWingRange(Starship ship, Gem gem, int wingIndex)
@@ -334,7 +377,7 @@ namespace TitanOrbit.Entities
                     if (dist > searchRadius)
                         continue;
 
-                    bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem) &&
+                    bool inFlight = GemTractorBeamDeployTracker.TryIsPullPhysicsActive(ship, gem) &&
                                     GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
                     pullCandidateScratch.Add(new GemPullCandidate
                     {
@@ -426,7 +469,7 @@ namespace TitanOrbit.Entities
                 if (dist > searchRadius)
                     continue;
 
-                bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem) &&
+                bool inFlight = GemTractorBeamDeployTracker.TryIsPullPhysicsActive(ship, gem) &&
                                 GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
                 pullCandidateScratch.Add(new GemPullCandidate { gem = gem, wingIndex = 0, dist = dist, inFlight = inFlight });
             }

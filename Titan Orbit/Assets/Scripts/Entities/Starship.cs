@@ -3985,9 +3985,6 @@ namespace TitanOrbit.Entities
             if (isDead.Value) return;
             if (gemMoonDocked.Value) return;
 
-            if (damage > 0.0001f)
-                lastHullDamageServerTime = Time.time;
-
             // Legacy bullet tuning: ~50% of damage as gems after hull is 0, with per-hit caps.
             const float LegacyGemExpulsionPerDamage = 0.5f;
             const float MaxLethalExpulsionFraction = 0.6f;
@@ -4003,6 +4000,7 @@ namespace TitanOrbit.Entities
                 float newHealth = Mathf.Max(0f, healthBefore - damage);
                 float deltaHealth = newHealth - healthBefore;
                 currentHealth.Value = newHealth;
+                lastHullDamageServerTime = Time.time;
 
                 const float minAbsHealthForPopup = 1f;
                 if (Mathf.Abs(deltaHealth) >= minAbsHealthForPopup && VisualEffectsManager.Instance != null)
@@ -4898,6 +4896,38 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Owner/AI collision path: apply on server directly when hosting; otherwise one ServerRpc (avoids per-frame RPC floods while grinding).</summary>
+        private void ApplyShipRamDamage(float damage, float gemExpulsionIntensity, float gemExpulsionPerHullDamage)
+        {
+            if (damage <= 0.0001f) return;
+            if (IsServer)
+                ApplyDamageOnServer(damage, TeamManager.Team.None, 0, gemExpulsionIntensity, gemExpulsionPerHullDamage);
+            else
+                TakeDamageServerRpc(damage, TeamManager.Team.None, 0, gemExpulsionIntensity, gemExpulsionPerHullDamage);
+        }
+
+        private void ApplyAsteroidRamDamage(Asteroid asteroid, float damage, ulong attackerShipId)
+        {
+            if (asteroid == null || damage <= 0.0001f) return;
+            if (IsServer)
+                asteroid.ApplyDamageFromBulletServer(damage, attackerShipId);
+            else
+                asteroid.TakeDamageServerRpc(damage, attackerShipId);
+        }
+
+        /// <summary>Shared throttle for grind damage + feedback (same interval as <see cref="asteroidGrindFeedbackInterval"/>).</summary>
+        private bool TryConsumeAsteroidGrindPulse(Asteroid asteroid)
+        {
+            if (asteroid == null) return false;
+            int id = asteroid.GetInstanceID();
+            float now = Time.time;
+            float interval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
+            if (_asteroidGrindFeedbackNextTimeByInstance.TryGetValue(id, out float nextOk) && now < nextOk)
+                return false;
+            _asteroidGrindFeedbackNextTimeByInstance[id] = now + interval;
+            return true;
+        }
+
         private void OnCollisionEnter(Collision collision)
         {
             if (rb == null || collision.contactCount == 0) return;
@@ -5000,10 +5030,8 @@ namespace TitanOrbit.Entities
             if (shipCollisionDamage > 0.0001f)
             {
                 // Self-inflicted collision damage: Team.None bypasses friendly-fire checks. Gems after hull is 0, 1:1 with damage.
-                TakeDamageServerRpc(
+                ApplyShipRamDamage(
                     shipCollisionDamage,
-                    TeamManager.Team.None,
-                    0,
                     PairedHullDamageGemExpulsionIntensity,
                     gemExpulsionPerHullDamage: 1f);
             }
@@ -5011,33 +5039,12 @@ namespace TitanOrbit.Entities
             if (asteroidCollisionDamage > 0.0001f)
             {
                 ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
-                asteroid.TakeDamageServerRpc(asteroidCollisionDamage, attackerShipId);
-
-                if (VisualEffectsManager.Instance != null)
-                {
-                    Vector3 asteroidHitPos = contact.point;
-                    asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
-                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                        asteroidHitPos,
-                        (int)FloatingCountChannel.DamageAsteroid,
-                        asteroidCollisionDamage,
-                        (int)shipTeam.Value
-                    );
-                    VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
-                        asteroidHitPos,
-                        asteroid.RemainingHealth,
-                        asteroid.RemainingGems,
-                        (int)shipTeam.Value
-                    );
-                }
+                ApplyAsteroidRamDamage(asteroid, asteroidCollisionDamage, attackerShipId);
+                SpawnAsteroidRamHitFloatingText(contact.point, asteroidCollisionDamage, asteroid);
             }
 
-            if (impactForceNewtons >= asteroidImpactForcePopupMin && VisualEffectsManager.Instance != null)
-            {
-                Vector3 impactPos = contact.point;
-                impactPos.y = Mathf.Max(impactPos.y, 0f);
-                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextServerRpc(impactPos, impactForceNewtons);
-            }
+            if (impactForceNewtons >= asteroidImpactForcePopupMin)
+                SpawnAsteroidImpactForceFloatingText(contact.point, impactForceNewtons);
 
             _pendingAsteroidBounceVelocity = vOut;
             _hasPendingAsteroidBounce = true;
@@ -5089,49 +5096,87 @@ namespace TitanOrbit.Entities
             Vector3 driveF = GetDrivePushForceXZ();
             float pushN = AsteroidRammingBehavior.ComputeNormalPushNewtons(n, driveF);
             if (pushN < asteroidGrindMinPushNewtons) return;
+            if (!TryConsumeAsteroidGrindPulse(asteroid)) return;
 
             float offenseRam = GetRammingOffenseMultiplier();
             float selfRam = GetRammingSelfDamageMultiplier();
+            float pulseInterval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
             float dps = pushN * offenseRam * asteroidGrindPushToAsteroidDpsScale;
             if (asteroidGrindMaxAsteroidDps > 0f)
                 dps = Mathf.Min(dps, asteroidGrindMaxAsteroidDps);
-            float asteroidGrindDamage = dps * Time.fixedDeltaTime;
+            float asteroidGrindDamage = dps * pulseInterval;
             if (asteroidGrindDamage <= 0.0001f) return;
 
             ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
-            asteroid.TakeDamageServerRpc(asteroidGrindDamage, attackerShipId);
+            ApplyAsteroidRamDamage(asteroid, asteroidGrindDamage, attackerShipId);
 
             TryPlayAsteroidGrindFeedback(asteroid, contact.point, n, pushN, offenseRam, asteroidGrindDamage);
 
             // Continuous self-damage while grinding; gems only after hull is 0 (1:1 with chip damage).
             if (asteroidImpactForceToShipDamageScale > 0f && asteroidImpactForceToAsteroidDamageScale > 0.0001f)
             {
-                float dt = Time.fixedDeltaTime;
-                float shipGrindDamage = pushN * selfRam * dt * asteroidGrindPushToAsteroidDpsScale
+                float shipGrindDamage = pushN * selfRam * pulseInterval * asteroidGrindPushToAsteroidDpsScale
                     * (asteroidImpactForceToShipDamageScale / asteroidImpactForceToAsteroidDamageScale);
                 if (shipGrindDamage > 0.0001f)
                 {
-                    TakeDamageServerRpc(
+                    ApplyShipRamDamage(
                         shipGrindDamage,
-                        TeamManager.Team.None,
-                        0,
                         PairedHullDamageGemExpulsionIntensity,
                         gemExpulsionPerHullDamage: 1f);
                 }
             }
         }
 
+        private void SpawnAsteroidRamHitFloatingText(Vector3 hitWorldPos, float damage, Asteroid asteroid)
+        {
+            if (VisualEffectsManager.Instance == null || asteroid == null) return;
+            Vector3 asteroidHitPos = hitWorldPos;
+            asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
+            int teamInt = (int)shipTeam.Value;
+            var vfx = VisualEffectsManager.Instance;
+            if (IsServer)
+            {
+                vfx.SpawnFloatingCountFromServerAuthority(
+                    asteroidHitPos,
+                    (int)FloatingCountChannel.DamageAsteroid,
+                    damage,
+                    teamInt);
+                vfx.SpawnAsteroidStatsFloatingTextFromServerAuthority(
+                    asteroidHitPos,
+                    asteroid.RemainingHealth,
+                    asteroid.RemainingGems,
+                    teamInt);
+            }
+            else
+            {
+                vfx.SpawnFloatingCountServerRpc(
+                    asteroidHitPos,
+                    (int)FloatingCountChannel.DamageAsteroid,
+                    damage,
+                    teamInt);
+                vfx.SpawnAsteroidStatsFloatingTextServerRpc(
+                    asteroidHitPos,
+                    asteroid.RemainingHealth,
+                    asteroid.RemainingGems,
+                    teamInt);
+            }
+        }
+
+        private void SpawnAsteroidImpactForceFloatingText(Vector3 hitWorldPos, float impactForceNewtons)
+        {
+            if (VisualEffectsManager.Instance == null) return;
+            Vector3 impactPos = hitWorldPos;
+            impactPos.y = Mathf.Max(impactPos.y, 0f);
+            if (IsServer)
+                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextFromServerAuthority(impactPos, impactForceNewtons);
+            else
+                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextServerRpc(impactPos, impactForceNewtons);
+        }
+
         /// <summary>Throttled VFX, sound, and floating numbers while grinding an asteroid (same flavor as collision enter).</summary>
         private void TryPlayAsteroidGrindFeedback(Asteroid asteroid, Vector3 hitWorldPos, Vector3 asteroidOutwardNormalXZ, float pushNewtons, float ramMul, float damageThisPulse)
         {
             if (asteroid == null) return;
-
-            int id = asteroid.GetInstanceID();
-            float now = Time.time;
-            float interval = Mathf.Max(0.02f, asteroidGrindFeedbackInterval);
-            if (_asteroidGrindFeedbackNextTimeByInstance.TryGetValue(id, out float nextOk) && now < nextOk)
-                return;
-            _asteroidGrindFeedbackNextTimeByInstance[id] = now + interval;
 
             float equivForce = Mathf.Max(pushNewtons * ramMul * Mathf.Max(0.01f, asteroidGrindFeedbackForceFromPushScale), 30f);
 
@@ -5145,20 +5190,7 @@ namespace TitanOrbit.Entities
                 sev = Mathf.Max(sev, 0.12f);
                 TrySpawnWeaponCollisionImpactVfx(hitWorldPos, asteroidOutwardNormalXZ, sev, pitch);
 
-                Vector3 asteroidHitPos = hitWorldPos;
-                asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    asteroidHitPos,
-                    (int)FloatingCountChannel.DamageAsteroid,
-                    damageThisPulse,
-                    (int)shipTeam.Value
-                );
-                VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
-                    asteroidHitPos,
-                    asteroid.RemainingHealth,
-                    asteroid.RemainingGems,
-                    (int)shipTeam.Value
-                );
+                SpawnAsteroidRamHitFloatingText(hitWorldPos, damageThisPulse, asteroid);
             }
         }
 
