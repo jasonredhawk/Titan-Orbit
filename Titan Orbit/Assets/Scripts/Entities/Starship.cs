@@ -5108,11 +5108,16 @@ namespace TitanOrbit.Entities
             {
                 ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
                 ApplyAsteroidRamDamage(asteroid, asteroidCollisionDamage, attackerShipId);
-                SpawnAsteroidRamHitFloatingText(contact.point, asteroidCollisionDamage, asteroid);
+                SpawnAsteroidCollisionFeedback(
+                    contact.point,
+                    asteroid,
+                    asteroidCollisionDamage,
+                    impactForceNewtons >= asteroidImpactForcePopupMin ? impactForceNewtons : (float?)null);
             }
-
-            if (impactForceNewtons >= asteroidImpactForcePopupMin)
-                SpawnAsteroidImpactForceFloatingText(contact.point, impactForceNewtons);
+            else if (impactForceNewtons >= asteroidImpactForcePopupMin)
+            {
+                SpawnAsteroidCollisionFeedback(contact.point, asteroid, null, impactForceNewtons);
+            }
 
             _pendingAsteroidBounceVelocity = vOut;
             _hasPendingAsteroidBounce = true;
@@ -5195,50 +5200,36 @@ namespace TitanOrbit.Entities
             }
         }
 
+        private void SpawnAsteroidCollisionFeedback(
+            Vector3 hitWorldPos,
+            Asteroid asteroid,
+            float? damage,
+            float? impactForceNewtons)
+        {
+            if (VisualEffectsManager.Instance == null || !IsServer) return;
+            Vector3 pos = hitWorldPos;
+            pos.y = Mathf.Max(pos.y, 0f);
+
+            var feedback = new AsteroidFloatingFeedback
+            {
+                Team = shipTeam.Value,
+                Damage = damage,
+                RemainingHealth = asteroid != null ? asteroid.RemainingHealth : null,
+                RemainingGems = asteroid != null ? asteroid.RemainingGems : null,
+                ImpactForceNewtons = impactForceNewtons,
+            };
+
+            VisualEffectsManager.Instance.SpawnAsteroidFeedbackFromServerAuthority(pos, feedback);
+        }
+
         private void SpawnAsteroidRamHitFloatingText(Vector3 hitWorldPos, float damage, Asteroid asteroid)
         {
-            if (VisualEffectsManager.Instance == null || asteroid == null) return;
-            Vector3 asteroidHitPos = hitWorldPos;
-            asteroidHitPos.y = Mathf.Max(asteroidHitPos.y, 0f);
-            int teamInt = (int)shipTeam.Value;
-            var vfx = VisualEffectsManager.Instance;
-            if (IsServer)
-            {
-                vfx.SpawnFloatingCountFromServerAuthority(
-                    asteroidHitPos,
-                    (int)FloatingCountChannel.DamageAsteroid,
-                    damage,
-                    teamInt);
-                vfx.SpawnAsteroidStatsFloatingTextFromServerAuthority(
-                    asteroidHitPos,
-                    asteroid.RemainingHealth,
-                    asteroid.RemainingGems,
-                    teamInt);
-            }
-            else
-            {
-                vfx.SpawnFloatingCountServerRpc(
-                    asteroidHitPos,
-                    (int)FloatingCountChannel.DamageAsteroid,
-                    damage,
-                    teamInt);
-                vfx.SpawnAsteroidStatsFloatingTextServerRpc(
-                    asteroidHitPos,
-                    asteroid.RemainingHealth,
-                    asteroid.RemainingGems,
-                    teamInt);
-            }
+            SpawnAsteroidCollisionFeedback(hitWorldPos, asteroid, damage, null);
         }
 
         private void SpawnAsteroidImpactForceFloatingText(Vector3 hitWorldPos, float impactForceNewtons)
         {
-            if (VisualEffectsManager.Instance == null) return;
-            Vector3 impactPos = hitWorldPos;
-            impactPos.y = Mathf.Max(impactPos.y, 0f);
-            if (IsServer)
-                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextFromServerAuthority(impactPos, impactForceNewtons);
-            else
-                VisualEffectsManager.Instance.SpawnImpactForceFloatingTextServerRpc(impactPos, impactForceNewtons);
+            SpawnAsteroidCollisionFeedback(hitWorldPos, null, null, impactForceNewtons);
         }
 
         /// <summary>Throttled VFX, sound, and floating numbers while grinding an asteroid (same flavor as collision enter).</summary>

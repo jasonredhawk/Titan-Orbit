@@ -80,6 +80,9 @@ namespace TitanOrbit.Camera
         /// <summary>0 = default ship zoom; 1 = max manual zoom out.</summary>
         private float manualZoomT;
 
+        /// <summary>Gameplay zoom distance after manual wheel and galactic animation (ortho size or perspective equivalent).</summary>
+        private float lastActiveZoomDistance;
+
         /// <summary>Decaying hit impulse (single collisions).</summary>
         private float collisionShakeIntensity;
         /// <summary>Sustained level while grinding (0..1); cleared by Starship when contacts end.</summary>
@@ -136,73 +139,80 @@ namespace TitanOrbit.Camera
                 currentScale = targetScale;
 
             float defaultDistance = zoomDistanceAtReferenceLevel * currentScale;
+            float activeZoomDistance = defaultDistance;
 
-            if (cam.orthographic)
+            if (!galacticZoomActive)
             {
-                if (!galacticZoomActive)
+                if (mouseZoomEnabled && target != null)
                 {
-                    if (mouseZoomEnabled && target != null)
+                    bool allowWheel = !ignoreMouseZoomOverUi
+                        || EventSystem.current == null
+                        || !EventSystem.current.IsPointerOverGameObject();
+                    if (allowWheel)
                     {
-                        bool allowWheel = !ignoreMouseZoomOverUi
-                            || EventSystem.current == null
-                            || !EventSystem.current.IsPointerOverGameObject();
-                        if (allowWheel)
-                        {
-                            float scroll;
+                        float scroll;
 #if ENABLE_INPUT_SYSTEM
-                            scroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y : 0f;
+                        scroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y : 0f;
 #else
-                            scroll = UnityEngine.Input.mouseScrollDelta.y;
+                        scroll = UnityEngine.Input.mouseScrollDelta.y;
 #endif
-                            if (Mathf.Abs(scroll) > 0.0001f)
-                            {
-                                // Scroll up (positive) = zoom in toward default; scroll down = zoom out toward max.
-                                manualZoomT = Mathf.Clamp01(
-                                    manualZoomT - (scroll / 120f) * mouseWheelZoomSensitivity);
-                            }
+                        if (Mathf.Abs(scroll) > 0.0001f)
+                        {
+                            // Scroll up (positive) = zoom in toward default; scroll down = zoom out toward max.
+                            manualZoomT = Mathf.Clamp01(
+                                manualZoomT - (scroll / 120f) * mouseWheelZoomSensitivity);
                         }
                     }
+                }
 
-                    cam.orthographicSize = GetManualZoomedDistance(defaultDistance);
+                activeZoomDistance = GetManualZoomedDistance(defaultDistance);
+            }
+            else
+            {
+                galacticZoomElapsed += Time.deltaTime;
+
+                float gameplayDistance = GetManualZoomedDistance(defaultDistance);
+                // Target zoomed-out size is halfway between gameplay zoom (including manual wheel) and the far-map size.
+                float halfwayOutSize = Mathf.Lerp(gameplayDistance, galacticZoomDistance, 0.5f);
+
+                if (!galacticZoomReturning)
+                {
+                    float tOut = galacticZoomOutDuration > 0.0001f
+                        ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomOutDuration)
+                        : 1f;
+                    activeZoomDistance = Mathf.Lerp(galacticZoomStartSize, halfwayOutSize, tOut);
                 }
                 else
                 {
-                    galacticZoomElapsed += Time.deltaTime;
+                    float tIn = galacticZoomInDuration > 0.0001f
+                        ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomInDuration)
+                        : 1f;
+                    activeZoomDistance = Mathf.Lerp(galacticZoomStartSize, gameplayDistance, tIn);
 
-                    float gameplayDistance = GetManualZoomedDistance(defaultDistance);
-                    // Target zoomed-out size is halfway between gameplay zoom (including manual wheel) and the far-map size.
-                    float halfwayOutSize = Mathf.Lerp(gameplayDistance, galacticZoomDistance, 0.5f);
-
-                    if (!galacticZoomReturning)
+                    if (tIn >= 1f - 0.0001f)
                     {
-                        float tOut = galacticZoomOutDuration > 0.0001f
-                            ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomOutDuration)
-                            : 1f;
-                        float size = Mathf.Lerp(galacticZoomStartSize, halfwayOutSize, tOut);
-                        cam.orthographicSize = size;
-                    }
-                    else
-                    {
-                        float tIn = galacticZoomInDuration > 0.0001f
-                            ? Mathf.Clamp01(galacticZoomElapsed / galacticZoomInDuration)
-                            : 1f;
-                        float size = Mathf.Lerp(galacticZoomStartSize, gameplayDistance, tIn);
-                        cam.orthographicSize = size;
-
-                        if (tIn >= 1f - 0.0001f)
-                        {
-                            galacticZoomActive = false;
-                            galacticZoomReturning = false;
-                            if (spaceBackground != null)
-                                spaceBackground.SetTemporarilyHidden(false);
-                        }
+                        galacticZoomActive = false;
+                        galacticZoomReturning = false;
+                        if (spaceBackground != null)
+                            spaceBackground.SetTemporarilyHidden(false);
                     }
                 }
             }
 
+            lastActiveZoomDistance = activeZoomDistance;
+
+            if (cam.orthographic)
+                cam.orthographicSize = activeZoomDistance;
+
+            // Perspective zoom is driven by camera height; orthographic zoom uses orthographicSize instead.
+            float zoomRatio = defaultDistance > 0.0001f ? activeZoomDistance / defaultDistance : 1f;
+            float offsetY = offsetAtReferenceLevel.y * currentScale;
+            if (!cam.orthographic)
+                offsetY *= zoomRatio;
+
             Vector3 offset = new Vector3(
                 offsetAtReferenceLevel.x,
-                offsetAtReferenceLevel.y * currentScale,
+                offsetY,
                 offsetAtReferenceLevel.z);
 
             // Lock camera to ship - ship is always in wrapped coordinates, so just follow directly
@@ -276,7 +286,7 @@ namespace TitanOrbit.Camera
             galacticZoomActive = true;
             galacticZoomReturning = false;
             galacticZoomElapsed = 0f;
-            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : zoomDistanceAtReferenceLevel * currentScale;
+            galacticZoomStartSize = GetActiveZoomDistanceForGalacticTransition();
 
             if (spaceBackground != null)
             {
@@ -292,7 +302,21 @@ namespace TitanOrbit.Camera
 
             galacticZoomReturning = true;
             galacticZoomElapsed = 0f;
-            galacticZoomStartSize = cam.orthographic ? cam.orthographicSize : zoomDistanceAtReferenceLevel * currentScale;
+            galacticZoomStartSize = GetActiveZoomDistanceForGalacticTransition();
+        }
+
+        private float GetActiveZoomDistanceForGalacticTransition()
+        {
+            if (cam == null)
+                return zoomDistanceAtReferenceLevel * currentScale;
+
+            if (cam.orthographic)
+                return cam.orthographicSize;
+
+            if (lastActiveZoomDistance > 0.0001f)
+                return lastActiveZoomDistance;
+
+            return GetManualZoomedDistance(zoomDistanceAtReferenceLevel * currentScale);
         }
     }
 }

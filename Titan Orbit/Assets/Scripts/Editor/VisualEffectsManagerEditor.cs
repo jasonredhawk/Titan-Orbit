@@ -20,20 +20,24 @@ namespace TitanOrbit.Systems.Editor
                 EditorGUILayout.Space(8f);
                 EditorGUILayout.LabelField("Floating Count Visibility", EditorStyles.boldLabel);
                 EditorGUILayout.HelpBox(
-                    "Each toggle controls one popup source. Changes apply immediately in Play Mode.",
+                    "Each toggle controls one popup source. Asteroid hits stack enabled lines into one grouped popup.",
                     MessageType.Info);
 
                 EditorGUI.indentLevel++;
                 visibility.gemPickup = EditorGUILayout.Toggle("Gem pickup", visibility.gemPickup);
                 visibility.gemDeposit = EditorGUILayout.Toggle("Gem deposit", visibility.gemDeposit);
-                visibility.damageAsteroid = EditorGUILayout.Toggle("Damage — asteroid", visibility.damageAsteroid);
+                EditorGUILayout.Space(4f);
+                EditorGUILayout.LabelField("Asteroid hit (stacked group)", EditorStyles.miniLabel);
+                visibility.asteroidDamage = EditorGUILayout.Toggle("  Damage dealt", visibility.asteroidDamage);
+                visibility.asteroidHealthRemaining = EditorGUILayout.Toggle("  HP remaining", visibility.asteroidHealthRemaining);
+                visibility.asteroidGemsRemaining = EditorGUILayout.Toggle("  Gems remaining", visibility.asteroidGemsRemaining);
+                visibility.asteroidImpactForce = EditorGUILayout.Toggle("  Impact force", visibility.asteroidImpactForce);
+                EditorGUILayout.Space(4f);
                 visibility.damageShipOrDrone = EditorGUILayout.Toggle("Damage — ship / drone", visibility.damageShipOrDrone);
                 visibility.damageMoon = EditorGUILayout.Toggle("Damage — moon", visibility.damageMoon);
                 visibility.healthChange = EditorGUILayout.Toggle("Health change", visibility.healthChange);
                 visibility.peopleLoad = EditorGUILayout.Toggle("People — load", visibility.peopleLoad);
                 visibility.peopleUnload = EditorGUILayout.Toggle("People — unload", visibility.peopleUnload);
-                visibility.asteroidStatsOverlay = EditorGUILayout.Toggle("Asteroid stats overlay", visibility.asteroidStatsOverlay);
-                visibility.asteroidImpactForce = EditorGUILayout.Toggle("Asteroid impact force", visibility.asteroidImpactForce);
                 EditorGUI.indentLevel--;
             }
 

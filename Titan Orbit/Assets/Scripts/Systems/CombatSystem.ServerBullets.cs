@@ -128,6 +128,9 @@ namespace TitanOrbit.Systems
             public float Damage;
             public int DamageChannelId;
             public bool ShowDamagePopup;
+            public float AsteroidRemainingHealth;
+            public float AsteroidRemainingGems;
+            public bool IsAsteroidHit;
         }
 
         private ServerBullet[] serverBullets;
@@ -471,7 +474,10 @@ namespace TitanOrbit.Systems
                 OwnerShipNetworkId = b.OwnerShipNetworkId,
                 Damage = popupInfo.Damage,
                 DamageChannelId = (int)popupInfo.Channel,
-                ShowDamagePopup = popupInfo.HasPopup,
+                ShowDamagePopup = popupInfo.HasPopup || popupInfo.HasAsteroidFeedback,
+                AsteroidRemainingHealth = popupInfo.AsteroidRemainingHealth,
+                AsteroidRemainingGems = popupInfo.AsteroidRemainingGems,
+                IsAsteroidHit = popupInfo.IsAsteroidHit,
             });
             ReleaseSlot(slot);
         }
@@ -515,7 +521,10 @@ namespace TitanOrbit.Systems
                     p.OwnerShipNetworkId,
                     p.Damage,
                     p.DamageChannelId,
-                    p.ShowDamagePopup);
+                    p.ShowDamagePopup,
+                    p.AsteroidRemainingHealth,
+                    p.AsteroidRemainingGems,
+                    p.IsAsteroidHit);
             }
             pendingImpacts.Clear();
         }
@@ -545,18 +554,29 @@ namespace TitanOrbit.Systems
             ulong bulletOwnerShipNetworkId,
             float damage,
             int damageChannelId,
-            bool showDamagePopup)
+            bool showDamagePopup,
+            float asteroidRemainingHealth,
+            float asteroidRemainingGems,
+            bool isAsteroidHit)
         {
             ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
             TeamManager.Team team = (TeamManager.Team)teamByte;
             var popup = showDamagePopup
-                ? new BulletHitResolver.BulletHitPopupInfo(true, (FloatingCountChannel)Mathf.Clamp(damageChannelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex), damage)
+                ? new BulletHitResolver.BulletHitPopupInfo(
+                    damage > 0.0001f,
+                    (FloatingCountChannel)Mathf.Clamp(damageChannelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex),
+                    damage,
+                    isAsteroidHit: isAsteroidHit,
+                    asteroidRemainingHealth: asteroidRemainingHealth,
+                    asteroidRemainingGems: asteroidRemainingGems)
                 : BulletHitResolver.BulletHitPopupInfo.None;
 
-            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound/damage from the server RPC.
+            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound from the server RPC.
             if (localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
             {
                 ClientBulletTracer.DespawnBySequence(sequence);
+                if (popup.HasAsteroidFeedback)
+                    BulletHitResolver.SpawnBulletHitFeedbackLocal(position, popup, team);
                 return;
             }
 
@@ -578,7 +598,7 @@ namespace TitanOrbit.Systems
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
 
-            BulletHitResolver.SpawnBulletDamagePopupLocal(position, popup, team);
+            BulletHitResolver.SpawnBulletHitFeedbackLocal(position, popup, team);
         }
 
         /// <summary>

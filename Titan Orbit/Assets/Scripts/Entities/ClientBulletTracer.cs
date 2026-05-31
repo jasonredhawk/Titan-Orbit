@@ -237,8 +237,23 @@ namespace TitanOrbit.Entities
 
                 if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam))
                 {
-                    BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out FloatingCountChannel channel);
-                    PlayOwnerPredictedImpact(hit.point, new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch));
+                    bool isAsteroid = hit.collider.GetComponentInParent<Asteroid>() != null;
+                    BulletHitResolver.BulletHitPopupInfo popup;
+                    if (isAsteroid)
+                    {
+                        popup = new BulletHitResolver.BulletHitPopupInfo(
+                            true,
+                            FloatingCountChannel.DamageAsteroid,
+                            damageForImpactPitch,
+                            isAsteroidHit: true);
+                    }
+                    else
+                    {
+                        FloatingCountChannel channel = FloatingCountChannel.DamageShipOrDrone;
+                        BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out channel);
+                        popup = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
+                    }
+                    PlayOwnerPredictedImpact(hit.point, popup);
                     return true;
                 }
 
@@ -257,7 +272,11 @@ namespace TitanOrbit.Entities
                 toroidalImpact.y = 0f;
                 PlayOwnerPredictedImpact(
                     toroidalImpact,
-                    new BulletHitResolver.BulletHitPopupInfo(true, FloatingCountChannel.DamageAsteroid, damageForImpactPitch));
+                    new BulletHitResolver.BulletHitPopupInfo(
+                        true,
+                        FloatingCountChannel.DamageAsteroid,
+                        damageForImpactPitch,
+                        isAsteroidHit: true));
                 return true;
             }
 
@@ -267,7 +286,10 @@ namespace TitanOrbit.Entities
                 moonImpact.y = 0f;
                 PlayOwnerPredictedImpact(
                     moonImpact,
-                    new BulletHitResolver.BulletHitPopupInfo(true, FloatingCountChannel.DamageMoon, damageForImpactPitch));
+                    new BulletHitResolver.BulletHitPopupInfo(
+                        true,
+                        FloatingCountChannel.DamageMoon,
+                        damageForImpactPitch));
                 return true;
             }
 
@@ -318,7 +340,8 @@ namespace TitanOrbit.Entities
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
 
-            BulletHitResolver.SpawnBulletDamagePopupLocal(position, popupInfo, ownerTeam);
+            if (!popupInfo.IsAsteroidHit && (popupInfo.HasPopup || popupInfo.HasAsteroidFeedback))
+                BulletHitResolver.SpawnBulletHitFeedbackLocal(position, popupInfo, ownerTeam);
         }
 
         /// <summary>

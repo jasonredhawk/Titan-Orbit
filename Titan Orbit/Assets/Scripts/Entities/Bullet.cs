@@ -434,18 +434,15 @@ namespace TitanOrbit.Entities
 
             if (VisualEffectsManager.Instance != null)
             {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                VisualEffectsManager.Instance.SpawnAsteroidFeedbackFromServerAuthority(
                     bestImpact,
-                    (int)FloatingCountChannel.DamageAsteroid,
-                    appliedDamage,
-                    (int)ownerTeam
-                );
-                VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
-                    bestImpact,
-                    bestAsteroid.RemainingHealth,
-                    bestAsteroid.RemainingGems,
-                    (int)ownerTeam
-                );
+                    new AsteroidFloatingFeedback
+                    {
+                        Team = ownerTeam,
+                        Damage = appliedDamage,
+                        RemainingHealth = bestAsteroid.RemainingHealth,
+                        RemainingGems = bestAsteroid.RemainingGems,
+                    });
             }
 
             DespawnBullet(bestImpact);
@@ -540,18 +537,15 @@ namespace TitanOrbit.Entities
 
                 if (VisualEffectsManager.Instance != null)
                 {
-                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    VisualEffectsManager.Instance.SpawnAsteroidFeedbackFromServerAuthority(
                         impactWorldPos,
-                        (int)FloatingCountChannel.DamageAsteroid,
-                        appliedDamage,
-                        (int)ownerTeam
-                    );
-                    VisualEffectsManager.Instance.SpawnAsteroidStatsFloatingTextServerRpc(
-                        impactWorldPos,
-                        asteroid.RemainingHealth,
-                        asteroid.RemainingGems,
-                        (int)ownerTeam
-                    );
+                        new AsteroidFloatingFeedback
+                        {
+                            Team = ownerTeam,
+                            Damage = appliedDamage,
+                            RemainingHealth = asteroid.RemainingHealth,
+                            RemainingGems = asteroid.RemainingGems,
+                        });
                 }
 
                 DespawnBullet(impactWorldPos);

@@ -4081,7 +4081,7 @@ MonoBehaviour:
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
   galacticZoomEnabled: 1
-  galacticZoomDistance: 90
+  galacticZoomDistance: 333
   galacticZoomOutDuration: 60
   galacticZoomInDuration: 2
   spaceBackground: {fileID: 252336435}
@@ -8383,14 +8383,15 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    damageAsteroid: 1
+    asteroidDamage: 1
+    asteroidHealthRemaining: 1
+    asteroidGemsRemaining: 1
+    asteroidImpactForce: 0
     damageShipOrDrone: 1
     damageMoon: 1
     healthChange: 0
     peopleLoad: 1
     peopleUnload: 1
-    asteroidStatsOverlay: 1
-    asteroidImpactForce: 0
   floatingCountFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   floatingCountGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   floatingCountDamageIcon: {fileID: 21300000, guid: 1bfbdc7d886478747bec635df56212bb, type: 3}
@@ -8408,6 +8409,7 @@ MonoBehaviour:
   floatingCountMaxSpreadRadius: 5.75
   floatingCountSpiralPeriod: 40
   floatingCountLateralDriftMax: 0
+  floatingCountStackLineSpacing: 0.82
   floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
