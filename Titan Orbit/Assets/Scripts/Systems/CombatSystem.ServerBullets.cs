@@ -3,6 +3,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 
@@ -131,6 +132,8 @@ namespace TitanOrbit.Systems
             public float AsteroidRemainingHealth;
             public float AsteroidRemainingGems;
             public bool IsAsteroidHit;
+            public float LingeringFireDuration;
+            public ulong AttachBurnNetworkObjectId;
         }
 
         private ServerBullet[] serverBullets;
@@ -204,6 +207,7 @@ namespace TitanOrbit.Systems
             b.SpawnTime = Time.time;
             b.MaxDistance = DefaultMaxDistance;
             b.Lifetime = DefaultLifetime;
+            BulletBankProfileUtility.ApplyBulletFlightModifiers(requestedBankIndex, ref b.Lifetime, ref b.MaxDistance);
             b.MinTravelBeforeHit = DefaultMinTravelBeforeHit;
             b.OwnerShipNetworkId = ownerShipNetworkId;
             b.OwnerTeam = ownerTeam;
@@ -274,13 +278,16 @@ namespace TitanOrbit.Systems
                 : -1;
 
             float scaleMul = Mathf.Max(0.1f, visualScaleMultiplier);
+            float previewLifetime = DefaultLifetime;
+            float previewMaxDistance = DefaultMaxDistance;
+            BulletBankProfileUtility.ApplyBulletFlightModifiers(requestedBankIndex, ref previewLifetime, ref previewMaxDistance);
 
             return new BulletSpawnPayload
             {
                 SpawnPosition = spawnPos,
                 Velocity = totalVelocity,
-                MaxDistance = DefaultMaxDistance,
-                Lifetime = DefaultLifetime,
+                MaxDistance = previewMaxDistance,
+                Lifetime = previewLifetime,
                 OwnerShipNetworkId = ownerShipNetworkId,
                 Damage = damage,
                 VisualPrefabBankIndex = requestedBankIndex,
@@ -315,6 +322,7 @@ namespace TitanOrbit.Systems
         private void FixedUpdate()
         {
             if (!IsServer) return;
+            TickBulletGravityWells();
             if (serverBullets == null || activeServerBulletCount == 0) return;
 
             float dt = Time.fixedDeltaTime;
@@ -464,6 +472,18 @@ namespace TitanOrbit.Systems
             ref ServerBullet b = ref serverBullets[slot];
             Vector3 fixedImpact = impactPos;
             fixedImpact.y = 0f;
+            // World-space looping fire for burn bullets (ship burns use Starship burn VFX parented to hull).
+            float lingerFire = 0f;
+            ulong attachBurnId = 0;
+            if (b.VisualPrefabBankIndex >= 0
+                && BulletBankProfileUtility.TryGetProfile(b.VisualPrefabBankIndex, out BulletBankProfile burnProfile)
+                && burnProfile != null
+                && burnProfile.HasBurn
+                && (!popupInfo.HasPopup || popupInfo.Channel == FloatingCountChannel.DamageAsteroid))
+            {
+                lingerFire = burnProfile.GetBurnDuration();
+            }
+
             pendingImpacts.Add(new PendingImpact
             {
                 Position = fixedImpact,
@@ -478,6 +498,8 @@ namespace TitanOrbit.Systems
                 AsteroidRemainingHealth = popupInfo.AsteroidRemainingHealth,
                 AsteroidRemainingGems = popupInfo.AsteroidRemainingGems,
                 IsAsteroidHit = popupInfo.IsAsteroidHit,
+                LingeringFireDuration = lingerFire,
+                AttachBurnNetworkObjectId = attachBurnId,
             });
             ReleaseSlot(slot);
         }
@@ -524,7 +546,9 @@ namespace TitanOrbit.Systems
                     p.ShowDamagePopup,
                     p.AsteroidRemainingHealth,
                     p.AsteroidRemainingGems,
-                    p.IsAsteroidHit);
+                    p.IsAsteroidHit,
+                    p.LingeringFireDuration,
+                    p.AttachBurnNetworkObjectId);
             }
             pendingImpacts.Clear();
         }
@@ -557,7 +581,9 @@ namespace TitanOrbit.Systems
             bool showDamagePopup,
             float asteroidRemainingHealth,
             float asteroidRemainingGems,
-            bool isAsteroidHit)
+            bool isAsteroidHit,
+            float lingeringFireDuration,
+            ulong attachBurnNetworkObjectId)
         {
             ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
             TeamManager.Team team = (TeamManager.Team)teamByte;
@@ -592,7 +618,36 @@ namespace TitanOrbit.Systems
                     ? GetImpactPrefabFromBank(impactPrefabBankIndex, team)
                     : null;
                 if (prefab != null)
-                    BulletVisualFactory.SpawnImpactAt(position, prefab, pitch, BulletVisualFactory.DefaultImpactScale, BulletVisualFactory.DefaultImpactDuration);
+                {
+                    if (lingeringFireDuration > 0.05f)
+                    {
+                        Transform attach = null;
+                        Vector3 localOffset = Vector3.zero;
+                        if (attachBurnNetworkObjectId != 0
+                            && NetworkManager.Singleton != null
+                            && NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(
+                                attachBurnNetworkObjectId, out NetworkObject attachNo)
+                            && attachNo != null)
+                        {
+                            attach = attachNo.transform;
+                            localOffset = attach.InverseTransformPoint(position);
+                        }
+
+                        BulletVisualFactory.SpawnLoopingImpactAt(
+                            position,
+                            prefab,
+                            pitch,
+                            BulletVisualFactory.DefaultImpactScale,
+                            lingeringFireDuration,
+                            attach,
+                            localOffset);
+                    }
+                    else
+                    {
+                        BulletVisualFactory.SpawnImpactAt(
+                            position, prefab, pitch, BulletVisualFactory.DefaultImpactScale, BulletVisualFactory.DefaultImpactDuration);
+                    }
+                }
             }
 
             if (AudioManager.Instance != null)

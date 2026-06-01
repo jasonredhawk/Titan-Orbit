@@ -393,6 +393,7 @@ namespace TitanOrbit.Entities
             public TeamManager.Team SourceTeam;
         }
         private readonly List<ActiveBulletBurn> activeBulletBurns = new List<ActiveBulletBurn>(4);
+        private GameObject clientBurnVfxInstance;
 
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
@@ -791,9 +792,24 @@ namespace TitanOrbit.Entities
                 rb.AddForce(-vel.normalized * brake, ForceMode.Force);
         }
 
-        public void ApplyBulletBurnOnServer(float dps, float durationSeconds, float tickInterval, TeamManager.Team sourceTeam)
+        /// <summary>Transform burn VFX parents to so fire moves with the visible hull (BankPivot when present).</summary>
+        public Transform GetBurnVfxAttachTransform()
+        {
+            if (visualRoot != null && visualRoot != transform)
+                return visualRoot;
+            return transform;
+        }
+
+        public void ApplyBulletBurnOnServer(
+            float dps,
+            float durationSeconds,
+            float tickInterval,
+            TeamManager.Team sourceTeam,
+            int bankIndex,
+            Vector3 impactWorldPos)
         {
             if (!IsServer || isDead.Value || dps <= 0f || durationSeconds <= 0f) return;
+            bool wasBurning = activeBulletBurns.Count > 0;
             activeBulletBurns.Add(new ActiveBulletBurn
             {
                 Dps = dps,
@@ -802,6 +818,93 @@ namespace TitanOrbit.Entities
                 TickInterval = Mathf.Max(0.05f, tickInterval),
                 SourceTeam = sourceTeam,
             });
+
+            Transform attach = GetBurnVfxAttachTransform();
+            Vector3 localOffset = attach.InverseTransformPoint(impactWorldPos);
+            localOffset.y = 0f;
+            float vfxDuration = GetLongestActiveBulletBurnDuration();
+            PlayBurnLingerVfxClientRpc(bankIndex, vfxDuration, localOffset, wasBurning);
+        }
+
+        private float GetLongestActiveBulletBurnDuration()
+        {
+            float longest = 0f;
+            for (int i = 0; i < activeBulletBurns.Count; i++)
+                longest = Mathf.Max(longest, activeBulletBurns[i].RemainingDuration);
+            return longest;
+        }
+
+        private void ClearBulletBurnEffectsOnServer()
+        {
+            if (!IsServer) return;
+            activeBulletBurns.Clear();
+            StopBurnLingerVfxClientRpc();
+        }
+
+        private void ClearClientBurnVfx()
+        {
+            if (clientBurnVfxInstance != null)
+            {
+                Destroy(clientBurnVfxInstance);
+                clientBurnVfxInstance = null;
+            }
+        }
+
+        [ClientRpc]
+        private void PlayBurnLingerVfxClientRpc(
+            int bankIndex,
+            float durationSeconds,
+            Vector3 localAttachOffset,
+            bool extendExistingBurn)
+        {
+            if (isDead.Value)
+            {
+                ClearClientBurnVfx();
+                return;
+            }
+
+            if (extendExistingBurn && clientBurnVfxInstance != null)
+            {
+                var anchor = clientBurnVfxInstance.GetComponent<ShipBurnVfxAnchor>();
+                if (anchor != null)
+                {
+                    anchor.SetDurationFromNow(durationSeconds);
+                    return;
+                }
+            }
+
+            ClearClientBurnVfx();
+
+            if (Application.isMobilePlatform || CombatSystem.Instance == null || bankIndex < 0)
+                return;
+
+            GameObject prefab = CombatSystem.Instance.GetImpactPrefabFromBank(bankIndex, shipTeam.Value);
+            if (prefab == null) return;
+
+            Transform attach = GetBurnVfxAttachTransform();
+            localAttachOffset.y = 0f;
+            clientBurnVfxInstance = BulletVisualFactory.SpawnLoopingImpactAt(
+                attach.TransformPoint(localAttachOffset),
+                prefab,
+                1f,
+                BulletVisualFactory.DefaultImpactScale,
+                durationSeconds,
+                attach,
+                localAttachOffset);
+        }
+
+        [ClientRpc]
+        private void StopBurnLingerVfxClientRpc()
+        {
+            ClearClientBurnVfx();
+        }
+
+        private void HandleIsDeadChangedForBurnVfx(bool previous, bool dead)
+        {
+            if (!dead) return;
+            if (IsServer)
+                activeBulletBurns.Clear();
+            ClearClientBurnVfx();
         }
 
         public float ApplyBulletHealOnServer(float healAmount, TeamManager.Team sourceTeam)
@@ -836,7 +939,7 @@ namespace TitanOrbit.Entities
 
         private void TickBulletStatusEffectsServer(float dt)
         {
-            if (!IsServer || activeBulletBurns.Count == 0) return;
+            if (!IsServer || isDead.Value || activeBulletBurns.Count == 0) return;
             for (int i = activeBulletBurns.Count - 1; i >= 0; i--)
             {
                 ActiveBulletBurn b = activeBulletBurns[i];
@@ -1391,6 +1494,8 @@ namespace TitanOrbit.Entities
 
         private void OnDestroy()
         {
+            isDead.OnValueChanged -= HandleIsDeadChangedForBurnVfx;
+            ClearClientBurnVfx();
             // Remove from global registry if present
             AllStarships.Remove(this);
             equippedCardIds?.Dispose();
@@ -1459,6 +1564,7 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            isDead.OnValueChanged += HandleIsDeadChangedForBurnVfx;
             if (!AllStarships.Contains(this))
                 AllStarships.Add(this);
             // Server: sync initial ship level so clients show correct slot count
@@ -4806,6 +4912,7 @@ namespace TitanOrbit.Entities
         private void ServerApplyDeath(ulong killerShipNetworkId = 0)
         {
             if (!IsServer || isDead.Value) return;
+            ClearBulletBurnEffectsOnServer();
             SuppressGemCollectionForRespawnDelay();
             if (killerShipNetworkId != 0 && ScoreSystem.Instance != null)
             {
@@ -5399,7 +5506,7 @@ namespace TitanOrbit.Entities
             float? damage,
             float? impactForceNewtons)
         {
-            if (VisualEffectsManager.Instance == null || !IsServer) return;
+            if (VisualEffectsManager.Instance == null) return;
             Vector3 pos = hitWorldPos;
             pos.y = Mathf.Max(pos.y, 0f);
 
@@ -5412,7 +5519,7 @@ namespace TitanOrbit.Entities
                 ImpactForceNewtons = impactForceNewtons,
             };
 
-            VisualEffectsManager.Instance.SpawnAsteroidFeedbackFromServerAuthority(pos, feedback);
+            VisualEffectsManager.Instance.SpawnAsteroidFeedback(pos, feedback);
         }
 
         private void SpawnAsteroidRamHitFloatingText(Vector3 hitWorldPos, float damage, Asteroid asteroid)

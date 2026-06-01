@@ -179,6 +179,17 @@ namespace TitanOrbit.Systems
             if (debrisShield != null && debrisShield.TryAbsorbBullet(ownerTeam))
                 return true;
 
+            Gem gem = other.GetComponentInParent<Gem>();
+            if (gem != null && !gem.IsInPool)
+            {
+                float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
+                    damage, bulletBankIndex, BulletBankDamageTarget.Gem);
+                BulletBankProfileUtility.ApplyOnHitEffects(
+                    bulletBankIndex, other, impactWorldPos, ownerTeam, ownerShipNetworkId, resolved, targetWasHealed: false);
+                finalImpactPos = impactWorldPos;
+                return true;
+            }
+
             Starship ship = other.GetComponentInParent<Starship>();
             if (ship != null && !ship.IsDead)
             {
@@ -254,6 +265,10 @@ namespace TitanOrbit.Systems
 
             DroneBase drone = other.GetComponentInParent<DroneBase>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+                return true;
+
+            Gem gem = other.GetComponentInParent<Gem>();
+            if (gem != null && !gem.IsInPool)
                 return true;
 
             return false;

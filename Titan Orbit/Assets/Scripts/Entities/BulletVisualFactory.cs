@@ -153,6 +153,62 @@ namespace TitanOrbit.Entities
             Object.Destroy(go, duration);
         }
 
+        /// <summary>
+        /// Spawns the bank impact prefab (e.g. fire) and loops it for <paramref name="duration"/> seconds.
+        /// When <paramref name="attachParent"/> is set, uses <see cref="ShipBurnVfxAnchor"/> so fire sticks to a moving hull.
+        /// </summary>
+        public static GameObject SpawnLoopingImpactAt(
+            Vector3 position,
+            GameObject prefab,
+            float pitch,
+            float scale,
+            float duration,
+            Transform attachParent = null,
+            Vector3 localOffset = default)
+        {
+            if (prefab == null || duration <= 0f) return null;
+
+            if (attachParent != null)
+            {
+                return ShipBurnVfxAnchor.SpawnAttached(
+                    attachParent, localOffset, prefab, pitch, scale, duration);
+            }
+
+            GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
+            go.transform.localScale = Vector3.one * scale;
+            SetAudioPitchInHierarchy(go, pitch);
+            VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
+            ConfigureLoopingImpactParticles(go, duration, simulateInLocalSpace: false);
+            VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
+            Object.Destroy(go, duration + 0.25f);
+            return go;
+        }
+
+        public static void ConfigureLoopingImpactParticles(
+            GameObject root,
+            float duration,
+            bool simulateInLocalSpace = false)
+        {
+            if (root == null) return;
+            foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                if (ps == null) continue;
+                var main = ps.main;
+                main.loop = true;
+                if (main.duration < duration)
+                    main.duration = duration;
+                main.stopAction = ParticleSystemStopAction.None;
+                if (simulateInLocalSpace)
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
+
+                var emission = ps.emission;
+                if (emission.rateOverTime.constant <= 0.01f && emission.burstCount > 0)
+                {
+                    emission.rateOverTime = Mathf.Max(4f, emission.burstCount * 2f);
+                }
+            }
+        }
+
         public static void SpawnMobileImpact(Vector3 position, TeamManager.Team team, float scale)
         {
             VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), scale);

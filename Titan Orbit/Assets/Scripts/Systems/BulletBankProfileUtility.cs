@@ -59,6 +59,25 @@ namespace TitanOrbit.Systems
             return baseDamage * profile.GetDamageMultiplier(target);
         }
 
+        /// <summary>Applies bank stat range and optional burn travel/lifetime extensions.</summary>
+        public static void ApplyBulletFlightModifiers(int bankIndex, ref float lifetime, ref float maxDistance)
+        {
+            if (!TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return;
+
+            BulletBankStatModifiers mods = profile.statModifiers;
+            float statRange = mods.bulletRangeMultiplier > 0f ? mods.bulletRangeMultiplier : 1f;
+            maxDistance *= statRange;
+
+            if (!profile.HasBurn)
+                return;
+
+            maxDistance *= profile.GetBurnBulletRangeMultiplier();
+            float burnDur = profile.GetBurnDuration();
+            if (burnDur > 0f)
+                lifetime = Mathf.Max(lifetime, burnDur * 0.65f);
+        }
+
         /// <summary>Server: apply non-damage abilities after damage/heal has been resolved.</summary>
         public static void ApplyOnHitEffects(
             int bankIndex,
@@ -98,23 +117,29 @@ namespace TitanOrbit.Systems
                             float dps = a.magnitude > 0f ? a.magnitude : resolvedDamage * 0.2f;
                             float dur = a.duration > 0f ? a.duration : 2f;
                             float tick = a.tickInterval > 0.05f ? a.tickInterval : 0.25f;
-                            ship.ApplyBulletBurnOnServer(dps, dur, tick, ownerTeam);
+                            ship.ApplyBulletBurnOnServer(dps, dur, tick, ownerTeam, bankIndex, impactWorldPos);
                         }
                         break;
 
                     case BulletBankAbilityType.ConcussivePush:
-                        if (ship != null && !isFriendlyShip)
                         {
                             float force = a.magnitude > 0f ? a.magnitude : 8f;
-                            ship.ApplyBulletKnockbackOnServer(impactWorldPos, force, pull: false);
+                            BulletImpactForceUtility.ApplyKnockbackFromImpact(
+                                hitCollider, impactWorldPos, force, pull: false, ownerTeam);
                         }
                         break;
 
                     case BulletBankAbilityType.GravityPull:
-                        if (ship != null && !isFriendlyShip)
                         {
-                            float force = a.magnitude > 0f ? a.magnitude : 8f;
-                            ship.ApplyBulletKnockbackOnServer(impactWorldPos, force, pull: true);
+                            float radius = a.radius > 0f ? a.radius : 6f;
+                            float force = a.magnitude > 0f ? a.magnitude : 12f;
+                            float dur = a.duration > 0f ? a.duration : 1.5f;
+                            CombatSystem combat = CombatSystem.Instance;
+                            if (combat != null)
+                            {
+                                combat.RegisterBulletGravityWell(
+                                    impactWorldPos, radius, force, dur, ownerTeam, ownerShipNetworkId);
+                            }
                         }
                         break;
                 }

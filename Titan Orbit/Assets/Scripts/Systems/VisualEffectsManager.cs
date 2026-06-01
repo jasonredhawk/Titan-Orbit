@@ -129,6 +129,24 @@ namespace TitanOrbit.Systems
             SpawnAsteroidFeedbackPopupLocal(position, feedback);
         }
 
+        /// <summary>
+        /// Spawns stacked asteroid feedback on every client. Use from server code directly, or from the
+        /// owning client after ram/grind (physics runs on owner; dedicated server is not IsServer on ship).
+        /// </summary>
+        public void SpawnAsteroidFeedback(Vector3 position, AsteroidFloatingFeedback feedback)
+        {
+            if (IsServer)
+                SpawnAsteroidFeedbackFromServerAuthority(position, feedback);
+            else
+                SpawnAsteroidFeedbackServerRpc(
+                    position,
+                    feedback.Damage ?? -1f,
+                    feedback.RemainingHealth ?? -1f,
+                    feedback.RemainingGems ?? -1f,
+                    feedback.ImpactForceNewtons ?? -1f,
+                    (int)feedback.Team);
+        }
+
         public void SpawnAsteroidFeedbackFromServerAuthority(Vector3 position, AsteroidFloatingFeedback feedback)
         {
             if (!IsServer) return;
@@ -142,6 +160,20 @@ namespace TitanOrbit.Systems
                 feedback.RemainingGems ?? -1f,
                 feedback.ImpactForceNewtons ?? -1f,
                 (int)feedback.Team);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnAsteroidFeedbackServerRpc(
+            Vector3 position,
+            float damage,
+            float remainingHealth,
+            float remainingGems,
+            float impactForceNewtons,
+            int teamInt)
+        {
+            SpawnAsteroidFeedbackFromServerAuthority(
+                position,
+                DecodeAsteroidFeedback(damage, remainingHealth, remainingGems, impactForceNewtons, teamInt));
         }
 
         [ClientRpc]

@@ -302,6 +302,20 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
+        /// <summary>Server: impulse from bullet concussive / gravity effects (gems are always pushed, not team-filtered).</summary>
+        public void ApplyBulletKnockbackOnServer(Vector3 impactWorldPos, float force, bool pull)
+        {
+            if (!HasServerAuthority || IsInPool || rb == null || force <= 0f) return;
+            Vector3 dir = rb.position - impactWorldPos;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.forward;
+            dir.Normalize();
+            if (!pull)
+                dir = -dir;
+            rb.AddForce(dir * force, ForceMode.Impulse);
+        }
+
         /// <summary>Server only. Puts gem back in pool (recycled); no Despawn. Call from pool or when gem is collected/expired.</summary>
         public void ServerReturnToPool()
         {

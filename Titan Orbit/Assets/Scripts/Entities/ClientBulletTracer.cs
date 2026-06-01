@@ -266,7 +266,10 @@ namespace TitanOrbit.Entities
                             popup = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
                         }
                     }
-                    PlayOwnerPredictedImpact(hit.point, popup);
+                    Starship burnAttachShip = hit.collider.GetComponentInParent<Starship>();
+                    if (burnAttachShip != null && (burnAttachShip.IsDead || burnAttachShip.ShipTeam == ownerTeam))
+                        burnAttachShip = null;
+                    PlayOwnerPredictedImpact(hit.point, popup, burnAttachShip);
                     return true;
                 }
 
@@ -325,7 +328,10 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private void PlayOwnerPredictedImpact(Vector3 position, BulletHitResolver.BulletHitPopupInfo popupInfo = default)
+        private void PlayOwnerPredictedImpact(
+            Vector3 position,
+            BulletHitResolver.BulletHitPopupInfo popupInfo = default,
+            Starship attachBurnToShip = null)
         {
             position.y = 0f;
             float pitch = BulletHitResolver.GetImpactSoundPitch(damageForImpactPitch);
@@ -341,12 +347,45 @@ namespace TitanOrbit.Entities
                     prefab = CombatSystem.Instance.GetImpactPrefabFromBank(visualPrefabBankIndex, ownerTeam);
                 if (prefab != null)
                 {
-                    BulletVisualFactory.SpawnImpactAt(
-                        position,
-                        prefab,
-                        pitch,
-                        BulletVisualFactory.DefaultImpactScale,
-                        BulletVisualFactory.DefaultImpactDuration);
+                    float burnDur = 0f;
+                    if (visualPrefabBankIndex >= 0
+                        && BulletBankProfileUtility.TryGetProfile(visualPrefabBankIndex, out BulletBankProfile profile)
+                        && profile != null
+                        && profile.HasBurn)
+                    {
+                        burnDur = profile.GetBurnDuration();
+                    }
+
+                    if (burnDur > 0.05f)
+                    {
+                        Transform attach = attachBurnToShip != null
+                            ? attachBurnToShip.GetBurnVfxAttachTransform()
+                            : null;
+                        Vector3 localOff = Vector3.zero;
+                        if (attach != null)
+                        {
+                            localOff = attach.InverseTransformPoint(position);
+                            localOff.y = 0f;
+                        }
+
+                        BulletVisualFactory.SpawnLoopingImpactAt(
+                            position,
+                            prefab,
+                            pitch,
+                            BulletVisualFactory.DefaultImpactScale,
+                            burnDur,
+                            attach,
+                            localOff);
+                    }
+                    else
+                    {
+                        BulletVisualFactory.SpawnImpactAt(
+                            position,
+                            prefab,
+                            pitch,
+                            BulletVisualFactory.DefaultImpactScale,
+                            BulletVisualFactory.DefaultImpactDuration);
+                    }
                 }
             }
 

@@ -170,6 +170,20 @@ namespace TitanOrbit.Entities
         {
             return ownerShip != null && team != TeamManager.Team.None && team != ownerShip.ShipTeam;
         }
+
+        /// <summary>Server: impulse away from or toward <paramref name="impactWorldPos"/>.</summary>
+        public void ApplyBulletKnockbackOnServer(Vector3 impactWorldPos, float force, bool pull)
+        {
+            if (!IsServer || IsDestroyed || rb == null || force <= 0f) return;
+            Vector3 dir = rb.position - impactWorldPos;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = transform.forward;
+            dir.Normalize();
+            if (!pull)
+                dir = -dir;
+            rb.AddForce(dir * force, ForceMode.Impulse);
+        }
     }
 
 }
