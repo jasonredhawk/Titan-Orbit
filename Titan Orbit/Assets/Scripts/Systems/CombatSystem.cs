@@ -4,6 +4,7 @@ using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using SciFiArsenal;
 
 namespace TitanOrbit.Systems
@@ -14,6 +15,8 @@ namespace TitanOrbit.Systems
     {
         public string categoryName;
         public List<GameObject> prefabs = new List<GameObject>();
+        [Tooltip("Stat multipliers and special abilities for this bullet type. Applied automatically when a ship fires using this bank index.")]
+        public BulletBankProfile profile = new BulletBankProfile();
     }
 
     /// <summary>
@@ -212,6 +215,21 @@ namespace TitanOrbit.Systems
             }
 
             return $"Bullet {index + 1}";
+        }
+
+        /// <summary>Returns the authored profile (stat multipliers + abilities) for a bullet bank index, or false if out of range.</summary>
+        public bool TryGetBulletBankProfile(int index, out BulletBankProfile profile)
+        {
+            profile = null;
+            if (index < 0) return false;
+            if (UseCategories && bulletBankCategories != null && index < bulletBankCategories.Count)
+            {
+                var cat = bulletBankCategories[index];
+                if (cat == null) return false;
+                profile = cat.profile ?? new BulletBankProfile();
+                return true;
+            }
+            return false;
         }
 
         /// <summary>Returns the visual prefab for a bank index (and team when using categories). Used by Bullet for its visual.</summary>

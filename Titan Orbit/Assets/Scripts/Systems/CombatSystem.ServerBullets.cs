@@ -357,7 +357,7 @@ namespace TitanOrbit.Systems
                 if (hit.collider == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, b.OwnerShipNetworkId)) continue;
 
-                if (BulletHitResolver.TryHit(hit.collider, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, hit.point, out Vector3 impactPos, out BulletHitResolver.BulletHitPopupInfo popup))
+                if (BulletHitResolver.TryHit(hit.collider, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, hit.point, out Vector3 impactPos, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
                 {
                     DespawnWithImpact(slot, impactPos, popup);
                     return;
@@ -375,13 +375,13 @@ namespace TitanOrbit.Systems
             if (TryOverlapFallbackHit(slot)) return;
 
             // Toroidal asteroid sweep: bullet and asteroid may sit in different toroidal tiles.
-            if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup))
+            if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup, b.VisualPrefabBankIndex))
             {
                 DespawnWithImpact(slot, toroidalImpact, asteroidPopup);
                 return;
             }
 
-            if (BulletHitResolver.TryToroidalGemMoonSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 moonImpact, out BulletHitResolver.BulletHitPopupInfo moonPopup))
+            if (BulletHitResolver.TryToroidalGemMoonSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 moonImpact, out BulletHitResolver.BulletHitPopupInfo moonPopup, b.VisualPrefabBankIndex))
             {
                 DespawnWithImpact(slot, moonImpact, moonPopup);
                 return;
@@ -413,7 +413,7 @@ namespace TitanOrbit.Systems
             if (bestIdx < 0) return false;
             Collider chosen = s_overlapHits[bestIdx];
             Vector3 impact = chosen.ClosestPoint(b.Position);
-            if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup))
+            if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
             {
                 DespawnWithImpact(slot, finalImpact, popup);
                 return true;
@@ -434,7 +434,7 @@ namespace TitanOrbit.Systems
                 if (asteroid != null && !asteroid.IsDestroyed)
                 {
                     Vector3 impact = c.ClosestPoint(b.Position);
-                    if (BulletHitResolver.TryHit(c, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup))
+                    if (BulletHitResolver.TryHit(c, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
                     {
                         DespawnWithImpact(slot, finalImpact, popup);
                         return;

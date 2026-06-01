@@ -727,6 +727,16 @@ namespace TitanOrbit.AI
             if (starship.GemMoonDocked)
                 return;
 
+            if (starship.IsBulletElectricShockDisabled)
+            {
+                moveDirection = Vector3.zero;
+                Vector3 shockVel = rb.linearVelocity;
+                shockVel.y = 0f;
+                shockVel = Vector3.MoveTowards(shockVel, Vector3.zero, aiDeceleration * 2.5f * Time.fixedDeltaTime);
+                rb.linearVelocity = shockVel;
+                return;
+            }
+
             if (!HasAnyAiCapabilityEnabled())
             {
                 moveDirection = Vector3.zero;
@@ -862,10 +872,11 @@ namespace TitanOrbit.AI
             if (moveDirection.magnitude > 0.1f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
+                float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
                 rb.MoveRotation(Quaternion.RotateTowards(
                     rb.rotation,
                     targetRotation,
-                    aiRotationSpeed * Time.fixedDeltaTime
+                    turnSpeed * Time.fixedDeltaTime
                 ));
             }
 
@@ -943,6 +954,7 @@ namespace TitanOrbit.AI
         private void HandleShootingAsteroid()
         {
             if (targetAsteroid == null || targetAsteroid.IsDestroyed || starship == null || rb == null) return;
+            if (starship.IsBulletElectricShockDisabled) return;
 
             Vector3 dirToAsteroid = ToroidalMap.ToroidalDirection(rb.position, targetAsteroid.transform.position);
             dirToAsteroid.y = 0f;
@@ -951,7 +963,8 @@ namespace TitanOrbit.AI
 
             // Rotate toward asteroid
             Quaternion targetRotation = Quaternion.LookRotation(dirToAsteroid);
-            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, aiRotationSpeed * Time.fixedDeltaTime));
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot (FireAtTarget respects fire rate and energy)
             starship.FireAtTarget(dirToAsteroid);
@@ -960,6 +973,7 @@ namespace TitanOrbit.AI
         private void HandleAttackingEnemy()
         {
             if (targetEnemyShip == null || targetEnemyShip.IsDead || starship == null || rb == null) return;
+            if (starship.IsBulletElectricShockDisabled) return;
 
             Vector3 myPos = rb.position;
             myPos.y = 0f;
@@ -1005,7 +1019,8 @@ namespace TitanOrbit.AI
             }
             
             Quaternion targetRotation = Quaternion.LookRotation(aimDirection);
-            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, aiRotationSpeed * Time.fixedDeltaTime));
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot at enemy (FireAtTarget respects fire rate and energy)
             starship.FireAtTarget(dirToEnemy);

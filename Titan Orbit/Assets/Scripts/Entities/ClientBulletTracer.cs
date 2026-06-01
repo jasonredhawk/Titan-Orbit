@@ -5,6 +5,7 @@ using TitanOrbit.Audio;
 using TitanOrbit.Camera;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Data;
 using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
@@ -235,7 +236,7 @@ namespace TitanOrbit.Entities
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, ownerShipNetworkId))
                     continue;
 
-                if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam))
+                if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam, visualPrefabBankIndex))
                 {
                     bool isAsteroid = hit.collider.GetComponentInParent<Asteroid>() != null;
                     BulletHitResolver.BulletHitPopupInfo popup;
@@ -249,9 +250,21 @@ namespace TitanOrbit.Entities
                     }
                     else
                     {
-                        FloatingCountChannel channel = FloatingCountChannel.DamageShipOrDrone;
-                        BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out channel);
-                        popup = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
+                        Starship friendly = hit.collider.GetComponentInParent<Starship>();
+                        if (friendly != null && friendly.ShipTeam == ownerTeam
+                            && BulletBankProfileUtility.TryGetProfile(visualPrefabBankIndex, out BulletBankProfile profile)
+                            && profile != null
+                            && profile.HasAbility(BulletBankAbilityType.HealFriendly))
+                        {
+                            popup = new BulletHitResolver.BulletHitPopupInfo(
+                                true, FloatingCountChannel.Healing, damageForImpactPitch);
+                        }
+                        else
+                        {
+                            FloatingCountChannel channel = FloatingCountChannel.DamageShipOrDrone;
+                            BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out channel);
+                            popup = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
+                        }
                     }
                     PlayOwnerPredictedImpact(hit.point, popup);
                     return true;

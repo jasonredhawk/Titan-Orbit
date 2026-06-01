@@ -382,6 +382,18 @@ namespace TitanOrbit.Entities
         /// <summary>Summed rammingPowerPerLevel from ShipFamilyDefinition — scales offense each ship level.</summary>
         private float _summedRammingPowerPerLevel;
 
+        /// <summary>Synced server time (seconds) until electric-shock stun ends. Blocks move, turn, and fire.</summary>
+        private NetworkVariable<float> electricShockEndServerTime = new NetworkVariable<float>(0f);
+        private struct ActiveBulletBurn
+        {
+            public float Dps;
+            public float RemainingDuration;
+            public float TickTimer;
+            public float TickInterval;
+            public TeamManager.Team SourceTeam;
+        }
+        private readonly List<ActiveBulletBurn> activeBulletBurns = new List<ActiveBulletBurn>(4);
+
         [Header("References")]
         [SerializeField] private PlayerInputHandler inputHandler;
         [SerializeField] private Rigidbody rb;
@@ -564,6 +576,8 @@ namespace TitanOrbit.Entities
         {
             get
             {
+                if (IsBulletElectricShockDisabled)
+                    return 0f;
                 float chassis = rotationSpeedFromShipFamilyDefinition
                     ? Mathf.Max(1f, rotationSpeed) * ShipTurnDefinitionToDegreesPerSecond
                     : rotationSpeed;
@@ -572,6 +586,20 @@ namespace TitanOrbit.Entities
                 return baseWithCards * attrScale;
             }
         }
+
+        /// <summary>Electric-shock stun: no movement thrust, rotation, or weapon fire until server time catches up.</summary>
+        public bool IsBulletElectricShockDisabled
+        {
+            get
+            {
+                var nm = NetworkManager.Singleton;
+                if (nm == null) return false;
+                return (float)nm.ServerTime.Time < electricShockEndServerTime.Value;
+            }
+        }
+
+        [System.Obsolete("Use IsBulletElectricShockDisabled")]
+        public bool IsBulletRotationLocked => IsBulletElectricShockDisabled;
 
         private float EffectiveEnergyRegen
         {
@@ -699,7 +727,136 @@ namespace TitanOrbit.Entities
         {
             float perLvl = Mathf.Max(0, ShipLevel - 1);
             float familyPower = _summedRammingPowerBase + _summedRammingPowerPerLevel * perLvl;
-            return ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyPower);
+            float rating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyPower);
+            return BulletBankProfileUtility.ScaleRammingRating(rating, GetActiveBulletBankIndexForShip());
+        }
+
+        /// <summary>Active bullet bank index (B-key cycle, family default, or cannon override).</summary>
+        private int ResolveBulletBankIndexForCannon(CannonConfig c, CombatSystem combat)
+        {
+            if (combat == null) return -1;
+            int bankCount = combat.BulletPrefabBankCount;
+            if (bankCount <= 0) return -1;
+            if (runtimeBulletPrefabIndex.Value >= 0)
+                return runtimeBulletPrefabIndex.Value % bankCount;
+            if (c != null && c.bulletPrefabIndex >= 0)
+                return c.bulletPrefabIndex % bankCount;
+            if (bulletPrefabBankIndex >= 0)
+                return bulletPrefabBankIndex % bankCount;
+            return 0;
+        }
+
+        private int GetActiveBulletBankIndexForShip()
+        {
+            if (CombatSystem.Instance == null) return -1;
+            int bankCount = CombatSystem.Instance.BulletPrefabBankCount;
+            if (bankCount <= 0) return -1;
+            int runtime = runtimeBulletPrefabIndex.Value;
+            if (runtime >= 0) return runtime % bankCount;
+            if (bulletPrefabBankIndex >= 0) return bulletPrefabBankIndex % bankCount;
+            return 0;
+        }
+
+        private static void ApplyBulletBankShotStats(int bulletBankIndex, ref float damage, ref float speed, ref float fireRate)
+        {
+            if (bulletBankIndex < 0) return;
+            damage = BulletBankProfileUtility.ScaleFirePower(damage, bulletBankIndex);
+            speed = BulletBankProfileUtility.ScaleBulletSpeed(speed, bulletBankIndex);
+            fireRate = BulletBankProfileUtility.ScaleFireRate(fireRate, bulletBankIndex);
+        }
+
+        /// <summary>Server: electric shock — movement, rotation, and firing disabled for the duration.</summary>
+        public void ApplyBulletElectricShockOnServer(float durationSeconds)
+        {
+            if (!IsServer || durationSeconds <= 0f) return;
+            var nm = NetworkManager.Singleton;
+            if (nm == null) return;
+            float end = (float)nm.ServerTime.Time + durationSeconds;
+            electricShockEndServerTime.Value = Mathf.Max(electricShockEndServerTime.Value, end);
+        }
+
+        [System.Obsolete("Use ApplyBulletElectricShockOnServer")]
+        public void ApplyBulletRotationLockOnServer(float durationSeconds) =>
+            ApplyBulletElectricShockOnServer(durationSeconds);
+
+        private void TickElectricShockBraking()
+        {
+            if (!IsBulletElectricShockDisabled || rb == null) return;
+            moveDirection = Vector3.zero;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float mass = Mathf.Max(0.5f, rb.mass);
+            float brake = brakeDeceleration * mass * 2.5f;
+            if (vel.sqrMagnitude > 0.0001f)
+                rb.AddForce(-vel.normalized * brake, ForceMode.Force);
+        }
+
+        public void ApplyBulletBurnOnServer(float dps, float durationSeconds, float tickInterval, TeamManager.Team sourceTeam)
+        {
+            if (!IsServer || isDead.Value || dps <= 0f || durationSeconds <= 0f) return;
+            activeBulletBurns.Add(new ActiveBulletBurn
+            {
+                Dps = dps,
+                RemainingDuration = durationSeconds,
+                TickTimer = 0f,
+                TickInterval = Mathf.Max(0.05f, tickInterval),
+                SourceTeam = sourceTeam,
+            });
+        }
+
+        public float ApplyBulletHealOnServer(float healAmount, TeamManager.Team sourceTeam)
+        {
+            if (!IsServer || isDead.Value || healAmount <= 0f) return 0f;
+            float before = currentHealth.Value;
+            currentHealth.Value = Mathf.Min(MaxHealth, before + healAmount);
+            float applied = currentHealth.Value - before;
+            if (applied > 0.001f && VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    transform.position,
+                    (int)FloatingCountChannel.Healing,
+                    applied,
+                    (int)sourceTeam);
+            }
+            return applied;
+        }
+
+        public void ApplyBulletKnockbackOnServer(Vector3 impactWorldPos, float force, bool pull)
+        {
+            if (!IsServer || rb == null || isDead.Value || force <= 0f) return;
+            Vector3 dir = rb.position - impactWorldPos;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = transform.forward;
+            dir.Normalize();
+            if (!pull)
+                dir = -dir;
+            rb.AddForce(dir * force, ForceMode.Impulse);
+        }
+
+        private void TickBulletStatusEffectsServer(float dt)
+        {
+            if (!IsServer || activeBulletBurns.Count == 0) return;
+            for (int i = activeBulletBurns.Count - 1; i >= 0; i--)
+            {
+                ActiveBulletBurn b = activeBulletBurns[i];
+                b.RemainingDuration -= dt;
+                if (b.RemainingDuration <= 0f)
+                {
+                    activeBulletBurns.RemoveAt(i);
+                    continue;
+                }
+
+                b.TickTimer -= dt;
+                if (b.TickTimer <= 0f)
+                {
+                    float tickDamage = b.Dps * b.TickInterval;
+                    if (!isDead.Value && tickDamage > 0f)
+                        ApplyDamageOnServer(tickDamage, b.SourceTeam, 0, 0.5f, 0f);
+                    b.TickTimer = b.TickInterval;
+                }
+                activeBulletBurns[i] = b;
+            }
         }
 
         private void ComputeRamImpactDamage(float inboundNormalSpeed, float restitution, out float asteroidDamage, out float selfDamage)
@@ -934,11 +1091,14 @@ namespace TitanOrbit.Entities
                 if (!IsValidWeaponFirePointIndex(i)) continue;
                 var c = bulletConfig.cannons[i];
                 if (c == null) continue;
+                int hudBank = ResolveBulletBankIndexForCannon(c, CombatSystem.Instance);
                 float rate = Mathf.Max(0f, c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL));
+                float hudSpeed = c.bulletSpeed;
+                float d = Mathf.Max(0f, c.damagePerBullet);
+                ApplyBulletBankShotStats(hudBank, ref d, ref hudSpeed, ref rate);
                 int pellets = 1;
                 if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
                     pellets = Mathf.Max(1, c.spreadProjectileCount);
-                float d = Mathf.Max(0f, c.damagePerBullet);
                 float dps = d * pellets * rate;
                 if (!any || dps > bestDps)
                 {
@@ -2371,6 +2531,9 @@ namespace TitanOrbit.Entities
 
             try
             {
+            if (IsServer)
+                TickBulletStatusEffectsServer(Time.fixedDeltaTime);
+
             ServerTickEstimatedPlanarVelocity(Time.fixedDeltaTime);
 
             // Toroidal orbit band (physics triggers fail across map wraps; owner + server need geometry, not OnTriggerEnter).
@@ -2654,6 +2817,12 @@ namespace TitanOrbit.Entities
             if (gemMoonDocked.Value && withinGemMoonBoundary)
                 return;
 
+            if (IsBulletElectricShockDisabled)
+            {
+                TickElectricShockBraking();
+                return;
+            }
+
             bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed
                 && !IsInsideFriendlyGemMoonOrbitZone();
             if (useOrbit)
@@ -2908,7 +3077,9 @@ namespace TitanOrbit.Entities
             }
 
             // Movement: right-click only - move in direction ship is facing
-            if (inputHandler.MoveForwardPressed)
+            if (IsBulletElectricShockDisabled)
+                moveDirection = Vector3.zero;
+            else if (inputHandler.MoveForwardPressed)
             {
                 moveDirection = transform.forward;
                 moveDirection.y = 0f;
@@ -3046,6 +3217,12 @@ namespace TitanOrbit.Entities
             currentVelocity = rb.linearVelocity;
             currentVelocity.y = 0f;
 
+            if (IsBulletElectricShockDisabled)
+            {
+                TickElectricShockBraking();
+                return;
+            }
+
             float mass = Mathf.Max(0.5f, rb.mass);
             float maxSpeed = EffectiveMaxSpeed;
 
@@ -3103,6 +3280,11 @@ namespace TitanOrbit.Entities
         private void HandleOrbitMovement()
         {
             if (currentOrbitPlanet == null || rb == null) return;
+            if (IsBulletElectricShockDisabled)
+            {
+                TickElectricShockBraking();
+                return;
+            }
 
             Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
             Vector3 shipPos = rb.position;
@@ -3393,6 +3575,8 @@ namespace TitanOrbit.Entities
 
         private void HandleRotation()
         {
+            if (IsBulletElectricShockDisabled)
+                return;
             // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
             // Always rotate toward mouse cursor - works in place, no movement required
             UnityEngine.Camera cam = UnityEngine.Camera.main;
@@ -3451,6 +3635,7 @@ namespace TitanOrbit.Entities
         private bool CanFire()
         {
             if (isDead.Value) return false;
+            if (IsBulletElectricShockDisabled) return false;
             if (IsAwaitingTeamSelection) return false;
             // Orbit firing rule is enforced on the server via ServerWorldPositionInsideAnyOrbitZone (FireServerRpc).
             // Local currentOrbitPlanet is not replicated and often disagrees with the server on relay/dedicated clients,
@@ -3463,9 +3648,13 @@ namespace TitanOrbit.Entities
             {
                 if (!IsValidWeaponFirePointIndex(i)) continue;
                 var c = bulletConfig.cannons[i];
+                int bankIdx = ResolveBulletBankIndexForCannon(c, CombatSystem.Instance);
                 float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                float canFireDamage = c.damagePerBullet;
+                float canFireSpeed = c.bulletSpeed;
+                ApplyBulletBankShotStats(bankIdx, ref canFireDamage, ref canFireSpeed, ref effectiveFireRate);
                 if (currentEnergy.Value >= c.energyCostPerShot &&
-                    (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / effectiveFireRate))
+                    (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / Mathf.Max(0.01f, effectiveFireRate)))
                     return true;
             }
             return false;
@@ -3600,15 +3789,12 @@ namespace TitanOrbit.Entities
                     bool skipEnergyForHostOwnerCosmetic = IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
                     if (!skipEnergyForHostOwnerCosmetic && currentEnergy.Value < c.energyCostPerShot) continue;
 
+                    int bulletIdx = ResolveBulletBankIndexForCannon(c, combat);
                     float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
-                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
-
-                    int bankCount = combat.BulletPrefabBankCount;
-                    int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
-                        ? (runtimeBulletPrefabIndex.Value % bankCount)
-                        : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
-                            ? c.bulletPrefabIndex
-                            : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
+                    float damage = c.damagePerBullet;
+                    float speed = c.bulletSpeed;
+                    ApplyBulletBankShotStats(bulletIdx, ref damage, ref speed, ref effectiveFireRate);
+                    if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / Mathf.Max(0.01f, effectiveFireRate)) continue;
 
                     Transform firePt = bulletFirePoints[i];
                     bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
@@ -3647,8 +3833,6 @@ namespace TitanOrbit.Entities
                             float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
                             dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
                         }
-                        float damage = c.damagePerBullet;
-                        float speed = c.bulletSpeed;
                         float scale = c.bulletScale * BulletScaleMultiplier;
                         BulletSpawnPayload payload = combat.BuildBulletTracerPayloadForClientPreview(
                             fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
@@ -3670,6 +3854,7 @@ namespace TitanOrbit.Entities
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
             if (IsAwaitingTeamSelection) return;
+            if (IsBulletElectricShockDisabled) return;
             CombatSystem combat = CombatSystem.Instance;
             if (combat == null)
                 combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
@@ -3735,16 +3920,12 @@ namespace TitanOrbit.Entities
                         if (!IsValidWeaponFirePointIndex(i)) continue;
                         if (currentEnergy.Value < c.energyCostPerShot) continue;
 
+                        int bulletIdx = ResolveBulletBankIndexForCannon(c, combat);
                         float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
-                        if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / effectiveFireRate) continue;
-
-                        int bankCount = combat.BulletPrefabBankCount;
-                        // Prefer cycled runtime index (B key) when valid so toggling bullets always takes effect; else per-cannon, else family default.
-                        int bulletIdx = (runtimeBulletPrefabIndex.Value >= 0 && bankCount > 0)
-                            ? (runtimeBulletPrefabIndex.Value % bankCount)
-                            : (c.bulletPrefabIndex >= 0 && bankCount > 0 && c.bulletPrefabIndex < bankCount)
-                                ? c.bulletPrefabIndex
-                                : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
+                        float damage = c.damagePerBullet;
+                        float speed = c.bulletSpeed;
+                        ApplyBulletBankShotStats(bulletIdx, ref damage, ref speed, ref effectiveFireRate);
+                        if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / Mathf.Max(0.01f, effectiveFireRate)) continue;
 
                         Transform firePt = bulletFirePoints[i];
                         bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
@@ -3795,8 +3976,6 @@ namespace TitanOrbit.Entities
                                 float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
                                 dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
                             }
-                            float damage = c.damagePerBullet;
-                            float speed = c.bulletSpeed;
                             float scale = c.bulletScale * BulletScaleMultiplier;
                             if (combat.TrySpawnBulletOnServer(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx))
                             {
@@ -3948,6 +4127,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer) return;
             if (isDead.Value) return;
+            if (IsBulletElectricShockDisabled) return;
             if (!CanFire()) return;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
