@@ -136,16 +136,28 @@ namespace TitanOrbit.Systems
             return candidate;
         }
 
-        /// <summary>Spawns people beaming from planet to ship (load).</summary>
+        /// <summary>Spawns people beaming from planet surface to ship (load).</summary>
         public void SpawnPeopleLoad(Vector3 planetPosition, Vector3 shipPosition, float amount, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team)
         {
-            SpawnPeopleTransport(planetPosition, shipPosition, amount, shipNetworkObjectId, true, team, 0, sourcePlanetNetworkObjectId);
+            Vector3 spawnPos = ResolvePlanetSurfaceSpawn(sourcePlanetNetworkObjectId, planetPosition, shipPosition);
+            SpawnPeopleTransport(spawnPos, shipPosition, amount, shipNetworkObjectId, true, team, 0, sourcePlanetNetworkObjectId);
         }
 
-        /// <summary>Spawns people beaming from ship to planet (unload).</summary>
+        /// <summary>Spawns people beaming from ship to planet surface (unload).</summary>
         public void SpawnPeopleUnload(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
         {
-            SpawnPeopleTransport(shipPosition, planetPosition, amount, planetNetworkObjectId, false, team, shipNetworkObjectId, 0);
+            Vector3 planetSurface = ResolvePlanetSurfaceSpawn(planetNetworkObjectId, planetPosition, shipPosition);
+            Vector3 spawnPos = shipPosition;
+            if (PeopleTransportProjectile.TryResolveShip(shipNetworkObjectId, out Starship ship))
+                spawnPos = PeopleTransportProjectile.GetShipUnloadSpawnPointToward(ship, planetSurface);
+            SpawnPeopleTransport(spawnPos, planetSurface, amount, planetNetworkObjectId, false, team, shipNetworkObjectId, 0);
+        }
+
+        private static Vector3 ResolvePlanetSurfaceSpawn(ulong planetNetworkObjectId, Vector3 planetCenterFallback, Vector3 towardWorldPos)
+        {
+            if (PeopleTransportProjectile.TryResolvePlanet(planetNetworkObjectId, out Planet planet))
+                return PeopleTransportProjectile.GetSurfaceSpawnPointToward(planet, towardWorldPos);
+            return planetCenterFallback;
         }
 
         private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId)
@@ -159,17 +171,23 @@ namespace TitanOrbit.Systems
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             else dir.Normalize();
-            // Nudge unload spawns slightly off the hull so the sphere is visible leaving the ship.
+            // Nudge spawns slightly off the hull so the sphere is visible immediately.
             Vector3 pos = fromPos;
-            if (!isLoad)
-                pos += dir * 0.75f;
-            float speed = 6f;
+            if (isLoad)
+                pos += dir * Mathf.Max(0.2f, PeopleTransportProjectile.SurfaceSpawnOutwardNudge * 0.35f);
+
+            float travelDist = ToroidalMap.ToroidalDistance(fromPos, toPos);
+            float cruiseSpeed = Mathf.Max(0.08f, travelDist / PeopleTransportProjectile.EffectiveVisualTravelSeconds);
+            if (isLoad)
+                cruiseSpeed *= PeopleTransportProjectile.LoadMagnetSpeedMultiplier;
+            float initialSpeed = cruiseSpeed * (isLoad ? 0.55f : 0.3f);
 
             GameObject obj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = obj.GetComponent<Rigidbody>();
             if (rb != null)
             {
-                rb.linearVelocity = dir * speed;
+                rb.position = pos;
+                rb.linearVelocity = dir * initialSpeed;
                 rb.linearDamping = 0f;
             }
 

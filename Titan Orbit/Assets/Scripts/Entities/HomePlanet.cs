@@ -131,7 +131,7 @@ namespace TitanOrbit.Entities
                 {
                     if (col.isTrigger)
                     {
-                        col.radius = GetOrbitZoneOuterRadiusLocal();
+                        col.radius = GetOrbitRingOuterRadiusLocal();
                         break;
                     }
                 }

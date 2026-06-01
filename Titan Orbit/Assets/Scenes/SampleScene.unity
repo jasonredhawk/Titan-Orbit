@@ -8569,12 +8569,13 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 3
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities:
-      - type: 1
-        magnitude: 2
-        duration: 5
-        tickInterval: 1
-        radius: 1.5
+      - type: 9
+        magnitude: 0
+        duration: 0
+        tickInterval: 0
+        radius: 0
         damageTarget: 0
   - categoryName: Bullets
     prefabs:
@@ -8589,6 +8590,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 5
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: EnergySpheres
     prefabs:
@@ -8603,7 +8605,14 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
-      abilities: []
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 3
+        magnitude: 1
+        duration: 0
+        tickInterval: 0
+        radius: 0
+        damageTarget: 1
   - categoryName: Laser
     prefabs:
     - {fileID: 161724, guid: fec710d6f8ab81c4c9edff6545732936, type: 3}
@@ -8617,6 +8626,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: LaserSmall
     prefabs:
@@ -8631,6 +8641,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Lightning
     prefabs:
@@ -8645,6 +8656,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Liquid
     prefabs:
@@ -8660,6 +8672,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Plasma
     prefabs:
@@ -8674,6 +8687,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Rift
     prefabs:
@@ -8688,6 +8702,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Ring
     prefabs:
@@ -8702,6 +8717,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Ring2
     prefabs:
@@ -8716,6 +8732,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Rockets
     prefabs:
@@ -8730,6 +8747,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Sharp
     prefabs:
@@ -8744,6 +8762,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Shockwave
     prefabs:
@@ -8758,6 +8777,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: Sparkler
     prefabs:
@@ -8772,6 +8792,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: V1
     prefabs:
@@ -8786,6 +8807,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   - categoryName: V2
     prefabs:
@@ -8800,6 +8822,7 @@ MonoBehaviour:
         bulletSpeedMultiplier: 1
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities: []
   bulletParent: {fileID: 0}
   rocketPrefab: {fileID: 6004000000000003, guid: d4e5f60718293a4b5c6d7e8f01234567, type: 3}

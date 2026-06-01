@@ -154,6 +154,23 @@ namespace TitanOrbit.Entities
                     );
 
                 Despawn();
+                return;
+            }
+
+            PeopleTransportProjectile peopleTransport = other.GetComponentInParent<PeopleTransportProjectile>();
+            if (peopleTransport != null && peopleTransport.PeopleAmount > 0f && peopleTransport.SourceTeam != ownerTeam)
+            {
+                peopleTransport.ApplyDamageFromBulletServer(damage, ownerTeam, transform.position);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountChannel.DamageShipOrDrone,
+                        damage,
+                        (int)ownerTeam
+                    );
+
+                Despawn();
             }
         }
 

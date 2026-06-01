@@ -533,6 +533,17 @@ namespace TitanOrbit.Entities
             return Time.timeAsDouble;
         }
 
+        /// <summary>World-space radius of the moon's orbit around its planet (shared with people-transfer orbit ring).</summary>
+        public float ComputeOrbitRadiusWorld()
+        {
+            if (planet == null) return 0f;
+
+            float rNominal = planet.PlanetSize * planet.GetMoonNominalOrbitRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
+            float moonDock = GetMoonDockSnapRadiusWorld();
+            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
+            return Mathf.Max(rNominal, rClear);
+        }
+
         /// <summary>
         /// Pure function of planet state + synced time. <paramref name="t"/> is the synced server time
         /// in seconds. Returns the world position and tangential velocity of the moon at time t.
@@ -541,10 +552,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         private void ComputeOrbitPosition(double t, out Vector3 pos, out Vector3 worldVelocity)
         {
-            float rNominal = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
-            float moonDock = GetMoonDockSnapRadiusWorld();
-            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
-            float r = Mathf.Max(rNominal, rClear);
+            float r = ComputeOrbitRadiusWorld();
             float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
             float omega = r > 0.001f ? speed / r : 0f;
 
@@ -1383,11 +1391,7 @@ namespace TitanOrbit.Entities
             if (planet == null || ship == null) return false;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
-            Vector3 center = planet.GetOrbitGameplayCenterWorld();
-            float dist = ToroidalMap.ToroidalDistance(shipPos, center);
-            float inner = planet.PlanetSize * 0.5f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            return dist >= inner && dist <= outer;
+            return planet.IsWorldPositionInOrbitRing(shipPos);
         }
 
         /// <summary>

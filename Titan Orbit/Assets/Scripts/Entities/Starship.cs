@@ -1018,6 +1018,26 @@ namespace TitanOrbit.Entities
         private Vector3 moveDirection = Vector3.zero;
         private Vector3 currentVelocity = Vector3.zero;
         private Planet currentOrbitPlanet; // When non-null, we're in a planet's orbit zone
+        /// <summary>World-space radius locked once stable orbit is reached; held until orbit exit.</summary>
+        private float lockedOrbitRadiusWorld = -1f;
+        private Planet lockedOrbitRadiusPlanet;
+
+        private bool HasLockedOrbitRadius(Planet planet)
+        {
+            return planet != null && lockedOrbitRadiusPlanet == planet && lockedOrbitRadiusWorld > 0f;
+        }
+
+        /// <summary>Strict visual orbit ring (matches <see cref="Planet.IsWorldPositionInOrbitRing"/>).</summary>
+        private bool IsShipInPlanetOrbitRing(Planet planet)
+        {
+            if (planet == null || rb == null) return false;
+            Vector3 rbPos = rb.position;
+            rbPos.y = 0f;
+            if (planet.IsWorldPositionInOrbitRing(rbPos)) return true;
+            Vector3 tPos = transform.position;
+            tPos.y = 0f;
+            return planet.IsWorldPositionInOrbitRing(tPos);
+        }
         private bool wasMovePressedLastFrame;
         private float depositAccumulator; // Accumulates toward next deposit chunk (shipLevel gems per chunk, 2 chunks/sec)
         private float lastDepositSpawnTime = -999f;
@@ -1898,13 +1918,13 @@ namespace TitanOrbit.Entities
             if (planet == null || rb == null) return false;
             if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return false;
 
-            float orbitRadius = planet.PlanetSize * 0.6f;
+            float orbitRadius = planet.PlanetSize * planet.GetOrbitRingCenterRadiusLocal();
             Vector3 planetPos = planet.transform.position;
             orbitPos = planetPos + new Vector3(orbitRadius, 0f, 0f);
             orbitPos.y = FIXED_Y_POSITION;
 
-            float innerWorld = planet.PlanetSize * 0.5f;
-            float outerWorld = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
+            float innerWorld = planet.PlanetSize * planet.GetOrbitRingInnerRadiusLocal();
+            float outerWorld = planet.PlanetSize * planet.GetOrbitRingOuterRadiusLocal();
             float targetSpeed = GetOrbitTargetSpeed(planet, orbitRadius, innerWorld, outerWorld);
 
             linearVelocity = new Vector3(0f, 0f, -targetSpeed);
@@ -2929,7 +2949,8 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            bool useOrbit = currentOrbitPlanet != null && inputHandler != null && !inputHandler.MoveForwardPressed
+            bool inOrbitRing = currentOrbitPlanet != null && IsShipInPlanetOrbitRing(currentOrbitPlanet);
+            bool useOrbit = inOrbitRing && inputHandler != null && !inputHandler.MoveForwardPressed
                 && !IsInsideFriendlyGemMoonOrbitZone();
             if (useOrbit)
             {
@@ -3400,35 +3421,59 @@ namespace TitanOrbit.Entities
 
             Vector3 toShip = ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipPos);
 
-            // Orbit zone: inner 0.5 to outer (local). Ship keeps whatever radius it entered.
-            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
-            Vector3 radial = toShip / dist;
-
-            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
-            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
+            // Orbit ring: lock radius only after stable orbit; until then follow current distance inside the band.
+            float innerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingInnerRadiusLocal();
+            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingOuterRadiusLocal();
+            bool inOrbitRing = dist >= innerWorld && dist <= outerWorld;
 
             float graceRemaining = gemMoonUndockOrbitGraceUntilTime - Time.time;
             bool inUndockGrace = !gemMoonDocked.Value && graceRemaining > 0f;
 
-            // While leaving the gem moon, the ship sits outside the planet orbit band; inward radial pull reads as a snap toward the ring.
-            Vector3 radialCorrection = Vector3.zero;
-            if (!inUndockGrace)
+            if (!inOrbitRing && !inUndockGrace)
             {
-                if (dist < innerWorld)
-                    radialCorrection += radial * orbitRadiusPullStrength;
-                else if (dist > outerWorld)
-                    radialCorrection -= radial * orbitRadiusPullStrength;
+                if (HasLockedOrbitRadius(currentOrbitPlanet))
+                    ClearLockedOrbitRadius();
+                return;
             }
+
+            bool hasLockedRadius = HasLockedOrbitRadius(currentOrbitPlanet);
+            float guidanceRadius = hasLockedRadius
+                ? Mathf.Clamp(lockedOrbitRadiusWorld, innerWorld, outerWorld)
+                : Mathf.Clamp(dist, innerWorld, outerWorld);
+            Vector3 radial = toShip / dist;
+
+            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, guidanceRadius, innerWorld, outerWorld);
+            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
+
+            Vector3 radialCorrection = Vector3.zero;
+            if (!inUndockGrace && inOrbitRing)
+            {
+                if (hasLockedRadius)
+                {
+                    float radiusError = dist - guidanceRadius;
+                    if (Mathf.Abs(radiusError) > 0.02f)
+                        radialCorrection -= radial * radiusError * orbitRadiusPullStrength;
+                }
+                else
+                {
+                    if (dist < innerWorld)
+                        radialCorrection += radial * orbitRadiusPullStrength;
+                    else if (dist > outerWorld)
+                        radialCorrection -= radial * orbitRadiusPullStrength;
+                }
+            }
+
+            float graceRemainingForBlend = graceRemaining;
+            bool inUndockGraceForBlend = inUndockGrace;
 
             Vector3 orbitTangentVelocity = tangent * targetSpeed + radialCorrection;
 
             // Do not stack full orbit speed + extra outward (felt like a huge launch). Blend from radial exit off the moon into orbit tangent.
             Vector3 desiredOrbitVelocity;
             float transitionDur = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
-            if (inUndockGrace && transitionDur > 0.001f)
+            if (inUndockGraceForBlend && transitionDur > 0.001f)
             {
-                float w = Mathf.Clamp01(graceRemaining / transitionDur); // 1 = start of grace, 0 = end
+                float w = Mathf.Clamp01(graceRemainingForBlend / transitionDur); // 1 = start of grace, 0 = end
                 Vector3 flat = ToroidalMap.ShortestWorldOffsetXZ(gemMoonUndockCachedMoonPos, rb.position);
                 Vector3 outwardDir = flat.sqrMagnitude > 0.0001f ? flat.normalized : tangent;
                 Vector3 outwardVel = outwardDir * (gemMoonUndockOutwardSpeed * w);
@@ -3445,9 +3490,9 @@ namespace TitanOrbit.Entities
             float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
             float massFactor = Mathf.Sqrt(mass);
             float alignRate = (orbitCaptureResponsiveness * gravityFactor) / massFactor;
-            if (inUndockGrace && transitionDur > 0.001f)
+            if (inUndockGraceForBlend && transitionDur > 0.001f)
             {
-                float fade = Mathf.Clamp01(graceRemaining / transitionDur);
+                float fade = Mathf.Clamp01(graceRemainingForBlend / transitionDur);
                 float ease = Mathf.Lerp(gemMoonUndockOrbitCaptureEase, 1f, 1f - fade);
                 alignRate *= ease;
             }
@@ -3458,6 +3503,8 @@ namespace TitanOrbit.Entities
 
             currentVelocity = blendedVelocity;
             rb.linearVelocity = blendedVelocity;
+
+            TryLockOrbitRadiusWhenStable();
         }
 
         /// <summary>
@@ -3470,8 +3517,10 @@ namespace TitanOrbit.Entities
                 return orbitSpeed;
 
             float clampedRadius = Mathf.Clamp(radius, innerWorld, outerWorld);
-            // 0 at outer edge of orbit band, 1 near the planet surface.
-            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
+            float centerWorld = planet.PlanetSize * planet.GetOrbitRingCenterRadiusLocal();
+            float halfBand = Mathf.Max(0.001f, (outerWorld - innerWorld) * 0.5f);
+            float radiusFactor = 1f - Mathf.Abs(clampedRadius - centerWorld) / halfBand;
+            radiusFactor = Mathf.Clamp01(radiusFactor);
 
             // Normalize planet size using the same rough range regular planets use (9–18), but works for home planets too.
             const float minSize = 9f;
@@ -3495,7 +3544,10 @@ namespace TitanOrbit.Entities
                 return 1f;
 
             float clampedRadius = Mathf.Clamp(radius, innerWorld, outerWorld);
-            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius); // 0 outer, 1 inner
+            float centerWorld = planet.PlanetSize * planet.GetOrbitRingCenterRadiusLocal();
+            float halfBand = Mathf.Max(0.001f, (outerWorld - innerWorld) * 0.5f);
+            float radiusFactor = 1f - Mathf.Abs(clampedRadius - centerWorld) / halfBand;
+            radiusFactor = Mathf.Clamp01(radiusFactor);
 
             const float minSize = 9f;
             const float maxSize = 18f;
@@ -3507,22 +3559,30 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>True when in orbit zone and velocity is aligned with orbital path and speed is close to target (i.e. "true orbit" for UI).</summary>
-        private bool IsInStableOrbit()
+        private bool IsInStableOrbit() => EvaluateStableOrbit(useLockedRadiusForSpeed: true);
+
+        /// <summary>Stable-orbit check used before radius lock (speed target uses current distance only).</summary>
+        private bool IsInStableOrbitForRadiusCapture() => EvaluateStableOrbit(useLockedRadiusForSpeed: false);
+
+        private bool EvaluateStableOrbit(bool useLockedRadiusForSpeed)
         {
             if (currentOrbitPlanet == null || rb == null) return false;
 
             Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
-            // Owner-simulated ships: replicated transform is authoritative on the server; rb can lag NT.
             Vector3 shipWorld = GetShipWorldPositionForOrbitChecks();
             float dist = ToroidalMap.ToroidalDistance(shipWorld, planetPos);
-            float innerWorld = currentOrbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitZoneOuterRadiusLocal();
+            float innerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingInnerRadiusLocal();
+            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingOuterRadiusLocal();
             if (dist < innerWorld || dist > outerWorld) return false;
+
+            float speedRadius = dist;
+            if (useLockedRadiusForSpeed && HasLockedOrbitRadius(currentOrbitPlanet))
+                speedRadius = Mathf.Clamp(lockedOrbitRadiusWorld, innerWorld, outerWorld);
 
             Vector3 toShip = ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipWorld);
             Vector3 radial = toShip / dist;
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
-            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, dist, innerWorld, outerWorld);
+            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, speedRadius, innerWorld, outerWorld);
             if (targetSpeed < 0.001f) return false;
 
             Vector3 vel = GetPlanarVelocityForOrbitStableCheck();
@@ -3531,8 +3591,24 @@ namespace TitanOrbit.Entities
 
             float alignment = Vector3.Dot(vel.normalized, tangent);
             float speedRatio = speed / targetSpeed;
-            // Strict thresholds: truly in orbit (~23° alignment, speed within ~30% of target). Buffer for not flickering is in Update (hide delay).
             return alignment >= 0.92f && speedRatio >= 0.7f && speedRatio <= 1.35f;
+        }
+
+        /// <summary>Locks orbit radius at resting stable orbit (not on first ring entry).</summary>
+        private void TryLockOrbitRadiusWhenStable()
+        {
+            if (currentOrbitPlanet == null || rb == null) return;
+            if (HasLockedOrbitRadius(currentOrbitPlanet)) return;
+            if (IsInStableOrbitForRadiusCapture())
+                CaptureOrbitRadius(currentOrbitPlanet);
+        }
+
+        /// <summary>AI orbit helper: guidance radius (locked after stable orbit, else current).</summary>
+        public float GetOrbitGuidanceRadiusForAI(Planet planet, float currentDist, float innerWorld, float outerWorld)
+        {
+            if (planet != null && HasLockedOrbitRadius(planet))
+                return Mathf.Clamp(lockedOrbitRadiusWorld, innerWorld, outerWorld);
+            return Mathf.Clamp(currentDist, innerWorld, outerWorld);
         }
 
         /// <summary>
@@ -3591,15 +3667,10 @@ namespace TitanOrbit.Entities
         /// </summary>
         private Vector3 GetPlanarVelocityForOrbitStableCheck() => GetPlanarVelocityForServerGameplayChecks();
 
-        /// <summary>True when the ship lies in the planet's orbit band (same ring math as <see cref="RefreshOrbitPlanetFromPosition"/>).</summary>
+        /// <summary>True when the ship lies in the planet's orbit ring (same math as <see cref="RefreshOrbitPlanetFromPosition"/>).</summary>
         private static bool IsWorldPositionInPlanetOrbitShell(Planet planet, Vector3 shipWorldPos)
         {
-            if (planet == null) return false;
-            shipWorldPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
-            float inner = planet.PlanetSize * 0.5f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            return dist >= inner && dist <= outer;
+            return planet != null && planet.IsWorldPositionInOrbitRing(shipWorldPos);
         }
 
         private static bool IsShipInCachedPlanetOrbitShell(Planet planet, Vector3 transformWorld, Vector3 rigidbodyWorld)
@@ -3609,15 +3680,10 @@ namespace TitanOrbit.Entities
                 || IsWorldPositionInPlanetOrbitShell(planet, rigidbodyWorld);
         }
 
-        /// <summary>Expanded orbit band for server-side checks when owner-replicated pose jitters slightly outside the strict trigger ring.</summary>
+        /// <summary>Expanded orbit ring for server-side checks when owner-replicated pose jitters slightly outside the strict band.</summary>
         private static bool IsWorldPositionInPlanetOrbitShellRelaxed(Planet planet, Vector3 shipWorldPos, float margin = 0.1f)
         {
-            if (planet == null) return false;
-            shipWorldPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
-            float inner = planet.PlanetSize * 0.5f * (1f - margin);
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * (1f + margin);
-            return dist >= inner && dist <= outer;
+            return planet != null && planet.IsWorldPositionInOrbitRingRelaxed(shipWorldPos, margin);
         }
 
         private static bool IsShipInCachedPlanetOrbitShellRelaxed(Planet planet, Vector3 transformWorld, Vector3 rigidbodyWorld)
@@ -3648,6 +3714,8 @@ namespace TitanOrbit.Entities
         private bool CanAccumulatePeopleTransferDwell()
         {
             if (currentOrbitPlanet == null || rb == null)
+                return false;
+            if (!IsShipInCachedPlanetOrbitShellRelaxed(currentOrbitPlanet, transform.position, rb.position))
                 return false;
             return IsShipIdleForPeopleTransfer();
         }
@@ -4470,7 +4538,7 @@ namespace TitanOrbit.Entities
             foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
-                if (!IsShipInCachedPlanetOrbitShellRelaxed(planet, p1, p0))
+                if (!IsShipInCachedPlanetOrbitShell(planet, p1, p0))
                     continue;
 
                 float d = ToroidalMap.ToroidalDistance(p0, planet.GetOrbitGameplayCenterWorld());
@@ -4481,8 +4549,41 @@ namespace TitanOrbit.Entities
                 }
             }
 
+            Planet previous = currentOrbitPlanet;
             currentOrbitPlanet = best;
+            if (best == null)
+                ClearLockedOrbitRadius();
+            else if (best != previous)
+                ClearLockedOrbitRadius();
         }
+
+        private void CaptureOrbitRadius(Planet planet)
+        {
+            if (planet == null || rb == null)
+            {
+                ClearLockedOrbitRadius();
+                return;
+            }
+
+            Vector3 shipPos = rb.position;
+            shipPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipPos, planet.GetOrbitGameplayCenterWorld());
+            float inner = planet.PlanetSize * planet.GetOrbitRingInnerRadiusLocal();
+            float outer = planet.PlanetSize * planet.GetOrbitRingOuterRadiusLocal();
+            lockedOrbitRadiusWorld = Mathf.Clamp(dist, inner, outer);
+            lockedOrbitRadiusPlanet = planet;
+        }
+
+        private void ClearLockedOrbitRadius()
+        {
+            lockedOrbitRadiusWorld = -1f;
+            lockedOrbitRadiusPlanet = null;
+        }
+
+        /// <summary>AI orbit helper: call each fixed tick while orbiting.</summary>
+        public void TryLockOrbitRadiusWhenStableFromAI() => TryLockOrbitRadiusWhenStable();
+
+        public bool HasLockedOrbitRadiusForAI(Planet planet) => HasLockedOrbitRadius(planet);
 
         private void TickOrbitPopulationTransfer()
         {
@@ -4674,12 +4775,13 @@ namespace TitanOrbit.Entities
                     peopleInTransit += peopleDropValue;
                     loadSpawnCount++;
 
-                    Vector3 planetPos = orbitPlanet.transform.position;
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    shipPos.y = 0f;
+                    Vector3 planetSpawn = PeopleTransportProjectile.GetSurfaceSpawnPointToward(orbitPlanet, shipPos);
                     var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                     var shipNo = GetComponent<NetworkObject>();
                     if (shipNo != null && planetNo != null)
-                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, peopleDropValue, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
+                        GemSpawner.Instance.SpawnPeopleLoad(planetSpawn, shipPos, peopleDropValue, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
                 }
 
                 float spaceAfter = PeopleCapacity - currentPeople.Value - peopleInTransit;
@@ -4695,12 +4797,13 @@ namespace TitanOrbit.Entities
                     peopleLoadAccumulator -= maxLoadRem;
                     peopleInTransit += maxLoadRem;
 
-                    Vector3 planetPos = orbitPlanet.transform.position;
                     Vector3 shipPos = rb != null ? rb.position : transform.position;
+                    shipPos.y = 0f;
+                    Vector3 planetSpawn = PeopleTransportProjectile.GetSurfaceSpawnPointToward(orbitPlanet, shipPos);
                     var planetNo = orbitPlanet.GetComponent<NetworkObject>();
                     var shipNo = GetComponent<NetworkObject>();
                     if (shipNo != null && planetNo != null)
-                        GemSpawner.Instance.SpawnPeopleLoad(planetPos, shipPos, maxLoadRem, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
+                        GemSpawner.Instance.SpawnPeopleLoad(planetSpawn, shipPos, maxLoadRem, shipNo.NetworkObjectId, planetNo.NetworkObjectId, shipTeam.Value);
                 }
             }
             else
@@ -6193,9 +6296,7 @@ namespace TitanOrbit.Entities
             {
                 if (planet == null) continue;
                 float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
-                float inner = planet.PlanetSize * 0.5f;
-                float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-                if (dist >= inner && dist <= outer)
+                if (planet.IsWorldPositionInOrbitRing(shipWorldPos))
                     return true;
             }
             return false;
@@ -6214,6 +6315,8 @@ namespace TitanOrbit.Entities
         public void EnterOrbitZone(Planet planet)
         {
             if (planet == null) return;
+            if (currentOrbitPlanet != planet)
+                ClearLockedOrbitRadius();
             currentOrbitPlanet = planet;
             hadGemsWhileInOrbitThisOrbit = false;
             depositedAnyGemsThisOrbit = false;
@@ -6227,8 +6330,8 @@ namespace TitanOrbit.Entities
         {
             if (currentOrbitPlanet == planet)
             {
-                // Gem moons sit outside the planet orbit band — leaving orbit while docked is normal, not an undock signal.
                 currentOrbitPlanet = null;
+                ClearLockedOrbitRadius();
                 hadGemsWhileInOrbitThisOrbit = false;
                 depositedAnyGemsThisOrbit = false;
                 triggeredGalacticZoomThisOrbit = false;

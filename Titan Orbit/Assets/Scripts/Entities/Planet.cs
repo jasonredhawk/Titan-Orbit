@@ -90,9 +90,11 @@ namespace TitanOrbit.Entities
         /// <summary>Icons for <see cref="GemMoonStatsDisplay"/> on the gem moon; optional.</summary>
         public Sprite GemMoonHudShieldIcon => gemMoonHudShieldIcon;
 
-        /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85, then scaled to 75% of that). Grows 5% per planet level.</summary>
+        /// <summary>Baseline nominal moon-orbit radius in planet-local space at level 1 (moon sits at max of this × factors and ring clearance).</summary>
         private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
-        private const float OrbitZoneGrowthPerLevel = 0.05f;
+        private const float OrbitRingGrowthPerLevel = 0.05f;
+        /// <summary>Half-width of the people-transfer orbit ring band in planet-local space.</summary>
+        private const float OrbitRingHalfThicknessLocal = 0.055f;
 
         /// <summary>Reference planet scale for gem-moon sizing: home planets use this size; smaller worlds get larger moons inversely (20/PlanetSize).</summary>
         private const float GemMoonReferencePlanetSize = 20f;
@@ -106,11 +108,68 @@ namespace TitanOrbit.Entities
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC, s_sharedTeamD, s_sharedTeamE;
 
-        /// <summary>Orbit zone outer radius in planet-local space. Base is 1.5x original (0.85); +5% per planet level.</summary>
-        public float GetOrbitZoneOuterRadiusLocal()
+        /// <summary>Orbit ring outer edge in planet-local space. Legacy name kept for triggers.</summary>
+        public float GetOrbitZoneOuterRadiusLocal() => GetOrbitRingOuterRadiusLocal();
+
+        /// <summary>Nominal gem-moon orbit baseline in planet-local space (+5% per planet level).</summary>
+        public float GetMoonNominalOrbitRadiusLocal()
         {
             int level = Mathf.Max(1, planetLevel.Value);
-            return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitZoneGrowthPerLevel, level - 1);
+            return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitRingGrowthPerLevel, level - 1);
+        }
+
+        /// <summary>World-space outer edge of decorative Saturn rings (for moon clearance).</summary>
+        public float GetRingsStructuralOuterRadiusWorld()
+        {
+            int level = Mathf.Max(1, PlanetLevel);
+            return PlanetSize * GetRingsOuterEdgeRadiusLocal(level);
+        }
+
+        /// <summary>World-space orbit radius of the gem moon (same math as <see cref="PlanetGemMoon.ComputeOrbitRadiusWorld"/>).</summary>
+        public float GetGemMoonOrbitRadiusWorld()
+        {
+            if (gemMoon != null)
+                return gemMoon.ComputeOrbitRadiusWorld();
+            return EstimateGemMoonOrbitRadiusWorld();
+        }
+
+        /// <summary>Center radius of the people-transfer orbit ring — matches gem moon orbit distance.</summary>
+        public float GetOrbitRingCenterRadiusLocal()
+        {
+            return GetGemMoonOrbitRadiusWorld() / Mathf.Max(0.001f, PlanetSize);
+        }
+
+        /// <summary>Inner edge of the planet orbit ring in planet-local space.</summary>
+        public float GetOrbitRingInnerRadiusLocal()
+        {
+            float center = GetOrbitRingCenterRadiusLocal();
+            return Mathf.Max(0.52f, center - OrbitRingHalfThicknessLocal);
+        }
+
+        /// <summary>Outer edge of the planet orbit ring in planet-local space.</summary>
+        public float GetOrbitRingOuterRadiusLocal()
+        {
+            return GetOrbitRingCenterRadiusLocal() + OrbitRingHalfThicknessLocal;
+        }
+
+        /// <summary>True when world XZ lies inside this planet's orbit ring (not the full surface-to-outer band).</summary>
+        public bool IsWorldPositionInOrbitRing(Vector3 shipWorldPos)
+        {
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, GetOrbitGameplayCenterWorld());
+            float inner = PlanetSize * GetOrbitRingInnerRadiusLocal();
+            float outer = PlanetSize * GetOrbitRingOuterRadiusLocal();
+            return dist >= inner && dist <= outer;
+        }
+
+        /// <summary>Expanded orbit ring for replicated-pose jitter (same margin idea as Starship relaxed shell).</summary>
+        public bool IsWorldPositionInOrbitRingRelaxed(Vector3 shipWorldPos, float margin = 0.1f)
+        {
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, GetOrbitGameplayCenterWorld());
+            float inner = PlanetSize * GetOrbitRingInnerRadiusLocal() * (1f - margin);
+            float outer = PlanetSize * GetOrbitRingOuterRadiusLocal() * (1f + margin);
+            return dist >= inner && dist <= outer;
         }
 
         /// <summary>
@@ -127,24 +186,20 @@ namespace TitanOrbit.Entities
         /// <summary>
         /// World-space radius from planet center to the farthest of orbit-zone outer edge or outermost ring (for moon clearance).
         /// </summary>
-        public float GetGemMoonStructuralOuterRadiusWorld()
-        {
-            int level = Mathf.Max(1, PlanetLevel);
-            float ringsOuterLocal = GetRingsOuterEdgeRadiusLocal(level);
-            float zoneOuterLocal = GetOrbitZoneOuterRadiusLocal();
-            return PlanetSize * Mathf.Max(ringsOuterLocal, zoneOuterLocal);
-        }
+        public float GetGemMoonStructuralOuterRadiusWorld() => GetRingsStructuralOuterRadiusWorld();
 
         /// <summary>
         /// Standard clockwise orbit linear speed at a world-space radius (matches Starship outer-band tuning; no per-ship territory bonus).
         /// </summary>
         public float GetStandardOrbitSpeedAtRadiusWorld(float radiusWorld)
         {
-            float innerWorld = PlanetSize * 0.5f;
-            float outerWorld = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            float innerWorld = PlanetSize * GetOrbitRingInnerRadiusLocal();
+            float outerWorld = PlanetSize * GetOrbitRingOuterRadiusLocal();
+            float centerWorld = PlanetSize * GetOrbitRingCenterRadiusLocal();
             if (outerWorld <= innerWorld + 0.001f) return 0.8f;
             float clampedRadius = Mathf.Clamp(radiusWorld, innerWorld, outerWorld);
-            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
+            float radiusFactor = 1f - Mathf.Abs(clampedRadius - centerWorld) / Mathf.Max(0.001f, (outerWorld - innerWorld) * 0.5f);
+            radiusFactor = Mathf.Clamp01(radiusFactor);
             const float minSize = 9f;
             const float maxSize = 18f;
             float sizeNorm = Mathf.Clamp01((PlanetSize - minSize) / (maxSize - minSize));
@@ -157,7 +212,7 @@ namespace TitanOrbit.Entities
         /// <summary>Orbit speed at the outer edge of the orbit band (where the gem moon runs).</summary>
         public float GetStandardOrbitSpeedAtOuterOrbit()
         {
-            float r = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            float r = PlanetSize * GetOrbitRingCenterRadiusLocal();
             return GetStandardOrbitSpeedAtRadiusWorld(r);
         }
 
@@ -195,7 +250,7 @@ namespace TitanOrbit.Entities
                 {
                     if (col.isTrigger)
                     {
-                        col.radius = GetOrbitZoneOuterRadiusLocal();
+                        col.radius = GetOrbitRingOuterRadiusLocal();
                         break;
                     }
                 }
@@ -670,7 +725,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Orbit zone: surface (0.5) to outer (scaled by level: 1.5x base, +5% per level). Ships orbit at whatever radius they enter; farther = slower.
+        /// Orbit ring: thin band away from the surface (+5% center radius per level). Ships must sit in the ring for people transfer.
         /// Trigger + <see cref="PlanetOrbitZone"/> live on the planet root (second SphereCollider). Legacy <c>OrbitZone</c> child objects are removed.
         /// </summary>
         private void EnsureOrbitZoneExists()
@@ -684,7 +739,7 @@ namespace TitanOrbit.Entities
             {
                 SphereCollider orbitCollider = gameObject.AddComponent<SphereCollider>();
                 orbitCollider.isTrigger = true;
-                orbitCollider.radius = GetOrbitZoneOuterRadiusLocal();
+                orbitCollider.radius = GetOrbitRingOuterRadiusLocal();
                 zone = gameObject.AddComponent<PlanetOrbitZone>();
                 zone.SetPlanet(this);
             }
@@ -704,6 +759,7 @@ namespace TitanOrbit.Entities
                 ApplyGemMoonVisualScale();
                 RefreshGemMoonVisualMaterial();
                 InjectGemMoonMatrixShieldPrefabs();
+                RefreshOrbitZoneRadius();
                 return;
             }
 
@@ -749,6 +805,7 @@ namespace TitanOrbit.Entities
             }
 
             InjectGemMoonMatrixShieldPrefabs();
+            RefreshOrbitZoneRadius();
         }
 
         private void InjectGemMoonMatrixShieldPrefabs()
@@ -822,9 +879,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         protected virtual float GetGemMoonHomeVisualScaleMultiplier() => 1f;
 
-        /// <summary>
-        /// Uniform local scale for GemMoonVisual: baseline as if planet were <see cref="GemMoonReferencePlanetSize"/>, then × (20/PlanetSize), capped.
-        /// </summary>
+        /// <summary>Uniform local scale for GemMoonVisual: baseline as if planet were <see cref="GemMoonReferencePlanetSize"/>, then × (20/PlanetSize), capped.</summary>
         private float GetGemMoonVisualUniformScale()
         {
             float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
@@ -832,6 +887,21 @@ namespace TitanOrbit.Entities
             inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
             float s = baseAtRef * inv * GetGemMoonHomeVisualScaleMultiplier();
             return Mathf.Clamp(s, 0.02f, 1.25f);
+        }
+
+        /// <summary>Estimate moon orbit radius before <see cref="PlanetGemMoon"/> exists (matches dock/clearance defaults).</summary>
+        private float EstimateGemMoonOrbitRadiusWorld()
+        {
+            const float defaultMoonOrbitOutsideFactor = 1.1f;
+            const float defaultClearanceMarginWorld = 0.4f;
+
+            float rNominal = PlanetSize * GetMoonNominalOrbitRadiusLocal() * Mathf.Max(1.01f, defaultMoonOrbitOutsideFactor);
+            float bodyLocalRadius = 0.5f * GetGemMoonVisualUniformScale();
+            float dockLocalRadius = bodyLocalRadius * 1.95f;
+            float planetScale = Mathf.Max(transform.lossyScale.x, Mathf.Max(transform.lossyScale.y, transform.lossyScale.z));
+            float moonDock = dockLocalRadius * planetScale;
+            float rClear = GetRingsStructuralOuterRadiusWorld() + moonDock + defaultClearanceMarginWorld;
+            return Mathf.Max(rNominal, rClear);
         }
 
         private void ApplyGemMoonVisualScale()
@@ -1154,6 +1224,13 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || amount <= 0f) return;
             currentPopulation.Value = Mathf.Max(0f, currentPopulation.Value - amount);
+        }
+
+        /// <summary>Server-only: undo hostile invasion impact when a people transport sphere is destroyed in flight.</summary>
+        public void RevertHostileUnloadImpactFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, MaxPopulation);
         }
 
         [ServerRpc(RequireOwnership = false)]

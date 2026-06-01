@@ -27,17 +27,13 @@ namespace TitanOrbit.Entities
         [Range(0.2f, 1f)]
         [SerializeField] private float ringOpacity = 0.6f;
 
-        [Header("Orbit Zone Fill")]
-        [Tooltip("Draw the orbit zone as a filled ring with gradient: 0.3 alpha at inner edge, 0 at outer edge.")]
+        [Header("Orbit Ring Fill")]
+        [Tooltip("Draw the people-transfer orbit ring (thin band, fades in/out at inner and outer edges).")]
         [SerializeField] private bool drawOrbitZoneFill = true;
-        [Tooltip("Inner radius of orbit zone (planet local).")]
-        [SerializeField] private float orbitZoneInnerRadius = 0.5f;
-        [Tooltip("Outer radius of orbit zone (planet local).")]
-        [SerializeField] private float orbitZoneOuterRadius = 0.85f;
         [SerializeField] private Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
-        [Tooltip("Alpha at inner edge of orbit zone.")]
+        [Tooltip("Peak alpha at the center of the orbit ring band.")]
         [Range(0f, 1f)]
-        [SerializeField] private float orbitZoneInnerAlpha = 0.3f;
+        [SerializeField] private float orbitZonePeakAlpha = 0.3f;
         [Tooltip("Draw the orbit zone this far below the planet (local Y) so ships and gems render above it.")]
         [SerializeField] private float orbitZoneHeightBelowPlanet = 1f;
 
@@ -129,13 +125,9 @@ namespace TitanOrbit.Entities
             int ringCount = Mathf.Clamp(level, 1, 6);
 
             Transform t = planet.transform;
-            float outerRadiusRuntime = planet.GetOrbitZoneOuterRadiusLocal();
-            if (outerRadiusRuntime <= 0.0001f) return;
-
-            float innerRadiusRuntime = Mathf.Min(orbitZoneInnerRadius, outerRadiusRuntime * 0.98f);
-            innerRadiusRuntime = Mathf.Max(0.02f, innerRadiusRuntime);
-            if (outerRadiusRuntime - innerRadiusRuntime < 0.02f)
-                innerRadiusRuntime = Mathf.Max(0.02f, outerRadiusRuntime - 0.02f);
+            float innerRadiusRuntime = planet.GetOrbitRingInnerRadiusLocal();
+            float outerRadiusRuntime = planet.GetOrbitRingOuterRadiusLocal();
+            if (outerRadiusRuntime - innerRadiusRuntime < 0.02f) return;
 
             Quaternion tilt = Quaternion.Euler(tiltDegrees, 0f, 0f);
             Matrix4x4 planetMatrix = t.localToWorldMatrix;
@@ -145,20 +137,7 @@ namespace TitanOrbit.Entities
                 Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
                 Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
                 Matrix4x4 zoneMatrix = planetMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
-                float zoneRadius = (innerRadiusRuntime + outerRadiusRuntime) * 0.5f;
-                float zoneThickness = outerRadiusRuntime - innerRadiusRuntime;
-                Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
-                Color outerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
-
-                using (Draw.Command(cam))
-                {
-                    Draw.ResetAllDrawStates();
-                    Draw.RadiusSpace = ThicknessSpace.Meters;
-                    Draw.ThicknessSpace = ThicknessSpace.Meters;
-                    Draw.DiscGeometry = DiscGeometry.Flat2D;
-                    Draw.Matrix = zoneMatrix;
-                    Draw.Ring(Vector3.zero, Quaternion.identity, zoneRadius, zoneThickness, DiscColors.Radial(innerColor, outerColor));
-                }
+                PlanetRingMeshBuilder.DrawShapesOrbitRing(cam, zoneMatrix, innerRadiusRuntime, outerRadiusRuntime, orbitZoneTint, orbitZonePeakAlpha);
             }
 
             if (cam != null)
@@ -248,12 +227,9 @@ namespace TitanOrbit.Entities
             if (!drawOrbitZoneFill || planet == null || orbitMeshFilter == null)
                 return;
 
-            float outer = planet.GetOrbitZoneOuterRadiusLocal();
-            if (outer <= 0.0001f) return;
-            float inner = Mathf.Min(orbitZoneInnerRadius, outer * 0.98f);
-            inner = Mathf.Max(0.02f, inner);
-            if (outer - inner < 0.02f)
-                inner = Mathf.Max(0.02f, outer - 0.02f);
+            float inner = planet.GetOrbitRingInnerRadiusLocal();
+            float outer = planet.GetOrbitRingOuterRadiusLocal();
+            if (outer - inner < 0.02f) return;
 
             if (!force && Mathf.Abs(outer - lastOrbitOuter) < 0.001f && Mathf.Abs(inner - lastOrbitInner) < 0.001f)
                 return;
@@ -267,13 +243,7 @@ namespace TitanOrbit.Entities
         private void ApplyOrbitMeshGradient()
         {
             if (orbitMeshMaterial == null || orbitMeshGradient == null) return;
-            for (int x = 0; x < orbitMeshGradient.width; x++)
-            {
-                float t = x / (float)(orbitMeshGradient.width - 1);
-                float a = Mathf.Lerp(orbitMeshInnerAlpha, 0f, t);
-                orbitMeshGradient.SetPixel(x, 0, new Color(1f, 1f, 1f, a));
-            }
-            orbitMeshGradient.Apply(false, false);
+            PlanetRingMeshBuilder.FillOrbitRingGradientTexture(orbitMeshGradient, orbitZonePeakAlpha);
             orbitMeshMaterial.SetTexture("_BaseMap", orbitMeshGradient);
             orbitMeshMaterial.SetTexture("_MainTex", orbitMeshGradient);
             orbitMeshMaterial.SetColor("_BaseColor", orbitZoneTint);
@@ -367,9 +337,56 @@ namespace TitanOrbit.Entities
         }
     }
 
-    /// <summary>Shared ring/orbit mesh geometry (same mesh layout as <see cref="GemMoonOrbitZoneVisual"/>).</summary>
+    /// <summary>Shared ring/orbit mesh geometry and planet orbit-ring drawing helpers.</summary>
     internal static class PlanetRingMeshBuilder
     {
+        internal const int OrbitRingShapeGradientSteps = 32;
+
+        internal static void FillOrbitRingGradientTexture(Texture2D texture, float peakAlpha)
+        {
+            if (texture == null) return;
+            int w = Mathf.Max(64, texture.width);
+            if (texture.width != w)
+            {
+                texture.Reinitialize(w, 1);
+                texture.wrapMode = TextureWrapMode.Clamp;
+                texture.filterMode = FilterMode.Bilinear;
+            }
+            for (int x = 0; x < w; x++)
+            {
+                float t = w > 1 ? x / (float)(w - 1) : 0f;
+                float a = peakAlpha * Mathf.Sin(t * Mathf.PI);
+                texture.SetPixel(x, 0, new Color(1f, 1f, 1f, a));
+            }
+            texture.Apply(false, false);
+        }
+
+        /// <summary>Shapes immediate-mode orbit ring with fade-in and fade-out across the band thickness.</summary>
+        internal static void DrawShapesOrbitRing(UnityEngine.Camera cam, Matrix4x4 matrix, float inner, float outer, Color tint, float peakAlpha)
+        {
+            float band = outer - inner;
+            if (band < 0.001f) return;
+            float step = band / OrbitRingShapeGradientSteps;
+            using (Draw.Command(cam))
+            {
+                Draw.ResetAllDrawStates();
+                Draw.RadiusSpace = ThicknessSpace.Meters;
+                Draw.ThicknessSpace = ThicknessSpace.Meters;
+                Draw.DiscGeometry = DiscGeometry.Flat2D;
+                Draw.Matrix = matrix;
+                for (int i = 0; i < OrbitRingShapeGradientSteps; i++)
+                {
+                    float r0 = inner + i * step;
+                    float r1 = r0 + step;
+                    float mid = (r0 + r1) * 0.5f;
+                    float t = (mid - inner) / band;
+                    float a = peakAlpha * Mathf.Sin(t * Mathf.PI);
+                    float center = (r0 + r1) * 0.5f;
+                    Draw.Ring(Vector3.zero, Quaternion.identity, center, step, new Color(tint.r, tint.g, tint.b, a));
+                }
+            }
+        }
+
         internal static void ConfigureTransparentMaterial(Material mat)
         {
             if (mat == null) return;

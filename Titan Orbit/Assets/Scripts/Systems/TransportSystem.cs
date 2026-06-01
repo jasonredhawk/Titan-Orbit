@@ -37,9 +37,7 @@ namespace TitanOrbit.Systems
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
             float dist = ToroidalMap.ToroidalDistance(shipPos, planet.transform.position);
-            float inner = planet.PlanetSize * 0.5f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            return dist >= inner && dist <= outer;
+            return planet.IsWorldPositionInOrbitRing(shipPos);
         }
 
         [ServerRpc(RequireOwnership = false)]
