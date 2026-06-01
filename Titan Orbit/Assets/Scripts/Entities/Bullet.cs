@@ -760,7 +760,8 @@ namespace TitanOrbit.Entities
             byte shapeIdx = cachedVisualShapeIndex != 0 ? cachedVisualShapeIndex : bulletVisualShapeIndex.Value;
             BulletShape shape = shapeIdx == 0 ? defaultShape : (BulletShape)Mathf.Clamp(shapeIdx, 0, 2);
             float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
-            float scale = bulletVisualScale * scaleMult;
+            float globalScale = CombatSystem.Instance != null ? CombatSystem.Instance.BulletVisualScaleMultiplier : 1f;
+            float scale = bulletVisualScale * scaleMult * globalScale;
             bool noTrailVisual = cachedVisualNoTrail || bulletVisualNoTrail.Value;
             TeamManager.Team teamForColor = (TeamManager.Team)bulletOwnerTeamByte.Value;
             if (teamForColor == TeamManager.Team.None) teamForColor = ownerTeam;

@@ -3,9 +3,9 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Canonical colors for the five ship-ability categories used by the bottom upgrade bar
-    /// (<see cref="ShipAttributeUpgradeHUD"/>). Orbit ship-tree power bars use the same palette as
-    /// two-tone pairs: Fire Power / Bullet Speed (offense), Health Cap / Regen (defense), etc.
+    /// Canonical colors for ship ability stats. The bottom upgrade bar and orbit ship-tree power bars
+    /// share the same two-tone palette via <see cref="GetPowerBreakdownStatColor"/> /
+    /// <see cref="GetPowerBreakdownStatColorForHud"/> (lighter primary stat, darker secondary per category).
     /// </summary>
     public static class ShipAbilityCategoryColors
     {
@@ -70,6 +70,14 @@ namespace TitanOrbit.UI
             if (statIndex < 0 || statIndex >= PowerBreakdownStatColors.Length)
                 return Color.white;
             return PowerBreakdownStatColors[statIndex];
+        }
+
+        /// <summary>Same two-tone stat colors as the upgrade-tree power bar, with HUD button alpha.</summary>
+        public static Color GetPowerBreakdownStatColorForHud(int statIndex, float alpha = 0.9f)
+        {
+            Color c = GetPowerBreakdownStatColor(statIndex);
+            c.a = alpha;
+            return c;
         }
 
         private static Color[] BuildPowerBreakdownStatColors()

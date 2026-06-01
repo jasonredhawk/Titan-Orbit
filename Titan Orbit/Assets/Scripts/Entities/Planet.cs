@@ -166,10 +166,21 @@ namespace TitanOrbit.Entities
         /// <summary>Gem deposit moon for this planet (outer orbit, clockwise). Null before spawn setup.</summary>
         public PlanetGemMoon GemMoon => gemMoon;
 
+        /// <summary>
+        /// Canonical planet center for toroidal orbit/distance math. On clients the root transform may sit in a
+        /// display tile near the camera while gameplay still uses wrapped canonical XZ (same as the server).
+        /// </summary>
+        public Vector3 GetOrbitGameplayCenterWorld()
+        {
+            Vector3 p = transform.position;
+            p.y = 0f;
+            return ToroidalMap.WrapPosition(p);
+        }
+
         /// <summary>World position of the gem moon for AI navigation (falls back to planet center if missing).</summary>
         public Vector3 GetGemMoonWorldPosition()
         {
-            return gemMoon != null ? gemMoon.transform.position : transform.position;
+            return gemMoon != null ? gemMoon.GetGameplayWorldPosition() : GetOrbitGameplayCenterWorld();
         }
 
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes.</summary>

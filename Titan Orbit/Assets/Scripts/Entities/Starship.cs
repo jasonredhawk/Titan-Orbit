@@ -253,8 +253,7 @@ namespace TitanOrbit.Entities
         /// <summary>Max speed from chassis: best single engine (or best thruster if no engines). Not summed across engines.</summary>
         private float componentEngineMaxSpeed = 0f;
 
-        private WeaponConfig weaponConfig;
-        /// <summary>Bullets from Weapon: light projectiles, low energy. Only weapons fire; cockpits do not.</summary>
+        /// <summary>Bullets from Weapon components only (built from ShipFamilyDefinition when chassis is applied).</summary>
         private WeaponConfig bulletConfig;
         private float[] bulletLastFireTime;
         /// <summary>Per-energy-cost round-robin cursor so equal-cost weapons alternate fairly.</summary>
@@ -324,30 +323,18 @@ namespace TitanOrbit.Entities
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
         };
 
-        private static WeaponConfig defaultWeaponConfig;
-
-        private static WeaponConfig GetDefaultWeaponConfig()
+        private bool IsValidWeaponFirePointIndex(int index)
         {
-            if (defaultWeaponConfig != null) return defaultWeaponConfig;
-            defaultWeaponConfig = ScriptableObject.CreateInstance<WeaponConfig>();
-            defaultWeaponConfig.displayName = "Default";
-            defaultWeaponConfig.cannons = new System.Collections.Generic.List<CannonConfig>
-            {
-                new CannonConfig { fireRate = 2.5f, energyCostPerShot = 2f, damagePerBullet = 8f, bulletScale = 0.6f, bulletSpeed = 20f }
-            };
-            return defaultWeaponConfig;
+            return bulletFirePoints != null
+                && index >= 0
+                && index < bulletFirePoints.Count
+                && bulletFirePoints[index] != null
+                && bulletFirePoints[index] != transform;
         }
-
-        /// <summary>Always returns a valid config for legacy (bullets only). When chassis is applied, bulletConfig is set from Weapon components.</summary>
-        private WeaponConfig EffectiveWeaponConfig =>
-            (weaponConfig != null && weaponConfig.cannons != null && weaponConfig.cannons.Count > 0)
-                ? weaponConfig
-                : GetDefaultWeaponConfig();
 
         private void EnsureBulletLastFireTime()
         {
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int bn = bulletWc.cannons != null ? bulletWc.cannons.Count : 0;
+            int bn = bulletConfig != null && bulletConfig.cannons != null ? bulletConfig.cannons.Count : 0;
             if (bulletLastFireTime == null || bulletLastFireTime.Length != bn)
             {
                 bulletLastFireTime = new float[bn];
@@ -372,7 +359,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float peopleCapacity = 10f;
 
         [Header("Mass (affects momentum and ramming)")]
-        [Tooltip("Base mass when no chassis. Chassis components override with component weights. Effective mass also scales with hull bulk (ship level HP and attribute upgrades).")]
+        [Tooltip("Base mass when no chassis. Chassis components override with component weights. Movement mass scales with hull bulk using Movement Hull Bulk Exponent; ramming uses full HP bulk.")]
         [SerializeField] private float baseMass = 1f;
         [Tooltip("Added mass per gem carried. Ship feels heavier when full; more momentum when braking.")]
         [SerializeField] private float massPerGem = 0.008f;
@@ -380,6 +367,8 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(1f)] private float rammingGemMassScale = 2.5f;
         [Tooltip("Multiplies chassis component mass (or baseMass when no chassis). Does not scale gem load.")]
         [SerializeField] private float hullMassScale = 0.7f;
+        [Tooltip("Exponent on HP-driven hull bulk for movement only (ramming/collisions use full bulk). 1 = same as ramming; ~0.4 keeps higher-level ships roughly half as sluggish.")]
+        [SerializeField, Range(0f, 1f)] private float movementHullBulkExponent = 0.4f;
         [Tooltip("Base collision ramming power before level/component modifiers.")]
         [SerializeField] private float baseRammingPower = 1f;
 
@@ -646,12 +635,25 @@ namespace TitanOrbit.Entities
         /// </summary>
         private float GetRammingBulkScale() => MaxHealth / Mathf.Max(1f, _chassisReferenceHealth);
 
-        /// <summary>Movement mass: hull bulk + gem cargo (base massPerGem).</summary>
+        /// <summary>
+        /// Softer HP bulk for movement/braking. Engines scale via acceleration caps; full ramming bulk made high-level ships feel glued.
+        /// </summary>
+        private float GetMovementBulkScale()
+        {
+            float bulk = GetRammingBulkScale();
+            if (bulk <= 1f || movementHullBulkExponent >= 0.999f)
+                return bulk;
+            if (movementHullBulkExponent <= 0.001f)
+                return 1f;
+            return Mathf.Pow(bulk, movementHullBulkExponent);
+        }
+
+        /// <summary>Movement mass: softened hull bulk + gem cargo (base massPerGem).</summary>
         private float EffectiveMass
         {
             get
             {
-                float bulkScale = GetRammingBulkScale();
+                float bulkScale = GetMovementBulkScale();
                 return Mathf.Max(0.5f, ScaledHullMassReference * bulkScale + currentGems.Value * massPerGem);
             }
         }
@@ -923,13 +925,14 @@ namespace TitanOrbit.Entities
             damagePerBullet = 0f;
             shotsPerSecond = 0f;
             damagePerSecond = 0f;
-            var wc = bulletConfig ?? EffectiveWeaponConfig;
-            if (wc == null || wc.cannons == null || wc.cannons.Count == 0) return false;
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return false;
 
             bool any = false;
             float bestDps = 0f;
-            foreach (var c in wc.cannons)
+            for (int i = 0; i < bulletConfig.cannons.Count; i++)
             {
+                if (!IsValidWeaponFirePointIndex(i)) continue;
+                var c = bulletConfig.cannons[i];
                 if (c == null) continue;
                 float rate = Mathf.Max(0f, c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL));
                 int pellets = 1;
@@ -1314,8 +1317,8 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // If we have shipData but no weapon config (e.g. scene ship or old prefab), apply it so we get a valid weaponConfig (or default)
-            if (shipData != null && weaponConfig == null)
+            // Scene / old prefab: apply ShipData so chassis visuals and weapon components initialize.
+            if (shipData != null && bulletConfig == null && currentChassisIndex.Value < 0)
                 SetShipData(shipData);
 
             // Ensure Y position is locked to 0
@@ -2450,12 +2453,16 @@ namespace TitanOrbit.Entities
                 moon = dockPlanet != null ? dockPlanet.GemMoon : null;
                 if (moon != null)
                 {
-                    gemMoonUndockCachedMoonPos = moon.transform.position;
-                    Vector3 moonPosForBoundary = moon.transform.position;
+                    gemMoonUndockCachedMoonPos = moon.GetGameplayWorldPosition();
+                    Vector3 moonPosForBoundary = gemMoonUndockCachedMoonPos;
                     moonPosForBoundary.y = 0f;
-                    Vector3 shipPosForBoundary = rb.position;
-                    shipPosForBoundary.y = 0f;
-                    float distToMoon = ToroidalMap.ToroidalDistance(shipPosForBoundary, moonPosForBoundary);
+                    Vector3 shipPosTransform = transform.position;
+                    shipPosTransform.y = 0f;
+                    Vector3 shipPosRigidbody = rb.position;
+                    shipPosRigidbody.y = 0f;
+                    float distToMoon = Mathf.Min(
+                        ToroidalMap.ToroidalDistance(shipPosTransform, moonPosForBoundary),
+                        ToroidalMap.ToroidalDistance(shipPosRigidbody, moonPosForBoundary));
                     moonDockOuterRadius = moon.GetMoonDockSnapRadiusWorld() * gemMoonLandingRangeMultiplier;
                     float bodyRadiusWorld = moon.GetMoonBodyRadiusWorld();
                     float shipRadius = GetShipMoonDockRadiusXZ();
@@ -2536,7 +2543,7 @@ namespace TitanOrbit.Entities
             {
                 ulong currentPlanetId = gemMoonPlanetNetworkObjectId.Value;
 
-                Vector3 moonPos = moon.transform.position;
+                Vector3 moonPos = moon.GetGameplayWorldPosition();
                 float contactRadius = Mathf.Max(0.0001f, moonDockSurfaceRadius);
                 Vector3 moonSpinAxis = moon.SpinAxisWorld.normalized;
 
@@ -3097,8 +3104,7 @@ namespace TitanOrbit.Entities
         {
             if (currentOrbitPlanet == null || rb == null) return;
 
-            Vector3 planetPos = currentOrbitPlanet.transform.position;
-            planetPos.y = 0f;
+            Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
             Vector3 shipPos = rb.position;
             shipPos.y = 0f;
             float dist = ToroidalMap.ToroidalDistance(shipPos, planetPos);
@@ -3217,8 +3223,7 @@ namespace TitanOrbit.Entities
         {
             if (currentOrbitPlanet == null || rb == null) return false;
 
-            Vector3 planetPos = currentOrbitPlanet.transform.position;
-            planetPos.y = 0f;
+            Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
             // Owner-simulated ships: replicated transform is authoritative on the server; rb can lag NT.
             Vector3 shipWorld = GetShipWorldPositionForOrbitChecks();
             float dist = ToroidalMap.ToroidalDistance(shipWorld, planetPos);
@@ -3303,7 +3308,7 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return false;
             shipWorldPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
             float inner = planet.PlanetSize * 0.5f;
             float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
             return dist >= inner && dist <= outer;
@@ -3321,7 +3326,7 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return false;
             shipWorldPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
             float inner = planet.PlanetSize * 0.5f * (1f - margin);
             float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * (1f + margin);
             return dist >= inner && dist <= outer;
@@ -3452,17 +3457,16 @@ namespace TitanOrbit.Entities
             // which prevented FireServerRpc from ever being sent while host/editor looked fine.
             if (gemMoonDocked.Value) return false;
             EnsureBulletLastFireTime();
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            if (bulletWc.cannons != null)
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0)
+                return false;
+            for (int i = 0; i < bulletConfig.cannons.Count; i++)
             {
-                for (int i = 0; i < bulletWc.cannons.Count; i++)
-                {
-                    var c = bulletWc.cannons[i];
-                    float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
-                    if (currentEnergy.Value >= c.energyCostPerShot &&
-                        (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / effectiveFireRate))
-                        return true;
-                }
+                if (!IsValidWeaponFirePointIndex(i)) continue;
+                var c = bulletConfig.cannons[i];
+                float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
+                if (currentEnergy.Value >= c.energyCostPerShot &&
+                    (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] >= 1f / effectiveFireRate))
+                    return true;
             }
             return false;
         }
@@ -3508,15 +3512,13 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Builds per-cannon world origins and aim axes from this client's transforms (same sizing rules as <see cref="FireServerRpc"/>).
-        /// Missing weapon slots use ship position + ship forward so the server never substitutes desynced server rigs for players.
+        /// Builds per-cannon world origins and aim axes from this client's weapon component transforms (same sizing rules as <see cref="FireServerRpc"/>).
         /// </summary>
         private bool TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] origins, out Vector3[] forwards)
         {
             origins = null;
             forwards = null;
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            if (bulletWc == null || bulletWc.cannons == null || bulletWc.cannons.Count == 0)
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0)
                 return false;
 
             Vector3 shipFwd = transform.forward;
@@ -3524,34 +3526,23 @@ namespace TitanOrbit.Entities
             if (shipFwd.sqrMagnitude < 0.01f) shipFwd = Vector3.forward;
             else shipFwd.Normalize();
 
-            int fpCount = bulletFirePoints != null ? bulletFirePoints.Count : 0;
-            int cannonCount = bulletWc.cannons.Count;
-            int maxCannons = Mathf.Max(fpCount, cannonCount);
-            int n = Mathf.Min(cannonCount, maxCannons);
-            if (n <= 0)
-                return false;
-
-            origins = new Vector3[n];
-            forwards = new Vector3[n];
-            for (int i = 0; i < n; i++)
+            int cannonCount = bulletConfig.cannons.Count;
+            origins = new Vector3[cannonCount];
+            forwards = new Vector3[cannonCount];
+            bool anyValid = false;
+            for (int i = 0; i < cannonCount; i++)
             {
-                if (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
-                {
-                    Transform pt = bulletFirePoints[i];
-                    origins[i] = pt.position;
-                    Vector3 wd = pt.forward;
-                    wd.y = 0f;
-                    if (wd.sqrMagnitude < 0.01f) wd = shipFwd;
-                    else wd.Normalize();
-                    forwards[i] = wd;
-                }
-                else
-                {
-                    origins[i] = transform.position;
-                    forwards[i] = shipFwd;
-                }
+                if (!IsValidWeaponFirePointIndex(i)) continue;
+                Transform pt = bulletFirePoints[i];
+                origins[i] = pt.position;
+                Vector3 wd = pt.forward;
+                wd.y = 0f;
+                if (wd.sqrMagnitude < 0.01f) wd = shipFwd;
+                else wd.Normalize();
+                forwards[i] = wd;
+                anyValid = true;
             }
-            return true;
+            return anyValid;
         }
 
         /// <summary>
@@ -3570,26 +3561,19 @@ namespace TitanOrbit.Entities
             if (combat == null) return;
             if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
             if (gemMoonDocked.Value) return;
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
             EnsureBulletLastFireTime();
             Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
                 ? ownerReportedShipVelocity
                 : (rb != null ? rb.linearVelocity : Vector3.zero);
             shipVel.y = 0f;
 
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int serverWeaponPoints = bulletFirePoints != null ? bulletFirePoints.Count : 0;
-            int ownerWeaponPoints = ownerReportedCannonOrigins != null ? ownerReportedCannonOrigins.Length : 0;
-            int maxCannons = Mathf.Max(serverWeaponPoints, ownerWeaponPoints);
-            if (bulletWc.cannons == null || maxCannons <= 0) return;
-
             var cannonsByEnergy = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<int>>();
-            int cannonCount = Mathf.Min(bulletWc.cannons.Count, maxCannons);
+            int cannonCount = bulletConfig.cannons.Count;
             for (int i = 0; i < cannonCount; i++)
             {
-                bool hasServerPoint = bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null;
-                bool hasOwnerPoint = ownerReportedCannonOrigins != null && i < ownerReportedCannonOrigins.Length;
-                if (!hasServerPoint && !hasOwnerPoint) continue;
-                int energyKey = GetEnergyCostGroupKey(bulletWc.cannons[i].energyCostPerShot);
+                if (!IsValidWeaponFirePointIndex(i)) continue;
+                int energyKey = GetEnergyCostGroupKey(bulletConfig.cannons[i].energyCostPerShot);
                 if (!cannonsByEnergy.TryGetValue(energyKey, out var group))
                 {
                     group = new System.Collections.Generic.List<int>();
@@ -3611,7 +3595,8 @@ namespace TitanOrbit.Entities
                 for (int step = 0; step < group.Count; step++)
                 {
                     int i = group[(start + step) % group.Count];
-                    var c = bulletWc.cannons[i];
+                    var c = bulletConfig.cannons[i];
+                    if (!IsValidWeaponFirePointIndex(i)) continue;
                     bool skipEnergyForHostOwnerCosmetic = IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
                     if (!skipEnergyForHostOwnerCosmetic && currentEnergy.Value < c.energyCostPerShot) continue;
 
@@ -3625,9 +3610,7 @@ namespace TitanOrbit.Entities
                             ? c.bulletPrefabIndex
                             : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
 
-                    Transform firePt = (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
-                        ? bulletFirePoints[i]
-                        : transform;
+                    Transform firePt = bulletFirePoints[i];
                     bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
                     bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
                     Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
@@ -3694,6 +3677,7 @@ namespace TitanOrbit.Entities
             // Use owner-reported position for the orbit band: cached currentOrbitPlanet is not replicated and can block all shots on dedicated server.
             if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
             if (gemMoonDocked.Value) return;
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
             EnsureBulletLastFireTime();
 
             bool useOnlyOwnerBallistics = NetworkObject != null && NetworkObject.IsPlayerObject;
@@ -3714,21 +3698,15 @@ namespace TitanOrbit.Entities
             var bulletIndicesFired = new System.Collections.Generic.List<byte>();
             var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
 
-            // Player ships: spawn geometry matches the owning client's RPC (no server-side muzzle snap). AI uses server transforms when arrays are null.
-            var bulletWc = bulletConfig ?? EffectiveWeaponConfig;
-            int serverWeaponPoints = bulletFirePoints != null ? bulletFirePoints.Count : 0;
-            int ownerWeaponPoints = ownerReportedCannonOrigins != null ? ownerReportedCannonOrigins.Length : 0;
-            int maxCannons = Mathf.Max(serverWeaponPoints, ownerWeaponPoints);
-            if (bulletWc.cannons != null && maxCannons > 0)
+            // Player ships: spawn geometry matches the owning client's RPC (no server-side muzzle snap). AI uses server weapon transforms.
+            int cannonCount = bulletConfig.cannons.Count;
+            if (cannonCount > 0)
             {
                 var cannonsByEnergy = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<int>>();
-                int cannonCount = Mathf.Min(bulletWc.cannons.Count, maxCannons);
                 for (int i = 0; i < cannonCount; i++)
                 {
-                    bool hasServerPoint = bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null;
-                    bool hasOwnerPoint = ownerReportedCannonOrigins != null && i < ownerReportedCannonOrigins.Length;
-                    if (!hasServerPoint && !hasOwnerPoint) continue;
-                    int energyKey = GetEnergyCostGroupKey(bulletWc.cannons[i].energyCostPerShot);
+                    if (!IsValidWeaponFirePointIndex(i)) continue;
+                    int energyKey = GetEnergyCostGroupKey(bulletConfig.cannons[i].energyCostPerShot);
                     if (!cannonsByEnergy.TryGetValue(energyKey, out var group))
                     {
                         group = new System.Collections.Generic.List<int>();
@@ -3753,7 +3731,8 @@ namespace TitanOrbit.Entities
                     for (int step = 0; step < group.Count; step++)
                     {
                         int i = group[(start + step) % group.Count];
-                        var c = bulletWc.cannons[i];
+                        var c = bulletConfig.cannons[i];
+                        if (!IsValidWeaponFirePointIndex(i)) continue;
                         if (currentEnergy.Value < c.energyCostPerShot) continue;
 
                         float effectiveFireRate = c.fireRate * (1f + attrFireRate.Value * ATTR_MULTIPLIER_PER_LEVEL);
@@ -3767,27 +3746,24 @@ namespace TitanOrbit.Entities
                                 ? c.bulletPrefabIndex
                                 : (bulletPrefabBankIndex >= 0 && bulletPrefabBankIndex < bankCount ? bulletPrefabBankIndex : 0);
 
-                        Transform firePt = (bulletFirePoints != null && i < bulletFirePoints.Count && bulletFirePoints[i] != null)
-                            ? bulletFirePoints[i]
-                            : transform;
+                        Transform firePt = bulletFirePoints[i];
                         bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
                         bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
+                        if (useOnlyOwnerBallistics && (!hasOwnerReportedOrigin || !hasOwnerReportedForward))
+                            continue;
 
                         Vector3 fireOrigin;
-                        if (hasOwnerReportedOrigin)
-                            fireOrigin = ownerReportedCannonOrigins[i];
-                        else if (useOnlyOwnerBallistics)
-                            fireOrigin = shipPosition;
-                        else
-                            fireOrigin = firePt.position;
-
                         Vector3 cannonFwd;
-                        if (hasOwnerReportedForward)
+                        if (useOnlyOwnerBallistics)
+                        {
+                            fireOrigin = ownerReportedCannonOrigins[i];
                             cannonFwd = ownerReportedCannonForwards[i];
-                        else if (useOnlyOwnerBallistics)
-                            cannonFwd = shipForward;
+                        }
                         else
+                        {
+                            fireOrigin = firePt.position;
                             cannonFwd = firePt.forward;
+                        }
                         cannonFwd.y = 0f;
                         if (cannonFwd.sqrMagnitude < 0.01f)
                         {
@@ -4211,7 +4187,7 @@ namespace TitanOrbit.Entities
                 if (!IsShipInCachedPlanetOrbitShellRelaxed(planet, p1, p0))
                     continue;
 
-                float d = ToroidalMap.ToroidalDistance(p0, planet.transform.position);
+                float d = ToroidalMap.ToroidalDistance(p0, planet.GetOrbitGameplayCenterWorld());
                 if (d < bestDist)
                 {
                     bestDist = d;
@@ -5721,18 +5697,11 @@ namespace TitanOrbit.Entities
         public bool IsInsideFriendlyGemMoonOrbitZone(float radiusMultiplier = 1.05f)
         {
             if (shipTeam.Value == TeamManager.Team.None) return false;
-            Vector3 shipPos = rb != null ? rb.position : transform.position;
-            shipPos.y = 0f;
             for (int i = 0; i < PlanetGemMoon.ActiveMoonCount; i++)
             {
                 PlanetGemMoon moon = PlanetGemMoon.GetActiveMoonAt(i);
                 if (moon == null || !moon.IsTeamFriendlyToThisMoon(shipTeam.Value)) continue;
-                Vector3 moonPos = moon.transform.position;
-                moonPos.y = 0f;
-                float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-                float r = moon.GetMoonDockSnapRadiusWorld() * radiusMultiplier;
-                float shipRadius = GetShipMoonDockRadiusXZ();
-                if (r > 0.0001f && dist <= r + shipRadius)
+                if (moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier))
                     return true;
             }
             return false;
@@ -5936,7 +5905,7 @@ namespace TitanOrbit.Entities
             foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
-                float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.transform.position);
+                float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
                 float inner = planet.PlanetSize * 0.5f;
                 float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
                 if (dist >= inner && dist <= outer)
@@ -6000,9 +5969,6 @@ namespace TitanOrbit.Entities
                 if (IsServer && networkShipLevel != null)
                     networkShipLevel.Value = Mathf.Max(1, shipLevel);
                 focusType = data.focusType;
-                weaponConfig = data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0
-                    ? data.weaponConfig
-                    : GetDefaultWeaponConfig();
                 EnsureBulletLastFireTime();
                 for (int i = 0; bulletLastFireTime != null && i < bulletLastFireTime.Length; i++) bulletLastFireTime[i] = -999f;
 
@@ -6347,9 +6313,7 @@ namespace TitanOrbit.Entities
             int weaponCount = stats.weaponTransforms != null ? stats.weaponTransforms.Count : 0;
             if (weaponCount > 0)
             {
-                var baseBullet = (data != null && data.weaponConfig != null && data.weaponConfig.cannons != null && data.weaponConfig.cannons.Count > 0)
-                    ? data.weaponConfig.cannons[0]
-                    : GetDefaultWeaponConfig().cannons[0];
+                var baseBullet = new CannonConfig();
                 var bc = ScriptableObject.CreateInstance<WeaponConfig>();
                 bc.displayName = "ChassisBullets";
                 bc.cannons = new System.Collections.Generic.List<CannonConfig>();
@@ -6370,8 +6334,10 @@ namespace TitanOrbit.Entities
 
                 for (int i = 0; i < weaponCount; i++)
                 {
-                    var c = baseBullet.Clone();
                     Transform wt = stats.weaponTransforms != null && i < stats.weaponTransforms.Count ? stats.weaponTransforms[i] : null;
+                    if (wt == null) continue;
+
+                    var c = baseBullet.Clone();
                     string componentId = "";
                     string resolvedComponentId = componentId;
                     if (wt != null && !string.IsNullOrEmpty(wt.name))
@@ -6447,13 +6413,11 @@ namespace TitanOrbit.Entities
                     if (previewFamilyDef != null && !string.IsNullOrEmpty(resolvedComponentId) && previewFamilyDef.TryGetComponentEntry(resolvedComponentId, out var compEntry) && compEntry != null && compEntry.bulletPrefabIndex >= 0)
                         c.bulletPrefabIndex = compEntry.bulletPrefabIndex;
                     bc.cannons.Add(c);
-                    Transform pt = stats.weaponTransforms[i];
-                    if (pt == null) pt = transform;
-                    bulletFirePoints.Add(pt);
+                    bulletFirePoints.Add(wt);
 
                     float ws = (stats.weaponScales != null && i < stats.weaponScales.Count) ? stats.weaponScales[i] : 1f;
                     float muzzleScale = (MUZZLE_BASE_SIZE + c.energyCostPerShot * MUZZLE_SIZE_PER_ENERGY) * Mathf.Max(0.5f, ws);
-                    ParticleSystem muzzle = CreateMuzzleParticleSystem(pt, muzzleScale);
+                    ParticleSystem muzzle = CreateMuzzleParticleSystem(wt, muzzleScale);
                     if (muzzle != null)
                     {
                         bulletMuzzleParticleSystems.Add(muzzle);
@@ -6467,22 +6431,29 @@ namespace TitanOrbit.Entities
                         weaponBasePositions.Add(wt.localPosition);
                     }
                 }
-                // Bullet prefab index from family definition (index into CombatSystem's Bullet Prefab Bank)
-                if (Systems.CombatSystem.Instance != null)
+                if (bc.cannons.Count == 0)
                 {
-                    int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
-                    int idx = (previewFamilyDef != null && count > 0) ? previewFamilyDef.bulletPrefabIndex : 0;
-                    bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : (count > 0 ? 0 : -1);
-                    if (IsServer)
-                        runtimeBulletPrefabIndex.Value = bulletPrefabBankIndex;
+                    Object.Destroy(bc);
                 }
                 else
                 {
-                    bulletPrefabBankIndex = -1;
-                    if (IsServer)
-                        runtimeBulletPrefabIndex.Value = -1;
+                    // Bullet prefab index from family definition (index into CombatSystem's Bullet Prefab Bank)
+                    if (Systems.CombatSystem.Instance != null)
+                    {
+                        int count = Systems.CombatSystem.Instance.BulletPrefabBankCount;
+                        int idx = (previewFamilyDef != null && count > 0) ? previewFamilyDef.bulletPrefabIndex : 0;
+                        bulletPrefabBankIndex = (idx >= 0 && count > 0 && idx < count) ? idx : (count > 0 ? 0 : -1);
+                        if (IsServer)
+                            runtimeBulletPrefabIndex.Value = bulletPrefabBankIndex;
+                    }
+                    else
+                    {
+                        bulletPrefabBankIndex = -1;
+                        if (IsServer)
+                            runtimeBulletPrefabIndex.Value = -1;
+                    }
+                    bulletConfig = bc;
                 }
-                bulletConfig = bc;
             }
 
             EnsureBulletLastFireTime();

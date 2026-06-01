@@ -43,6 +43,8 @@ namespace TitanOrbit.Systems
         [SerializeField] private int maxBullets = 200; // Limit total bullets to prevent lag
         [Tooltip("Global multiplier for bullet speed. Lower = slower bullets (e.g. 0.4 = 40% of configured speed).")]
         [SerializeField] [Range(0.1f, 2f)] private float bulletSpeedMultiplier = 0.4f;
+        [Tooltip("Global multiplier for bullet visual size (applied on clients after cannon bulletScale × ship upgrade scale). ~0.29 ≈ pre-2024 baseline (prefab scale was 0.35, now 1.2).")]
+        [SerializeField] [Range(0.05f, 2f)] private float bulletVisualScaleMultiplier = 0.5f;
         [Tooltip("Spawn offset in front of fire position (Sci-Fi Arsenal style). Bullet spawns at position + direction * this value.")]
         [SerializeField] private float spawnOffset = 0.3f;
 
@@ -95,6 +97,9 @@ namespace TitanOrbit.Systems
         public int BulletPrefabBankCount => UseCategories ? (bulletBankCategories != null ? bulletBankCategories.Count : 0) : (bulletPrefabBank != null ? bulletPrefabBank.Count : 0);
 
         private bool UseCategories => bulletBankCategories != null && bulletBankCategories.Count > 0;
+
+        /// <summary>Global client-side scale for bullet visuals (see <see cref="BulletVisualFactory"/>).</summary>
+        public float BulletVisualScaleMultiplier => Mathf.Max(0.05f, bulletVisualScaleMultiplier);
 
         public int DeathDebrisMaxPieces => Mathf.Max(1, deathDebrisMaxPieces);
         public float DeathDebrisMinImpulse => Mathf.Max(0f, deathDebrisMinImpulse);

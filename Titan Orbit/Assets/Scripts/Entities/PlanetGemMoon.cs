@@ -565,8 +565,7 @@ namespace TitanOrbit.Entities
             float theta = (float)(phaseOffset - omega * t);
             orbitAngle = theta;
 
-            Vector3 center = planet.transform.position;
-            center.y = 0f;
+            Vector3 center = planet.GetOrbitGameplayCenterWorld();
             Vector3 offset = new Vector3(Mathf.Cos(theta), 0f, Mathf.Sin(theta)) * r;
             pos = center + offset;
             pos.y = 0f;
@@ -580,7 +579,7 @@ namespace TitanOrbit.Entities
         {
             float now = Time.time;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             float moonRadius = GetMoonBodyRadiusWorld();
             if (moonRadius <= 0.0001f) return;
@@ -760,21 +759,11 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return;
 
-            Vector3 moonPos = transform.position;
-            moonPos.y = 0f;
-            float zoneRadius = GetMoonDockSnapRadiusWorld();
-            if (zoneRadius <= 0.0001f) return;
-
             for (int i = 0; i < Starship.AllStarships.Count; i++)
             {
                 Starship ship = Starship.AllStarships[i];
                 if (ship == null || ship.IsDead) continue;
-
-                Vector3 shipPos = ship.transform.position;
-                shipPos.y = 0f;
-                float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-                float shipRadius = ship.GetShipMoonDockRadiusXZ();
-                if (dist > zoneRadius + shipRadius) continue;
+                if (!IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1.05f)) continue;
 
                 ProcessShipGemMoonDocking(ship, overlapsDockTrigger: true);
             }
@@ -1061,6 +1050,48 @@ namespace TitanOrbit.Entities
             return GetMoonDockSnapRadiusLocal();
         }
 
+        /// <summary>
+        /// Deterministic moon world XZ from synced orbit math. Use for toroidal distance against ships that
+        /// stay at unwrapped world coordinates — not the client display tile from <see cref="ToroidalRenderer"/>.
+        /// </summary>
+        public Vector3 GetGameplayWorldPosition()
+        {
+            if (planet == null)
+            {
+                Vector3 p = transform.position;
+                p.y = 0f;
+                return p;
+            }
+            ComputeOrbitPosition(GetSyncedTimeSeconds(), out Vector3 pos, out _);
+            return pos;
+        }
+
+        /// <summary>
+        /// Toroidal dock-zone check for <paramref name="ship"/> (physics triggers miss across map wraps).
+        /// Uses gameplay moon position and both ship transform + rigidbody XZ (owner sim can split them).
+        /// </summary>
+        public bool IsShipInMoonDockZoneToroidal(Starship ship, float radiusMultiplier = 1f)
+        {
+            if (ship == null) return false;
+
+            Vector3 moonPos = GetGameplayWorldPosition();
+            moonPos.y = 0f;
+            float zoneRadius = GetMoonDockSnapRadiusWorld() * Mathf.Max(0.0001f, radiusMultiplier);
+            if (zoneRadius <= 0.0001f) return false;
+
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
+            float threshold = zoneRadius + shipRadius;
+
+            Vector3 tPos = ship.transform.position;
+            tPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            Vector3 rPos = shipRb != null ? shipRb.position : tPos;
+            rPos.y = 0f;
+
+            return ToroidalMap.ToroidalDistance(tPos, moonPos) <= threshold
+                || ToroidalMap.ToroidalDistance(rPos, moonPos) <= threshold;
+        }
+
         /// <summary>World-space radius of the docking trigger; snap only applies while within this distance of the moon.</summary>
         public float GetMoonDockSnapRadiusWorld()
         {
@@ -1139,13 +1170,22 @@ namespace TitanOrbit.Entities
             if (ship == null) return transform.position;
             if (planet == null) return transform.position;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
 
-            float radius = GetMoonBodyRadiusWorld();
             // Closest surface point from current ship approach direction.
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
+
+            float radius = GetMoonBodyRadiusWorld();
             Vector3 dir = ToroidalMap.ToroidalDirection(moonPos, shipPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f)
@@ -1263,10 +1303,8 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
-            Vector3 shipPos = ship.transform.position;
-            shipPos.y = 0f;
 
             bool remainDocked = ShouldShipRemainGemMoonDocked(ship);
             ship.ServerSetGemMoonDocked(remainDocked, remainDocked ? planet : null);
@@ -1300,10 +1338,18 @@ namespace TitanOrbit.Entities
             float shieldRadiusWorld = GetMoonShieldOuterRadiusWorld();
             if (shieldRadiusWorld <= 0.0001f) return false;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
 
             float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
             if (dist > shieldRadiusWorld) return false;
@@ -1337,8 +1383,7 @@ namespace TitanOrbit.Entities
             if (planet == null || ship == null) return false;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
-            Vector3 center = planet.transform.position;
-            center.y = 0f;
+            Vector3 center = planet.GetOrbitGameplayCenterWorld();
             float dist = ToroidalMap.ToroidalDistance(shipPos, center);
             float inner = planet.PlanetSize * 0.5f;
             float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
@@ -1352,15 +1397,7 @@ namespace TitanOrbit.Entities
         {
             if (ship == null || !ship.GemMoonDocked) return false;
 
-            Vector3 moonPos = transform.position;
-            moonPos.y = 0f;
-            Vector3 shipPos = ship.transform.position;
-            shipPos.y = 0f;
-
-            float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float shipRadius = ship.GetShipMoonDockRadiusXZ();
-            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.25f + shipRadius;
-            return keepDockRadiusWorld > 0.0001f && xzDist <= keepDockRadiusWorld;
+            return IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1.25f);
         }
 
         private bool IsShipReadyToLandInMoonZone(Starship ship, bool overlapsDockTrigger = false)
@@ -1384,17 +1421,24 @@ namespace TitanOrbit.Entities
                 return false;
             }
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
 
-            float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
             float zoneRadius = GetMoonDockSnapRadiusWorld();
             float shipRadius = ship.GetShipMoonDockRadiusXZ();
             if (zoneRadius <= 0.0001f) return false;
-            // When the dock trigger already overlaps the ship, trust that instead of center-distance (large tier hulls).
-            if (!overlapsDockTrigger && dist > zoneRadius + shipRadius) return false;
+            // Toroidal geometry check (trigger overlap flag from TickGemMoonDockingServer or OnTriggerStay).
+            if (!overlapsDockTrigger && !IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1f)) return false;
 
             Vector3 vel = ship.GetPlanarVelocityForServerGameplayChecks();
             float speed = vel.magnitude;

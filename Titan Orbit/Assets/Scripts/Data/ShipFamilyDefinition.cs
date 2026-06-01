@@ -1249,6 +1249,218 @@ namespace TitanOrbit.Data
                 capacity = s.maxGems + s.maxPeople
             };
         }
+
+        /// <summary>
+        /// Branch slot order for one upgrade-tree level row (left → right).
+        /// Anchors highest fire power on the left and highest gem cap on the right; remaining ships are
+        /// placed on a fire→gems skew axis so the row visibly trends fire-heavy left and gem-heavy right.
+        /// </summary>
+        public static int[] ComputeBranchLayoutOrder(IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns)
+        {
+            int n = breakdowns?.Count ?? 0;
+            if (n <= 1)
+                return n == 1 ? new[] { 0 } : Array.Empty<int>();
+
+            var slotTargets = new float[n];
+            for (int i = 0; i < n; i++)
+                slotTargets[i] = ComputeFireGemsSlotTarget(breakdowns, i);
+
+            int leftAnchor = FindBestAnchorIndex(
+                breakdowns,
+                b => b.firePower,
+                preferLowerGemsOnTie: true,
+                preferLowerFireOnTie: false);
+
+            int rightAnchor = FindBestAnchorIndex(
+                breakdowns,
+                b => b.gemCap,
+                preferLowerGemsOnTie: false,
+                preferLowerFireOnTie: true,
+                excludedIndex: leftAnchor);
+
+            var interior = new List<int>(n);
+            for (int i = 0; i < n; i++)
+            {
+                if (i == leftAnchor || i == rightAnchor)
+                    continue;
+                interior.Add(i);
+            }
+
+            interior.Sort((a, b) => CompareFireGemsBranchOrder(breakdowns, slotTargets, a, b));
+
+            var order = new int[n];
+            order[0] = leftAnchor;
+            if (n >= 2)
+                order[n - 1] = rightAnchor;
+
+            int interiorSlot = 0;
+            for (int slot = 1; slot < n - 1; slot++)
+                order[slot] = interior[interiorSlot++];
+
+            return order;
+        }
+
+        /// <summary>0 = fire branch (left), 1 = gem branch (right).</summary>
+        private static float ComputeFireGemsSlotTarget(IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns, int index)
+        {
+            int n = breakdowns.Count;
+            float fireNorm = NormalizeBranchStat(breakdowns, index, b => b.firePower);
+            float gemNorm = NormalizeBranchStat(breakdowns, index, b => b.gemCap);
+            return (1f - fireNorm + gemNorm) * 0.5f;
+        }
+
+        private static float NormalizeBranchStat(
+            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
+            int index,
+            Func<ShipFamilyPowerScoreBreakdown, float> metric)
+        {
+            int n = breakdowns.Count;
+            if (n <= 1)
+                return 0.5f;
+
+            float min = float.MaxValue;
+            float max = float.MinValue;
+            for (int i = 0; i < n; i++)
+            {
+                float v = metric(breakdowns[i]);
+                min = Mathf.Min(min, v);
+                max = Mathf.Max(max, v);
+            }
+
+            float value = metric(breakdowns[index]);
+            if (max - min <= 0.0001f)
+                return ComputeBranchRankNorm(breakdowns, index, metric);
+
+            return (value - min) / (max - min);
+        }
+
+        private static float ComputeBranchRankNorm(
+            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
+            int index,
+            Func<ShipFamilyPowerScoreBreakdown, float> metric)
+        {
+            int n = breakdowns.Count;
+            if (n <= 1)
+                return 0.5f;
+
+            int rank = 0;
+            float value = metric(breakdowns[index]);
+            for (int i = 0; i < n; i++)
+            {
+                if (metric(breakdowns[i]) < value - 0.0001f)
+                    rank++;
+            }
+
+            return rank / (float)(n - 1);
+        }
+
+        private static int CompareFireGemsBranchOrder(
+            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
+            float[] slotTargets,
+            int a,
+            int b)
+        {
+            int cmp = slotTargets[a].CompareTo(slotTargets[b]);
+            if (cmp != 0)
+                return cmp;
+
+            cmp = breakdowns[b].firePower.CompareTo(breakdowns[a].firePower);
+            if (cmp != 0)
+                return cmp;
+
+            cmp = breakdowns[a].gemCap.CompareTo(breakdowns[b].gemCap);
+            if (cmp != 0)
+                return cmp;
+
+            return breakdowns[b].GetDisplayTotalForUi().CompareTo(breakdowns[a].GetDisplayTotalForUi());
+        }
+
+        private static int FindBestAnchorIndex(
+            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
+            Func<ShipFamilyPowerScoreBreakdown, float> metric,
+            bool preferLowerGemsOnTie,
+            bool preferLowerFireOnTie,
+            int excludedIndex = -1)
+        {
+            int n = breakdowns.Count;
+            int best = -1;
+            float bestVal = float.NegativeInfinity;
+            float bestGems = float.PositiveInfinity;
+            float bestFire = float.PositiveInfinity;
+            float bestTotal = float.NegativeInfinity;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (i == excludedIndex)
+                    continue;
+
+                float v = metric(breakdowns[i]);
+                float gems = breakdowns[i].gemCap;
+                float fire = breakdowns[i].firePower;
+                float total = breakdowns[i].GetDisplayTotalForUi();
+                if (v > bestVal + 0.0001f)
+                {
+                    bestVal = v;
+                    bestGems = gems;
+                    bestFire = fire;
+                    bestTotal = total;
+                    best = i;
+                    continue;
+                }
+
+                if (!Mathf.Approximately(v, bestVal))
+                    continue;
+
+                if (preferLowerGemsOnTie && gems < bestGems - 0.0001f)
+                {
+                    bestGems = gems;
+                    bestFire = fire;
+                    bestTotal = total;
+                    best = i;
+                    continue;
+                }
+
+                if (preferLowerFireOnTie && fire < bestFire - 0.0001f)
+                {
+                    bestFire = fire;
+                    bestGems = gems;
+                    bestTotal = total;
+                    best = i;
+                    continue;
+                }
+
+                if (Mathf.Approximately(gems, bestGems) && Mathf.Approximately(fire, bestFire) && total > bestTotal + 0.0001f)
+                {
+                    bestTotal = total;
+                    best = i;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>Reorders <paramref name="items"/> left→right for one planet tier row using <see cref="ComputeBranchLayoutOrder"/>.</summary>
+        public static void ReorderListByBranchLayout<T>(List<T> items, Func<T, ShipFamilyPowerScoreBreakdown> selector)
+        {
+            if (items == null || items.Count <= 1 || selector == null)
+                return;
+
+            var breakdowns = new ShipFamilyPowerScoreBreakdown[items.Count];
+            for (int i = 0; i < items.Count; i++)
+                breakdowns[i] = selector(items[i]);
+
+            int[] order = ComputeBranchLayoutOrder(breakdowns);
+            if (order.Length != items.Count)
+                return;
+
+            var reordered = new List<T>(items.Count);
+            for (int slot = 0; slot < order.Length; slot++)
+                reordered.Add(items[order[slot]]);
+
+            items.Clear();
+            items.AddRange(reordered);
+        }
+
     }
 
     /// <summary>

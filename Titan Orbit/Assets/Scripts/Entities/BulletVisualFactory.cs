@@ -54,7 +54,8 @@ namespace TitanOrbit.Entities
             float bulletSpeed,
             bool noTrail)
         {
-            float scale = DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier);
+            float globalScale = CombatSystem.Instance != null ? CombatSystem.Instance.BulletVisualScaleMultiplier : 1f;
+            float scale = DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
             Color color = GetTeamBulletColor(team);
 
             GameObject visualPrefab = null;

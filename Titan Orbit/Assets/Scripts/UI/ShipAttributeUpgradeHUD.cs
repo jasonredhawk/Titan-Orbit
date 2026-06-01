@@ -57,13 +57,6 @@ namespace TitanOrbit.UI
         [SerializeField] private Color buttonAccentColor = new Color(0.75f, 0.88f, 1f, 0.28f);
         [SerializeField] private Color buttonShadowColor = new Color(0f, 0f, 0f, 0.45f);
 
-        [Header("Category Colors")]
-        [SerializeField] private Color weaponColor = ShipAbilityCategoryColors.WeaponForHud;
-        [SerializeField] private Color healthColor = ShipAbilityCategoryColors.HealthForHud;
-        [SerializeField] private Color energyColor = ShipAbilityCategoryColors.EnergyForHud;
-        [SerializeField] private Color shipColor = ShipAbilityCategoryColors.ShipForHud;
-        [SerializeField] private Color cargoColor = ShipAbilityCategoryColors.CargoForHud;
-
         [Header("Cost icon (assign in Inspector)")]
         [Tooltip("Shown next to the gem cost number on each upgrade slot. Leave empty until you have a sprite.")]
         [SerializeField] private Sprite gemCostIconSprite;
@@ -77,8 +70,6 @@ namespace TitanOrbit.UI
             "Move Speed", "Turn Speed",
             "Max Gems", "Max People"
         };
-
-        private static readonly int[] CategoryIndices = new[] { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4 };
 
         private Starship playerShip;
         private float lastShipLookupTime = -999f;
@@ -252,13 +243,13 @@ namespace TitanOrbit.UI
             bgImage.color = new Color(0f, 0f, 0f, 0f);
             bgImage.raycastTarget = false;
 
-            Color[] categoryColors = { weaponColor, healthColor, energyColor, shipColor, cargoColor };
             string[] keyStrings = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
 
             for (int i = 0; i < 10; i++)
             {
                 float x = bw / 2f + i * (bw + sp);
-                var btn = CreateUpgradeButton(rootPanel.transform, x, i, categoryColors[CategoryIndices[i]], keyStrings[i], bw, bh);
+                Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(i);
+                var btn = CreateUpgradeButton(rootPanel.transform, x, i, statColor, keyStrings[i], bw, bh);
                 buttons[i] = btn.button;
                 titleTexts[i] = btn.titleText;
                 tickContainers[i] = btn.tickContainer;
@@ -269,7 +260,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color categoryColor, string keyStr, float scaledButtonWidth, float scaledBarHeight)
+        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color statColor, string keyStr, float scaledButtonWidth, float scaledBarHeight)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -282,7 +273,7 @@ namespace TitanOrbit.UI
             btnRect.sizeDelta = new Vector2(scaledButtonWidth, scaledBarHeight - E(6f));
 
             Image bgImage = btnObj.AddComponent<Image>();
-            bgImage.color = categoryColor;
+            bgImage.color = statColor;
             bgImage.raycastTarget = true;
             var buttonOutline = btnObj.AddComponent<Outline>();
             buttonOutline.effectColor = buttonFrameColor;
@@ -492,8 +483,6 @@ namespace TitanOrbit.UI
             }
 
             bool show = playerShip != null && playerShip.IsSpawned && !playerShip.IsDead && playerShip.ShipTeam != TeamManager.Team.None;
-            if (HUDController.ShipUpgradeTreeObscuresHud)
-                show = false;
             rootPanel.SetActive(show);
 
             if (!show || playerShip == null) return;
@@ -532,7 +521,6 @@ namespace TitanOrbit.UI
             if (!upgradeBarEnabled) return;
             RefreshUpgradeStripPlacement();
 
-            if (HUDController.ShipUpgradeTreeObscuresHud) return;
             var keyboard = Keyboard.current;
             if (keyboard == null || playerShip == null || !playerShip.IsSpawned) return;
 
