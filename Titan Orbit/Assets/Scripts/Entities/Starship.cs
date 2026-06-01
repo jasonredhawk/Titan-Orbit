@@ -3723,8 +3723,21 @@ namespace TitanOrbit.Entities
         /// <summary>AI transporters only load when their controller sets wantToLoad; players load surplus automatically.</summary>
         private bool ShouldLoadPeopleFromOrbitPlanet()
         {
+            if (!CanLoadPeopleFromPlanetOrbitRing()) return false;
             return !_isAIControlled || wantToLoadPeople.Value;
         }
+
+        /// <summary>People load onto the ship only in the planet orbit ring — not while in the gem moon dock/orbit shell.</summary>
+        public bool IsInGemMoonOrbitBlockingPeopleLoadToShip()
+        {
+            if (gemMoonDocked.Value) return true;
+            if (currentOrbitPlanet == null) return false;
+            PlanetGemMoon moon = currentOrbitPlanet.GemMoon;
+            if (moon == null) return false;
+            return moon.IsShipInMoonDockZoneToroidal(this, 1f);
+        }
+
+        private bool CanLoadPeopleFromPlanetOrbitRing() => !IsInGemMoonOrbitBlockingPeopleLoadToShip();
 
         /// <summary>AI transporters only invade when wantToUnload is set; players unload automatically in hostile/neutral orbit.</summary>
         private bool ShouldUnloadPeopleToNeutralOrEnemyPlanet()
@@ -4687,14 +4700,6 @@ namespace TitanOrbit.Entities
                         var shipNo = GetComponent<NetworkObject>();
                         if (planetNo != null && shipNo != null)
                             GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, peopleDropValue, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
-
-                        if (VisualEffectsManager.Instance != null)
-                            VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                                planetPos,
-                                (int)FloatingCountChannel.PeopleUnload,
-                                peopleDropValue,
-                                (int)shipTeam.Value);
-                        PlayPeopleUnloadSoundClientRpc(peopleDropValue);
                     }
                     else
                     {
@@ -4713,14 +4718,6 @@ namespace TitanOrbit.Entities
                             var shipNo = GetComponent<NetworkObject>();
                             if (planetNo != null && shipNo != null)
                                 GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, maxReinforceRem, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
-
-                            if (VisualEffectsManager.Instance != null)
-                                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                                    planetPos,
-                                    (int)FloatingCountChannel.PeopleUnload,
-                                    maxReinforceRem,
-                                    (int)shipTeam.Value);
-                            PlayPeopleUnloadSoundClientRpc(maxReinforceRem);
                         }
                     }
                     return;
@@ -4850,7 +4847,7 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Server: invasion unload — apply population immediately, spawn visual projectile (delivery only despawns).</summary>
+        /// <summary>Server: invasion unload — remove crew from ship and spawn projectile; planet population applies on surface delivery.</summary>
         private void ApplyHostileOrbitPeopleUnload(float chunk)
         {
             if (!IsServer || currentOrbitPlanet == null || chunk <= 0f || currentPeople.Value < chunk - 0.0001f)
@@ -4858,7 +4855,6 @@ namespace TitanOrbit.Entities
 
             Planet targetPlanet = currentOrbitPlanet;
             RemovePeopleFromServer(chunk);
-            targetPlanet.AddPopulationFromServer(chunk, shipTeam.Value);
 
             Vector3 shipPos = rb != null ? rb.position : transform.position;
             Vector3 planetPos = targetPlanet.transform.position;
@@ -4866,20 +4862,6 @@ namespace TitanOrbit.Entities
             var shipNo = GetComponent<NetworkObject>();
             if (GemSpawner.Instance != null && planetNo != null && shipNo != null)
                 GemSpawner.Instance.SpawnPeopleUnload(shipPos, planetPos, chunk, planetNo.NetworkObjectId, shipTeam.Value, shipNo.NetworkObjectId);
-
-            if (VisualEffectsManager.Instance != null)
-            {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    planetPos,
-                    (int)FloatingCountChannel.PeopleUnload,
-                    chunk,
-                    (int)shipTeam.Value);
-            }
-
-            PlayPeopleUnloadSoundClientRpc(chunk);
-
-            if (ScoreSystem.Instance != null)
-                ScoreSystem.Instance.AwardHostileUnload(this, chunk);
         }
 
         /// <summary>Server: credits gems straight to the planet (same as old flying deposit gems). No gem projectiles.</summary>
@@ -5999,6 +5981,34 @@ namespace TitanOrbit.Entities
             }
 
             PlayPeopleLoadSoundClientRpc(amount);
+        }
+
+        /// <summary>
+        /// Server-only: apply successful people unload arrival feedback at planet contact.
+        /// Called by PeopleTransportProjectile when an unload projectile reaches the planet surface.
+        /// </summary>
+        public void OnPeopleUnloadArrivedFromProjectile(float amount, TeamManager.Team sourceTeam, Vector3 worldPosition, Planet targetPlanet)
+        {
+            if (!IsServer || amount <= 0f) return;
+
+            if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    worldPosition,
+                    (int)FloatingCountChannel.PeopleUnload,
+                    amount,
+                    (int)sourceTeam);
+            }
+
+            PlayPeopleUnloadSoundClientRpc(amount);
+
+            if (targetPlanet != null
+                && targetPlanet.TeamOwnership != sourceTeam
+                && !(targetPlanet is HomePlanet home && home.AssignedTeam == sourceTeam)
+                && ScoreSystem.Instance != null)
+            {
+                ScoreSystem.Instance.AwardHostileUnload(this, amount);
+            }
         }
 
         [ServerRpc(RequireOwnership = false)]

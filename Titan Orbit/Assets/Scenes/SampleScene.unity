@@ -4150,10 +4150,10 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomEnabled: 0
-  galacticZoomDistance: 333
-  galacticZoomOutDuration: 60
-  galacticZoomInDuration: 2
+  galacticZoomEnabled: 1
+  galacticZoomDistance: 111
+  galacticZoomOutDuration: 11
+  galacticZoomInDuration: 1
   spaceBackground: {fileID: 252336435}
   collisionCameraShakeEnabled: 1
   collisionShakeMaxTranslation: {x: 0.45, y: 0.45, z: 0.45}
@@ -8188,12 +8188,12 @@ MonoBehaviour:
   minPlanetSize: 9
   maxPlanetSize: 16
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 333
-  asteroidsAtMaxMapSize: 333
-  minAsteroidClusters: 3
-  maxAsteroidClusters: 50
+  asteroidsAtMinMapSize: 666
+  asteroidsAtMaxMapSize: 666
+  minAsteroidClusters: 6
+  maxAsteroidClusters: 66
   minAsteroidSize: 1
-  maxAsteroidSize: 100
+  maxAsteroidSize: 200
   minAsteroidSpacing: 1.5
   planetsParent: {fileID: 0}
   asteroidsParent: {fileID: 0}

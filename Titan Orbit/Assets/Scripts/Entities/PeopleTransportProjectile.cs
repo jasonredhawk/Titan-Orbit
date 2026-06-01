@@ -64,10 +64,8 @@ namespace TitanOrbit.Entities
             1f,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
-        /// <summary>Hostile invasion applies planet population when the sphere spawns; cleared on delivery or reverted on destroy.</summary>
-        private NetworkVariable<bool> hostileInvasionAppliedOnSpawn = new NetworkVariable<bool>(false);
-        /// <summary>HP per person in this sphere (5 people = 5× HP of 1 person).</summary>
-        public const float HealthPerPerson = 4f;
+        /// <summary>HP per ship level in this sphere (level 3 ship → 12 HP). Chunk size equals ship level.</summary>
+        public const float HealthPerShipLevel = 4f;
         private const float ClientNetworkSnapDistance = 10f;
         private const float ClientNetworkBlendRate = 14f;
         private Vector3 baseVisualScale = Vector3.one;
@@ -604,6 +602,7 @@ namespace TitanOrbit.Entities
         private bool IsShipEligibleForLoadFromSourcePlanet(Starship ship)
         {
             if (ship == null || sourcePlanetId.Value == 0) return false;
+            if (ship.IsInGemMoonOrbitBlockingPeopleLoadToShip()) return false;
             if (!TryGetSourcePlanet(out Planet sourcePlanet)) return false;
 
             Vector3 rbPos = GetShipWorldPosition(ship);
@@ -683,7 +682,7 @@ namespace TitanOrbit.Entities
                 || (planet is HomePlanet home && home.AssignedTeam == sourceTeam);
         }
 
-        /// <summary>Unload completes on the planet hull after a short visible trip (population may already be applied for invasion).</summary>
+        /// <summary>Unload completes on the planet hull after a short visible trip.</summary>
         private bool CanCompleteUnloadDelivery(Vector3 projectilePos, Planet planet)
         {
             if (planet == null) return false;
@@ -723,12 +722,12 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Visual cleanup on wrong planet; do not refund hostile invasion already applied to the intended target.</summary>
+        /// <summary>Visual cleanup on wrong planet; people in the sphere are casualties.</summary>
         private void DestroyOnForeignPlanetSurface()
         {
             if (!IsServer || amount.Value <= 0f) return;
 
-            hostileInvasionAppliedOnSpawn.Value = false;
+            FinalizeDestroyedTransportAsCasualties();
             amount.Value = 0f;
             var no = GetComponent<NetworkObject>();
             if (no != null)
@@ -760,14 +759,23 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || amount.Value <= 0f || planet == null) return;
 
-            bool sameTeamPlanet = IsSameTeamPlanet(planet);
+            float deliverAmount = amount.Value;
+            var sourceTeam = (TeamManager.Team)team.Value;
+            Vector3 feedbackPos = GetSurfacePointToward(planet, rb != null ? rb.position : transform.position);
 
-            // Friendly reinforce unload: apply when the projectile reaches the planet.
-            // Hostile invasion: population is applied when the ship spawns the projectile.
-            if (sameTeamPlanet)
-                planet.AddPopulationFromServer(amount.Value, (TeamManager.Team)team.Value);
+            planet.AddPopulationFromServer(deliverAmount, sourceTeam);
 
-            hostileInvasionAppliedOnSpawn.Value = false;
+            if (TryResolveShip(spawningShipId.Value, out Starship ship))
+                ship.OnPeopleUnloadArrivedFromProjectile(deliverAmount, sourceTeam, feedbackPos, planet);
+            else if (VisualEffectsManager.Instance != null)
+            {
+                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                    feedbackPos,
+                    (int)FloatingCountChannel.PeopleUnload,
+                    deliverAmount,
+                    (int)sourceTeam);
+            }
+
             DespawnProjectile(successfulDelivery: true);
         }
 
@@ -787,67 +795,34 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || amount.Value <= 0f) return;
 
-            RefundDestroyedTransport();
+            FinalizeDestroyedTransportAsCasualties();
             amount.Value = 0f;
-            hostileInvasionAppliedOnSpawn.Value = false;
 
             var no = GetComponent<NetworkObject>();
             if (no != null)
                 no.Despawn();
         }
 
-        private void RefundDestroyedTransport()
+        /// <summary>Destroyed in flight: people are casualties (no ship/planet refund). Load clears in-transit capacity only.</summary>
+        private void FinalizeDestroyedTransportAsCasualties()
         {
-            if (!IsServer || amount.Value <= 0f) return;
+            if (!IsServer || amount.Value <= 0f || !isLoad.Value) return;
 
-            float refundAmount = amount.Value;
             var nm = NetworkManager.Singleton;
             if (nm == null) return;
+            if (!nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject shipObj)) return;
 
-            if (isLoad.Value)
-            {
-                if (nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject shipObj))
-                {
-                    var ship = shipObj.GetComponent<Starship>();
-                    if (ship != null)
-                        ship.ReleasePeopleInTransit(refundAmount);
-                }
-
-                if (sourcePlanetId.Value != 0
-                    && nm.SpawnManager.SpawnedObjects.TryGetValue(sourcePlanetId.Value, out NetworkObject planetObj))
-                {
-                    var planet = planetObj.GetComponent<Planet>();
-                    if (planet != null)
-                        planet.AddPopulationFromServer(refundAmount, SourceTeam);
-                }
-                return;
-            }
-
-            if (hostileInvasionAppliedOnSpawn.Value
-                && nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetPlanetObj))
-            {
-                var planet = targetPlanetObj.GetComponent<Planet>();
-                if (planet != null)
-                    planet.RevertHostileUnloadImpactFromServer(refundAmount);
-                return;
-            }
-
-            if (spawningShipId.Value != 0
-                && nm.SpawnManager.SpawnedObjects.TryGetValue(spawningShipId.Value, out NetworkObject shipSpawnerObj))
-            {
-                var ship = shipSpawnerObj.GetComponent<Starship>();
-                if (ship != null)
-                    ship.AddPeopleFromServer(refundAmount);
-            }
+            var ship = shipObj.GetComponent<Starship>();
+            if (ship != null)
+                ship.ReleasePeopleInTransit(amount.Value);
         }
 
         private void DespawnProjectile(bool successfulDelivery = false)
         {
             if (!successfulDelivery && IsServer && amount.Value > 0f)
-                RefundDestroyedTransport();
+                FinalizeDestroyedTransportAsCasualties();
 
             amount.Value = 0f;
-            hostileInvasionAppliedOnSpawn.Value = false;
             var no = GetComponent<NetworkObject>();
             if (no != null)
                 no.Despawn();
@@ -937,17 +912,8 @@ namespace TitanOrbit.Entities
                     }
                 }
 
-                float maxHp = Mathf.Max(HealthPerPerson, peopleAmount * HealthPerPerson);
+                float maxHp = Mathf.Max(HealthPerShipLevel, peopleAmount * HealthPerShipLevel);
                 health.Value = maxHp;
-
-                if (!loadingFromPlanet && targetNetworkObjectId != 0 && nm != null
-                    && nm.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject targetObj))
-                {
-                    var planet = targetObj.GetComponent<Planet>();
-                    hostileInvasionAppliedOnSpawn.Value = planet != null && !IsSameTeamPlanet(planet);
-                }
-                else
-                    hostileInvasionAppliedOnSpawn.Value = false;
 
                 Vector3 initVel = rb != null ? rb.linearVelocity : Vector3.zero;
                 initVel.y = 0f;

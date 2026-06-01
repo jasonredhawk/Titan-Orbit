@@ -97,10 +97,16 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Gem moon on home worlds is 1.5× the inverse-scaled size used for regular planets at the same PlanetSize.</summary>
-        protected override float GetGemMoonHomeVisualScaleMultiplier() => 1.5f;
+        protected override float GetGemMoonHomeVisualScaleMultiplier() => MapGemMoonScaleMultiplier;
+
+        /// <summary>Scale multiplier passed to <see cref="Planet.ComputeMapPlacementInfluenceRadiusWorld"/> for home-world ring spacing.</summary>
+        public const float MapGemMoonScaleMultiplier = 1.5f;
+
+        /// <summary>Starting level at spawn; used by map generation for ring clearance.</summary>
+        public const int InitialSpawnLevel = 3;
 
         /// <summary>Initial planet level. Home planets start at 3.</summary>
-        protected override int GetInitialPlanetLevel() => 3;
+        protected override int GetInitialPlanetLevel() => InitialSpawnLevel;
 
         /// <summary>Max level for home planets is 6.</summary>
         protected override int GetMaxLevel() => 6;

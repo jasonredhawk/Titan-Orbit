@@ -175,12 +175,48 @@ namespace TitanOrbit.Entities
         /// <summary>
         /// Outer edge of decorative Saturn rings in planet-local XZ units (matches ring drawer: one band per level, max 6).
         /// </summary>
-        public float GetRingsOuterEdgeRadiusLocal(int level)
+        public float GetRingsOuterEdgeRadiusLocal(int level) => GetRingsOuterEdgeRadiusLocalStatic(level);
+
+        /// <summary>Static variant for map generation before a planet instance exists.</summary>
+        public static float GetRingsOuterEdgeRadiusLocalStatic(int level)
         {
             int n = Mathf.Clamp(level, 1, 6);
             float step = GemMoonRingThicknessLocal + GemMoonRingGapLocal;
             float lastCenter = GemMoonRingsInnerRadiusLocal + (n - 1) * step;
             return lastCenter + GemMoonRingThicknessLocal * 0.5f;
+        }
+
+        /// <summary>
+        /// World-space radius from planet center to the outer gameplay orbit ring edge (moon orbit + band thickness).
+        /// Used by <see cref="Generation.MapGenerator"/> so planet rings do not overlap when placing the map.
+        /// </summary>
+        public static float ComputeMapPlacementInfluenceRadiusWorld(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier = 1f)
+        {
+            float moonOrbitWorld = EstimateGemMoonOrbitRadiusWorldStatic(planetSize, planetLevel, gemMoonHomeScaleMultiplier);
+            return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * OrbitRingHalfThicknessLocal;
+        }
+
+        private static float EstimateGemMoonOrbitRadiusWorldStatic(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier)
+        {
+            const float defaultMoonOrbitOutsideFactor = 1.1f;
+            const float defaultClearanceMarginWorld = 0.4f;
+
+            planetSize = Mathf.Max(0.01f, planetSize);
+            int level = Mathf.Max(1, planetLevel);
+            float moonNominalLocal = OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitRingGrowthPerLevel, level - 1);
+            float rNominal = planetSize * moonNominalLocal * Mathf.Max(1.01f, defaultMoonOrbitOutsideFactor);
+
+            float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
+            float inv = GemMoonReferencePlanetSize / planetSize;
+            inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
+            float gemMoonUniformScale = Mathf.Clamp(baseAtRef * inv * Mathf.Max(0.01f, gemMoonHomeScaleMultiplier), 0.02f, 1.25f);
+            float bodyLocalRadius = 0.5f * gemMoonUniformScale;
+            float dockLocalRadius = bodyLocalRadius * 1.95f;
+            float moonDock = dockLocalRadius * planetSize;
+
+            float ringsOuter = planetSize * GetRingsOuterEdgeRadiusLocalStatic(level);
+            float rClear = ringsOuter + moonDock + defaultClearanceMarginWorld;
+            return Mathf.Max(rNominal, rClear);
         }
 
         /// <summary>
@@ -892,16 +928,7 @@ namespace TitanOrbit.Entities
         /// <summary>Estimate moon orbit radius before <see cref="PlanetGemMoon"/> exists (matches dock/clearance defaults).</summary>
         private float EstimateGemMoonOrbitRadiusWorld()
         {
-            const float defaultMoonOrbitOutsideFactor = 1.1f;
-            const float defaultClearanceMarginWorld = 0.4f;
-
-            float rNominal = PlanetSize * GetMoonNominalOrbitRadiusLocal() * Mathf.Max(1.01f, defaultMoonOrbitOutsideFactor);
-            float bodyLocalRadius = 0.5f * GetGemMoonVisualUniformScale();
-            float dockLocalRadius = bodyLocalRadius * 1.95f;
-            float planetScale = Mathf.Max(transform.lossyScale.x, Mathf.Max(transform.lossyScale.y, transform.lossyScale.z));
-            float moonDock = dockLocalRadius * planetScale;
-            float rClear = GetRingsStructuralOuterRadiusWorld() + moonDock + defaultClearanceMarginWorld;
-            return Mathf.Max(rNominal, rClear);
+            return EstimateGemMoonOrbitRadiusWorldStatic(PlanetSize, PlanetLevel, GetGemMoonHomeVisualScaleMultiplier());
         }
 
         private void ApplyGemMoonVisualScale()
