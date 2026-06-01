@@ -359,6 +359,8 @@ namespace TitanOrbit.Systems
             int hitCount = Physics.SphereCastNonAlloc(from, BulletRadius, dir, s_sphereCastHits, pathLen, ~0, QueryTriggerInteraction.Ignore);
 
             if (hitCount > 1) SortHitsByDistance(hitCount);
+
+            // Pass 1: nearest valid gameplay target (asteroid, ship, moon, etc.).
             for (int i = 0; i < hitCount; i++)
             {
                 RaycastHit hit = s_sphereCastHits[i];
@@ -370,19 +372,13 @@ namespace TitanOrbit.Systems
                     DespawnWithImpact(slot, impactPos, popup);
                     return;
                 }
-
-                float travelled = ToroidalMap.ToroidalDistance(b.Position, b.SpawnPosition);
-                if (travelled >= b.MinTravelBeforeHit)
-                {
-                    DespawnWithImpact(slot, hit.point);
-                    return;
-                }
             }
 
             // Overlap fallback: sphere-cast can miss thin colliders against large kinematic hulls.
             if (TryOverlapFallbackHit(slot)) return;
 
-            // Toroidal asteroid sweep: bullet and asteroid may sit in different toroidal tiles.
+            // Toroidal sweeps before geometry despawn: world physics can miss tiled asteroids/moons
+            // while still hitting a nearer planet shell on the same cast.
             if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup, b.VisualPrefabBankIndex))
             {
                 DespawnWithImpact(slot, toroidalImpact, asteroidPopup);
@@ -393,6 +389,20 @@ namespace TitanOrbit.Systems
             {
                 DespawnWithImpact(slot, moonImpact, moonPopup);
                 return;
+            }
+
+            // Pass 2: blocking geometry only after valid targets and toroidal sweeps.
+            float travelled = ToroidalMap.ToroidalDistance(b.Position, b.SpawnPosition);
+            if (travelled >= b.MinTravelBeforeHit)
+            {
+                for (int i = 0; i < hitCount; i++)
+                {
+                    RaycastHit hit = s_sphereCastHits[i];
+                    if (hit.collider == null) continue;
+                    if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, b.OwnerShipNetworkId)) continue;
+                    DespawnWithImpact(slot, hit.point);
+                    return;
+                }
             }
         }
 

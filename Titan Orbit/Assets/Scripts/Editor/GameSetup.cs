@@ -935,14 +935,14 @@ namespace TitanOrbit.Editor
 
             float iconSize = 28f; // Larger so 128px icons scale down less and stay crisp
             float barLeft = margin + iconSize + 8f;
-            float valueWidth = 36f;
-            float barRight = minimapWidth - margin - valueWidth - 4f;
+            float valueWidth = 92f; // Fits "9999/9999" without wrapping
+            float barRight = minimapWidth - margin - valueWidth - 8f;
             float barW = barRight - barLeft;
 
-            (Image icon, Slider bar, TextMeshProUGUI value) Row1 = CreateShipStatRow(shipStatsPanel.transform, 0, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.2f, 0.9f, 0.45f, 1f), iconHealth);
-            (Image icon, Slider bar, TextMeshProUGUI value) Row2 = CreateShipStatRow(shipStatsPanel.transform, 1, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.2f, 0.65f, 0.95f, 1f), iconEnergy);
-            (Image icon, Slider bar, TextMeshProUGUI value) Row3 = CreateShipStatRow(shipStatsPanel.transform, 2, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.95f, 0.25f, 0.2f, 1f), iconGems);
-            (Image icon, Slider bar, TextMeshProUGUI value) Row4 = CreateShipStatRow(shipStatsPanel.transform, 3, margin, rowHeight, rowGap, barLeft, barW, iconSize, shiftBarSprite, new Color(0.9f, 0.75f, 0.3f, 1f), iconPeople);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row1 = CreateShipStatRow(shipStatsPanel.transform, 0, margin, rowHeight, rowGap, barLeft, barW, valueWidth, iconSize, shiftBarSprite, new Color(0.2f, 0.9f, 0.45f, 1f), iconHealth);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row2 = CreateShipStatRow(shipStatsPanel.transform, 1, margin, rowHeight, rowGap, barLeft, barW, valueWidth, iconSize, shiftBarSprite, new Color(0.2f, 0.65f, 0.95f, 1f), iconEnergy);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row3 = CreateShipStatRow(shipStatsPanel.transform, 2, margin, rowHeight, rowGap, barLeft, barW, valueWidth, iconSize, shiftBarSprite, new Color(0.95f, 0.25f, 0.2f, 1f), iconGems);
+            (Image icon, Slider bar, TextMeshProUGUI value) Row4 = CreateShipStatRow(shipStatsPanel.transform, 3, margin, rowHeight, rowGap, barLeft, barW, valueWidth, iconSize, shiftBarSprite, new Color(0.9f, 0.75f, 0.3f, 1f), iconPeople);
 
             const float orbitBtnSize = 20f;
             const float orbitBtnGap = 4f;
@@ -1406,7 +1406,7 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>Creates one ship stat row: icon (CleanFlat) + bar (Shift sprite) + value text. Returns (icon Image, Slider, value Text).</summary>
-        private static (Image icon, Slider bar, TextMeshProUGUI value) CreateShipStatRow(Transform parent, int rowIndex, float margin, float rowHeight, float rowGap, float barLeft, float barWidth, float iconSize, Sprite barSprite, Color fillColor, Sprite iconSprite)
+        private static (Image icon, Slider bar, TextMeshProUGUI value) CreateShipStatRow(Transform parent, int rowIndex, float margin, float rowHeight, float rowGap, float barLeft, float barWidth, float valueWidth, float iconSize, Sprite barSprite, Color fillColor, Sprite iconSprite)
         {
             float yTop = -margin - rowIndex * (rowHeight + rowGap);
             GameObject rowObj = new GameObject("Row" + rowIndex);
@@ -1438,17 +1438,20 @@ namespace TitanOrbit.Editor
             barRect.anchorMin = new Vector2(0, 0);
             barRect.anchorMax = new Vector2(1, 1);
             barRect.offsetMin = new Vector2(barLeft, 2);
-            barRect.offsetMax = new Vector2(-40f, -2);
+            barRect.offsetMax = new Vector2(-(valueWidth + 8f), -2);
 
-            GameObject valueObj = CreateText(rowObj.transform, "Value", "0", 16, TextAnchor.MiddleLeft);
-            valueObj.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.MidlineRight;
-            valueObj.GetComponent<TextMeshProUGUI>().color = new Color(1f, 1f, 1f, 0.95f);
+            GameObject valueObj = CreateText(rowObj.transform, "Value", "0/0", 14, TextAnchor.MiddleLeft);
+            TextMeshProUGUI valueTmp = valueObj.GetComponent<TextMeshProUGUI>();
+            valueTmp.alignment = TextAlignmentOptions.MidlineRight;
+            valueTmp.color = new Color(1f, 1f, 1f, 0.95f);
+            valueTmp.enableWordWrapping = false;
+            valueTmp.overflowMode = TextOverflowModes.Overflow;
             RectTransform valueRect = valueObj.GetComponent<RectTransform>();
             valueRect.anchorMin = new Vector2(1, 0.5f);
             valueRect.anchorMax = new Vector2(1, 0.5f);
             valueRect.pivot = new Vector2(1, 0.5f);
             valueRect.anchoredPosition = new Vector2(-4, 0);
-            valueRect.sizeDelta = new Vector2(34, rowHeight - 2);
+            valueRect.sizeDelta = new Vector2(valueWidth, rowHeight - 2);
 
             Slider bar = barObj.GetComponent<Slider>();
             return (iconImg, bar, valueObj.GetComponent<TextMeshProUGUI>());
@@ -1520,7 +1523,7 @@ namespace TitanOrbit.Editor
             Image bgImg = bg.AddComponent<Image>();
             bgImg.color = new Color(0.15f, 0.15f, 0.2f, 0.95f);
             bgImg.sprite = uiSprite;
-            if (useSliced) bgImg.type = Image.Type.Sliced; // Prevents rounded/sprite borders from stretching
+            bgImg.type = Image.Type.Simple;
             RectTransform bgRect = bg.GetComponent<RectTransform>();
             bgRect.anchorMin = Vector2.zero;
             bgRect.anchorMax = Vector2.one;
@@ -1530,17 +1533,17 @@ namespace TitanOrbit.Editor
             GameObject fillArea = new GameObject("Fill Area");
             fillArea.transform.SetParent(sliderObj.transform, false);
             RectTransform fillAreaRect = fillArea.AddComponent<RectTransform>();
-            fillAreaRect.anchorMin = new Vector2(0, 0.1f);
-            fillAreaRect.anchorMax = new Vector2(1, 0.9f);
-            fillAreaRect.offsetMin = new Vector2(4, 2);
-            fillAreaRect.offsetMax = new Vector2(-4, -2);
+            fillAreaRect.anchorMin = Vector2.zero;
+            fillAreaRect.anchorMax = Vector2.one;
+            fillAreaRect.offsetMin = Vector2.zero;
+            fillAreaRect.offsetMax = Vector2.zero;
 
             GameObject fill = new GameObject("Fill");
             fill.transform.SetParent(fillArea.transform, false);
             Image fillImg = fill.AddComponent<Image>();
             fillImg.color = fillColor;
             fillImg.sprite = uiSprite;
-            if (useSliced) fillImg.type = Image.Type.Sliced;
+            fillImg.type = Image.Type.Simple;
             RectTransform fillRect = fill.GetComponent<RectTransform>();
             fillRect.anchorMin = Vector2.zero;
             fillRect.anchorMax = new Vector2(1, 1);

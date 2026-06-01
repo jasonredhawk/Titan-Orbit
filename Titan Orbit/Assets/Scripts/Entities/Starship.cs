@@ -2137,8 +2137,9 @@ namespace TitanOrbit.Entities
             _cachedCardGemDepositSpeedMultiplier = 1f;
             _cachedCardPeopleTransferSpeedMultiplier = 1f;
 
-            if (equippedCards == null) return;
-            foreach (var card in equippedCards)
+            IReadOnlyList<CardData> cards = GetEquippedCardsForDisplay();
+            if (cards == null) return;
+            foreach (var card in cards)
             {
                 if (card == null) continue;
                 // Card stats use authored values only; level gates equipping, rarity affects shop drop weights — not combat math.
@@ -3889,6 +3890,7 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Builds per-cannon world origins and aim axes from this client's weapon component transforms (same sizing rules as <see cref="FireServerRpc"/>).
+        /// Always allocates arrays when cannons exist so <see cref="FireServerRpc"/> can fall back per-cannon to server muzzles when a slot is invalid.
         /// </summary>
         private bool TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] origins, out Vector3[] forwards)
         {
@@ -3908,17 +3910,49 @@ namespace TitanOrbit.Entities
             bool anyValid = false;
             for (int i = 0; i < cannonCount; i++)
             {
-                if (!IsValidWeaponFirePointIndex(i)) continue;
-                Transform pt = bulletFirePoints[i];
-                origins[i] = pt.position;
-                Vector3 wd = pt.forward;
-                wd.y = 0f;
-                if (wd.sqrMagnitude < 0.01f) wd = shipFwd;
-                else wd.Normalize();
-                forwards[i] = wd;
+                if (!TryResolveCannonFirePose(i, shipFwd, out Vector3 origin, out Vector3 forward))
+                    continue;
+                origins[i] = origin;
+                forwards[i] = forward;
                 anyValid = true;
             }
             return anyValid;
+        }
+
+        /// <summary>Resolves muzzle origin/forward for cannon <paramref name="index"/> from weapon transforms.</summary>
+        private bool TryResolveCannonFirePose(
+            int index,
+            Vector3 shipForward,
+            out Vector3 fireOrigin,
+            out Vector3 cannonForward)
+        {
+            fireOrigin = Vector3.zero;
+            cannonForward = shipForward;
+            if (!IsValidWeaponFirePointIndex(index))
+                return false;
+
+            Transform firePt = bulletFirePoints[index];
+            fireOrigin = firePt.position;
+            cannonForward = firePt.forward;
+
+            cannonForward.y = 0f;
+            if (cannonForward.sqrMagnitude < 0.01f)
+            {
+                cannonForward = shipForward;
+                cannonForward.y = 0f;
+            }
+            if (cannonForward.sqrMagnitude < 0.01f)
+                cannonForward = Vector3.forward;
+            else
+                cannonForward.Normalize();
+            return true;
+        }
+
+        private static bool HasOwnerReportedCannonPose(Vector3[] origins, Vector3[] forwards, int index)
+        {
+            if (origins == null || forwards == null) return false;
+            if (index < 0 || index >= origins.Length || index >= forwards.Length) return false;
+            return forwards[index].sqrMagnitude > 0.0001f;
         }
 
         /// <summary>
@@ -3983,12 +4017,16 @@ namespace TitanOrbit.Entities
                     ApplyBulletBankShotStats(bulletIdx, ref damage, ref speed, ref effectiveFireRate);
                     if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / Mathf.Max(0.01f, effectiveFireRate)) continue;
 
-                    Transform firePt = bulletFirePoints[i];
-                    bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
-                    bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
-                    Vector3 fireOrigin = hasOwnerReportedOrigin ? ownerReportedCannonOrigins[i] : firePt.position;
-
-                    Vector3 cannonFwd = hasOwnerReportedForward ? ownerReportedCannonForwards[i] : firePt.forward;
+                    bool useOwnerPose = HasOwnerReportedCannonPose(ownerReportedCannonOrigins, ownerReportedCannonForwards, i);
+                    Vector3 fireOrigin;
+                    Vector3 cannonFwd;
+                    if (useOwnerPose)
+                    {
+                        fireOrigin = ownerReportedCannonOrigins[i];
+                        cannonFwd = ownerReportedCannonForwards[i];
+                    }
+                    else if (!TryResolveCannonFirePose(i, shipForward, out fireOrigin, out cannonFwd))
+                        continue;
                     cannonFwd.y = 0f;
                     if (cannonFwd.sqrMagnitude < 0.01f)
                     {
@@ -4114,24 +4152,17 @@ namespace TitanOrbit.Entities
                         ApplyBulletBankShotStats(bulletIdx, ref damage, ref speed, ref effectiveFireRate);
                         if (i >= bulletLastFireTime.Length || Time.time - bulletLastFireTime[i] < 1f / Mathf.Max(0.01f, effectiveFireRate)) continue;
 
-                        Transform firePt = bulletFirePoints[i];
-                        bool hasOwnerReportedOrigin = ownerReportedCannonOrigins != null && i >= 0 && i < ownerReportedCannonOrigins.Length;
-                        bool hasOwnerReportedForward = ownerReportedCannonForwards != null && i >= 0 && i < ownerReportedCannonForwards.Length;
-                        if (useOnlyOwnerBallistics && (!hasOwnerReportedOrigin || !hasOwnerReportedForward))
-                            continue;
-
+                        bool useOwnerPose = useOnlyOwnerBallistics && HasOwnerReportedCannonPose(ownerReportedCannonOrigins, ownerReportedCannonForwards, i);
                         Vector3 fireOrigin;
                         Vector3 cannonFwd;
-                        if (useOnlyOwnerBallistics)
+                        if (useOwnerPose)
                         {
                             fireOrigin = ownerReportedCannonOrigins[i];
                             cannonFwd = ownerReportedCannonForwards[i];
                         }
-                        else
-                        {
-                            fireOrigin = firePt.position;
-                            cannonFwd = firePt.forward;
-                        }
+                        else if (!TryResolveCannonFirePose(i, shipForward, out fireOrigin, out cannonFwd))
+                            continue;
+
                         cannonFwd.y = 0f;
                         if (cannonFwd.sqrMagnitude < 0.01f)
                         {
