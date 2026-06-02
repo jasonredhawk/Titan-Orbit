@@ -26,13 +26,19 @@ namespace TitanOrbit.Editor.Build
             "Assets/StarSparrow/Textures/BonusContent/Asteroids",
             "Assets/StarSparrow/Textures",
             "Assets/HiRezSpaceshipsCreatorFree/Textures",
+            "Assets/DinV/Dynamic Space Background/Sprites",
         };
+
+        const string BuildProfilesFolder = "Assets/Settings/Build Profiles";
+        const int WebGlBuildTargetEnum = 20; // BuildTarget.WebGL
+        const int DxtSubtarget = 0; // WebGLTextureSubtarget.DXT
 
         public int callbackOrder => -200;
 
         static WebGLTextureImportBuildFix()
         {
             ApplyWebGlTextureSubtarget();
+            EnsureWebGlBuildProfilesUseDxt(log: false);
             BuildPlayerWindow.RegisterBuildPlayerHandler(OnBuildPlayerFromWindow);
         }
 
@@ -67,6 +73,7 @@ namespace TitanOrbit.Editor.Build
         internal static void PrepareWebGlBuild(bool log)
         {
             ApplyWebGlTextureSubtarget();
+            EnsureWebGlBuildProfilesUseDxt(log);
             EnsureSgtPlanetShaderIncluded();
             DisableSrpBatcherOnWebGlPipelineAsset();
 
@@ -103,6 +110,76 @@ namespace TitanOrbit.Editor.Build
             EditorUserBuildSettings.webGLBuildSubtarget = WebGLTextureSubtarget.DXT;
         }
 
+        /// <summary>
+        /// Build Profiles store their own WebGL texture subtarget (often ASTC). Unity 6 applies that
+        /// over EditorUserBuildSettings, producing invisible ship/planet meshes on desktop browsers.
+        /// </summary>
+        internal static void EnsureWebGlBuildProfilesUseDxt(bool log)
+        {
+            if (!AssetDatabase.IsValidFolder(BuildProfilesFolder))
+                return;
+
+            bool anyChanged = false;
+            string[] guids = AssetDatabase.FindAssets("t:BuildProfile", new[] { BuildProfilesFolder });
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                Object[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
+                if (assets == null || assets.Length == 0)
+                    continue;
+
+                bool profileChanged = false;
+                foreach (Object asset in assets)
+                {
+                    if (asset == null)
+                        continue;
+
+                    var so = new SerializedObject(asset);
+                    bool changed = false;
+
+                    SerializedProperty buildTarget = so.FindProperty("m_BuildTarget");
+                    if (buildTarget != null && buildTarget.intValue == WebGlBuildTargetEnum)
+                    {
+                        SerializedProperty subtarget = so.FindProperty("m_Subtarget");
+                        if (subtarget != null && subtarget.intValue != DxtSubtarget)
+                        {
+                            subtarget.intValue = DxtSubtarget;
+                            changed = true;
+                        }
+                    }
+
+                    SerializedProperty webGlTextureSubtarget = so.FindProperty("m_WebGLTextureSubtarget");
+                    if (webGlTextureSubtarget != null && webGlTextureSubtarget.intValue != DxtSubtarget)
+                    {
+                        webGlTextureSubtarget.intValue = DxtSubtarget;
+                        changed = true;
+                    }
+
+                    if (!changed)
+                        continue;
+
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    profileChanged = true;
+                }
+
+                if (!profileChanged)
+                    continue;
+
+                EditorUtility.SetDirty(AssetDatabase.LoadMainAssetAtPath(path));
+                anyChanged = true;
+                if (log)
+                {
+                    Debug.Log(
+                        "[WebGLTextureImportBuildFix] WebGL Build Profile texture subtarget set to DXT (desktop browsers): "
+                        + path);
+                }
+            }
+
+            if (anyChanged)
+                AssetDatabase.SaveAssets();
+        }
+
         internal static int ApplyWebGlGameplayTextureImports(bool log)
         {
             ApplyWebGlTextureSubtarget();
@@ -120,7 +197,10 @@ namespace TitanOrbit.Editor.Build
                 bool isPlanetTexture = path.StartsWith(
                     "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Textures",
                     System.StringComparison.OrdinalIgnoreCase);
-                int maxSize = isPlanetTexture ? 1024 : 512;
+                bool isBackgroundTexture = path.StartsWith(
+                    "Assets/DinV/Dynamic Space Background/Sprites",
+                    System.StringComparison.OrdinalIgnoreCase);
+                int maxSize = isPlanetTexture ? 1024 : isBackgroundTexture ? 1024 : 512;
 
                 TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
                 if (webgl == null || string.IsNullOrEmpty(webgl.name))

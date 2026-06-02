@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Entities;
 using TitanOrbit.Systems;
@@ -126,6 +127,13 @@ namespace TitanOrbit.UI
             shipUpgradeTree.RefreshVisualState();
         }
 
+        /// <summary>Called after a ship purchase/swap so tree highlights and labels match the new hull.</summary>
+        public void RefreshShipTreeAfterShipChange()
+        {
+            RefreshShipTreeVisualStateOnly();
+            RefreshShipsTab(scrollToActiveShipNode: false);
+        }
+
         internal bool IsTreeDataAvailable()
         {
             return UpgradeSystem.Instance != null
@@ -182,6 +190,9 @@ namespace TitanOrbit.UI
                 PopulateTreeNode(nodes[i], maxPower);
         }
 
+        private static bool IsDebugFreeShipUpgradeTree() =>
+            GameManager.Instance != null && GameManager.Instance.DebugFreeShipUpgradeTree;
+
         internal void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower)
         {
             if (view == null || currentShip == null)
@@ -191,6 +202,12 @@ namespace TitanOrbit.UI
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (tree == null || storePlanet == null || CardShopSystem.Instance == null)
                 return;
+
+            if (IsDebugFreeShipUpgradeTree())
+            {
+                PopulateTreeNodeDebug(view, maxPower);
+                return;
+            }
 
             int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
             int currentLevel = currentShip.ShipLevel;
@@ -259,6 +276,38 @@ namespace TitanOrbit.UI
             view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
         }
 
+        private void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, float maxPower)
+        {
+            int currentLevel = currentShip.ShipLevel;
+            int currentBranch = currentShip.BranchIndex;
+            bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
+            int nodeLevel = view.Level;
+            int nodeBranch = view.BranchIndex;
+
+            view.SetPriceClickHandler(() => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch));
+            view.SetInteractable(true);
+            view.EnsureStableButtonRendering();
+            view.SetInteractable(true);
+            view.SetButtonBackgroundColor(isCurrent
+                ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
+                : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+
+            view.SetPreview(ResolveShipTreePreviewSprite(view.Level, view.BranchIndex));
+
+            if (view.UsesMoonHorizontalLayout)
+                view.SetLevelLabel(view.Level == 1 ? "Lv 1" : $"Lv {view.Level}");
+            else
+                view.SetLevelLabel(view.Level == 1 ? "1" : view.Level.ToString());
+
+            if (view.Level == 1)
+                view.SetShipName(GetStarterShipDisplayName());
+            else
+                view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
+
+            view.SetPrice("Free");
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
+        }
+
         private void UpdateShipTreeHintText()
         {
             if (shipUpgradeTree == null)
@@ -294,7 +343,9 @@ namespace TitanOrbit.UI
             bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
             bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
 
-            if (canSwapHullAtCurrentSlot)
+            if (IsDebugFreeShipUpgradeTree())
+                shipUpgradeTree.Hint.text = "Debug: click any ship to try it for free (all tiers unlocked).";
+            else if (canSwapHullAtCurrentSlot)
                 shipUpgradeTree.Hint.text = "Click your ship to swap to this moon's hull at your tier (free).";
             else if (storePlanetLevelBlocksSwap)
                 shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
@@ -322,6 +373,22 @@ namespace TitanOrbit.UI
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
             var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
+
+            if (IsDebugFreeShipUpgradeTree())
+            {
+                if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
+                    return;
+
+                if (!CardShopSystem.Instance.IsSpawned)
+                {
+                    Debug.LogWarning("OrbitStationUI: CardShopSystem is not spawned — start a networked game (host) to change ships.");
+                    return;
+                }
+
+                CardShopSystem.Instance.RequestDebugSelectUpgradeTreeNode(
+                    planetNo.NetworkObjectId, currentShip.NetworkObjectId, nodeLevel, targetBranchIndex);
+                return;
+            }
 
             if (nodeLevel == currentShip.ShipLevel + 1)
             {

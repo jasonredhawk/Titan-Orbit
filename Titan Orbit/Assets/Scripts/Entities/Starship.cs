@@ -1342,6 +1342,18 @@ namespace TitanOrbit.Entities
             if (planetNo == null) return false;
             return gemMoonPlanetNetworkObjectId.Value == planetNo.NetworkObjectId;
         }
+
+        /// <summary>
+        /// True when the ease-in-out dock transition has finished (ship on moon surface).
+        /// Gem deposit must wait for this — <see cref="gemMoonDocked"/> latches earlier when landing gates pass.
+        /// </summary>
+        private bool IsGemMoonSurfaceLandingComplete()
+        {
+            if (!gemMoonDocked.Value) return false;
+            float dockDuration = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
+            return gemMoonDockApproachElapsed >= dockDuration;
+        }
+
         public float GemMoonDockIgnoreUntilServerTime => gemMoonDockIgnoreUntilServerTime.Value;
         public int SmallRocketsCount => smallRocketsCount.Value;
         public int LargeRocketsCount => largeRocketsCount.Value;
@@ -4944,6 +4956,12 @@ namespace TitanOrbit.Entities
         private void TickOrbitGemDeposit()
         {
             if (!gemMoonDocked.Value)
+            {
+                depositAccumulator = 0f;
+                return;
+            }
+
+            if (!IsGemMoonSurfaceLandingComplete())
             {
                 depositAccumulator = 0f;
                 return;

@@ -15,6 +15,8 @@ namespace TitanOrbit.Core
         [Header("Debug")]
         [Tooltip("When enabled: one-shot asteroids, fast economy/combat tuning, instant gem deposit and people load/unload, and unload counts as 100x people impact. Toggle off for normal play.")]
         [SerializeField] private bool debugMode = true;
+        [Tooltip("Every ship in the gem-moon upgrade tree is clickable, shows Free, and costs no gems (ignores planet/home level gates).")]
+        [SerializeField] private bool debugFreeShipUpgradeTree = true;
 
         [Header("Game Settings")]
         [SerializeField] private int maxPlayersPerTeam = 20;
@@ -22,6 +24,7 @@ namespace TitanOrbit.Core
         [SerializeField] private float attributeScaleExaggeration = 0.15f;
 
         public bool DebugMode => debugMode;
+        public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
         /// <summary>Attribute scale exaggeration for ship components (15% default). Ships use this when > 0, else their own value.</summary>
         public float AttributeScaleExaggeration => attributeScaleExaggeration;
         [SerializeField] private int numberOfTeams = 3;
