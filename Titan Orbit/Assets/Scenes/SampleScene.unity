@@ -1194,6 +1194,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e32e60398d7d59b4a93251137092dcaa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipStatsFpsStyleHUD
+  valueColumnWidth: 92
+  valueColumnInset: 8
   iconHealth: {fileID: 903603371}
   iconEnergy: {fileID: 1229198910}
   iconGems: {fileID: 2134221421}
@@ -8187,8 +8189,9 @@ MonoBehaviour:
   maxNeutralPlanets: 12
   minPlanetSize: 9
   maxPlanetSize: 16
+  planetRingPlacementMargin: 3
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 666
+  asteroidsAtMinMapSize: 333
   asteroidsAtMaxMapSize: 666
   minAsteroidClusters: 6
   maxAsteroidClusters: 66
@@ -14034,8 +14037,9 @@ MonoBehaviour:
   edgeMarkerMinSize: 20
   edgeMarkerMaxSize: 48
   maxPlanetDistance: 150
-  expandedSizePercent: 0.85
-  fullMapRadius: 212
+  expandedSizePercent: 1
+  expandedBackgroundAlpha: 0.97
+  fullMapRadius: 0
   markerHeight: 1
   mapSizeLabel: {fileID: 0}
   playerBlipPrefab: {fileID: 0}

@@ -15,6 +15,7 @@ namespace TitanOrbit.Entities
     /// Docking uses a trigger collider; collisions use a non-trigger collider on the same Rigidbody.
     /// After the moon's shield reaches 0, it drains planet gems and expels them as collectible gems.
     /// </summary>
+    [DefaultExecutionOrder(32100)] // After ToroidalRenderer (32000): visual orbit follows parent display tile
     public class PlanetGemMoon : MonoBehaviour
     {
         [SerializeField] private Planet planet;
@@ -84,7 +85,7 @@ namespace TitanOrbit.Entities
         // Orbit is now driven by a parametric formula tied to NetworkManager.ServerTime so every
         // peer renders the moon at the same place without any per-tick replication. orbitAngle /
         // spinAngleDegrees are still updated for any callers that read them, but the source of
-        // truth is the synced time + cached phase offsets below (see ComputeOrbitPosition).
+        // truth is the synced time + cached phase offsets below (see ComputeOrbitMotion).
         private float orbitAngle;
         private float spinAngleDegrees;
         private Vector3 cachedWorldVelocity;
@@ -369,7 +370,7 @@ namespace TitanOrbit.Entities
             // Deterministic phase per planet: every peer derives the same starting angle/spin
             // from the planet's NetworkObjectId, so the parametric orbit lines up without any
             // per-tick sync. The integer cast `spinAngleDegrees` is retained only for the
-            // SpinAngleDegrees getter; ComputeOrbitPosition / LateUpdate overwrite it each frame.
+            // SpinAngleDegrees getter; ComputeOrbitMotion / LateUpdate overwrite it each frame.
             phaseOffset = (id % 6283UL) * 0.001f;
             orbitAngle = (float)phaseOffset;
             spinAngleDegrees = (id % 360UL);
@@ -468,15 +469,17 @@ namespace TitanOrbit.Entities
             // body trigger callbacks fire on a stable cadence. Visual smoothness comes from
             // LateUpdate below, which sets transform.position parametrically every render frame.
             double t = GetSyncedTimeSeconds();
-            ComputeOrbitPosition(t, out Vector3 pos, out cachedWorldVelocity);
+            ComputeOrbitMotion(t, out Vector3 worldOffset, out cachedWorldVelocity);
 
-            if (_rb != null && _rb.isKinematic)
+            // Server: logical world position for triggers/collision. Clients: LateUpdate sets local orbit.
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
-                _rb.MovePosition(pos);
-            }
-            else
-            {
-                transform.position = pos;
+                Vector3 pos = planet.GetOrbitGameplayCenterWorld() + worldOffset;
+                pos.y = 0f;
+                if (_rb != null && _rb.isKinematic)
+                    _rb.MovePosition(pos);
+                else
+                    transform.position = pos;
             }
 
             // Keep moon shield capacity scaled with current planet level.
@@ -507,8 +510,8 @@ namespace TitanOrbit.Entities
             if (planet == null) return;
 
             double t = GetSyncedTimeSeconds();
-            ComputeOrbitPosition(t, out Vector3 pos, out cachedWorldVelocity);
-            transform.position = pos;
+            ComputeOrbitMotion(t, out Vector3 worldOffset, out cachedWorldVelocity);
+            ApplyOrbitOffsetAsLocalPosition(worldOffset);
 
             if (_visualTransform == null) _visualTransform = transform.Find("GemMoonVisual");
             if (_visualTransform != null)
@@ -546,11 +549,11 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Pure function of planet state + synced time. <paramref name="t"/> is the synced server time
-        /// in seconds. Returns the world position and tangential velocity of the moon at time t.
+        /// in seconds. Returns world-space orbit offset from the planet center and tangential velocity.
         /// When the orbital angular speed changes (planet level up), <see cref="phaseOffset"/> is
         /// adjusted so the angle stays continuous; both peers run the same correction independently.
         /// </summary>
-        private void ComputeOrbitPosition(double t, out Vector3 pos, out Vector3 worldVelocity)
+        private void ComputeOrbitMotion(double t, out Vector3 worldOffset, out Vector3 worldVelocity)
         {
             float r = ComputeOrbitRadiusWorld();
             float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
@@ -573,14 +576,24 @@ namespace TitanOrbit.Entities
             float theta = (float)(phaseOffset - omega * t);
             orbitAngle = theta;
 
-            Vector3 center = planet.GetOrbitGameplayCenterWorld();
-            Vector3 offset = new Vector3(Mathf.Cos(theta), 0f, Mathf.Sin(theta)) * r;
-            pos = center + offset;
-            pos.y = 0f;
+            worldOffset = new Vector3(Mathf.Cos(theta), 0f, Mathf.Sin(theta)) * r;
 
-            Vector3 radial = r > 0.001f ? offset / r : Vector3.forward;
+            Vector3 radial = r > 0.001f ? worldOffset / r : Vector3.forward;
             // Counter-clockwise tangent for the negative-omega motion above.
             worldVelocity = new Vector3(-radial.z, 0f, radial.x) * speed;
+        }
+
+        /// <summary>
+        /// Parented orbit offset in planet-local space so the moon follows <see cref="ToroidalRenderer"/>
+        /// display tiles (clients) without breaking toroidal gameplay math on the server.
+        /// </summary>
+        private void ApplyOrbitOffsetAsLocalPosition(Vector3 worldOffset)
+        {
+            if (planet == null) return;
+            Vector3 ls = planet.transform.lossyScale;
+            float sx = Mathf.Max(0.001f, Mathf.Abs(ls.x));
+            float sz = Mathf.Max(0.001f, Mathf.Abs(ls.z));
+            transform.localPosition = new Vector3(worldOffset.x / sx, 0f, worldOffset.z / sz);
         }
 
         private void TickMoonCollisionDamageServer()
@@ -1070,7 +1083,9 @@ namespace TitanOrbit.Entities
                 p.y = 0f;
                 return p;
             }
-            ComputeOrbitPosition(GetSyncedTimeSeconds(), out Vector3 pos, out _);
+            ComputeOrbitMotion(GetSyncedTimeSeconds(), out Vector3 worldOffset, out _);
+            Vector3 pos = planet.GetOrbitGameplayCenterWorld() + worldOffset;
+            pos.y = 0f;
             return pos;
         }
 

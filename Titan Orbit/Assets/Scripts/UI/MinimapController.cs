@@ -36,7 +36,8 @@ namespace TitanOrbit.UI
         
         [Header("Expand Settings")]
         [SerializeField] private float expandedSizePercent = 0.85f; // Percentage of screen to fill (85%)
-        [Tooltip("World radius for expanded minimap when ToroidalMap size is not set yet. When the map has loaded, expanded zoom uses half the map diagonal from ToroidalMap instead.")]
+        [SerializeField] private float expandedBackgroundAlpha = 0.9f;
+        [Tooltip("World-space radius visible around the player when expanded. Smaller = zoomed in, larger = zoomed out. Set to 0 or less to auto-fit the full toroidal map.")]
         [SerializeField] private float fullMapRadius = 212f;
         [SerializeField] private float markerHeight = 1f; // Height above ground for markers
 
@@ -179,9 +180,12 @@ namespace TitanOrbit.UI
             dz -= mapH * Mathf.Round(dz / mapH);
         }
 
-        /// <summary>World-space radius that fits the full toroidal map in the expanded minimap (center to corner).</summary>
+        /// <summary>World-space radius used for expanded minimap zoom (player-centered).</summary>
         private float GetExpandedWorldRadius()
         {
+            if (fullMapRadius > 0f)
+                return fullMapRadius;
+
             float w = ToroidalMap.GetMapWidth();
             float h = ToroidalMap.GetMapHeight();
             if (w > 1f && h > 1f)
@@ -190,7 +194,15 @@ namespace TitanOrbit.UI
                 float hh = h * 0.5f;
                 return Mathf.Sqrt(hw * hw + hh * hh);
             }
-            return fullMapRadius;
+
+            return 212f;
+        }
+
+        private void OnValidate()
+        {
+            if (!Application.isPlaying || !isExpanded)
+                return;
+            minimapRadius = GetExpandedWorldRadius();
         }
 
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
@@ -993,11 +1005,14 @@ namespace TitanOrbit.UI
             }
             
             // Set the background to use a circular sprite
-            bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize);
+            float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.4f;
+            bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha);
             bgImage.type = Image.Type.Simple;
+            // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
+            bgImage.color = Color.white;
         }
         
-        private Sprite CreateCircularBackgroundSprite(int size)
+        private Sprite CreateCircularBackgroundSprite(int size, float alpha)
         {
             int textureSize = size;
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
@@ -1009,7 +1024,7 @@ namespace TitanOrbit.UI
             float radius = textureSize / 2f;
             
             // Create circular background with semi-transparent black
-            Color bgColor = new Color(0, 0, 0, 0.4f); // Semi-transparent black
+            Color bgColor = new Color(0, 0, 0, alpha);
             
             for (int y = 0; y < textureSize; y++)
             {

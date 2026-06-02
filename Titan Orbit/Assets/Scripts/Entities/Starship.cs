@@ -5238,8 +5238,8 @@ namespace TitanOrbit.Entities
             debRb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             debRb.interpolation = RigidbodyInterpolation.Interpolate;
             debRb.useGravity = false;
-            // Keep debris on the same gameplay plane as ships/asteroids.
-            debRb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            // Keep debris on the same gameplay plane as ships/asteroids, but allow tumbling on all axes.
+            debRb.constraints = RigidbodyConstraints.FreezePositionY;
             // Keep breakup pieces moving and bouncing for the full respawn timeout.
             CombatSystem combat = useCombatSystemDeathBreakupTuning ? CombatSystem.Instance : null;
             float minImpulse = combat != null ? combat.DeathDebrisMinImpulse : 1f;
@@ -5278,7 +5278,10 @@ namespace TitanOrbit.Entities
             Vector3 vel = dir * horizontalSpeed;
             vel.y = 0f;
             debRb.linearVelocity = vel;
-            debRb.angularVelocity = Vector3.up * Random.Range(minAngularVel, maxAngularVel);
+            debRb.angularVelocity = new Vector3(
+                RandomSignedAngularSpeed(minAngularVel, maxAngularVel),
+                RandomSignedAngularSpeed(minAngularVel, maxAngularVel),
+                RandomSignedAngularSpeed(minAngularVel, maxAngularVel));
             if (IsServer && debrisBlocksEnemyBullets)
             {
                 var shield = go.AddComponent<ShipDeathDebris>();
@@ -5293,6 +5296,12 @@ namespace TitanOrbit.Entities
 
             Object.Destroy(go, debrisLifetime);
             return true;
+        }
+
+        private static float RandomSignedAngularSpeed(float minSpeed, float maxSpeed)
+        {
+            float speed = Random.Range(minSpeed, maxSpeed);
+            return Random.value < 0.5f ? -speed : speed;
         }
 
         private static PhysicsMaterial GetDeathDebrisNoFrictionMaterial()

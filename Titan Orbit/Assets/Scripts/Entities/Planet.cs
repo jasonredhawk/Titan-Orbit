@@ -190,10 +190,21 @@ namespace TitanOrbit.Entities
         /// World-space radius from planet center to the outer gameplay orbit ring edge (moon orbit + band thickness).
         /// Used by <see cref="Generation.MapGenerator"/> so planet rings do not overlap when placing the map.
         /// </summary>
+        public const int DefaultMaxPlanetLevel = 6;
+
         public static float ComputeMapPlacementInfluenceRadiusWorld(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier = 1f)
         {
             float moonOrbitWorld = EstimateGemMoonOrbitRadiusWorldStatic(planetSize, planetLevel, gemMoonHomeScaleMultiplier);
             return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * OrbitRingHalfThicknessLocal;
+        }
+
+        public static float ComputeGemMoonVisualUniformScaleStatic(float planetSize, float gemMoonHomeScaleMultiplier = 1f)
+        {
+            planetSize = Mathf.Max(0.01f, planetSize);
+            float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
+            float inv = GemMoonReferencePlanetSize / planetSize;
+            inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
+            return Mathf.Clamp(baseAtRef * inv * Mathf.Max(0.01f, gemMoonHomeScaleMultiplier), 0.02f, 1.25f);
         }
 
         private static float EstimateGemMoonOrbitRadiusWorldStatic(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier)
@@ -206,10 +217,7 @@ namespace TitanOrbit.Entities
             float moonNominalLocal = OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitRingGrowthPerLevel, level - 1);
             float rNominal = planetSize * moonNominalLocal * Mathf.Max(1.01f, defaultMoonOrbitOutsideFactor);
 
-            float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
-            float inv = GemMoonReferencePlanetSize / planetSize;
-            inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
-            float gemMoonUniformScale = Mathf.Clamp(baseAtRef * inv * Mathf.Max(0.01f, gemMoonHomeScaleMultiplier), 0.02f, 1.25f);
+            float gemMoonUniformScale = ComputeGemMoonVisualUniformScaleStatic(planetSize, gemMoonHomeScaleMultiplier);
             float bodyLocalRadius = 0.5f * gemMoonUniformScale;
             float dockLocalRadius = bodyLocalRadius * 1.95f;
             float moonDock = dockLocalRadius * planetSize;

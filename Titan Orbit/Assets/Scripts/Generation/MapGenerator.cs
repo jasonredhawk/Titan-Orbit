@@ -159,6 +159,7 @@ namespace TitanOrbit.Generation
         private struct PlanetPlacement
         {
             public Vector3 Position;
+            /// <summary>World-space radius to the outer edge of the planet orbit ring.</summary>
             public float InfluenceRadius;
         }
         private int nextPlanetId = 1;
@@ -832,11 +833,9 @@ namespace TitanOrbit.Generation
 
                 if (numberOfAsteroidsThisMap > 0)
                 {
-                    Vector3[] clusterCenters = new Vector3[asteroidClustersThisMap];
-                    for (int c = 0; c < asteroidClustersThisMap; c++)
-                        clusterCenters[c] = GetRandomMapPositionAvoidingPlanetRings(0f);
-
                     int perCluster = Mathf.CeilToInt((float)numberOfAsteroidsThisMap / Mathf.Max(1, asteroidClustersThisMap));
+                    Vector3[] clusterCenters = PickAsteroidClusterCenters(asteroidClustersThisMap);
+
                     int spawned = 0;
                     int effectiveAsteroidsPerBatch = ComputeEffectiveAsteroidsPerBatch(numberOfAsteroidsThisMap);
                     for (int c = 0; c < asteroidClustersThisMap && spawned < numberOfAsteroidsThisMap; c++)
@@ -846,7 +845,7 @@ namespace TitanOrbit.Generation
                         {
                             Vector3 position = GetPositionInCluster(center, perCluster);
                             if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
-                            if (OverlapsAnyPlanetRings(position, MAX_ASTEROID_RADIUS)) continue;
+                            if (OverlapsPlanetOrbitRings(position, MAX_ASTEROID_RADIUS)) continue;
 
                             asteroidPositions.Add(position);
                             float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
@@ -983,8 +982,9 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
-        /// Random packed placement with minimum pairwise spacing; relaxes separation slightly on failure,
-        /// then falls back to a rotated regular polygon so generation always succeeds.
+        /// Places home planets on a regular polygon (radius + rotation) chosen to minimize toroidal
+        /// distance spread between all pairs. Relaxes minimum separation on failure, then falls back
+        /// to a simple ring so generation always succeeds.
         /// </summary>
         private void BuildRandomHomePositionsOrFallback(int n)
         {
@@ -992,35 +992,46 @@ namespace TitanOrbit.Generation
             float homeInfluence = GetHomePlanetInfluenceRadius();
             float ringPairSep = 2f * homeInfluence + Mathf.Max(0f, planetRingPlacementMargin);
             float minSep = Mathf.Max(25f, minHomePlanetPairSeparation, ringPairSep);
-            const int attemptsPerPlanet = 500;
+            float maxRadius = GetMaxHomePlanetRingRadius(homeInfluence);
+            float baseRot = (float)random.NextDouble() * Mathf.PI * 2f;
 
-            for (int relax = 0; relax < 16; relax++)
+            const int radiusSteps = 24;
+            const int rotationSteps = 48;
+
+            List<Vector3> bestLayout = null;
+            float bestScore = float.NegativeInfinity;
+
+            for (int relax = 0; relax < 12; relax++)
             {
-                homePlanetPositions.Clear();
-                bool complete = true;
-                for (int i = 0; i < n; i++)
+                float requiredMin = minSep;
+                bestLayout = null;
+                bestScore = float.NegativeInfinity;
+
+                for (int ri = 0; ri <= radiusSteps; ri++)
                 {
-                    Vector3 chosen = Vector3.zero;
-                    bool found = false;
-                    for (int attempt = 0; attempt < attemptsPerPlanet; attempt++)
+                    float r = maxRadius * (ri + 1) / (radiusSteps + 1);
+                    for (int ti = 0; ti < rotationSteps; ti++)
                     {
-                        Vector3 candidate = RandomHomeCandidateOnMap();
-                        if (!OverlapsHomePlanetRings(candidate, homeInfluence))
+                        float rot = baseRot + (Mathf.PI * 2f * ti) / rotationSteps;
+                        List<Vector3> candidate = BuildRegularHomePolygon(n, r, rot);
+                        if (!MeetsMinToroidalPairSeparation(candidate, requiredMin))
+                            continue;
+
+                        float score = ScoreToroidalEquidistance(candidate);
+                        if (score > bestScore)
                         {
-                            chosen = candidate;
-                            found = true;
-                            break;
+                            bestScore = score;
+                            bestLayout = candidate;
                         }
                     }
-                    if (!found)
-                    {
-                        complete = false;
-                        break;
-                    }
-                    homePlanetPositions.Add(chosen);
                 }
-                if (complete)
+
+                if (bestLayout != null)
+                {
+                    homePlanetPositions.AddRange(bestLayout);
                     return;
+                }
+
                 minSep *= 0.92f;
             }
 
@@ -1028,39 +1039,93 @@ namespace TitanOrbit.Generation
             PlaceHomePlanetsFallbackRing(n);
         }
 
-        private Vector3 RandomHomeCandidateOnMap()
+        private float GetMaxHomePlanetRingRadius(float homeInfluence)
         {
-            float margin = Mathf.Clamp(minHomePlanetPairSeparation * 0.4f, 24f, mapWidth * 0.42f);
-            float halfW = Mathf.Max(8f, mapWidth * 0.5f - margin);
-            float halfH = Mathf.Max(8f, mapHeight * 0.5f - margin);
-            return new Vector3(
-                GetRandomFloat(-halfW, halfW),
-                0f,
-                GetRandomFloat(-halfH, halfH));
+            float margin = Mathf.Max(
+                28f,
+                clearanceRadiusAroundHomePlanet + 20f,
+                minHomePlanetPairSeparation * 0.35f,
+                homeInfluence + 8f);
+            float halfSpace = Mathf.Min(mapWidth, mapHeight) * 0.5f - margin;
+            if (halfSpace < 20f)
+                halfSpace = Mathf.Max(15f, Mathf.Min(mapWidth, mapHeight) * 0.5f - 10f);
+            return Mathf.Max(20f, halfSpace);
         }
 
-        /// <summary>Evenly spaced ring with random rotation; pairwise distance scales with radius.</summary>
+        private static List<Vector3> BuildRegularHomePolygon(int n, float radius, float rotationRad)
+        {
+            var positions = new List<Vector3>(n);
+            for (int i = 0; i < n; i++)
+            {
+                float ang = rotationRad + (Mathf.PI * 2f * i) / n;
+                positions.Add(new Vector3(Mathf.Cos(ang) * radius, 0f, Mathf.Sin(ang) * radius));
+            }
+            return positions;
+        }
+
+        private static bool MeetsMinToroidalPairSeparation(List<Vector3> positions, float minSep)
+        {
+            for (int i = 0; i < positions.Count; i++)
+            {
+                for (int j = i + 1; j < positions.Count; j++)
+                {
+                    if (ToroidalMap.ToroidalDistance(positions[i], positions[j]) < minSep)
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>Higher is better: large minimum toroidal distance and small spread between pairs.</summary>
+        private static float ScoreToroidalEquidistance(List<Vector3> positions)
+        {
+            float minD = float.MaxValue;
+            float maxD = 0f;
+            float sumD = 0f;
+            int pairs = 0;
+
+            for (int i = 0; i < positions.Count; i++)
+            {
+                for (int j = i + 1; j < positions.Count; j++)
+                {
+                    float d = ToroidalMap.ToroidalDistance(positions[i], positions[j]);
+                    minD = Mathf.Min(minD, d);
+                    maxD = Mathf.Max(maxD, d);
+                    sumD += d;
+                    pairs++;
+                }
+            }
+
+            if (pairs == 0)
+                return float.NegativeInfinity;
+
+            float mean = sumD / pairs;
+            float spread = maxD - minD;
+            float spreadRatio = spread / Mathf.Max(1f, mean);
+            return minD * 2f - spread - spreadRatio * 10f;
+        }
+
+        /// <summary>Evenly spaced ring with random rotation; uses toroidal pairwise distances.</summary>
         private void PlaceHomePlanetsFallbackRing(int n)
         {
             float homeInfluence = GetHomePlanetInfluenceRadius();
             float ringPairSep = 2f * homeInfluence + Mathf.Max(0f, planetRingPlacementMargin);
-            float margin = Mathf.Max(28f, clearanceRadiusAroundHomePlanet + 20f, minHomePlanetPairSeparation * 0.35f, homeInfluence + 8f);
-            float halfSpace = Mathf.Min(mapWidth, mapHeight) * 0.5f - margin;
-            if (halfSpace < 20f)
-                halfSpace = Mathf.Max(15f, Mathf.Min(mapWidth, mapHeight) * 0.5f - 10f);
-
-            float minChord = Mathf.Max(28f, minHomePlanetPairSeparation * 0.55f, ringPairSep);
-            float sinHalf = Mathf.Sin(Mathf.PI / Mathf.Max(2, n));
-            float rFromChord = minChord / (2f * Mathf.Max(0.01f, sinHalf));
-            float rPreferred = Mathf.Max(rFromChord, homePlanetDistance * 0.45f);
-            float r = Mathf.Clamp(rPreferred, 35f, halfSpace);
-
+            float minSep = Mathf.Max(28f, minHomePlanetPairSeparation * 0.55f, ringPairSep);
+            float maxRadius = GetMaxHomePlanetRingRadius(homeInfluence);
             float rot = (float)random.NextDouble() * Mathf.PI * 2f;
-            for (int i = 0; i < n; i++)
+
+            float chosenRadius = Mathf.Min(maxRadius, Mathf.Max(35f, homePlanetDistance * 0.45f));
+            for (int ri = 0; ri <= 40; ri++)
             {
-                float ang = rot + (Mathf.PI * 2f * i) / n;
-                homePlanetPositions.Add(new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r));
+                float r = maxRadius * (ri + 1) / 41f;
+                if (MeetsMinToroidalPairSeparation(BuildRegularHomePolygon(n, r, rot), minSep))
+                {
+                    chosenRadius = r;
+                    break;
+                }
             }
+
+            homePlanetPositions.AddRange(BuildRegularHomePolygon(n, chosenRadius, rot));
         }
 
         /// <summary>
@@ -1162,14 +1227,9 @@ namespace TitanOrbit.Generation
 
             if (numberOfAsteroidsThisMap <= 0) return;
 
-            // Create cluster centers
-            Vector3[] clusterCenters = new Vector3[asteroidClustersThisMap];
-            for (int c = 0; c < asteroidClustersThisMap; c++)
-            {
-                clusterCenters[c] = GetRandomMapPositionAvoidingPlanetRings(0f);
-            }
-
             int perCluster = Mathf.CeilToInt((float)numberOfAsteroidsThisMap / Mathf.Max(1, asteroidClustersThisMap));
+            Vector3[] clusterCenters = PickAsteroidClusterCenters(asteroidClustersThisMap);
+
             for (int c = 0; c < asteroidClustersThisMap; c++)
             {
                 Vector3 center = clusterCenters[c];
@@ -1177,7 +1237,7 @@ namespace TitanOrbit.Generation
                 {
                     Vector3 position = GetPositionInCluster(center, perCluster);
                     if (IsTooCloseToAny(position, minAsteroidSpacing, asteroidPositions)) continue;
-                    if (OverlapsAnyPlanetRings(position, MAX_ASTEROID_RADIUS)) continue;
+                    if (OverlapsPlanetOrbitRings(position, MAX_ASTEROID_RADIUS)) continue;
 
                     asteroidPositions.Add(position);
                     float size = GetRandomFloat(minAsteroidSize, maxAsteroidSize);
@@ -1243,6 +1303,49 @@ namespace TitanOrbit.Generation
             return cachedHomePlanetInfluenceRadius;
         }
 
+        /// <summary>
+        /// Spreads cluster seeds around the map (one angular sector per cluster) so asteroids are not
+        /// forced into a single valid pocket when many planet rings overlap.
+        /// </summary>
+        private Vector3[] PickAsteroidClusterCenters(int clusterCount)
+        {
+            var centers = new Vector3[clusterCount];
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
+            float innerFrac = 0.12f;
+            float outerFrac = 0.88f;
+            float sectorWidth = Mathf.PI * 2f / Mathf.Max(1, clusterCount);
+            float sectorJitter = sectorWidth * 0.85f;
+
+            for (int c = 0; c < clusterCount; c++)
+            {
+                float sectorStart = sectorWidth * c;
+                Vector3 chosen = Vector3.zero;
+                bool found = false;
+
+                for (int attempt = 0; attempt < 200; attempt++)
+                {
+                    float angle = sectorStart + GetRandomFloat(0f, sectorJitter);
+                    float radial = GetRandomFloat(innerFrac, outerFrac);
+                    float x = Mathf.Cos(angle) * radial * halfW;
+                    float z = Mathf.Sin(angle) * radial * halfH;
+                    Vector3 candidate = new Vector3(x, 0f, z);
+                    if (!OverlapsPlanetOrbitRings(candidate, MAX_ASTEROID_RADIUS))
+                    {
+                        chosen = candidate;
+                        found = true;
+                        break;
+                    }
+                }
+
+                centers[c] = found
+                    ? chosen
+                    : GetRandomMapPositionAvoidingPlanetRings(MAX_ASTEROID_RADIUS);
+            }
+
+            return centers;
+        }
+
         private void RegisterPlanetPlacement(Vector3 position, float influenceRadius)
         {
             planetPlacements.Add(new PlanetPlacement
@@ -1252,29 +1355,21 @@ namespace TitanOrbit.Generation
             });
         }
 
-        private bool OverlapsAnyPlanetRings(Vector3 position, float candidateRadius)
+        /// <summary>True when <paramref name="position"/> lies inside a planet's orbit ring (plus asteroid radius and margin).</summary>
+        private bool OverlapsPlanetOrbitRings(Vector3 position, float asteroidRadius)
         {
             float margin = Mathf.Max(0f, planetRingPlacementMargin);
             foreach (var placement in planetPlacements)
             {
-                float minDist = placement.InfluenceRadius + candidateRadius + margin;
-                if (Vector3.Distance(position, placement.Position) < minDist)
+                float minDist = placement.InfluenceRadius + asteroidRadius + margin;
+                if (ToroidalMap.ToroidalDistance(position, placement.Position) < minDist)
                     return true;
             }
             return false;
         }
 
-        private bool OverlapsHomePlanetRings(Vector3 candidate, float homeInfluenceRadius)
-        {
-            float margin = Mathf.Max(0f, planetRingPlacementMargin);
-            float minDist = 2f * homeInfluenceRadius + margin;
-            foreach (var hp in homePlanetPositions)
-            {
-                if (Vector3.Distance(candidate, hp) < minDist)
-                    return true;
-            }
-            return false;
-        }
+        private bool OverlapsAnyPlanetRings(Vector3 position, float candidateRadius)
+            => OverlapsPlanetOrbitRings(position, candidateRadius);
 
         private Vector3 GetRandomMapPositionAvoidingPlanetRings(float candidateInfluenceRadius, int maxAttempts = 250)
         {
