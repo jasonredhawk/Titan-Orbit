@@ -769,11 +769,12 @@ namespace TitanOrbit.Entities
                 ship.OnPeopleUnloadArrivedFromProjectile(deliverAmount, sourceTeam, feedbackPos, planet);
             else if (VisualEffectsManager.Instance != null)
             {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                feedbackPos.y = 0f;
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
                     feedbackPos,
-                    (int)FloatingCountChannel.PeopleUnload,
-                    deliverAmount,
-                    (int)sourceTeam);
+                    FloatingCountChannel.PeopleUnload,
+                    -deliverAmount,
+                    sourceTeam);
             }
 
             DespawnProjectile(successfulDelivery: true);

@@ -422,6 +422,9 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<float> currentPeople = new NetworkVariable<float>(0f);
         private NetworkVariable<float> currentEnergy = new NetworkVariable<float>(50f);
+        /// <summary>Server-authoritative gem/people caps for HUD (clients may not resolve all card bonuses locally).</summary>
+        private NetworkVariable<float> networkGemCapacity = new NetworkVariable<float>(100f);
+        private NetworkVariable<float> networkPeopleCapacity = new NetworkVariable<float>(10f);
         private NetworkVariable<TeamManager.Team> shipTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         /// <summary>Human player has no team yet (brief replication window; player ships are spawned only after team join).</summary>
         private bool IsAwaitingTeamSelection => !_isAIControlled && shipTeam.Value == TeamManager.Team.None;
@@ -1116,9 +1119,9 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                float baseWithCards = gemCapacity + GetCardGemCapacityAdd();
-                float attrScale = 1f + attrGemCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return Mathf.Max(0f, baseWithCards * attrScale);
+                if (IsSpawned && !IsServer)
+                    return networkGemCapacity.Value;
+                return ComputeGemCapacityLocal();
             }
         }
 
@@ -1284,9 +1287,9 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                float baseWithCards = peopleCapacity + GetCardPeopleCapacityAdd();
-                float attrScale = 1f + attrPeopleCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return Mathf.Max(0f, baseWithCards * attrScale);
+                if (IsSpawned && !IsServer)
+                    return networkPeopleCapacity.Value;
+                return ComputePeopleCapacityLocal();
             }
         }
         public float CurrentEnergy => currentEnergy.Value;
@@ -1717,6 +1720,7 @@ namespace TitanOrbit.Entities
             currentGems.Value = 0f;
             currentPeople.Value = 0f;
             currentEnergy.Value = EffectiveEnergyCapacity;
+            RefreshSyncedCapacitiesOnServer();
             if (TeamManager.Instance != null)
                 shipTeam.Value = TeamManager.Instance.GetPlayerTeam(OwnerClientId);
             PlaceShipForCurrentTeamOrLobby();
@@ -1836,9 +1840,10 @@ namespace TitanOrbit.Entities
             smallMinesCount.Value = snapshot.SmallMines;
             largeMinesCount.Value = snapshot.LargeMines;
 
+            RefreshSyncedCapacitiesOnServer();
             currentHealth.Value = Mathf.Clamp(snapshot.CurrentHealth, 0f, MaxHealth);
-            currentGems.Value = Mathf.Max(0f, snapshot.CurrentGems);
-            currentPeople.Value = Mathf.Max(0f, snapshot.CurrentPeople);
+            currentGems.Value = Mathf.Clamp(snapshot.CurrentGems, 0f, GemCapacity);
+            currentPeople.Value = Mathf.Clamp(snapshot.CurrentPeople, 0f, PeopleCapacity);
             currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
 
             if (snapshot.Team != TeamManager.Team.None && TeamManager.Instance != null)
@@ -2086,6 +2091,17 @@ namespace TitanOrbit.Entities
         private void LateUpdate()
         {
             RefreshCardStatsCache();
+            if (IsServer && IsSpawned && (Time.frameCount & 31) == 0)
+            {
+                float gemCap = ComputeGemCapacityLocal();
+                float peopleCap = ComputePeopleCapacityLocal();
+                if (currentGems.Value > gemCap + 0.001f || currentPeople.Value > peopleCap + 0.001f
+                    || !Mathf.Approximately(networkGemCapacity.Value, gemCap)
+                    || !Mathf.Approximately(networkPeopleCapacity.Value, peopleCap))
+                {
+                    ClampCarriedResourcesToCapacity();
+                }
+            }
             if (visualBaseScale > 0.001f && lastPrefabScale.sqrMagnitude > 0.001f)
             {
                 Transform root = GetPrefabTransform();
@@ -4707,6 +4723,8 @@ namespace TitanOrbit.Entities
                         {
                             RemovePeopleFromServer(instantUnload);
                             orbitPlanet.AddPopulationFromServer(instantUnload, shipTeam.Value);
+                            Vector3 shipPos = rb != null ? rb.position : transform.position;
+                            SpawnPeopleTransferFloatingCount(FloatingCountChannel.PeopleUnload, instantUnload, shipPos);
                             PlayPeopleUnloadSoundClientRpc(instantUnload);
                         }
                         return;
@@ -4769,6 +4787,8 @@ namespace TitanOrbit.Entities
                     {
                         orbitPlanet.RemovePopulationFromServer(instantLoadAmount);
                         AddPeopleFromServer(instantLoadAmount);
+                        Vector3 shipPos = rb != null ? rb.position : transform.position;
+                        SpawnPeopleTransferFloatingCount(FloatingCountChannel.PeopleLoad, instantLoadAmount, shipPos);
                         PlayPeopleLoadSoundClientRpc(instantLoadAmount);
                     }
                     return;
@@ -4853,6 +4873,8 @@ namespace TitanOrbit.Entities
                         RemovePeopleFromServer(instantUnloadPeople);
                         // Debug-only shortcut: each 1 unloaded person applies 100 population impact.
                         currentOrbitPlanet.AddPopulationFromServer(instantUnloadPeople * 100f, shipTeam.Value);
+                        Vector3 shipPos = rb != null ? rb.position : transform.position;
+                        SpawnPeopleTransferFloatingCount(FloatingCountChannel.PeopleUnload, instantUnloadPeople, shipPos);
                         PlayPeopleUnloadSoundClientRpc(instantUnloadPeople);
                     }
                     return;
@@ -5915,6 +5937,17 @@ namespace TitanOrbit.Entities
                 AudioManager.Instance.PlayPeopleUnloadSound(amount);
         }
 
+        private void SpawnPeopleTransferFloatingCount(FloatingCountChannel channel, float amount, Vector3 worldPosition)
+        {
+            if (!IsServer || amount <= 0.0001f || VisualEffectsManager.Instance == null)
+                return;
+
+            Vector3 pos = worldPosition;
+            pos.y = 0f;
+            float signedAmount = channel == FloatingCountChannel.PeopleUnload ? -amount : amount;
+            VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(pos, channel, signedAmount, shipTeam.Value);
+        }
+
         /// <summary>Server-only gem removal used by moon deposit path (avoids nested ServerRpc from server authority).</summary>
         public void RemoveGemsFromDepositServer(float amount)
         {
@@ -6012,12 +6045,13 @@ namespace TitanOrbit.Entities
 
             if (VisualEffectsManager.Instance != null)
             {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    worldPosition,
-                    (int)FloatingCountChannel.PeopleLoad,
+                Vector3 pos = worldPosition;
+                pos.y = 0f;
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
+                    pos,
+                    FloatingCountChannel.PeopleLoad,
                     amount,
-                    (int)sourceTeam
-                );
+                    sourceTeam);
             }
 
             PlayPeopleLoadSoundClientRpc(amount);
@@ -6033,11 +6067,13 @@ namespace TitanOrbit.Entities
 
             if (VisualEffectsManager.Instance != null)
             {
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
-                    worldPosition,
-                    (int)FloatingCountChannel.PeopleUnload,
-                    amount,
-                    (int)sourceTeam);
+                Vector3 pos = worldPosition;
+                pos.y = 0f;
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
+                    pos,
+                    FloatingCountChannel.PeopleUnload,
+                    -amount,
+                    sourceTeam);
             }
 
             PlayPeopleUnloadSoundClientRpc(amount);
@@ -6234,6 +6270,9 @@ namespace TitanOrbit.Entities
                 case 8: attrGemCapacity.Value++; break;
                 case 9: attrPeopleCapacity.Value++; break;
             }
+
+            if (attributeIndex == 8 || attributeIndex == 9)
+                ClampCarriedResourcesToCapacity();
 
             // Weapon stat upgrades are baked into chassis-derived per-cannon values.
             // Rebuild immediately so fire power / bullet speed upgrades take effect on the next shot.
@@ -6974,6 +7013,9 @@ namespace TitanOrbit.Entities
                     }
                 }
             }
+
+            if (IsServer && IsSpawned)
+                ClampCarriedResourcesToCapacity();
         }
 
         /// <summary>
@@ -7205,6 +7247,7 @@ namespace TitanOrbit.Entities
             if (equippedCards != null) equippedCards.Clear();
             if (equippedCardIds != null) equippedCardIds.Clear();
             _cardStatsCacheFrame = -1;
+            ClampCarriedResourcesToCapacity();
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
         }
@@ -7226,6 +7269,37 @@ namespace TitanOrbit.Entities
         }
 
         #region Card stat helpers
+
+        private float ComputeGemCapacityLocal()
+        {
+            float baseWithCards = gemCapacity + GetCardGemCapacityAdd();
+            float attrScale = 1f + attrGemCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
+            return Mathf.Max(0f, baseWithCards * attrScale);
+        }
+
+        private float ComputePeopleCapacityLocal()
+        {
+            float baseWithCards = peopleCapacity + GetCardPeopleCapacityAdd();
+            float attrScale = 1f + attrPeopleCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
+            return Mathf.Max(0f, baseWithCards * attrScale);
+        }
+
+        /// <summary>Server: push authoritative caps so client HUD matches gameplay limits.</summary>
+        private void RefreshSyncedCapacitiesOnServer()
+        {
+            if (!IsServer || !IsSpawned) return;
+            networkGemCapacity.Value = ComputeGemCapacityLocal();
+            networkPeopleCapacity.Value = ComputePeopleCapacityLocal();
+        }
+
+        /// <summary>Server: keep carried gems/people within current capacity after loadout or chassis changes.</summary>
+        private void ClampCarriedResourcesToCapacity()
+        {
+            if (!IsServer || !IsSpawned) return;
+            RefreshSyncedCapacitiesOnServer();
+            currentGems.Value = Mathf.Clamp(currentGems.Value, 0f, networkGemCapacity.Value);
+            currentPeople.Value = Mathf.Clamp(currentPeople.Value, 0f, networkPeopleCapacity.Value);
+        }
 
         private float GetCardMovementSpeedAdd()
         {
@@ -7322,6 +7396,7 @@ namespace TitanOrbit.Entities
                 equippedCards.Add(card);
                 equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(card.GetStableCardId()) });
                 _cardStatsCacheFrame = -1;
+                ClampCarriedResourcesToCapacity();
             }
         }
 
@@ -7337,6 +7412,7 @@ namespace TitanOrbit.Entities
             _cardStatsCacheFrame = -1;
             if (equippedCardIds != null && slotIndex < equippedCardIds.Count)
                 equippedCardIds.RemoveAt(slotIndex);
+            ClampCarriedResourcesToCapacity();
         }
 
         /// <summary>Client calls this to request removal of a card at the given slot. Only the ship owner can remove cards.</summary>

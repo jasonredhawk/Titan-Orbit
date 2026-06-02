@@ -8,24 +8,14 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Top-left ship stats HUD: horizontal progress bars (Health, Energy, Gems, People)
-    /// with icons, square-edged fills, capacity notches, and current/max labels.
+    /// with icons, square-edged fills, and current/max labels.
     /// </summary>
     public class ShipStatsFpsStyleHUD : MonoBehaviour
     {
-        private enum StatBarKind
-        {
-            Health,
-            Energy,
-            Gems,
-            People
-        }
-
         private struct StatBarRow
         {
             public Slider Bar;
             public TextMeshProUGUI Value;
-            public StatBarKind Kind;
-            public ShipStatBarNotchesUI Notches;
         }
 
         [Header("Layout")]
@@ -85,10 +75,10 @@ namespace TitanOrbit.UI
         {
             _rows = new[]
             {
-                new StatBarRow { Bar = barHealth, Value = valueHealth, Kind = StatBarKind.Health },
-                new StatBarRow { Bar = barEnergy, Value = valueEnergy, Kind = StatBarKind.Energy },
-                new StatBarRow { Bar = barGems, Value = valueGems, Kind = StatBarKind.Gems },
-                new StatBarRow { Bar = barPeople, Value = valuePeople, Kind = StatBarKind.People },
+                new StatBarRow { Bar = barHealth, Value = valueHealth },
+                new StatBarRow { Bar = barEnergy, Value = valueEnergy },
+                new StatBarRow { Bar = barGems, Value = valueGems },
+                new StatBarRow { Bar = barPeople, Value = valuePeople },
             };
         }
 
@@ -178,38 +168,9 @@ namespace TitanOrbit.UI
 
             if (row.Value != null)
             {
-                int curInt = Mathf.FloorToInt(current);
-                int maxInt = Mathf.FloorToInt(max);
+                int curInt = Mathf.RoundToInt(current);
+                int maxInt = Mathf.RoundToInt(max);
                 row.Value.text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
-            }
-
-            if (row.Notches == null && row.Bar != null)
-                row.Notches = EnsureNotches(row.Bar);
-            if (row.Notches != null)
-                row.Notches.SetSegmentCount(ComputeSegmentCount(row.Kind, max));
-        }
-
-        /// <summary>How many segments (and thus notches) to draw for this stat's max value.</summary>
-        private static int ComputeSegmentCount(StatBarKind kind, float max)
-        {
-            if (max <= 0.0001f) return 1;
-
-            switch (kind)
-            {
-                case StatBarKind.Gems:
-                case StatBarKind.People:
-                {
-                    int cap = Mathf.Max(1, Mathf.CeilToInt(max));
-                    if (cap <= 1) return 1;
-                    // One segment per discrete unit when capacity is modest; coarser steps when large.
-                    if (cap <= 20) return cap;
-                    int step = Mathf.Max(1, Mathf.CeilToInt(cap / 10f));
-                    return Mathf.Clamp(Mathf.CeilToInt(cap / (float)step), 4, 12);
-                }
-                case StatBarKind.Health:
-                case StatBarKind.Energy:
-                default:
-                    return 4;
             }
         }
 
@@ -242,11 +203,11 @@ namespace TitanOrbit.UI
         {
             if (row.Bar != null)
             {
+                RemoveExistingNotches(row.Bar);
+
                 RectTransform barRect = row.Bar.GetComponent<RectTransform>();
                 float barRightInset = valueColumnWidth + valueColumnInset;
                 barRect.offsetMax = new Vector2(-barRightInset, barRect.offsetMax.y);
-
-                row.Notches = EnsureNotches(row.Bar);
             }
 
             if (row.Value != null)
@@ -266,40 +227,12 @@ namespace TitanOrbit.UI
             }
         }
 
-        private static ShipStatBarNotchesUI EnsureNotches(Slider bar)
+        private static void RemoveExistingNotches(Slider bar)
         {
+            if (bar == null) return;
             Transform existing = bar.transform.Find("Notches");
-            GameObject notchRoot;
             if (existing != null)
-                notchRoot = existing.gameObject;
-            else
-            {
-                notchRoot = new GameObject("Notches", typeof(RectTransform), typeof(ShipStatBarNotchesUI));
-                notchRoot.transform.SetParent(bar.transform, false);
-                notchRoot.transform.SetAsLastSibling();
-
-                RectTransform rt = notchRoot.GetComponent<RectTransform>();
-                Transform bg = bar.transform.Find("Background");
-                if (bg is RectTransform bgRect)
-                {
-                    rt.anchorMin = bgRect.anchorMin;
-                    rt.anchorMax = bgRect.anchorMax;
-                    rt.offsetMin = bgRect.offsetMin;
-                    rt.offsetMax = bgRect.offsetMax;
-                    rt.pivot = bgRect.pivot;
-                }
-                else
-                {
-                    rt.anchorMin = Vector2.zero;
-                    rt.anchorMax = Vector2.one;
-                    rt.offsetMin = Vector2.zero;
-                    rt.offsetMax = Vector2.zero;
-                }
-            }
-
-            var notches = notchRoot.GetComponent<ShipStatBarNotchesUI>();
-            notches.BindTrack(notchRoot.GetComponent<RectTransform>());
-            return notches;
+                Object.Destroy(existing.gameObject);
         }
 
         private void ApplySquareBarStyleToAll()
@@ -314,14 +247,14 @@ namespace TitanOrbit.UI
         {
             if (slider == null) return;
 
+            RemoveExistingNotches(slider);
+
             Sprite square = GetSquareBarSprite();
             Image[] images = slider.GetComponentsInChildren<Image>(true);
             for (int i = 0; i < images.Length; i++)
             {
                 Image img = images[i];
                 if (img == null) continue;
-                if (img.GetComponentInParent<ShipStatBarNotchesUI>() != null)
-                    continue;
                 img.sprite = square;
                 img.type = Image.Type.Simple;
             }
