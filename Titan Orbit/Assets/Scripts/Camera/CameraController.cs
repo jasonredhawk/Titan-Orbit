@@ -10,6 +10,7 @@ namespace TitanOrbit.Camera
     /// Camera controller that follows the player ship with smooth movement.
     /// Camera distance (zoom) and height scale with ship level: level 1 = closer, higher levels = further (more view).
     /// </summary>
+    [DefaultExecutionOrder(32500)] // After ToroidalRenderer (32000) and PlanetGemMoon (32100)
     public class CameraController : MonoBehaviour
     {
         [Header("Camera Settings")]
@@ -36,6 +37,15 @@ namespace TitanOrbit.Camera
         [Tooltip("Time in seconds to smoothly transition to new distance when level changes (0 = instant).")]
         [Min(0f)]
         [SerializeField] private float distanceChangeSmoothTime = 1.5f;
+        [Tooltip("Smooth follow on XZ only while coasting (not moving) inside a friendly gem-moon orbit shell. 0 = hard lock everywhere.")]
+        [Min(0f)]
+        [SerializeField] private float gemMoonOrbitFollowSmoothTime = 0.1f;
+        [Tooltip("Planar speed (m/s) at or below this starts gem-moon coast smoothing (hysteresis enter).")]
+        [Min(0.05f)]
+        [SerializeField] private float gemMoonOrbitSmoothingEnterSpeed = 0.35f;
+        [Tooltip("Planar speed (m/s) at or above this ends gem-moon coast smoothing (hysteresis exit).")]
+        [Min(0.05f)]
+        [SerializeField] private float gemMoonOrbitSmoothingExitSpeed = 0.6f;
         [Tooltip("When you first spawn, camera starts this many times more zoomed out (bird's eye), then zooms in. 1 = no spawn zoom.")]
         [Min(1f)]
         [SerializeField] private float spawnZoomScale = 1f;
@@ -85,6 +95,11 @@ namespace TitanOrbit.Camera
         [SerializeField] private bool ignoreMouseZoomOverUi = true;
 
         private UnityEngine.Camera cam;
+        private Starship targetShip;
+        private Vector3 smoothedFollowXZ;
+        private bool hasSmoothedFollowXZ;
+        private Vector3 followVelocity;
+        private bool gemMoonOrbitSmoothingActive;
         private float currentScale = 1f;
         private float scaleVelocity;
 
@@ -241,8 +256,40 @@ namespace TitanOrbit.Camera
                 offsetY,
                 offsetAtReferenceLevel.z);
 
-            // Lock camera to ship - ship is always in wrapped coordinates, so just follow directly
-            Vector3 targetPosition = target.position + offset;
+            Vector3 followWorld = targetShip != null
+                ? targetShip.GetCameraFollowWorldPosition()
+                : target.position;
+
+            Vector3 followXZ = new Vector3(followWorld.x, 0f, followWorld.z);
+            bool useGemMoonOrbitSmoothing = gemMoonOrbitFollowSmoothTime > 0.0001f
+                && UpdateGemMoonOrbitSmoothingActive();
+
+            if (!useGemMoonOrbitSmoothing)
+            {
+                smoothedFollowXZ = followXZ;
+                hasSmoothedFollowXZ = true;
+                followVelocity = Vector3.zero;
+            }
+            else if (!hasSmoothedFollowXZ)
+            {
+                smoothedFollowXZ = followXZ;
+                hasSmoothedFollowXZ = true;
+            }
+            else
+            {
+                smoothedFollowXZ = Vector3.SmoothDamp(
+                    smoothedFollowXZ,
+                    followXZ,
+                    ref followVelocity,
+                    gemMoonOrbitFollowSmoothTime,
+                    Mathf.Infinity,
+                    Time.deltaTime);
+            }
+
+            Vector3 targetPosition = new Vector3(
+                smoothedFollowXZ.x,
+                followWorld.y,
+                smoothedFollowXZ.z) + offset;
 
             float impulsePow = collisionShakeIntensity > 0.0001f
                 ? Mathf.Pow(collisionShakeIntensity, collisionShakeSmoothingExponent)
@@ -322,9 +369,44 @@ namespace TitanOrbit.Camera
                 spaceBackground.SetTemporarilyHidden(hidden);
         }
 
+        private bool UpdateGemMoonOrbitSmoothingActive()
+        {
+            if (targetShip == null
+                || targetShip.GemMoonDocked
+                || !targetShip.IsInsideFriendlyGemMoonOrbitZone())
+            {
+                gemMoonOrbitSmoothingActive = false;
+                return false;
+            }
+
+            if (targetShip.IsMoveForwardPressedForGemMoonLanding)
+            {
+                gemMoonOrbitSmoothingActive = false;
+                return false;
+            }
+
+            float speed = targetShip.GetPlanarSpeedWorld();
+            float enterSpeed = Mathf.Max(0.05f, gemMoonOrbitSmoothingEnterSpeed);
+            float exitSpeed = Mathf.Max(enterSpeed + 0.05f, gemMoonOrbitSmoothingExitSpeed);
+
+            if (!gemMoonOrbitSmoothingActive)
+            {
+                if (speed <= enterSpeed)
+                    gemMoonOrbitSmoothingActive = true;
+            }
+            else if (speed >= exitSpeed)
+                gemMoonOrbitSmoothingActive = false;
+
+            return gemMoonOrbitSmoothingActive;
+        }
+
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;
+            targetShip = newTarget != null ? newTarget.GetComponent<Starship>() : null;
+            hasSmoothedFollowXZ = false;
+            followVelocity = Vector3.zero;
+            gemMoonOrbitSmoothingActive = false;
             if (newTarget != null && spawnZoomScale > 1f)
             {
                 currentScale = spawnZoomScale;

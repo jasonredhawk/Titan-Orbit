@@ -22,6 +22,7 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject mainMenuPanel;
         [SerializeField] private GameObject lobbyPanel;
         [SerializeField] private GameObject teamSelectionPanel;
+        [SerializeField] private RescueOldShipUI rescueOldShipUI;
         [SerializeField] private LoadingScreenController loadingScreenController;
         [SerializeField] private Button playButton;
         [SerializeField] private Button hostOnlineButton; // wired as dedicated quick join (Relay client only)
@@ -75,6 +76,7 @@ namespace TitanOrbit.UI
         private bool deferTeamPanelUntilNetworkReady;
         private float _dbgLastLobbyRefreshRealtime = -1f;
         private int _dbgLobbyRefreshCount;
+        private Coroutine returningShipQueryRoutine;
 
         private const float LobbyScreenContentWidth = 540f;
 
@@ -111,6 +113,8 @@ namespace TitanOrbit.UI
 
             NetworkGameManager.OnTeamChosen += OnTeamChosen;
             NetworkGameManager.OnTeamChoiceFailed += OnTeamChoiceFailed;
+            NetworkGameManager.OnReturningShipQueryResult += OnReturningShipQueryResult;
+            NetworkGameManager.OnPlayerTeamScuttled += OnPlayerTeamScuttled;
 
             if (teamAButton != null) teamAButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamA));
             if (teamBButton != null) teamBButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamB));
@@ -156,6 +160,8 @@ namespace TitanOrbit.UI
             UnityGameServicesBootstrap.AuthStateChanged -= OnUnityAuthStateChanged;
             NetworkGameManager.OnTeamChosen -= OnTeamChosen;
             NetworkGameManager.OnTeamChoiceFailed -= OnTeamChoiceFailed;
+            NetworkGameManager.OnReturningShipQueryResult -= OnReturningShipQueryResult;
+            NetworkGameManager.OnPlayerTeamScuttled -= OnPlayerTeamScuttled;
         }
 
         private void OnUnityAuthStateChanged()
@@ -582,6 +588,9 @@ namespace TitanOrbit.UI
         {
             pendingTeamJoinError = message ?? "";
             Debug.LogWarning("[MainMenu] " + message);
+            if (lobbyPanel != null && !lobbyPanel.activeSelf)
+                lobbyPanel.SetActive(true);
+            ShowTeamSelectionAfterRescueChoice();
         }
 
         private void OnTeamChosen(Core.TeamManager.Team team)
@@ -590,6 +599,41 @@ namespace TitanOrbit.UI
             deferTeamPanelUntilNetworkReady = false;
             if (lobbyPanel != null) lobbyPanel.SetActive(false);
             if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
+            if (rescueOldShipUI != null) rescueOldShipUI.Hide();
+        }
+
+        private void OnReturningShipQueryResult(NetworkGameManager.ReturningShipInfo info)
+        {
+            if (info.HasRescuableShip && info.Team != Core.TeamManager.Team.None)
+            {
+                EnsureRescueOldShipUi();
+                if (teamSelectionPanel != null)
+                    teamSelectionPanel.SetActive(false);
+                rescueOldShipUI.Show(info);
+                return;
+            }
+
+            ShowTeamSelectionAfterRescueChoice();
+        }
+
+        private void OnPlayerTeamScuttled()
+        {
+            pendingTeamJoinError = "Your team's home world was lost. Your ship was scuttled — choose a new team.";
+            if (lobbyPanel != null)
+                lobbyPanel.SetActive(true);
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+            ShowTeamSelectionAfterRescueChoice();
+        }
+
+        /// <summary>Show team selection (after loading or after declining / lacking a rescuable ship).</summary>
+        public void ShowTeamSelectionAfterRescueChoice()
+        {
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+            if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(true);
+            UpdateLobbyInfo();
         }
 
         private void LateUpdate()
@@ -626,8 +670,9 @@ namespace TitanOrbit.UI
                     var nm = NetworkManager.Singleton;
                     if (nm != null && (nm.IsClient || nm.IsServer))
                     {
-                        teamSelectionPanel.SetActive(true);
                         deferTeamPanelUntilNetworkReady = false;
+                        if (returningShipQueryRoutine == null)
+                            returningShipQueryRoutine = StartCoroutine(CoQueryReturningShipWhenReady());
                     }
                 }
                 UpdateLobbyInfo();
@@ -2012,8 +2057,8 @@ namespace TitanOrbit.UI
                 teamSelectionPanel.SetActive(false);
         }
 
-        /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
-        public void ShowLobbyAndTeamSelection()
+        /// <summary>Called by LoadingScreenController when loading is complete. Queries for a returning ship, then team or rescue UI.</summary>
+        public void ShowPostLoadingJoinFlow()
         {
             deferTeamPanelUntilNetworkReady = false;
             if (mainMenuPanel != null)
@@ -2029,15 +2074,61 @@ namespace TitanOrbit.UI
                 ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                 : playerName;
 
+            NetworkGameManager.PendingRestoreChoice = NetworkGameManager.ShipRestoreChoice.Unset;
+
             if (lobbyPanel != null)
-            {
                 lobbyPanel.SetActive(true);
-            }
 
             if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(false);
+
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+
+            if (returningShipQueryRoutine != null)
+                StopCoroutine(returningShipQueryRoutine);
+            returningShipQueryRoutine = StartCoroutine(CoQueryReturningShipWhenReady());
+        }
+
+        private System.Collections.IEnumerator CoQueryReturningShipWhenReady()
+        {
+            const float timeoutSeconds = 20f;
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+            while (Time.realtimeSinceStartup < deadline)
             {
-                teamSelectionPanel.SetActive(true);
+                var ngm = NetworkGameManager.Instance;
+                if (ngm != null && ngm.IsSpawned)
+                {
+                    NetworkGameManager.QueryReturningShipFromLocalPlayer();
+                    returningShipQueryRoutine = null;
+                    yield break;
+                }
+                yield return null;
             }
+
+            returningShipQueryRoutine = null;
+            OnReturningShipQueryResult(default);
+        }
+
+        /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
+        public void ShowLobbyAndTeamSelection()
+        {
+            ShowPostLoadingJoinFlow();
+        }
+
+        private void EnsureRescueOldShipUi()
+        {
+            if (rescueOldShipUI != null)
+                return;
+
+            Transform parent = lobbyPanel != null ? lobbyPanel.transform : transform;
+            var go = new GameObject("RescueOldShipUI");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            rescueOldShipUI = go.AddComponent<RescueOldShipUI>();
         }
 
         private void UpdateLobbyInfo()

@@ -45,7 +45,7 @@ namespace TitanOrbit.UI
         private float nextLeaderboardRefreshTime;
         private float lastPlayerShipLookupTime = -999f;
         private const float PlayerShipLookupInterval = 0.3f;
-        /// <summary>When true, ship stats and leaderboard stay hidden (e.g. gem moon fullscreen ship upgrade tree).</summary>
+        /// <summary>When true, ship stats, leaderboard, attribute upgrade bar, and world moon chips stay hidden (gem moon dock menu).</summary>
         private static bool s_shipUpgradeTreeObscuresHud;
 
         public static void SetShipUpgradeTreeObscuresHud(bool obscures)

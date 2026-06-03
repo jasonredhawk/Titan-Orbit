@@ -1519,6 +1519,32 @@ namespace TitanOrbit.Networking
         /// <summary>Fired on client when Join was rejected (team full, not in match, etc.).</summary>
         public static System.Action<string> OnTeamChoiceFailed;
 
+        /// <summary>Fired on client when their team was eliminated and their ship was scuttled (rejoin team selection).</summary>
+        public static System.Action OnPlayerTeamScuttled;
+
+        public enum ShipRestoreChoice
+        {
+            Unset = 0,
+            Rescue = 1,
+            StartAnew = 2
+        }
+
+        /// <summary>Client-side choice from the Rescue Old Ship screen; consumed when the ship spawns.</summary>
+        public static ShipRestoreChoice PendingRestoreChoice { get; set; } = ShipRestoreChoice.Unset;
+
+        /// <summary>Summary of a returning player's saved ship (client-side, from server query).</summary>
+        public struct ReturningShipInfo
+        {
+            public bool HasRescuableShip;
+            public int ShipLevel;
+            public TeamManager.Team Team;
+            public string ChassisDisplayName;
+            public float CurrentGems;
+        }
+
+        /// <summary>Fired on client after <see cref="QueryReturningShipFromLocalPlayer"/> completes.</summary>
+        public static System.Action<ReturningShipInfo> OnReturningShipQueryResult;
+
         /// <summary>
         /// <see cref="NetworkManager.Singleton"/> can reference an inactive duplicate (e.g. Multiplayer Play Mode / extra scene object) that never started Netcode,
         /// while another <see cref="NetworkManager"/> in the hierarchy is the real host/client. Prefer the instance that is actually running.
@@ -1713,6 +1739,119 @@ namespace TitanOrbit.Networking
                 Debug.LogWarning("[NetworkGameManager] Team choice granted but team was None — UI may stay open. Check server AddPlayerToTeam / ClientRpc path.");
                 OnTeamChoiceFailed?.Invoke("Team assignment incomplete. Try again or rejoin.");
             }
+        }
+
+        /// <summary>Client: ask the server whether this player has a rescuable ship for the current map instance.</summary>
+        public static void QueryReturningShipFromLocalPlayer()
+        {
+            var ngm = Instance ?? UnityEngine.Object.FindAnyObjectByType<NetworkGameManager>(FindObjectsInactive.Include);
+            if (ngm == null || !ngm.IsSpawned)
+            {
+                OnReturningShipQueryResult?.Invoke(default);
+                return;
+            }
+
+            string authPlayerId = UnityGameServicesBootstrap.PlayerId ?? string.Empty;
+            ngm.QueryReturningShipServerRpc(authPlayerId);
+        }
+
+        /// <summary>Client: abandon saved ship progress and start fresh on the next spawn.</summary>
+        public static void AbandonOldShipFromLocalPlayer()
+        {
+            PendingRestoreChoice = ShipRestoreChoice.StartAnew;
+            var ngm = Instance ?? UnityEngine.Object.FindAnyObjectByType<NetworkGameManager>(FindObjectsInactive.Include);
+            if (ngm == null || !ngm.IsSpawned)
+                return;
+            string authPlayerId = UnityGameServicesBootstrap.PlayerId ?? string.Empty;
+            ngm.AbandonOldShipServerRpc(authPlayerId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void QueryReturningShipServerRpc(string authPlayerId, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, clientId);
+            MapInstanceShipProgressStore.RegisterClientAuthId(clientId, key);
+
+            if (!MapInstanceShipProgressStore.TryGetSnapshot(key, out PlayerShipProgressSnapshot snapshot)
+                || snapshot.Team == TeamManager.Team.None)
+            {
+                NotifyReturningShipClientRpc(clientId, false, 0, (int)TeamManager.Team.None, string.Empty, 0f);
+                return;
+            }
+
+            if (TeamManager.Instance != null && TeamManager.Instance.IsTeamEliminated(snapshot.Team))
+            {
+                MapInstanceShipProgressStore.RemoveSnapshot(key);
+                NotifyReturningShipClientRpc(clientId, false, 0, (int)TeamManager.Team.None, string.Empty, 0f);
+                return;
+            }
+
+            string displayName = snapshot.ChassisId;
+            if (CardShopSystem.Instance != null)
+            {
+                var chassis = CardShopSystem.Instance.GetChassisDefinitionByChassisId(snapshot.ChassisId);
+                if (chassis != null && !string.IsNullOrEmpty(chassis.displayName))
+                    displayName = chassis.displayName.Trim();
+            }
+
+            NotifyReturningShipClientRpc(
+                clientId,
+                true,
+                snapshot.ShipLevel,
+                (int)snapshot.Team,
+                displayName ?? string.Empty,
+                snapshot.CurrentGems);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void AbandonOldShipServerRpc(string authPlayerId, ServerRpcParams rpcParams = default)
+        {
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, clientId);
+            MapInstanceShipProgressStore.RegisterClientAuthId(clientId, key);
+            MapInstanceShipProgressStore.RemoveSnapshot(key);
+        }
+
+        [ClientRpc]
+        private void NotifyReturningShipClientRpc(
+            ulong clientId,
+            bool hasRescuableShip,
+            int shipLevel,
+            int teamInt,
+            string chassisDisplayName,
+            float currentGems)
+        {
+            var nm = ResolveNetworkManagerForGameplay();
+            if (nm == null || nm.LocalClientId != clientId)
+                return;
+
+            var info = new ReturningShipInfo
+            {
+                HasRescuableShip = hasRescuableShip,
+                ShipLevel = shipLevel,
+                Team = (TeamManager.Team)teamInt,
+                ChassisDisplayName = chassisDisplayName ?? string.Empty,
+                CurrentGems = currentGems
+            };
+            OnReturningShipQueryResult?.Invoke(info);
+        }
+
+        /// <summary>Server: tell a connected player their team was eliminated and they must pick a new team.</summary>
+        public void NotifyPlayerTeamScuttled(ulong clientId)
+        {
+            if (!IsServer) return;
+            NotifyPlayerTeamScuttledClientRpc(clientId);
+        }
+
+        [ClientRpc]
+        private void NotifyPlayerTeamScuttledClientRpc(ulong clientId)
+        {
+            var nm = ResolveNetworkManagerForGameplay();
+            if (nm == null || nm.LocalClientId != clientId)
+                return;
+            PendingRestoreChoice = ShipRestoreChoice.Unset;
+            OnPlayerTeamScuttled?.Invoke();
         }
 
         public bool IsServer => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;

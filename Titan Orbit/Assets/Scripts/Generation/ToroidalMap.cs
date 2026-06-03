@@ -38,6 +38,55 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
+        /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is clearly closer.
+        /// Prevents planets/moons from popping a full map width when the reference point hovers near a tile boundary.
+        /// </summary>
+        public static Vector3 GetDisplayPositionWithHysteresis(
+            Vector3 logicalPos,
+            Vector3 referencePos,
+            ref int tileK,
+            ref int tileM,
+            float switchMarginFraction = 0.35f)
+        {
+            float dx = referencePos.x - logicalPos.x;
+            float dz = referencePos.z - logicalPos.z;
+            int candidateK = (int)Mathf.Round(dx / mapWidth);
+            int candidateM = (int)Mathf.Round(dz / mapHeight);
+
+            if (tileK == int.MinValue)
+            {
+                tileK = candidateK;
+                tileM = candidateM;
+            }
+            else if (candidateK != tileK || candidateM != tileM)
+            {
+                Vector3 current = new Vector3(
+                    logicalPos.x + tileK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + tileM * mapHeight);
+                Vector3 candidate = new Vector3(
+                    logicalPos.x + candidateK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + candidateM * mapHeight);
+                float currentDistSq = (referencePos.x - current.x) * (referencePos.x - current.x)
+                    + (referencePos.z - current.z) * (referencePos.z - current.z);
+                float candidateDistSq = (referencePos.x - candidate.x) * (referencePos.x - candidate.x)
+                    + (referencePos.z - candidate.z) * (referencePos.z - candidate.z);
+                float margin = Mathf.Max(1f, switchMarginFraction * Mathf.Min(mapWidth, mapHeight));
+                if (candidateDistSq < currentDistSq - margin * margin)
+                {
+                    tileK = candidateK;
+                    tileM = candidateM;
+                }
+            }
+
+            return new Vector3(
+                logicalPos.x + tileK * mapWidth,
+                logicalPos.y,
+                logicalPos.z + tileM * mapHeight);
+        }
+
+        /// <summary>
         /// Wraps a position to the toroidal map. Uses modulo for consistent wrapping.
         /// Valid range: [-halfWidth, halfWidth) for X, [-halfHeight, halfHeight) for Z
         /// </summary>

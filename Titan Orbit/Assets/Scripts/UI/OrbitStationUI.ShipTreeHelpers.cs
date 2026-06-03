@@ -132,6 +132,7 @@ namespace TitanOrbit.UI
         {
             RefreshShipTreeVisualStateOnly();
             RefreshShipsTab(scrollToActiveShipNode: false);
+            RefreshSidebar();
         }
 
         internal bool IsTreeDataAvailable()
@@ -374,7 +375,7 @@ namespace TitanOrbit.UI
             if (IsDebugFreeShipUpgradeTree())
                 shipUpgradeTree.Hint.text = "Debug: click any ship to try it for free (all tiers unlocked).";
             else if (canSwapHullAtCurrentSlot)
-                shipUpgradeTree.Hint.text = "Click your ship to swap to this moon's hull at your tier (free).";
+                shipUpgradeTree.Hint.text = "Click your ship in the left panel to swap to this moon's hull at your tier (free).";
             else if (storePlanetLevelBlocksSwap)
                 shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
             else if (upgradeBlockedByStoreLevel)

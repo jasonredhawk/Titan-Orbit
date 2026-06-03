@@ -57,6 +57,7 @@ namespace TitanOrbit.UI
         public ShipUpgradeNode Node { get; private set; }
         /// <summary>Moon tree: dedicated top-left node showing the player's current hull (not a ladder slot).</summary>
         public bool IsCurrentShipDisplay { get; private set; }
+        private bool _sidebarLayoutMember;
         public RectTransform Rect => transform as RectTransform;
         public float NodeButtonWidth { get; private set; }
         public float PowerBarTrackWidth { get; private set; }
@@ -112,6 +113,21 @@ namespace TitanOrbit.UI
         public void BindAsCurrentShipDisplay(float width, float height, float powerTrackWidth)
         {
             IsCurrentShipDisplay = true;
+            _sidebarLayoutMember = false;
+            Level = 0;
+            BranchIndex = 0;
+            Node = null;
+            NodeButtonWidth = width;
+            PowerBarTrackWidth = powerTrackWidth;
+            _boundHeight = height;
+            ApplyFixedLayoutSize(width, height);
+        }
+
+        /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
+        public void ApplySidebarPanelLayout(float width, float height, float powerTrackWidth)
+        {
+            IsCurrentShipDisplay = true;
+            _sidebarLayoutMember = true;
             Level = 0;
             BranchIndex = 0;
             Node = null;
@@ -150,27 +166,50 @@ namespace TitanOrbit.UI
 
             bool sizeChanged = Mathf.Abs(_appliedWidth - width) > 0.5f || Mathf.Abs(_appliedHeight - height) > 0.5f;
 
-            if (IsCurrentShipDisplay)
+            if (IsCurrentShipDisplay && _sidebarLayoutMember)
+            {
+                Rect.anchorMin = new Vector2(0f, 1f);
+                Rect.anchorMax = new Vector2(1f, 1f);
+                Rect.pivot = new Vector2(0.5f, 1f);
+                Rect.anchoredPosition = Vector2.zero;
+                Rect.sizeDelta = new Vector2(0f, height);
+            }
+            else if (IsCurrentShipDisplay)
                 ApplyPanelOverlayTopLeft(_panelOverlayMargin);
             else
             {
                 Rect.anchorMin = new Vector2(0.5f, 0.5f);
                 Rect.anchorMax = new Vector2(0.5f, 0.5f);
                 Rect.pivot = new Vector2(0.5f, 0.5f);
+                Rect.sizeDelta = new Vector2(width, height);
             }
 
-            Rect.sizeDelta = new Vector2(width, height);
+            if (!IsCurrentShipDisplay || !_sidebarLayoutMember)
+                Rect.sizeDelta = new Vector2(width, height);
 
             var le = Rect.GetComponent<LayoutElement>();
             if (le == null)
                 le = Rect.gameObject.AddComponent<LayoutElement>();
-            le.ignoreLayout = true;
-            le.flexibleWidth = 0f;
-            le.flexibleHeight = 0f;
-            le.minWidth = width;
-            le.preferredWidth = width;
-            le.minHeight = height;
-            le.preferredHeight = height;
+            if (_sidebarLayoutMember)
+            {
+                le.ignoreLayout = false;
+                le.flexibleWidth = 1f;
+                le.flexibleHeight = 0f;
+                le.minWidth = width;
+                le.preferredWidth = width;
+                le.minHeight = height;
+                le.preferredHeight = height;
+            }
+            else
+            {
+                le.ignoreLayout = true;
+                le.flexibleWidth = 0f;
+                le.flexibleHeight = 0f;
+                le.minWidth = width;
+                le.preferredWidth = width;
+                le.minHeight = height;
+                le.preferredHeight = height;
+            }
 
             _appliedWidth = width;
             _appliedHeight = height;

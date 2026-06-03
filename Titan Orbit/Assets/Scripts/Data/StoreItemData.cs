@@ -49,5 +49,56 @@ namespace TitanOrbit.Data
                 default: return 1;
             }
         }
+
+        /// <summary>Compact card title for moon dock store row.</summary>
+        public static string GetShortDisplayName(StoreItemType item)
+        {
+            switch (item)
+            {
+                case StoreItemType.FighterDrone: return "Fighter";
+                case StoreItemType.ShieldDrone: return "Shield";
+                case StoreItemType.MiningDrone: return "Mining";
+                case StoreItemType.SmallRockets: return "Rockets S";
+                case StoreItemType.LargeRockets: return "Rockets L";
+                case StoreItemType.SmallMines: return "Mines S";
+                case StoreItemType.LargeMines: return "Mines L";
+                default: return item.ToString();
+            }
+        }
+
+        /// <summary>
+        /// Stat index (0–9) into <see cref="TitanOrbit.UI.ShipAbilityCategoryColors"/> for card tinting —
+        /// same palette as the bottom ship upgrade bar.
+        /// </summary>
+        public static int GetAbilityColorStatIndex(StoreItemType item)
+        {
+            switch (item)
+            {
+                case StoreItemType.FighterDrone: return 0; // Fire Power
+                case StoreItemType.SmallRockets: return 1; // Bullet Speed
+                case StoreItemType.LargeRockets: return 0;
+                case StoreItemType.ShieldDrone: return 2; // Health Cap
+                case StoreItemType.SmallMines: return 3; // Health Regen
+                case StoreItemType.LargeMines: return 3;
+                case StoreItemType.MiningDrone: return 8; // Gem Cap
+                default: return 0;
+            }
+        }
+
+        /// <summary>Large glyph shown in the card icon area when no sprite is assigned.</summary>
+        public static string GetIconGlyph(StoreItemType item)
+        {
+            switch (item)
+            {
+                case StoreItemType.FighterDrone: return "\u2694"; // crossed swords
+                case StoreItemType.ShieldDrone: return "\u25C8"; // diamond
+                case StoreItemType.MiningDrone: return "\u2692"; // pick
+                case StoreItemType.SmallRockets:
+                case StoreItemType.LargeRockets: return "\u25B2"; // triangle
+                case StoreItemType.SmallMines:
+                case StoreItemType.LargeMines: return "\u25CF"; // circle
+                default: return "?";
+            }
+        }
     }
 }

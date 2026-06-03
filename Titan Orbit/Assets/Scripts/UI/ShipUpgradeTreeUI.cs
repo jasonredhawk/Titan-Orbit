@@ -18,14 +18,13 @@ namespace TitanOrbit.UI
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
         public const string PanelTitleText = "Ship Upgrade Tree";
-        public const string PanelDefaultSubtitle = "You (top-left): your ship. Green: tree slot. Blue: affordable upgrades. Cyan: free hull swap.";
+        public const string PanelDefaultSubtitle = "Green: tree slot. Blue: affordable upgrades. Cyan: free hull swap. Your ship is in the left panel.";
 
         private const float CanvasInnerMargin = 8f;
         private const float MoonNodeHeight = 100f;
         private const float MoonMinNodeWidth = 74f;
         private const float MoonLevelColGap = 12f;
         private const float MoonBranchGapY = 8f;
-        private const float MoonCurrentShipOverlayMargin = 8f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
         private const float VerticalNodeHeight = 188f;
@@ -47,6 +46,8 @@ namespace TitanOrbit.UI
         [SerializeField] private ShipFamilyDefinition previewFamily;
 
         public ShipFamilyDefinition PreviewFamily => previewFamily;
+        public ShipUpgradeTreeNodeUI NodePrefab => nodePrefab;
+        public Sprite NodeBackgroundSprite => nodeBackgroundSprite;
 
         private OrbitStationUI _station;
         private readonly List<ShipUpgradeTreeNodeUI> _nodes = new List<ShipUpgradeTreeNodeUI>();
@@ -200,8 +201,6 @@ namespace TitanOrbit.UI
 
             float maxPower = ComputeMaxDisplayPower();
             _station.RefreshShipUpgradeTreeNodeStates(_nodes, maxPower);
-            if (_currentShipNode != null)
-                _station.PopulateTreeNode(_currentShipNode, maxPower);
         }
 
         /// <summary>Editor: populate all tier slots and connectors. Uses <paramref name="family"/> when assigned.</summary>
@@ -336,14 +335,8 @@ namespace TitanOrbit.UI
                 byLevel[level] = views;
             }
 
-            SpawnCurrentShipDisplayNode(nodeW, nodeH, trackW);
             ForceLayoutBeforeConnectors();
             EnforceUniformNodeSizes(nodeW, nodeH, trackW);
-            if (_currentShipNode != null)
-            {
-                _currentShipNode.EnforceLayoutSize(nodeW, nodeH, trackW);
-                _currentShipNode.ApplyPanelOverlayTopLeft(MoonCurrentShipOverlayMargin);
-            }
             DrawConnectors(byLevel, pathEdges, moonHorizontal: true);
         }
 
@@ -416,35 +409,6 @@ namespace TitanOrbit.UI
             float stackTop = halfH - margin - (maxColStackH - stackH) * 0.5f;
             x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * (nodeW + MoonLevelColGap));
             y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + MoonBranchGapY));
-        }
-
-        private void SpawnCurrentShipDisplayNode(float nodeW, float nodeH, float trackW)
-        {
-            if (_station == null || nodePrefab == null)
-                return;
-
-            Transform overlayParent = centerRow != null ? centerRow : transform;
-            var view = Instantiate(nodePrefab, overlayParent);
-            view.gameObject.SetActive(true);
-            view.transform.SetAsLastSibling();
-            if (nodeBackgroundSprite != null)
-            {
-                var bg = view.GetComponent<Image>();
-                if (bg != null)
-                {
-                    bg.sprite = nodeBackgroundSprite;
-                    bg.type = Image.Type.Sliced;
-                }
-            }
-
-            view.BindAsCurrentShipDisplay(nodeW, nodeH, trackW);
-            view.ConfigureLayout(true);
-            view.ApplyPanelOverlayTopLeft(MoonCurrentShipOverlayMargin);
-            view.EnsureStableButtonRendering();
-            view.SetPriceClickHandler(() => _station.OnCurrentShipDisplayNodeClicked());
-
-            _station.PopulateTreeNode(view, ComputeMaxDisplayPower());
-            _currentShipNode = view;
         }
 
         private void ForceLayoutBeforeConnectors()
@@ -757,5 +721,7 @@ namespace TitanOrbit.UI
 
             return Mathf.Max(max, 0.001f);
         }
+
+        public float GetMaxDisplayPower() => ComputeMaxDisplayPower();
     }
 }

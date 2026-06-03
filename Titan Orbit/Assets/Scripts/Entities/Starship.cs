@@ -13,6 +13,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Services;
+using TitanOrbit.Networking;
 using TitanOrbit.AI;
 using TitanOrbit.Audio;
 using SciFiArsenal;
@@ -53,6 +54,8 @@ namespace TitanOrbit.Entities
         private static TitanOrbit.UI.HomePlanetOrbitUI s_cachedOrbitUI;
         private static TitanOrbit.Camera.CameraController s_cachedCameraController;
         private bool _orbitUiVisible;
+        private float _gemMoonLandingCompleteTime = -1f;
+        private const float GemMoonDockMenuDelayAfterLandingSeconds = 0.5f;
         [Header("Ship Settings")]
         [SerializeField] private ShipData shipData;
         /// <summary>Current ship data (model, weapon config, stats). Used so AI can match player ship.</summary>
@@ -1700,6 +1703,50 @@ namespace TitanOrbit.Entities
             !_isAIControlled && moveForwardPressedNet.Value;
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
+
+        /// <summary>Planar speed in world XZ (m/s) for camera / UI.</summary>
+        public float GetPlanarSpeedWorld()
+        {
+            if (rb == null) return 0f;
+            Vector3 v = rb.linearVelocity;
+            v.y = 0f;
+            return v.magnitude;
+        }
+
+        /// <summary>First friendly gem moon whose dock shell contains this ship (toroidal).</summary>
+        public bool TryGetFriendlyGemMoonInZone(out PlanetGemMoon moon, float radiusMultiplier = 1.05f)
+        {
+            moon = null;
+            if (shipTeam.Value == TeamManager.Team.None) return false;
+            for (int i = 0; i < PlanetGemMoon.ActiveMoonCount; i++)
+            {
+                PlanetGemMoon candidate = PlanetGemMoon.GetActiveMoonAt(i);
+                if (candidate == null || !candidate.IsTeamFriendlyToThisMoon(shipTeam.Value)) continue;
+                if (!candidate.IsShipInMoonDockZoneToroidal(this, radiusMultiplier)) continue;
+                moon = candidate;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Camera follow point. In the friendly moon shell on the owning client, uses display-space moon center + toroidal
+        /// offset so follow matches rendered moon/planet motion (reduces orbit jitter).
+        /// </summary>
+        public Vector3 GetCameraFollowWorldPosition()
+        {
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            if (ShouldUseGemMoonDisplayDockSpace() && TryGetFriendlyGemMoonInZone(out PlanetGemMoon moon))
+            {
+                Vector3 moonPos = moon.GetDisplayWorldPosition();
+                shipPos = moonPos + ToroidalMap.ShortestWorldOffsetXZ(moonPos, shipPos);
+            }
+            return shipPos;
+        }
+
+        private bool ShouldUseGemMoonDisplayDockSpace() =>
+            IsOwner && !_isAIControlled && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
+
         /// <summary>True when this ship is gem-moon docked and the dock target is <paramref name="planet"/>.</summary>
         public bool IsGemMoonDockedAtPlanet(Planet planet)
         {
@@ -1713,7 +1760,7 @@ namespace TitanOrbit.Entities
         /// True when the ease-in-out dock transition has finished (ship on moon surface).
         /// Gem deposit must wait for this — <see cref="gemMoonDocked"/> latches earlier when landing gates pass.
         /// </summary>
-        private bool IsGemMoonSurfaceLandingComplete()
+        public bool IsGemMoonSurfaceLandingComplete()
         {
             if (!gemMoonDocked.Value) return false;
             float dockDuration = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
@@ -1797,6 +1844,8 @@ namespace TitanOrbit.Entities
                 //rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
                 rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Prevent tunnelling through planets/asteroids
                 rb.linearDamping = 0f; // Frictionless: velocity only changes from our code (thrust/brakes/recoil)
+                if (!_isAIControlled)
+                    rb.interpolation = RigidbodyInterpolation.Interpolate;
             }
 
             // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
@@ -2041,10 +2090,13 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
-            if (IsServer && !_isAIControlled)
+            if (IsServer && !_isAIControlled
+                && (TeamManager.Instance == null || !TeamManager.Instance.IsTeamEliminated(shipTeam.Value)))
+            {
                 MapInstanceShipProgressStore.SaveSnapshot(
                     MapInstanceShipProgressStore.ResolveAuthPlayerId(OwnerClientId),
                     CaptureMapInstanceProgress());
+            }
             base.OnNetworkDespawn();
         }
 
@@ -2065,10 +2117,31 @@ namespace TitanOrbit.Entities
 
             string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId);
             MapInstanceShipProgressStore.RegisterClientAuthId(OwnerClientId, key);
+
+            if (NetworkGameManager.PendingRestoreChoice == NetworkGameManager.ShipRestoreChoice.StartAnew)
+            {
+                MapInstanceShipProgressStore.RemoveSnapshot(key);
+                ApplyDefaultPlayerSpawnSetup();
+                NetworkGameManager.PendingRestoreChoice = NetworkGameManager.ShipRestoreChoice.Unset;
+                return;
+            }
+
             if (MapInstanceShipProgressStore.TryGetSnapshot(key, out PlayerShipProgressSnapshot snapshot))
+            {
+                if (TeamManager.Instance != null && TeamManager.Instance.IsTeamEliminated(snapshot.Team))
+                {
+                    MapInstanceShipProgressStore.RemoveSnapshot(key);
+                    ApplyDefaultPlayerSpawnSetup();
+                    NetworkGameManager.PendingRestoreChoice = NetworkGameManager.ShipRestoreChoice.Unset;
+                    return;
+                }
+
                 ApplyMapInstanceProgress(snapshot);
+            }
             else
                 ApplyDefaultPlayerSpawnSetup();
+
+            NetworkGameManager.PendingRestoreChoice = NetworkGameManager.ShipRestoreChoice.Unset;
         }
 
         /// <summary>Server: first-time spawn for this map instance (starter chassis, fresh vitals).</summary>
@@ -2444,7 +2517,23 @@ namespace TitanOrbit.Entities
             Planet orbitUiPlanet = currentOrbitPlanet;
             if (orbitUiPlanet == null && gemMoonDocked.Value)
                 orbitUiPlanet = ResolveGemMoonDockPlanet();
-            bool shouldShowOrbitUI = isLocalWithTeam && !movePressed && orbitUiPlanet != null && gemMoonDocked.Value;
+
+            bool dockedOrbitEligible = isLocalWithTeam && !movePressed && orbitUiPlanet != null && gemMoonDocked.Value;
+            if (dockedOrbitEligible && IsGemMoonSurfaceLandingComplete())
+            {
+                if (_gemMoonLandingCompleteTime < 0f)
+                    _gemMoonLandingCompleteTime = Time.time;
+            }
+            else if (!gemMoonDocked.Value)
+            {
+                _gemMoonLandingCompleteTime = -1f;
+            }
+
+            bool shouldShowOrbitUI = dockedOrbitEligible
+                && IsGemMoonSurfaceLandingComplete()
+                && _gemMoonLandingCompleteTime >= 0f
+                && Time.time >= _gemMoonLandingCompleteTime + GemMoonDockMenuDelayAfterLandingSeconds;
+
             if (isLocalWithTeam)
             {
                 if (s_cachedOrbitUI == null)
@@ -2502,6 +2591,7 @@ namespace TitanOrbit.Entities
             ResolveBankPivotFromHierarchy();
             if (!enableVisualBankingPitch) return;
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
+            if (gemMoonDocked.Value) return;
             ApplyVisualBanking(Time.deltaTime);
         }
 
@@ -3149,7 +3239,7 @@ namespace TitanOrbit.Entities
                 moon = dockPlanet != null ? dockPlanet.GemMoon : null;
                 if (moon != null)
                 {
-                    gemMoonUndockCachedMoonPos = moon.GetGameplayWorldPosition();
+                    gemMoonUndockCachedMoonPos = moon.GetDockTrackingWorldPosition(ShouldUseGemMoonDisplayDockSpace());
                     Vector3 moonPosForBoundary = gemMoonUndockCachedMoonPos;
                     moonPosForBoundary.y = 0f;
                     Vector3 shipPosTransform = transform.position;
@@ -3224,7 +3314,10 @@ namespace TitanOrbit.Entities
                 float uEase = GemMoonDockEaseInOut(u);
                 gemMoonVisualScaleMultiplier = Mathf.Lerp(gemMoonUndockStartScale, 1f, uEase);
                 if (u >= 0.999f)
+                {
+                    gemMoonVisualScaleMultiplier = 1f;
                     gemMoonUndockBlendActive = false;
+                }
             }
             else
             {
@@ -3242,7 +3335,8 @@ namespace TitanOrbit.Entities
             {
                 ulong currentPlanetId = gemMoonPlanetNetworkObjectId.Value;
 
-                Vector3 moonPos = moon.GetGameplayWorldPosition();
+                bool useDisplayMoonSpace = ShouldUseGemMoonDisplayDockSpace();
+                Vector3 moonPos = moon.GetDockTrackingWorldPosition(useDisplayMoonSpace);
                 float contactRadius = Mathf.Max(0.0001f, moonDockSurfaceRadius);
                 Vector3 moonSpinAxis = moon.SpinAxisWorld.normalized;
 
@@ -3275,12 +3369,8 @@ namespace TitanOrbit.Entities
                 radial = radial.normalized * contactRadius;
                 gemMoonLandingOffset = radial;
 
-                // Distance blend outer zone → surface along spin-aligned radial (not toward current ship XZ),
-                // otherwise the ship stays at a fixed world azimuth and does not co-rotate with the moon.
                 Vector3 orbitDir = radial.sqrMagnitude > 0.0001f ? radial.normalized : Vector3.forward;
 
-                // Start the dock transition from the ship's live world pose so entering the moon zone
-                // never teleports to a precomputed radial pose.
                 if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
                     gemMoonDockApproachStartWorldPos = rb.position;
 
@@ -3289,7 +3379,6 @@ namespace TitanOrbit.Entities
                 rb.MovePosition(targetPos);
                 SetRootColliderDocked(true);
 
-                // Re-orient visuals: same ease-in-out t as scale & position (refresh start pose at outer ring).
                 if (visualRoot != null && visualRoot != transform)
                 {
                     if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
@@ -3382,151 +3471,6 @@ namespace TitanOrbit.Entities
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
                 CacheVisualForwardAccelForPitch();
-            }
-        }
-
-        private void AttachToGemMoonParent(PlanetGemMoon moon, Vector3 targetWorldPos)
-        {
-            if (moon == null) return;
-            Transform parentTarget = moon.LandingParentTransform;
-            if (parentTarget == null) return;
-            Transform reparentTarget = GetPrefabTransform();
-            if (reparentTarget == null) return;
-            gemMoonVisualUndockBlendActive = false;
-            RefreshGemMoonPrefabBaseline();
-
-            // Reparent only visual mesh container (Prefab), never the NetworkObject root.
-            // worldPositionStays=false avoids Unity inflating localScale to preserve world size under the moon visual.
-            if (!gemMoonVisualAttached)
-            {
-                gemMoonReparentTarget = reparentTarget;
-                gemMoonVisualParentBeforeAttach = reparentTarget.parent;
-                reparentTarget.SetParent(parentTarget, false);
-                gemMoonReparentTarget.localPosition = parentTarget.InverseTransformPoint(targetWorldPos);
-                gemMoonReparentTarget.localScale = Vector3.Scale(
-                    gemMoonPrefabBaselineLocalScale,
-                    Vector3.one * Mathf.Max(0.001f, gemMoonVisualScaleMultiplier));
-                gemMoonVisualDockStartLocalPos = reparentTarget.localPosition;
-                gemMoonVisualDockStartLocalRot = reparentTarget.localRotation;
-                gemMoonVisualDockBlendElapsed = 0f;
-                gemMoonVisualDockBlendActive = true;
-                gemMoonVisualAttached = true;
-            }
-            else if (gemMoonReparentTarget != null && gemMoonReparentTarget.parent != parentTarget)
-            {
-                gemMoonReparentTarget.SetParent(parentTarget, false);
-                gemMoonReparentTarget.localPosition = parentTarget.InverseTransformPoint(targetWorldPos);
-                gemMoonReparentTarget.localScale = Vector3.Scale(
-                    gemMoonPrefabBaselineLocalScale,
-                    Vector3.one * Mathf.Max(0.001f, gemMoonVisualScaleMultiplier));
-                gemMoonVisualDockStartLocalPos = gemMoonReparentTarget.localPosition;
-                gemMoonVisualDockStartLocalRot = gemMoonReparentTarget.localRotation;
-                gemMoonVisualDockBlendElapsed = 0f;
-                gemMoonVisualDockBlendActive = true;
-            }
-        }
-
-        private void DetachFromGemMoonParent()
-        {
-            if (!gemMoonVisualAttached || gemMoonReparentTarget == null) return;
-            Transform restoreParent = gemMoonVisualParentBeforeAttach != null ? gemMoonVisualParentBeforeAttach : visualRoot;
-            gemMoonReparentTarget.SetParent(restoreParent, true);
-
-            // Animate back to canonical local pose under BankPivot.
-            gemMoonVisualUndockStartLocalPos = gemMoonReparentTarget.localPosition;
-            gemMoonVisualUndockStartLocalRot = gemMoonReparentTarget.localRotation;
-            gemMoonVisualUndockStartLocalScale = gemMoonReparentTarget.localScale;
-            gemMoonVisualUndockBlendElapsed = 0f;
-            gemMoonVisualUndockBlendActive = true;
-
-            gemMoonVisualAttached = false;
-            gemMoonVisualParentBeforeAttach = null;
-            gemMoonVisualDockBlendActive = false;
-            gemMoonVisualDockBlendElapsed = 0f;
-        }
-
-        private void UpdateDockedVisualBlend(Vector3 moonPos, Vector3 targetPos, PlanetGemMoon moon)
-        {
-            if (gemMoonReparentTarget == null || moon == null) return;
-            Transform parentTarget = gemMoonReparentTarget.parent;
-            if (parentTarget == null) return;
-
-            // Moon-local tangent frame so belly stays toward surface while parent spin rotates the ship with the moon.
-            Vector3 surfaceNormal = targetPos - moonPos;
-            surfaceNormal.y = 0f;
-            if (surfaceNormal.sqrMagnitude < 0.0001f) surfaceNormal = Vector3.up;
-            surfaceNormal.Normalize();
-
-            Vector3 facing = rb != null ? rb.rotation * Vector3.forward : transform.forward;
-            facing.y = 0f;
-            facing = Vector3.ProjectOnPlane(facing, surfaceNormal);
-            if (facing.sqrMagnitude < 0.0001f)
-            {
-                Vector3 tangent = Vector3.Cross(moon.SpinAxisWorld, surfaceNormal);
-                facing = tangent.sqrMagnitude > 0.0001f ? tangent.normalized : Vector3.forward;
-            }
-            facing.Normalize();
-
-            Vector3 localN = parentTarget.InverseTransformDirection(surfaceNormal).normalized;
-            Vector3 localF = parentTarget.InverseTransformDirection(facing).normalized;
-            localF = Vector3.ProjectOnPlane(localF, localN);
-            if (localF.sqrMagnitude < 0.0001f)
-                localF = parentTarget.InverseTransformDirection(transform.forward);
-            localF = Vector3.ProjectOnPlane(localF, localN).normalized;
-            if (localF.sqrMagnitude < 0.0001f) localF = Vector3.forward;
-
-            gemMoonVisualDockTargetLocalPos = parentTarget.InverseTransformPoint(targetPos);
-            gemMoonVisualDockTargetLocalRot = Quaternion.LookRotation(localF, localN);
-
-            if (!gemMoonVisualDockBlendActive)
-            {
-                gemMoonReparentTarget.localPosition = gemMoonVisualDockTargetLocalPos;
-                gemMoonReparentTarget.localRotation = gemMoonVisualDockTargetLocalRot;
-                return;
-            }
-
-            gemMoonVisualDockBlendElapsed += Time.fixedDeltaTime;
-            float duration = Mathf.Max(0.01f, gemMoonVisualDockBlendSeconds);
-            float t = Mathf.Clamp01(gemMoonVisualDockBlendElapsed / duration);
-            float smoothT = t * t * (3f - 2f * t);
-
-            gemMoonReparentTarget.localPosition = Vector3.Lerp(gemMoonVisualDockStartLocalPos, gemMoonVisualDockTargetLocalPos, smoothT);
-            gemMoonReparentTarget.localRotation = Quaternion.Slerp(gemMoonVisualDockStartLocalRot, gemMoonVisualDockTargetLocalRot, smoothT);
-
-            if (t >= 0.999f)
-                gemMoonVisualDockBlendActive = false;
-        }
-
-        private void ApplyGemMoonVisualScaleToReparentTarget()
-        {
-            if (gemMoonReparentTarget == null)
-                return;
-            if (gemMoonVisualUndockBlendActive) return;
-            gemMoonReparentTarget.localScale = Vector3.Scale(
-                gemMoonPrefabBaselineLocalScale,
-                Vector3.one * Mathf.Max(0.001f, gemMoonVisualScaleMultiplier));
-        }
-
-        private void UpdateUndockedVisualBlend()
-        {
-            if (!gemMoonVisualUndockBlendActive || gemMoonReparentTarget == null) return;
-
-            gemMoonVisualUndockBlendElapsed += Time.fixedDeltaTime;
-            float duration = Mathf.Max(0.01f, gemMoonVisualDockBlendSeconds);
-            float t = Mathf.Clamp01(gemMoonVisualUndockBlendElapsed / duration);
-            float smoothT = t * t * (3f - 2f * t);
-
-            gemMoonReparentTarget.localPosition = Vector3.Lerp(gemMoonVisualUndockStartLocalPos, Vector3.zero, smoothT);
-            gemMoonReparentTarget.localRotation = Quaternion.Slerp(gemMoonVisualUndockStartLocalRot, Quaternion.identity, smoothT);
-            gemMoonReparentTarget.localScale = Vector3.Lerp(gemMoonVisualUndockStartLocalScale, gemMoonPrefabBaselineLocalScale, smoothT);
-
-            if (t >= 0.999f)
-            {
-                gemMoonReparentTarget.localPosition = Vector3.zero;
-                gemMoonReparentTarget.localRotation = Quaternion.identity;
-                gemMoonReparentTarget.localScale = gemMoonPrefabBaselineLocalScale;
-                gemMoonVisualUndockBlendActive = false;
-                gemMoonReparentTarget = null;
             }
         }
 

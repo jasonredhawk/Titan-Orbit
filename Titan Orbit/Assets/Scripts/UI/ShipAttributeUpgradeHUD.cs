@@ -482,7 +482,9 @@ namespace TitanOrbit.UI
                 }
             }
 
-            bool show = playerShip != null && playerShip.IsSpawned && !playerShip.IsDead && playerShip.ShipTeam != TeamManager.Team.None;
+            bool show = playerShip != null && playerShip.IsSpawned && !playerShip.IsDead
+                && playerShip.ShipTeam != TeamManager.Team.None
+                && !HUDController.ShipUpgradeTreeObscuresHud;
             rootPanel.SetActive(show);
 
             if (!show || playerShip == null) return;

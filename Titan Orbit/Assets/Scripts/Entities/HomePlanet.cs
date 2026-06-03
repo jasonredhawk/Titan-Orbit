@@ -362,17 +362,9 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         private void EliminateTeamServerRpc(TeamManager.Team eliminatedTeam)
         {
-            // Notify all clients that a team was eliminated
-            EliminateTeamClientRpc(eliminatedTeam);
-            
-            // Check win conditions
+            if (TeamManager.Instance != null)
+                TeamManager.Instance.EliminateTeamOnServer(eliminatedTeam);
             CheckWinConditions();
-        }
-
-        [ClientRpc]
-        private void EliminateTeamClientRpc(TeamManager.Team eliminatedTeam)
-        {
-            Debug.Log($"Team {eliminatedTeam} has been eliminated!");
         }
 
         private void CheckWinConditions()

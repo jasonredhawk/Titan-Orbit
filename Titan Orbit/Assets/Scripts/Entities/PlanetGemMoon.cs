@@ -1090,6 +1090,31 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
+        /// Moon center in the same world space as rendered geometry (planet display tile + orbit offset).
+        /// Use for owner-client dock visuals; server and toroidal gameplay checks keep using
+        /// <see cref="GetGameplayWorldPosition"/>.
+        /// </summary>
+        public Vector3 GetDisplayWorldPosition()
+        {
+            if (planet == null)
+            {
+                Vector3 p = transform.position;
+                p.y = 0f;
+                return p;
+            }
+            ComputeOrbitMotion(GetSyncedTimeSeconds(), out Vector3 worldOffset, out _);
+            Vector3 center = planet.transform.position;
+            center.y = 0f;
+            Vector3 pos = center + worldOffset;
+            pos.y = 0f;
+            return pos;
+        }
+
+        /// <summary>Dock pose tracking: display space on owning clients, gameplay space elsewhere.</summary>
+        public Vector3 GetDockTrackingWorldPosition(bool useDisplaySpace) =>
+            useDisplaySpace ? GetDisplayWorldPosition() : GetGameplayWorldPosition();
+
+        /// <summary>
         /// Toroidal dock-zone check for <paramref name="ship"/> (physics triggers miss across map wraps).
         /// Uses gameplay moon position and both ship transform + rigidbody XZ (owner sim can split them).
         /// </summary>

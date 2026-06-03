@@ -42,6 +42,7 @@ namespace TitanOrbit.Core
 
         private Dictionary<ulong, Team> playerTeams = new Dictionary<ulong, Team>();
         private Dictionary<Team, List<ulong>> teamPlayers = new Dictionary<Team, List<ulong>>();
+        private readonly HashSet<Team> eliminatedTeams = new HashSet<Team>();
 
         private NetworkVariable<int> networkTeamACount = new NetworkVariable<int>(0);
         private NetworkVariable<int> networkTeamBCount = new NetworkVariable<int>(0);
@@ -51,6 +52,9 @@ namespace TitanOrbit.Core
 
         /// <summary>How many teams are in the current match (2–5). Set by MapGenerator when home worlds spawn.</summary>
         private NetworkVariable<int> activeTeamCount = new NetworkVariable<int>(3);
+
+        /// <summary>Bitmask of eliminated teams (bit 0 = TeamA, …). Replicated to clients for team selection UI.</summary>
+        private NetworkVariable<int> eliminatedTeamsMask = new NetworkVariable<int>(0);
 
         /// <summary>Server: applied in OnNetworkSpawn if <see cref="SetActiveTeamCountFromServer"/> ran before spawn.</summary>
         private int pendingActiveTeamCount = -1;
@@ -88,6 +92,53 @@ namespace TitanOrbit.Core
                 maxOrd = Mathf.Max(maxOrd, HomePlanet.AllHomePlanets.Count);
             maxOrd = Mathf.Clamp(maxOrd, 2, 5);
             return ord >= 1 && ord <= maxOrd;
+        }
+
+        public bool IsTeamEliminated(Team team)
+        {
+            if (team == Team.None) return false;
+            if (IsServer)
+                return eliminatedTeams.Contains(team);
+            int bit = 1 << ((int)team - 1);
+            return (eliminatedTeamsMask.Value & bit) != 0;
+        }
+
+        /// <summary>Server: home planet captured — scuttle team ships and saved progress.</summary>
+        public void EliminateTeamOnServer(Team team)
+        {
+            if (!IsServer || team == Team.None || eliminatedTeams.Contains(team))
+                return;
+
+            eliminatedTeams.Add(team);
+            SyncEliminatedTeamsMaskToNetwork();
+            TitanOrbit.Systems.MapInstanceShipProgressStore.ScuttleSnapshotsForTeam(team);
+
+            var clientIds = new List<ulong>(teamPlayers[team]);
+            for (int i = 0; i < clientIds.Count; i++)
+            {
+                ulong clientId = clientIds[i];
+                Starship ship = GetPlayerStarshipForClient(clientId);
+                RemovePlayer(clientId);
+                if (ship != null)
+                {
+                    NetworkObject netObj = ship.NetworkObject;
+                    if (netObj != null && netObj.IsSpawned)
+                        netObj.Despawn(true);
+                }
+
+                var ngm = NetworkGameManager.Instance;
+                if (ngm != null)
+                    ngm.NotifyPlayerTeamScuttled(clientId);
+            }
+        }
+
+        private void SyncEliminatedTeamsMaskToNetwork()
+        {
+            if (!IsServer) return;
+            int mask = 0;
+            foreach (Team t in eliminatedTeams)
+                mask |= 1 << ((int)t - 1);
+            eliminatedTeamsMask.Value = mask;
         }
 
         private void Awake()
@@ -162,13 +213,13 @@ namespace TitanOrbit.Core
 
         public bool IsTeamOpen(Team team)
         {
-            if (team == Team.None || !IsTeamInCurrentMatch(team)) return false;
+            if (team == Team.None || !IsTeamInCurrentMatch(team) || IsTeamEliminated(team)) return false;
             return GetTeamPlayerCount(team) < maxPlayersPerTeam;
         }
 
         public bool TryReassignPlayer(ulong clientId, Team newTeam)
         {
-            if (!IsServer || newTeam == Team.None || !IsTeamInCurrentMatch(newTeam)) return false;
+            if (!IsServer || newTeam == Team.None || !IsTeamInCurrentMatch(newTeam) || IsTeamEliminated(newTeam)) return false;
             if (!IsTeamOpen(newTeam)) return false;
             if (!playerTeams.ContainsKey(clientId)) return false;
             Team currentTeam = playerTeams[clientId];
@@ -183,7 +234,7 @@ namespace TitanOrbit.Core
         /// <summary>Server only: add a player to a team (first-time assignment, e.g. when they click Join from team selection).</summary>
         public bool AddPlayerToTeam(ulong clientId, Team team)
         {
-            if (!IsServer || team == Team.None || !IsTeamInCurrentMatch(team)) return false;
+            if (!IsServer || team == Team.None || !IsTeamInCurrentMatch(team) || IsTeamEliminated(team)) return false;
             if (!IsTeamOpen(team)) return false;
             if (playerTeams.ContainsKey(clientId)) return false;
             playerTeams[clientId] = team;
@@ -248,7 +299,9 @@ namespace TitanOrbit.Core
                 actualTeam = ok ? preferredTeam : Team.None;
                 if (!ok)
                 {
-                    if (preferredTeam == Team.None || !IsTeamInCurrentMatch(preferredTeam))
+                    if (IsTeamEliminated(preferredTeam))
+                        failMessage = "That team has been eliminated.";
+                    else if (preferredTeam == Team.None || !IsTeamInCurrentMatch(preferredTeam))
                         failMessage = "That team is not part of this match.";
                     else if (!IsTeamOpen(preferredTeam))
                         failMessage = "That team is full.";

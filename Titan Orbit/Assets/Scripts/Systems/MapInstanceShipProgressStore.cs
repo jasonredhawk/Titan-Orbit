@@ -75,6 +75,29 @@ namespace TitanOrbit.Systems
             return SnapshotsByAuthPlayerId.TryGetValue(authPlayerId, out snapshot);
         }
 
+        public static void RemoveSnapshot(string authPlayerId)
+        {
+            if (string.IsNullOrEmpty(authPlayerId))
+                return;
+            SnapshotsByAuthPlayerId.Remove(authPlayerId);
+        }
+
+        /// <summary>Server: destroy saved ships for every player on an eliminated team.</summary>
+        public static void ScuttleSnapshotsForTeam(TeamManager.Team team)
+        {
+            if (!_bound || team == TeamManager.Team.None)
+                return;
+
+            var toRemove = new List<string>();
+            foreach (var kv in SnapshotsByAuthPlayerId)
+            {
+                if (kv.Value.Team == team)
+                    toRemove.Add(kv.Key);
+            }
+            for (int i = 0; i < toRemove.Count; i++)
+                SnapshotsByAuthPlayerId.Remove(toRemove[i]);
+        }
+
         private static string FallbackAuthKey(ulong clientId) => "client:" + clientId.ToString();
     }
 
