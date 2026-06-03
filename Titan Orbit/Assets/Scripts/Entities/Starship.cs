@@ -45,17 +45,23 @@ namespace TitanOrbit.Entities
     {
         public int itemType;
         public int remainingCharges;
+        public Unity.Collections.FixedString64Bytes componentId;
 
         public StoreItemType ItemType => (StoreItemType)itemType;
+        public bool IsShipComponent => ItemType == StoreItemType.ShipComponent;
+        public string ComponentId => componentId.ToString();
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref itemType);
             serializer.SerializeValue(ref remainingCharges);
+            serializer.SerializeValue(ref componentId);
         }
 
         public bool Equals(EquippedEquipmentEntry other) =>
-            itemType == other.itemType && remainingCharges == other.remainingCharges;
+            itemType == other.itemType &&
+            remainingCharges == other.remainingCharges &&
+            componentId.Equals(other.componentId);
     }
 
     /// <summary>
@@ -723,6 +729,9 @@ namespace TitanOrbit.Entities
         /// <summary>Synced equipment entries for client UI.</summary>
         private NetworkList<EquippedEquipmentEntry> equippedEquipmentEntries;
 
+        /// <summary>Summed effective stats from equipped ship-family components (equipment slots).</summary>
+        private ShipComponentAbilityStats _equippedComponentStatSum;
+
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
         /// <summary>Per level after 1, mobility loses this fraction of the <em>base</em> stat: base − (base × this) × (level − 1).</summary>
         private const float ShipLevelMobilityPenaltyFractionPerLevel = ShipPropulsionAggregation.ShipLevelMobilityPenaltyFractionPerLevel;
@@ -739,6 +748,7 @@ namespace TitanOrbit.Entities
             get
             {
                 float baseThrust = componentEngineThrust > 0f ? componentEngineThrust : engineThrust;
+                baseThrust += _equippedComponentStatSum.accelerationCap;
                 float baseWithCards = baseThrust + GetCardMovementSpeedAdd();
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 // Boost acceleration so ships feel snappier. 5x matches previous feel better after mass changes.
@@ -752,6 +762,7 @@ namespace TitanOrbit.Entities
             get
             {
                 float baseSpeed = componentEngineMaxSpeed > 0f ? componentEngineMaxSpeed : engineThrust * 0.5f;
+                baseSpeed += _equippedComponentStatSum.moveSpeed;
                 float baseWithCards = baseSpeed + GetCardMovementSpeedAdd() * 0.5f;
                 float attrScale = 1f + attrMovementSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 float speed = Mathf.Max(2f, baseWithCards * attrScale);
@@ -799,7 +810,7 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                float baseWithCards = healthRegenRate + GetCardHealthRegenAdd();
+                float baseWithCards = healthRegenRate + _equippedComponentStatSum.healthRegen + GetCardHealthRegenAdd();
                 float attrScale = 1f + attrHealthRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 return baseWithCards * attrScale;
             }
@@ -814,7 +825,7 @@ namespace TitanOrbit.Entities
                 float chassis = rotationSpeedFromShipFamilyDefinition
                     ? Mathf.Max(1f, rotationSpeed) * ShipTurnDefinitionToDegreesPerSecond
                     : rotationSpeed;
-                float baseWithCards = chassis + GetCardRotationSpeedAdd();
+                float baseWithCards = chassis + _equippedComponentStatSum.turnSpeed + GetCardRotationSpeedAdd();
                 float attrScale = 1f + attrRotationSpeed.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 return baseWithCards * attrScale;
             }
@@ -846,7 +857,7 @@ namespace TitanOrbit.Entities
                     return sum;
                 }
 
-                float baseWithCards = energyRegenRate + GetCardEnergyRegenAdd();
+                float baseWithCards = energyRegenRate + _equippedComponentStatSum.energyRegen + GetCardEnergyRegenAdd();
                 float attrScale = 1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
                 return baseWithCards * attrScale;
             }
@@ -1427,7 +1438,7 @@ namespace TitanOrbit.Entities
         private float GetTotalRammingPower()
         {
             float perLvl = Mathf.Max(0, ShipLevel - 1);
-            return Mathf.Max(0f, baseRammingPower + _summedRammingPowerBase + _summedRammingPowerPerLevel * perLvl);
+            return Mathf.Max(0f, baseRammingPower + _summedRammingPowerBase + _summedRammingPowerPerLevel * perLvl + _equippedComponentStatSum.rammingPower);
         }
 
         private float GetMaxAsteroidRestitution() => Mathf.Clamp01(asteroidCollisionNormalSpeedRetention);
@@ -2287,6 +2298,7 @@ namespace TitanOrbit.Entities
                 cardIds.ToArray(),
                 CaptureEquipmentItemTypes(),
                 CaptureEquipmentCharges(),
+                CaptureEquipmentComponentIds(),
                 smallRocketsCount.Value,
                 largeRocketsCount.Value,
                 smallMinesCount.Value,
@@ -7171,6 +7183,8 @@ namespace TitanOrbit.Entities
                 energyRegenRate = Mathf.Max(0f, energyRegenVal);
             }
 
+            RecalculateEquippedComponentStatSum();
+
             // Clear component scale caches for attribute-based scaling
             cockpitScaleTransforms.Clear();
             cockpitBaseScales.Clear();
@@ -7742,7 +7756,7 @@ namespace TitanOrbit.Entities
 
         private float ComputeMaxHealthLocal()
         {
-            float baseWithCards = maxHealth + GetCardMaxHealthAdd();
+            float baseWithCards = maxHealth + _equippedComponentStatSum.healthCap + GetCardMaxHealthAdd();
             float attrScale = 1f + attrMaxHealth.Value * ATTR_MULTIPLIER_PER_LEVEL;
             return Mathf.Max(1f, baseWithCards * attrScale);
         }
@@ -7757,21 +7771,21 @@ namespace TitanOrbit.Entities
                 return Mathf.Max(0.1f, sum);
             }
 
-            float baseWithCards = energyCapacity + GetCardEnergyCapacityAdd();
+            float baseWithCards = energyCapacity + _equippedComponentStatSum.energyCap + GetCardEnergyCapacityAdd();
             float attrScale = 1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
             return Mathf.Max(0.1f, baseWithCards * attrScale);
         }
 
         private float ComputeGemCapacityLocal()
         {
-            float baseWithCards = gemCapacity + GetCardGemCapacityAdd();
+            float baseWithCards = gemCapacity + _equippedComponentStatSum.maxGems + GetCardGemCapacityAdd();
             float attrScale = 1f + attrGemCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
             return Mathf.Max(0f, baseWithCards * attrScale);
         }
 
         private float ComputePeopleCapacityLocal()
         {
-            float baseWithCards = peopleCapacity + GetCardPeopleCapacityAdd();
+            float baseWithCards = peopleCapacity + _equippedComponentStatSum.maxPeople + GetCardPeopleCapacityAdd();
             float attrScale = 1f + attrPeopleCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
             return Mathf.Max(0f, baseWithCards * attrScale);
         }
@@ -7922,6 +7936,7 @@ namespace TitanOrbit.Entities
         public bool AddEquipmentFromServer(StoreItemType itemType, int? overrideCharges = null)
         {
             if (!IsServer) return false;
+            if (StoreItemData.IsShipComponent(itemType)) return false;
             if (equippedEquipment == null) equippedEquipment = new List<EquippedEquipmentEntry>();
             if (equippedEquipmentEntries == null) return false;
             if (equippedEquipment.Count >= EquipmentSlotCount) return false;
@@ -7930,11 +7945,77 @@ namespace TitanOrbit.Entities
             var entry = new EquippedEquipmentEntry
             {
                 itemType = (int)itemType,
-                remainingCharges = Mathf.Max(1, charges)
+                remainingCharges = Mathf.Max(1, charges),
+                componentId = default
             };
             equippedEquipment.Add(entry);
             equippedEquipmentEntries.Add(entry);
             return true;
+        }
+
+        /// <summary>Server-only: add a ship-family component to the first available equipment slot.</summary>
+        public bool AddComponentEquipmentFromServer(string componentId)
+        {
+            if (!IsServer || string.IsNullOrWhiteSpace(componentId)) return false;
+            if (HasComponentEquipped(componentId)) return false;
+            if (equippedEquipment == null) equippedEquipment = new List<EquippedEquipmentEntry>();
+            if (equippedEquipmentEntries == null) return false;
+            if (equippedEquipment.Count >= EquipmentSlotCount) return false;
+
+            var entry = new EquippedEquipmentEntry
+            {
+                itemType = (int)StoreItemType.ShipComponent,
+                remainingCharges = 1,
+                componentId = new Unity.Collections.FixedString64Bytes(componentId.Trim())
+            };
+            equippedEquipment.Add(entry);
+            equippedEquipmentEntries.Add(entry);
+            RecalculateEquippedComponentStatSum();
+            ClampCarriedResourcesToCapacity();
+            return true;
+        }
+
+        public bool HasComponentEquipped(string componentId)
+        {
+            if (string.IsNullOrWhiteSpace(componentId) || equippedEquipment == null)
+                return false;
+            string id = componentId.Trim();
+            for (int i = 0; i < equippedEquipment.Count; i++)
+            {
+                if (!equippedEquipment[i].IsShipComponent) continue;
+                if (string.Equals(equippedEquipment[i].ComponentId, id, System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private void RecalculateEquippedComponentStatSum()
+        {
+            _equippedComponentStatSum = default;
+            if (equippedEquipment == null || equippedEquipment.Count == 0)
+                return;
+
+            ShipFamilyDefinition family = ResolveFamilyForEquipment();
+            if (family == null)
+                return;
+
+            int level = ShipLevel;
+            for (int i = 0; i < equippedEquipment.Count; i++)
+            {
+                EquippedEquipmentEntry entry = equippedEquipment[i];
+                if (!entry.IsShipComponent) continue;
+                if (!family.TryGetComponentEntry(entry.ComponentId, out ShipFamilyComponentEntry componentEntry) || componentEntry == null)
+                    continue;
+                ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(componentEntry.stats, level);
+                _equippedComponentStatSum.AddInPlace(effective);
+            }
+        }
+
+        private ShipFamilyDefinition ResolveFamilyForEquipment()
+        {
+            if (Systems.CardShopSystem.Instance == null)
+                return null;
+            return Systems.CardShopSystem.Instance.GetShipFamilyForShip(this);
         }
 
         /// <summary>Server-only: remove equipment at slot index. Despawns linked drones unless skipped.</summary>
@@ -7952,6 +8033,8 @@ namespace TitanOrbit.Entities
             if (equippedEquipmentEntries != null && slotIndex < equippedEquipmentEntries.Count)
                 equippedEquipmentEntries.RemoveAt(slotIndex);
 
+            RecalculateEquippedComponentStatSum();
+            ClampCarriedResourcesToCapacity();
             ReindexEquipmentDronesAfterRemoval(slotIndex);
         }
 
@@ -8046,6 +8129,16 @@ namespace TitanOrbit.Entities
             return charges;
         }
 
+        private string[] CaptureEquipmentComponentIds()
+        {
+            if (equippedEquipment == null || equippedEquipment.Count == 0)
+                return System.Array.Empty<string>();
+            var ids = new string[equippedEquipment.Count];
+            for (int i = 0; i < equippedEquipment.Count; i++)
+                ids[i] = equippedEquipment[i].IsShipComponent ? equippedEquipment[i].ComponentId : string.Empty;
+            return ids;
+        }
+
         private void RestoreEquipmentFromSnapshot(in PlayerShipProgressSnapshot snapshot)
         {
             if (snapshot.EquipmentItemTypes != null && snapshot.EquipmentItemTypes.Length > 0)
@@ -8057,8 +8150,21 @@ namespace TitanOrbit.Entities
                     int charges = snapshot.EquipmentCharges != null && i < snapshot.EquipmentCharges.Length
                         ? snapshot.EquipmentCharges[i]
                         : 1;
-                    AddEquipmentFromServer((StoreItemType)snapshot.EquipmentItemTypes[i], charges);
+                    var itemType = (StoreItemType)snapshot.EquipmentItemTypes[i];
+                    if (StoreItemData.IsShipComponent(itemType))
+                    {
+                        string componentId = snapshot.EquipmentComponentIds != null && i < snapshot.EquipmentComponentIds.Length
+                            ? snapshot.EquipmentComponentIds[i]
+                            : null;
+                        if (!string.IsNullOrWhiteSpace(componentId))
+                            AddComponentEquipmentFromServer(componentId);
+                    }
+                    else
+                    {
+                        AddEquipmentFromServer(itemType, charges);
+                    }
                 }
+                RecalculateEquippedComponentStatSum();
                 return;
             }
 

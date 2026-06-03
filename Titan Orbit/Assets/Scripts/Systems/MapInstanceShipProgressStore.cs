@@ -122,6 +122,7 @@ namespace TitanOrbit.Systems
         public readonly string[] CardIds;
         public readonly int[] EquipmentItemTypes;
         public readonly int[] EquipmentCharges;
+        public readonly string[] EquipmentComponentIds;
         public readonly int SmallRockets;
         public readonly int LargeRockets;
         public readonly int SmallMines;
@@ -150,6 +151,7 @@ namespace TitanOrbit.Systems
             string[] cardIds,
             int[] equipmentItemTypes,
             int[] equipmentCharges,
+            string[] equipmentComponentIds,
             int smallRockets,
             int largeRockets,
             int smallMines,
@@ -177,6 +179,7 @@ namespace TitanOrbit.Systems
             CardIds = cardIds ?? System.Array.Empty<string>();
             EquipmentItemTypes = equipmentItemTypes ?? System.Array.Empty<int>();
             EquipmentCharges = equipmentCharges ?? System.Array.Empty<int>();
+            EquipmentComponentIds = equipmentComponentIds ?? System.Array.Empty<string>();
             SmallRockets = smallRockets;
             LargeRockets = largeRockets;
             SmallMines = smallMines;

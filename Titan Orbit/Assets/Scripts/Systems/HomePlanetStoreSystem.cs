@@ -64,6 +64,7 @@ namespace TitanOrbit.Systems
             Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
             if (ship == null || ship.OwnerClientId != clientId) return;
             if (!ship.HasEmptyEquipmentSlot) return;
+            if (StoreItemData.IsShipComponent(itemType)) return;
 
             float cost = StoreItemData.GetPrice(itemType);
             if (!home.TrySpendContributedGems(clientId, cost)) return;
@@ -85,6 +86,41 @@ namespace TitanOrbit.Systems
             NotifyPurchaseClientRpc(clientId, itemType, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
         }
 
+        /// <summary>Server: purchase a ship-family component into an equipment slot.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void PurchaseComponentServerRpc(ulong homePlanetNetworkId, ulong shipNetworkId, string componentId, ServerRpcParams rpcParams = default)
+        {
+            if (string.IsNullOrWhiteSpace(componentId)) return;
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            NetworkObject homeNet = GetNetworkObject(homePlanetNetworkId);
+            HomePlanet home = homeNet != null ? homeNet.GetComponent<HomePlanet>() : null;
+            if (home == null || home.AssignedTeam == TeamManager.Team.None) return;
+            if (TeamManager.Instance == null || TeamManager.Instance.GetPlayerTeam(clientId) != home.AssignedTeam) return;
+
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+            if (!ship.HasEmptyEquipmentSlot) return;
+            if (ship.HasComponentEquipped(componentId)) return;
+
+            ShipFamilyDefinition family = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(ship)
+                : null;
+            if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry componentEntry) || componentEntry == null)
+                return;
+
+            float cost = ShipComponentStoreData.GetComponentGemPrice(componentEntry, ship.ShipLevel);
+            if (!home.TrySpendContributedGems(clientId, cost)) return;
+
+            if (!ship.AddComponentEquipmentFromServer(componentId))
+            {
+                home.RefundContributedGems(clientId, cost);
+                return;
+            }
+
+            NotifyComponentPurchaseClientRpc(clientId, componentId, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
+        }
+
         /// <summary>Server: respawn drones for equipment slots after reconnect snapshot restore.</summary>
         public void RespawnEquipmentDronesForShip(Starship ship)
         {
@@ -104,6 +140,11 @@ namespace TitanOrbit.Systems
         private void NotifyPurchaseClientRpc(ulong clientId, StoreItemType itemType, ClientRpcParams rpcParams = default)
         {
             // Optional: play sound / UI feedback
+        }
+
+        [ClientRpc]
+        private void NotifyComponentPurchaseClientRpc(ulong clientId, string componentId, ClientRpcParams rpcParams = default)
+        {
         }
 
         public enum DroneType { Fighter, Shield, Mining }

@@ -52,6 +52,8 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>Ship family for upgrade cards: from <see cref="Starship.CurrentChassisId"/> prefix, else starter chassis.</summary>
+        public ShipFamilyDefinition GetShipFamilyForShip(Starship ship) => TryResolveFamilyForShip(ship);
+
         private ShipFamilyDefinition TryResolveFamilyForShip(Starship ship)
         {
             if (planetShipFamilyConfig == null) return null;

@@ -160,20 +160,34 @@ namespace TitanOrbit.UI
         private GameObject moonDockStoreSection;
         private GameObject _moonDockStoreToCardsDivider;
         private GameObject _moonDockCardsToEquipmentDivider;
-        private StoreItemType[] moonDockStoreItemTypes;
-        private TextMeshProUGUI[] moonDockStoreTitleLabels;
-        private TextMeshProUGUI[] moonDockStoreCountLabels;
-        private TextMeshProUGUI[] moonDockStoreIconLabels;
-        private Image[] moonDockStoreCardImages;
-        private Button[] moonDockStoreBuyButtons;
-        private TextMeshProUGUI[] moonDockStoreBuyLabels;
-        private Image[] moonDockStoreBuyImages;
-        private RectTransform _moonDockStoreCardsRow;
+        private RectTransform _moonDockStoreScrollViewport;
+        private RectTransform _moonDockStoreGridContent;
+        private GridLayoutGroup _moonDockStoreGrid;
+        private string _moonDockStoreBuiltForFamilyKey;
+
+        private sealed class MoonDockStoreCardBinding
+        {
+            public bool isComponent;
+            public string componentId;
+            public StoreItemType supportItem;
+            public GameObject root;
+            public Image bgImage;
+            public TextMeshProUGUI titleText;
+            public TextMeshProUGUI descriptionText;
+            public TextMeshProUGUI sublineText;
+            public Button buyButton;
+            public Image buyImage;
+            public TextMeshProUGUI buyLabel;
+        }
+
+        private readonly List<MoonDockStoreCardBinding> _moonDockStoreCards = new List<MoonDockStoreCardBinding>();
 
         private const int MoonDockStoreTilesPerRow = 7;
         private const float MoonDockStoreTileSpacing = 6f;
         private const float MoonDockStoreTileMinWidth = 72f;
         private const float MoonDockStoreCardHeight = 118f;
+        private const float MoonDockEquipmentCardHeight = 172f;
+        private const float MoonDockEquipmentPanelHeight = 420f;
         private static readonly Color MoonDockStoreCardFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
         private static readonly Color MoonDockStoreCardInnerShade = new Color(0f, 0f, 0f, 0.22f);
         private static readonly Color MoonDockItemTileButtonIdle = new Color(0.08f, 0.1f, 0.16f, 0.88f);
@@ -817,8 +831,8 @@ namespace TitanOrbit.UI
             cardsContentRect.offsetMin = Vector2.zero;
             cardsContentRect.offsetMax = Vector2.zero;
             var cardsTabVlg = cardsTabContent.AddComponent<VerticalLayoutGroup>();
-            cardsTabVlg.spacing = 8f;
-            cardsTabVlg.padding = new RectOffset(12, 12, 8, 16);
+            cardsTabVlg.spacing = 6f;
+            cardsTabVlg.padding = new RectOffset(12, 12, 8, 8);
             cardsTabVlg.childAlignment = TextAnchor.UpperCenter;
             cardsTabVlg.childControlWidth = true;
             cardsTabVlg.childControlHeight = true;
@@ -2302,60 +2316,135 @@ namespace TitanOrbit.UI
 
         private void RefreshMoonDockStore()
         {
-            if (!_moonDockLayoutActive || moonDockStoreItemTypes == null)
+            if (!_moonDockLayoutActive || moonDockStoreSection == null)
                 return;
 
-            for (int i = 0; i < moonDockStoreItemTypes.Length; i++)
+            EnsureMoonDockStoreSection();
+            ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
+                : null;
+            string familyKey = family != null ? family.familyId : string.Empty;
+            if (!string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal))
+                RebuildMoonDockEquipmentStore(family);
+
+            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            for (int i = 0; i < _moonDockStoreCards.Count; i++)
             {
-                StoreItemType item = moonDockStoreItemTypes[i];
-                int count = CountSupportItem(currentShip, item);
-                float price = StoreItemData.GetPrice(item);
-                bool canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
+                MoonDockStoreCardBinding card = _moonDockStoreCards[i];
+                if (card == null) continue;
 
-                if (moonDockStoreCountLabels != null && i < moonDockStoreCountLabels.Length && moonDockStoreCountLabels[i] != null)
-                    moonDockStoreCountLabels[i].text = count > 0 ? $"\u00d7{count}" : string.Empty;
-
-                if (moonDockStoreBuyButtons != null && i < moonDockStoreBuyButtons.Length && moonDockStoreBuyButtons[i] != null)
+                bool canBuy;
+                float price;
+                string subline;
+                if (card.isComponent)
                 {
-                    moonDockStoreBuyButtons[i].interactable = canBuy;
-                    moonDockStoreBuyButtons[i].onClick.RemoveAllListeners();
-                    StoreItemType captured = item;
-                    moonDockStoreBuyButtons[i].onClick.AddListener(() => OnBuySupportItem(captured));
+                    ShipFamilyComponentEntry componentEntry = null;
+                    if (family != null)
+                        family.TryGetComponentEntry(card.componentId, out componentEntry);
+                    price = componentEntry != null
+                        ? ShipComponentStoreData.GetComponentGemPrice(componentEntry, shipLevel)
+                        : 999f;
+                    bool owned = currentShip != null && currentShip.HasComponentEquipped(card.componentId);
+                    canBuy = currentShip != null && !owned && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
+                    float power = componentEntry != null
+                        ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel)
+                        : 0f;
+                    subline = owned ? "Equipped" : $"PWR {power:F0}";
+                    if (card.descriptionText != null && componentEntry != null)
+                        card.descriptionText.text = ShipComponentStoreData.GetStatsDescription(componentEntry, shipLevel);
+                }
+                else
+                {
+                    price = StoreItemData.GetPrice(card.supportItem);
+                    int count = CountSupportItem(currentShip, card.supportItem);
+                    canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
+                    subline = count > 0 ? $"\u00d7{count} owned" : StoreItemData.GetDescription(card.supportItem);
                 }
 
-                if (moonDockStoreBuyLabels != null && i < moonDockStoreBuyLabels.Length && moonDockStoreBuyLabels[i] != null)
-                    moonDockStoreBuyLabels[i].text = $"{price:F0}g";
-
-                if (moonDockStoreBuyImages != null && i < moonDockStoreBuyImages.Length && moonDockStoreBuyImages[i] != null)
+                if (card.sublineText != null)
+                    card.sublineText.text = subline;
+                if (card.buyLabel != null)
+                    card.buyLabel.text = $"{price:F0}g";
+                if (card.buyButton != null)
                 {
-                    moonDockStoreBuyImages[i].color = canBuy
+                    card.buyButton.interactable = canBuy;
+                    card.buyButton.onClick.RemoveAllListeners();
+                    if (card.isComponent)
+                    {
+                        string capturedId = card.componentId;
+                        card.buyButton.onClick.AddListener(() => OnBuyComponent(capturedId));
+                    }
+                    else
+                    {
+                        StoreItemType capturedItem = card.supportItem;
+                        card.buyButton.onClick.AddListener(() => OnBuySupportItem(capturedItem));
+                    }
+                }
+                if (card.buyImage != null)
+                {
+                    card.buyImage.color = canBuy
                         ? OrbitDockSidebarPanelUI.EquipmentAccent
                         : MoonDockItemTileButtonDisabled;
                 }
-
-                if (moonDockStoreCardImages != null && i < moonDockStoreCardImages.Length && moonDockStoreCardImages[i] != null)
+                if (card.bgImage != null)
                 {
-                    var c = moonDockStoreCardImages[i].color;
-                    c.a = canBuy ? 0.92f : 0.55f;
-                    moonDockStoreCardImages[i].color = c;
+                    var c = card.bgImage.color;
+                    c.a = canBuy ? 0.92f : 0.58f;
+                    card.bgImage.color = c;
                 }
             }
+
+            ApplyMoonDockCardGridWidth();
         }
 
-        private static float ComputeMoonDockStoreTileWidth(float rowInnerWidth, float spacing)
+        private void RebuildMoonDockEquipmentStore(ShipFamilyDefinition family)
         {
-            float totalSpacing = spacing * (MoonDockStoreTilesPerRow - 1);
-            return Mathf.Max(MoonDockStoreTileMinWidth, (rowInnerWidth - totalSpacing) / MoonDockStoreTilesPerRow);
+            if (_moonDockStoreGridContent == null)
+                return;
+
+            _moonDockStoreCards.Clear();
+            for (int c = _moonDockStoreGridContent.childCount - 1; c >= 0; c--)
+                Destroy(_moonDockStoreGridContent.GetChild(c).gameObject);
+
+            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            if (family?.components != null)
+            {
+                var sorted = new List<ShipFamilyComponentEntry>();
+                for (int i = 0; i < family.components.Count; i++)
+                {
+                    if (family.components[i] != null)
+                        sorted.Add(family.components[i]);
+                }
+                sorted.Sort((a, b) =>
+                {
+                    float pb = ShipComponentStoreData.GetComponentPowerScore(b, shipLevel);
+                    float pa = ShipComponentStoreData.GetComponentPowerScore(a, shipLevel);
+                    return pb.CompareTo(pa);
+                });
+
+                for (int i = 0; i < sorted.Count; i++)
+                    CreateMoonDockEquipmentStoreCard(_moonDockStoreGridContent, sorted[i], shipLevel);
+            }
+
+            foreach (StoreItemType item in Enum.GetValues(typeof(StoreItemType)))
+            {
+                if (StoreItemData.IsShipComponent(item))
+                    continue;
+                CreateMoonDockSupportStoreCard(_moonDockStoreGridContent, item);
+            }
+
+            _moonDockStoreBuiltForFamilyKey = family != null ? family.familyId : string.Empty;
+            ApplyMoonDockCardGridWidth();
         }
 
         private float GetMoonDockItemTileWidth()
         {
-            if (_moonDockStoreCardsRow != null && _moonDockStoreCardsRow.rect.width > 1f)
+            if (_moonDockStoreScrollViewport != null && _moonDockStoreScrollViewport.rect.width > 1f)
             {
-                var hlg = _moonDockStoreCardsRow.GetComponent<HorizontalLayoutGroup>();
-                float pad = hlg != null ? hlg.padding.left + hlg.padding.right : 0f;
-                float spacing = hlg != null ? hlg.spacing : MoonDockStoreTileSpacing;
-                return ComputeMoonDockStoreTileWidth(_moonDockStoreCardsRow.rect.width - pad, spacing);
+                float pad = _moonDockStoreGrid != null
+                    ? _moonDockStoreGrid.padding.left + _moonDockStoreGrid.padding.right
+                    : 0f;
+                return ComputeMoonDockStoreTileWidth(_moonDockStoreScrollViewport.rect.width - pad, MoonDockStoreTileSpacing);
             }
 
             if (cardsTabContent != null)
@@ -2368,6 +2457,12 @@ namespace TitanOrbit.UI
             }
 
             return MoonDockStoreTileMinWidth;
+        }
+
+        private static float ComputeMoonDockStoreTileWidth(float rowInnerWidth, float spacing)
+        {
+            float totalSpacing = spacing * (MoonDockStoreTilesPerRow - 1);
+            return Mathf.Max(MoonDockStoreTileMinWidth, (rowInnerWidth - totalSpacing) / MoonDockStoreTilesPerRow);
         }
 
         private static void ApplyMoonDockTileLayoutToRow(RectTransform row, float tileWidth)
@@ -2402,8 +2497,8 @@ namespace TitanOrbit.UI
             moonDockStoreSection = new GameObject("MoonDockStoreSection");
             moonDockStoreSection.transform.SetParent(moonDockCenterCardsHost, false);
             var sectionVlg = moonDockStoreSection.AddComponent<VerticalLayoutGroup>();
-            sectionVlg.spacing = 6f;
-            sectionVlg.padding = new RectOffset(0, 0, 0, 4);
+            sectionVlg.spacing = 4f;
+            sectionVlg.padding = new RectOffset(0, 0, 0, 0);
             sectionVlg.childAlignment = TextAnchor.UpperCenter;
             sectionVlg.childControlWidth = true;
             sectionVlg.childControlHeight = true;
@@ -2415,83 +2510,337 @@ namespace TitanOrbit.UI
             CreateMoonDockSectionHeader(
                 moonDockStoreSection.transform,
                 OrbitDockSidebarPanelUI.SectionTitleEquipment,
-                "Buy drones, rockets, and mines — they fill equipment slots.",
+                "Buy ship components and support gear — fills equipment slots.",
                 OrbitDockSidebarPanelUI.EquipmentAccent);
 
-            var cardsRowGo = new GameObject("StoreCardsRow");
-            cardsRowGo.transform.SetParent(moonDockStoreSection.transform, false);
-            _moonDockStoreCardsRow = cardsRowGo.AddComponent<RectTransform>();
-            var cardsRowLe = cardsRowGo.AddComponent<LayoutElement>();
-            cardsRowLe.preferredHeight = MoonDockStoreCardHeight;
-            cardsRowLe.minHeight = MoonDockStoreCardHeight;
-            cardsRowLe.flexibleHeight = 0f;
-            var cardsRowHlg = cardsRowGo.AddComponent<HorizontalLayoutGroup>();
-            cardsRowHlg.spacing = 6f;
-            cardsRowHlg.padding = new RectOffset(0, 0, 0, 0);
-            cardsRowHlg.childAlignment = TextAnchor.UpperCenter;
-            cardsRowHlg.childControlWidth = true;
-            cardsRowHlg.childControlHeight = true;
-            cardsRowHlg.childForceExpandWidth = true;
-            cardsRowHlg.childForceExpandHeight = false;
+            var scrollGo = new GameObject("EquipmentStoreScroll");
+            scrollGo.transform.SetParent(moonDockStoreSection.transform, false);
+            var scrollLe = scrollGo.AddComponent<LayoutElement>();
+            scrollLe.preferredHeight = MoonDockEquipmentPanelHeight;
+            scrollLe.minHeight = MoonDockEquipmentPanelHeight;
+            scrollLe.flexibleHeight = 0f;
+            scrollLe.flexibleWidth = 1f;
+            var scrollRect = scrollGo.AddComponent<ScrollRect>();
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 24f;
 
-            moonDockStoreItemTypes = (StoreItemType[])Enum.GetValues(typeof(StoreItemType));
-            int itemCount = moonDockStoreItemTypes.Length;
-            moonDockStoreTitleLabels = new TextMeshProUGUI[itemCount];
-            moonDockStoreCountLabels = new TextMeshProUGUI[itemCount];
-            moonDockStoreIconLabels = new TextMeshProUGUI[itemCount];
-            moonDockStoreCardImages = new Image[itemCount];
-            moonDockStoreBuyButtons = new Button[itemCount];
-            moonDockStoreBuyLabels = new TextMeshProUGUI[itemCount];
-            moonDockStoreBuyImages = new Image[itemCount];
-            for (int i = 0; i < itemCount; i++)
-                CreateMoonDockStoreCard(cardsRowGo.transform, i, moonDockStoreItemTypes[i]);
+            var viewportGo = new GameObject("Viewport");
+            viewportGo.transform.SetParent(scrollGo.transform, false);
+            _moonDockStoreScrollViewport = viewportGo.AddComponent<RectTransform>();
+            _moonDockStoreScrollViewport.anchorMin = Vector2.zero;
+            _moonDockStoreScrollViewport.anchorMax = Vector2.one;
+            _moonDockStoreScrollViewport.offsetMin = Vector2.zero;
+            _moonDockStoreScrollViewport.offsetMax = Vector2.zero;
+            viewportGo.AddComponent<RectMask2D>();
+            var viewportImg = viewportGo.AddComponent<Image>();
+            viewportImg.color = new Color(1f, 1f, 1f, 0.02f);
+            scrollRect.viewport = _moonDockStoreScrollViewport;
+
+            var contentGo = new GameObject("EquipmentGrid");
+            contentGo.transform.SetParent(viewportGo.transform, false);
+            _moonDockStoreGridContent = contentGo.AddComponent<RectTransform>();
+            _moonDockStoreGridContent.anchorMin = new Vector2(0f, 1f);
+            _moonDockStoreGridContent.anchorMax = new Vector2(1f, 1f);
+            _moonDockStoreGridContent.pivot = new Vector2(0.5f, 1f);
+            _moonDockStoreGridContent.anchoredPosition = Vector2.zero;
+            _moonDockStoreGridContent.sizeDelta = new Vector2(0f, MoonDockEquipmentPanelHeight);
+            _moonDockStoreGrid = contentGo.AddComponent<GridLayoutGroup>();
+            _moonDockStoreGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            _moonDockStoreGrid.constraintCount = MoonDockStoreTilesPerRow;
+            _moonDockStoreGrid.spacing = new Vector2(MoonDockStoreTileSpacing, MoonDockStoreTileSpacing);
+            _moonDockStoreGrid.padding = new RectOffset(0, 0, 0, 8);
+            _moonDockStoreGrid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+            _moonDockStoreGrid.startAxis = GridLayoutGroup.Axis.Horizontal;
+            _moonDockStoreGrid.childAlignment = TextAnchor.UpperLeft;
+            var contentFitter = contentGo.AddComponent<ContentSizeFitter>();
+            contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            scrollRect.content = _moonDockStoreGridContent;
         }
 
-        private void CreateMoonDockStoreCard(Transform parent, int index, StoreItemType itemType)
+        private void CreateMoonDockEquipmentStoreCard(Transform parent, ShipFamilyComponentEntry entry, int shipLevel)
         {
-            Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
-                StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
+            if (entry == null) return;
 
-            CreateMoonDockItemTile(
+            Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                ShipComponentStoreData.GetAbilityColorStatIndex(entry), 0.92f);
+            float price = ShipComponentStoreData.GetComponentGemPrice(entry, shipLevel);
+            float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel);
+
+            CreateMoonDockEquipmentItemTile(
                 parent,
-                "StoreCard_" + itemType,
+                "Component_" + entry.componentId,
                 cardColor,
                 OrbitDockSidebarPanelUI.EquipmentAccent,
-                $"{StoreItemData.GetPrice(itemType):F0}g",
-                out _,
+                $"{price:F0}g",
+                out GameObject root,
                 out _,
                 out Image cardBg,
                 out _,
                 out TextMeshProUGUI iconGlyph,
                 out TextMeshProUGUI titleTmp,
-                out TextMeshProUGUI countTmp,
+                out TextMeshProUGUI descriptionTmp,
+                out TextMeshProUGUI sublineTmp,
                 out Button buyBtn,
                 out Image buyImg);
 
-            moonDockStoreCardImages[index] = cardBg;
-            moonDockStoreTitleLabels[index] = titleTmp;
-            moonDockStoreCountLabels[index] = countTmp;
-            moonDockStoreIconLabels[index] = iconGlyph;
-            moonDockStoreBuyButtons[index] = buyBtn;
-            moonDockStoreBuyImages[index] = buyImg;
+            if (titleTmp != null)
+                titleTmp.text = ShipComponentStoreData.GetDisplayName(entry);
+            if (iconGlyph != null)
+                iconGlyph.text = ShipComponentStoreData.GetIconGlyph(entry);
+            if (descriptionTmp != null)
+                descriptionTmp.text = ShipComponentStoreData.GetStatsDescription(entry, shipLevel);
+            if (sublineTmp != null)
+                sublineTmp.text = $"PWR {power:F0}";
+
+            _moonDockStoreCards.Add(new MoonDockStoreCardBinding
+            {
+                isComponent = true,
+                componentId = entry.componentId,
+                root = root,
+                bgImage = cardBg,
+                titleText = titleTmp,
+                descriptionText = descriptionTmp,
+                sublineText = sublineTmp,
+                buyButton = buyBtn,
+                buyImage = buyImg,
+                buyLabel = buyBtn != null ? buyBtn.GetComponentInChildren<TextMeshProUGUI>() : null
+            });
+        }
+
+        private void CreateMoonDockSupportStoreCard(Transform parent, StoreItemType itemType)
+        {
+            Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
+
+            CreateMoonDockEquipmentItemTile(
+                parent,
+                "Support_" + itemType,
+                cardColor,
+                OrbitDockSidebarPanelUI.EquipmentAccent,
+                $"{StoreItemData.GetPrice(itemType):F0}g",
+                out GameObject root,
+                out _,
+                out Image cardBg,
+                out _,
+                out TextMeshProUGUI iconGlyph,
+                out TextMeshProUGUI titleTmp,
+                out TextMeshProUGUI descriptionTmp,
+                out TextMeshProUGUI sublineTmp,
+                out Button buyBtn,
+                out Image buyImg);
 
             if (titleTmp != null)
                 titleTmp.text = StoreItemData.GetShortDisplayName(itemType);
             if (iconGlyph != null)
                 iconGlyph.text = StoreItemData.GetIconGlyph(itemType);
-            if (buyBtn != null)
-                moonDockStoreBuyLabels[index] = buyBtn.GetComponentInChildren<TextMeshProUGUI>();
+            if (descriptionTmp != null)
+                descriptionTmp.text = StoreItemData.GetDescription(itemType);
+
+            _moonDockStoreCards.Add(new MoonDockStoreCardBinding
+            {
+                isComponent = false,
+                supportItem = itemType,
+                root = root,
+                bgImage = cardBg,
+                titleText = titleTmp,
+                descriptionText = descriptionTmp,
+                sublineText = sublineTmp,
+                buyButton = buyBtn,
+                buyImage = buyImg,
+                buyLabel = buyBtn != null ? buyBtn.GetComponentInChildren<TextMeshProUGUI>() : null
+            });
+        }
+
+        private void CreateMoonDockEquipmentItemTile(
+            Transform parent,
+            string tileName,
+            Color tileColor,
+            Color accentColor,
+            string actionLabel,
+            out GameObject root,
+            out Image accentImage,
+            out Image bgImage,
+            out Image iconImage,
+            out TextMeshProUGUI iconGlyphText,
+            out TextMeshProUGUI titleText,
+            out TextMeshProUGUI descriptionText,
+            out TextMeshProUGUI sublineText,
+            out Button actionButton,
+            out Image actionButtonImage)
+        {
+            root = new GameObject(tileName);
+            root.transform.SetParent(parent, false);
+            var cardLe = root.AddComponent<LayoutElement>();
+            cardLe.flexibleWidth = 0f;
+            cardLe.flexibleHeight = 0f;
+            cardLe.minWidth = MoonDockStoreTileMinWidth;
+            cardLe.preferredWidth = MoonDockStoreTileMinWidth;
+            cardLe.preferredHeight = MoonDockEquipmentCardHeight;
+            cardLe.minHeight = MoonDockEquipmentCardHeight;
+
+            bgImage = root.AddComponent<Image>();
+            bgImage.color = tileColor;
+            bgImage.raycastTarget = false;
+            var cardOutline = root.AddComponent<Outline>();
+            cardOutline.effectColor = MoonDockStoreCardFrameColor;
+            cardOutline.effectDistance = new Vector2(1f, 1f);
+
+            var innerShadeGo = new GameObject("InnerShade");
+            innerShadeGo.transform.SetParent(root.transform, false);
+            var innerShadeRt = innerShadeGo.AddComponent<RectTransform>();
+            innerShadeRt.anchorMin = Vector2.zero;
+            innerShadeRt.anchorMax = Vector2.one;
+            innerShadeRt.offsetMin = new Vector2(3f, 3f);
+            innerShadeRt.offsetMax = new Vector2(-3f, -3f);
+            var innerShadeImg = innerShadeGo.AddComponent<Image>();
+            innerShadeImg.color = MoonDockStoreCardInnerShade;
+            innerShadeImg.raycastTarget = false;
+            innerShadeGo.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            var cardVlg = root.AddComponent<VerticalLayoutGroup>();
+            cardVlg.spacing = 2f;
+            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.childAlignment = TextAnchor.UpperCenter;
+            cardVlg.childControlWidth = true;
+            cardVlg.childControlHeight = true;
+            cardVlg.childForceExpandWidth = true;
+            cardVlg.childForceExpandHeight = false;
+
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(root.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = 3f;
+            accentLe.minHeight = 3f;
+            accentImage = accentGo.AddComponent<Image>();
+            accentImage.color = accentColor;
+            accentImage.raycastTarget = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(root.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 18f;
+            titleLe.minHeight = 16f;
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.fontSize = 10f;
+            titleText.fontStyle = FontStyles.Bold;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.color = Color.white;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.raycastTarget = false;
+            if (fontAsset != null) titleText.font = fontAsset;
+
+            var iconGo = new GameObject("Icon");
+            iconGo.transform.SetParent(root.transform, false);
+            var iconLe = iconGo.AddComponent<LayoutElement>();
+            iconLe.flexibleHeight = 0f;
+            iconLe.minHeight = 24f;
+            iconLe.preferredHeight = 28f;
+            iconImage = iconGo.AddComponent<Image>();
+            iconImage.color = new Color(1f, 1f, 1f, 0f);
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+
+            var glyphGo = new GameObject("Glyph");
+            glyphGo.transform.SetParent(iconGo.transform, false);
+            var glyphRt = glyphGo.AddComponent<RectTransform>();
+            glyphRt.anchorMin = Vector2.zero;
+            glyphRt.anchorMax = Vector2.one;
+            glyphRt.offsetMin = Vector2.zero;
+            glyphRt.offsetMax = Vector2.zero;
+            iconGlyphText = glyphGo.AddComponent<TextMeshProUGUI>();
+            iconGlyphText.fontSize = 22f;
+            iconGlyphText.alignment = TextAlignmentOptions.Center;
+            iconGlyphText.color = new Color(1f, 1f, 1f, 0.95f);
+            iconGlyphText.raycastTarget = false;
+            if (fontAsset != null) iconGlyphText.font = fontAsset;
+
+            var descriptionGo = new GameObject("Description");
+            descriptionGo.transform.SetParent(root.transform, false);
+            var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
+            descriptionLe.flexibleHeight = 1f;
+            descriptionLe.minHeight = 36f;
+            descriptionLe.preferredHeight = 44f;
+            descriptionText = descriptionGo.AddComponent<TextMeshProUGUI>();
+            descriptionText.fontSize = 9f;
+            descriptionText.alignment = TextAlignmentOptions.Top;
+            descriptionText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
+            descriptionText.enableWordWrapping = true;
+            descriptionText.overflowMode = TextOverflowModes.Ellipsis;
+            descriptionText.maxVisibleLines = 4;
+            descriptionText.raycastTarget = false;
+            if (fontAsset != null) descriptionText.font = fontAsset;
+
+            var sublineGo = new GameObject("Subline");
+            sublineGo.transform.SetParent(root.transform, false);
+            var sublineLe = sublineGo.AddComponent<LayoutElement>();
+            sublineLe.preferredHeight = 12f;
+            sublineLe.minHeight = 10f;
+            sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
+            sublineText.fontSize = 9f;
+            sublineText.fontStyle = FontStyles.Bold;
+            sublineText.alignment = TextAlignmentOptions.Center;
+            sublineText.color = new Color(1f, 1f, 1f, 0.82f);
+            sublineText.overflowMode = TextOverflowModes.Ellipsis;
+            sublineText.raycastTarget = false;
+            if (fontAsset != null) sublineText.font = fontAsset;
+
+            var actionGo = new GameObject("Action");
+            actionGo.transform.SetParent(root.transform, false);
+            var actionLe = actionGo.AddComponent<LayoutElement>();
+            actionLe.preferredHeight = 22f;
+            actionLe.minHeight = 20f;
+            actionButtonImage = actionGo.AddComponent<Image>();
+            actionButtonImage.color = MoonDockItemTileButtonIdle;
+            if (buttonSprite != null)
+            {
+                actionButtonImage.sprite = buttonSprite;
+                actionButtonImage.type = Image.Type.Sliced;
+            }
+            actionButton = actionGo.AddComponent<Button>();
+            actionButton.targetGraphic = actionButtonImage;
+            var actionLabelGo = new GameObject("Label");
+            actionLabelGo.transform.SetParent(actionGo.transform, false);
+            var actionLabelRt = actionLabelGo.AddComponent<RectTransform>();
+            actionLabelRt.anchorMin = Vector2.zero;
+            actionLabelRt.anchorMax = Vector2.one;
+            actionLabelRt.offsetMin = new Vector2(2f, 1f);
+            actionLabelRt.offsetMax = new Vector2(-2f, -1f);
+            var actionLabelTmp = actionLabelGo.AddComponent<TextMeshProUGUI>();
+            actionLabelTmp.text = actionLabel;
+            actionLabelTmp.fontSize = 10f;
+            actionLabelTmp.fontStyle = FontStyles.Bold;
+            actionLabelTmp.alignment = TextAlignmentOptions.Center;
+            actionLabelTmp.color = Color.white;
+            actionLabelTmp.raycastTarget = false;
+            if (fontAsset != null) actionLabelTmp.font = fontAsset;
         }
 
         private static Color GetEquipmentSlotColor(StoreItemType itemType)
         {
+            if (StoreItemData.IsShipComponent(itemType))
+                return new Color(0.18f, 0.28f, 0.42f, 0.95f);
             return ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 StoreItemData.GetAbilityColorStatIndex(itemType));
+        }
+
+        private static Color GetEquipmentSlotColor(ShipFamilyComponentEntry entry)
+        {
+            return ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                ShipComponentStoreData.GetAbilityColorStatIndex(entry));
         }
 
         private static Color GetEquipmentSlotBorderColor(StoreItemType itemType)
         {
             Color c = GetEquipmentSlotColor(itemType);
+            return new Color(Mathf.Min(1f, c.r + 0.12f), Mathf.Min(1f, c.g + 0.12f), Mathf.Min(1f, c.b + 0.12f), 0.95f);
+        }
+
+        private static Color GetEquipmentSlotBorderColor(ShipFamilyComponentEntry entry)
+        {
+            Color c = GetEquipmentSlotColor(entry);
             return new Color(Mathf.Min(1f, c.r + 0.12f), Mathf.Min(1f, c.g + 0.12f), Mathf.Min(1f, c.b + 0.12f), 0.95f);
         }
 
@@ -2515,10 +2864,26 @@ namespace TitanOrbit.UI
         {
             if (currentShip == null || currentHomePlanet == null || HomePlanetStoreSystem.Instance == null)
                 return;
+            if (StoreItemData.IsShipComponent(item))
+                return;
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned)
                 return;
             HomePlanetStoreSystem.Instance.PurchaseItemServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, item);
+            pendingGemsRequest = true;
+            HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+        }
+
+        private void OnBuyComponent(string componentId)
+        {
+            if (currentShip == null || currentHomePlanet == null || HomePlanetStoreSystem.Instance == null)
+                return;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return;
+            var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
+            if (homeNo == null || !homeNo.IsSpawned)
+                return;
+            HomePlanetStoreSystem.Instance.PurchaseComponentServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, componentId);
             pendingGemsRequest = true;
             HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
         }
@@ -3106,7 +3471,28 @@ namespace TitanOrbit.UI
             _pendingRemoveEquipmentSlotIndex = slotIndex;
             EnsureEquipmentRemoveConfirmModal();
             if (equipmentRemoveConfirmBodyText != null)
-                equipmentRemoveConfirmBodyText.text = $"Remove \"{StoreItemData.GetDisplayName(itemType)}\" from equipment?";
+            {
+                string itemLabel;
+                if (equipment[slotIndex].IsShipComponent)
+                {
+                    itemLabel = equipment[slotIndex].ComponentId;
+                    if (CardShopSystem.Instance != null &&
+                        CardShopSystem.Instance.GetShipFamilyForShip(currentShip) is ShipFamilyDefinition family &&
+                        family.TryGetComponentEntry(equipment[slotIndex].ComponentId, out ShipFamilyComponentEntry componentEntry))
+                    {
+                        itemLabel = ShipComponentStoreData.GetDisplayName(componentEntry);
+                    }
+                    else
+                    {
+                        itemLabel = ShipComponentStoreData.FormatComponentId(itemLabel);
+                    }
+                }
+                else
+                {
+                    itemLabel = StoreItemData.GetDisplayName(itemType);
+                }
+                equipmentRemoveConfirmBodyText.text = $"Remove \"{itemLabel}\" from equipment?";
+            }
             equipmentRemoveConfirmRoot.SetActive(true);
             equipmentRemoveConfirmRoot.transform.SetAsLastSibling();
         }
@@ -3210,14 +3596,38 @@ namespace TitanOrbit.UI
                 EquippedEquipmentEntry entry = (equipment != null && i < equipment.Count) ? equipment[i] : default;
                 bool filled = equipment != null && i < equipment.Count;
                 StoreItemType itemType = filled ? entry.ItemType : default;
+                ShipFamilyComponentEntry componentEntry = null;
+                if (filled && entry.IsShipComponent && CardShopSystem.Instance != null && currentShip != null)
+                {
+                    ShipFamilyDefinition family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
+                    family?.TryGetComponentEntry(entry.ComponentId, out componentEntry);
+                }
 
                 if (equipmentTitleTexts != null && i < equipmentTitleTexts.Length && equipmentTitleTexts[i] != null)
-                    equipmentTitleTexts[i].text = filled ? StoreItemData.GetShortDisplayName(itemType) : "Empty";
+                {
+                    if (!filled)
+                        equipmentTitleTexts[i].text = "Empty";
+                    else if (entry.IsShipComponent && componentEntry != null)
+                        equipmentTitleTexts[i].text = ShipComponentStoreData.GetDisplayName(componentEntry);
+                    else if (entry.IsShipComponent)
+                        equipmentTitleTexts[i].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
+                    else
+                        equipmentTitleTexts[i].text = StoreItemData.GetShortDisplayName(itemType);
+                }
                 if (equipmentDescTexts != null && i < equipmentDescTexts.Length && equipmentDescTexts[i] != null)
-                    equipmentDescTexts[i].text = filled ? StoreItemData.GetDescription(itemType) : "Buy from Store tab";
+                {
+                    if (!filled)
+                        equipmentDescTexts[i].text = "Buy from Store tab";
+                    else if (entry.IsShipComponent && componentEntry != null)
+                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, currentShip.ShipLevel, 2);
+                    else
+                        equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
+                }
                 if (equipmentChargeTexts != null && i < equipmentChargeTexts.Length && equipmentChargeTexts[i] != null)
                 {
-                    if (filled && !StoreItemData.IsDrone(itemType))
+                    if (filled && entry.IsShipComponent && componentEntry != null)
+                        equipmentChargeTexts[i].text = ShipComponentStoreData.GetIconGlyph(componentEntry);
+                    else if (filled && !StoreItemData.IsDrone(itemType))
                         equipmentChargeTexts[i].text = entry.remainingCharges.ToString();
                     else if (filled)
                         equipmentChargeTexts[i].text = StoreItemData.GetIconGlyph(itemType);
@@ -3227,11 +3637,23 @@ namespace TitanOrbit.UI
                     if (bubble != null) bubble.gameObject.SetActive(filled);
                 }
                 if (equipmentBgImages != null && i < equipmentBgImages.Length && equipmentBgImages[i] != null)
-                    equipmentBgImages[i].color = filled ? GetEquipmentSlotColor(itemType) : new Color(0.18f, 0.22f, 0.32f, 0.95f);
+                {
+                    if (!filled)
+                        equipmentBgImages[i].color = new Color(0.18f, 0.22f, 0.32f, 0.95f);
+                    else if (entry.IsShipComponent && componentEntry != null)
+                        equipmentBgImages[i].color = GetEquipmentSlotColor(componentEntry);
+                    else
+                        equipmentBgImages[i].color = GetEquipmentSlotColor(itemType);
+                }
                 if (equipmentBorderImages != null && i < equipmentBorderImages.Length && equipmentBorderImages[i] != null)
                 {
                     equipmentBorderImages[i].enabled = true;
-                    equipmentBorderImages[i].color = filled ? GetEquipmentSlotBorderColor(itemType) : new Color(0.35f, 0.4f, 0.5f, 0.8f);
+                    if (!filled)
+                        equipmentBorderImages[i].color = new Color(0.35f, 0.4f, 0.5f, 0.8f);
+                    else if (entry.IsShipComponent && componentEntry != null)
+                        equipmentBorderImages[i].color = GetEquipmentSlotBorderColor(componentEntry);
+                    else
+                        equipmentBorderImages[i].color = GetEquipmentSlotBorderColor(itemType);
                 }
                 if (equipmentDeleteButtons != null && i < equipmentDeleteButtons.Length && equipmentDeleteButtons[i] != null)
                 {
@@ -3639,8 +4061,8 @@ namespace TitanOrbit.UI
                 _moonDockCardsToEquipmentDivider = new GameObject("CardsToEquipmentDivider");
                 _moonDockCardsToEquipmentDivider.transform.SetParent(moonDockCenterCardsHost, false);
                 var divLe = _moonDockCardsToEquipmentDivider.AddComponent<LayoutElement>();
-                divLe.preferredHeight = 16f;
-                divLe.minHeight = 12f;
+                divLe.preferredHeight = 8f;
+                divLe.minHeight = 6f;
                 divLe.flexibleHeight = 0f;
             }
             if (_moonDockCardsToEquipmentDivider != null && moonDockStoreSection != null)
@@ -3842,7 +4264,12 @@ namespace TitanOrbit.UI
 
             float tileWidth = GetMoonDockItemTileWidth();
             float spinBandWidth = ComputeMoonDockSpinBandWidth(tileWidth);
-            ApplyMoonDockTileLayoutToRow(_moonDockStoreCardsRow, tileWidth);
+            if (_moonDockStoreGrid != null)
+            {
+                _moonDockStoreGrid.cellSize = new Vector2(tileWidth, MoonDockEquipmentCardHeight);
+                if (_moonDockStoreGridContent != null)
+                    UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_moonDockStoreGridContent);
+            }
             if (_cardSpinRowLayout != null)
             {
                 var spinRowRt = _cardSpinRowLayout.GetComponent<RectTransform>();
@@ -3863,8 +4290,6 @@ namespace TitanOrbit.UI
                 _cardSpinButtonLayout.preferredWidth = spinBandWidth;
                 _cardSpinButtonLayout.minWidth = spinBandWidth;
             }
-            if (_moonDockStoreCardsRow != null)
-                UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_moonDockStoreCardsRow);
         }
 
         private Planet GetShipUpgradeStorePlanet()

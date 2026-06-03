@@ -92,6 +92,10 @@ namespace TitanOrbit.Data
                 || item == StoreItemType.MiningDrone;
         }
 
+        public static bool IsShipComponent(StoreItemType item) => item == StoreItemType.ShipComponent;
+
+        public static bool IsSupportItem(StoreItemType item) => !IsShipComponent(item);
+
         /// <summary>Short description for equipment slot UI.</summary>
         public static string GetDescription(StoreItemType item)
         {
