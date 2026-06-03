@@ -64,15 +64,11 @@ namespace TitanOrbit.Camera
         [Tooltip("How fast shake intensity decays per second.")]
         [SerializeField] private float collisionShakeRecoverPerSecond = 1.2f;
         [SerializeField] private float collisionShakeSmoothingExponent = 1f;
-        [Tooltip("Impulse shake at lightest vs hardest asteroid ram impacts (0–1).")]
-        [SerializeField] private float ramImpactShakeMin = 0.05f;
-        [SerializeField] private float ramImpactShakeMax = 0.35f;
-        [Tooltip("Sustained shake while grinding an asteroid at min vs max grind intensity (0–1).")]
-        [SerializeField] private float ramGrindShakeMin = 0.02f;
-        [SerializeField] private float ramGrindShakeMax = 0.18f;
-        [Tooltip("Extra impulse when grinding through an asteroid breakup (ram + grind at destruction), scaled by gem size.")]
+        [Tooltip("Shake strength when an asteroid is destroyed while ramming/grinding (0–1), scaled by gem size.")]
         [SerializeField] private float ramDestroyShakeMin = 0.25f;
         [SerializeField] private float ramDestroyShakeMax = 0.85f;
+        [Tooltip("How long destroy shake runs (seconds).")]
+        [SerializeField, Min(0.05f)] private float ramDestroyShakeDurationSeconds = 0.5f;
         [Tooltip("Gem value range used to scale destroy shake (matches asteroid size 1–70).")]
         [SerializeField] private float ramDestroyShakeSizeMin = 1f;
         [SerializeField] private float ramDestroyShakeSizeMax = 70f;
@@ -106,8 +102,9 @@ namespace TitanOrbit.Camera
 
         /// <summary>Decaying hit impulse (single collisions).</summary>
         private float collisionShakeIntensity;
-        /// <summary>Sustained level while grinding (0..1); cleared by Starship when contacts end.</summary>
-        private float rammingShakeDrive;
+        /// <summary>Fixed-duration shake (e.g. asteroid destroy while ramming).</summary>
+        private float timedShakeIntensity;
+        private float timedShakeEndTime;
         private float collisionShakeSeed;
 
         private float GetManualZoomedDistance(float defaultDistance)
@@ -250,7 +247,16 @@ namespace TitanOrbit.Camera
             float impulsePow = collisionShakeIntensity > 0.0001f
                 ? Mathf.Pow(collisionShakeIntensity, collisionShakeSmoothingExponent)
                 : 0f;
-            float combinedShake = Mathf.Max(impulsePow, rammingShakeDrive);
+            float timedShake = 0f;
+            if (Time.time < timedShakeEndTime)
+                timedShake = timedShakeIntensity;
+            else if (timedShakeIntensity > 0f)
+            {
+                timedShakeIntensity = 0f;
+                timedShakeEndTime = 0f;
+            }
+
+            float combinedShake = Mathf.Max(impulsePow, timedShake);
             if (combinedShake > 0.0001f)
             {
                 float ft = Time.time * collisionShakeFrequency;
@@ -270,29 +276,32 @@ namespace TitanOrbit.Camera
             transform.position = targetPosition;
         }
 
-        /// <summary>Impulse shake for the local player (typ. 0.05–0.35). Stacks with sustained ramming via max.</summary>
+        /// <summary>Impulse shake for the local player (decays over time).</summary>
         public void ApplyCollisionShake(float amount01)
         {
             if (!collisionCameraShakeEnabled) return;
             collisionShakeIntensity = Mathf.Max(collisionShakeIntensity, Mathf.Clamp01(amount01));
         }
 
-        /// <summary>Sustained shake while grinding; set every physics step from owner client, or 0 when ramming stops.</summary>
-        public void SetRammingShakeDrive(float amount01)
+        /// <summary>Constant-intensity shake for a fixed duration (used for asteroid destroy while ramming/grinding).</summary>
+        public void ApplyTimedCollisionShake(float amount01, float durationSeconds)
         {
-            if (!collisionCameraShakeEnabled) return;
-            rammingShakeDrive = Mathf.Clamp01(amount01);
+            if (!collisionCameraShakeEnabled || durationSeconds <= 0f) return;
+            float a = Mathf.Clamp01(amount01);
+            float end = Time.time + durationSeconds;
+            if (Time.time >= timedShakeEndTime)
+            {
+                timedShakeIntensity = a;
+                timedShakeEndTime = end;
+            }
+            else
+            {
+                timedShakeIntensity = Mathf.Max(timedShakeIntensity, a);
+                timedShakeEndTime = Mathf.Max(timedShakeEndTime, end);
+            }
         }
 
-        /// <summary>Maps asteroid impact severity (0–1, same curve as collision VFX) to impulse shake strength.</summary>
-        public float EvaluateRamImpactShake(float impactSeverity01) =>
-            Mathf.Lerp(ramImpactShakeMin, ramImpactShakeMax, Mathf.Clamp01(impactSeverity01));
-
-        /// <summary>Maps grind severity (0–1) to sustained shake drive while pushing into an asteroid.</summary>
-        public float EvaluateRamGrindShake(float grindSeverity01) =>
-            Mathf.Lerp(ramGrindShakeMin, ramGrindShakeMax, Mathf.Clamp01(grindSeverity01));
-
-        /// <summary>Maps asteroid gem size (typically 1–70) to breakup impulse when grinding through destruction.</summary>
+        /// <summary>Maps asteroid gem size (typically 1–70) to destroy shake strength (0–1).</summary>
         public float EvaluateRamDestroyShake(float asteroidGemSize)
         {
             float sizeMin = Mathf.Min(ramDestroyShakeSizeMin, ramDestroyShakeSizeMax);
@@ -300,6 +309,8 @@ namespace TitanOrbit.Camera
             float sizeT = Mathf.InverseLerp(sizeMin, sizeMax, asteroidGemSize);
             return Mathf.Lerp(ramDestroyShakeMin, ramDestroyShakeMax, sizeT);
         }
+
+        public float RamDestroyShakeDurationSeconds => ramDestroyShakeDurationSeconds;
 
         /// <summary>
         /// Hides the starfield while the map loads / team menu uses the zoomed-out camera (avoids a tiny quad at extreme zoom distance).

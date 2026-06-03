@@ -203,6 +203,12 @@ namespace TitanOrbit.UI
             if (tree == null || storePlanet == null || CardShopSystem.Instance == null)
                 return;
 
+            if (view.IsCurrentShipDisplay)
+            {
+                PopulateCurrentShipDisplayNode(view, maxPower);
+                return;
+            }
+
             if (IsDebugFreeShipUpgradeTree())
             {
                 PopulateTreeNodeDebug(view, maxPower);
@@ -213,7 +219,6 @@ namespace TitanOrbit.UI
             int currentLevel = currentShip.ShipLevel;
             int currentBranch = currentShip.BranchIndex;
             int nextLevel = currentLevel + 1;
-            float nextCost = tree.GetGemCostForLevel(nextLevel);
             bool canBuyAny = CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(currentShip, storePlanet, out _, out _, out _);
             int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
 
@@ -233,7 +238,11 @@ namespace TitanOrbit.UI
             bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
             bool canSwapHull = isCurrent && !tierBlockedByHome
                 && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, view.Level, view.BranchIndex, out _);
-            bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nextCost && !tierBlocked && canApplyPurchase;
+            int nodeCost = isNextChoice
+                ? CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(
+                    currentShip, storePlanet.PlanetId, nextLevel, view.BranchIndex)
+                : 0;
+            bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nodeCost && !tierBlocked && canApplyPurchase;
 
             string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
                 currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
@@ -257,10 +266,7 @@ namespace TitanOrbit.UI
             else
                 view.SetLevelLabel(view.Level == 1 ? "1" : view.Level.ToString());
 
-            if (view.Level == 1)
-                view.SetShipName(GetStarterShipDisplayName());
-            else
-                view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
+            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
             if (canSwapHull)
                 view.SetPrice("Free");
@@ -271,7 +277,7 @@ namespace TitanOrbit.UI
             else if (view.Level == 1)
                 view.SetPrice("—");
             else
-                view.SetPrice($"{tree.GetGemCostForLevel(view.Level):F0}g");
+                view.SetPrice($"{CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex)}g");
 
             view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
         }
@@ -299,13 +305,35 @@ namespace TitanOrbit.UI
             else
                 view.SetLevelLabel(view.Level == 1 ? "1" : view.Level.ToString());
 
-            if (view.Level == 1)
-                view.SetShipName(GetStarterShipDisplayName());
-            else
-                view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
+            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
             view.SetPrice("Free");
             view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
+        }
+
+        private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        {
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            int currentLevel = currentShip.ShipLevel;
+            int currentBranch = currentShip.BranchIndex;
+            bool canSwapHull = CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
+                currentShip, storePlanet, currentLevel, currentBranch, out _);
+
+            view.SetInteractable(canSwapHull);
+            view.EnsureStableButtonRendering();
+            if (canSwapHull)
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+            else
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+
+            view.SetPreview(ResolveCurrentShipPreviewSprite());
+            if (view.UsesMoonHorizontalLayout)
+                view.SetLevelLabel("You");
+            else
+                view.SetLevelLabel($"Lv {currentLevel}");
+            view.SetShipName(GetCurrentShipDisplayName());
+            view.SetPrice(canSwapHull ? "Free" : "—");
+            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxPower);
         }
 
         private void UpdateShipTreeHintText()
@@ -362,9 +390,22 @@ namespace TitanOrbit.UI
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null)
                 return default;
-            if (level <= 1)
-                return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
-            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
+            return CardShopSystem.Instance.GetPowerScoreBreakdownForUpgradeSlot(
+                currentShip, storePlanet.PlanetId, level, branchIndex);
+        }
+
+        internal ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
+        {
+            if (currentShip == null || CardShopSystem.Instance == null)
+                return default;
+            return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisId(currentShip.CurrentChassisId);
+        }
+
+        internal void OnCurrentShipDisplayNodeClicked()
+        {
+            if (currentShip == null)
+                return;
+            OnUpgradeTreeNodeClicked(currentShip.ShipLevel, currentShip.BranchIndex);
         }
 
         internal void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)

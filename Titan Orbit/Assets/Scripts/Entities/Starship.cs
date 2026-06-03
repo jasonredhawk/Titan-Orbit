@@ -307,6 +307,8 @@ namespace TitanOrbit.Entities
         [SerializeField, Min(0.01f)] private float collisionWeaponVfxMinScaleMultiplier = 0.35f;
         [Tooltip("Severity 1 maps to this collision VFX scale multiplier when using local tuning.")]
         [SerializeField, Min(0.01f)] private float collisionWeaponVfxMaxScaleMultiplier = 1.85f;
+        /// <summary>Asteroid ram/grind impact bursts: 0.4 = 60% smaller than severity-based scale.</summary>
+        private const float RamGrindImpactVfxScaleFactor = 0.4f;
 
         private bool _hasPendingAsteroidBounce;
         private Vector3 _pendingAsteroidBounceVelocity;
@@ -322,8 +324,6 @@ namespace TitanOrbit.Entities
         private readonly HashSet<Asteroid> _asteroidRamContactInstances = new HashSet<Asteroid>();
         /// <summary>Asteroids that reported collision this physics step (for stale contact cleanup).</summary>
         private readonly HashSet<Asteroid> _asteroidRamContactsThisPhysicsStep = new HashSet<Asteroid>();
-        /// <summary>Per-asteroid sustained grind shake drive (0–1) for the local player camera.</summary>
-        private readonly Dictionary<Asteroid, float> _asteroidGrindShakeDriveByInstance = new Dictionary<Asteroid, float>();
         /// <summary>Avoid double-firing destroy shake when predictive kill and despawn both fire.</summary>
         private readonly HashSet<Asteroid> _asteroidDestroyShakeTriggered = new HashSet<Asteroid>();
         /// <summary>Server: Time.time when hull last took damage; regen waits until healthRegenDelayAfterDamage after this.</summary>
@@ -1267,7 +1267,7 @@ namespace TitanOrbit.Entities
         }
         private bool wasMovePressedLastFrame;
         /// <summary>While gem-moon docked: deposit chunks per second (each chunk = <see cref="ShipLevel"/> gems).</summary>
-        private const float GemMoonDepositChunksPerSecond = 2f;
+        private const float GemMoonDepositChunksPerSecond = 3f;
         private float depositAccumulator;
         private float lastVoluntaryGemExpulsionServerTime = -999f;
         private int voluntaryGemExpulsionShotIndex;
@@ -5219,7 +5219,7 @@ namespace TitanOrbit.Entities
                 ScoreSystem.Instance.AwardDeposit(this, amount);
         }
 
-        /// <summary>Server: while docked at gem moon, deposits shipLevel gems per tick at 2 ticks/sec; applied directly to planet level gems.</summary>
+        /// <summary>Server: while docked at gem moon, deposits shipLevel gems per tick at 3 ticks/sec; applied directly to planet level gems.</summary>
         private void TickOrbitGemDeposit()
         {
             if (!gemMoonDocked.Value)
@@ -5762,59 +5762,11 @@ namespace TitanOrbit.Entities
             _asteroidRamContactsThisPhysicsStep.Clear();
         }
 
-        private void RefreshRammingCameraShakeDrive()
-        {
-            if (!CanApplyLocalRamCameraShake()) return;
-            EnsureCachedCameraControllerForShake();
-            if (s_cachedCameraController == null || !s_cachedCameraController.IsCollisionCameraShakeEnabled) return;
-
-            float maxDrive = 0f;
-            foreach (float drive in _asteroidGrindShakeDriveByInstance.Values)
-                maxDrive = Mathf.Max(maxDrive, drive);
-            s_cachedCameraController.SetRammingShakeDrive(maxDrive);
-        }
-
-        private void UpdateAsteroidGrindCameraShakeDrive(Asteroid asteroid, float pushNewtons)
-        {
-            if (!CanApplyLocalRamCameraShake() || asteroid == null) return;
-            EnsureCachedCameraControllerForShake();
-            if (s_cachedCameraController == null || !s_cachedCameraController.IsCollisionCameraShakeEnabled) return;
-
-            if (pushNewtons < asteroidGrindMinPushNewtons)
-            {
-                _asteroidGrindShakeDriveByInstance.Remove(asteroid);
-            }
-            else
-            {
-                float grindFeedbackRam = GetRammingDamageRating() * GetRammingMassForDamage();
-                float equivForce = Mathf.Max(
-                    pushNewtons * grindFeedbackRam * Mathf.Max(0.01f, asteroidGrindFeedbackForceFromPushScale),
-                    30f);
-                float severity = ComputeCollisionVfxSeverityFromImpactForce(equivForce);
-                _asteroidGrindShakeDriveByInstance[asteroid] =
-                    s_cachedCameraController.EvaluateRamGrindShake(severity);
-            }
-
-            RefreshRammingCameraShakeDrive();
-        }
-
-        private void ApplyAsteroidRamImpactCameraShake(float impactForceNewtons)
-        {
-            if (!CanApplyLocalRamCameraShake()) return;
-            EnsureCachedCameraControllerForShake();
-            if (s_cachedCameraController == null || !s_cachedCameraController.IsCollisionCameraShakeEnabled) return;
-
-            float severity = ComputeCollisionVfxSeverityFromImpactForce(impactForceNewtons);
-            float shake = s_cachedCameraController.EvaluateRamImpactShake(severity);
-            s_cachedCameraController.ApplyCollisionShake(shake);
-        }
-
-        private void TryApplyAsteroidGrindDestroyCameraShake(Asteroid asteroid)
+        /// <summary>0.5s camera shake when breaking an asteroid while in ram/grind contact.</summary>
+        private void TryApplyAsteroidRamDestroyCameraShake(Asteroid asteroid)
         {
             if (!CanApplyLocalRamCameraShake() || asteroid == null) return;
             if (!_asteroidRamContactInstances.Contains(asteroid)) return;
-            if (!_asteroidGrindShakeDriveByInstance.TryGetValue(asteroid, out float grindDrive) || grindDrive <= 0.0001f)
-                return;
             if (_asteroidDestroyShakeTriggered.Contains(asteroid)) return;
             _asteroidDestroyShakeTriggered.Add(asteroid);
 
@@ -5823,7 +5775,8 @@ namespace TitanOrbit.Entities
 
             float gemSize = Mathf.Max(asteroid.MaxGems, asteroid.RemainingGems);
             float shake = s_cachedCameraController.EvaluateRamDestroyShake(gemSize);
-            s_cachedCameraController.ApplyCollisionShake(shake);
+            float duration = s_cachedCameraController.RamDestroyShakeDurationSeconds;
+            s_cachedCameraController.ApplyTimedCollisionShake(shake, duration);
         }
 
         private void ClearAsteroidRamCameraShakeState(Asteroid asteroid)
@@ -5831,9 +5784,7 @@ namespace TitanOrbit.Entities
             if (asteroid == null) return;
             _asteroidRamContactInstances.Remove(asteroid);
             _asteroidRamContactsThisPhysicsStep.Remove(asteroid);
-            _asteroidGrindShakeDriveByInstance.Remove(asteroid);
             _asteroidDestroyShakeTriggered.Remove(asteroid);
-            RefreshRammingCameraShakeDrive();
         }
 
         private void OnCollisionEnter(Collision collision)
@@ -5923,10 +5874,8 @@ namespace TitanOrbit.Entities
             if (impactForceNewtons >= GetCollisionVfxAsteroidMinImpactForce())
             {
                 float sev = ComputeCollisionVfxSeverityFromImpactForce(impactForceNewtons);
-                TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch);
+                TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch, RamGrindImpactVfxScaleFactor);
             }
-
-            ApplyAsteroidRamImpactCameraShake(impactForceNewtons);
 
             // Visual nose-up kick (local X on visual root); stronger on harder hits.
             {
@@ -5962,6 +5911,9 @@ namespace TitanOrbit.Entities
                 SpawnAsteroidCollisionFeedback(contact.point, asteroid, null, impactForceNewtons);
             }
 
+            if (asteroid.IsDestroyed)
+                TryApplyAsteroidRamDestroyCameraShake(asteroid);
+
             _pendingAsteroidBounceVelocity = vOut;
             _hasPendingAsteroidBounce = true;
 
@@ -5987,12 +5939,7 @@ namespace TitanOrbit.Entities
             if (!IsOwner) return;
             _asteroidRamContactInstances.Clear();
             _asteroidRamContactsThisPhysicsStep.Clear();
-            _asteroidGrindShakeDriveByInstance.Clear();
             _asteroidDestroyShakeTriggered.Clear();
-            if (s_cachedCameraController == null)
-                s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
-            if (s_cachedCameraController == null) return;
-            s_cachedCameraController.SetRammingShakeDrive(0f);
         }
 
         private void OnCollisionStay(Collision collision)
@@ -6011,7 +5958,7 @@ namespace TitanOrbit.Entities
 
             if (asteroid.IsDestroyed)
             {
-                TryApplyAsteroidGrindDestroyCameraShake(asteroid);
+                TryApplyAsteroidRamDestroyCameraShake(asteroid);
                 ClearAsteroidRamCameraShakeState(asteroid);
                 _asteroidGrindFeedbackNextTimeByInstance.Remove(asteroid.GetInstanceID());
                 return;
@@ -6026,7 +5973,6 @@ namespace TitanOrbit.Entities
 
             Vector3 driveF = GetDrivePushForceXZ();
             float pushN = AsteroidRammingBehavior.ComputeNormalPushNewtons(n, driveF);
-            UpdateAsteroidGrindCameraShakeDrive(asteroid, pushN);
 
             if (asteroidGrindPushToAsteroidDpsScale <= 0f) return;
 
@@ -6048,7 +5994,7 @@ namespace TitanOrbit.Entities
 
             if (healthBeforeGrind <= asteroidGrindDamage + 0.001f)
             {
-                TryApplyAsteroidGrindDestroyCameraShake(asteroid);
+                TryApplyAsteroidRamDestroyCameraShake(asteroid);
                 ClearAsteroidRamCameraShakeState(asteroid);
                 _asteroidGrindFeedbackNextTimeByInstance.Remove(asteroid.GetInstanceID());
                 return;
@@ -6118,7 +6064,7 @@ namespace TitanOrbit.Entities
             {
                 float sev = ComputeCollisionVfxSeverityFromImpactForce(equivForce);
                 sev = Mathf.Max(sev, 0.12f);
-                TrySpawnWeaponCollisionImpactVfx(hitWorldPos, asteroidOutwardNormalXZ, sev, pitch);
+                TrySpawnWeaponCollisionImpactVfx(hitWorldPos, asteroidOutwardNormalXZ, sev, pitch, RamGrindImpactVfxScaleFactor);
 
                 SpawnAsteroidRamHitFloatingText(hitWorldPos, damageThisPulse, asteroid);
             }
@@ -6280,7 +6226,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Weapon-style impact burst (SciFi impact particle), scaled by severity01 (0..1).</summary>
-        private void TrySpawnWeaponCollisionImpactVfx(Vector3 impactWorldPos, Vector3 outwardXZNormal, float severity01, float audioPitch)
+        private void TrySpawnWeaponCollisionImpactVfx(Vector3 impactWorldPos, Vector3 outwardXZNormal, float severity01, float audioPitch, float vfxScaleFactor = 1f)
         {
             if (VisualEffectsManager.Instance == null) return;
             impactWorldPos.y = Mathf.Max(impactWorldPos.y, 0f);
@@ -6288,7 +6234,8 @@ namespace TitanOrbit.Entities
             n.y = 0f;
             if (n.sqrMagnitude < 1e-6f) n = transform.forward;
             n.Normalize();
-            float scaleMul = Mathf.Lerp(GetCollisionVfxScaleMinMultiplier(), GetCollisionVfxScaleMaxMultiplier(), Mathf.Clamp01(severity01));
+            float scaleMul = Mathf.Lerp(GetCollisionVfxScaleMinMultiplier(), GetCollisionVfxScaleMaxMultiplier(), Mathf.Clamp01(severity01))
+                * Mathf.Max(0.05f, vfxScaleFactor);
             int bank = GetCollisionImpactBulletBankIndex();
             VisualEffectsManager.Instance.SpawnWeaponCollisionImpactServerRpc(
                 impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value);

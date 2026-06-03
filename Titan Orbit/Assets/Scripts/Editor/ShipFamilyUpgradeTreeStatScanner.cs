@@ -120,11 +120,9 @@ namespace TitanOrbit.Editor
             return def != null ? def.ApplyStatFallbacks(summed) : summed;
         }
 
-        /// <summary>Max stat upgrades for a tier = its <see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/> (matches max attribute upgrades at that ship level).</summary>
-        public static int GetMaxUpgradeCountForTier(int minHomePlanetLevel)
-        {
-            return Mathf.Max(0, minHomePlanetLevel);
-        }
+        /// <inheritdoc cref="ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier"/>
+        public static int GetMaxUpgradeCountForTier(int minHomePlanetLevel) =>
+            ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(minHomePlanetLevel);
 
         public struct StatMinMax
         {
@@ -188,28 +186,11 @@ namespace TitanOrbit.Editor
             preview.turnSpeed = RangeFromPerLevel(atMinLevel.turnSpeed, atMinLevel.turnSpeedPerLevel, maxUpgrades);
             preview.powerScoreTotal = new StatMinMax(
                 ShipFamilyPowerScoreBreakdown.FromSummedShipStats(atMinLevel).Total,
-                ShipFamilyPowerScoreBreakdown.FromSummedShipStats(ApplyMaxEffectiveLevels(atMinLevel, maxUpgrades)).Total);
+                ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
+                    ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(atMinLevel, maxUpgrades)).Total);
             return true;
         }
 
-        /// <summary>Inflates base stats by per-level × upgrade count for max-level power score preview.</summary>
-        private static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
-        {
-            stats.firePower += stats.firePowerPerLevel * upgradeCount;
-            stats.bulletSpeed += stats.bulletSpeedPerLevel * upgradeCount;
-            stats.fireRate += stats.fireRatePerLevel * upgradeCount;
-            stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
-            stats.healthCap += stats.healthCapPerLevel * upgradeCount;
-            stats.healthRegen += stats.healthRegenPerLevel * upgradeCount;
-            stats.energyCap += stats.energyCapPerLevel * upgradeCount;
-            stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
-            stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
-            stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
-            stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
-            stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
-            stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;
-            return stats;
-        }
 
         private static StatMinMax RangeFromPerLevel(float baseValue, float perLevel, int upgradeCount)
         {

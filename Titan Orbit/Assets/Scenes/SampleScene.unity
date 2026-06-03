@@ -4166,6 +4166,11 @@ MonoBehaviour:
   collisionShakeFrequency: 25
   collisionShakeRecoverPerSecond: 1.2
   collisionShakeSmoothingExponent: 1
+  ramDestroyShakeMin: 0.25
+  ramDestroyShakeMax: 0.85
+  ramDestroyShakeDurationSeconds: 0.5
+  ramDestroyShakeSizeMin: 1
+  ramDestroyShakeSizeMax: 70
   mouseZoomEnabled: 0
   maxManualZoomOutDistance: 80
   mouseWheelZoomSensitivity: 0.12
@@ -8319,11 +8324,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
   ShowTopMostFoldoutHeaderGroup: 1
-  aiShipsEnabled: 0
+  aiShipsEnabled: 1
   starshipPrefab: {fileID: 0}
   aiShipData: {fileID: 0}
   minAIShipsPerTeam: 5
-  maxAIShipsPerTeam: 10
+  maxAIShipsPerTeam: 5
   minerPercentage: 0.6
 --- !u!114 &1207700302
 MonoBehaviour:
@@ -8406,7 +8411,7 @@ MonoBehaviour:
     gemPickup: 1
     gemDeposit: 1
     asteroidDamage: 1
-    asteroidHealthRemaining: 0
+    asteroidHealthRemaining: 1
     asteroidGemsRemaining: 0
     asteroidImpactForce: 0
     damageShipOrDrone: 1
@@ -9411,7 +9416,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   ShowTopMostFoldoutHeaderGroup: 1
   debugMode: 0
-  debugFreeShipUpgradeTree: 1
+  debugFreeShipUpgradeTree: 0
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3

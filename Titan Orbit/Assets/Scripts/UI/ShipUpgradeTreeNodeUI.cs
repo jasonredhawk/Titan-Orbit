@@ -55,6 +55,8 @@ namespace TitanOrbit.UI
         public int Level { get; private set; }
         public int BranchIndex { get; private set; }
         public ShipUpgradeNode Node { get; private set; }
+        /// <summary>Moon tree: dedicated top-left node showing the player's current hull (not a ladder slot).</summary>
+        public bool IsCurrentShipDisplay { get; private set; }
         public RectTransform Rect => transform as RectTransform;
         public float NodeButtonWidth { get; private set; }
         public float PowerBarTrackWidth { get; private set; }
@@ -88,6 +90,7 @@ namespace TitanOrbit.UI
         private LayoutElement _previewColLe;
         private LayoutElement _previewImgLe;
         private LayoutElement _powerBarLe;
+        private float _panelOverlayMargin = 8f;
 
         public void ConfigureLayout(bool useMoonHorizontal)
         {
@@ -96,9 +99,22 @@ namespace TitanOrbit.UI
 
         public void BindSlot(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float powerTrackWidth)
         {
+            IsCurrentShipDisplay = false;
             Level = level;
             BranchIndex = branchIndex;
             Node = node;
+            NodeButtonWidth = width;
+            PowerBarTrackWidth = powerTrackWidth;
+            _boundHeight = height;
+            ApplyFixedLayoutSize(width, height);
+        }
+
+        public void BindAsCurrentShipDisplay(float width, float height, float powerTrackWidth)
+        {
+            IsCurrentShipDisplay = true;
+            Level = 0;
+            BranchIndex = 0;
+            Node = null;
             NodeButtonWidth = width;
             PowerBarTrackWidth = powerTrackWidth;
             _boundHeight = height;
@@ -114,6 +130,19 @@ namespace TitanOrbit.UI
             ApplyFixedLayoutSize(width, height);
         }
 
+        /// <summary>Moon panel overlay: top-left of <see cref="ShipUpgradeTreeUI"/> center row (does not consume tree width).</summary>
+        public void ApplyPanelOverlayTopLeft(float margin)
+        {
+            _panelOverlayMargin = margin;
+            if (Rect == null)
+                return;
+
+            Rect.anchorMin = new Vector2(0f, 1f);
+            Rect.anchorMax = new Vector2(0f, 1f);
+            Rect.pivot = new Vector2(0f, 1f);
+            Rect.anchoredPosition = new Vector2(margin, -margin);
+        }
+
         private void ApplyFixedLayoutSize(float width, float height)
         {
             if (Rect == null)
@@ -121,9 +150,15 @@ namespace TitanOrbit.UI
 
             bool sizeChanged = Mathf.Abs(_appliedWidth - width) > 0.5f || Mathf.Abs(_appliedHeight - height) > 0.5f;
 
-            Rect.anchorMin = new Vector2(0.5f, 0.5f);
-            Rect.anchorMax = new Vector2(0.5f, 0.5f);
-            Rect.pivot = new Vector2(0.5f, 0.5f);
+            if (IsCurrentShipDisplay)
+                ApplyPanelOverlayTopLeft(_panelOverlayMargin);
+            else
+            {
+                Rect.anchorMin = new Vector2(0.5f, 0.5f);
+                Rect.anchorMax = new Vector2(0.5f, 0.5f);
+                Rect.pivot = new Vector2(0.5f, 0.5f);
+            }
+
             Rect.sizeDelta = new Vector2(width, height);
 
             var le = Rect.GetComponent<LayoutElement>();

@@ -15,7 +15,7 @@ namespace TitanOrbit.Data
         [Tooltip("Minimum home planet level required to purchase this chassis.")]
         public int minHomePlanetLevel = 1;
 
-        [Tooltip("Gem cost to purchase this chassis at its tier. Default formula: 20 * (Level - 1)^2 (tier 1 = 0).")]
+        [Tooltip("Gem cost to purchase this chassis (2× gem cap, L1→L6 gradient at tier level). Set when unlock entries are built.")]
         public float gemCost = 20f;
     }
 
@@ -148,7 +148,7 @@ namespace TitanOrbit.Data
                 {
                     chassis = chassis,
                     minHomePlanetLevel = tier.minHomePlanetLevel,
-                    gemCost = GetTierCost(tier.minHomePlanetLevel)
+                    gemCost = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tier, tier.minHomePlanetLevel)
                 };
                 result.Add(entry);
             }
@@ -181,12 +181,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Gem cost to purchase a ship at this tier from the upgrade tree: 20 * (Level - 1)^2 (tier 1 = 0).
+        /// Gem cost for a chassis at the given ship level (2× gem cap, L1→L6 gradient).
         /// </summary>
-        public static float GetTierCost(int level)
+        public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier, int shipLevel)
         {
-            float n = Mathf.Max(0f, level - 1f);
-            return 20f * n * n;
+            return ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tier, shipLevel);
         }
 
         /// <summary>First chassis index for a given tier (0-based). Tier 1=0, 2=1, 3=3, 4=6, 5=10, 6=15.</summary>

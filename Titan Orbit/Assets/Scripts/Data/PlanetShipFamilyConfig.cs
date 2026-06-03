@@ -207,6 +207,37 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>Upgrade-tree tier entry for a chassis ID, or null.</summary>
+        public ShipFamilyChassisTierEntry GetTierEntryForChassisId(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId) || families == null) return null;
+            int underscoreIdx = chassisId.IndexOf('_');
+            if (underscoreIdx <= 0) return null;
+            string familyNamePrefix = chassisId.Substring(0, underscoreIdx);
+
+            foreach (var f in families)
+            {
+                if (f?.shipFamilyDefinition?.upgradeTree == null) continue;
+                string entryFamilyName = f.shipFamilyDefinition.familyId;
+                if (string.IsNullOrEmpty(entryFamilyName) || !entryFamilyName.Equals(familyNamePrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var tier in f.shipFamilyDefinition.upgradeTree)
+                {
+                    if (tier != null && tier.chassisId == chassisId)
+                        return tier;
+                }
+                return null;
+            }
+            return null;
+        }
+
+        /// <summary>Gem purchase cost for a chassis at the given ship level (2× gem cap, L1→L6 gradient).</summary>
+        public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
+        {
+            return ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(GetTierEntryForChassisId(chassisId), shipLevel);
+        }
+
         /// <summary>Power score breakdown for this chassis from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
         {
@@ -341,7 +372,7 @@ namespace TitanOrbit.Data
                 {
                     chassis = chassis,
                     minHomePlanetLevel = tier.minHomePlanetLevel,
-                    gemCost = ShipUnlockTable.GetTierCost(tier.minHomePlanetLevel)
+                    gemCost = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tier, tier.minHomePlanetLevel)
                 });
             }
             return result;

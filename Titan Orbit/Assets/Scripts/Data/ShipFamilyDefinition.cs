@@ -1331,6 +1331,132 @@ namespace TitanOrbit.Data
             };
         }
 
+        /// <summary>Max attribute upgrades for a tier = <see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/>.</summary>
+        public static int GetMaxUpgradeCountForTier(int minHomePlanetLevel)
+        {
+            return Mathf.Max(0, minHomePlanetLevel);
+        }
+
+        /// <summary>Inflates summed stats by per-level × upgrade count (matches upgrade-tree max-level preview).</summary>
+        public static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
+        {
+            stats.firePower += stats.firePowerPerLevel * upgradeCount;
+            stats.bulletSpeed += stats.bulletSpeedPerLevel * upgradeCount;
+            stats.fireRate += stats.fireRatePerLevel * upgradeCount;
+            stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
+            stats.healthCap += stats.healthCapPerLevel * upgradeCount;
+            stats.healthRegen += stats.healthRegenPerLevel * upgradeCount;
+            stats.energyCap += stats.energyCapPerLevel * upgradeCount;
+            stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
+            stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
+            stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
+            stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
+            stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
+            stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;
+            return stats;
+        }
+
+        /// <summary>Ship levels used for purchase-cost gradient endpoints (level 1 = base gem cap, level 6 = max gem cap).</summary>
+        public const int PurchaseCostGradientMinLevel = 1;
+        public const int PurchaseCostGradientMaxLevel = 6;
+
+        /// <summary>Gem purchase cost = 2 × gem cap (lerped L1 base → L6 max), rounded.</summary>
+        public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier, int shipLevel)
+        {
+            return Mathf.RoundToInt(2f * Mathf.Max(0f, GetInterpolatedGemCapForShipLevel(tier, shipLevel)));
+        }
+
+        /// <summary>Uses <see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/> as the ship level.</summary>
+        public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier)
+        {
+            return GetPurchaseGemCost(tier, tier != null ? tier.minHomePlanetLevel : 1);
+        }
+
+        /// <summary>Gem cap for a purchase at <paramref name="shipLevel"/> (linear blend from L1 base to L6 max).</summary>
+        public static float GetInterpolatedGemCapForShipLevel(ShipFamilyChassisTierEntry tier, int shipLevel)
+        {
+            if (tier == null) return 0f;
+            float baseCap = GetBaseGemCap(tier);
+            float maxCap = GetGemCapAtUpgradeCount(tier, PurchaseCostGradientMaxLevel);
+            int clampedLevel = Mathf.Clamp(shipLevel, PurchaseCostGradientMinLevel, PurchaseCostGradientMaxLevel);
+            float t = (clampedLevel - PurchaseCostGradientMinLevel)
+                / (float)(PurchaseCostGradientMaxLevel - PurchaseCostGradientMinLevel);
+            return Mathf.Lerp(baseCap, maxCap, t);
+        }
+
+        public static float GetBaseGemCap(ShipFamilyChassisTierEntry tier)
+        {
+            if (tier == null) return 0f;
+            if (tier.powerScoreBreakdown.gemCap > 0.01f)
+                return tier.powerScoreBreakdown.gemCap;
+            if (TryGetSummedStatsFromTierPrefab(tier, out ShipComponentAbilityStats stats))
+                return Mathf.Max(0f, stats.maxGems);
+            return 0f;
+        }
+
+        /// <summary>Effective gem cap after <paramref name="upgradeCount"/> attribute upgrades.</summary>
+        public static float GetGemCapAtUpgradeCount(ShipFamilyChassisTierEntry tier, int upgradeCount)
+        {
+            if (tier == null) return 0f;
+            upgradeCount = Mathf.Max(0, upgradeCount);
+            if (upgradeCount == 0)
+                return GetBaseGemCap(tier);
+
+            if (TryGetSummedStatsFromTierPrefab(tier, out ShipComponentAbilityStats stats))
+                return Mathf.Max(0f, ApplyMaxEffectiveLevels(stats, upgradeCount).maxGems);
+
+            return GetBaseGemCap(tier);
+        }
+
+        public static float GetBasePowerScore(ShipFamilyChassisTierEntry tier)
+        {
+            if (tier == null) return 0f;
+            float score = tier.powerScore;
+            if (score <= 0.01f && tier.powerScoreBreakdown.Total > 0.01f)
+                score = tier.powerScoreBreakdown.Total;
+            if (score <= 0.01f)
+                score = TryComputeBaseLevelPowerScoreFromPrefab(tier);
+            return Mathf.Max(0f, score);
+        }
+
+        /// <summary>Total power after applying <paramref name="upgradeCount"/> attribute upgrades to summed prefab stats.</summary>
+        public static float GetPowerScoreAtUpgradeCount(ShipFamilyChassisTierEntry tier, int upgradeCount)
+        {
+            if (tier == null) return 0f;
+            upgradeCount = Mathf.Max(0, upgradeCount);
+            if (upgradeCount == 0)
+                return GetBasePowerScore(tier);
+
+            if (TryGetSummedStatsFromTierPrefab(tier, out ShipComponentAbilityStats stats))
+                return FromSummedShipStats(ApplyMaxEffectiveLevels(stats, upgradeCount)).Total;
+
+            float baseScore = GetBasePowerScore(tier);
+            float maxScore = tier.powerScoreAtMaxLevel;
+            if (maxScore <= 0.01f)
+                maxScore = baseScore;
+            int bakedTier = Mathf.Max(1, tier.minHomePlanetLevel);
+            float t = Mathf.Clamp01(upgradeCount / (float)bakedTier);
+            return Mathf.Lerp(baseScore, maxScore, t);
+        }
+
+        /// <summary>Runtime fallback when <see cref="ShipFamilyChassisTierEntry.powerScore"/> was not baked in the editor.</summary>
+        public static float TryComputeBaseLevelPowerScoreFromPrefab(ShipFamilyChassisTierEntry tier)
+        {
+            if (!TryGetSummedStatsFromTierPrefab(tier, out ShipComponentAbilityStats stats))
+                return 0f;
+            return FromSummedShipStats(stats).Total;
+        }
+
+        private static bool TryGetSummedStatsFromTierPrefab(ShipFamilyChassisTierEntry tier, out ShipComponentAbilityStats stats)
+        {
+            stats = default;
+            if (tier?.prefab == null) return false;
+            var preview = tier.prefab.GetComponent<Entities.ShipFamilyStatsPreview>();
+            if (preview == null) return false;
+            stats = preview.TotalStats;
+            return true;
+        }
+
         /// <summary>
         /// Branch slot order for one upgrade-tree level row (left → right).
         /// Anchors highest fire power on the left and highest gem cap on the right; remaining ships are
@@ -1569,6 +1695,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Approximate overall power score used for auto-ordering (higher = stronger). Sum of power score breakdown categories.")]
         public float powerScore;
+
+        [Tooltip("Power score at max upgrades for this tier's minHomePlanetLevel (editor preview; L6 endpoint uses upgrade count 6 at runtime).")]
+        public float powerScoreAtMaxLevel;
 
         [Tooltip("Chassis component mass from this tier's prefab (sum of part scale factors). Matches Starship componentMass / speedometer MASS at level 1 with empty cargo.")]
         public float componentMass;

@@ -11,11 +11,33 @@ namespace TitanOrbit.UI
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
+        /// <summary>
+        /// Gem Cap (8) and People Cap (9) bar widths use this fraction of raw stat power
+        /// so high gem capacity does not dominate the moon-menu upgrade tree bar (0.5 = 50% smaller).
+        /// </summary>
+        public const float MoonTreeCapacityStatBarScale = 0.5f;
+
         [SerializeField] private Image[] segments = new Image[ShipAbilityCategoryColors.PowerBreakdownStatCount];
         [SerializeField] private float barHeight = 10f;
         [SerializeField] private float pairGap = 4f;
 
         public float TrackWidth { get; private set; }
+
+        public static float GetMoonTreeBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
+        {
+            float value = breakdown.GetDisplayStatValue(statIndex);
+            if (statIndex == 8 || statIndex == 9)
+                return value * MoonTreeCapacityStatBarScale;
+            return value;
+        }
+
+        public static float GetMoonTreeBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
+        {
+            float total = 0f;
+            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
+                total += GetMoonTreeBarStatValue(breakdown, i);
+            return total;
+        }
 
         private float _widthScale = 1f;
         private float _heightScale = 1f;
@@ -33,7 +55,7 @@ namespace TitanOrbit.UI
         public void ApplyBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestShipTotalPower, float trackWidth)
         {
             TrackWidth = Mathf.Max(0f, trackWidth);
-            float total = breakdown.GetDisplayTotalForUi();
+            float total = GetMoonTreeBarDisplayTotal(breakdown);
             bool hasData = total > 0.01f;
             float maxDen = Mathf.Max(strongestShipTotalPower, 0.001f);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
@@ -50,8 +72,8 @@ namespace TitanOrbit.UI
             {
                 int statA = pair * 2;
                 int statB = statA + 1;
-                float valA = breakdown.GetDisplayStatValue(statA);
-                float valB = breakdown.GetDisplayStatValue(statB);
+                float valA = GetMoonTreeBarStatValue(breakdown, statA);
+                float valB = GetMoonTreeBarStatValue(breakdown, statB);
                 float pairSum = valA + valB;
 
                 float pairWidth;

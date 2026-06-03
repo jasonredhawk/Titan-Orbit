@@ -19,7 +19,7 @@ namespace TitanOrbit.Data
         [SerializeField] private List<ShipUpgradeNode> level7Ships = new List<ShipUpgradeNode>(); // 3 MEGA boss ships (not 7)
 
         [Header("Upgrade Requirements")]
-        [Tooltip("Legacy serialized costs (unused). Runtime cost = 20 × (level − 1)² gems to purchase the ship at that tier.")]
+        [Tooltip("Legacy serialized costs (unused). Runtime ship purchase cost = 2× gem cap (L1→L6 gradient) per chassis.")]
         [SerializeField] private float[] gemCostsPerLevel = { 0f, 100f, 100f, 250f, 500f, 1000f, 2000f, 15000f }; // Level 1-7
 
         /// <summary>Number of ship slots at this level (level 1 = 1 ship, … level 6 = 6, level 7 = 3 MEGA).</summary>
@@ -101,12 +101,10 @@ namespace TitanOrbit.Data
             }
         }
 
-        /// <summary>Gems to purchase the ship at this tier: 20 × (level − 1)². Level 1 starter = 0.</summary>
+        /// <summary>Legacy level-only cost hook. Prefer <see cref="Systems.CardShopSystem.GetPurchaseGemCostForUpgradeSlot"/>.</summary>
         public float GetGemCostForLevel(int level)
         {
-            if (level <= 1) return 0f;
-            float n = level - 1f;
-            return 20f * n * n;
+            return 0f;
         }
 
         /// <summary>Resolve the upgrade node for slot (level, branchIndex). Branch index is 0-based within that level.</summary>

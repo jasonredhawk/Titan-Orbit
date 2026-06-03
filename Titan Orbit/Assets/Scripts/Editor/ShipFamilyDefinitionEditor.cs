@@ -548,14 +548,15 @@ namespace TitanOrbit.Editor
                     upgradeTreeShipName = GetUpgradeTreeShipNameFromPrefabName(prefab.name),
                     prefab = prefab,
                     minHomePlanetLevel = currentLevel,
-                    powerScore = power,
-                    powerScoreBreakdown = breakdown,
                     componentMass = def.ComputeComponentMassFromPrefab(prefab)
                 };
+                ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
+                AssignTierPowerScores(entry, stats, breakdown);
                 def.upgradeTree.Add(entry);
                 assignedAtThisLevel++;
             }
 
+            RefreshMaxLevelPowerScores(def, familyId);
             def.RecalculateTotalComponentMass();
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
@@ -609,7 +610,6 @@ namespace TitanOrbit.Editor
                 ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
                 ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
                 float power = breakdown.Total;
-                tier.powerScore = power;
                 tier.powerScoreBreakdown = breakdown;
                 tier.componentMass = def.ComputeComponentMassFromPrefab(tier.prefab);
 
@@ -679,6 +679,7 @@ namespace TitanOrbit.Editor
                 newTree.Add(trailingNoPrefab[i]);
 
             def.upgradeTree = newTree;
+            RefreshMaxLevelPowerScores(def, familyId);
             def.RecalculateTotalComponentMass();
 
             EditorUtility.SetDirty(def);
@@ -714,6 +715,32 @@ namespace TitanOrbit.Editor
             }
 
             return orderedForTree;
+        }
+
+        private static void AssignTierPowerScores(
+            ShipFamilyChassisTierEntry entry,
+            ShipComponentAbilityStats stats,
+            ShipFamilyPowerScoreBreakdown breakdown)
+        {
+            entry.powerScore = breakdown.Total;
+            entry.powerScoreBreakdown = breakdown;
+            int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(entry.minHomePlanetLevel);
+            entry.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
+                ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
+        }
+
+        private static void RefreshMaxLevelPowerScores(ShipFamilyDefinition def, string familyId)
+        {
+            if (def?.upgradeTree == null || string.IsNullOrEmpty(familyId)) return;
+            for (int i = 0; i < def.upgradeTree.Count; i++)
+            {
+                ShipFamilyChassisTierEntry tier = def.upgradeTree[i];
+                if (tier?.prefab == null) continue;
+                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
+                int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(tier.minHomePlanetLevel);
+                tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
+                    ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
+            }
         }
 
         /// <summary>Scale-adjusted stats for power scoring (loads prefab contents so nested part localScale is included).</summary>

@@ -18,13 +18,14 @@ namespace TitanOrbit.UI
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
         public const string PanelTitleText = "Ship Upgrade Tree";
-        public const string PanelDefaultSubtitle = "Green: your ship. Blue: affordable upgrades. Cyan: free hull swap.";
+        public const string PanelDefaultSubtitle = "You (top-left): your ship. Green: tree slot. Blue: affordable upgrades. Cyan: free hull swap.";
 
         private const float CanvasInnerMargin = 8f;
         private const float MoonNodeHeight = 100f;
         private const float MoonMinNodeWidth = 74f;
         private const float MoonLevelColGap = 12f;
         private const float MoonBranchGapY = 8f;
+        private const float MoonCurrentShipOverlayMargin = 8f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
         private const float VerticalNodeHeight = 188f;
@@ -52,12 +53,14 @@ namespace TitanOrbit.UI
         private readonly List<GameObject> _visuals = new List<GameObject>();
         private readonly List<int> _nextTargets = new List<int>(4);
         private string _structureKey = string.Empty;
+        private ShipUpgradeTreeNodeUI _currentShipNode;
 
         public TextMeshProUGUI Title => titleText;
         public TextMeshProUGUI Hint => hintText;
         public RectTransform CenterRow => centerRow;
         public RectTransform NodesCanvas => nodesCanvas;
         public IReadOnlyList<ShipUpgradeTreeNodeUI> Nodes => _nodes;
+        public ShipUpgradeTreeNodeUI CurrentShipDisplayNode => _currentShipNode;
 
         private void Awake()
         {
@@ -141,9 +144,24 @@ namespace TitanOrbit.UI
 
         public void Clear()
         {
+            DestroyCurrentShipDisplayNode();
             ClearNodesCanvasChildren();
             _visuals.Clear();
             _nodes.Clear();
+        }
+
+        private void DestroyCurrentShipDisplayNode()
+        {
+            if (_currentShipNode == null)
+                return;
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                DestroyImmediate(_currentShipNode.gameObject);
+            else
+#endif
+                Destroy(_currentShipNode.gameObject);
+            _currentShipNode = null;
         }
 
         private bool HasOrphanNodesCanvasChildren()
@@ -175,10 +193,15 @@ namespace TitanOrbit.UI
 
         public void RefreshVisualState()
         {
-            if (_station == null || _nodes.Count == 0)
+            if (_station == null)
+                return;
+            if (_nodes.Count == 0 && _currentShipNode == null)
                 return;
 
-            _station.RefreshShipUpgradeTreeNodeStates(_nodes, ComputeMaxDisplayPower());
+            float maxPower = ComputeMaxDisplayPower();
+            _station.RefreshShipUpgradeTreeNodeStates(_nodes, maxPower);
+            if (_currentShipNode != null)
+                _station.PopulateTreeNode(_currentShipNode, maxPower);
         }
 
         /// <summary>Editor: populate all tier slots and connectors. Uses <paramref name="family"/> when assigned.</summary>
@@ -195,7 +218,7 @@ namespace TitanOrbit.UI
                 foreach (var tier in family.upgradeTree)
                 {
                     if (tier == null) continue;
-                    float t = tier.powerScoreBreakdown.GetDisplayTotalForUi();
+                    float t = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(tier.powerScoreBreakdown);
                     if (t > maxPower) maxPower = t;
                 }
             }
@@ -237,7 +260,8 @@ namespace TitanOrbit.UI
                     else
                         node.ApplyPowerBreakdown(default, maxPower);
 
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
+                        out colX, out nodeY);
                     node.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(node);
                     _nodes.Add(node);
@@ -303,7 +327,8 @@ namespace TitanOrbit.UI
                     ShipUpgradeNode upgradeNode = level == 1 ? null : tree.GetNodeForBranch(level, b);
                     var view = SpawnNode(level, b, upgradeNode, nodeW, nodeH, trackW);
                     view.ConfigureLayout(true);
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
+                        out colX, out nodeY);
                     view.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(view);
                 }
@@ -311,8 +336,14 @@ namespace TitanOrbit.UI
                 byLevel[level] = views;
             }
 
+            SpawnCurrentShipDisplayNode(nodeW, nodeH, trackW);
             ForceLayoutBeforeConnectors();
             EnforceUniformNodeSizes(nodeW, nodeH, trackW);
+            if (_currentShipNode != null)
+            {
+                _currentShipNode.EnforceLayoutSize(nodeW, nodeH, trackW);
+                _currentShipNode.ApplyPanelOverlayTopLeft(MoonCurrentShipOverlayMargin);
+            }
             DrawConnectors(byLevel, pathEdges, moonHorizontal: true);
         }
 
@@ -385,6 +416,35 @@ namespace TitanOrbit.UI
             float stackTop = halfH - margin - (maxColStackH - stackH) * 0.5f;
             x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * (nodeW + MoonLevelColGap));
             y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + MoonBranchGapY));
+        }
+
+        private void SpawnCurrentShipDisplayNode(float nodeW, float nodeH, float trackW)
+        {
+            if (_station == null || nodePrefab == null)
+                return;
+
+            Transform overlayParent = centerRow != null ? centerRow : transform;
+            var view = Instantiate(nodePrefab, overlayParent);
+            view.gameObject.SetActive(true);
+            view.transform.SetAsLastSibling();
+            if (nodeBackgroundSprite != null)
+            {
+                var bg = view.GetComponent<Image>();
+                if (bg != null)
+                {
+                    bg.sprite = nodeBackgroundSprite;
+                    bg.type = Image.Type.Sliced;
+                }
+            }
+
+            view.BindAsCurrentShipDisplay(nodeW, nodeH, trackW);
+            view.ConfigureLayout(true);
+            view.ApplyPanelOverlayTopLeft(MoonCurrentShipOverlayMargin);
+            view.EnsureStableButtonRendering();
+            view.SetPriceClickHandler(() => _station.OnCurrentShipDisplayNodeClicked());
+
+            _station.PopulateTreeNode(view, ComputeMaxDisplayPower());
+            _currentShipNode = view;
         }
 
         private void ForceLayoutBeforeConnectors()
@@ -678,12 +738,19 @@ namespace TitanOrbit.UI
         private float ComputeMaxDisplayPower()
         {
             float max = 0f;
+            if (_station != null)
+            {
+                float current = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(_station.GetCurrentShipPowerBreakdown());
+                if (current > max) max = current;
+            }
+
             for (int level = 1; level <= 7; level++)
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 for (int b = 0; b < count; b++)
                 {
-                    float t = _station.GetPowerBreakdownForTreeNode(level, b).GetDisplayTotalForUi();
+                    float t = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(
+                        _station.GetPowerBreakdownForTreeNode(level, b));
                     if (t > max) max = t;
                 }
             }

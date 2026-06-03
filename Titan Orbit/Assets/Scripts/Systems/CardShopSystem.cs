@@ -174,6 +174,21 @@ namespace TitanOrbit.Systems
             return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetPowerScoreBreakdownForChassisId(chassisId) : default;
         }
 
+        /// <summary>Gem purchase cost for a chassis at the given ship level (2× gem cap, L1→L6 gradient).</summary>
+        public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
+        {
+            return planetShipFamilyConfig != null
+                ? planetShipFamilyConfig.GetPurchaseGemCostForChassisId(chassisId, shipLevel)
+                : 0;
+        }
+
+        /// <summary>Gem purchase cost for the hull at an upgrade-tree ladder slot at <paramref name="level"/>.</summary>
+        public int GetPurchaseGemCostForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return GetPurchaseGemCostForChassisId(cid, level);
+        }
+
         /// <summary>Power breakdown for the ship that would be unlocked at the given tree slot.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {
@@ -242,8 +257,22 @@ namespace TitanOrbit.Systems
                 if (!hasPath) return false;
             }
 
-            cost = tree.GetGemCostForLevel(nextLevel);
-            return cost > 0f;
+            if (string.IsNullOrEmpty(chassisId))
+            {
+                var targets = new List<int>(4);
+                UpgradeTree.GetNextLevelBranchTargets(ship.ShipLevel, ship.BranchIndex, targets);
+                for (int t = 0; t < targets.Count; t++)
+                {
+                    string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, nextLevel, targets[t]);
+                    if (string.IsNullOrEmpty(cid)) continue;
+                    chassisId = cid;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(chassisId)) return false;
+            cost = GetPurchaseGemCostForChassisId(chassisId, nextLevel);
+            return true;
         }
 
         /// <summary>
@@ -370,10 +399,8 @@ namespace TitanOrbit.Systems
         {
             int t = Mathf.Max(1, spinCardTier);
             int gemLevel = Mathf.Clamp(t + 1, 2, 24);
-            if (UpgradeSystem.Instance != null && UpgradeSystem.Instance.UpgradeTree != null)
-                return Mathf.Max(15f, UpgradeSystem.Instance.UpgradeTree.GetGemCostForLevel(gemLevel));
-            float n = gemLevel - 1f;
-            return Mathf.Max(15f, 20f * n * n);
+            if (gemLevel <= 1) return 15f;
+            return Mathf.Max(15f, 20f * gemLevel * gemLevel);
         }
 
         /// <summary>
@@ -670,8 +697,7 @@ namespace TitanOrbit.Systems
             int purchaseTier = Mathf.Max(tierLevel, chassis?.minHomePlanetLevel ?? tierLevel);
             if (purchaseTier > planet.PlanetLevel) return;
 
-            float baseCost = ShipUnlockTable.GetTierCost(tierLevel);
-            float cost = Mathf.Max(baseCost, 20f);
+            float cost = GetPurchaseGemCostForChassisId(chassisId, purchaseTier);
 
             if (!homePlanet.TrySpendContributedGems(clientId, cost))
                 return;
@@ -717,11 +743,14 @@ namespace TitanOrbit.Systems
             Planet planet = planetNet != null ? planetNet.GetComponent<Planet>() : null;
             if (planet == null) return;
 
-            if (!CanPurchaseShipLevelUpgrade(ship, planet, out int nextLevel, out float cost, out _))
+            if (!CanPurchaseShipLevelUpgrade(ship, planet, out int nextLevel, out _, out _))
                 return;
 
             int p = ship.BranchIndex;
             if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, p, nextLevel, targetBranchIndex)) return;
+
+            string targetChassisId = GetChassisIdForUpgradeLadderSlot(ship, planet.PlanetId, nextLevel, targetBranchIndex);
+            float cost = GetPurchaseGemCostForChassisId(targetChassisId, nextLevel);
 
             HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
             if (homePlanet == null) return;
