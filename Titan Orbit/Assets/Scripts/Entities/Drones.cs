@@ -57,17 +57,24 @@ namespace TitanOrbit.Entities
         protected Starship ownerShip;
         protected float orbitAngle;
         protected Rigidbody rb;
+        private int equipmentSlotIndex = -1;
         private const float FIXED_Y = 0f;
 
         public float CurrentHp => currentHp.Value;
         public float MaxHp => maxHp;
         public Starship OwnerShip => ownerShip;
+        public int EquipmentSlotIndex => equipmentSlotIndex;
         public bool IsDestroyed => currentHp.Value <= 0f;
 
         public virtual void SetOwnerShip(Starship ship)
         {
             ownerShip = ship;
             orbitAngle = Random.Range(0f, 360f);
+        }
+
+        public void SetEquipmentSlotIndex(int slotIndex)
+        {
+            equipmentSlotIndex = slotIndex;
         }
 
         protected void Awake()
@@ -105,6 +112,7 @@ namespace TitanOrbit.Entities
             {
                 if (IsServer)
                 {
+                    NotifyOwnerEquipmentDroneLost();
                     var no = GetComponent<NetworkObject>();
                     if (no != null && no.IsSpawned) no.Despawn();
                 }
@@ -115,6 +123,7 @@ namespace TitanOrbit.Entities
             {
                 if (currentHp.Value <= 0f)
                 {
+                    NotifyOwnerEquipmentDroneLost();
                     var no = GetComponent<NetworkObject>();
                     if (no != null && no.IsSpawned) no.Despawn();
                     return;
@@ -183,6 +192,14 @@ namespace TitanOrbit.Entities
             if (!pull)
                 dir = -dir;
             rb.AddForce(dir * force, ForceMode.Impulse);
+        }
+
+        private void NotifyOwnerEquipmentDroneLost()
+        {
+            if (!IsServer || ownerShip == null || equipmentSlotIndex < 0)
+                return;
+            ownerShip.NotifyEquipmentDroneDestroyed(equipmentSlotIndex);
+            equipmentSlotIndex = -1;
         }
     }
 

@@ -19,6 +19,13 @@ namespace TitanOrbit.UI
         }
 
         public const float PanelWidth = 252f;
+        public const string SectionTitleUpgradeCards = "Upgrade Cards";
+        public const string SectionTitleEquipment = "Equipment";
+
+        /// <summary>Accent stripe for upgrade-card sections (matches store tab card shop block).</summary>
+        public static readonly Color UpgradeCardsAccent = new Color(0.35f, 0.55f, 0.95f, 1f);
+        /// <summary>Accent stripe for equipment / store-item sections.</summary>
+        public static readonly Color EquipmentAccent = new Color(0.28f, 0.72f, 0.48f, 1f);
 
         private const float NavStripHeight = 44f;
         private const float CurrentShipNodeHeight = 92f;
@@ -30,6 +37,7 @@ namespace TitanOrbit.UI
         private RectTransform _contentRoot;
         private RectTransform _currentShipHost;
         private RectTransform _loadoutHost;
+        private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
         private ShipUpgradeTreeNodeUI _currentShipNode;
         private Button _navUpgradesBtn;
@@ -42,6 +50,7 @@ namespace TitanOrbit.UI
         private bool _built;
 
         public RectTransform LoadoutHost => _loadoutHost;
+        public RectTransform EquipmentHost => _equipmentHost;
         public ShipUpgradeTreeNodeUI CurrentShipNode => _currentShipNode;
 
         public void ConfigureVisuals(Sprite panelBg, Sprite btnSprite, TMP_FontAsset font)
@@ -140,16 +149,21 @@ namespace TitanOrbit.UI
 
             _bankText = CreateBodyLabel(_contentRoot, "Bank", "Bank balance: 0 gems", 22f);
 
-            CreateSectionHeader(_contentRoot, "Ship Loadout", 24f);
-            var loadoutHint = CreateBodyLabel(_contentRoot, "LoadoutHint",
-                "Tap ✕ on a card to remove it.", 22f);
-            loadoutHint.fontSize = 11f;
-            loadoutHint.color = new Color(0.68f, 0.74f, 0.86f, 0.95f);
+            CreateAccentSectionHeader(_contentRoot, SectionTitleUpgradeCards,
+                "Equipped cards — tap ✕ to remove.", UpgradeCardsAccent);
             _loadoutHost = CreateStretchHost(_contentRoot, "LoadoutHost", 80f);
             var loadoutLe = _loadoutHost.GetComponent<LayoutElement>();
             loadoutLe.minHeight = 64f;
             loadoutLe.preferredHeight = 80f;
             loadoutLe.flexibleHeight = 0f;
+
+            CreateAccentSectionHeader(_contentRoot, SectionTitleEquipment,
+                "Equipped store items — tap ✕ to remove.", EquipmentAccent);
+            _equipmentHost = CreateStretchHost(_contentRoot, "EquipmentHost", 80f);
+            var equipmentLe = _equipmentHost.GetComponent<LayoutElement>();
+            equipmentLe.minHeight = 64f;
+            equipmentLe.preferredHeight = 80f;
+            equipmentLe.flexibleHeight = 0f;
 
             ApplyNavVisuals();
         }
@@ -276,20 +290,83 @@ namespace TitanOrbit.UI
 
         private void CreateSectionHeader(Transform parent, string text, float height)
         {
-            var go = new GameObject("Header_" + text.Replace(" ", ""));
-            go.transform.SetParent(parent, false);
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredHeight = height;
-            le.minHeight = height - 4f;
-            le.flexibleHeight = 0f;
-            var tmp = go.AddComponent<TextMeshProUGUI>();
-            tmp.text = text;
-            tmp.fontSize = 15f;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.alignment = TextAlignmentOptions.Left;
-            tmp.color = new Color(0.88f, 0.92f, 1f, 1f);
-            tmp.raycastTarget = false;
-            ApplyFont(tmp);
+            CreateAccentSectionHeader(parent, text, null, new Color(0.88f, 0.92f, 1f, 1f), height, false);
+        }
+
+        private void CreateAccentSectionHeader(Transform parent, string title, string subtitle, Color accent,
+            float blockHeight = 42f, bool showAccent = true)
+        {
+            var blockGo = new GameObject("Header_" + title.Replace(" ", ""));
+            blockGo.transform.SetParent(parent, false);
+            var blockLe = blockGo.AddComponent<LayoutElement>();
+            blockLe.preferredHeight = blockHeight;
+            blockLe.minHeight = blockHeight - 6f;
+            blockLe.flexibleHeight = 0f;
+
+            var row = blockGo.AddComponent<HorizontalLayoutGroup>();
+            row.spacing = 8f;
+            row.padding = new RectOffset(0, 0, 0, 0);
+            row.childAlignment = TextAnchor.MiddleLeft;
+            row.childControlWidth = true;
+            row.childControlHeight = true;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = true;
+
+            if (showAccent)
+            {
+                var accentGo = new GameObject("Accent");
+                accentGo.transform.SetParent(blockGo.transform, false);
+                var accentLe = accentGo.AddComponent<LayoutElement>();
+                accentLe.preferredWidth = 4f;
+                accentLe.minWidth = 4f;
+                accentLe.flexibleHeight = 1f;
+                var accentImg = accentGo.AddComponent<Image>();
+                accentImg.color = accent;
+                accentImg.raycastTarget = false;
+            }
+
+            var textColGo = new GameObject("TextCol");
+            textColGo.transform.SetParent(blockGo.transform, false);
+            var textColLe = textColGo.AddComponent<LayoutElement>();
+            textColLe.flexibleWidth = 1f;
+            textColLe.minWidth = 80f;
+            var textVlg = textColGo.AddComponent<VerticalLayoutGroup>();
+            textVlg.spacing = 2f;
+            textVlg.childAlignment = TextAnchor.UpperLeft;
+            textVlg.childControlWidth = true;
+            textVlg.childControlHeight = true;
+            textVlg.childForceExpandWidth = true;
+            textVlg.childForceExpandHeight = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(textColGo.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 20f;
+            titleLe.minHeight = 18f;
+            var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
+            titleTmp.text = title;
+            titleTmp.fontSize = 15f;
+            titleTmp.fontStyle = FontStyles.Bold;
+            titleTmp.alignment = TextAlignmentOptions.Left;
+            titleTmp.color = new Color(0.92f, 0.95f, 1f, 1f);
+            titleTmp.raycastTarget = false;
+            ApplyFont(titleTmp);
+
+            if (!string.IsNullOrEmpty(subtitle))
+            {
+                var subGo = new GameObject("Subtitle");
+                subGo.transform.SetParent(textColGo.transform, false);
+                var subLe = subGo.AddComponent<LayoutElement>();
+                subLe.preferredHeight = 16f;
+                subLe.minHeight = 14f;
+                var subTmp = subGo.AddComponent<TextMeshProUGUI>();
+                subTmp.text = subtitle;
+                subTmp.fontSize = 11f;
+                subTmp.alignment = TextAlignmentOptions.Left;
+                subTmp.color = new Color(0.68f, 0.74f, 0.86f, 0.95f);
+                subTmp.raycastTarget = false;
+                ApplyFont(subTmp);
+            }
         }
 
         private TextMeshProUGUI CreateBodyLabel(Transform parent, string name, string text, float height)

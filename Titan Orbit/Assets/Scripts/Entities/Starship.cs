@@ -40,6 +40,24 @@ namespace TitanOrbit.Entities
         public bool Equals(EquippedCardId other) => cardId.Equals(other.cardId);
     }
 
+    /// <summary>Serializable store equipment entry for syncing equipped support items to clients.</summary>
+    public struct EquippedEquipmentEntry : INetworkSerializable, System.IEquatable<EquippedEquipmentEntry>
+    {
+        public int itemType;
+        public int remainingCharges;
+
+        public StoreItemType ItemType => (StoreItemType)itemType;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref itemType);
+            serializer.SerializeValue(ref remainingCharges);
+        }
+
+        public bool Equals(EquippedEquipmentEntry other) =>
+            itemType == other.itemType && remainingCharges == other.remainingCharges;
+    }
+
     /// <summary>
     /// Base starship controller for player-controlled ships
     /// </summary>
@@ -697,6 +715,13 @@ namespace TitanOrbit.Entities
 
         /// <summary>Synced list of equipped card IDs so clients can display loadout. Server keeps this in sync with equippedCards.</summary>
         private NetworkList<EquippedCardId> equippedCardIds;
+
+        [Header("Equipment Loadout")]
+        [Tooltip("Store items (drones, rockets, mines) equipped in ship equipment slots. Server-authoritative.")]
+        [SerializeField] private List<EquippedEquipmentEntry> equippedEquipment = new List<EquippedEquipmentEntry>();
+
+        /// <summary>Synced equipment entries for client UI.</summary>
+        private NetworkList<EquippedEquipmentEntry> equippedEquipmentEntries;
 
         private const float ATTR_MULTIPLIER_PER_LEVEL = 0.1f;
         /// <summary>Per level after 1, mobility loses this fraction of the <em>base</em> stat: base − (base × this) × (level − 1).</summary>
@@ -1670,6 +1695,32 @@ namespace TitanOrbit.Entities
 
         /// <summary>True if there is at least one empty slot.</summary>
         public bool HasEmptySlot => equippedCards != null && equippedCards.Count < SlotCount;
+
+        /// <summary>Number of equipment slots (1 per ship level). Each slot holds at most one store item.</summary>
+        public int EquipmentSlotCount => SlotCount;
+
+        /// <summary>True if there is at least one empty equipment slot.</summary>
+        public bool HasEmptyEquipmentSlot => equippedEquipment != null && equippedEquipment.Count < EquipmentSlotCount;
+
+        public int EquippedEquipmentCount => equippedEquipment != null ? equippedEquipment.Count : 0;
+
+        public IReadOnlyList<EquippedEquipmentEntry> EquippedEquipment => GetEquippedEquipmentForDisplay();
+
+        private readonly List<EquippedEquipmentEntry> _clientEquippedEquipmentCache = new List<EquippedEquipmentEntry>();
+
+        private IReadOnlyList<EquippedEquipmentEntry> GetEquippedEquipmentForDisplay()
+        {
+            if (IsServer)
+                return equippedEquipment ?? (IReadOnlyList<EquippedEquipmentEntry>)new List<EquippedEquipmentEntry>();
+            _clientEquippedEquipmentCache.Clear();
+            if (equippedEquipmentEntries != null)
+            {
+                for (int i = 0; i < equippedEquipmentEntries.Count; i++)
+                    _clientEquippedEquipmentCache.Add(equippedEquipmentEntries[i]);
+            }
+            return _clientEquippedEquipmentCache;
+        }
+
         public TeamManager.Team ShipTeam => shipTeam.Value;
         public int ShipLevel => (IsSpawned && networkShipLevel != null) ? networkShipLevel.Value : shipLevel;
         public int BranchIndex => (IsSpawned && networkBranchIndex != null) ? networkBranchIndex.Value : (shipData != null ? shipData.branchIndex : 0);
@@ -1853,6 +1904,7 @@ namespace TitanOrbit.Entities
                 gameObject.AddComponent<ToroidalRenderer>();
 
             equippedCardIds = new NetworkList<EquippedCardId>();
+            equippedEquipmentEntries = new NetworkList<EquippedEquipmentEntry>();
         }
 
         private const string PREFAB_CONTAINER_NAME = "Prefab";
@@ -1949,6 +2001,7 @@ namespace TitanOrbit.Entities
             // Remove from global registry if present
             AllStarships.Remove(this);
             equippedCardIds?.Dispose();
+            equippedEquipmentEntries?.Dispose();
             // Cancel any pending respawn invokes
             CancelInvoke(nameof(DelayedRespawnAfterDeath));
         }
@@ -2033,6 +2086,12 @@ namespace TitanOrbit.Entities
                     if (i < equippedCards.Count && equippedCards[i] != null)
                         equippedCardIds.Add(new EquippedCardId { cardId = new FixedString64Bytes(equippedCards[i].GetStableCardId()) });
                 }
+            }
+
+            if (IsServer && equippedEquipmentEntries != null && equippedEquipment != null)
+            {
+                for (int i = equippedEquipmentEntries.Count; i < equippedEquipment.Count; i++)
+                    equippedEquipmentEntries.Add(equippedEquipment[i]);
             }
 
             // Scene / old prefab: apply ShipData so chassis visuals and weapon components initialize.
@@ -2226,6 +2285,8 @@ namespace TitanOrbit.Entities
                 attrGemCapacity.Value,
                 attrPeopleCapacity.Value,
                 cardIds.ToArray(),
+                CaptureEquipmentItemTypes(),
+                CaptureEquipmentCharges(),
                 smallRocketsCount.Value,
                 largeRocketsCount.Value,
                 smallMinesCount.Value,
@@ -2278,6 +2339,7 @@ namespace TitanOrbit.Entities
             attrPeopleCapacity.Value = snapshot.AttrPeopleCapacity;
 
             ClearAllCardsFromServer();
+            ClearAllEquipmentFromServer();
             if (CardShopSystem.Instance != null && snapshot.CardIds != null)
             {
                 for (int i = 0; i < snapshot.CardIds.Length; i++)
@@ -2287,6 +2349,9 @@ namespace TitanOrbit.Entities
                         AddCardFromServer(card);
                 }
             }
+
+            RestoreEquipmentFromSnapshot(snapshot);
+            HomePlanetStoreSystem.Instance?.RespawnEquipmentDronesForShip(this);
 
             smallRocketsCount.Value = snapshot.SmallRockets;
             largeRocketsCount.Value = snapshot.LargeRockets;
@@ -6360,24 +6425,28 @@ namespace TitanOrbit.Entities
         /// <summary>Server: consume one small rocket. Returns true if had one.</summary>
         public bool ConsumeSmallRocket()
         {
+            if (TryConsumeFromEquipment(StoreItemType.SmallRockets)) return true;
             if (smallRocketsCount.Value <= 0) return false;
             smallRocketsCount.Value--;
             return true;
         }
         public bool ConsumeLargeRocket()
         {
+            if (TryConsumeFromEquipment(StoreItemType.LargeRockets)) return true;
             if (largeRocketsCount.Value <= 0) return false;
             largeRocketsCount.Value--;
             return true;
         }
         public bool ConsumeSmallMine()
         {
+            if (TryConsumeFromEquipment(StoreItemType.SmallMines)) return true;
             if (smallMinesCount.Value <= 0) return false;
             smallMinesCount.Value--;
             return true;
         }
         public bool ConsumeLargeMine()
         {
+            if (TryConsumeFromEquipment(StoreItemType.LargeMines)) return true;
             if (largeMinesCount.Value <= 0) return false;
             largeMinesCount.Value--;
             return true;
@@ -7623,6 +7692,7 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             ResetAttributeLevels();
             ClearAllCardsFromServer();
+            ClearAllEquipmentFromServer();
         }
 
         /// <summary>Server only: resets attribute upgrades only. Keeps equipped cards/slots. Call when buying a new chassis.</summary>
@@ -7846,6 +7916,170 @@ namespace TitanOrbit.Entities
         public void RemoveCardServerRpc(int slotIndex)
         {
             RemoveCardFromServer(slotIndex);
+        }
+
+        /// <summary>Server-only: add a store item to the first available equipment slot.</summary>
+        public bool AddEquipmentFromServer(StoreItemType itemType, int? overrideCharges = null)
+        {
+            if (!IsServer) return false;
+            if (equippedEquipment == null) equippedEquipment = new List<EquippedEquipmentEntry>();
+            if (equippedEquipmentEntries == null) return false;
+            if (equippedEquipment.Count >= EquipmentSlotCount) return false;
+
+            int charges = overrideCharges ?? (StoreItemData.IsDrone(itemType) ? 1 : StoreItemData.GetPackSize(itemType));
+            var entry = new EquippedEquipmentEntry
+            {
+                itemType = (int)itemType,
+                remainingCharges = Mathf.Max(1, charges)
+            };
+            equippedEquipment.Add(entry);
+            equippedEquipmentEntries.Add(entry);
+            return true;
+        }
+
+        /// <summary>Server-only: remove equipment at slot index. Despawns linked drones unless skipped.</summary>
+        public void RemoveEquipmentFromServer(int slotIndex, bool skipDroneDespawn = false)
+        {
+            if (!IsServer) return;
+            if (equippedEquipment == null) return;
+            if (slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
+
+            var entry = equippedEquipment[slotIndex];
+            if (!skipDroneDespawn && StoreItemData.IsDrone(entry.ItemType))
+                DespawnEquipmentDroneAtSlot(slotIndex);
+
+            equippedEquipment.RemoveAt(slotIndex);
+            if (equippedEquipmentEntries != null && slotIndex < equippedEquipmentEntries.Count)
+                equippedEquipmentEntries.RemoveAt(slotIndex);
+
+            ReindexEquipmentDronesAfterRemoval(slotIndex);
+        }
+
+        /// <summary>Server: drone in an equipment slot was destroyed — clear the slot.</summary>
+        public void NotifyEquipmentDroneDestroyed(int slotIndex)
+        {
+            if (!IsServer) return;
+            if (equippedEquipment == null || slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
+            var entry = equippedEquipment[slotIndex];
+            if (!StoreItemData.IsDrone(entry.ItemType)) return;
+            RemoveEquipmentFromServer(slotIndex, skipDroneDespawn: true);
+        }
+
+        [ServerRpc(RequireOwnership = true)]
+        public void RemoveEquipmentServerRpc(int slotIndex)
+        {
+            RemoveEquipmentFromServer(slotIndex);
+        }
+
+        private void DespawnEquipmentDroneAtSlot(int slotIndex)
+        {
+            if (!IsServer) return;
+            var drones = UnityEngine.Object.FindObjectsByType<DroneBase>(FindObjectsSortMode.None);
+            for (int i = 0; i < drones.Length; i++)
+            {
+                DroneBase drone = drones[i];
+                if (drone == null || drone.OwnerShip != this || drone.EquipmentSlotIndex != slotIndex)
+                    continue;
+                var no = drone.GetComponent<NetworkObject>();
+                if (no != null && no.IsSpawned)
+                    no.Despawn();
+                return;
+            }
+        }
+
+        private void ReindexEquipmentDronesAfterRemoval(int removedSlotIndex)
+        {
+            if (!IsServer) return;
+            var drones = UnityEngine.Object.FindObjectsByType<DroneBase>(FindObjectsSortMode.None);
+            for (int i = 0; i < drones.Length; i++)
+            {
+                DroneBase drone = drones[i];
+                if (drone == null || drone.OwnerShip != this || drone.EquipmentSlotIndex < 0)
+                    continue;
+                if (drone.EquipmentSlotIndex > removedSlotIndex)
+                    drone.SetEquipmentSlotIndex(drone.EquipmentSlotIndex - 1);
+            }
+        }
+
+        private bool TryConsumeFromEquipment(StoreItemType itemType)
+        {
+            if (!IsServer || equippedEquipment == null) return false;
+            for (int i = 0; i < equippedEquipment.Count; i++)
+            {
+                EquippedEquipmentEntry entry = equippedEquipment[i];
+                if (entry.ItemType != itemType || entry.remainingCharges <= 0)
+                    continue;
+
+                entry.remainingCharges--;
+                if (entry.remainingCharges <= 0)
+                {
+                    RemoveEquipmentFromServer(i);
+                }
+                else
+                {
+                    equippedEquipment[i] = entry;
+                    if (equippedEquipmentEntries != null && i < equippedEquipmentEntries.Count)
+                        equippedEquipmentEntries[i] = entry;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private int[] CaptureEquipmentItemTypes()
+        {
+            if (equippedEquipment == null || equippedEquipment.Count == 0)
+                return System.Array.Empty<int>();
+            var types = new int[equippedEquipment.Count];
+            for (int i = 0; i < equippedEquipment.Count; i++)
+                types[i] = equippedEquipment[i].itemType;
+            return types;
+        }
+
+        private int[] CaptureEquipmentCharges()
+        {
+            if (equippedEquipment == null || equippedEquipment.Count == 0)
+                return System.Array.Empty<int>();
+            var charges = new int[equippedEquipment.Count];
+            for (int i = 0; i < equippedEquipment.Count; i++)
+                charges[i] = equippedEquipment[i].remainingCharges;
+            return charges;
+        }
+
+        private void RestoreEquipmentFromSnapshot(in PlayerShipProgressSnapshot snapshot)
+        {
+            if (snapshot.EquipmentItemTypes != null && snapshot.EquipmentItemTypes.Length > 0)
+            {
+                int count = snapshot.EquipmentItemTypes.Length;
+                for (int i = 0; i < count; i++)
+                {
+                    if (equippedEquipment.Count >= EquipmentSlotCount) break;
+                    int charges = snapshot.EquipmentCharges != null && i < snapshot.EquipmentCharges.Length
+                        ? snapshot.EquipmentCharges[i]
+                        : 1;
+                    AddEquipmentFromServer((StoreItemType)snapshot.EquipmentItemTypes[i], charges);
+                }
+                return;
+            }
+
+            TryAddLegacyInventoryAsEquipment(StoreItemType.SmallRockets, snapshot.SmallRockets);
+            TryAddLegacyInventoryAsEquipment(StoreItemType.LargeRockets, snapshot.LargeRockets);
+            TryAddLegacyInventoryAsEquipment(StoreItemType.SmallMines, snapshot.SmallMines);
+            TryAddLegacyInventoryAsEquipment(StoreItemType.LargeMines, snapshot.LargeMines);
+        }
+
+        private void TryAddLegacyInventoryAsEquipment(StoreItemType itemType, int legacyCount)
+        {
+            if (legacyCount <= 0) return;
+            if (equippedEquipment != null && equippedEquipment.Count >= EquipmentSlotCount) return;
+            AddEquipmentFromServer(itemType, legacyCount);
+        }
+
+        private void ClearAllEquipmentFromServer()
+        {
+            if (!IsServer || equippedEquipment == null) return;
+            for (int i = equippedEquipment.Count - 1; i >= 0; i--)
+                RemoveEquipmentFromServer(i);
         }
 
         /// <summary>Server-only: set the current chassis index (from ShipUnlockTable) so clients can show the correct card grid layout.</summary>

@@ -85,6 +85,29 @@ namespace TitanOrbit.Data
             }
         }
 
+        public static bool IsDrone(StoreItemType item)
+        {
+            return item == StoreItemType.FighterDrone
+                || item == StoreItemType.ShieldDrone
+                || item == StoreItemType.MiningDrone;
+        }
+
+        /// <summary>Short description for equipment slot UI.</summary>
+        public static string GetDescription(StoreItemType item)
+        {
+            switch (item)
+            {
+                case StoreItemType.FighterDrone: return "Attacks enemy ships.";
+                case StoreItemType.ShieldDrone: return "Blocks incoming fire.";
+                case StoreItemType.MiningDrone: return "Mines nearby asteroids.";
+                case StoreItemType.SmallRockets: return "Q to fire · pack of 4.";
+                case StoreItemType.LargeRockets: return "Q to fire · pack of 2.";
+                case StoreItemType.SmallMines: return "E to place · pack of 4.";
+                case StoreItemType.LargeMines: return "E to place · pack of 2.";
+                default: return string.Empty;
+            }
+        }
+
         /// <summary>Large glyph shown in the card icon area when no sprite is assigned.</summary>
         public static string GetIconGlyph(StoreItemType item)
         {

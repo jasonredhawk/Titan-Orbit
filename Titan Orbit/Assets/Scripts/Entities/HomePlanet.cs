@@ -203,6 +203,17 @@ namespace TitanOrbit.Entities
             return true;
         }
 
+        /// <summary>Server: refund contributed gems when a purchase could not be completed.</summary>
+        public void RefundContributedGems(ulong clientId, float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            if (contributedGemsByClientId == null)
+                contributedGemsByClientId = new Dictionary<ulong, float>();
+            if (!contributedGemsByClientId.ContainsKey(clientId))
+                contributedGemsByClientId[clientId] = 0f;
+            contributedGemsByClientId[clientId] += amount;
+        }
+
         /// <summary>Override to add scale pulse effect and auto-level ships when home planet levels up.</summary>
         protected override void OnPlanetLevelChanged(int previousLevel, int newLevel)
         {

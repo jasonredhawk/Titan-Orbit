@@ -120,6 +120,8 @@ namespace TitanOrbit.Systems
         public readonly int AttrGemCapacity;
         public readonly int AttrPeopleCapacity;
         public readonly string[] CardIds;
+        public readonly int[] EquipmentItemTypes;
+        public readonly int[] EquipmentCharges;
         public readonly int SmallRockets;
         public readonly int LargeRockets;
         public readonly int SmallMines;
@@ -146,6 +148,8 @@ namespace TitanOrbit.Systems
             int attrGemCapacity,
             int attrPeopleCapacity,
             string[] cardIds,
+            int[] equipmentItemTypes,
+            int[] equipmentCharges,
             int smallRockets,
             int largeRockets,
             int smallMines,
@@ -171,6 +175,8 @@ namespace TitanOrbit.Systems
             AttrGemCapacity = attrGemCapacity;
             AttrPeopleCapacity = attrPeopleCapacity;
             CardIds = cardIds ?? System.Array.Empty<string>();
+            EquipmentItemTypes = equipmentItemTypes ?? System.Array.Empty<int>();
+            EquipmentCharges = equipmentCharges ?? System.Array.Empty<int>();
             SmallRockets = smallRockets;
             LargeRockets = largeRockets;
             SmallMines = smallMines;
