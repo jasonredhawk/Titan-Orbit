@@ -33,6 +33,23 @@ namespace TitanOrbit.Input
         public bool ShootPressed => shootPressed;
         public bool RocketPressed => rocketPressed;
         public bool MinePressed => minePressed;
+        /// <summary>True while V is held to voluntarily expel carried gems forward at 2 shots/sec.</summary>
+        public bool ExpelGemsHeld
+        {
+            get
+            {
+                var k = Keyboard.current;
+                if (k == null)
+                {
+                    foreach (var d in InputSystem.devices)
+                    {
+                        if (d is Keyboard kb) { k = kb; break; }
+                    }
+                }
+                return k != null && k.vKey.isPressed;
+            }
+        }
+
         /// <summary>True the frame the player presses B (or CycleBullet action) to cycle bullet prefab.</summary>
         public bool CycleBulletPressed
         {

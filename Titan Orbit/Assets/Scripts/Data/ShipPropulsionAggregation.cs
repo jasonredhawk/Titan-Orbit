@@ -84,7 +84,28 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Per-part acceleration before the global propulsion scale. Uses authored <see cref="ShipComponentAbilityStats.accelerationCap"/>
+        /// (summed for thrusters and engines). When cap is unset, derives from move speed using the same ratio as scan suggestions.
+        /// </summary>
+        public static float GetPropulsionAccelerationContribution(
+            ShipComponentAbilityStats comp,
+            int levelsAfterFirst)
+        {
+            float authored = comp.accelerationCap + comp.accelerationCapPerLevel * levelsAfterFirst;
+            if (authored > 0f)
+                return authored;
+
+            if (comp.moveSpeed <= 0f && comp.moveSpeedPerLevel <= 0f)
+                return 0f;
+
+            float moveDerived = comp.moveSpeed * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
+            float movePerLevelDerived = comp.moveSpeedPerLevel * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
+            return moveDerived + movePerLevelDerived * levelsAfterFirst;
+        }
+
+        /// <summary>
         /// Computes shared engine/thruster top speed and total acceleration from per-component stats at a ship level.
+        /// Acceleration = sum of every matched engine and thruster part (each instance on the prefab counts).
         /// </summary>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
@@ -144,7 +165,9 @@ namespace TitanOrbit.Data
                     continue;
 
                 ShipComponentAbilityStats comp = perComponentStats[i];
-                result.sumAcceleration += Mathf.Max(0f, comp.accelerationCap + comp.accelerationCapPerLevel * levelsAfterFirst);
+                result.sumAcceleration += Mathf.Max(
+                    0f,
+                    GetPropulsionAccelerationContribution(comp, levelsAfterFirst));
             }
 
             result.topMoveSpeed = ApplyOverallPropulsionSpeedScale(result.topMoveSpeed);
@@ -214,12 +237,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sets each weapon's energy stats so regen is slightly below that weapon's sustained fire drain.
+        /// Sets each weapon's energy stats from <see cref="ShipComponentWeaponSuggestions"/> (burst at full fire rate, regen below sustained drain).
         /// </summary>
         public static void BalanceWeaponEnergyForComponents(
             IList<ShipFamilyComponentEntry> components,
-            float regenToDrainRatio = 0.85f,
-            float capacitySecondsAtFullDrain = 4f)
+            float sustainedFireRateShotsPerSecond = ShipComponentWeaponSuggestions.SustainedFireRateShotsPerSecond,
+            float capacitySecondsAtFullDrain = ShipComponentWeaponSuggestions.BurstSecondsAtFullDrain)
         {
             if (components == null || components.Count == 0)
                 return;
@@ -238,14 +261,12 @@ namespace TitanOrbit.Data
                 if (!string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                float weaponDrain = ComputeWeaponSustainedEnergyDrain(entry.stats);
-                if (weaponDrain <= 0f)
+                ShipComponentWeaponSuggestions.ApplyBalancedEnergy(
+                    ref entry.stats,
+                    sustainedFireRateShotsPerSecond,
+                    capacitySecondsAtFullDrain);
+                if (entry.stats.energyCap <= 0f)
                     continue;
-
-                entry.stats.energyRegen = weaponDrain * regenToDrainRatio;
-                entry.stats.energyRegenPerLevel = entry.stats.energyRegen * PerLevelFractionOfBase;
-                entry.stats.energyCap = weaponDrain * capacitySecondsAtFullDrain;
-                entry.stats.energyCapPerLevel = entry.stats.energyCap * PerLevelFractionOfBase;
                 entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(
                     entry.stats,
                     entry.statCategories,

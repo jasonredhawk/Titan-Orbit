@@ -155,7 +155,9 @@ namespace TitanOrbit.Systems
         /// <summary>
         /// Server-authoritative bullet spawn. Pushes a struct into the pool and queues a batched
         /// spawn payload for clients. Returns false when the bullet cap is reached or required
-        /// inputs are invalid (so callers can skip energy / recoil).
+        /// inputs are invalid (so callers can skip energy / recoil). Still returns true when the
+        /// bullet immediately overlaps a target (e.g. ramming an asteroid) and is despawned in
+        /// <see cref="CheckImmediateOverlap"/> — callers must not treat that as a failed shot.
         /// </summary>
         public bool TrySpawnServerBullet(
             Vector3 position,
@@ -241,7 +243,8 @@ namespace TitanOrbit.Systems
             });
 
             CheckImmediateOverlap(slot);
-            return b.Active;
+            // Slot was acquired and spawn was queued; do not use b.Active (overlap despawn is a valid shot).
+            return true;
         }
 
         /// <summary>
@@ -439,25 +442,40 @@ namespace TitanOrbit.Systems
             return false;
         }
 
+        /// <summary>
+        /// Muzzle can sit inside an asteroid while ramming/grinding; resolve the nearest valid
+        /// gameplay target once (same radius as overlap fallback) without treating it as a failed spawn.
+        /// </summary>
         private void CheckImmediateOverlap(int slot)
         {
             ref ServerBullet b = ref serverBullets[slot];
-            int m = Physics.OverlapSphereNonAlloc(b.Position, 0.5f, s_overlapHits, ~0, QueryTriggerInteraction.Ignore);
+            float radius = BulletRadius + BulletOverlapPadding;
+            int m = Physics.OverlapSphereNonAlloc(b.Position, radius, s_overlapHits, ~0, QueryTriggerInteraction.Ignore);
+            if (m == 0) return;
+
+            Collider bestCollider = null;
+            Vector3 bestImpact = b.Position;
+            float bestDistSq = float.MaxValue;
             for (int i = 0; i < m; i++)
             {
                 Collider c = s_overlapHits[i];
                 if (c == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(c, b.OwnerShipNetworkId)) continue;
-                Asteroid asteroid = c.GetComponentInParent<Asteroid>();
-                if (asteroid != null && !asteroid.IsDestroyed)
+                if (!BulletHitResolver.TryGetBulletDamageChannel(c, b.OwnerTeam, out _)) continue;
+                Vector3 impact = c.ClosestPoint(b.Position);
+                float dSq = (impact - b.Position).sqrMagnitude;
+                if (dSq < bestDistSq)
                 {
-                    Vector3 impact = c.ClosestPoint(b.Position);
-                    if (BulletHitResolver.TryHit(c, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
-                    {
-                        DespawnWithImpact(slot, finalImpact, popup);
-                        return;
-                    }
+                    bestDistSq = dSq;
+                    bestCollider = c;
+                    bestImpact = impact;
                 }
+            }
+
+            if (bestCollider != null
+                && BulletHitResolver.TryHit(bestCollider, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, bestImpact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
+            {
+                DespawnWithImpact(slot, finalImpact, popup);
             }
         }
 
@@ -618,9 +636,10 @@ namespace TitanOrbit.Systems
 
             ClientBulletTracer.DespawnBySequence(sequence);
 
+            float impactScale = BulletVisualFactory.GetImpactScale(isAsteroidHit);
             if (Application.isMobilePlatform)
             {
-                BulletVisualFactory.SpawnMobileImpact(position, team, BulletVisualFactory.DefaultImpactScale);
+                BulletVisualFactory.SpawnMobileImpact(position, team, impactScale);
             }
             else
             {
@@ -647,7 +666,7 @@ namespace TitanOrbit.Systems
                             position,
                             prefab,
                             pitch,
-                            BulletVisualFactory.DefaultImpactScale,
+                            impactScale,
                             lingeringFireDuration,
                             attach,
                             localOffset);
@@ -655,7 +674,7 @@ namespace TitanOrbit.Systems
                     else
                     {
                         BulletVisualFactory.SpawnImpactAt(
-                            position, prefab, pitch, BulletVisualFactory.DefaultImpactScale, BulletVisualFactory.DefaultImpactDuration);
+                            position, prefab, pitch, impactScale, BulletVisualFactory.DefaultImpactDuration);
                     }
                 }
             }

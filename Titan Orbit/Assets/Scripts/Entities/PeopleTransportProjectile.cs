@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 
@@ -44,7 +45,8 @@ namespace TitanOrbit.Entities
         private const float PeopleAmountScaleMin = 1f;
         private const float PeopleAmountScaleMax = 12f;
         private const float VisualScaleMinMultiplier = 0.9f;
-        private const float VisualScaleMaxMultiplier = 2.1f;
+        /// <summary>Max visual multiplier at <see cref="PeopleAmountScaleMax"/>; span is 50% wider than the original 0.9→2.1 tuning.</summary>
+        private const float VisualScaleMaxMultiplier = 2.7f;
         private const float ShipLoadCollectPadding = 0.22f;
         private const float ShipLoadCollectMinDistance = 0.4f;
         private const float ShipHullMagnetInset = 0.12f;
@@ -74,7 +76,13 @@ namespace TitanOrbit.Entities
         private Vector3 clientPredictedPosition;
         private Vector3 clientPredictedVelocity;
         private bool clientPredictionInitialized;
-        private ulong ignoredCollisionShipNetworkId;
+        private bool ownerShipCollisionsIgnored;
+        private int ownerShipColliderSignature;
+        private int transportColliderSignature;
+        private ulong ownerShipCollisionTargetId;
+        private float lastEnemyRamDamageTime = -999f;
+        private const float EnemyRamDamageInterval = 0.14f;
+        private const float EnemyRamMinRelativeSpeed = 1.25f;
 
         /// <summary>Remote clients simulate magnet motion locally for smooth visuals; host/server use physics.</summary>
         public bool UsesClientPredictedPosition => IsClient && !IsServer;
@@ -103,6 +111,28 @@ namespace TitanOrbit.Entities
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             rb.linearDamping = 0f;
+            EnsureRootTriggerCollider();
+            DisableNonGameplayVisualColliders();
+        }
+
+        private void EnsureRootTriggerCollider()
+        {
+            SphereCollider sphere = GetComponent<SphereCollider>();
+            if (sphere != null)
+                sphere.isTrigger = true;
+        }
+
+        /// <summary>Visual ship meshes ship with box colliders; only the root trigger drives gameplay.</summary>
+        private void DisableNonGameplayVisualColliders()
+        {
+            Collider root = GetComponent<Collider>();
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider col = colliders[i];
+                if (col == null || col == root) continue;
+                col.enabled = false;
+            }
         }
 
         /// <summary>Match Gem prefab: NetworkTransform + NetworkRigidbody + ToroidalRenderer for client visuals on a toroidal map.</summary>
@@ -135,10 +165,12 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkSpawn()
         {
+            ConfigureTransportRigidbody();
             amount.OnValueChanged += OnAmountChanged;
             ApplyVisualScaleFromAmount(amount.Value);
             ResetClientPredictionFromNetwork();
             CatchUpClientPredictionAfterSpawn();
+            UpdateOwnerShipCollisionIgnores();
         }
 
         /// <summary>Advance client visuals by ~half RTT so spheres don't pop in behind the ship/planet.</summary>
@@ -176,6 +208,9 @@ namespace TitanOrbit.Entities
 
         private void Update()
         {
+            if (amount.Value > 0f)
+                UpdateOwnerShipCollisionIgnores();
+
             if (!UsesClientPredictedPosition || amount.Value <= 0f)
                 return;
 
@@ -291,8 +326,6 @@ namespace TitanOrbit.Entities
                 }
                 else
                 {
-                    EnsureIgnoredShipCollisions(ship);
-
                     if (CanDeliverLoadToShip(myPos, ship) && HasBriefTravelBeforeLoad(myPos))
                     {
                         StopTransportMotion(myPos);
@@ -311,9 +344,6 @@ namespace TitanOrbit.Entities
             {
                 Planet planet = targetObj.GetComponent<Planet>();
                 if (planet == null) return;
-
-                if (TryResolveShip(spawningShipId.Value, out Starship unloadShip))
-                    EnsureIgnoredShipCollisions(unloadShip);
 
                 Vector3 magnetTarget = GetSurfacePointToward(planet, myPos);
                 ApplyMagnetVelocity(myPos, magnetTarget);
@@ -415,25 +445,112 @@ namespace TitanOrbit.Entities
             syncedPlanarVelocity.Value = Vector3.zero;
         }
 
-        private void EnsureIgnoredShipCollisions(Starship ship)
+        private bool TryResolveOwnerShip(out Starship ownerShip)
         {
-            if (ship == null) return;
-            var shipNo = ship.GetComponent<NetworkObject>();
-            if (shipNo == null || shipNo.NetworkObjectId == ignoredCollisionShipNetworkId)
-                return;
-
-            Collider transportCollider = GetComponent<Collider>();
-            if (transportCollider == null) return;
-
-            Collider[] shipColliders = ship.GetComponentsInChildren<Collider>();
-            for (int i = 0; i < shipColliders.Length; i++)
+            ownerShip = null;
+            if (isLoad.Value)
             {
-                Collider shipCol = shipColliders[i];
-                if (shipCol == null || shipCol == transportCollider) continue;
-                Physics.IgnoreCollision(transportCollider, shipCol, true);
+                var nm = NetworkManager.Singleton;
+                if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetId.Value, out NetworkObject targetObj))
+                    return false;
+                ownerShip = targetObj.GetComponent<Starship>();
+                return ownerShip != null;
             }
 
-            ignoredCollisionShipNetworkId = shipNo.NetworkObjectId;
+            return TryResolveShip(spawningShipId.Value, out ownerShip);
+        }
+
+        /// <summary>
+        /// Skip hull collisions with the owning ship for the projectile's full lifetime.
+        /// Runs on every peer so owner-client ship physics matches the server magnet sim.
+        /// </summary>
+        private void UpdateOwnerShipCollisionIgnores()
+        {
+            if (amount.Value <= 0f) return;
+            if (!TryResolveOwnerShip(out Starship ownerShip)) return;
+
+            bool shouldIgnore = ShouldIgnoreCollisionsWithOwnerShip(ownerShip);
+            var shipNo = ownerShip.GetComponent<NetworkObject>();
+            ulong shipId = shipNo != null ? shipNo.NetworkObjectId : 0ul;
+
+            Collider[] shipColliders = ownerShip.GetComponentsInChildren<Collider>();
+            Collider[] transportColliders = GetComponentsInChildren<Collider>();
+            int shipSignature = ComputeColliderSignature(shipColliders);
+            int transportSignature = ComputeColliderSignature(transportColliders);
+            if (shipId == ownerShipCollisionTargetId
+                && shouldIgnore == ownerShipCollisionsIgnored
+                && shipSignature == ownerShipColliderSignature
+                && transportSignature == transportColliderSignature)
+                return;
+
+            if (transportColliders == null || transportColliders.Length == 0) return;
+
+            for (int t = 0; t < transportColliders.Length; t++)
+            {
+                Collider transportCol = transportColliders[t];
+                if (transportCol == null || !transportCol.enabled) continue;
+
+                for (int s = 0; s < shipColliders.Length; s++)
+                {
+                    Collider shipCol = shipColliders[s];
+                    if (shipCol == null || shipCol == transportCol) continue;
+                    Physics.IgnoreCollision(transportCol, shipCol, shouldIgnore);
+                }
+            }
+
+            ownerShipCollisionTargetId = shipId;
+            ownerShipCollisionsIgnored = shouldIgnore;
+            ownerShipColliderSignature = shipSignature;
+            transportColliderSignature = transportSignature;
+        }
+
+        private static int ComputeColliderSignature(Collider[] colliders)
+        {
+            int sig = colliders != null ? colliders.Length : 0;
+            if (colliders == null) return sig;
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider col = colliders[i];
+                if (col != null)
+                    sig = unchecked(sig * 31 + col.GetInstanceID());
+            }
+            return sig;
+        }
+
+        private bool ShouldIgnoreCollisionsWithOwnerShip(Starship ownerShip)
+        {
+            if (ownerShip == null || ownerShip.IsDead) return false;
+            if (ownerShip.ShipTeam != SourceTeam || SourceTeam == TeamManager.Team.None) return false;
+            return true;
+        }
+
+        private void TryApplyEnemyShipRamDamage(Starship hitShip, Vector3 impactWorldPos)
+        {
+            if (!IsServer || hitShip == null || hitShip.IsDead || amount.Value <= 0f) return;
+            if (hitShip.ShipTeam == SourceTeam || hitShip.ShipTeam == TeamManager.Team.None) return;
+
+            float now = Time.time;
+            if (now - lastEnemyRamDamageTime < EnemyRamDamageInterval) return;
+
+            Vector3 shipVel = hitShip.GetPlanarVelocityForServerGameplayChecks();
+            Vector3 transportVel = syncedPlanarVelocity.Value;
+            float relSpeed = (shipVel - transportVel).magnitude;
+            if (relSpeed < EnemyRamMinRelativeSpeed) return;
+
+            lastEnemyRamDamageTime = now;
+            float damage = ComputeRamDamageFromShip(hitShip, relSpeed);
+            if (damage <= 0f) return;
+
+            ApplyDamageFromBulletServer(damage, hitShip.ShipTeam, impactWorldPos);
+        }
+
+        private static float ComputeRamDamageFromShip(Starship ship, float relativeSpeed)
+        {
+            if (ship == null) return 0f;
+            float rating = ship.GetHudRamDamageRating();
+            float mass = ship.GetHudRamEffectiveMass();
+            float speedFactor = relativeSpeed / ShipComponentRammingSuggestions.ReferenceImpactSpeed;
+            return Mathf.Max(1f, rating * speedFactor * Mathf.Sqrt(Mathf.Max(0.01f, mass)));
         }
 
         private void ApplyMagnetVelocity(Vector3 myPos, Vector3 targetPos)
@@ -859,7 +976,6 @@ namespace TitanOrbit.Entities
                     var spawnShip = shipObj.GetComponent<Starship>();
                     if (spawnShip != null)
                     {
-                        EnsureIgnoredShipCollisions(spawnShip);
                         if (TryGetSourcePlanet(out Planet sourcePlanetForSpawn) && rb != null)
                         {
                             Vector3 shipPos = GetShipWorldPosition(spawnShip);
@@ -879,7 +995,6 @@ namespace TitanOrbit.Entities
                     var targetPlanet = planetObj.GetComponent<Planet>();
                     if (targetPlanet != null)
                     {
-                        EnsureIgnoredShipCollisions(unloadShip);
                         Vector3 planetSurface = GetSurfacePointToward(targetPlanet, GetShipWorldPosition(unloadShip));
                         Vector3 hullSpawn = GetShipUnloadSpawnPointToward(unloadShip, planetSurface);
                         rb.position = hullSpawn;
@@ -920,6 +1035,8 @@ namespace TitanOrbit.Entities
                 initVel.y = 0f;
                 syncedPlanarVelocity.Value = initVel;
             }
+
+            UpdateOwnerShipCollisionIgnores();
         }
 
         public override void OnNetworkDespawn()
@@ -956,11 +1073,13 @@ namespace TitanOrbit.Entities
             Vector3 myPos = rb != null ? rb.position : transform.position;
             myPos.y = 0f;
             Planet hitPlanet = other.GetComponent<Planet>() ?? other.GetComponentInParent<Planet>();
+            Starship hitShip = other.GetComponent<Starship>() ?? other.GetComponentInParent<Starship>();
+            if (hitShip != null)
+                TryApplyEnemyShipRamDamage(hitShip, myPos);
 
             if (isLoad.Value)
             {
                 Starship ship = targetObj.GetComponent<Starship>();
-                Starship hitShip = other.GetComponent<Starship>() ?? other.GetComponentInParent<Starship>();
                 if (ship != null && hitShip == ship
                     && IsShipEligibleForLoadFromSourcePlanet(ship)
                     && CanDeliverLoadToShip(myPos, ship)

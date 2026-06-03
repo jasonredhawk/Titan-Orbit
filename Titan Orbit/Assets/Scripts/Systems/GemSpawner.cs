@@ -276,78 +276,120 @@ namespace TitanOrbit.Systems
                 SpawnGem(prefab, asteroidCenter, gemWorth, 1f, asteroidPhysicalSize, primaryDamagerShipId, true);
         }
         
+        /// <summary>Launch speed and spawn offset scale with ship level so larger ships expel gems farther.</summary>
+        public static float GetShipExpulsionLevelSpeedMultiplier(int shipLevel)
+        {
+            int level = Mathf.Max(1, shipLevel);
+            return 1f + (level - 1) * 0.12f;
+        }
+
         /// <summary>Server-only gem expulsion (hull breakup, ramming self-damage, etc.). Avoids nested ServerRpc when invoked from server damage/collision paths.</summary>
-        /// <param name="expulsionIntensity">0 = many small gems (grind); 1 = few large gems (hard impact).</param>
-        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f)
+        /// <param name="expulsionIntensity">Scales launch speed (0 = softer eject, 1 = harder impact).</param>
+        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f, int shipLevel = 1)
         {
             if (!IsServer) return;
-            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity);
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity, shipLevel);
         }
 
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f)
+        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f, int shipLevel = 1)
         {
-            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity);
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity, shipLevel);
         }
 
-        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity)
+        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity, int shipLevel)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null || totalValue <= 0f) return;
 
             float intensity = Mathf.Clamp01(expulsionIntensity);
-            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity);
+            float levelSpeedMul = GetShipExpulsionLevelSpeedMultiplier(shipLevel);
+            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity) * levelSpeedMul;
 
-            List<float> chunks = BuildShipExpulsionGemChunks(totalValue, intensity);
+            List<float> chunks = SplitExpulsionValueIntoRandomGemChunks(totalValue);
             for (int i = 0; i < chunks.Count; i++)
             {
                 float gemValue = chunks[i];
                 if (gemValue <= 0.001f) continue;
-                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul);
+                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul, levelSpeedMul);
             }
         }
 
-        /// <summary>
-        /// Randomly partitions gem value into chunks. Low intensity (grind) → many small gems;
-        /// high intensity (hard impact) → few large gems. Sum equals <paramref name="totalValue"/> exactly.
-        /// </summary>
-        private static List<float> BuildShipExpulsionGemChunks(float totalValue, float intensity)
+        /// <summary>Randomly splits expelled value into 1–3 positive chunks that sum to <paramref name="totalValue"/> exactly.</summary>
+        private static List<float> SplitExpulsionValueIntoRandomGemChunks(float totalValue)
         {
-            var chunks = new List<float>(16);
+            var chunks = new List<float>(3);
             if (totalValue <= 0.001f) return chunks;
 
-            intensity = Mathf.Clamp01(intensity);
-            int maxPossibleGems = Mathf.Max(1, Mathf.FloorToInt(totalValue));
-
-            int minGems = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(totalValue * 0.25f, 1f, intensity)), 1, maxPossibleGems);
-            int maxGems = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(totalValue, 2f, intensity)), minGems, maxPossibleGems);
-            int gemCount = Random.Range(minGems, maxGems + 1);
-
+            int gemCount = Random.Range(1, 4);
             if (gemCount <= 1)
             {
                 chunks.Add(totalValue);
                 return chunks;
             }
 
-            float remaining = totalValue;
-            int gemsLeft = gemCount;
-            float chunkSkew = Mathf.Lerp(0.35f, 2.5f, intensity);
+            float[] cutPoints = new float[gemCount - 1];
+            for (int i = 0; i < cutPoints.Length; i++)
+                cutPoints[i] = Random.Range(0f, totalValue);
+            System.Array.Sort(cutPoints);
 
-            for (int i = 0; i < gemCount - 1; i++)
+            float previous = 0f;
+            for (int i = 0; i < cutPoints.Length; i++)
             {
-                gemsLeft--;
-                float minChunk = 1f;
-                float maxChunk = Mathf.Max(minChunk, remaining - gemsLeft);
-                float t = Mathf.Pow(Random.value, 1f / chunkSkew);
-                float chunk = Mathf.Lerp(minChunk, maxChunk, t);
-                chunk = Mathf.Clamp(chunk, minChunk, maxChunk);
-                chunks.Add(chunk);
-                remaining -= chunk;
+                chunks.Add(cutPoints[i] - previous);
+                previous = cutPoints[i];
             }
-
-            chunks.Add(remaining);
+            chunks.Add(totalValue - previous);
             return chunks;
+        }
+
+        /// <summary>Server: player voluntarily expels gems forward from the ship (V key, 2 shots/sec). Each shot splits into 1–3 gems totaling the shot value.</summary>
+        public void SpawnVoluntaryGemFromShipOnServer(
+            Vector3 shipPosition,
+            Vector3 forwardDir,
+            float gemValue,
+            int shipLevel,
+            ulong expelledByShipId,
+            Vector3 shipVelocity,
+            int shotIndex)
+        {
+            if (!IsServer || gemValue <= 0.001f) return;
+
+            GameObject prefab = GetGemPrefab();
+            if (prefab == null) return;
+
+            forwardDir.y = 0f;
+            if (forwardDir.sqrMagnitude < 0.01f)
+                forwardDir = Vector3.forward;
+            else
+                forwardDir.Normalize();
+
+            Vector3 lateral = Vector3.Cross(Vector3.up, forwardDir);
+            float levelSpeedMul = GetShipExpulsionLevelSpeedMultiplier(shipLevel);
+            float launchSpeed = explosionSpeed * 2f * levelSpeedMul;
+
+            List<float> chunks = SplitExpulsionValueIntoRandomGemChunks(gemValue);
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                float chunkValue = chunks[i];
+                if (chunkValue <= 0.001f) continue;
+                float lateralOffset = chunks.Count > 1
+                    ? Mathf.Lerp(-0.35f, 0.35f, i / (float)(chunks.Count - 1))
+                    : 0f;
+                SpawnGemFromShipDirectional(
+                    prefab,
+                    shipPosition,
+                    forwardDir,
+                    lateral,
+                    lateralOffset,
+                    chunkValue,
+                    expelledByShipId,
+                    launchSpeed,
+                    shipVelocity,
+                    shotIndex + i,
+                    levelSpeedMul);
+            }
         }
 
         /// <summary>Spawns a gem expelled from ship toward planet for deposit. Value = amount passed in; size shows value.</summary>
@@ -392,17 +434,51 @@ namespace TitanOrbit.Systems
             }
         }
 
-        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId, float launchSpeedMultiplier = 1f)
+        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId, float launchSpeedMultiplier = 1f, float spawnRadiusMultiplier = 1f)
         {
             Vector2 dir2 = Random.insideUnitCircle.normalized;
             if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
             Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
-            Vector3 pos = shipCenter + dir * explosionRadius * Random.Range(0.3f, 1f);
+            float radiusMul = Mathf.Max(0.1f, spawnRadiusMultiplier);
+            Vector3 pos = shipCenter + dir * explosionRadius * radiusMul * Random.Range(0.3f, 1f);
             Vector3 vel = dir * explosionSpeed * Mathf.Max(0.1f, launchSpeedMultiplier) * Random.Range(0.8f, 1.2f);
             Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
+            SpawnGemFromShipObject(prefab, pos, vel, angVel, gemValue, sizeMultiplier, expelledByShipId);
+        }
 
+        private void SpawnGemFromShipDirectional(
+            GameObject prefab,
+            Vector3 shipCenter,
+            Vector3 forwardDir,
+            Vector3 lateralDir,
+            float lateralOffset,
+            float gemValue,
+            ulong expelledByShipId,
+            float launchSpeed,
+            Vector3 shipVelocity,
+            int indexInVolley,
+            float spawnRadiusMultiplier = 1f)
+        {
+            float radiusMul = Mathf.Max(0.1f, spawnRadiusMultiplier);
+            float forwardOffset = explosionRadius * radiusMul * (0.55f + indexInVolley * 0.12f);
+            Vector3 pos = shipCenter + forwardDir * forwardOffset + lateralDir * lateralOffset;
+            pos.y = 0f;
+            Vector3 vel = forwardDir * launchSpeed * Random.Range(0.95f, 1.05f) + shipVelocity;
+            vel.y = 0f;
+            Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
+            SpawnGemFromShipObject(prefab, pos, vel, angVel, gemValue, 1f, expelledByShipId);
+        }
+
+        private void SpawnGemFromShipObject(
+            GameObject prefab,
+            Vector3 pos,
+            Vector3 vel,
+            Vector3 angVel,
+            float gemValue,
+            float sizeMultiplier,
+            ulong expelledByShipId)
+        {
             // Do not use GemPool here: recycling + NetworkTransform/physics ordering was leaving hull-expelled gems at zero velocity.
-            // New instance matches original pre-pool behavior (explosionSpeed / explosionRadius apply to a fresh spawned gem).
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody r = gemObj.GetComponent<Rigidbody>();
 

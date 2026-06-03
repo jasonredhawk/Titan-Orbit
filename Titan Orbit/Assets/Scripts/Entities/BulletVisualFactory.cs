@@ -18,7 +18,12 @@ namespace TitanOrbit.Entities
         public const float DefaultTailWidth = 0.12f;
         public const float DefaultTailFade = 0.7f;
         public const float DefaultImpactScale = 0.5f;
+        /// <summary>Multiplier applied to bullet impact VFX scale when hitting asteroids.</summary>
+        public const float AsteroidImpactScaleFactor = 0.25f;
         public const float DefaultImpactDuration = 3f;
+
+        public static float GetImpactScale(bool isAsteroidHit) =>
+            DefaultImpactScale * (isAsteroidHit ? AsteroidImpactScaleFactor : 1f);
 
         private static Material trailMat;
         private static Material defaultBulletMat;
@@ -146,7 +151,7 @@ namespace TitanOrbit.Entities
         {
             if (prefab == null) return;
             GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
-            go.transform.localScale = Vector3.one * scale;
+            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
             VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
             VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
@@ -175,7 +180,7 @@ namespace TitanOrbit.Entities
             }
 
             GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
-            go.transform.localScale = Vector3.one * scale;
+            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
             VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
             ConfigureLoopingImpactParticles(go, duration, simulateInLocalSpace: false);

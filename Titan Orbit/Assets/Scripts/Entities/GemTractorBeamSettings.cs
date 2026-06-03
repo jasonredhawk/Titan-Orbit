@@ -45,6 +45,10 @@ namespace TitanOrbit.Entities
         private static readonly List<Gem> reachableGemScratch = new List<Gem>(32);
         /// <summary>Guards reentrant GetMagneticPullState while BuildMagneticPullState is running.</summary>
         private static readonly HashSet<int> buildingPullStateForShipIds = new HashSet<int>();
+        /// <summary>Per-ship wing → gem locks until collected or out of wing reach.</summary>
+        private static readonly Dictionary<int, Dictionary<int, int>> stickyGemIdByShipAndWing =
+            new Dictionary<int, Dictionary<int, int>>(32);
+        private static readonly List<int> stickyWingRemovalScratch = new List<int>(8);
 
         private sealed class MagneticPullState
         {
@@ -58,7 +62,6 @@ namespace TitanOrbit.Entities
             public Gem gem;
             public int wingIndex;
             public float dist;
-            public bool inFlight;
         }
 
         /// <summary>Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.</summary>
@@ -208,6 +211,7 @@ namespace TitanOrbit.Entities
             pullSetCachePhysicsFixedTime = Time.fixedTime;
             pullStateByShipInstanceId.Clear();
             pullSetCacheFrame = -1;
+            PruneStaleStickyWingLocks();
         }
 
         /// <summary>
@@ -268,14 +272,80 @@ namespace TitanOrbit.Entities
             return Mathf.Clamp(basePullSpeed * sizeMul, minScaled, MaxGameplayPullSpeed);
         }
 
-        /// <summary>World origin for the beam line (closest assigned wing, or ship center).</summary>
-        public static Vector3 GetBeamOrigin(Starship ship, Gem gem)
+        /// <summary>World origin for the beam line (closest assigned / in-range wing, or ship center).</summary>
+        public static Vector3 GetBeamOrigin(Starship ship, Gem gem) => GetPullTargetPosition(ship, gem);
+
+        /// <summary>World position gems should move toward for this ship (closest assigned wing, else closest in-range wing).</summary>
+        public static Vector3 GetPullTargetPosition(Starship ship, Gem gem)
         {
             if (ship == null)
                 return Vector3.zero;
 
-            int wingIndex = GetPrimaryAssignedWingIndex(ship, gem);
+            int wingIndex = GetClosestAssignedWingIndex(ship, gem);
+            if (wingIndex < 0)
+                wingIndex = FindClosestInRangeWingIndex(ship, gem);
+
             return GetWingBeamOrigin(ship, wingIndex);
+        }
+
+        /// <summary>Normalized XZ direction from the gem toward this ship's pull target.</summary>
+        public static bool TryGetPullTowardDirection(Starship ship, Gem gem, out Vector3 direction)
+        {
+            direction = Vector3.zero;
+            if (ship == null || gem == null)
+                return false;
+
+            Vector3 gemPos = GetGemPosition(gem);
+            var wings = ship.WingTractorBeams;
+            var assignedWings = GetAssignedWingIndices(ship, gem);
+
+            if (assignedWings.Count > 0 && wings != null)
+            {
+                Vector3 weightedSum = Vector3.zero;
+                float totalWeight = 0f;
+                for (int i = 0; i < assignedWings.Count; i++)
+                {
+                    int wingIndex = assignedWings[i];
+                    if (wingIndex < 0 || wingIndex >= wings.Count || wings[wingIndex].wingTransform == null)
+                        continue;
+
+                    Vector3 toWing = ToroidalMap.ToroidalDirection(gemPos, wings[wingIndex].GetWorldPosition());
+                    toWing.y = 0f;
+                    if (toWing.sqrMagnitude < 0.0001f)
+                        continue;
+
+                    wings[wingIndex].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out _, out float wingSpeed);
+                    float weight = Mathf.Max(0.001f, wingSpeed);
+                    weightedSum += toWing.normalized * weight;
+                    totalWeight += weight;
+                }
+
+                if (totalWeight > 0.0001f && weightedSum.sqrMagnitude > 0.0001f)
+                {
+                    direction = weightedSum.normalized;
+                    return true;
+                }
+            }
+
+            int closestWing = FindClosestInRangeWingIndex(ship, gem);
+            if (closestWing >= 0)
+            {
+                Vector3 toWing = ToroidalMap.ToroidalDirection(gemPos, GetWingBeamOrigin(ship, closestWing));
+                toWing.y = 0f;
+                if (toWing.sqrMagnitude > 0.0001f)
+                {
+                    direction = toWing.normalized;
+                    return true;
+                }
+            }
+
+            Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, GetShipPosition(ship));
+            toShip.y = 0f;
+            if (toShip.sqrMagnitude < 0.0001f)
+                return false;
+
+            direction = toShip.normalized;
+            return true;
         }
 
         public static Vector3 GetWingBeamOrigin(Starship ship, int wingIndex)
@@ -293,10 +363,36 @@ namespace TitanOrbit.Entities
         /// <summary>First assigned wing (legacy / deploy timing). Prefer <see cref="GetAssignedWingIndices"/>.</summary>
         public static int GetAssignedWingIndex(Starship ship, Gem gem) => GetPrimaryAssignedWingIndex(ship, gem);
 
-        public static int GetPrimaryAssignedWingIndex(Starship ship, Gem gem)
+        public static int GetPrimaryAssignedWingIndex(Starship ship, Gem gem) => GetClosestAssignedWingIndex(ship, gem);
+
+        public static int GetClosestAssignedWingIndex(Starship ship, Gem gem)
         {
             var assigned = GetAssignedWingIndices(ship, gem);
-            return assigned.Count > 0 ? assigned[0] : -1;
+            if (assigned.Count == 0)
+                return -1;
+
+            var wings = ship.WingTractorBeams;
+            if (wings == null || wings.Count == 0)
+                return assigned[0];
+
+            Vector3 gemPos = GetGemPosition(gem);
+            int bestWing = assigned[0];
+            float bestDist = float.MaxValue;
+            for (int i = 0; i < assigned.Count; i++)
+            {
+                int wingIndex = assigned[i];
+                if (wingIndex < 0 || wingIndex >= wings.Count || wings[wingIndex].wingTransform == null)
+                    continue;
+
+                float dist = ToroidalMap.ToroidalDistance(gemPos, wings[wingIndex].GetWorldPosition());
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestWing = wingIndex;
+                }
+            }
+
+            return bestWing;
         }
 
         public static IReadOnlyList<int> GetAssignedWingIndices(Starship ship, Gem gem)
@@ -409,14 +505,17 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Assigns each wing to at most one gem. When fewer gems than wings are in range, extra wings
-        /// coordinate on the same gem(s) and pull speed stacks; otherwise each wing pulls a distinct gem.
+        /// Assigns each wing to at most one gem. Free wings always claim distinct gems first; when fewer
+        /// gems than active tractor beams are in range, remaining wings stack on those gems and pull speed combines.
         /// </summary>
         private static MagneticPullState BuildMagneticPullState(Starship ship)
         {
             var state = new MagneticPullState();
             if (!IsShipEligibleForMagneticPull(ship))
+            {
+                ClearStickyWingLocksForShip(ship.GetInstanceID());
                 return state;
+            }
 
             var wings = ship.WingTractorBeams;
             int wingCount = wings != null ? wings.Count : 0;
@@ -450,45 +549,20 @@ namespace TitanOrbit.Entities
                     if (dist > searchRadius)
                         continue;
 
-                    bool inFlight = GemTractorBeamDeployTracker.TryIsPullPhysicsActive(ship, gem) &&
-                                    GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
                     pullCandidateScratch.Add(new GemPullCandidate
                     {
                         gem = gem,
                         wingIndex = wi,
-                        dist = dist,
-                        inFlight = inFlight
+                        dist = dist
                     });
                 }
             }
 
-            if (pullCandidateScratch.Count == 0)
-                return state;
-
             var wingAssigned = new bool[wingCount];
+            ApplyStickyWingLocks(ship, wings, wingCount, state, wingAssigned);
 
-            // Keep in-flight gems on their wing.
-            pullCandidateScratch.Sort((a, b) =>
-            {
-                if (a.inFlight != b.inFlight)
-                    return a.inFlight ? -1 : 1;
-                if (a.wingIndex != b.wingIndex)
-                    return a.wingIndex.CompareTo(b.wingIndex);
-                return a.dist.CompareTo(b.dist);
-            });
-
-            for (int i = 0; i < pullCandidateScratch.Count; i++)
-            {
-                if (!pullCandidateScratch[i].inFlight)
-                    break;
-
-                GemPullCandidate c = pullCandidateScratch[i];
-                if (wingAssigned[c.wingIndex])
-                    continue;
-
-                AssignWingToGem(state, c.wingIndex, c.gem);
-                wingAssigned[c.wingIndex] = true;
-            }
+            if (pullCandidateScratch.Count == 0 && state.gemIds.Count == 0)
+                return state;
 
             CollectReachableGems(ship, wings, wingCount, reachableGemScratch);
             int activeWingCount = CountActiveWings(wings, wingCount);
@@ -496,10 +570,11 @@ namespace TitanOrbit.Entities
 
             if (reachableGemScratch.Count > 0 && freeWings > 0)
             {
-                if (reachableGemScratch.Count < activeWingCount)
+                // Always give each free wing its own gem first; only stack leftovers when gems < beams.
+                AssignIndependentOneGemPerWing(ship, state, wingAssigned);
+                freeWings = CountFreeWings(wingAssigned);
+                if (freeWings > 0 && reachableGemScratch.Count < activeWingCount)
                     AssignSplitWingsEvenly(ship, wings, wingCount, wingAssigned, state, reachableGemScratch, freeWings);
-                else
-                    AssignIndependentOneGemPerWing(state, wingAssigned);
             }
 
             return state;
@@ -520,9 +595,9 @@ namespace TitanOrbit.Entities
             return active;
         }
 
-        private static void AssignIndependentOneGemPerWing(MagneticPullState state, bool[] wingAssigned)
+        private static void AssignIndependentOneGemPerWing(Starship ship, MagneticPullState state, bool[] wingAssigned)
         {
-            var assignedGemIds = new HashSet<int>();
+            var assignedGemIds = new HashSet<int>(state.gemIds);
             pullCandidateScratch.Sort((a, b) =>
             {
                 if (a.wingIndex != b.wingIndex)
@@ -540,10 +615,114 @@ namespace TitanOrbit.Entities
                 if (assignedGemIds.Contains(gemId))
                     continue;
 
-                AssignWingToGem(state, c.wingIndex, c.gem);
+                AssignWingToGem(ship, state, c.wingIndex, c.gem);
                 wingAssigned[c.wingIndex] = true;
                 assignedGemIds.Add(gemId);
             }
+        }
+
+        /// <summary>Restore wing locks from prior frames; release when gem is gone or out of wing reach.</summary>
+        private static void ApplyStickyWingLocks(
+            Starship ship,
+            IReadOnlyList<WingTractorBeamSlot> wings,
+            int wingCount,
+            MagneticPullState state,
+            bool[] wingAssigned)
+        {
+            int shipId = ship.GetInstanceID();
+            if (!stickyGemIdByShipAndWing.TryGetValue(shipId, out Dictionary<int, int> sticky))
+                return;
+
+            stickyWingRemovalScratch.Clear();
+            foreach (var kv in sticky)
+            {
+                int wingIndex = kv.Key;
+                int gemInstanceId = kv.Value;
+
+                if (wingIndex < 0 || wingIndex >= wingCount || wings[wingIndex].wingTransform == null)
+                {
+                    stickyWingRemovalScratch.Add(wingIndex);
+                    continue;
+                }
+
+                Gem gem = TryFindGemByInstanceId(gemInstanceId);
+                if (!IsStickyWingLockStillValid(ship, gem, wingIndex))
+                {
+                    stickyWingRemovalScratch.Add(wingIndex);
+                    continue;
+                }
+
+                if (wingAssigned[wingIndex])
+                    continue;
+
+                // Sticky entry already exists — only update pull state (not sticky) to avoid modifying the dictionary during enumeration.
+                ApplyWingToPullState(state, wingIndex, gem);
+                wingAssigned[wingIndex] = true;
+            }
+
+            for (int i = 0; i < stickyWingRemovalScratch.Count; i++)
+                sticky.Remove(stickyWingRemovalScratch[i]);
+        }
+
+        private static bool IsStickyWingLockStillValid(Starship ship, Gem gem, int wingIndex)
+        {
+            if (gem == null)
+                return false;
+            if (!PassesBasicMagneticPullEligibility(ship, gem))
+                return false;
+            return IsGemWithinAssignedWingRange(ship, gem, wingIndex);
+        }
+
+        private static Gem TryFindGemByInstanceId(int gemInstanceId)
+        {
+            var gems = Gem.AllGems;
+            if (gems == null)
+                return null;
+
+            for (int i = 0; i < gems.Count; i++)
+            {
+                Gem gem = gems[i];
+                if (gem != null && gem.GetInstanceID() == gemInstanceId)
+                    return gem;
+            }
+
+            return null;
+        }
+
+        private static void PruneStaleStickyWingLocks()
+        {
+            if (stickyGemIdByShipAndWing.Count == 0)
+                return;
+
+            var ships = Starship.AllStarships;
+            if (ships == null || ships.Count == 0)
+            {
+                stickyGemIdByShipAndWing.Clear();
+                return;
+            }
+
+            stickyWingRemovalScratch.Clear();
+            foreach (int shipId in stickyGemIdByShipAndWing.Keys)
+            {
+                bool found = false;
+                for (int i = 0; i < ships.Count && !found; i++)
+                {
+                    Starship ship = ships[i];
+                    if (ship != null && ship.IsSpawned && ship.GetInstanceID() == shipId)
+                        found = true;
+                }
+
+                if (!found)
+                    stickyWingRemovalScratch.Add(shipId);
+            }
+
+            for (int i = 0; i < stickyWingRemovalScratch.Count; i++)
+                stickyGemIdByShipAndWing.Remove(stickyWingRemovalScratch[i]);
+        }
+
+        private static void ClearStickyWingLocksForShip(int shipInstanceId)
+        {
+            stickyGemIdByShipAndWing.Remove(shipInstanceId);
         }
 
         private static void CollectReachableGems(
@@ -695,10 +874,37 @@ namespace TitanOrbit.Entities
                     if (wingIndex < 0)
                         return;
 
-                    AssignWingToGem(state, wingIndex, gem);
+                    AssignWingToGem(ship, state, wingIndex, gem);
                     wingAssigned[wingIndex] = true;
                 }
             }
+        }
+
+        private static int FindClosestInRangeWingIndex(Starship ship, Gem gem)
+        {
+            var wings = ship.WingTractorBeams;
+            if (wings == null || gem == null)
+                return -1;
+
+            Vector3 gemPos = GetGemPosition(gem);
+            int bestWing = -1;
+            float bestDist = float.MaxValue;
+            for (int wi = 0; wi < wings.Count; wi++)
+            {
+                if (wings[wi].wingTransform == null)
+                    continue;
+
+                wings[wi].GetTractorParams(ship.ShipLevel, ship.IsInOrbit, out float searchRadius, out _);
+                Vector3 wingPos = wings[wi].GetWorldPosition();
+                float dist = ToroidalMap.ToroidalDistance(gemPos, wingPos);
+                if (dist > searchRadius || dist >= bestDist)
+                    continue;
+
+                bestDist = dist;
+                bestWing = wi;
+            }
+
+            return bestWing;
         }
 
         private static int FindClosestFreeWingForGem(
@@ -733,11 +939,17 @@ namespace TitanOrbit.Entities
             return bestWing;
         }
 
-        private static void AssignWingToGem(MagneticPullState state, int wingIndex, Gem gem)
+        private static void AssignWingToGem(Starship ship, MagneticPullState state, int wingIndex, Gem gem)
         {
-            if (gem == null)
+            if (gem == null || ship == null)
                 return;
 
+            ApplyWingToPullState(state, wingIndex, gem);
+            RecordStickyWingLock(ship, wingIndex, gem.GetInstanceID());
+        }
+
+        private static void ApplyWingToPullState(MagneticPullState state, int wingIndex, Gem gem)
+        {
             int gemId = gem.GetInstanceID();
             state.gemIds.Add(gemId);
             state.wingIndexToGemId[wingIndex] = gemId;
@@ -752,11 +964,39 @@ namespace TitanOrbit.Entities
                 wingIndices.Add(wingIndex);
         }
 
+        private static void RecordStickyWingLock(Starship ship, int wingIndex, int gemInstanceId)
+        {
+            int shipId = ship.GetInstanceID();
+            if (!stickyGemIdByShipAndWing.TryGetValue(shipId, out Dictionary<int, int> sticky))
+            {
+                sticky = new Dictionary<int, int>(8);
+                stickyGemIdByShipAndWing[shipId] = sticky;
+            }
+
+            sticky[wingIndex] = gemInstanceId;
+        }
+
         /// <summary>Ships without wing components: one beam at ship center using default wing-tier stats.</summary>
         private static void BuildFallbackSingleBeamPullSet(Starship ship, MagneticPullState state)
         {
             GetTractorBeamFromMaxGems(8f, ship.IsInOrbit, out float searchRadius, out _);
             Vector3 origin = GetShipPosition(ship);
+
+            int shipId = ship.GetInstanceID();
+            if (stickyGemIdByShipAndWing.TryGetValue(shipId, out Dictionary<int, int> sticky) &&
+                sticky.TryGetValue(0, out int lockedGemId))
+            {
+                Gem lockedGem = TryFindGemByInstanceId(lockedGemId);
+                if (lockedGem != null &&
+                    PassesBasicMagneticPullEligibility(ship, lockedGem) &&
+                    IsWithinReach(GetGemPosition(lockedGem), origin, ship.IsInOrbit, searchRadius))
+                {
+                    AssignWingToGem(ship, state, 0, lockedGem);
+                    return;
+                }
+
+                sticky.Remove(0);
+            }
 
             var gems = Gem.AllGems;
             if (gems == null || gems.Count == 0)
@@ -774,23 +1014,16 @@ namespace TitanOrbit.Entities
                 if (dist > searchRadius)
                     continue;
 
-                bool inFlight = GemTractorBeamDeployTracker.TryIsPullPhysicsActive(ship, gem) &&
-                                GetTowardShipSpeed(ship, gem) >= ActivePullTowardSpeedThreshold * 0.5f;
-                pullCandidateScratch.Add(new GemPullCandidate { gem = gem, wingIndex = 0, dist = dist, inFlight = inFlight });
+                pullCandidateScratch.Add(new GemPullCandidate { gem = gem, wingIndex = 0, dist = dist });
             }
 
             if (pullCandidateScratch.Count == 0)
                 return;
 
-            pullCandidateScratch.Sort((a, b) =>
-            {
-                if (a.inFlight != b.inFlight)
-                    return a.inFlight ? -1 : 1;
-                return a.dist.CompareTo(b.dist);
-            });
+            pullCandidateScratch.Sort((a, b) => a.dist.CompareTo(b.dist));
 
             Gem chosen = pullCandidateScratch[0].gem;
-            AssignWingToGem(state, 0, chosen);
+            AssignWingToGem(ship, state, 0, chosen);
         }
 
         private static float GetTowardShipSpeed(Starship ship, Gem gem)
@@ -800,18 +1033,12 @@ namespace TitanOrbit.Entities
             if (gem.IsServer)
             {
                 var gemRb = gem.GetComponent<Rigidbody>();
-                if (gemRb != null && !gemRb.isKinematic)
+                if (gemRb != null && !gemRb.isKinematic &&
+                    TryGetPullTowardDirection(ship, gem, out Vector3 pullDir))
                 {
-                    Vector3 shipPos = GetShipPosition(ship);
-                    Vector3 gemPos = GetGemPosition(gem);
-                    Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, shipPos);
-                    toShip.y = 0f;
-                    if (toShip.sqrMagnitude > 0.0001f)
-                    {
-                        Vector3 vel = gemRb.linearVelocity;
-                        vel.y = 0f;
-                        towardSpeed = Mathf.Max(towardSpeed, Vector3.Dot(vel, toShip.normalized));
-                    }
+                    Vector3 vel = gemRb.linearVelocity;
+                    vel.y = 0f;
+                    towardSpeed = Mathf.Max(towardSpeed, Vector3.Dot(vel, pullDir));
                 }
             }
 

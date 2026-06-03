@@ -5,6 +5,7 @@ using TMPro;
 using Unity.Netcode;
 using TitanOrbit.Networking;
 using TitanOrbit.Services;
+using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
@@ -53,6 +54,8 @@ namespace TitanOrbit.UI
         private readonly List<NetworkGameManager.LobbySummary> cachedLobbySummaries = new List<NetworkGameManager.LobbySummary>();
         private readonly List<Button> lobbyRowButtons = new List<Button>();
         private readonly List<Image> lobbyRowBackgrounds = new List<Image>();
+        private readonly List<TextMeshProUGUI> lobbyRowDurationLabels = new List<TextMeshProUGUI>();
+        private float lobbyDurationRefreshTimer;
         private string selectedLobbyId;
         private int selectedLobbyRowIndex = -1;
         private GameObject lobbyBrowserRoot;
@@ -606,6 +609,16 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            if (lobbyScreenRoot != null && lobbyScreenRoot.activeSelf && cachedLobbySummaries.Count > 0)
+            {
+                lobbyDurationRefreshTimer += Time.unscaledDeltaTime;
+                if (lobbyDurationRefreshTimer >= 1f)
+                {
+                    lobbyDurationRefreshTimer = 0f;
+                    RefreshLobbyRowDurations();
+                }
+            }
+
             if (lobbyPanel != null && lobbyPanel.activeSelf)
             {
                 if (deferTeamPanelUntilNetworkReady && teamSelectionPanel != null)
@@ -973,12 +986,15 @@ namespace TitanOrbit.UI
                 row.SetActive(true);
                 var button = row.GetComponent<Button>();
                 var nameLabel = row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
+                var durationLabel = row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
                 var playersLabel = row.transform.Find("LobbyRowPlayers")?.GetComponent<TextMeshProUGUI>();
-                if (nameLabel != null || playersLabel != null)
+                if (nameLabel != null || durationLabel != null || playersLabel != null)
                 {
                     string latestTag = summary.IsLatest ? "  ·  Latest" : "";
                     if (nameLabel != null)
                         nameLabel.text = $"<b>{summary.Name}</b>{latestTag}";
+                    if (durationLabel != null)
+                        durationLabel.text = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
                     if (playersLabel != null)
                         playersLabel.text = $"{summary.CurrentPlayers}/{summary.MaxPlayers}";
                 }
@@ -988,9 +1004,12 @@ namespace TitanOrbit.UI
                     if (label != null)
                     {
                         string latestTag = summary.IsLatest ? "  ·  Latest" : "";
-                        label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                        string activeFor = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
+                        label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{activeFor}  ·  {summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
                     }
                 }
+                if (durationLabel != null)
+                    lobbyRowDurationLabels.Add(durationLabel);
                 if (button != null)
                 {
                     int capturedIndex = i;
@@ -1027,10 +1046,47 @@ namespace TitanOrbit.UI
             }
         }
 
+        private void RefreshLobbyRowDurations()
+        {
+            int count = Mathf.Min(lobbyRowDurationLabels.Count, cachedLobbySummaries.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (lobbyRowDurationLabels[i] == null)
+                    continue;
+                lobbyRowDurationLabels[i].text = FormatLobbyActiveDuration(cachedLobbySummaries[i].CreatedAtEpochSeconds);
+            }
+        }
+
+        private static string FormatLobbyActiveDuration(long createdAtEpochSeconds)
+        {
+            if (createdAtEpochSeconds <= 0)
+                return "—";
+
+            long elapsed = Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - createdAtEpochSeconds);
+            if (elapsed < 60)
+                return elapsed <= 1 ? "Just started" : $"{elapsed}s";
+
+            if (elapsed < 3600)
+                return $"{elapsed / 60}m";
+
+            if (elapsed < 86400)
+            {
+                long hours = elapsed / 3600;
+                long minutes = (elapsed % 3600) / 60;
+                return minutes > 0 ? $"{hours}h {minutes}m" : $"{hours}h";
+            }
+
+            long days = elapsed / 86400;
+            long dayHours = (elapsed % 86400) / 3600;
+            return dayHours > 0 ? $"{days}d {dayHours}h" : $"{days}d";
+        }
+
         private void ClearLobbyListRows()
         {
             lobbyRowButtons.Clear();
             lobbyRowBackgrounds.Clear();
+            lobbyRowDurationLabels.Clear();
+            lobbyDurationRefreshTimer = 0f;
             if (lobbyListContainer == null)
                 return;
             for (int i = lobbyListContainer.childCount - 1; i >= 0; i--)
@@ -1239,6 +1295,10 @@ namespace TitanOrbit.UI
         public void ShowLobbyScreen()
         {
             EnsureLobbyScreenUi();
+            if (lobbyPanel != null)
+                lobbyPanel.SetActive(false);
+            if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(false);
             if (lobbyScreenRoot != null)
                 lobbyScreenRoot.SetActive(true);
             if (mainMenuPanel != null)
@@ -1866,6 +1926,25 @@ namespace TitanOrbit.UI
                 nameLe.flexibleWidth = 1f;
                 nameLe.minWidth = 120f;
                 nameLe.preferredHeight = 44f;
+            }
+
+            var durationObj = CreateLabel("LobbyRowDuration", "—", Vector2.zero, 16f, rowObj.transform, raycastTarget: false);
+            if (durationObj != null)
+            {
+                var durationRect = durationObj.GetComponent<RectTransform>();
+                durationRect.anchorMin = Vector2.zero;
+                durationRect.anchorMax = Vector2.one;
+                durationRect.offsetMin = Vector2.zero;
+                durationRect.offsetMax = Vector2.zero;
+                var durationTmp = durationObj.GetComponent<TextMeshProUGUI>();
+                durationTmp.alignment = TextAlignmentOptions.MidlineRight;
+                durationTmp.enableWordWrapping = false;
+                durationTmp.color = new Color(0.62f, 0.74f, 0.86f, 0.88f);
+                var durationLe = durationObj.AddComponent<LayoutElement>();
+                durationLe.preferredWidth = 72f;
+                durationLe.minWidth = 56f;
+                durationLe.flexibleWidth = 0f;
+                durationLe.preferredHeight = 44f;
             }
 
             var playersObj = CreateLabel("LobbyRowPlayers", "0/0", Vector2.zero, 18f, rowObj.transform, raycastTarget: false);

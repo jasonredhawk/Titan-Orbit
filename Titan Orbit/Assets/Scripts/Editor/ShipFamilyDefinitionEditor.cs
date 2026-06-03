@@ -815,12 +815,12 @@ namespace TitanOrbit.Editor
                     }
                     else
                     {
-                        stats.firePower = 3f * v;
-                        stats.bulletSpeed = 12f * v;
-                        stats.fireRate = 1.2f * v;
-                        stats.firePowerPerLevel = PerLevelFromBase(stats.firePower);
-                        stats.bulletSpeedPerLevel = PerLevelFromBase(stats.bulletSpeed);
-                        stats.fireRatePerLevel = PerLevelFromBase(stats.fireRate);
+                        stats.firePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
+                        stats.bulletSpeed = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeed(version);
+                        stats.fireRate = ShipComponentWeaponSuggestions.FireRate;
+                        stats.fireRatePerLevel = ShipComponentWeaponSuggestions.FireRatePerLevel;
+                        stats.firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(version);
+                        stats.bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(version);
                     }
                     break;
 
@@ -832,10 +832,17 @@ namespace TitanOrbit.Editor
                     break;
 
                 case ShipComponentStatCategory.Energy:
-                    stats.energyCap = 20f * v;
-                    stats.energyRegen = 2.5f * v;
-                    stats.energyCapPerLevel = PerLevelFromBase(stats.energyCap);
-                    stats.energyRegenPerLevel = PerLevelFromBase(stats.energyRegen);
+                    if (string.Equals(type, "Weapon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Filled after offense stats via BalanceWeaponEnergyForComponents on scan.
+                    }
+                    else
+                    {
+                        stats.energyCap = 20f * v;
+                        stats.energyRegen = 2.5f * v;
+                        stats.energyCapPerLevel = PerLevelFromBase(stats.energyCap);
+                        stats.energyRegenPerLevel = PerLevelFromBase(stats.energyRegen);
+                    }
                     break;
 
                 case ShipComponentStatCategory.Movement:
@@ -858,6 +865,13 @@ namespace TitanOrbit.Editor
                         stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedThrusterTurnSpeed(version);
                         stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
+                    else if (string.Equals(type, "Engine", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stats.moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(version);
+                        stats.accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(version);
+                        stats.moveSpeedPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(version);
+                        stats.accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(version);
+                    }
                     else
                     {
                         stats.moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(version);
@@ -869,9 +883,9 @@ namespace TitanOrbit.Editor
 
                 case ShipComponentStatCategory.Capacity:
                     stats.maxGems = 8f * v;
-                    stats.maxPeople = 4f * v;
+                    stats.maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(version);
                     stats.maxGemsPerLevel = PerLevelFromBase(stats.maxGems);
-                    stats.maxPeoplePerLevel = PerLevelPeopleFromBase(stats.maxPeople);
+                    stats.maxPeoplePerLevel = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacityPerLevel(version);
                     if (string.Equals(type, "Wing", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(type, "Arm", StringComparison.OrdinalIgnoreCase))
                     {

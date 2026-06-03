@@ -60,32 +60,36 @@ MonoBehaviour:
   shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
   familyIdOverride: 
   totalStats:
-    firePower: 2.25
-    firePowerPerLevel: 0.5625
+    firePower: 3
+    firePowerPerLevel: 3
     bulletSpeed: 12
     bulletSpeedPerLevel: 3
-    fireRate: 2.4
-    fireRatePerLevel: 0.6
-    rammingPower: 2
-    rammingPowerPerLevel: 0.5
-    healthCap: 147.66602
-    healthCapPerLevel: 36.916504
-    healthRegen: 5.273786
-    healthRegenPerLevel: 1.3184465
-    energyCap: 14.400001
+    fireRate: 3
+    fireRatePerLevel: 0.3
+    rammingPower: 1
+    rammingPowerPerLevel: 0.25
+    healthCap: 30.728445
+    healthCapPerLevel: 7.6821113
+    healthRegen: 1.0974445
+    healthRegenPerLevel: 0.27436113
+    energyCap: 15
     energyCapPerLevel: 3.6000001
-    energyRegen: 3.0600002
-    energyRegenPerLevel: 0.76500005
-    moveSpeed: 30
-    moveSpeedPerLevel: 4
-    accelerationCap: 36
-    accelerationCapPerLevel: 9
-    turnSpeed: 44
-    turnSpeedPerLevel: 11
+    energyRegen: 3
+    energyRegenPerLevel: 2
+    moveSpeed: 9.12
+    moveSpeedPerLevel: 1.6
+    accelerationCap: 16.800001
+    accelerationCapPerLevel: 4.2
+    turnSpeed: 24.31892
+    turnSpeedPerLevel: 6.07973
     maxGems: 32
     maxGemsPerLevel: 8
-    maxPeople: 16
-    maxPeoplePerLevel: 4
+    tractorBeamDistance: 9
+    tractorBeamDistancePerLevel: 2.25
+    tractorBeamPower: 12
+    tractorBeamPowerPerLevel: 3
+    maxPeople: 8
+    maxPeoplePerLevel: 2
   matchedComponentIds:
   - Cockpit
   - Engine_2
@@ -113,7 +117,7 @@ MonoBehaviour:
   - 0.94
   - 0.94
   - 1
-  - 0.6666667
+  - 1
   perComponentStats:
   - firePower: 0
     firePowerPerLevel: 0
@@ -121,12 +125,12 @@ MonoBehaviour:
     bulletSpeedPerLevel: 0
     fireRate: 0
     fireRatePerLevel: 0
-    rammingPower: 2
-    rammingPowerPerLevel: 0.5
-    healthCap: 21
-    healthCapPerLevel: 5.25
-    healthRegen: 0.75
-    healthRegenPerLevel: 0.1875
+    rammingPower: 1
+    rammingPowerPerLevel: 0.25
+    healthCap: 6.3
+    healthCapPerLevel: 1.575
+    healthRegen: 0.22500002
+    healthRegenPerLevel: 0.056250006
     energyCap: 0
     energyCapPerLevel: 0
     energyRegen: 0
@@ -139,33 +143,11 @@ MonoBehaviour:
     turnSpeedPerLevel: 0
     maxGems: 8
     maxGemsPerLevel: 2
-    maxPeople: 4
-    maxPeoplePerLevel: 1
-  - firePower: 0
-    firePowerPerLevel: 0
-    bulletSpeed: 0
-    bulletSpeedPerLevel: 0
-    fireRate: 0
-    fireRatePerLevel: 0
-    rammingPower: 0
-    rammingPowerPerLevel: 0
-    healthCap: 0
-    healthCapPerLevel: 0
-    healthRegen: 0
-    healthRegenPerLevel: 0
-    energyCap: 0
-    energyCapPerLevel: 0
-    energyRegen: 0
-    energyRegenPerLevel: 0
-    moveSpeed: 16
-    moveSpeedPerLevel: 4
-    accelerationCap: 8
-    accelerationCapPerLevel: 2
-    turnSpeed: 0
-    turnSpeedPerLevel: 0
-    maxGems: 0
-    maxGemsPerLevel: 0
-    maxPeople: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
+    maxPeople: 2
     maxPeoplePerLevel: 0
   - firePower: 0
     firePowerPerLevel: 0
@@ -183,40 +165,18 @@ MonoBehaviour:
     energyCapPerLevel: 0
     energyRegen: 0
     energyRegenPerLevel: 0
-    moveSpeed: 16
-    moveSpeedPerLevel: 4
-    accelerationCap: 8
-    accelerationCapPerLevel: 2
+    moveSpeed: 8
+    moveSpeedPerLevel: 1.6
+    accelerationCap: 4
+    accelerationCapPerLevel: 0.8
     turnSpeed: 0
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
-    maxPeople: 0
-    maxPeoplePerLevel: 0
-  - firePower: 0
-    firePowerPerLevel: 0
-    bulletSpeed: 0
-    bulletSpeedPerLevel: 0
-    fireRate: 0
-    fireRatePerLevel: 0
-    rammingPower: 0
-    rammingPowerPerLevel: 0
-    healthCap: 0
-    healthCapPerLevel: 0
-    healthRegen: 0
-    healthRegenPerLevel: 0
-    energyCap: 0
-    energyCapPerLevel: 0
-    energyRegen: 0
-    energyRegenPerLevel: 0
-    moveSpeed: 16
-    moveSpeedPerLevel: 4
-    accelerationCap: 8
-    accelerationCapPerLevel: 2
-    turnSpeed: 0
-    turnSpeedPerLevel: 0
-    maxGems: 0
-    maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -236,13 +196,17 @@ MonoBehaviour:
     energyRegen: 0
     energyRegenPerLevel: 0
     moveSpeed: 8
-    moveSpeedPerLevel: 2
+    moveSpeedPerLevel: 1.6
     accelerationCap: 4
-    accelerationCapPerLevel: 1
+    accelerationCapPerLevel: 0.8
     turnSpeed: 0
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -262,13 +226,17 @@ MonoBehaviour:
     energyRegen: 0
     energyRegenPerLevel: 0
     moveSpeed: 8
-    moveSpeedPerLevel: 2
+    moveSpeedPerLevel: 1.6
     accelerationCap: 4
-    accelerationCapPerLevel: 1
+    accelerationCapPerLevel: 0.8
     turnSpeed: 0
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -287,14 +255,18 @@ MonoBehaviour:
     energyCapPerLevel: 0
     energyRegen: 0
     energyRegenPerLevel: 0
-    moveSpeed: 8
-    moveSpeedPerLevel: 2
-    accelerationCap: 4
-    accelerationCapPerLevel: 1
-    turnSpeed: 0
-    turnSpeedPerLevel: 0
+    moveSpeed: 6
+    moveSpeedPerLevel: 1.2
+    accelerationCap: 3
+    accelerationCapPerLevel: 0.6
+    turnSpeed: 3.7459462
+    turnSpeedPerLevel: 0.93648654
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -305,10 +277,70 @@ MonoBehaviour:
     fireRatePerLevel: 0
     rammingPower: 0
     rammingPowerPerLevel: 0
-    healthCap: 21
-    healthCapPerLevel: 5.25
-    healthRegen: 0.75
-    healthRegenPerLevel: 0.1875
+    healthCap: 0
+    healthCapPerLevel: 0
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 6
+    moveSpeedPerLevel: 1.2
+    accelerationCap: 3
+    accelerationCapPerLevel: 0.6
+    turnSpeed: 3.7459462
+    turnSpeedPerLevel: 0.93648654
+    maxGems: 0
+    maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    rammingPower: 0
+    rammingPowerPerLevel: 0
+    healthCap: 0
+    healthCapPerLevel: 0
+    healthRegen: 0
+    healthRegenPerLevel: 0
+    energyCap: 0
+    energyCapPerLevel: 0
+    energyRegen: 0
+    energyRegenPerLevel: 0
+    moveSpeed: 6
+    moveSpeedPerLevel: 1.2
+    accelerationCap: 3
+    accelerationCapPerLevel: 0.6
+    turnSpeed: 3.7459462
+    turnSpeedPerLevel: 0.93648654
+    maxGems: 0
+    maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
+    maxPeople: 0
+    maxPeoplePerLevel: 0
+  - firePower: 0
+    firePowerPerLevel: 0
+    bulletSpeed: 0
+    bulletSpeedPerLevel: 0
+    fireRate: 0
+    fireRatePerLevel: 0
+    rammingPower: 0
+    rammingPowerPerLevel: 0
+    healthCap: 6.3
+    healthCapPerLevel: 1.575
+    healthRegen: 0.22500002
+    healthRegenPerLevel: 0.056250006
     energyCap: 0
     energyCapPerLevel: 0
     energyRegen: 0
@@ -321,6 +353,10 @@ MonoBehaviour:
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -331,10 +367,10 @@ MonoBehaviour:
     fireRatePerLevel: 0
     rammingPower: 0
     rammingPowerPerLevel: 0
-    healthCap: 42.66601
-    healthCapPerLevel: 10.666503
-    healthRegen: 1.5237862
-    healthRegenPerLevel: 0.38094655
+    healthCap: 8.228446
+    healthCapPerLevel: 2.0571115
+    healthRegen: 0.29387307
+    healthRegenPerLevel: 0.07346827
     energyCap: 0
     energyCapPerLevel: 0
     energyRegen: 0
@@ -347,6 +383,10 @@ MonoBehaviour:
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -369,10 +409,14 @@ MonoBehaviour:
     moveSpeedPerLevel: 0
     accelerationCap: 0
     accelerationCapPerLevel: 0
-    turnSpeed: 22
-    turnSpeedPerLevel: 5.5
+    turnSpeed: 6.5405407
+    turnSpeedPerLevel: 1.6351352
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -395,10 +439,14 @@ MonoBehaviour:
     moveSpeedPerLevel: 0
     accelerationCap: 0
     accelerationCapPerLevel: 0
-    turnSpeed: 22
-    turnSpeedPerLevel: 5.5
+    turnSpeed: 6.5405407
+    turnSpeedPerLevel: 1.6351352
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
   - firePower: 0
@@ -409,10 +457,10 @@ MonoBehaviour:
     fireRatePerLevel: 0
     rammingPower: 0
     rammingPowerPerLevel: 0
-    healthCap: 63
-    healthCapPerLevel: 15.75
-    healthRegen: 2.25
-    healthRegenPerLevel: 0.5625
+    healthCap: 9.9
+    healthCapPerLevel: 2.475
+    healthRegen: 0.35357144
+    healthRegenPerLevel: 0.08839286
     energyCap: 0
     energyCapPerLevel: 0
     energyRegen: 0
@@ -425,24 +473,28 @@ MonoBehaviour:
     turnSpeedPerLevel: 0
     maxGems: 24
     maxGemsPerLevel: 6
-    maxPeople: 12
-    maxPeoplePerLevel: 3
-  - firePower: 2.25
-    firePowerPerLevel: 0.5625
+    tractorBeamDistance: 9
+    tractorBeamDistancePerLevel: 2.25
+    tractorBeamPower: 12
+    tractorBeamPowerPerLevel: 3
+    maxPeople: 6
+    maxPeoplePerLevel: 2
+  - firePower: 3
+    firePowerPerLevel: 3
     bulletSpeed: 12
     bulletSpeedPerLevel: 3
-    fireRate: 2.4
-    fireRatePerLevel: 0.6
+    fireRate: 3
+    fireRatePerLevel: 0
     rammingPower: 0
     rammingPowerPerLevel: 0
     healthCap: 0
     healthCapPerLevel: 0
     healthRegen: 0
     healthRegenPerLevel: 0
-    energyCap: 14.400001
+    energyCap: 15
     energyCapPerLevel: 3.6000001
-    energyRegen: 3.0600002
-    energyRegenPerLevel: 0.76500005
+    energyRegen: 3
+    energyRegenPerLevel: 2
     moveSpeed: 0
     moveSpeedPerLevel: 0
     accelerationCap: 0
@@ -451,13 +503,19 @@ MonoBehaviour:
     turnSpeedPerLevel: 0
     maxGems: 0
     maxGemsPerLevel: 0
+    tractorBeamDistance: 0
+    tractorBeamDistancePerLevel: 0
+    tractorBeamPower: 0
+    tractorBeamPowerPerLevel: 0
     maxPeople: 0
     maxPeoplePerLevel: 0
-  previewSumPropulsionAcceleration: 36
-  previewSumPropulsionAccelerationPerLevel: 9
-  previewExtraThrusterMoveSpeed: 14
-  previewPrimaryThrusterMoveSpeed: 16
-  previewTopSpeedMoveSpeed: 30
+  previewSumPropulsionAcceleration: 16.800001
+  previewSumPropulsionAccelerationPerLevel: 4.2
+  previewExtraThrusterMoveSpeed: 2.72
+  previewPrimaryThrusterMoveSpeed: 8
+  previewTopSpeedMoveSpeed: 9.12
+  previewComponentMass: 12.895858
+  previewHudHullMass: 9.027101
 --- !u!1001 &337909860016709406
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1330,15 +1388,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.x
-      value: 0.75
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.y
-      value: 0.75
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalScale.z
-      value: 0.5
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
       propertyPath: m_LocalPosition.x

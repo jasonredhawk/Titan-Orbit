@@ -941,15 +941,11 @@ namespace TitanOrbit.AI
             Vector3 radial = toShip / dist;
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
 
-            float lockedRadius = starship.GetOrbitGuidanceRadiusForAI(orbitPlanet, dist, innerWorld, outerWorld);
-            bool hasLockedRadius = starship.HasLockedOrbitRadiusForAI(orbitPlanet);
+            float guidanceRadius = starship.GetOrbitGuidanceRadiusForAI(orbitPlanet, dist, innerWorld, outerWorld);
             Vector3 orbitVelocity = tangent * orbitSpeed;
-            if (hasLockedRadius)
-            {
-                float radiusError = dist - lockedRadius;
-                if (Mathf.Abs(radiusError) > 0.02f)
-                    orbitVelocity -= radial * radiusError * 2f;
-            }
+            float radiusError = dist - guidanceRadius;
+            if (Mathf.Abs(radiusError) > 0.02f)
+                orbitVelocity -= radial * radiusError * 2f;
 
             orbitVelocity.y = 0f;
             rb.linearVelocity = orbitVelocity;

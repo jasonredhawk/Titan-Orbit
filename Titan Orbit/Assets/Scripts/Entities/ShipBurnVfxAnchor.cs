@@ -28,7 +28,7 @@ namespace TitanOrbit.Entities
             GameObject go = Instantiate(impactPrefab, attachParent);
             go.transform.localPosition = localOffset;
             go.transform.localRotation = Quaternion.identity;
-            go.transform.localScale = Vector3.one * scale;
+            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
 
             BulletVisualFactory.SetAudioPitchInHierarchy(go, pitch);
             VfxUrpCompat.FixAllIn1MaterialsForUrp(go);

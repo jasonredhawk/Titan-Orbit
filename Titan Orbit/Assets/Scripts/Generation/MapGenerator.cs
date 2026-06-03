@@ -10,7 +10,7 @@ namespace TitanOrbit.Generation
 {
     /// <summary>
     /// Generates procedural maps with seed-based randomization
-    /// Uses parent containers for organization. Asteroids are clustered and never overlap; count scales with map size and cluster count is rolled per map.
+    /// Uses parent containers for organization. Asteroids are clustered (evenly spread cluster seeds) and never overlap; count scales with map size and cluster count is rolled per map.
     /// Supports progressive generation for loading screen visualization.
     /// </summary>
     public class MapGenerator : NetworkBehaviour
@@ -214,6 +214,101 @@ namespace TitanOrbit.Generation
                 syncedMapHeight.OnValueChanged -= OnSyncedMapDimensionsChanged;
             }
             base.OnNetworkDespawn();
+        }
+
+        /// <summary>
+        /// Dedicated server: true when this process has a finished map blueprint clients can build from.
+        /// After in-process Netcode restart (empty lobby recreate), <see cref="hasGenerated"/> can stay true while the blueprint is empty.
+        /// </summary>
+        public bool IsServerMapSessionHealthy()
+        {
+            if (!IsServer)
+                return true;
+            if (!hasGenerated)
+                return false;
+            if (!LoadingComplete)
+                return BlueprintEntryCount > 0;
+            return BlueprintEntryCount >= MinSupportedTeams;
+        }
+
+        /// <summary>
+        /// Clears one-shot generation state so <see cref="EnsureMapGenerated"/> can run again after Netcode Shutdown/StartServer in the same process.
+        /// </summary>
+        public void ResetForNewMatchSession()
+        {
+            if (!IsServer && (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer))
+                return;
+
+            StopAllCoroutines();
+            hasGenerated = false;
+            asteroidPositions.Clear();
+            planetPlacements.Clear();
+            homePlanetPositions.Clear();
+            neutralPlanetStartingLevels.Clear();
+            cachedHomePlanetInfluenceRadius = -1f;
+            nextPlanetId = 1;
+            clientJoinBuildActive = false;
+            clientJoinRevealedIds.Clear();
+
+            DestroyMapHierarchyChildren();
+            DespawnServerMapNetworkObjects();
+
+            if (blueprint != null)
+                blueprint.Clear();
+            if (IsSpawned)
+            {
+                loadingProgress.Value = 0f;
+                loadingComplete.Value = false;
+                blueprintSeed.Value = 0;
+                serverBootEpochUtc.Value = 0;
+                syncedWorldObjectCount.Value = 0;
+            }
+
+            Debug.Log("[MapGenerator] ResetForNewMatchSession: cleared map state for a new dedicated match session.");
+        }
+
+        private void DestroyMapHierarchyChildren()
+        {
+            DestroyChildrenUnder(planetsParent);
+            DestroyChildrenUnder(asteroidsParent);
+            DestroyChildrenUnder(homePlanetsParent);
+        }
+
+        private static void DestroyChildrenUnder(Transform parent)
+        {
+            if (parent == null)
+                return;
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                Transform child = parent.GetChild(i);
+                if (child != null)
+                    UnityEngine.Object.Destroy(child.gameObject);
+            }
+        }
+
+        private void DespawnServerMapNetworkObjects()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || nm.SpawnManager == null)
+                return;
+
+            var toDespawn = new List<NetworkObject>(64);
+            foreach (var netObj in nm.SpawnManager.SpawnedObjects.Values)
+            {
+                if (netObj == null || !netObj.IsSpawned)
+                    continue;
+                if (netObj.GetComponentInChildren<Planet>(true) != null ||
+                    netObj.GetComponentInChildren<Asteroid>(true) != null)
+                {
+                    toDespawn.Add(netObj);
+                }
+            }
+
+            for (int i = 0; i < toDespawn.Count; i++)
+            {
+                if (toDespawn[i] != null && toDespawn[i].IsSpawned)
+                    toDespawn[i].Despawn(true);
+            }
         }
 
         /// <summary>True while the joining client is playing the staged map-build animation.</summary>
@@ -1304,46 +1399,140 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
-        /// Spreads cluster seeds around the map (one angular sector per cluster) so asteroids are not
-        /// forced into a single valid pocket when many planet rings overlap.
+        /// Places one cluster seed per shuffled grid cell so cluster groups stay evenly spread across
+        /// the map (not bunched in one sector). Individual asteroids still spawn densely around each seed.
         /// </summary>
         private Vector3[] PickAsteroidClusterCenters(int clusterCount)
         {
             var centers = new Vector3[clusterCount];
+            if (clusterCount <= 0)
+                return centers;
+
             float halfW = mapWidth * 0.5f;
             float halfH = mapHeight * 0.5f;
-            float innerFrac = 0.12f;
-            float outerFrac = 0.88f;
-            float sectorWidth = Mathf.PI * 2f / Mathf.Max(1, clusterCount);
-            float sectorJitter = sectorWidth * 0.85f;
+            const float edgeMarginFrac = 0.08f;
+            float minX = -halfW + mapWidth * edgeMarginFrac;
+            float maxX = halfW - mapWidth * edgeMarginFrac;
+            float minZ = -halfH + mapHeight * edgeMarginFrac;
+            float maxZ = halfH - mapHeight * edgeMarginFrac;
+            float usableW = maxX - minX;
+            float usableH = maxZ - minZ;
 
-            for (int c = 0; c < clusterCount; c++)
+            int cols = Mathf.Max(1, Mathf.CeilToInt(Mathf.Sqrt(clusterCount)));
+            int rows = Mathf.Max(1, Mathf.CeilToInt((float)clusterCount / cols));
+            float cellW = usableW / cols;
+            float cellH = usableH / rows;
+            float minCenterSep = Mathf.Min(cellW, cellH) * 0.3f;
+
+            var cellOrder = new List<int>(cols * rows);
+            for (int i = 0; i < cols * rows; i++)
+                cellOrder.Add(i);
+            for (int i = cellOrder.Count - 1; i > 0; i--)
             {
-                float sectorStart = sectorWidth * c;
-                Vector3 chosen = Vector3.zero;
-                bool found = false;
-
-                for (int attempt = 0; attempt < 200; attempt++)
-                {
-                    float angle = sectorStart + GetRandomFloat(0f, sectorJitter);
-                    float radial = GetRandomFloat(innerFrac, outerFrac);
-                    float x = Mathf.Cos(angle) * radial * halfW;
-                    float z = Mathf.Sin(angle) * radial * halfH;
-                    Vector3 candidate = new Vector3(x, 0f, z);
-                    if (!OverlapsPlanetOrbitRings(candidate, MAX_ASTEROID_RADIUS))
-                    {
-                        chosen = candidate;
-                        found = true;
-                        break;
-                    }
-                }
-
-                centers[c] = found
-                    ? chosen
-                    : GetRandomMapPositionAvoidingPlanetRings(MAX_ASTEROID_RADIUS);
+                int j = random.Next(i + 1);
+                int tmp = cellOrder[i];
+                cellOrder[i] = cellOrder[j];
+                cellOrder[j] = tmp;
             }
 
+            int placed = 0;
+            for (int ci = 0; ci < cellOrder.Count && placed < clusterCount; ci++)
+            {
+                int cellIndex = cellOrder[ci];
+                int col = cellIndex % cols;
+                int row = cellIndex / cols;
+                float cellCenterX = minX + (col + 0.5f) * cellW;
+                float cellCenterZ = minZ + (row + 0.5f) * cellH;
+
+                if (TryPickClusterCenterNear(cellCenterX, cellCenterZ, cellW, cellH, minCenterSep, centers, placed, out Vector3 chosen))
+                    centers[placed++] = chosen;
+            }
+
+            for (int c = placed; c < clusterCount; c++)
+                centers[c] = FallbackAsteroidClusterCenter(centers, c, minCenterSep);
+
             return centers;
+        }
+
+        private bool TryPickClusterCenterNear(
+            float anchorX,
+            float anchorZ,
+            float cellW,
+            float cellH,
+            float minSepFromOthers,
+            Vector3[] existingCenters,
+            int existingCount,
+            out Vector3 chosen)
+        {
+            chosen = Vector3.zero;
+            float jitterHalfW = cellW * 0.45f;
+            float jitterHalfH = cellH * 0.45f;
+
+            for (int attempt = 0; attempt < 120; attempt++)
+            {
+                float x = anchorX + GetRandomFloat(-jitterHalfW, jitterHalfW);
+                float z = anchorZ + GetRandomFloat(-jitterHalfH, jitterHalfH);
+                Vector3 candidate = new Vector3(x, 0f, z);
+                if (!IsValidClusterCenter(candidate, minSepFromOthers, existingCenters, existingCount))
+                    continue;
+                chosen = candidate;
+                return true;
+            }
+
+            float expandStep = Mathf.Max(cellW, cellH) * 0.5f;
+            for (int ring = 1; ring <= 4; ring++)
+            {
+                float expand = expandStep * ring;
+                for (int attempt = 0; attempt < 40; attempt++)
+                {
+                    float x = anchorX + GetRandomFloat(-expand, expand);
+                    float z = anchorZ + GetRandomFloat(-expand, expand);
+                    Vector3 candidate = new Vector3(x, 0f, z);
+                    if (!IsValidClusterCenter(candidate, minSepFromOthers, existingCenters, existingCount))
+                        continue;
+                    chosen = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsValidClusterCenter(
+            Vector3 candidate,
+            float minSepFromOthers,
+            Vector3[] existingCenters,
+            int existingCount)
+        {
+            if (OverlapsPlanetOrbitRings(candidate, MAX_ASTEROID_RADIUS))
+                return false;
+
+            for (int i = 0; i < existingCount; i++)
+            {
+                if (ToroidalMap.ToroidalDistance(candidate, existingCenters[i]) < minSepFromOthers)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private Vector3 FallbackAsteroidClusterCenter(Vector3[] existingCenters, int existingCount, float minSep)
+        {
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
+            float relaxedSep = minSep * 0.5f;
+
+            for (int attempt = 0; attempt < 300; attempt++)
+            {
+                Vector3 candidate = new Vector3(
+                    GetRandomFloat(-halfW * 0.88f, halfW * 0.88f),
+                    0f,
+                    GetRandomFloat(-halfH * 0.88f, halfH * 0.88f));
+                if (IsValidClusterCenter(candidate, relaxedSep, existingCenters, existingCount))
+                    return candidate;
+            }
+
+            return GetRandomMapPositionAvoidingPlanetRings(MAX_ASTEROID_RADIUS);
         }
 
         private void RegisterPlanetPlacement(Vector3 position, float influenceRadius)

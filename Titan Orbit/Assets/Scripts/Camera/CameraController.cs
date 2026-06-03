@@ -21,9 +21,18 @@ namespace TitanOrbit.Camera
         [Tooltip("Base camera distance (view distance). Larger = more zoomed out. 12 = closer view, 24 = zoomed out.")]
         [FormerlySerializedAs("orthographicSizeAtReferenceLevel")]
         [SerializeField] private float zoomDistanceAtReferenceLevel = 12f;
-        [Tooltip("Zoom scale at level 1 (e.g. 0.7 = slightly closer). Reaches 1.0 (100%) at level 6. 1 = no level-based zoom.")]
-        [Range(0.3f, 1f)]
+        [Tooltip("Ship level that uses Zoom Scale At Level 1.")]
+        [Min(1)]
+        [SerializeField] private int minShipLevelForZoom = 1;
+        [Tooltip("Ship level that uses Zoom Scale At Max Level (e.g. 6). Levels above this use the max scale.")]
+        [Min(2)]
+        [SerializeField] private int maxShipLevelForZoom = 6;
+        [Tooltip("Multiplier on base zoom distance at min ship level. 1 = reference distance.")]
+        [Min(0.1f)]
         [SerializeField] private float zoomScaleAtLevel1 = 1f;
+        [Tooltip("Multiplier at max ship level. 1.5 = 50% more zoomed out than level 1. Linear steps per level in between.")]
+        [Min(0.1f)]
+        [SerializeField] private float zoomScaleAtMaxShipLevel = 1.5f;
         [Tooltip("Time in seconds to smoothly transition to new distance when level changes (0 = instant).")]
         [Min(0f)]
         [SerializeField] private float distanceChangeSmoothTime = 1.5f;
@@ -55,6 +64,18 @@ namespace TitanOrbit.Camera
         [Tooltip("How fast shake intensity decays per second.")]
         [SerializeField] private float collisionShakeRecoverPerSecond = 1.2f;
         [SerializeField] private float collisionShakeSmoothingExponent = 1f;
+        [Tooltip("Impulse shake at lightest vs hardest asteroid ram impacts (0–1).")]
+        [SerializeField] private float ramImpactShakeMin = 0.05f;
+        [SerializeField] private float ramImpactShakeMax = 0.35f;
+        [Tooltip("Sustained shake while grinding an asteroid at min vs max grind intensity (0–1).")]
+        [SerializeField] private float ramGrindShakeMin = 0.02f;
+        [SerializeField] private float ramGrindShakeMax = 0.18f;
+        [Tooltip("Extra impulse when grinding through an asteroid breakup (ram + grind at destruction), scaled by gem size.")]
+        [SerializeField] private float ramDestroyShakeMin = 0.25f;
+        [SerializeField] private float ramDestroyShakeMax = 0.85f;
+        [Tooltip("Gem value range used to scale destroy shake (matches asteroid size 1–70).")]
+        [SerializeField] private float ramDestroyShakeSizeMin = 1f;
+        [SerializeField] private float ramDestroyShakeSizeMax = 70f;
 
         [Header("Mouse Zoom")]
         [Tooltip("Allow mouse wheel to zoom out from the default ship zoom up to max zoom out size.")]
@@ -95,6 +116,16 @@ namespace TitanOrbit.Camera
             return Mathf.Lerp(defaultDistance, maxDistance, manualZoomT);
         }
 
+        /// <summary>Linear zoom multiplier from <see cref="zoomScaleAtLevel1"/> at min level to <see cref="zoomScaleAtMaxShipLevel"/> at max level.</summary>
+        private float GetZoomScaleForShipLevel(int shipLevel)
+        {
+            int minLevel = Mathf.Max(1, minShipLevelForZoom);
+            int maxLevel = Mathf.Max(minLevel + 1, maxShipLevelForZoom);
+            shipLevel = Mathf.Clamp(shipLevel, minLevel, maxLevel);
+            float t = (shipLevel - minLevel) / (float)(maxLevel - minLevel);
+            return Mathf.Lerp(zoomScaleAtLevel1, zoomScaleAtMaxShipLevel, t);
+        }
+
         /// <summary>Inspector toggle: whether collision feedback may apply camera shake.</summary>
         public bool IsCollisionCameraShakeEnabled => collisionCameraShakeEnabled;
 
@@ -129,9 +160,7 @@ namespace TitanOrbit.Camera
             if (ship != null)
                 level = ship.ShipLevel;
 
-            // Level 1 = much closer (zoomScaleAtLevel1), level 6 = 100% zoom out (1.0). Linear interpolation.
-            float zoomT = level <= 1 ? 0f : Mathf.Clamp01((level - 1) / 5f);
-            float targetScale = Mathf.Lerp(zoomScaleAtLevel1, 1f, zoomT);
+            float targetScale = GetZoomScaleForShipLevel(level);
 
             if (distanceChangeSmoothTime > 0f)
                 currentScale = Mathf.SmoothDamp(currentScale, targetScale, ref scaleVelocity, distanceChangeSmoothTime);
@@ -248,11 +277,28 @@ namespace TitanOrbit.Camera
             collisionShakeIntensity = Mathf.Max(collisionShakeIntensity, Mathf.Clamp01(amount01));
         }
 
-        /// <summary>Sustained shake while grinding; set every physics step from server, or 0 when ramming stops.</summary>
+        /// <summary>Sustained shake while grinding; set every physics step from owner client, or 0 when ramming stops.</summary>
         public void SetRammingShakeDrive(float amount01)
         {
             if (!collisionCameraShakeEnabled) return;
             rammingShakeDrive = Mathf.Clamp01(amount01);
+        }
+
+        /// <summary>Maps asteroid impact severity (0–1, same curve as collision VFX) to impulse shake strength.</summary>
+        public float EvaluateRamImpactShake(float impactSeverity01) =>
+            Mathf.Lerp(ramImpactShakeMin, ramImpactShakeMax, Mathf.Clamp01(impactSeverity01));
+
+        /// <summary>Maps grind severity (0–1) to sustained shake drive while pushing into an asteroid.</summary>
+        public float EvaluateRamGrindShake(float grindSeverity01) =>
+            Mathf.Lerp(ramGrindShakeMin, ramGrindShakeMax, Mathf.Clamp01(grindSeverity01));
+
+        /// <summary>Maps asteroid gem size (typically 1–70) to breakup impulse when grinding through destruction.</summary>
+        public float EvaluateRamDestroyShake(float asteroidGemSize)
+        {
+            float sizeMin = Mathf.Min(ramDestroyShakeSizeMin, ramDestroyShakeSizeMax);
+            float sizeMax = Mathf.Max(ramDestroyShakeSizeMin, ramDestroyShakeSizeMax);
+            float sizeT = Mathf.InverseLerp(sizeMin, sizeMax, asteroidGemSize);
+            return Mathf.Lerp(ramDestroyShakeMin, ramDestroyShakeMax, sizeT);
         }
 
         /// <summary>

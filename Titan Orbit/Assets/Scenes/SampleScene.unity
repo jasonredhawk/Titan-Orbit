@@ -1196,6 +1196,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipStatsFpsStyleHUD
   valueColumnWidth: 92
   valueColumnInset: 8
+  barValueGap: 12
   iconHealth: {fileID: 903603371}
   iconEnergy: {fileID: 1229198910}
   iconGems: {fileID: 2134221421}
@@ -4149,10 +4150,13 @@ MonoBehaviour:
   target: {fileID: 0}
   offsetAtReferenceLevel: {x: 0, y: 25, z: 0}
   zoomDistanceAtReferenceLevel: 9
+  minShipLevelForZoom: 1
+  maxShipLevelForZoom: 6
   zoomScaleAtLevel1: 1
+  zoomScaleAtMaxShipLevel: 1.5
   distanceChangeSmoothTime: 1.5
   spawnZoomScale: 1
-  galacticZoomEnabled: 1
+  galacticZoomEnabled: 0
   galacticZoomDistance: 111
   galacticZoomOutDuration: 11
   galacticZoomInDuration: 1
@@ -8177,7 +8181,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   seed: 0
   minMapSize: 333
-  maxMapSize: 333
+  maxMapSize: 555
   homePlanetPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
   homePlanetDistance: 99
   minHomePlanetPairSeparation: 120
@@ -8191,25 +8195,25 @@ MonoBehaviour:
   maxPlanetSize: 16
   planetRingPlacementMargin: 3
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 333
-  asteroidsAtMaxMapSize: 666
-  minAsteroidClusters: 6
-  maxAsteroidClusters: 66
+  asteroidsAtMinMapSize: 444
+  asteroidsAtMaxMapSize: 888
+  minAsteroidClusters: 11
+  maxAsteroidClusters: 22
   minAsteroidSize: 1
   maxAsteroidSize: 200
   minAsteroidSpacing: 1.5
   planetsParent: {fileID: 0}
   asteroidsParent: {fileID: 0}
   homePlanetsParent: {fileID: 0}
-  batchDelaySeconds: 0.05
+  batchDelaySeconds: 0.5
   asteroidsPerBatch: 33
   alwaysUseProgressiveGeneration: 1
   targetProgressiveDurationSeconds: 2.5
   accelerateAsteroidProgressive: 0
   maxAsteroidDelayBatches: 8
-  joinPauseBeforeNeutralPlanetsSeconds: 0.05
-  joinHomePlanetStepSeconds: 0.05
-  joinNeutralPlanetStepSeconds: 0.05
+  joinPauseBeforeNeutralPlanetsSeconds: 0.5
+  joinHomePlanetStepSeconds: 0.5
+  joinNeutralPlanetStepSeconds: 0.5
   joinAsteroidClusterGapSeconds: 0.05
   joinAsteroidsPerClusterBurst: 33
   joinRevealMaxToroidalDistance: 7.5
@@ -8428,7 +8432,7 @@ MonoBehaviour:
   floatingCountSpiralPeriod: 40
   floatingCountLateralDriftMax: 0
   floatingCountStackLineSpacing: 0.82
-  floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  floatingCountDamageFallbackColor: {r: 1, g: 0.63529414, b: 0.078431375, a: 1}
   floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
   floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
   floatingCountImpactForceColor: {r: 1, g: 0.75, b: 0.2, a: 1}
@@ -8570,16 +8574,10 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 3
+        fireRateMultiplier: 1
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
-      abilities:
-      - type: 9
-        magnitude: 0
-        duration: 0
-        tickInterval: 0
-        radius: 0
-        damageTarget: 0
+      abilities: []
   - categoryName: Bullets
     prefabs:
     - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
@@ -9413,6 +9411,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   ShowTopMostFoldoutHeaderGroup: 1
   debugMode: 0
+  debugFreeShipUpgradeTree: 1
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3

@@ -23,7 +23,7 @@ namespace TitanOrbit.Entities
         [Tooltip("Logical id for this planet used to link unique ship families and cards. 0 or negative = not bound to a specific family.")]
         [SerializeField] private int planetId = 0;
         [SerializeField] private float baseMaxPopulation = 100f;
-        [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
+        [SerializeField] private float baseGrowthRate = 1f; // Fallback only if level is unset; normal rate is PlanetLevel people/sec
         [Tooltip("Seconds after the last hostile unload (people dropped on this planet) before passive population growth resumes.")]
         [SerializeField] private float populationGrowthPauseAfterAttackSeconds = 1f;
         [SerializeField] private float planetSize = 1f;
@@ -94,7 +94,7 @@ namespace TitanOrbit.Entities
         private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
         private const float OrbitRingGrowthPerLevel = 0.05f;
         /// <summary>Half-width of the people-transfer orbit ring band in planet-local space.</summary>
-        private const float OrbitRingHalfThicknessLocal = 0.055f;
+        private const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
 
         /// <summary>Reference planet scale for gem-moon sizing: home planets use this size; smaller worlds get larger moons inversely (20/PlanetSize).</summary>
         private const float GemMoonReferencePlanetSize = 20f;
@@ -104,6 +104,8 @@ namespace TitanOrbit.Entities
         private const float GemMoonRingsInnerRadiusLocal = 0.68f;
         private const float GemMoonRingThicknessLocal = 0.06f;
         private const float GemMoonRingGapLocal = 0.015f;
+        /// <summary>Dock/orbit shell outer radius ÷ moon body radius (1.95 × 1.2).</summary>
+        private const float GemMoonDockOrbitZoneRadiusOverBody = 1.95f * 1.2f;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC, s_sharedTeamD, s_sharedTeamE;
@@ -219,7 +221,7 @@ namespace TitanOrbit.Entities
 
             float gemMoonUniformScale = ComputeGemMoonVisualUniformScaleStatic(planetSize, gemMoonHomeScaleMultiplier);
             float bodyLocalRadius = 0.5f * gemMoonUniformScale;
-            float dockLocalRadius = bodyLocalRadius * 1.95f;
+            float dockLocalRadius = bodyLocalRadius * GemMoonDockOrbitZoneRadiusOverBody;
             float moonDock = dockLocalRadius * planetSize;
 
             float ringsOuter = planetSize * GetRingsOuterEdgeRadiusLocalStatic(level);
@@ -316,8 +318,8 @@ namespace TitanOrbit.Entities
             // (Refresh order can matter during spawn/setup.)
             float visualLocalScale = Mathf.Abs(GetGemMoonVisualUniformScale());
             float bodyLocalRadius = Mathf.Max(0.01f, 0.5f * visualLocalScale);
-            // Moon dock / orbit zone visual radius (1.5× prior 1.3× body).
-            float dockLocalRadius = bodyLocalRadius * 1.95f;
+            // Moon dock / orbit zone radius (body × GemMoonDockOrbitZoneRadiusOverBody).
+            float dockLocalRadius = bodyLocalRadius * GemMoonDockOrbitZoneRadiusOverBody;
             float shieldLocalRadius = dockLocalRadius * gemMoon.GetMoonShieldBarrierRadiusMultiplierFromDockRadius();
 
             // There can be multiple SphereColliders (older versions, prefab duplicates, etc.).
@@ -375,6 +377,14 @@ namespace TitanOrbit.Entities
         private float lastPopulationDisplayUpdate = -999f;
         /// <summary>Server Time.time when hostile unload last reduced population (capture pressure). Growth waits until pause elapses.</summary>
         private float lastHostilePopulationImpactServerTime = -999f;
+        /// <summary>Server: population units banked from growth above the 50% reserve (used when deployable surplus is tight).</summary>
+        private float surplusPeopleSendCredit;
+        /// <summary>Server: round-robin index for distributing surplus people loads across orbiting ships.</summary>
+        private int surplusPeopleLoadRoundRobinIndex;
+        /// <summary>Server: minimum seconds between surplus people-load projectiles from this planet.</summary>
+        private const float SurplusPeopleLoadIntervalSeconds = 1f;
+        private float lastSurplusPeopleLoadServerTime = -999f;
+        private static readonly System.Collections.Generic.List<Starship> SurplusLoadShipScratch = new System.Collections.Generic.List<Starship>(16);
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
@@ -616,6 +626,94 @@ namespace TitanOrbit.Entities
             {
                 lastPopulationDisplayUpdate = Time.time;
                 UpdatePopulationDisplay();
+            }
+        }
+
+        private void FixedUpdate()
+        {
+            if (IsServer)
+                TickSurplusPeopleLoadToOrbitingShips();
+        }
+
+        /// <summary>
+        /// Server: at most one people-load projectile per <see cref="SurplusPeopleLoadIntervalSeconds"/> when surplus exists above the 50% reserve.
+        /// Healthy surplus: steady 1/s round-robin while the planet can afford each chunk. Tight surplus (near the 50% floor): also requires growth credit.
+        /// </summary>
+        private void TickSurplusPeopleLoadToOrbitingShips()
+        {
+            float halfCap = 0.5f * MaxPopulation;
+            float surplus = Mathf.Max(0f, CurrentPopulation - halfCap);
+            if (surplus <= 0.0001f)
+            {
+                surplusPeopleSendCredit = 0f;
+                return;
+            }
+
+            float growth = GetGrowthRatePerSecond() * Time.fixedDeltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                growth *= 100f;
+            surplusPeopleSendCredit += growth;
+
+            if (Time.time < lastSurplusPeopleLoadServerTime + SurplusPeopleLoadIntervalSeconds)
+                return;
+
+            SurplusLoadShipScratch.Clear();
+            float maxEligibleChunk = 0f;
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || !ship.CanReceivePlanetSurplusPeopleLoadFrom(this))
+                    continue;
+                SurplusLoadShipScratch.Add(ship);
+                maxEligibleChunk = Mathf.Max(maxEligibleChunk, ship.GetPeopleTransferChunkSize());
+            }
+
+            int shipCount = SurplusLoadShipScratch.Count;
+            if (shipCount == 0)
+                return;
+
+            // Enough deployable surplus for a full chunk → steady 1/s dispatch. Otherwise growth must bank credit first.
+            bool growthCreditRequired = surplus < maxEligibleChunk - 0.0001f;
+
+            for (int attempt = 0; attempt < shipCount; attempt++)
+            {
+                int idx = (surplusPeopleLoadRoundRobinIndex + attempt) % shipCount;
+                Starship ship = SurplusLoadShipScratch[idx];
+                if (ship == null)
+                    continue;
+
+                surplus = Mathf.Max(0f, CurrentPopulation - halfCap);
+                if (surplus <= 0.0001f)
+                    break;
+
+                float chunk = ship.GetPeopleTransferChunkSize();
+                float space = ship.GetPeopleLoadSpaceRemaining();
+                float sendAmount = 0f;
+
+                if (surplus >= chunk - 0.0001f && space >= chunk - 0.0001f)
+                    sendAmount = chunk;
+                else
+                {
+                    float remainder = Mathf.Min(space, surplus);
+                    if (remainder <= 0.0001f || remainder >= chunk - 0.0001f)
+                        continue;
+                    sendAmount = remainder;
+                }
+
+                if (sendAmount <= 0.0001f)
+                    continue;
+
+                if (growthCreditRequired && surplusPeopleSendCredit < sendAmount - 0.0001f)
+                    continue;
+
+                if (ship.TryDispatchPlanetSurplusPeopleLoad(this, sendAmount, out float sent) && sent > 0.0001f)
+                {
+                    if (growthCreditRequired)
+                        surplusPeopleSendCredit = Mathf.Max(0f, surplusPeopleSendCredit - sent);
+                    surplusPeopleLoadRoundRobinIndex = (idx + 1) % shipCount;
+                    lastSurplusPeopleLoadServerTime = Time.time;
+                    return;
+                }
             }
         }
 
@@ -1039,12 +1137,11 @@ namespace TitanOrbit.Entities
             planetStatsDisplay.Init(this);
         }
 
-        /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>
+        /// <summary>Population per second: one person per second per planet level (level 3 → 3/s), plus connection triangle bonus.</summary>
         protected virtual float GetGrowthRatePerSecond()
         {
-            // Use stored growthRate.Value (which doubles on level up) instead of constant baseGrowthRate,
-            // then apply any connection bonus from planet‑to‑planet triangles.
-            float baseRate = growthRate.Value > 0f ? growthRate.Value : baseGrowthRate;
+            int level = PlanetLevel;
+            float baseRate = level > 0 ? level : baseGrowthRate;
             float bonusFactor = 1f + Mathf.Max(0f, connectionGrowthBonusFraction);
             return baseRate * bonusFactor;
         }
@@ -1182,10 +1279,9 @@ namespace TitanOrbit.Entities
             planetLevel.Value++;
             currentGems.Value = 0f; // Reset gem count to 0 when leveling up
 
-            // Recompute max population from new level (formula: size * level^1.5); double growth rate
+            // Recompute max population from new level (formula: size * level^1.5); growth rate tracks level (N people/sec)
             maxPopulation.Value = GetMaxPopulationForPlanet();
-            float oldGrowthRate = growthRate.Value;
-            SetGrowthRate(oldGrowthRate * 2f);
+            SetGrowthRate(GetGrowthRatePerSecond());
 
             LevelUpClientRpc(planetLevel.Value, transform.position, planetSize);
         }

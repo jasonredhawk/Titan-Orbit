@@ -37,7 +37,12 @@ namespace TitanOrbit.Networking
             public bool IsOpen;
             public bool IsLatest;
             public long CreatedAtEpochSeconds;
+            /// <summary>UTC unix-seconds from dedicated server heartbeat; 0 if not published yet.</summary>
+            public long ServerAliveAtEpochSeconds;
         }
+
+        /// <summary>Skip dedicated lobbies whose server has not heartbeated recently (ghost listing after process death).</summary>
+        public const int DedicatedLobbyStaleSeconds = 120;
 
         public static NetworkGameManager Instance { get; private set; }
 
@@ -121,6 +126,7 @@ namespace TitanOrbit.Networking
         private const string LobbyIsOpenKey = "IsOpen";
         private const string LobbyIsLatestKey = "IsLatest";
         private const string LobbyCreatedAtEpochKey = "CreatedAtEpoch";
+        private const string LobbyServerAliveEpochKey = "ServerAliveAt";
         private const string LobbyRelayProtocolKey = "RelayProtocol";
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
         private Lobby currentLobby;
@@ -554,6 +560,16 @@ namespace TitanOrbit.Networking
 
                     if (joinedLobby != null && joinedLobby.Data != null && joinedLobby.Data.ContainsKey(LobbyRelayCodeKey))
                     {
+                        if (!IsDedicatedLobbyJoinable(joinedLobby, out string quickJoinReject))
+                        {
+                            Debug.LogWarning(
+                                "[NetworkGameManager] Quick join skipped stale/closed lobby: " + quickJoinReject);
+                            joinedLobby = null;
+                        }
+                    }
+
+                    if (joinedLobby != null && joinedLobby.Data != null && joinedLobby.Data.ContainsKey(LobbyRelayCodeKey))
+                    {
                         try
                         {
                             string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
@@ -604,6 +620,8 @@ namespace TitanOrbit.Networking
                             foreach (Lobby candidate in response.Results)
                             {
                                 if (candidate == null || string.IsNullOrWhiteSpace(candidate.Id))
+                                    continue;
+                                if (!IsDedicatedLobbyJoinable(candidate, out _))
                                     continue;
                                 try
                                 {
@@ -890,6 +908,12 @@ namespace TitanOrbit.Networking
                 return false;
             }
 
+            if (!IsDedicatedLobbyJoinable(joinedLobby, out string rejectReason))
+            {
+                Debug.LogWarning("[NetworkGameManager] Refusing join to stale/closed lobby " + id + ": " + rejectReason);
+                return false;
+            }
+
             string joinCode = joinedLobby.Data[LobbyRelayCodeKey].Value;
             if (string.IsNullOrEmpty(joinCode))
             {
@@ -961,7 +985,7 @@ namespace TitanOrbit.Networking
             for (int i = 0; i < lobbies.Count; i++)
             {
                 LobbySummary l = lobbies[i];
-                if (l != null && l.IsOpen)
+                if (l != null && l.IsOpen && !IsDedicatedLobbySummaryStale(l))
                     open.Add(l);
             }
 
@@ -997,6 +1021,56 @@ namespace TitanOrbit.Networking
                 !string.Equals(il.Value, "1", StringComparison.Ordinal))
                 return false;
             return true;
+        }
+
+        private static bool IsDedicatedLobbyJoinable(Lobby lobby, out string rejectReason)
+        {
+            rejectReason = null;
+            if (lobby?.Data == null)
+                return true;
+
+            bool isDedicated = lobby.Data.ContainsKey(LobbyServerListenAddressKey);
+            if (!isDedicated)
+                return true;
+
+            if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject io) && io != null &&
+                !string.Equals(io.Value, "1", StringComparison.Ordinal))
+            {
+                rejectReason = "lobby is closed";
+                return false;
+            }
+
+            if (IsDedicatedLobbyStale(lobby))
+            {
+                rejectReason = "server heartbeat is stale (match may have ended)";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsDedicatedLobbyStale(Lobby lobby)
+        {
+            if (lobby?.Data == null)
+                return false;
+            if (!lobby.Data.ContainsKey(LobbyServerListenAddressKey))
+                return false;
+            if (!lobby.Data.TryGetValue(LobbyServerAliveEpochKey, out DataObject aliveObj) || aliveObj == null)
+                return false;
+            if (!long.TryParse(aliveObj.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long aliveEpoch) ||
+                aliveEpoch <= 0)
+                return false;
+
+            long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            return nowEpoch - aliveEpoch > DedicatedLobbyStaleSeconds;
+        }
+
+        private static bool IsDedicatedLobbySummaryStale(LobbySummary summary)
+        {
+            if (summary == null || summary.ServerAliveAtEpochSeconds <= 0)
+                return false;
+            long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            return nowEpoch - summary.ServerAliveAtEpochSeconds > DedicatedLobbyStaleSeconds;
         }
 
         private enum RelaxedLobbyMergeResult
@@ -1161,6 +1235,19 @@ namespace TitanOrbit.Networking
             return await PlayWebGLJoinByLobbyIdAsync(lobbyId);
         }
 
+        /// <summary>Disconnect Netcode and leave UGS lobby after detecting a dead/stale dedicated match.</summary>
+        public void AbortStaleClientSession(string reason)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && (nm.IsClient || nm.IsListening))
+            {
+                Debug.Log("[NetworkGameManager] Aborting stale client session: " + reason);
+                nm.Shutdown();
+            }
+
+            _ = LeaveCurrentLobbyIfMemberAsync(reason ?? "stale_session");
+        }
+
         private LobbySummary ToLobbySummary(Lobby lobby)
         {
             int maxPlayerCapacity = Mathf.Max(1, lobby.MaxPlayers);
@@ -1197,6 +1284,12 @@ namespace TitanOrbit.Networking
                 long.TryParse(createdAtObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long created))
             {
                 summary.CreatedAtEpochSeconds = created;
+            }
+
+            if (lobby.Data.TryGetValue(LobbyServerAliveEpochKey, out DataObject aliveAtObj) &&
+                long.TryParse(aliveAtObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long aliveAt))
+            {
+                summary.ServerAliveAtEpochSeconds = aliveAt;
             }
 
             return summary;

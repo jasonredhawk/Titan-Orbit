@@ -335,10 +335,11 @@ namespace TitanOrbit.Entities
         {
             position.y = 0f;
             float pitch = BulletHitResolver.GetImpactSoundPitch(damageForImpactPitch);
+            float impactScale = BulletVisualFactory.GetImpactScale(popupInfo.IsAsteroidHit);
 
             if (Application.isMobilePlatform)
             {
-                BulletVisualFactory.SpawnMobileImpact(position, ownerTeam, BulletVisualFactory.DefaultImpactScale);
+                BulletVisualFactory.SpawnMobileImpact(position, ownerTeam, impactScale);
             }
             else
             {
@@ -372,7 +373,7 @@ namespace TitanOrbit.Entities
                             position,
                             prefab,
                             pitch,
-                            BulletVisualFactory.DefaultImpactScale,
+                            impactScale,
                             burnDur,
                             attach,
                             localOff);
@@ -383,7 +384,7 @@ namespace TitanOrbit.Entities
                             position,
                             prefab,
                             pitch,
-                            BulletVisualFactory.DefaultImpactScale,
+                            impactScale,
                             BulletVisualFactory.DefaultImpactDuration);
                     }
                 }

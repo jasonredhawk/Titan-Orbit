@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace TitanOrbit.Entities
 {
@@ -12,7 +13,8 @@ namespace TitanOrbit.Entities
     {
         [SerializeField] private float heightBelowMoon = 0.05f;
         [SerializeField] private Color tint = new Color(0.55f, 0.75f, 0.98f, 1f);
-        [SerializeField, Range(0f, 1f)] private float innerAlpha = 0.28f;
+        [FormerlySerializedAs("innerAlpha")]
+        [SerializeField, Range(0f, 1f)] private float centerAlpha = 0.28f;
         [SerializeField] private int segments = 64;
 
         private PlanetGemMoon moon;
@@ -21,7 +23,6 @@ namespace TitanOrbit.Entities
         private Material runtimeMaterial;
         private Texture2D runtimeGradientTexture;
         private float lastOuter = -1f;
-        private float lastInner = -1f;
 
         private void Awake()
         {
@@ -85,48 +86,49 @@ namespace TitanOrbit.Entities
             if (moon == null || meshFilter == null)
                 return;
 
-            float outer = moon.GetMoonDockSnapRadiusLocal();
-            float inner = Mathf.Clamp(moon.GetMoonBodyRadiusLocal(), 0.02f, Mathf.Max(0.03f, outer - 0.01f));
-            if (!force && Mathf.Abs(outer - lastOuter) < 0.001f && Mathf.Abs(inner - lastInner) < 0.001f)
+            float outer = GetOrbitZoneOuterRadiusLocal();
+            if (!force && Mathf.Abs(outer - lastOuter) < 0.001f)
                 return;
 
             lastOuter = outer;
-            lastInner = inner;
-            meshFilter.sharedMesh = BuildRingMesh(inner, outer, Mathf.Max(24, segments));
+            meshFilter.sharedMesh = BuildDiscMesh(outer, Mathf.Max(24, segments));
         }
 
-        private static Mesh BuildRingMesh(float inner, float outer, int segs)
+        private float GetOrbitZoneOuterRadiusLocal()
+        {
+            if (moon == null) return 0f;
+            float world = moon.GetMoonShieldOuterRadiusWorld();
+            float scale = Mathf.Max(0.0001f, Mathf.Abs(moon.transform.lossyScale.x));
+            return world / scale;
+        }
+
+        private static Mesh BuildDiscMesh(float radius, int segs)
         {
             Mesh mesh = new Mesh();
             mesh.name = "MoonOrbitZoneMeshFallback";
-            int vertexCount = (segs + 1) * 2;
-            Vector3[] vertices = new Vector3[vertexCount];
-            Vector2[] uv = new Vector2[vertexCount];
-            int[] triangles = new int[segs * 6];
+            int rimVerts = segs + 1;
+            Vector3[] vertices = new Vector3[rimVerts + 1];
+            Vector2[] uv = new Vector2[rimVerts + 1];
+            int[] triangles = new int[segs * 3];
 
-            for (int i = 0; i <= segs; i++)
+            vertices[0] = Vector3.zero;
+            uv[0] = new Vector2(0f, 0.5f);
+
+            for (int i = 0; i < rimVerts; i++)
             {
                 float t = i / (float)segs;
                 float a = t * Mathf.PI * 2f;
-                float c = Mathf.Cos(a);
-                float s = Mathf.Sin(a);
-                int vi = i * 2;
-                vertices[vi] = new Vector3(inner * c, 0f, inner * s);
-                vertices[vi + 1] = new Vector3(outer * c, 0f, outer * s);
-                uv[vi] = new Vector2(0f, t);
-                uv[vi + 1] = new Vector2(1f, t);
+                int vi = i + 1;
+                vertices[vi] = new Vector3(radius * Mathf.Cos(a), 0f, radius * Mathf.Sin(a));
+                uv[vi] = new Vector2(1f, t);
             }
 
             for (int i = 0; i < segs; i++)
             {
-                int vi = i * 2;
-                int ti = i * 6;
-                triangles[ti] = vi;
-                triangles[ti + 1] = vi + 2;
-                triangles[ti + 2] = vi + 1;
-                triangles[ti + 3] = vi + 1;
-                triangles[ti + 4] = vi + 2;
-                triangles[ti + 5] = vi + 3;
+                int ti = i * 3;
+                triangles[ti] = 0;
+                triangles[ti + 1] = i + 1;
+                triangles[ti + 2] = i + 2;
             }
 
             mesh.vertices = vertices;
@@ -154,7 +156,7 @@ namespace TitanOrbit.Entities
                 for (int x = 0; x < runtimeGradientTexture.width; x++)
                 {
                     float t = x / (float)(runtimeGradientTexture.width - 1);
-                    float a = Mathf.Lerp(innerAlpha, 0f, t);
+                    float a = Mathf.Lerp(centerAlpha, 0f, t);
                     runtimeGradientTexture.SetPixel(x, 0, new Color(1f, 1f, 1f, a));
                 }
                 runtimeGradientTexture.Apply(false, false);

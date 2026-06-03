@@ -59,6 +59,7 @@ namespace TitanOrbit.UI
         private GameObject joinPreviewRoot;
         private float joinPlaybackProgress;
         private bool joinPlaybackComplete = true;
+        private bool joinWorldInvalid;
 
         private void Awake()
         {
@@ -286,6 +287,15 @@ namespace TitanOrbit.UI
             if (!complete || teamMenuShownAfterLoad || elapsed < minLoadingDisplayTime)
                 return;
 
+            if (joinWorldInvalid ||
+                (pureClient && mapGen != null && mapGen.LoadingComplete && joinPlaybackComplete &&
+                 mapGen.BlueprintEntryCount <= 0 && elapsed >= minLoadingDisplayTime + 5f))
+            {
+                if (!teamMenuShownAfterLoad)
+                    FailStaleJoinAndReturnToBrowser();
+                return;
+            }
+
             if (!netcodeListening)
             {
                 if (elapsed < minLoadingDisplayTime + maxWaitNetcodeSeconds)
@@ -339,6 +349,7 @@ namespace TitanOrbit.UI
         public void ShowLoading()
         {
             teamMenuShownAfterLoad = false;
+            joinWorldInvalid = false;
             var nm = NetworkGameManager.ResolveNetworkManagerForGameplay();
             bool wantsLayoutPlayback = nm != null && nm.IsClient;
             joinPlaybackProgress = 0f;
@@ -445,6 +456,7 @@ namespace TitanOrbit.UI
 
                 joinPlaybackProgress = 1f;
                 joinPlaybackComplete = true;
+                joinWorldInvalid = n <= 0;
                 if (joinPreviewRoot != null)
                 {
                     Destroy(joinPreviewRoot);
@@ -468,6 +480,40 @@ namespace TitanOrbit.UI
                 joinPreviewRoot = null;
             }
             joinLayoutPlaybackRoutine = null;
+        }
+
+        private void FailStaleJoinAndReturnToBrowser()
+        {
+            teamMenuShownAfterLoad = true;
+            joinWorldInvalid = true;
+            Debug.LogError(
+                "[LoadingScreenController] Match has no map data (stale or dead server). Returning to lobby browser.");
+
+            var mapGenRestore = MapGenerator.Active != null ? MapGenerator.Active : FindFirstObjectByType<MapGenerator>();
+            mapGenRestore?.EndClientJoinBuild();
+
+            if (joinLayoutPlaybackRoutine != null)
+            {
+                StopCoroutine(joinLayoutPlaybackRoutine);
+                joinLayoutPlaybackRoutine = null;
+            }
+
+            if (joinPreviewRoot != null)
+            {
+                Destroy(joinPreviewRoot);
+                joinPreviewRoot = null;
+            }
+
+            if (loadingPanel != null)
+                loadingPanel.SetActive(false);
+
+            OverrideCameraForLoading(false);
+            NetworkGameManager.Instance?.AbortStaleClientSession("stale_empty_world");
+            NetworkGameManager.OnTeamChoiceFailed?.Invoke(
+                "This match is no longer active (empty world). Refresh the game list and join again, or use Quick Join.");
+
+            if (mainMenu != null)
+                mainMenu.ShowLobbyScreen();
         }
 
         /// <summary>Hide loading screen and show team menu. Camera stays zoomed out until player picks a team.</summary>

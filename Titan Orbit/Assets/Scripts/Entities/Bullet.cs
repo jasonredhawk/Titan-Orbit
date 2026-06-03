@@ -445,7 +445,7 @@ namespace TitanOrbit.Entities
                     });
             }
 
-            DespawnBullet(bestImpact);
+            DespawnBullet(bestImpact, isAsteroidHit: true);
             return true;
         }
 
@@ -548,7 +548,7 @@ namespace TitanOrbit.Entities
                         });
                 }
 
-                DespawnBullet(impactWorldPos);
+                DespawnBullet(impactWorldPos, isAsteroidHit: true);
                 return true;
             }
 
@@ -641,21 +641,22 @@ namespace TitanOrbit.Entities
 
         private void DespawnBullet() => DespawnBullet(transform.position);
 
-        private void DespawnBullet(Vector3 impactWorldPos)
+        private void DespawnBullet(Vector3 impactWorldPos, bool isAsteroidHit = false)
         {
             Vector3 impactPos = impactWorldPos;
             impactPos.y = FIXED_Y_POSITION;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
             float impactPitch = GetImpactSoundPitch();
+            float impactScale = impactEffectScale * (isAsteroidHit ? BulletVisualFactory.AsteroidImpactScaleFactor : 1f);
             GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
             // Mobile uses procedural URP particle burst in SpawnImpactAt; still spawn if bank prefab missing.
             bool spawnImpactFx = impactPrefab != null || Application.isMobilePlatform;
             if (spawnImpactFx)
             {
-                SpawnImpactEffectClientRpc(impactPos, bankIdx, impactPitch);
+                SpawnImpactEffectClientRpc(impactPos, bankIdx, impactPitch, isAsteroidHit);
                 // Mobile impact VFX runs only in ClientRpc (avoids double spawn on host); desktop keeps server-side for listen-server visibility.
                 if (!Application.isMobilePlatform)
-                    SpawnImpactAt(impactPos, impactPrefab, impactPitch);
+                    SpawnImpactAt(impactPos, impactPrefab, impactPitch, impactScale);
             }
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
@@ -694,20 +695,21 @@ namespace TitanOrbit.Entities
             return impactEffectPrefab;
         }
 
-        private void SpawnImpactAt(Vector3 position, GameObject prefab = null, float pitch = 1f)
+        private void SpawnImpactAt(Vector3 position, GameObject prefab = null, float pitch = 1f, float scale = -1f)
         {
+            if (scale < 0f) scale = impactEffectScale;
             if (Application.isMobilePlatform)
             {
                 TeamManager.Team t = (TeamManager.Team)bulletOwnerTeamByte.Value;
                 if (t == TeamManager.Team.None) t = ownerTeam;
-                VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(t), impactEffectScale);
+                VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(t), scale);
                 return;
             }
 
             GameObject usePrefab = prefab != null ? prefab : impactEffectPrefab;
             if (usePrefab == null) return;
             GameObject go = Instantiate(usePrefab, position, Quaternion.identity);
-            go.transform.localScale = Vector3.one * impactEffectScale;
+            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
             VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
             VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
@@ -728,13 +730,14 @@ namespace TitanOrbit.Entities
         }
 
         [ClientRpc]
-        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex, float pitch)
+        private void SpawnImpactEffectClientRpc(Vector3 position, int impactPrefabBankIndex, float pitch, bool isAsteroidHit = false)
         {
             TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
             if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
+            float impactScale = impactEffectScale * (isAsteroidHit ? BulletVisualFactory.AsteroidImpactScaleFactor : 1f);
             if (Application.isMobilePlatform)
             {
-                SpawnImpactAt(position, null, pitch);
+                SpawnImpactAt(position, null, pitch, impactScale);
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayImpactSound(pitch);
                 return;
@@ -745,7 +748,7 @@ namespace TitanOrbit.Entities
                 : null;
             if (prefab == null) prefab = impactEffectPrefab;
             if (prefab != null)
-                SpawnImpactAt(position, prefab, pitch);
+                SpawnImpactAt(position, prefab, pitch, impactScale);
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
         }

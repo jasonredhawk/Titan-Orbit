@@ -59,9 +59,7 @@ namespace TitanOrbit.Entities
                 AllHomePlanets.Add(this);
             EnsureSolidColliderAndOrbitZone();
             if (IsServer)
-            {
-                SetGrowthRate(GetGrowthRatePerSecond()); // 1 per 5 sec at level 1, doubles per level
-            }
+                SetGrowthRate(GetGrowthRatePerSecond());
             baseLocalScale = transform.localScale;
             RemoveOldCylinderRings();
             EnsureShapesRingsDrawer();
@@ -116,15 +114,6 @@ namespace TitanOrbit.Entities
         {
             if (level < 1) return 0f;
             return baseMaxGemsLevel1 * Mathf.Pow(2f, level - 1);
-        }
-
-        /// <summary>Home planets: 1 person per 5 seconds at level 1, doubles each level (2 at 2, 4 at 3, 8 at 4, … per 5 sec).</summary>
-        protected override float GetGrowthRatePerSecond()
-        {
-            int level = PlanetLevel;
-            int exponent = Mathf.Max(0, level - 1); // Level 1 -> 1 per 5s, 2 -> 2, 3 -> 4, 4 -> 8 per 5s
-            float peoplePer5Sec = Mathf.Pow(2f, exponent);
-            return peoplePer5Sec / 5f;
         }
 
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes. Home planets may use HomePlanetOrbitZone.</summary>

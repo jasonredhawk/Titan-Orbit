@@ -19,8 +19,9 @@ namespace TitanOrbit.UI
         }
 
         [Header("Layout")]
-        [SerializeField] private float valueColumnWidth = 92f;
+        [SerializeField] private float valueColumnWidth = 120f;
         [SerializeField] private float valueColumnInset = 8f;
+        [SerializeField] private float barValueGap = 12f;
 
         [Header("References (assigned by GameSetup or inspector)")]
         [SerializeField] private Image iconHealth;
@@ -163,12 +164,13 @@ namespace TitanOrbit.UI
 
         private void UpdateRow(ref StatBarRow row, float current, float max)
         {
-            float fill01 = max > 0.0001f ? Mathf.Clamp01(current / max) : 0f;
+            float displayCurrent = max > 0.0001f ? Mathf.Min(current, max) : current;
+            float fill01 = max > 0.0001f ? Mathf.Clamp01(displayCurrent / max) : 0f;
             SetBarFill(row.Bar, fill01);
 
             if (row.Value != null)
             {
-                int curInt = Mathf.RoundToInt(current);
+                int curInt = Mathf.RoundToInt(displayCurrent);
                 int maxInt = Mathf.RoundToInt(max);
                 row.Value.text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
             }
@@ -201,29 +203,43 @@ namespace TitanOrbit.UI
 
         private void ApplyRowLayout(ref StatBarRow row)
         {
-            if (row.Bar != null)
-            {
-                RemoveExistingNotches(row.Bar);
-
-                RectTransform barRect = row.Bar.GetComponent<RectTransform>();
-                float barRightInset = valueColumnWidth + valueColumnInset;
-                barRect.offsetMax = new Vector2(-barRightInset, barRect.offsetMax.y);
-            }
-
+            float columnWidth = valueColumnWidth;
             if (row.Value != null)
             {
                 TextMeshProUGUI tmp = row.Value;
                 tmp.enableWordWrapping = false;
                 tmp.overflowMode = TextOverflowModes.Overflow;
-                tmp.alignment = TextAlignmentOptions.MidlineRight;
+                tmp.alignment = TextAlignmentOptions.MidlineLeft;
                 if (tmp.fontSize < 13f) tmp.fontSize = 14f;
 
                 RectTransform valueRect = tmp.rectTransform;
                 valueRect.anchorMin = new Vector2(1f, 0.5f);
                 valueRect.anchorMax = new Vector2(1f, 0.5f);
                 valueRect.pivot = new Vector2(1f, 0.5f);
-                valueRect.anchoredPosition = new Vector2(-valueColumnInset * 0.5f, 0f);
-                valueRect.sizeDelta = new Vector2(valueColumnWidth, valueRect.sizeDelta.y);
+                valueRect.anchoredPosition = new Vector2(-valueColumnInset, 0f);
+                columnWidth = Mathf.Max(valueColumnWidth, valueRect.sizeDelta.x);
+                valueRect.sizeDelta = new Vector2(columnWidth, valueRect.sizeDelta.y);
+            }
+
+            if (row.Bar != null)
+            {
+                RemoveExistingNotches(row.Bar);
+
+                RectTransform barRect = row.Bar.GetComponent<RectTransform>();
+                barRect.anchorMin = new Vector2(0f, 0f);
+                barRect.anchorMax = new Vector2(1f, 1f);
+                barRect.pivot = new Vector2(0.5f, 0.5f);
+                barRect.anchoredPosition = Vector2.zero;
+                barRect.sizeDelta = Vector2.zero;
+
+                float barLeft = 48f;
+                Transform icon = barRect.parent != null ? barRect.parent.Find("Icon") : null;
+                if (icon is RectTransform iconRect)
+                    barLeft = iconRect.anchoredPosition.x + iconRect.sizeDelta.x + 8f;
+
+                float barRightInset = columnWidth + valueColumnInset + barValueGap;
+                barRect.offsetMin = new Vector2(barLeft, 2f);
+                barRect.offsetMax = new Vector2(-barRightInset, -2f);
             }
         }
 

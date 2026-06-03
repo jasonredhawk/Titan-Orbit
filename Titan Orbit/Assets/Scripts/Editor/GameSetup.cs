@@ -28,6 +28,8 @@ namespace TitanOrbit.Editor
     /// </summary>
     public class GameSetup : EditorWindow
     {
+        private const float ShipStatBarValueGap = 12f;
+
         [MenuItem("Titan Orbit/Setup Game Scene")]
         public static void SetupGameScene()
         {
@@ -935,8 +937,8 @@ namespace TitanOrbit.Editor
 
             float iconSize = 28f; // Larger so 128px icons scale down less and stay crisp
             float barLeft = margin + iconSize + 8f;
-            float valueWidth = 92f; // Fits "9999/9999" without wrapping
-            float barRight = minimapWidth - margin - valueWidth - 8f;
+            float valueWidth = 120f; // Fits "99999/99999" without wrapping
+            float barRight = minimapWidth - margin - valueWidth - 8f - ShipStatBarValueGap;
             float barW = barRight - barLeft;
 
             (Image icon, Slider bar, TextMeshProUGUI value) Row1 = CreateShipStatRow(shipStatsPanel.transform, 0, margin, rowHeight, rowGap, barLeft, barW, valueWidth, iconSize, shiftBarSprite, new Color(0.2f, 0.9f, 0.45f, 1f), iconHealth);
@@ -1438,11 +1440,11 @@ namespace TitanOrbit.Editor
             barRect.anchorMin = new Vector2(0, 0);
             barRect.anchorMax = new Vector2(1, 1);
             barRect.offsetMin = new Vector2(barLeft, 2);
-            barRect.offsetMax = new Vector2(-(valueWidth + 8f), -2);
+            barRect.offsetMax = new Vector2(-(valueWidth + 8f + ShipStatBarValueGap), -2);
 
             GameObject valueObj = CreateText(rowObj.transform, "Value", "0/0", 14, TextAnchor.MiddleLeft);
             TextMeshProUGUI valueTmp = valueObj.GetComponent<TextMeshProUGUI>();
-            valueTmp.alignment = TextAlignmentOptions.MidlineRight;
+            valueTmp.alignment = TextAlignmentOptions.MidlineLeft;
             valueTmp.color = new Color(1f, 1f, 1f, 0.95f);
             valueTmp.enableWordWrapping = false;
             valueTmp.overflowMode = TextOverflowModes.Overflow;
@@ -1450,7 +1452,7 @@ namespace TitanOrbit.Editor
             valueRect.anchorMin = new Vector2(1, 0.5f);
             valueRect.anchorMax = new Vector2(1, 0.5f);
             valueRect.pivot = new Vector2(1, 0.5f);
-            valueRect.anchoredPosition = new Vector2(-4, 0);
+            valueRect.anchoredPosition = new Vector2(-8, 0);
             valueRect.sizeDelta = new Vector2(valueWidth, rowHeight - 2);
 
             Slider bar = barObj.GetComponent<Slider>();

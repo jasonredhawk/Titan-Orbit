@@ -35,10 +35,10 @@ namespace TitanOrbit.Entities
         [Tooltip("Scaled stats per matched component; same order as Matched Component Ids.")]
         [SerializeField] private List<ShipComponentAbilityStats> perComponentStats = new List<ShipComponentAbilityStats>();
 
-        [Header("Propulsion preview (thrusters only, ship level 1 base)")]
-        [Tooltip("Sum of thruster Acceleration Cap — matches Starship thrust numerator (stacked before F/m).")]
+        [Header("Propulsion preview (engines + thrusters, ship level 1 base)")]
+        [Tooltip("Sum of engine and thruster Acceleration Cap — matches Starship thrust numerator (stacked before F/m).")]
         [SerializeField] private float previewSumPropulsionAcceleration;
-        [Tooltip("Sum of thruster Acceleration Cap / Level (per-level terms, ship level 1 adds 0).")]
+        [Tooltip("Sum of engine and thruster Acceleration Cap / Level (per-level terms, ship level 1 adds 0).")]
         [SerializeField] private float previewSumPropulsionAccelerationPerLevel;
         [Tooltip("Extra top speed from non-primary engines/thrusters: half the sum of their moveSpeedPerLevel.")]
         [SerializeField] private float previewExtraThrusterMoveSpeed;
@@ -59,9 +59,9 @@ namespace TitanOrbit.Entities
         public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
         public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
         public IReadOnlyList<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
-        /// <summary>Sum of thruster <see cref="ShipComponentAbilityStats.accelerationCap"/> (level 1). Matches Starship propulsion thrust stacking.</summary>
+        /// <summary>Sum of engine and thruster <see cref="ShipComponentAbilityStats.accelerationCap"/> (level 1). Matches Starship propulsion thrust stacking.</summary>
         public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
-        /// <summary>Sum of thruster <see cref="ShipComponentAbilityStats.accelerationCapPerLevel"/>.</summary>
+        /// <summary>Sum of engine and thruster <see cref="ShipComponentAbilityStats.accelerationCapPerLevel"/>.</summary>
         public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
         /// <summary>Effective extra top speed from non-primary propulsion parts (half summed moveSpeedPerLevel).</summary>
         public float PreviewExtraThrusterMoveSpeed => previewExtraThrusterMoveSpeed;

@@ -97,8 +97,9 @@ namespace TitanOrbit.Editor
                 Debug.LogError("ShipStatsPanel not found. Open a scene that has the HUD.");
                 return;
             }
-            const float valueColumnWidth = 92f;
-            const float barRight = valueColumnWidth + 8f;
+            const float valueColumnWidth = 120f;
+            const float barValueGap = 12f;
+            const float barRight = valueColumnWidth + 8f + barValueGap;
             int fixedCount = 0;
             for (int r = 0; r <= 3; r++)
             {
@@ -130,6 +131,7 @@ namespace TitanOrbit.Editor
                     {
                         tmp.enableWordWrapping = false;
                         tmp.overflowMode = TextOverflowModes.Overflow;
+                        tmp.alignment = TextAlignmentOptions.MidlineLeft;
                         EditorUtility.SetDirty(tmp);
                     }
                 }

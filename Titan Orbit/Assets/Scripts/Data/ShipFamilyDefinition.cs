@@ -919,15 +919,18 @@ namespace TitanOrbit.Data
         /// <summary>Engine push (N) into the rock where one grind pulse deals full rating × massFactor × interval damage.</summary>
         public const float ReferenceGrindPushNewtons = 80f;
 
-        /// <summary>Impact: rating × massFactor × speed factor. massFactor ≈ 1 at hull baseline (level-invariant).</summary>
+        /// <summary>
+        /// Impact: rating × massFactor × speed factor. massFactor ≈ 1 at hull baseline (level-invariant).
+        /// Pass <paramref name="maxRestitutionForDamage"/> (not bounce restitution) so suppressed bounce energy becomes damage.
+        /// </summary>
         public static float ComputeImpactDamage(
             float ramDamageRating,
             float mass,
             float hullBaselineMass,
             float inboundNormalSpeed,
-            float restitution)
+            float maxRestitutionForDamage)
         {
-            float deltaNormalSpeed = (1f + Mathf.Clamp01(restitution)) * Mathf.Max(0f, inboundNormalSpeed);
+            float deltaNormalSpeed = (1f + Mathf.Clamp01(maxRestitutionForDamage)) * Mathf.Max(0f, inboundNormalSpeed);
             float speedFactor = deltaNormalSpeed / Mathf.Max(0.1f, ReferenceImpactSpeed);
             float massFactor = ComputeMassDamageFactor(mass, hullBaselineMass);
             return Mathf.Max(0f, ramDamageRating * massFactor * speedFactor);
@@ -948,6 +951,68 @@ namespace TitanOrbit.Data
 
         public static float ComputeSelfMassDamageFactor(float mass, float hullBaselineMass) =>
             ComputeMassDamageFactor(mass, hullBaselineMass, SelfMassDamageExponent);
+    }
+
+    /// <summary>Scan/auto-populate weapon offense and energy (burst ~2s at full fire rate, regen below sustained drain).</summary>
+    public static class ShipComponentWeaponSuggestions
+    {
+        public const float FirePowerV1 = 3f;
+        public const float FireRate = 3f;
+        public const float FireRatePerLevel = 0f;
+        public const float BulletSpeedV1 = 12f;
+
+        /// <summary>Seconds of continuous fire at authored fire rate before the pool is empty (no regen).</summary>
+        public const float BurstSecondsAtFullDrain = 2f;
+
+        /// <summary>
+        /// Shots/sec when energy-limited (energyRegen / firePower at runtime). Independent of max fire rate.
+        /// </summary>
+        public const float SustainedFireRateShotsPerSecond = 1f;
+
+        public static float GetSuggestedFirePower(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return FirePowerV1 * v;
+        }
+
+        public static float GetSuggestedBulletSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return BulletSpeedV1 * v;
+        }
+
+        public static float GetSuggestedFirePowerPerLevel(int version) =>
+            GetSuggestedFirePower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+        public static float GetSuggestedBulletSpeedPerLevel(int version) =>
+            GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+        public static float ComputeSustainedEnergyDrain(float firePower, float fireRate) =>
+            Mathf.Max(0f, firePower) * Mathf.Max(0.01f, fireRate);
+
+        public static float ComputeSustainedEnergyDrain(ShipComponentAbilityStats weaponStats, int levelAfterFirst = 0)
+        {
+            float firePower = weaponStats.firePower + weaponStats.firePowerPerLevel * Mathf.Max(0, levelAfterFirst);
+            float fireRate = weaponStats.fireRate + weaponStats.fireRatePerLevel * Mathf.Max(0, levelAfterFirst);
+            return ComputeSustainedEnergyDrain(firePower, fireRate);
+        }
+
+        public static void ApplyBalancedEnergy(
+            ref ShipComponentAbilityStats stats,
+            float sustainedFireRateShotsPerSecond = SustainedFireRateShotsPerSecond,
+            float capacitySecondsAtFullDrain = BurstSecondsAtFullDrain,
+            int levelAfterFirst = 0)
+        {
+            float firePower = stats.firePower + stats.firePowerPerLevel * Mathf.Max(0, levelAfterFirst);
+            float drain = ComputeSustainedEnergyDrain(stats, levelAfterFirst);
+            if (firePower <= 0f || drain <= 0f)
+                return;
+
+            stats.energyRegen = firePower * Mathf.Max(0f, sustainedFireRateShotsPerSecond);
+            stats.energyRegenPerLevel = stats.energyRegen * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            stats.energyCap = drain * capacitySecondsAtFullDrain;
+            stats.energyCapPerLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
+        }
     }
 
     /// <summary>Scan/auto-populate wing tractor beam reach and pull speed (Capacity category).</summary>
@@ -982,6 +1047,22 @@ namespace TitanOrbit.Data
 
         public static float GetSuggestedTractorPowerPerLevel(int version) =>
             GetSuggestedTractorPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+    }
+
+    /// <summary>Scan/auto-populate people capacity for cockpits, wings, and other Capacity category parts.</summary>
+    public static class ShipComponentPeopleCapacitySuggestions
+    {
+        /// <summary>People capacity at version 1 per Capacity-category component (halved from prior 4).</summary>
+        public const float PeopleCapacityV1 = 2f;
+
+        public static float GetSuggestedPeopleCapacity(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return PeopleCapacityV1 * v;
+        }
+
+        public static float GetSuggestedPeopleCapacityPerLevel(int version) =>
+            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedPeopleCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
     }
 
     /// <summary>Scan/auto-populate turn speed for fins, tails, and thrusters (summed at runtime).</summary>
@@ -1529,20 +1610,27 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats CreateBaseline()
         {
             const int v = 1;
-            float weaponFirePower = 3f * v;
-            float weaponBulletSpeed = 12f * v;
-            float weaponFireRate = 1.2f * v;
-            float energyCap = 20f * v;
-            float energyRegen = 2.5f * v;
+            float weaponFirePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(v);
+            float weaponBulletSpeed = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeed(v);
+            float weaponFireRate = ShipComponentWeaponSuggestions.FireRate;
+            var weaponEnergy = new ShipComponentAbilityStats
+            {
+                firePower = weaponFirePower,
+                fireRate = weaponFireRate,
+                fireRatePerLevel = ShipComponentWeaponSuggestions.FireRatePerLevel
+            };
+            ShipComponentWeaponSuggestions.ApplyBalancedEnergy(ref weaponEnergy);
+            float energyCap = weaponEnergy.energyCap;
+            float energyRegen = weaponEnergy.energyRegen;
             float maxGems = 8f * v;
-            float maxPeople = 4f * v;
+            float maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(v);
             float perLevel = ShipPropulsionAggregation.PerLevelFractionOfBase;
-            float moveSpeed = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
-                ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(v));
+            const float baselineMoveSpeed = 9f;
+            const float baselineTurnSpeed = 14f;
+            float moveSpeed = baselineMoveSpeed;
             float accelerationCap = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
                 ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(v));
-            float turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(v)
-                + ShipComponentTurnSpeedSuggestions.GetSuggestedThrusterTurnSpeed(v);
+            float turnSpeed = baselineTurnSpeed;
 
             return new ShipComponentAbilityStats
             {
@@ -1551,7 +1639,7 @@ namespace TitanOrbit.Data
                 bulletSpeed = weaponBulletSpeed,
                 bulletSpeedPerLevel = weaponBulletSpeed * perLevel,
                 fireRate = weaponFireRate,
-                fireRatePerLevel = weaponFireRate * perLevel,
+                fireRatePerLevel = ShipComponentWeaponSuggestions.FireRatePerLevel,
                 rammingPower = ShipComponentRammingSuggestions.GetSuggestedRammingPower(v),
                 rammingPowerPerLevel = ShipComponentRammingSuggestions.GetSuggestedRammingPowerPerLevel(v),
                 healthCap = ShipComponentHealthSuggestions.GetSuggestedHealthCap(v),
@@ -1563,8 +1651,7 @@ namespace TitanOrbit.Data
                 energyRegen = energyRegen,
                 energyRegenPerLevel = energyRegen * perLevel,
                 moveSpeed = moveSpeed,
-                moveSpeedPerLevel = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(
-                    ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(v)),
+                moveSpeedPerLevel = moveSpeed * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase,
                 accelerationCap = accelerationCap,
                 accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(v),
                 turnSpeed = turnSpeed,
@@ -1576,7 +1663,7 @@ namespace TitanOrbit.Data
                 tractorBeamPower = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPower(v),
                 tractorBeamPowerPerLevel = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPowerPerLevel(v),
                 maxPeople = maxPeople,
-                maxPeoplePerLevel = Mathf.Max(0f, Mathf.RoundToInt(maxPeople * perLevel))
+                maxPeoplePerLevel = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacityPerLevel(v)
             };
         }
     }
@@ -1644,6 +1731,10 @@ namespace TitanOrbit.Data
         [NonSerialized] private List<CardData> _runtimeProceduralCards;
 
         private static readonly Regex CloneSuffixRegex = new Regex(@"\s+\(\d+\)$", RegexOptions.Compiled);
+        private static readonly Regex PropulsionIdUnderscoreFormRegex =
+            new Regex(@"^(Engine|Thruster|Wing)_(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex PropulsionIdCompactFormRegex =
+            new Regex(@"^(Engine|Thruster|Wing)(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// Normalizes a transform suffix or component id (strips Unity clone suffixes and _Mirrored).
@@ -1658,6 +1749,34 @@ namespace TitanOrbit.Data
             if (s.EndsWith("_Mirrored", StringComparison.OrdinalIgnoreCase))
                 s = s.Substring(0, s.Length - "_Mirrored".Length);
             return s.Trim();
+        }
+
+        /// <summary>Maps Engine1 ↔ Engine_1 (and thruster/wing variants) so prefab suffixes match family entries.</summary>
+        internal static string GetAlternateComponentIdForm(string componentId)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return string.Empty;
+
+            string s = NormalizeComponentId(componentId);
+            Match underscored = PropulsionIdUnderscoreFormRegex.Match(s);
+            if (underscored.Success)
+                return underscored.Groups[1].Value + underscored.Groups[2].Value;
+
+            Match compact = PropulsionIdCompactFormRegex.Match(s);
+            if (compact.Success)
+                return compact.Groups[1].Value + "_" + compact.Groups[2].Value;
+
+            return string.Empty;
+        }
+
+        private static void RegisterComponentStatsLookupKey(
+            Dictionary<string, ShipComponentAbilityStats> lookup,
+            string key,
+            ShipComponentAbilityStats stats)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return;
+            lookup[key.Trim()] = stats;
         }
 
         /// <summary>
@@ -1775,10 +1894,11 @@ namespace TitanOrbit.Data
                     if (entry == null) continue;
                     if (string.IsNullOrWhiteSpace(entry.componentId)) continue;
                     string raw = entry.componentId.Trim();
-                    _lookup[raw] = entry.stats;
+                    RegisterComponentStatsLookupKey(_lookup, raw, entry.stats);
                     string canonical = NormalizeComponentId(raw);
-                    if (!string.IsNullOrEmpty(canonical))
-                        _lookup[canonical] = entry.stats;
+                    RegisterComponentStatsLookupKey(_lookup, canonical, entry.stats);
+                    string alternate = GetAlternateComponentIdForm(raw);
+                    RegisterComponentStatsLookupKey(_lookup, alternate, entry.stats);
                 }
             }
 
@@ -1801,7 +1921,10 @@ namespace TitanOrbit.Data
             if (_lookup.TryGetValue(raw, out stats))
                 return true;
             string canonical = NormalizeComponentId(raw);
-            return !string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats);
+            if (!string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats))
+                return true;
+            string alternate = GetAlternateComponentIdForm(raw);
+            return !string.IsNullOrEmpty(alternate) && _lookup.TryGetValue(alternate, out stats);
         }
 
         /// <summary>

@@ -629,7 +629,7 @@ namespace TitanOrbit.Systems
             GameObject go = Instantiate(prefab, position, rot);
             float mul = Mathf.Max(0.12f, scaleMultiplier);
             float finalScale = weaponCollisionImpactBaseScale * mul;
-            ApplyCollisionImpactVisualScale(go, finalScale);
+            VfxUrpCompat.ApplyImpactVisualScale(go, finalScale);
             FixAllIn1VfxForUrp(go);
             SetAudioPitchInHierarchy(go, audioPitch);
             Destroy(go, weaponCollisionImpactDuration);
@@ -644,50 +644,6 @@ namespace TitanOrbit.Systems
             {
                 if (sources[i] != null)
                     sources[i].pitch = pitch;
-            }
-        }
-
-        /// <summary>
-        /// Uniformly scales impact VFX so collisions visibly differ at low/high severity.
-        /// Some particle prefabs use world space or constant modules and ignore transform scale alone.
-        /// </summary>
-        private static void ApplyCollisionImpactVisualScale(GameObject root, float scale)
-        {
-            if (root == null) return;
-            float s = Mathf.Max(0.05f, scale);
-            root.transform.localScale = Vector3.one * s;
-
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
-            {
-                ParticleSystem ps = systems[i];
-                if (ps == null) continue;
-
-                var main = ps.main;
-                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-                main.startSizeMultiplier *= s;
-                main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-                main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-
-                var shape = ps.shape;
-                if (shape.enabled)
-                {
-                    shape.radius *= s;
-                    shape.scale *= s;
-                }
-
-                var sizeOverLifetime = ps.sizeOverLifetime;
-                if (sizeOverLifetime.enabled)
-                    sizeOverLifetime.sizeMultiplier *= s;
-
-            }
-
-            Light[] lights = root.GetComponentsInChildren<Light>(true);
-            for (int i = 0; i < lights.Length; i++)
-            {
-                if (lights[i] == null) continue;
-                lights[i].range *= s;
-                lights[i].intensity *= Mathf.Lerp(0.7f, 1.35f, Mathf.InverseLerp(0.2f, 2.2f, s));
             }
         }
 

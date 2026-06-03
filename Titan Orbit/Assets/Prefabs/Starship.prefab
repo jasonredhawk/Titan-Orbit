@@ -163,6 +163,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
   GlobalObjectIdHash: 2177445015
   InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
   ActiveSceneSynchronization: 0
@@ -170,6 +172,8 @@ MonoBehaviour:
   SpawnWithObservers: 1
   DontDestroyWithOwner: 0
   AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!114 &7711223344556677880
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -182,6 +186,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a7e8f9c04b2d4e1f9a8b7c6d5e4f3a2b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Networking.OwnerAuthoritativeNetworkTransform
+  ShowTopMostFoldoutHeaderGroup: 1
+  NetworkTransformExpanded: 0
+  AutoOwnerAuthorityTickOffset: 1
+  PositionInterpolationType: 0
+  RotationInterpolationType: 0
+  ScaleInterpolationType: 0
+  PositionLerpSmoothing: 1
+  PositionMaxInterpolationTime: 0.1
+  RotationLerpSmoothing: 1
+  RotationMaxInterpolationTime: 0.1
+  ScaleLerpSmoothing: 1
+  ScaleMaxInterpolationTime: 0.1
+  AuthorityMode: 0
+  TickSyncChildren: 0
   UseUnreliableDeltas: 0
   SyncPositionX: 1
   SyncPositionY: 1
@@ -199,6 +217,7 @@ MonoBehaviour:
   UseQuaternionCompression: 0
   UseHalfFloatPrecision: 0
   InLocalSpace: 0
+  SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
 --- !u!114 &7711223344556677881
@@ -213,6 +232,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6c0be61502bb534f922ebb746851216, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Components::Unity.Netcode.Components.NetworkRigidbody
+  ShowTopMostFoldoutHeaderGroup: 1
+  NetworkRigidbodyBaseExpanded: 0
+  UseRigidBodyForMotion: 0
+  AutoUpdateKinematicState: 1
+  AutoSetKinematicOnDespawn: 1
 --- !u!114 &8147216304518170485
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -225,6 +249,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b802506b7be4a1e44b57f5c0cb6e8aaf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Starship
+  ShowTopMostFoldoutHeaderGroup: 1
   shipData: {fileID: 0}
   shipLevel: 1
   focusType: 0
@@ -282,7 +307,7 @@ MonoBehaviour:
   asteroidGrindPushToAsteroidDpsScale: 0.003
   asteroidGrindMinPushNewtons: 8
   asteroidGrindMaxAsteroidDps: 120
-  asteroidGrindFeedbackInterval: 0.1
+  asteroidGrindFeedbackInterval: 0.25
   asteroidGrindFeedbackForceFromPushScale: 2.75
   asteroidImpactForcePopupMin: 80
   asteroidImpactForceToShipDamageScale: 0.000625
@@ -302,14 +327,16 @@ MonoBehaviour:
   peopleCapacity: 10
   baseMass: 1
   massPerGem: 0.01
+  rammingGemMassScale: 2.5
   hullMassScale: 0.7
+  movementHullBulkExponent: 0.4
   baseRammingPower: 1
   energyCapacity: 50
   energyRegenRate: 5
   inputHandler: {fileID: 0}
   rb: {fileID: 0}
   visualRoot: {fileID: 0}
-  shipVisualScaleMultiplier: 0.175
+  shipVisualScaleMultiplier: 0.155
   defaultMaxBankAngle: 66
   defaultBankSmoothing: 1
   equippedCards: []

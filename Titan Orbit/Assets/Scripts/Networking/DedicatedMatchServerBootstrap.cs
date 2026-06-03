@@ -16,6 +16,7 @@ using Unity.Services.Relay.Models;
 using UnityEngine;
 using TitanOrbit.Data;
 using TitanOrbit.Diagnostics;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Networking
 {
@@ -33,8 +34,11 @@ namespace TitanOrbit.Networking
         private const string LobbyIsOpenKey = "IsOpen";
         private const string LobbyIsLatestKey = "IsLatest";
         private const string LobbyCreatedAtEpochKey = "CreatedAtEpoch";
+        /// <summary>UTC unix-seconds updated on each lobby heartbeat so clients can skip ghost/stale listings.</summary>
+        private const string LobbyServerAliveEpochKey = "ServerAliveAt";
         private const string LobbyRelayProtocolKey = "RelayProtocol";
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
+        private const int DefaultDedicatedLobbyStaleSeconds = 120;
         private static int _dbgWatchdogFailCount;
         private static string _activeLobbyId;
         private static int _matchMaxPlayers;
@@ -132,7 +136,15 @@ namespace TitanOrbit.Networking
 
             DedicatedServerFileLog.Append("boot", "AfterSceneLoad Init scheduling BootAsync (Relay + UGS Lobby + Netcode).");
             Debug.Log("[DedicatedMatchServerBootstrap] AfterSceneLoad: scheduling BootAsync...");
+            Application.quitting += OnDedicatedProcessQuitting;
             _ = BootAsyncWithRetriesAsync();
+        }
+
+        private static void OnDedicatedProcessQuitting()
+        {
+            if (string.IsNullOrWhiteSpace(_activeLobbyId))
+                return;
+            _ = CloseLobbyForNewJoinersAsync(_activeLobbyId, "process_exit");
         }
 
         private static int GetArgInt(string name, int defaultValue)
@@ -548,7 +560,10 @@ namespace TitanOrbit.Networking
                 throw new InvalidOperationException("Netcode StartServer returned false.");
             }
 
+            TryEnsureServerMapReadyAfterNetcodeStart("initial_boot");
+
             long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long serverAliveEpochSeconds = createdAtEpochSeconds;
             Debug.Log("[DedicatedMatchServerBootstrap] Creating UGS Lobby...");
             Lobby createdLobby = null;
             try
@@ -572,6 +587,13 @@ namespace TitanOrbit.Networking
                                         DataObject.VisibilityOptions.Public,
                                         createdAtEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
                                         DataObject.IndexOptions.N3
+                                    )
+                                },
+                                {
+                                    LobbyServerAliveEpochKey,
+                                    new DataObject(
+                                        DataObject.VisibilityOptions.Public,
+                                        serverAliveEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
                                     )
                                 },
                                 { LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, relayProtocol) },
@@ -604,6 +626,12 @@ namespace TitanOrbit.Networking
             _ = HeartbeatLoopAsync();
             _ = LobbyPresenceWatchdogAsync();
             _ = NetcodeHealthLoopAsync();
+            _ = MatchSessionHealthLoopAsync(
+                maxPlayers,
+                relayProtocol,
+                isLatest,
+                relayAllocTimeoutMs,
+                lobbyCreateTimeoutMs);
             _ = RotationLoopAsync(
                 createdAtEpochSeconds,
                 maxPlayers,
@@ -697,6 +725,7 @@ namespace TitanOrbit.Networking
                     else if (!string.IsNullOrWhiteSpace(lobbyId))
                     {
                         await LobbyService.Instance.SendHeartbeatPingAsync(lobbyId);
+                        await TouchLobbyServerAliveAsync(lobbyId);
                     }
                 }
                 catch (Exception e)
@@ -783,6 +812,8 @@ namespace TitanOrbit.Networking
                 transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, relayProto));
                 NetworkGameManager.ApplyRelayFriendlyTransportSettings(transport);
 
+                ResetServerMapBeforeNetcodeRestart("empty_match_recreate");
+
                 if (NetworkManager.Singleton.IsListening)
                     NetworkManager.Singleton.Shutdown();
 
@@ -790,7 +821,10 @@ namespace TitanOrbit.Networking
                 if (!started)
                     throw new InvalidOperationException("Netcode StartServer returned false after empty match recreate.");
 
+                TryEnsureServerMapReadyAfterNetcodeStart("empty_match_recreate");
+
                 long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                long serverAliveEpochSeconds = createdAtEpochSeconds;
                 string serverListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
                 Lobby newLobby = await WithTimeoutAsync(
                     LobbyService.Instance.CreateLobbyAsync(
@@ -811,6 +845,13 @@ namespace TitanOrbit.Networking
                                         DataObject.VisibilityOptions.Public,
                                         createdAtEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
                                         DataObject.IndexOptions.N3
+                                    )
+                                },
+                                {
+                                    LobbyServerAliveEpochKey,
+                                    new DataObject(
+                                        DataObject.VisibilityOptions.Public,
+                                        serverAliveEpochSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
                                     )
                                 },
                                 { LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, relayProtocol) },
@@ -943,6 +984,121 @@ namespace TitanOrbit.Networking
                 },
                 IsLocked = !isOpen
             });
+        }
+
+        private static async Task TouchLobbyServerAliveAsync(string lobbyId)
+        {
+            if (string.IsNullOrWhiteSpace(lobbyId))
+                return;
+            try
+            {
+                long aliveEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
+                {
+                    Data = new Dictionary<string, DataObject>
+                    {
+                        {
+                            LobbyServerAliveEpochKey,
+                            new DataObject(
+                                DataObject.VisibilityOptions.Public,
+                                aliveEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                        }
+                    }
+                });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[DedicatedMatchServerBootstrap] TouchLobbyServerAlive failed: " + e.Message);
+            }
+        }
+
+        private static void ResetServerMapBeforeNetcodeRestart(string reason)
+        {
+            MapGenerator mapGen = UnityEngine.Object.FindFirstObjectByType<MapGenerator>();
+            if (mapGen == null)
+                return;
+            mapGen.ResetForNewMatchSession();
+            DedicatedServerFileLog.Append("map", "Reset map before Netcode restart (" + reason + ").");
+        }
+
+        private static void TryEnsureServerMapReadyAfterNetcodeStart(string reason)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+                return;
+
+            MapGenerator mapGen = UnityEngine.Object.FindFirstObjectByType<MapGenerator>();
+            if (mapGen == null)
+            {
+                Debug.LogWarning(
+                    "[DedicatedMatchServerBootstrap] No MapGenerator in scene after Netcode start (" + reason + ").");
+                return;
+            }
+
+            if (!mapGen.IsServerMapSessionHealthy())
+            {
+                mapGen.ResetForNewMatchSession();
+                mapGen.EnsureMapGenerated();
+            }
+
+            if (!mapGen.IsServerMapSessionHealthy())
+            {
+                Debug.LogError(
+                    "[DedicatedMatchServerBootstrap] Map session unhealthy after EnsureMapGenerated (" + reason +
+                    "). blueprintCount=" + mapGen.BlueprintEntryCount + " loadingComplete=" + mapGen.LoadingComplete);
+                DedicatedServerFileLog.Append(
+                    "map",
+                    "Unhealthy map after Netcode start (" + reason + ") blueprintCount=" + mapGen.BlueprintEntryCount);
+            }
+        }
+
+        /// <summary>
+        /// While idle (no players), recover from a stale map session or publish a fresh lobby if the world cannot be regenerated in-process.
+        /// </summary>
+        private static async Task MatchSessionHealthLoopAsync(
+            int maxPlayers,
+            string relayProtocol,
+            bool isLatest,
+            int relayAllocTimeoutMs,
+            int lobbyCreateTimeoutMs)
+        {
+            var interval = TimeSpan.FromSeconds(45);
+            while (true)
+            {
+                await Task.Delay(interval);
+                try
+                {
+                    if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+                        continue;
+                    if (NetworkManager.Singleton.ConnectedClients.Count > 0)
+                        continue;
+
+                    MapGenerator mapGen = UnityEngine.Object.FindFirstObjectByType<MapGenerator>();
+                    if (mapGen == null || mapGen.IsServerMapSessionHealthy())
+                        continue;
+
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] Stale map session detected (no players). Regenerating map.");
+                    DedicatedServerFileLog.Append("map", "Stale map session; attempting in-process regeneration.");
+                    mapGen.ResetForNewMatchSession();
+                    mapGen.EnsureMapGenerated();
+
+                    if (mapGen.IsServerMapSessionHealthy())
+                        continue;
+
+                    Debug.LogError(
+                        "[DedicatedMatchServerBootstrap] Map still unhealthy after regeneration; recreating empty match (lobby + Relay).");
+                    await RecreateEmptyMatchInProcessAsync(
+                        maxPlayers,
+                        relayProtocol,
+                        isLatest,
+                        TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                        lobbyCreateTimeoutMs);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("[DedicatedMatchServerBootstrap] MatchSessionHealthLoop error: " + e.Message);
+                }
+            }
         }
 
         private static void SpawnNextMatch(int maxPlayers, ushort serverPort, string relayProtocol, bool nextIsLatest)

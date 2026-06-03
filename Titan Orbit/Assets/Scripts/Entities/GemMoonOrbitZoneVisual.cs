@@ -13,18 +13,18 @@ namespace TitanOrbit.Entities
     public class GemMoonOrbitZoneVisual : ImmediateModeShapeDrawer
     {
         [Header("Orbit Zone Fill")]
-        [Tooltip("Draw the orbit zone as a filled ring with gradient: alpha at inner edge, 0 at outer edge (same idea as HomePlanetRingsDrawer).")]
+        [Tooltip("Draw the orbit zone as a filled disc with radial gradient: alpha at center, 0 at outer edge.")]
         [SerializeField] private bool drawOrbitZoneFill = true;
         [FormerlySerializedAs("zoneTint")]
         [Tooltip("Match planet orbit fill (PlanetRingsDrawer): soft blue reads more translucent than white at the same alpha.")]
         [SerializeField] private Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
-        [Tooltip("Alpha at inner edge of orbit zone (moon body radius). Same default as planet orbit zone (0.3).")]
+        [Tooltip("Alpha at disc center. Same default as planet orbit zone peak (0.3).")]
         [Range(0f, 1f)]
         [FormerlySerializedAs("zoneInnerAlpha")]
         [SerializeField] private float orbitZoneInnerAlpha = 0.3f;
-        [Tooltip("Vertical offset for the moon orbit zone in moon local Y. 0 keeps it centered at moon level.")]
+        [Tooltip("Draw the orbit zone this far below the moon (local Y) so ships and gems render above it.")]
         [FormerlySerializedAs("heightBelowMoon")]
-        [SerializeField] private float orbitZoneHeightBelowPlanet = 0f;
+        [SerializeField] private float orbitZoneHeightBelowPlanet = 0.08f;
 
         private PlanetGemMoon moon;
 
@@ -56,20 +56,13 @@ namespace TitanOrbit.Entities
             float outerRadiusRuntime = GetMoonShieldRadiusLocal();
             if (outerRadiusRuntime <= 0.0001f) return;
 
-            float innerRadiusRuntime = Mathf.Min(moon.GetMoonBodyRadiusLocal(), outerRadiusRuntime * 0.98f);
-            innerRadiusRuntime = Mathf.Max(0.02f, innerRadiusRuntime);
-            if (outerRadiusRuntime - innerRadiusRuntime < 0.02f)
-                innerRadiusRuntime = Mathf.Max(0.02f, outerRadiusRuntime - 0.02f);
-
             Transform t = moon.transform;
             Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
             Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
             Matrix4x4 homeMatrix = t.localToWorldMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
 
-            float zoneRadius = (innerRadiusRuntime + outerRadiusRuntime) * 0.5f;
-            float zoneThickness = outerRadiusRuntime - innerRadiusRuntime;
-            Color innerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
-            Color outerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
+            Color centerColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, orbitZoneInnerAlpha);
+            Color edgeColor = new Color(orbitZoneTint.r, orbitZoneTint.g, orbitZoneTint.b, 0f);
 
             using (Draw.Command(cam))
             {
@@ -79,7 +72,7 @@ namespace TitanOrbit.Entities
                 Draw.DiscGeometry = DiscGeometry.Flat2D;
                 Draw.Matrix = homeMatrix;
 
-                Draw.Ring(Vector3.zero, Quaternion.identity, zoneRadius, zoneThickness, DiscColors.Radial(innerColor, outerColor));
+                Draw.Disc(Vector3.zero, Quaternion.identity, outerRadiusRuntime, DiscColors.Radial(centerColor, edgeColor));
             }
         }
 

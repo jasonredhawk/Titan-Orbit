@@ -67,6 +67,49 @@ namespace TitanOrbit.Core
             PlayParticleSystemsInHierarchy(root);
         }
 
+        /// <summary>
+        /// Uniformly scales impact VFX. Sci-Fi Arsenal / AllIn1 prefabs often use world-space particles
+        /// and ignore <see cref="Transform.localScale"/> alone — adjust particle modules directly.
+        /// </summary>
+        public static void ApplyImpactVisualScale(GameObject root, float scale)
+        {
+            if (root == null) return;
+            float s = Mathf.Max(0.05f, scale);
+            root.transform.localScale = Vector3.one * s;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null) continue;
+
+                var main = ps.main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                main.startSizeMultiplier *= s;
+                main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
+                main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
+
+                var shape = ps.shape;
+                if (shape.enabled)
+                {
+                    shape.radius *= s;
+                    shape.scale *= s;
+                }
+
+                var sizeOverLifetime = ps.sizeOverLifetime;
+                if (sizeOverLifetime.enabled)
+                    sizeOverLifetime.sizeMultiplier *= s;
+            }
+
+            Light[] lights = root.GetComponentsInChildren<Light>(true);
+            for (int i = 0; i < lights.Length; i++)
+            {
+                if (lights[i] == null) continue;
+                lights[i].range *= s;
+                lights[i].intensity *= Mathf.Lerp(0.7f, 1.35f, Mathf.InverseLerp(0.2f, 2.2f, s));
+            }
+        }
+
         /// <summary>Weapon fire: compact cone burst using URP Particles Unlit only (mobile; no AllIn1 prefabs).</summary>
         public static void SpawnMobileMuzzleFlash(Vector3 position, Vector3 forwardHorizontal, Color color)
         {

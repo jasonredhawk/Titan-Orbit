@@ -101,13 +101,10 @@ namespace TitanOrbit.Entities
             if (!smoothedVelocityByGemId.TryGetValue(gemId, out Vector3 velocity))
                 return 0f;
 
-            Vector3 cur = GetWorldPosition(gem);
-            Vector3 toShip = ToroidalMap.ToroidalDirection(cur, GetShipPosition(ship));
-            toShip.y = 0f;
-            if (toShip.sqrMagnitude < 0.0001f)
+            if (!GemTractorBeamSettings.TryGetPullTowardDirection(ship, gem, out Vector3 pullDir))
                 return 0f;
 
-            return Vector3.Dot(velocity, toShip.normalized);
+            return Vector3.Dot(velocity, pullDir);
         }
 
         public static void Clear()
@@ -116,14 +113,6 @@ namespace TitanOrbit.Entities
             currentSampleByGemId.Clear();
             smoothedVelocityByGemId.Clear();
             lastCommitFrame = -1;
-        }
-
-        private static Vector3 GetShipPosition(Starship ship)
-        {
-            var rb = ship.GetComponent<Rigidbody>();
-            Vector3 pos = rb != null ? rb.position : ship.transform.position;
-            pos.y = 0f;
-            return pos;
         }
 
         private static Vector3 GetWorldPosition(Gem gem)
