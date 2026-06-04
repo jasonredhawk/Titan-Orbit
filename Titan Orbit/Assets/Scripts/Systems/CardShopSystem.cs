@@ -173,7 +173,13 @@ namespace TitanOrbit.Systems
         /// <summary>Heuristic power breakdown for a chassis tier (editor-built upgrade tree).</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
         {
-            return planetShipFamilyConfig != null ? planetShipFamilyConfig.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+            if (planetShipFamilyConfig == null || string.IsNullOrEmpty(chassisId))
+                return default;
+
+            ShipFamilyPowerScoreBreakdown breakdown = planetShipFamilyConfig.GetPowerScoreBreakdownForChassisId(chassisId);
+            ShipFamilyDefinition family = planetShipFamilyConfig.GetShipFamilyDefinitionForChassisId(chassisId);
+            int bankIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+            return BulletBankProfileUtility.ApplyProfileToBreakdown(breakdown, bankIndex);
         }
 
         /// <summary>Gem purchase cost for a chassis at the given ship level (2× gem cap, L1→L6 gradient).</summary>

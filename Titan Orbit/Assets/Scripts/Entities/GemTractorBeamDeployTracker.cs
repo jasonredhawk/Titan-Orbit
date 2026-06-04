@@ -27,6 +27,8 @@ namespace TitanOrbit.Entities
             public float lockStartTime;
             public float lockDistance;
             public float extendDuration;
+            /// <summary>Wing that established the lock (-1 = ship center fallback for wingless ships).</summary>
+            public int lockingWingIndex;
         }
 
         public static void LateUpdateTick()
@@ -69,7 +71,8 @@ namespace TitanOrbit.Entities
                     if (stateByPair.ContainsKey(key))
                         continue;
 
-                    Vector3 origin = GemTractorBeamSettings.GetBeamOrigin(ship, gem);
+                    int lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
+                    Vector3 origin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
                     Vector3 gemPos = GetGemWorldPosition(gem);
                     float dist = ToroidalMap.ToroidalDistance(origin, gemPos);
                     float extendDuration = ComputeExtendDuration(dist);
@@ -78,7 +81,8 @@ namespace TitanOrbit.Entities
                     {
                         lockStartTime = now,
                         lockDistance = dist,
-                        extendDuration = extendDuration
+                        extendDuration = extendDuration,
+                        lockingWingIndex = lockingWingIndex
                     };
                 }
             }
@@ -114,7 +118,8 @@ namespace TitanOrbit.Entities
             if (!GemTractorBeamSettings.IsWithinCandidateMagneticPullRange(ship, gem))
                 return;
 
-            Vector3 origin = GemTractorBeamSettings.GetBeamOrigin(ship, gem);
+            int lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
+            Vector3 origin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
             Vector3 gemPos = GetGemWorldPosition(gem);
             float dist = ToroidalMap.ToroidalDistance(origin, gemPos);
             float now = GetNow();
@@ -123,8 +128,22 @@ namespace TitanOrbit.Entities
             {
                 lockStartTime = now,
                 lockDistance = dist,
-                extendDuration = ComputeExtendDuration(dist)
+                extendDuration = ComputeExtendDuration(dist),
+                lockingWingIndex = lockingWingIndex
             };
+        }
+
+        /// <summary>True when a deploy/tractor lock exists for this ship–gem pair (beam connected).</summary>
+        public static bool HasActiveLock(Starship ship, Gem gem) => TryGetState(ship, gem, out _);
+
+        public static bool TryGetLockingWingIndex(Starship ship, Gem gem, out int wingIndex)
+        {
+            wingIndex = -1;
+            if (!TryGetState(ship, gem, out DeployState state))
+                return false;
+
+            wingIndex = state.lockingWingIndex;
+            return true;
         }
 
         public static float GetExtendDuration(Starship ship, Gem gem)

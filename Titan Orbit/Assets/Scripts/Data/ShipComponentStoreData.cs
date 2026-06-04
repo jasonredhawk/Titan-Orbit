@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using TitanOrbit.Core;
+using TitanOrbit.Systems;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -55,19 +56,33 @@ namespace TitanOrbit.Data
             };
         }
 
-        public static float GetComponentPowerScore(ShipFamilyComponentEntry entry, int shipLevel)
+        public static float GetComponentPowerScore(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null)
         {
             if (entry == null)
                 return 0f;
-            return GetPowerBreakdown(entry, shipLevel).Total;
+            return GetPowerBreakdown(entry, shipLevel, family).Total;
         }
 
-        public static ShipFamilyPowerScoreBreakdown GetPowerBreakdown(ShipFamilyComponentEntry entry, int shipLevel)
+        public static ShipFamilyPowerScoreBreakdown GetPowerBreakdown(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family = null)
+        {
+            if (entry == null)
+                return default;
+            ShipComponentAbilityStats effective = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective);
+        }
+
+        public static ShipComponentAbilityStats GetEffectiveStatsForDisplay(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family = null)
         {
             if (entry == null)
                 return default;
             ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(entry.stats, shipLevel);
-            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective);
+            return BulletBankProfileUtility.ApplyProfileToComponentStats(effective, entry, family);
         }
 
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
@@ -145,12 +160,12 @@ namespace TitanOrbit.Data
             return 0;
         }
 
-        public static string GetStatsDescription(ShipFamilyComponentEntry entry, int shipLevel, int maxLines = 4)
+        public static string GetStatsDescription(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null, int maxLines = 4)
         {
             if (entry == null)
                 return string.Empty;
 
-            ShipComponentAbilityStats s = GetEffectiveStatsAtShipLevel(entry.stats, shipLevel);
+            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
             var lines = new List<string>(maxLines);
             TryAddLine(lines, "Fire", s.firePower, maxLines);
             TryAddLine(lines, "Bullet", s.bulletSpeed, maxLines);

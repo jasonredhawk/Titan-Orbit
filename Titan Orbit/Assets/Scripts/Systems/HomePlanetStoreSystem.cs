@@ -17,6 +17,13 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject fighterDronePrefab;
         [SerializeField] private GameObject shieldDronePrefab;
         [SerializeField] private GameObject miningDronePrefab;
+        [Tooltip("Network prefab for drones dropped on ship death (LootableDrone + NetworkObject).")]
+        [SerializeField] private GameObject lootableDroneNetworkPrefab;
+
+        public GameObject FighterDronePrefab => fighterDronePrefab;
+        public GameObject ShieldDronePrefab => shieldDronePrefab;
+        public GameObject MiningDronePrefab => miningDronePrefab;
+        public GameObject LootableDroneNetworkPrefab => lootableDroneNetworkPrefab;
 
         private void Awake()
         {
@@ -75,14 +82,6 @@ namespace TitanOrbit.Systems
                 return;
             }
 
-            int slotIndex = ship.EquippedEquipmentCount - 1;
-            if (StoreItemData.IsDrone(itemType))
-            {
-                GameObject prefab = GetDronePrefab(itemType);
-                if (prefab != null)
-                    SpawnDroneForShip(ship, prefab, slotIndex);
-            }
-
             NotifyPurchaseClientRpc(clientId, itemType, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
         }
 
@@ -121,19 +120,10 @@ namespace TitanOrbit.Systems
             NotifyComponentPurchaseClientRpc(clientId, componentId, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
         }
 
-        /// <summary>Server: respawn drones for equipment slots after reconnect snapshot restore.</summary>
+        /// <summary>Legacy hook after snapshot restore; swarm visuals rebuild from equipment list automatically.</summary>
         public void RespawnEquipmentDronesForShip(Starship ship)
         {
-            if (!IsServer || ship == null) return;
-            var equipment = ship.EquippedEquipment;
-            for (int i = 0; i < equipment.Count; i++)
-            {
-                if (!StoreItemData.IsDrone(equipment[i].ItemType)) continue;
-                if (HasDroneAtEquipmentSlot(ship, i)) continue;
-                GameObject prefab = GetDronePrefab(equipment[i].ItemType);
-                if (prefab != null)
-                    SpawnDroneForShip(ship, prefab, i);
-            }
+            ship?.DroneSwarm?.OnStarshipNetworkSpawn();
         }
 
         [ClientRpc]
@@ -148,46 +138,6 @@ namespace TitanOrbit.Systems
         }
 
         public enum DroneType { Fighter, Shield, Mining }
-
-        private GameObject GetDronePrefab(StoreItemType itemType)
-        {
-            switch (itemType)
-            {
-                case StoreItemType.FighterDrone: return fighterDronePrefab;
-                case StoreItemType.ShieldDrone: return shieldDronePrefab;
-                case StoreItemType.MiningDrone: return miningDronePrefab;
-                default: return null;
-            }
-        }
-
-        private void SpawnDroneForShip(Starship ship, GameObject prefab, int equipmentSlotIndex)
-        {
-            if (prefab == null || ship == null) return;
-            Vector3 pos = ship.transform.position + ship.transform.forward * 2f;
-            GameObject go = Instantiate(prefab, pos, Quaternion.identity);
-            var drone = go.GetComponent<DroneBase>();
-            if (drone != null)
-            {
-                drone.SetOwnerShip(ship);
-                drone.SetEquipmentSlotIndex(equipmentSlotIndex);
-            }
-            var no = go.GetComponent<NetworkObject>();
-            if (no != null) no.Spawn();
-        }
-
-        private static bool HasDroneAtEquipmentSlot(Starship ship, int equipmentSlotIndex)
-        {
-            var drones = Object.FindObjectsByType<DroneBase>(FindObjectsSortMode.None);
-            for (int i = 0; i < drones.Length; i++)
-            {
-                DroneBase drone = drones[i];
-                if (drone == null || drone.IsDestroyed) continue;
-                if (drone.OwnerShip != ship) continue;
-                if (drone.EquipmentSlotIndex == equipmentSlotIndex)
-                    return true;
-            }
-            return false;
-        }
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {

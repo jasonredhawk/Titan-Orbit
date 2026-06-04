@@ -108,6 +108,16 @@ namespace TitanOrbit.UI
             return ((RectTransform)rootPanel.transform).sizeDelta.y;
         }
 
+        /// <summary>
+        /// Distance from the root canvas bottom edge to the top of the upgrade strip (inset + bar height).
+        /// Matches the strip's live anchored layout so HUDs stacked above it do not overlap.
+        /// </summary>
+        public float GetUpgradeStripReserveHeight()
+        {
+            if (_stripRootRect == null) return GetUpgradeBarCanvasHeight();
+            return _stripRootRect.anchoredPosition.y + _stripRootRect.sizeDelta.y;
+        }
+
         private void Start()
         {
             if (!upgradeBarEnabled) return;

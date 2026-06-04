@@ -218,6 +218,27 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>Returns the authored profile (stat multipliers + abilities) for a bullet bank index, or false if out of range.</summary>
+        /// <summary>Resolves a category index by <see cref="BulletBankCategory.categoryName"/> (case-insensitive). Returns false if not found.</summary>
+        public bool TryGetBulletBankIndexByCategoryName(string categoryName, out int index)
+        {
+            index = -1;
+            if (string.IsNullOrWhiteSpace(categoryName) || !UseCategories || bulletBankCategories == null)
+                return false;
+
+            string key = categoryName.Trim();
+            for (int i = 0; i < bulletBankCategories.Count; i++)
+            {
+                var cat = bulletBankCategories[i];
+                if (cat == null || string.IsNullOrEmpty(cat.categoryName)) continue;
+                if (string.Equals(cat.categoryName, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    index = i;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public bool TryGetBulletBankProfile(int index, out BulletBankProfile profile)
         {
             profile = null;
@@ -263,9 +284,9 @@ namespace TitanOrbit.Systems
         /// struct simulation (no NetworkObject per bullet); see <c>CombatSystem.ServerBullets.cs</c>.
         /// Returns false when the bullet cap is reached so callers can skip energy/recoil deductions.
         /// </summary>
-        public bool TrySpawnBulletOnServer(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1)
+        public bool TrySpawnBulletOnServer(Vector3 position, Vector3 direction, float speed, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId = 0, float visualScaleMultiplier = 1f, byte bulletShapeIndex = 0, Vector3 shipVelocity = default, int bulletPrefabIndex = -1, byte spawnFlags = 0)
         {
-            return TrySpawnServerBullet(position, direction, speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, shipVelocity, bulletPrefabIndex);
+            return TrySpawnServerBullet(position, direction, speed, damage, ownerTeam, ownerShipNetworkId, visualScaleMultiplier, bulletShapeIndex, shipVelocity, bulletPrefabIndex, spawnFlags);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -312,6 +333,49 @@ namespace TitanOrbit.Systems
             }
             var no = go.GetComponent<NetworkObject>();
             if (no != null) no.Spawn();
+        }
+
+        /// <summary>Client-side muzzle flash matching ship weapon fire (Sci-Fi Arsenal or mobile fallback).</summary>
+        public void PlayWeaponMuzzleVfxAt(Vector3 position, Vector3 direction, int bankIndex, TeamManager.Team team, float pitch = 1f)
+        {
+            Vector3 dir = direction;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+            else dir.Normalize();
+            position.y = 0f;
+
+            if (!Application.isMobilePlatform)
+            {
+                GameObject bulletPrefab = GetBulletPrefabFromBank(bankIndex, team);
+                var sciFi = bulletPrefab != null ? bulletPrefab.GetComponent<SciFiProjectileScript>() : null;
+                if (sciFi != null && sciFi.muzzleParticle != null)
+                {
+                    GameObject muzzle = Instantiate(sciFi.muzzleParticle, position, Quaternion.LookRotation(-dir));
+                    if (muzzle != null)
+                    {
+                        VfxUrpCompat.PrepareVfxInstance(muzzle);
+                        SetMuzzleAudioPitchInHierarchy(muzzle, pitch);
+                        Destroy(muzzle, 1.5f);
+                        return;
+                    }
+                }
+            }
+
+            Color flashColor = TeamManager.Instance != null
+                ? TeamManager.GetTeamColor(team)
+                : new Color(1f, 0.88f, 0.45f);
+            VfxUrpCompat.SpawnMobileMuzzleFlash(position, dir, flashColor);
+        }
+
+        private static void SetMuzzleAudioPitchInHierarchy(GameObject root, float pitch)
+        {
+            if (root == null) return;
+            var sources = root.GetComponentsInChildren<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] != null)
+                    sources[i].pitch = pitch;
+            }
         }
     }
 }

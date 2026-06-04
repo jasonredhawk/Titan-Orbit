@@ -23,10 +23,10 @@ namespace TitanOrbit.Systems
                 return;
             }
 
-            DroneBase drone = hitCollider.GetComponentInParent<DroneBase>();
-            if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
+            DroneBody drone = hitCollider.GetComponentInParent<DroneBody>();
+            if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam) && drone.Loot == null)
             {
-                drone.ApplyBulletKnockbackOnServer(impactWorldPos, impulse, pull);
+                drone.Swarm?.ApplyKnockbackFromBullet(drone.EquipmentSlotIndex, impactWorldPos, impulse, pull);
                 return;
             }
 

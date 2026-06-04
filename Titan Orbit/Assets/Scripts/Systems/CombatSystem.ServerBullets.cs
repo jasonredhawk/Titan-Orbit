@@ -35,6 +35,10 @@ namespace TitanOrbit.Systems
         public byte ShapeIndex;
         public byte NoTrailFlag;
         public float ScaleMultiplier;
+        /// <summary>Bit flags — <see cref="BulletSpawnFlagDrone"/> always spawns a client tracer on the firing ship owner.</summary>
+        public byte SpawnFlags;
+
+        public const byte BulletSpawnFlagDrone = 1;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -51,6 +55,7 @@ namespace TitanOrbit.Systems
             serializer.SerializeValue(ref ShapeIndex);
             serializer.SerializeValue(ref NoTrailFlag);
             serializer.SerializeValue(ref ScaleMultiplier);
+            serializer.SerializeValue(ref SpawnFlags);
         }
     }
 
@@ -113,10 +118,8 @@ namespace TitanOrbit.Systems
             public byte NoTrailFlag;
             public float ScaleMultiplier;
             public uint Sequence;
+            public byte SpawnFlags;
         }
-
-        private static readonly RaycastHit[] s_sphereCastHits = new RaycastHit[32];
-        private static readonly Collider[] s_overlapHits = new Collider[32];
 
         private struct PendingImpact
         {
@@ -134,11 +137,14 @@ namespace TitanOrbit.Systems
             public bool IsAsteroidHit;
             public float LingeringFireDuration;
             public ulong AttachBurnNetworkObjectId;
+            public bool IsDroneShot;
         }
 
         private ServerBullet[] serverBullets;
         private int activeServerBulletCount;
         private uint nextBulletSequence = 1;
+        private static readonly RaycastHit[] s_sphereCastHits = new RaycastHit[32];
+        private static readonly Collider[] s_overlapHits = new Collider[32];
         private readonly List<BulletSpawnPayload> pendingSpawnBatch = new List<BulletSpawnPayload>(MaxSpawnBatchSize);
         private readonly List<PendingImpact> pendingImpacts = new List<PendingImpact>(MaxSpawnBatchSize);
 
@@ -169,7 +175,8 @@ namespace TitanOrbit.Systems
             float visualScaleMultiplier,
             byte bulletShapeIndex,
             Vector3 shipVelocity,
-            int bulletPrefabIndex)
+            int bulletPrefabIndex,
+            byte spawnFlags = 0)
         {
             if (!IsServer) return false;
             EnsureSimulationInitialized();
@@ -182,7 +189,8 @@ namespace TitanOrbit.Systems
             else dir.Normalize();
 
             float finalSpeed = Mathf.Max(0.01f, speed * bulletSpeedMultiplier);
-            Vector3 spawnPos = position + dir * spawnOffset;
+            bool isDroneShot = (spawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0;
+            Vector3 spawnPos = isDroneShot ? position : position + dir * spawnOffset;
             spawnPos.y = 0f;
 
             Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
@@ -218,6 +226,7 @@ namespace TitanOrbit.Systems
             b.NoTrailFlag = 0;
             b.ScaleMultiplier = Mathf.Max(0.1f, visualScaleMultiplier);
             b.Sequence = sequence;
+            b.SpawnFlags = spawnFlags;
 
             activeServerBulletCount++;
 
@@ -240,6 +249,7 @@ namespace TitanOrbit.Systems
                 ShapeIndex = bulletShapeIndex,
                 NoTrailFlag = 0,
                 ScaleMultiplier = b.ScaleMultiplier,
+                SpawnFlags = spawnFlags,
             });
 
             CheckImmediateOverlap(slot);
@@ -380,6 +390,13 @@ namespace TitanOrbit.Systems
             // Overlap fallback: sphere-cast can miss thin colliders against large kinematic hulls.
             if (TryOverlapFallbackHit(slot)) return;
 
+            if (DroneSwarmHitScan.TrySegmentHit(from, to, BulletRadius, b.OwnerTeam, out DroneBody droneBody, out Vector3 droneImpact)
+                && BulletHitResolver.TryHitDroneSphere(droneBody, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, droneImpact, out BulletHitResolver.BulletHitPopupInfo dronePopup, b.VisualPrefabBankIndex))
+            {
+                DespawnWithImpact(slot, droneImpact, dronePopup);
+                return;
+            }
+
             // Toroidal sweeps before geometry despawn: world physics can miss tiled asteroids/moons
             // while still hitting a nearer planet shell on the same cast.
             if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup, b.VisualPrefabBankIndex))
@@ -431,14 +448,24 @@ namespace TitanOrbit.Systems
                 }
             }
 
-            if (bestIdx < 0) return false;
-            Collider chosen = s_overlapHits[bestIdx];
-            Vector3 impact = chosen.ClosestPoint(b.Position);
-            if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
+            if (bestIdx >= 0)
             {
-                DespawnWithImpact(slot, finalImpact, popup);
+                Collider chosen = s_overlapHits[bestIdx];
+                Vector3 impact = chosen.ClosestPoint(b.Position);
+                if (BulletHitResolver.TryHit(chosen, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, impact, out Vector3 finalImpact, out BulletHitResolver.BulletHitPopupInfo popup, b.VisualPrefabBankIndex))
+                {
+                    DespawnWithImpact(slot, finalImpact, popup);
+                    return true;
+                }
+            }
+
+            if (DroneSwarmHitScan.TryOverlapHit(b.Position, BulletRadius, b.OwnerTeam, out DroneBody droneBody, out Vector3 droneImpact)
+                && BulletHitResolver.TryHitDroneSphere(droneBody, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, droneImpact, out BulletHitResolver.BulletHitPopupInfo dronePopup, b.VisualPrefabBankIndex))
+            {
+                DespawnWithImpact(slot, droneImpact, dronePopup);
                 return true;
             }
+
             return false;
         }
 
@@ -528,6 +555,7 @@ namespace TitanOrbit.Systems
                 IsAsteroidHit = popupInfo.IsAsteroidHit,
                 LingeringFireDuration = lingerFire,
                 AttachBurnNetworkObjectId = attachBurnId,
+                IsDroneShot = (b.SpawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0,
             });
             ReleaseSlot(slot);
         }
@@ -576,7 +604,8 @@ namespace TitanOrbit.Systems
                     p.AsteroidRemainingGems,
                     p.IsAsteroidHit,
                     p.LingeringFireDuration,
-                    p.AttachBurnNetworkObjectId);
+                    p.AttachBurnNetworkObjectId,
+                    p.IsDroneShot);
             }
             pendingImpacts.Clear();
         }
@@ -590,7 +619,9 @@ namespace TitanOrbit.Systems
             {
                 BulletSpawnPayload p = payloads[i];
                 // Owner already has lag-free ClientBulletTracer from HandleInput; do not spawn a second tracer from the server batch.
-                if (localShipId != 0 && p.OwnerShipNetworkId == localShipId)
+                // Drone shots never use owner prediction — always show the batched tracer.
+                bool isDroneShot = (p.SpawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0;
+                if (!isDroneShot && localShipId != 0 && p.OwnerShipNetworkId == localShipId)
                     continue;
                 ClientBulletTracer.Spawn(p);
             }
@@ -611,7 +642,8 @@ namespace TitanOrbit.Systems
             float asteroidRemainingGems,
             bool isAsteroidHit,
             float lingeringFireDuration,
-            ulong attachBurnNetworkObjectId)
+            ulong attachBurnNetworkObjectId,
+            bool isDroneShot)
         {
             ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
             TeamManager.Team team = (TeamManager.Team)teamByte;
@@ -625,8 +657,8 @@ namespace TitanOrbit.Systems
                     asteroidRemainingGems: asteroidRemainingGems)
                 : BulletHitResolver.BulletHitPopupInfo.None;
 
-            // Firing owner uses local-only tracer impacts; skip duplicate VFX/sound from the server RPC.
-            if (localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
+            // Firing owner uses local-only tracer impacts for ship weapons; drone shots always use server impact VFX.
+            if (!isDroneShot && localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
             {
                 ClientBulletTracer.DespawnBySequence(sequence);
                 if (popup.HasAsteroidFeedback)
@@ -687,7 +719,7 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Snapshot active server bullets into <paramref name="dest"/> so server-side AI (e.g.
-        /// <see cref="ShieldDrone"/>) can reason about incoming threats without iterating every
+        /// shield drones via <see cref="DroneSwarmLogic"/>) can reason about incoming threats without iterating every
         /// frame across all NetworkObjects.
         /// </summary>
         public int CopyActiveBulletSnapshots(ServerBulletSnapshot[] dest)

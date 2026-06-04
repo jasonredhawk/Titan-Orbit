@@ -39,7 +39,7 @@ namespace TitanOrbit.UI
         [Tooltip("Inset from the bottom or top screen edge, depending on placement.")]
         [SerializeField, FormerlySerializedAs("bottomMargin")] private float verticalMargin = 20f;
         [Tooltip("When placement is Bottom Left, extra space above the bottom ship upgrade strip before this panel.")]
-        [SerializeField] private float stackGapAboveUpgradeBar = 8f;
+        [SerializeField] private float stackGapAboveUpgradeBar = 20f;
 
         [Header("Colors")]
         [SerializeField] private Color backgroundColor = new Color(0f, 0f, 0f, 0.45f);
@@ -299,7 +299,7 @@ namespace TitanOrbit.UI
             if (placement != SpeedometerPlacement.BottomLeft) return 0f;
             var upgradeBar = Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
             if (upgradeBar == null) return 0f;
-            return upgradeBar.GetUpgradeBarCanvasHeight() + stackGapAboveUpgradeBar;
+            return upgradeBar.GetUpgradeStripReserveHeight() + stackGapAboveUpgradeBar;
         }
 
         private void ApplyPlacement(RectTransform rootRect)

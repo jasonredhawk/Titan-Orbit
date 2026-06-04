@@ -41,7 +41,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
-        [Tooltip("After tractor pickup credits gems, the gem glides to ship center and despawn when within this distance.")]
+        [Tooltip("After tractor pickup credits gems, the gem glides to the collecting wing and despawn when within this distance.")]
         [SerializeField] private float tractorAbsorbCompleteRadius = 0.12f;
         [Tooltip("Minimum ship hull radius used by center-distance pickup checks when collider bounds are unavailable.")]
         [SerializeField] private float shipProximitySlop = 0.35f;
@@ -69,8 +69,9 @@ namespace TitanOrbit.Entities
         /// <summary>Server-only pickup gate: used only for hull-expelled gems so the victim ship cannot instantly re-collect.</summary>
         private ulong serverNoImmediatePickupShipId;
         private float serverNoImmediatePickupUntilTime;
-        /// <summary>Server-only: gems credited; gem keeps gliding to ship center before despawn (tractor beam pickup).</summary>
+        /// <summary>Server-only: gems credited; gem keeps gliding to the collecting wing before despawn (tractor beam pickup).</summary>
         private ulong serverAbsorbTargetShipId;
+        private int serverAbsorbTargetWingIndex = -1;
         private bool serverInitializedBeforeSpawn;
         private Rigidbody rb;
         private NetworkTransform networkTransform;
@@ -422,6 +423,7 @@ namespace TitanOrbit.Entities
         private void ClearServerAbsorbState()
         {
             serverAbsorbTargetShipId = 0;
+            serverAbsorbTargetWingIndex = -1;
         }
 
         private static Starship FindShipByNetworkObjectId(ulong networkObjectId)
@@ -447,7 +449,7 @@ namespace TitanOrbit.Entities
             if (no != null) no.Despawn();
         }
 
-        /// <summary>Server: after tractor pickup credits gems, glide toward ship center then despawn.</summary>
+        /// <summary>Server: after tractor pickup credits gems, glide toward the collecting wing then despawn.</summary>
         private void ServerTickTractorAbsorbGlide()
         {
             Starship ship = FindShipByNetworkObjectId(serverAbsorbTargetShipId);
@@ -459,12 +461,9 @@ namespace TitanOrbit.Entities
 
             Vector3 gemPos = rb != null ? rb.position : transform.position;
             gemPos.y = 0f;
-            Vector3 shipPos = ship.transform.position;
-            var shipRb = ship.GetComponent<Rigidbody>();
-            if (shipRb != null) shipPos = shipRb.position;
-            shipPos.y = 0f;
+            Vector3 targetPos = GetAbsorbTargetWorldPosition(ship);
 
-            float dist = ToroidalMap.ToroidalDistance(gemPos, shipPos);
+            float dist = ToroidalMap.ToroidalDistance(gemPos, targetPos);
             if (dist <= tractorAbsorbCompleteRadius)
             {
                 DespawnCollectedGem();
@@ -474,17 +473,28 @@ namespace TitanOrbit.Entities
             if (rb == null)
                 return;
 
-            Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, shipPos);
-            toShip.y = 0f;
-            if (toShip.sqrMagnitude < 0.0001f)
+            Vector3 toTarget = ToroidalMap.ToroidalDirection(gemPos, targetPos);
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < 0.0001f)
             {
                 DespawnCollectedGem();
                 return;
             }
 
             float pullSpeed = GemTractorBeamSettings.GetGameplayPullSpeed(ship, this);
-            rb.linearVelocity = toShip.normalized * pullSpeed;
+            rb.linearVelocity = toTarget.normalized * pullSpeed;
             rb.linearDamping = 0f;
+        }
+
+        private Vector3 GetAbsorbTargetWorldPosition(Starship ship)
+        {
+            if (serverAbsorbTargetWingIndex >= 0)
+                return GemTractorBeamSettings.GetWingBeamOrigin(ship, serverAbsorbTargetWingIndex);
+
+            var shipRb = ship.GetComponent<Rigidbody>();
+            Vector3 shipPos = shipRb != null ? shipRb.position : ship.transform.position;
+            shipPos.y = 0f;
+            return shipPos;
         }
 
         private float GetServerTime()
@@ -607,7 +617,8 @@ namespace TitanOrbit.Entities
             if (!CanShipCollect(ship))
                 return;
 
-            CollectToShip(ship);
+            int wingIndex = GemTractorBeamSettings.GetPullWingIndex(ship, this);
+            CollectToShip(ship, wingIndex);
         }
 
         /// <summary>Server: blocks only the victim ship for hull-expelled gem cooldown (authoritative fields, not NetworkVariables).</summary>
@@ -634,6 +645,12 @@ namespace TitanOrbit.Entities
             {
                 if (ship == null || ship.IsDead) continue;
                 if (ship.IsGemCollectionSuppressed) continue;
+                if (!CanShipCollect(ship))
+                    continue;
+
+                if (TryCollectToShipFromWingProximity(ship, gemPos))
+                    return;
+
                 Vector3 shipPos = ship.transform.position;
                 var srb = ship.GetComponent<Rigidbody>();
                 if (srb != null) shipPos = srb.position;
@@ -643,12 +660,40 @@ namespace TitanOrbit.Entities
                 if (ToroidalMap.ToroidalDistance(gemPos, shipPos) > maxDist)
                     continue;
 
-                if (!CanShipCollect(ship))
-                    continue;
-
-                CollectToShip(ship);
+                CollectToShip(ship, -1);
                 return;
             }
+        }
+
+        /// <summary>Collect when the gem is near any wing tractor anchor (ships with wing beams).</summary>
+        private bool TryCollectToShipFromWingProximity(Starship ship, Vector3 gemPos)
+        {
+            var wings = ship.WingTractorBeams;
+            if (wings == null || wings.Count == 0)
+                return false;
+
+            float maxDist = collectRadius + shipProximitySlop;
+            int bestWing = -1;
+            float bestDist = float.MaxValue;
+
+            for (int wi = 0; wi < wings.Count; wi++)
+            {
+                if (wings[wi].wingTransform == null)
+                    continue;
+
+                float dist = ToroidalMap.ToroidalDistance(gemPos, wings[wi].GetWorldPosition());
+                if (dist > maxDist || dist >= bestDist)
+                    continue;
+
+                bestDist = dist;
+                bestWing = wi;
+            }
+
+            if (bestWing < 0)
+                return false;
+
+            CollectToShip(ship, bestWing);
+            return true;
         }
 
         /// <summary>
@@ -670,7 +715,7 @@ namespace TitanOrbit.Entities
             return collectRadius + hullRadius;
         }
 
-        private void CollectToShip(Starship ship)
+        private void CollectToShip(Starship ship, int collectingWingIndex)
         {
             if (!IsServer || ship == null) return;
             if (value.Value <= 0f) return;
@@ -696,10 +741,13 @@ namespace TitanOrbit.Entities
                 VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
                     gemPos, FloatingCountChannel.GemPickup, toAdd, ship.ShipTeam);
 
-            // Tractor-pulled gems credit immediately but keep gliding to ship center before despawn.
+            // Tractor-pulled gems credit immediately but keep gliding to the collecting wing before despawn.
             if (GemTractorBeamSettings.IsPulledByAnyShip(this))
             {
                 serverAbsorbTargetShipId = GetShipNetworkObjectId(ship);
+                if (collectingWingIndex < 0)
+                    collectingWingIndex = GemTractorBeamSettings.GetPullWingIndex(ship, this);
+                serverAbsorbTargetWingIndex = collectingWingIndex;
                 return;
             }
 
@@ -747,19 +795,14 @@ namespace TitanOrbit.Entities
                     continue;
                 if (GemTractorBeamSettings.IsWithinMagneticPullRange(ship, this))
                     continue;
-
-                var shipRb = ship.GetComponent<Rigidbody>();
-                Vector3 shipPos = shipRb != null ? shipRb.position : ship.transform.position;
-                shipPos.y = 0f;
-
-                Vector3 toShip = ToroidalMap.ToroidalDirection(gemPos, shipPos);
-                toShip.y = 0f;
-                if (toShip.sqrMagnitude < 0.0001f)
+                if (!GemTractorBeamSettings.HasTractorInvolvement(ship, this))
+                    continue;
+                if (!GemTractorBeamSettings.TryGetPullTowardDirection(ship, this, out Vector3 pullDir))
                     continue;
 
-                float toward = Vector3.Dot(vel, toShip.normalized);
+                float toward = Vector3.Dot(vel, pullDir);
                 if (toward > 0f)
-                    vel -= toShip.normalized * toward;
+                    vel -= pullDir * toward;
             }
 
             rb.linearVelocity = new Vector3(vel.x, rb.linearVelocity.y, vel.z);

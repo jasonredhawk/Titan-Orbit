@@ -400,6 +400,8 @@ namespace TitanOrbit.Camera
             return gemMoonOrbitSmoothingActive;
         }
 
+        private bool hasEverSetFollowTarget;
+
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;
@@ -407,11 +409,27 @@ namespace TitanOrbit.Camera
             hasSmoothedFollowXZ = false;
             followVelocity = Vector3.zero;
             gemMoonOrbitSmoothingActive = false;
-            if (newTarget != null && spawnZoomScale > 1f)
+            manualZoomT = 0f;
+            galacticZoomActive = false;
+            galacticZoomReturning = false;
+            galacticZoomElapsed = 0f;
+
+            int level = targetShip != null ? targetShip.ShipLevel : minShipLevelForZoom;
+            float levelScale = GetZoomScaleForShipLevel(level);
+
+            bool playSpawnIntro = newTarget != null && spawnZoomScale > 1f && !hasEverSetFollowTarget;
+            if (newTarget != null)
+                hasEverSetFollowTarget = true;
+
+            if (playSpawnIntro)
             {
                 currentScale = spawnZoomScale;
-                scaleVelocity = 0f;
             }
+            else
+            {
+                currentScale = levelScale;
+            }
+            scaleVelocity = 0f;
         }
 
         /// <summary>Begin galactic zoom out toward a large camera distance.</summary>

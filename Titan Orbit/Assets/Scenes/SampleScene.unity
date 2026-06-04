@@ -2693,7 +2693,7 @@ MonoBehaviour:
   accelerationBarSmoothing: 5
   horizontalMargin: 20
   verticalMargin: 24
-  stackGapAboveUpgradeBar: 8
+  stackGapAboveUpgradeBar: 20
   backgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
   fillColor: {r: 0.35, g: 0.85, b: 1, a: 0.9}
   trackColor: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
@@ -4153,7 +4153,7 @@ MonoBehaviour:
   minShipLevelForZoom: 1
   maxShipLevelForZoom: 6
   zoomScaleAtLevel1: 1
-  zoomScaleAtMaxShipLevel: 1.5
+  zoomScaleAtMaxShipLevel: 1.33
   distanceChangeSmoothTime: 1.5
   gemMoonOrbitFollowSmoothTime: 0.12
   gemMoonOrbitSmoothingEnterSpeed: 0.35
@@ -8363,6 +8363,7 @@ MonoBehaviour:
   fighterDronePrefab: {fileID: 6001000000000003, guid: a1b2c3d4e5f60718293a4b5c6d7e8f90, type: 3}
   shieldDronePrefab: {fileID: 6002000000000003, guid: b2c3d4e5f60718293a4b5c6d7e8f9012, type: 3}
   miningDronePrefab: {fileID: 6003000000000003, guid: c3d4e5f60718293a4b5c6d7e8f012345, type: 3}
+  lootableDroneNetworkPrefab: {fileID: 0}
 --- !u!114 &1207700304
 MonoBehaviour:
   m_ObjectHideFlags: 0

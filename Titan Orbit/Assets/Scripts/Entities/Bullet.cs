@@ -492,7 +492,7 @@ namespace TitanOrbit.Entities
                         TryHit(col, col.ClosestPoint(transform.position));
                         return;
                     }
-                    DroneBase drone = col.GetComponentInParent<DroneBase>();
+                    DroneBody drone = col.GetComponentInParent<DroneBody>();
                     if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
                     {
                         TryHit(col, col.ClosestPoint(transform.position));
@@ -599,10 +599,10 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
-            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            DroneBody drone = other.GetComponentInParent<DroneBody>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
-                drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+                drone.Swarm?.ApplyDamageFromBullet(drone.EquipmentSlotIndex, damage, ownerTeam, ownerShipNetworkId, impactWorldPos);
 
                 if (VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(

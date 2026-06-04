@@ -92,6 +92,13 @@ namespace TitanOrbit.Data
                 || item == StoreItemType.MiningDrone;
         }
 
+        /// <summary>Max HP stored in <see cref="EquippedEquipmentEntry.remainingCharges"/> for drones.</summary>
+        public static int GetDroneMaxHp(StoreItemType item)
+        {
+            if (!IsDrone(item)) return 1;
+            return 30;
+        }
+
         public static bool IsShipComponent(StoreItemType item) => item == StoreItemType.ShipComponent;
 
         public static bool IsSupportItem(StoreItemType item) => !IsShipComponent(item);

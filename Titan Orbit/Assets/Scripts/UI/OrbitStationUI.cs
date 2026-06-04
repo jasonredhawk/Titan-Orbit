@@ -3172,14 +3172,14 @@ namespace TitanOrbit.UI
                     bool owned = currentShip != null && currentShip.HasComponentEquipped(card.componentId);
                     canBuy = currentShip != null && !owned && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
                     float power = componentEntry != null
-                        ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel)
+                        ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family)
                         : 0f;
                     subline = FormatMoonDockEquipmentSubline(shipLevel, power, owned);
                     if (card.descriptionText != null && componentEntry != null)
-                        ApplyEquipmentCardAbilityDescription(card.descriptionText, componentEntry, shipLevel);
+                        ApplyEquipmentCardAbilityDescription(card.descriptionText, componentEntry, shipLevel, family);
                     if (card.powerBar != null && componentEntry != null)
                     {
-                        ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel);
+                        ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel, family);
                         float maxPower = GetMoonDockComponentMaxDisplayPower(family, shipLevel);
                         float trackW = Mathf.Max(40f, MoonDockStoreTileMinWidth - 14f);
                         card.powerBar.ConfigureLayoutScale(1f, 1f);
@@ -3442,11 +3442,11 @@ namespace TitanOrbit.UI
 
             Color accentColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 ShipComponentStoreData.GetAbilityColorStatIndex(entry), 0.92f);
-            float price = ShipComponentStoreData.GetComponentGemPrice(entry, shipLevel);
-            float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel);
             ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
+            float price = ShipComponentStoreData.GetComponentGemPrice(entry, shipLevel);
+            float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel, family);
 
             CreateMoonDockEquipmentItemTile(
                 parent,
@@ -3470,7 +3470,7 @@ namespace TitanOrbit.UI
             if (titleTmp != null)
                 titleTmp.text = ShipComponentStoreData.GetDisplayName(entry);
             if (descriptionTmp != null)
-                ApplyEquipmentCardAbilityDescription(descriptionTmp, entry, shipLevel);
+                ApplyEquipmentCardAbilityDescription(descriptionTmp, entry, shipLevel, family);
             if (sublineTmp != null)
                 sublineTmp.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: false);
 
@@ -3485,7 +3485,7 @@ namespace TitanOrbit.UI
                 float maxPower = GetMoonDockComponentMaxDisplayPower(family, shipLevel);
                 float trackW = Mathf.Max(40f, MoonDockStoreTileMinWidth - 14f);
                 powerBar.ConfigureLayoutScale(1f, 1f);
-                powerBar.ApplyEquipmentBreakdown(ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel), maxPower, trackW);
+                powerBar.ApplyEquipmentBreakdown(ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family), maxPower, trackW);
             }
 
             _moonDockStoreCards.Add(new MoonDockStoreCardBinding
@@ -3579,13 +3579,13 @@ namespace TitanOrbit.UI
             return $"Lv {level} · PWR {power:F0}";
         }
 
-        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, int maxLines = 8)
+        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 8)
         {
             if (entry == null)
                 return string.Empty;
 
-            ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel);
-            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(entry.stats, shipLevel);
+            ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family);
+            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsForDisplay(entry, shipLevel, family);
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
             var sb = new StringBuilder(128);
             int count = 0;
@@ -3632,13 +3632,14 @@ namespace TitanOrbit.UI
         private static void ApplyEquipmentCardAbilityDescription(
             TextMeshProUGUI descriptionTmp,
             ShipFamilyComponentEntry entry,
-            int shipLevel)
+            int shipLevel,
+            ShipFamilyDefinition family = null)
         {
             if (descriptionTmp == null)
                 return;
 
             descriptionTmp.text = entry != null
-                ? BuildMoonDockComponentStatRichText(entry, shipLevel)
+                ? BuildMoonDockComponentStatRichText(entry, shipLevel, family)
                 : string.Empty;
             descriptionTmp.ForceMeshUpdate(true);
 
@@ -3671,7 +3672,7 @@ namespace TitanOrbit.UI
                 if (entry == null)
                     continue;
                 float total = ShipUpgradeTreePowerBarUI.GetEquipmentBarDisplayTotal(
-                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel));
+                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family));
                 if (total > max)
                     max = total;
             }
@@ -4855,7 +4856,7 @@ namespace TitanOrbit.UI
                     if (!filled)
                         equipmentDescTexts[i].text = "Buy from Store tab";
                     else if (entry.IsShipComponent && componentEntry != null)
-                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, currentShip.ShipLevel, 2);
+                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, shipLevel, shipFamily, 2);
                     else
                         equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
                 }
@@ -4953,7 +4954,7 @@ namespace TitanOrbit.UI
                 else if (entry.IsShipComponent && componentEntry != null)
                 {
                     equipmentDescTexts[index].richText = true;
-                    ApplyEquipmentCardAbilityDescription(equipmentDescTexts[index], componentEntry, shipLevel);
+                    ApplyEquipmentCardAbilityDescription(equipmentDescTexts[index], componentEntry, shipLevel, family);
                 }
                 else
                 {
@@ -4966,11 +4967,17 @@ namespace TitanOrbit.UI
             {
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
-                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel);
+                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family);
                     slotUi.sublineText.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: true);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
-                else if (filled && !entry.IsShipComponent && !StoreItemData.IsDrone(itemType))
+                else if (filled && StoreItemData.IsDrone(itemType))
+                {
+                    int maxHp = StoreItemData.GetDroneMaxHp(itemType);
+                    slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else if (filled && !entry.IsShipComponent)
                 {
                     slotUi.sublineText.text = $"\u00d7{entry.remainingCharges} charges";
                     slotUi.sublineText.gameObject.SetActive(true);
@@ -4987,7 +4994,7 @@ namespace TitanOrbit.UI
                 {
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
-                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel),
+                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel, family),
                         maxComponentPower,
                         trackWidth);
                 }

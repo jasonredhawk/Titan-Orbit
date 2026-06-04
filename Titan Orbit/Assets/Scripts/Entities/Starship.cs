@@ -646,6 +646,8 @@ namespace TitanOrbit.Entities
         private ShipFamilyDefinition currentVisualFamilyDefinition;
         /// <summary>Last chassis index we applied (so we re-apply when buying a new ship). -2 = never applied; server uses this to apply default AstroEagle_01 once.</summary>
         private int _lastAppliedChassisIndex = -2;
+        /// <summary>Ship level used when <see cref="ApplyShipVisualFromPrefab"/> last ran; re-apply when level syncs after chassis (rescue restore).</summary>
+        private int _lastAppliedShipLevel = -1;
         /// <summary>Server: true after default spawn or map-instance restore has run for this human player ship.</summary>
         private bool _playerSpawnSetupComplete;
 
@@ -1028,6 +1030,53 @@ namespace TitanOrbit.Entities
             speed = c.bulletSpeed * SpeedMultiplier;
             ApplyBulletBankShotStats(bulletBankIndex, ref damage, ref speed, ref fireRate);
             energyCostPerShot = c.energyCostPerShot * DamageMultiplier;
+        }
+
+        /// <summary>
+        /// Damage for drone bullets: primary cannon base fire power at <see cref="ShipLevel"/> (no attribute/card multipliers),
+        /// with optional bullet-bank profile scaling.
+        /// </summary>
+        public float GetDroneBulletDamage(int bulletBankIndex = -1)
+        {
+            CombatSystem combat = CombatSystem.Instance;
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0)
+            {
+                int perLvl = Mathf.Max(0, ShipLevel - 1);
+                float damage = ShipComponentWeaponSuggestions.GetSuggestedFirePower(1)
+                    + ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(1) * perLvl;
+                if (bulletBankIndex >= 0)
+                    damage = BulletBankProfileUtility.ScaleFirePower(damage, bulletBankIndex);
+                return Mathf.Max(0.5f, damage);
+            }
+
+            var c = bulletConfig.cannons[0];
+            float baseFirePower = Mathf.Max(0.5f, c.damagePerBullet);
+            int bankIdx = bulletBankIndex >= 0
+                ? bulletBankIndex
+                : (combat != null ? ResolveBulletBankIndexForCannon(c, combat) : -1);
+            if (bankIdx >= 0)
+                baseFirePower = BulletBankProfileUtility.ScaleFirePower(baseFirePower, bankIdx);
+            return baseFirePower;
+        }
+
+        /// <summary>Server: play bank muzzle VFX at a drone fire origin on all clients.</summary>
+        public void ServerPlayDroneMuzzleVfx(Vector3 position, Vector3 direction, int bankIndex, float damage)
+        {
+            if (!IsServer) return;
+            float pitch = BulletHitResolver.GetImpactSoundPitch(Mathf.Max(0.01f, damage));
+            PlayDroneMuzzleClientRpc(position, direction, bankIndex, (byte)ShipTeam, pitch);
+        }
+
+        [ClientRpc]
+        private void PlayDroneMuzzleClientRpc(Vector3 position, Vector3 direction, int bankIndex, byte teamByte, float pitch)
+        {
+            if (CombatSystem.Instance == null) return;
+            CombatSystem.Instance.PlayWeaponMuzzleVfxAt(
+                position,
+                direction,
+                bankIndex,
+                (TeamManager.Team)teamByte,
+                pitch);
         }
 
         /// <summary>Server: electric shock — movement, rotation, and firing disabled for the duration.</summary>
@@ -1717,6 +1766,13 @@ namespace TitanOrbit.Entities
 
         public IReadOnlyList<EquippedEquipmentEntry> EquippedEquipment => GetEquippedEquipmentForDisplay();
 
+        /// <summary>Synced equipment for <see cref="DroneSwarmController"/> list change events.</summary>
+        public NetworkList<EquippedEquipmentEntry> EquippedEquipmentNetworkList => equippedEquipmentEntries;
+
+        public DroneSwarmController DroneSwarm => droneSwarm;
+
+        private DroneSwarmController droneSwarm;
+
         private readonly List<EquippedEquipmentEntry> _clientEquippedEquipmentCache = new List<EquippedEquipmentEntry>();
 
         private IReadOnlyList<EquippedEquipmentEntry> GetEquippedEquipmentForDisplay()
@@ -1884,6 +1940,10 @@ namespace TitanOrbit.Entities
             _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             // Run before OnNetworkSpawn/SetShipData so the BankPivot + Prefab structure exists.
             EnsureVisualRootForBanking();
+
+            droneSwarm = GetComponent<DroneSwarmController>();
+            if (droneSwarm == null)
+                droneSwarm = gameObject.AddComponent<DroneSwarmController>();
 
             if (_isAIControlled)
                 EnemyShipWorldStatsPanel.CreateAsStarshipChild(this);
@@ -2148,6 +2208,8 @@ namespace TitanOrbit.Entities
 
             SyncInputHandlerForTeamSelectionState();
 
+            droneSwarm?.OnStarshipNetworkSpawn();
+
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
         }
 
@@ -2159,6 +2221,7 @@ namespace TitanOrbit.Entities
 
         public override void OnNetworkDespawn()
         {
+            droneSwarm?.OnStarshipNetworkDespawn();
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
             if (IsServer && !_isAIControlled
                 && (TeamManager.Instance == null || !TeamManager.Instance.IsTeamEliminated(shipTeam.Value)))
@@ -2234,6 +2297,7 @@ namespace TitanOrbit.Entities
                     SetCurrentChassisIndex(0);
                     if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
+                    _lastAppliedShipLevel = ShipLevel;
                 }
                 else
                     Debug.LogWarning("Starship: No starter ship prefab. Assign ShipUnlockTable.homeShipFamilyDefinition (e.g. AstroEagleShipFamily) with upgrade tree prefabs, and ensure CardShopSystem references the same ShipUnlockTable.");
@@ -2325,19 +2389,7 @@ namespace TitanOrbit.Entities
             if (!string.IsNullOrEmpty(snapshot.ChassisId))
                 SetCurrentChassisId(snapshot.ChassisId);
 
-            if (CardShopSystem.Instance != null)
-            {
-                GameObject prefab = !string.IsNullOrEmpty(snapshot.ChassisId)
-                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(snapshot.ChassisId)
-                    : null;
-                if (prefab == null && snapshot.ChassisIndex >= 0)
-                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(snapshot.ChassisIndex);
-                if (prefab != null)
-                {
-                    ApplyShipVisualFromPrefab(prefab);
-                    _lastAppliedChassisIndex = snapshot.ChassisIndex;
-                }
-            }
+            SyncShipDataToLevelAndBranch(snapshot.ShipLevel, snapshot.BranchIndex);
 
             attrFirePower.Value = snapshot.AttrFirePower;
             attrBulletSpeed.Value = snapshot.AttrBulletSpeed;
@@ -2375,6 +2427,9 @@ namespace TitanOrbit.Entities
             currentGems.Value = Mathf.Clamp(snapshot.CurrentGems, 0f, GemCapacity);
             currentPeople.Value = Mathf.Clamp(snapshot.CurrentPeople, 0f, PeopleCapacity);
             currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
+
+            // Apply hull after level, attributes, cards, and equipment are restored so per-level stats and component scaling match.
+            TryApplyChassisVisualFromNetworkState();
 
             if (snapshot.Team != TeamManager.Team.None && TeamManager.Instance != null)
             {
@@ -2537,26 +2592,15 @@ namespace TitanOrbit.Entities
                     SetCurrentChassisIndex(0);
                     if (!string.IsNullOrEmpty(starterChassisId)) SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
+                    _lastAppliedShipLevel = ShipLevel;
                 }
             }
-            // When chassis index/id is set or synced from the server, every peer must build the mesh (not just the owner).
-            // Otherwise other players see an empty BankPivot: invisible ship while bullets/weapons still spawn from the server.
-            if (currentChassisIndex.Value >= 0 && currentChassisIndex.Value != _lastAppliedChassisIndex && CardShopSystem.Instance != null)
+            // When chassis index/id or ship level is synced from the server, every peer must build the mesh (not just the owner).
+            // Level can replicate after chassis during rescue restore; re-apply when either changes so per-level hull scaling is correct.
+            if (currentChassisIndex.Value >= 0 && CardShopSystem.Instance != null
+                && (currentChassisIndex.Value != _lastAppliedChassisIndex || ShipLevel != _lastAppliedShipLevel))
             {
-                string cid = currentChassisId.Value.ToString();
-                GameObject prefab = !string.IsNullOrEmpty(cid) ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid) : null;
-                if (prefab == null)
-                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
-                if (prefab != null)
-                {
-                    ApplyShipVisualFromPrefab(prefab);
-                    _lastAppliedChassisIndex = currentChassisIndex.Value;
-                }
-                else if (currentChassisIndex.Value != _lastAppliedChassisIndex)
-                {
-                    Debug.LogWarning($"Starship: No prefab for chassis '{cid}' (index {currentChassisIndex.Value}). Assign ShipUnlockTable.homeShipFamilyDefinition with an upgrade tree that has prefabs set, or assign CardShopSystem's Ship Unlock Table.");
-                    _lastAppliedChassisIndex = currentChassisIndex.Value;
-                }
+                TryApplyChassisVisualFromNetworkState();
             }
 
             if (!IsOwner) return;
@@ -3302,6 +3346,7 @@ namespace TitanOrbit.Entities
                 TickOrbitGemDeposit();
                 TickVoluntaryGemExpulsion();
                 TickNearbyGemAttraction();
+                TickNearbyLootableDroneAttraction();
             }
 
             Planet dockPlanet = null;
@@ -3575,6 +3620,32 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Server: pull nearby lootable drones toward this ship when an equipment slot is free.</summary>
+        private void TickNearbyLootableDroneAttraction()
+        {
+            if (!IsServer) return;
+            if (isDead.Value || !HasEmptyEquipmentSlot || gemMoonDocked.Value) return;
+            if (LootableDrone.AllLootableDrones == null || LootableDrone.AllLootableDrones.Count == 0) return;
+
+            if (((Time.frameCount + GetInstanceID()) & 1) != 0)
+                return;
+
+            foreach (var drone in LootableDrone.AllLootableDrones)
+            {
+                if (!LootableDroneTractorUtility.ShouldApplyPullPhysics(this, drone))
+                    continue;
+
+                Rigidbody droneRb = drone.GetComponent<Rigidbody>();
+                if (droneRb == null) continue;
+                if (!LootableDroneTractorUtility.TryGetPullTowardDirection(this, drone, out Vector3 pullDir))
+                    continue;
+
+                float pullSpeed = LootableDroneTractorUtility.GetPullSpeed(this, drone);
+                droneRb.linearVelocity = pullDir * pullSpeed;
+                droneRb.linearDamping = 0f;
+            }
+        }
+
         /// <summary>Server: pull nearby free gems toward this ship so ships, not gems, drive attraction.</summary>
         private void TickNearbyGemAttraction()
         {
@@ -3607,7 +3678,7 @@ namespace TitanOrbit.Entities
                 if (!GemTractorBeamSettings.TryGetPullTowardDirection(this, gem, out Vector3 pullDir))
                     continue;
 
-                // Constant linear speed toward the assigned wing(s) until collected.
+                // Constant linear speed toward the closest assigned wing until collected.
                 gemRb.linearVelocity = pullDir * pullSpeed;
                 gemRb.linearDamping = 0f;
             }
@@ -5357,6 +5428,7 @@ namespace TitanOrbit.Entities
         private void ServerApplyDeath(ulong killerShipNetworkId = 0)
         {
             if (!IsServer || isDead.Value) return;
+            droneSwarm?.ServerDetachDronesAsLootOnDeath();
             ClearBulletBurnEffectsOnServer();
             SuppressGemCollectionForRespawnDelay();
             if (killerShipNetworkId != 0 && ScoreSystem.Instance != null)
@@ -6782,21 +6854,12 @@ namespace TitanOrbit.Entities
                     if (!string.IsNullOrEmpty(starterChassisId))
                         SetCurrentChassisId(starterChassisId);
                     _lastAppliedChassisIndex = 0;
+                    _lastAppliedShipLevel = ShipLevel;
                 }
             }
             else
             {
-                string cid = currentChassisId.Value.ToString();
-                GameObject prefab = !string.IsNullOrEmpty(cid)
-                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid)
-                    : null;
-                if (prefab == null && currentChassisIndex.Value >= 0)
-                    prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
-                if (prefab != null)
-                {
-                    ApplyShipVisualFromPrefab(prefab);
-                    _lastAppliedChassisIndex = currentChassisIndex.Value;
-                }
+                TryApplyChassisVisualFromNetworkState();
             }
         }
 
@@ -6933,6 +6996,47 @@ namespace TitanOrbit.Entities
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
             ApplyHullIdentityColor();
+        }
+
+        /// <summary>Keep runtime ShipData level/branch aligned with restored or synced ship state (visualScale and stats helpers).</summary>
+        private void SyncShipDataToLevelAndBranch(int level, int branchIndex)
+        {
+            int clampedLevel = Mathf.Max(1, level);
+            if (shipData != null)
+                shipData = Instantiate(shipData);
+            else
+                shipData = ScriptableObject.CreateInstance<ShipData>();
+            shipData.shipLevel = clampedLevel;
+            shipData.branchIndex = branchIndex;
+        }
+
+        /// <summary>Resolve the networked chassis id/index to a prefab and apply it; updates last-applied chassis/level tracking.</summary>
+        private void TryApplyChassisVisualFromNetworkState()
+        {
+            if (CardShopSystem.Instance == null || currentChassisIndex.Value < 0)
+                return;
+
+            string cid = currentChassisId.Value.ToString();
+            GameObject prefab = !string.IsNullOrEmpty(cid)
+                ? CardShopSystem.Instance.GetShipPrefabForChassisId(cid)
+                : null;
+            if (prefab == null)
+                prefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(currentChassisIndex.Value);
+
+            if (prefab != null)
+            {
+                ApplyShipVisualFromPrefab(prefab);
+                _lastAppliedChassisIndex = currentChassisIndex.Value;
+                _lastAppliedShipLevel = ShipLevel;
+                return;
+            }
+
+            if (currentChassisIndex.Value != _lastAppliedChassisIndex || ShipLevel != _lastAppliedShipLevel)
+            {
+                Debug.LogWarning($"Starship: No prefab for chassis '{cid}' (index {currentChassisIndex.Value}). Assign ShipUnlockTable.homeShipFamilyDefinition with an upgrade tree that has prefabs set, or assign CardShopSystem's Ship Unlock Table.");
+                _lastAppliedChassisIndex = currentChassisIndex.Value;
+                _lastAppliedShipLevel = ShipLevel;
+            }
         }
 
         /// <summary>Replaces this ship's visual with the chosen ship prefab: copies root hull mesh and reparents children (keeps FirePoint for shooting). Uses Prefab container (StarshipMain -> BankPivot -> Prefab) so upgrades swap cleanly.</summary>
@@ -7941,7 +8045,8 @@ namespace TitanOrbit.Entities
             if (equippedEquipmentEntries == null) return false;
             if (equippedEquipment.Count >= EquipmentSlotCount) return false;
 
-            int charges = overrideCharges ?? (StoreItemData.IsDrone(itemType) ? 1 : StoreItemData.GetPackSize(itemType));
+            int charges = overrideCharges
+                ?? (StoreItemData.IsDrone(itemType) ? StoreItemData.GetDroneMaxHp(itemType) : StoreItemData.GetPackSize(itemType));
             var entry = new EquippedEquipmentEntry
             {
                 itemType = (int)itemType,
@@ -8018,16 +8123,12 @@ namespace TitanOrbit.Entities
             return Systems.CardShopSystem.Instance.GetShipFamilyForShip(this);
         }
 
-        /// <summary>Server-only: remove equipment at slot index. Despawns linked drones unless skipped.</summary>
+        /// <summary>Server-only: remove equipment at slot index.</summary>
         public void RemoveEquipmentFromServer(int slotIndex, bool skipDroneDespawn = false)
         {
             if (!IsServer) return;
             if (equippedEquipment == null) return;
             if (slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
-
-            var entry = equippedEquipment[slotIndex];
-            if (!skipDroneDespawn && StoreItemData.IsDrone(entry.ItemType))
-                DespawnEquipmentDroneAtSlot(slotIndex);
 
             equippedEquipment.RemoveAt(slotIndex);
             if (equippedEquipmentEntries != null && slotIndex < equippedEquipmentEntries.Count)
@@ -8035,7 +8136,6 @@ namespace TitanOrbit.Entities
 
             RecalculateEquippedComponentStatSum();
             ClampCarriedResourcesToCapacity();
-            ReindexEquipmentDronesAfterRemoval(slotIndex);
         }
 
         /// <summary>Server: drone in an equipment slot was destroyed — clear the slot.</summary>
@@ -8045,7 +8145,7 @@ namespace TitanOrbit.Entities
             if (equippedEquipment == null || slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
             var entry = equippedEquipment[slotIndex];
             if (!StoreItemData.IsDrone(entry.ItemType)) return;
-            RemoveEquipmentFromServer(slotIndex, skipDroneDespawn: true);
+            RemoveEquipmentFromServer(slotIndex);
         }
 
         [ServerRpc(RequireOwnership = true)]
@@ -8054,33 +8154,45 @@ namespace TitanOrbit.Entities
             RemoveEquipmentFromServer(slotIndex);
         }
 
-        private void DespawnEquipmentDroneAtSlot(int slotIndex)
+        /// <summary>Server: remove drone rows from equipment on death. Ship components stay equipped.</summary>
+        public void StripDroneEquipmentFromServer()
         {
-            if (!IsServer) return;
-            var drones = UnityEngine.Object.FindObjectsByType<DroneBase>(FindObjectsSortMode.None);
-            for (int i = 0; i < drones.Length; i++)
+            if (!IsServer || equippedEquipment == null || equippedEquipmentEntries == null) return;
+            for (int i = equippedEquipment.Count - 1; i >= 0; i--)
             {
-                DroneBase drone = drones[i];
-                if (drone == null || drone.OwnerShip != this || drone.EquipmentSlotIndex != slotIndex)
-                    continue;
-                var no = drone.GetComponent<NetworkObject>();
-                if (no != null && no.IsSpawned)
-                    no.Despawn();
-                return;
+                if (!StoreItemData.IsDrone(equippedEquipment[i].ItemType)) continue;
+                equippedEquipment.RemoveAt(i);
+                if (i < equippedEquipmentEntries.Count)
+                    equippedEquipmentEntries.RemoveAt(i);
             }
         }
 
-        private void ReindexEquipmentDronesAfterRemoval(int removedSlotIndex)
+        /// <summary>Server: apply bullet damage to a drone equipment slot (HP stored in remainingCharges).</summary>
+        public void ApplyDroneSlotDamage(int slotIndex, float damage, TeamManager.Team attackerTeam, ulong attackerShipNetworkId)
         {
-            if (!IsServer) return;
-            var drones = UnityEngine.Object.FindObjectsByType<DroneBase>(FindObjectsSortMode.None);
-            for (int i = 0; i < drones.Length; i++)
+            if (!IsServer || equippedEquipment == null || equippedEquipmentEntries == null) return;
+            if (slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
+
+            var entry = equippedEquipment[slotIndex];
+            if (!StoreItemData.IsDrone(entry.ItemType)) return;
+            if (attackerTeam == shipTeam.Value) return;
+
+            int previousHp = entry.remainingCharges;
+            entry.remainingCharges = Mathf.Max(0, entry.remainingCharges - Mathf.RoundToInt(damage));
+            equippedEquipment[slotIndex] = entry;
+            if (slotIndex < equippedEquipmentEntries.Count)
+                equippedEquipmentEntries[slotIndex] = entry;
+
+            if (previousHp > 0 && entry.remainingCharges <= 0 && attackerShipNetworkId != 0 && ScoreSystem.Instance != null)
             {
-                DroneBase drone = drones[i];
-                if (drone == null || drone.OwnerShip != this || drone.EquipmentSlotIndex < 0)
-                    continue;
-                if (drone.EquipmentSlotIndex > removedSlotIndex)
-                    drone.SetEquipmentSlotIndex(drone.EquipmentSlotIndex - 1);
+                var spawnManager = NetworkManager.Singleton != null ? NetworkManager.Singleton.SpawnManager : null;
+                if (spawnManager != null && spawnManager.SpawnedObjects.TryGetValue(attackerShipNetworkId, out NetworkObject attackerObj))
+                {
+                    Starship attackerShip = attackerObj != null ? attackerObj.GetComponent<Starship>() : null;
+                    if (attackerShip != null)
+                        ScoreSystem.Instance.AwardEnemyKill(attackerShip);
+                }
+                NotifyEquipmentDroneDestroyed(slotIndex);
             }
         }
 
@@ -8161,6 +8273,8 @@ namespace TitanOrbit.Entities
                     }
                     else
                     {
+                        if (StoreItemData.IsDrone(itemType) && charges <= 1)
+                            charges = StoreItemData.GetDroneMaxHp(itemType);
                         AddEquipmentFromServer(itemType, charges);
                     }
                 }

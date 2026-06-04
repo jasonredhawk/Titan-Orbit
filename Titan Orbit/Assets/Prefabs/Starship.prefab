@@ -304,6 +304,7 @@ MonoBehaviour:
   asteroidRammingMinRestitution: 0
   asteroidRammingRestitutionThreshold: 6
   asteroidRammingRestitutionReferenceExcess: 14
+  asteroidRammingRestitutionReferenceMassRatioExcess: 0.4
   asteroidGrindPushToAsteroidDpsScale: 0.003
   asteroidGrindMinPushNewtons: 8
   asteroidGrindMaxAsteroidDps: 120
@@ -337,7 +338,7 @@ MonoBehaviour:
   rb: {fileID: 0}
   visualRoot: {fileID: 0}
   shipVisualScaleMultiplier: 0.155
-  defaultMaxBankAngle: 66
+  defaultMaxBankAngle: 99
   defaultBankSmoothing: 1
   equippedCards: []
   peopleTransferStationaryHoldSeconds: 1

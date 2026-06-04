@@ -51,6 +51,134 @@ namespace TitanOrbit.Systems
             return rating * m;
         }
 
+        /// <summary>Maps component/family bullet index into CombatSystem's bank (category index when categories are used).</summary>
+        public static int ResolveBankIndex(int componentOrPreferredIndex, int familyDefaultIndex = 0)
+        {
+            CombatSystem combat = CombatSystem.Instance;
+            if (combat == null || combat.BulletPrefabBankCount <= 0)
+                return -1;
+            int count = combat.BulletPrefabBankCount;
+            int idx = componentOrPreferredIndex >= 0 ? componentOrPreferredIndex : familyDefaultIndex;
+            if (idx < 0) idx = 0;
+            return idx % count;
+        }
+
+        public static int ResolveBankIndexForComponent(ShipFamilyComponentEntry entry, ShipFamilyDefinition family)
+        {
+            int familyDefault = family != null ? family.bulletPrefabIndex : 0;
+            int componentIndex = entry != null ? entry.bulletPrefabIndex : -1;
+            return ResolveBankIndex(componentIndex, familyDefault);
+        }
+
+        public static int ResolveBankIndexForFamily(ShipFamilyDefinition family) =>
+            ResolveBankIndex(-1, family != null ? family.bulletPrefabIndex : 0);
+
+        /// <summary>Applies bullet-bank stat modifiers and offense abilities for UI/store display.</summary>
+        public static ShipComponentAbilityStats ApplyProfileToComponentStats(
+            ShipComponentAbilityStats stats,
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family)
+        {
+            int bankIndex = ResolveBankIndexForComponent(entry, family);
+            if (bankIndex < 0)
+                return stats;
+
+            string partType = entry != null
+                ? ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId)
+                : string.Empty;
+            bool isWeapon = partType == "Weapon";
+            bool hasRamming = Mathf.Abs(stats.rammingPower) > 0.05f;
+
+            ApplyStatModifiersToComponentStats(ref stats, bankIndex, applyFire: isWeapon, applyRamming: isWeapon || hasRamming);
+            if (isWeapon && TryGetProfile(bankIndex, out BulletBankProfile profile) && profile != null)
+                ApplyAbilityAdjustmentsToOffenseStats(ref stats, profile);
+            return stats;
+        }
+
+        /// <summary>Applies bullet-bank stat modifiers and offense abilities to a baked chassis breakdown.</summary>
+        public static ShipFamilyPowerScoreBreakdown ApplyProfileToBreakdown(
+            ShipFamilyPowerScoreBreakdown breakdown,
+            int bankIndex)
+        {
+            if (bankIndex < 0 || !breakdown.HasDisplayStats)
+                return breakdown;
+
+            var stats = new ShipComponentAbilityStats
+            {
+                firePower = breakdown.firePower,
+                bulletSpeed = breakdown.bulletSpeed,
+                fireRate = breakdown.fireRate,
+                rammingPower = breakdown.rammingPower,
+                healthCap = breakdown.healthCap,
+                healthRegen = breakdown.healthRegen,
+                energyCap = breakdown.energyCap,
+                energyRegen = breakdown.energyRegen,
+                moveSpeed = breakdown.moveSpeed,
+                turnSpeed = breakdown.turnSpeed,
+                maxGems = breakdown.gemCap,
+                maxPeople = breakdown.peopleCap,
+            };
+
+            ApplyStatModifiersToComponentStats(ref stats, bankIndex, applyFire: true, applyRamming: true);
+            if (TryGetProfile(bankIndex, out BulletBankProfile profile) && profile != null)
+                ApplyAbilityAdjustmentsToOffenseStats(ref stats, profile);
+
+            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+        }
+
+        private static void ApplyStatModifiersToComponentStats(
+            ref ShipComponentAbilityStats stats,
+            int bankIndex,
+            bool applyFire,
+            bool applyRamming)
+        {
+            if (applyFire)
+            {
+                stats.firePower = ScaleFirePower(stats.firePower, bankIndex);
+                stats.bulletSpeed = ScaleBulletSpeed(stats.bulletSpeed, bankIndex);
+                stats.fireRate = ScaleFireRate(stats.fireRate, bankIndex);
+            }
+
+            if (applyRamming)
+                stats.rammingPower = ScaleRammingRating(stats.rammingPower, bankIndex);
+        }
+
+        private static void ApplyAbilityAdjustmentsToOffenseStats(ref ShipComponentAbilityStats stats, BulletBankProfile profile)
+        {
+            if (profile?.abilities != null)
+            {
+                for (int i = 0; i < profile.abilities.Count; i++)
+                {
+                    BulletBankAbility ability = profile.abilities[i];
+                    if (ability == null || ability.type != BulletBankAbilityType.BurnOverTime)
+                        continue;
+
+                    float dps = ability.magnitude > 0f ? ability.magnitude : stats.firePower * 0.2f;
+                    float duration = ability.duration > 0f ? ability.duration : 2f;
+                    stats.firePower += dps * duration;
+                }
+            }
+
+            float peakDamageMultiplier = 1f;
+            peakDamageMultiplier = Mathf.Max(peakDamageMultiplier, profile.GetDamageMultiplier(BulletBankDamageTarget.Everything));
+            peakDamageMultiplier = Mathf.Max(peakDamageMultiplier, profile.GetDamageMultiplier(BulletBankDamageTarget.Asteroid));
+            peakDamageMultiplier = Mathf.Max(peakDamageMultiplier, profile.GetDamageMultiplier(BulletBankDamageTarget.ShipOrDrone));
+            peakDamageMultiplier = Mathf.Max(peakDamageMultiplier, profile.GetDamageMultiplier(BulletBankDamageTarget.GemMoon));
+            peakDamageMultiplier = Mathf.Max(peakDamageMultiplier, profile.GetDamageMultiplier(BulletBankDamageTarget.Gem));
+            if (peakDamageMultiplier > 1.001f)
+                stats.firePower *= peakDamageMultiplier;
+
+            if (profile.HasAbility(BulletBankAbilityType.HealFriendly)
+                && profile.TryGetAbility(BulletBankAbilityType.HealFriendly, out BulletBankAbility healAbility)
+                && healAbility.magnitude > 0f)
+            {
+                if (stats.firePower < healAbility.magnitude * 0.5f)
+                    stats.firePower = healAbility.magnitude;
+                else
+                    stats.firePower = Mathf.Max(stats.firePower, healAbility.magnitude);
+            }
+        }
+
         public static float ResolveDamageForTarget(float baseDamage, int bankIndex, BulletBankDamageTarget target)
         {
             if (baseDamage <= 0f) return baseDamage;

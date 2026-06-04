@@ -83,7 +83,7 @@ namespace TitanOrbit.Systems
                 return true;
             }
 
-            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            DroneBody drone = other.GetComponentInParent<DroneBody>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 channel = FloatingCountChannel.DamageShipOrDrone;
@@ -215,7 +215,7 @@ namespace TitanOrbit.Systems
                 return true;
             }
 
-            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            DroneBody drone = other.GetComponentInParent<DroneBody>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
                 float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
@@ -229,6 +229,28 @@ namespace TitanOrbit.Systems
             }
 
             return false;
+        }
+
+        /// <summary>Colliderless drone hit from sphere scan (swarm / loot).</summary>
+        public static bool TryHitDroneSphere(
+            DroneBody drone,
+            float damage,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            Vector3 impactWorldPos,
+            out BulletHitPopupInfo popupInfo,
+            int bulletBankIndex = -1)
+        {
+            popupInfo = BulletHitPopupInfo.None;
+            if (drone == null || drone.IsDestroyed || !drone.IsEnemyTeam(ownerTeam))
+                return false;
+
+            float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
+                damage, bulletBankIndex, BulletBankDamageTarget.ShipOrDrone);
+            ApplyDroneHit(drone, resolved, ownerTeam, ownerShipNetworkId, impactWorldPos);
+            float applied = GetAppliedBulletDamage(resolved);
+            popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageShipOrDrone, applied);
+            return true;
         }
 
         /// <summary>
@@ -263,7 +285,7 @@ namespace TitanOrbit.Systems
                 return true;
             }
 
-            DroneBase drone = other.GetComponentInParent<DroneBase>();
+            DroneBody drone = other.GetComponentInParent<DroneBody>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
                 return true;
 
@@ -409,9 +431,16 @@ namespace TitanOrbit.Systems
             ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
         }
 
-        public static void ApplyDroneHit(DroneBase drone, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
+        public static void ApplyDroneHit(DroneBody drone, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
-            drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+            if (drone == null || drone.IsDestroyed) return;
+            if (drone.Loot != null)
+            {
+                drone.Loot.ApplyDamageFromBullet(damage, ownerTeam);
+                return;
+            }
+            if (drone.Swarm == null) return;
+            drone.Swarm.ApplyDamageFromBullet(drone.EquipmentSlotIndex, damage, ownerTeam, ownerShipNetworkId, impactWorldPos);
         }
 
         /// <summary>

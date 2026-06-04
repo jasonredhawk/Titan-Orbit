@@ -2707,7 +2707,7 @@ namespace TitanOrbit.Editor
                     var listProp2 = so2.FindProperty("List");
                     if (listProp2 != null)
                     {
-                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/PeopleTransport.prefab", "Assets/Prefabs/Starship.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
+                        string[] storePrefabPaths = { "Assets/Prefabs/FighterDrone.prefab", "Assets/Prefabs/ShieldDrone.prefab", "Assets/Prefabs/MiningDrone.prefab", "Assets/Prefabs/LootableDrone.prefab", "Assets/Prefabs/RocketProjectile.prefab", "Assets/Prefabs/Mine.prefab", "Assets/Prefabs/PeopleTransport.prefab", "Assets/Prefabs/Starship.prefab", "Assets/Prefabs/Ships/Starship_Lv1_0.prefab" };
                         foreach (string path in storePrefabPaths)
                         {
                             var prefabObj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
@@ -2770,6 +2770,9 @@ namespace TitanOrbit.Editor
                 if (shieldPrefab != null) { so.FindProperty("shieldDronePrefab").objectReferenceValue = shieldPrefab; }
                 var miningPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/MiningDrone.prefab");
                 if (miningPrefab != null) { so.FindProperty("miningDronePrefab").objectReferenceValue = miningPrefab; }
+                var lootablePrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/LootableDrone.prefab");
+                if (lootablePrefab != null)
+                    so.FindProperty("lootableDroneNetworkPrefab").objectReferenceValue = lootablePrefab;
                 so.ApplyModifiedPropertiesWithoutUndo();
                 Debug.Log("Drone prefabs assigned to HomePlanetStoreSystem.");
             }
