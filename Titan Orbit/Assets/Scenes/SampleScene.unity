@@ -4178,6 +4178,29 @@ MonoBehaviour:
   maxManualZoomOutDistance: 80
   mouseWheelZoomSensitivity: 0.12
   ignoreMouseZoomOverUi: 1
+  theatricalModeEnabled: 1
+  theatricalIdleDurationSeconds: 3
+  theatricalIdleMaxPlanarSpeed: 0.35
+  theatricalIntroDurationSeconds: 3.5
+  theatricalIntroDropHeightFraction: 0.28
+  theatricalEnterBlendDuration: 1.25
+  theatricalExitBlendDuration: 2
+  theatricalPositionSmoothTime: 0.35
+  theatricalEnterRotationLagExponent: 2.4
+  theatricalOrbitMotionStartBlend: 0.98
+  theatricalPathDurationMinSeconds: 55
+  theatricalPathDurationMaxSeconds: 95
+  theatricalLookSmoothTime: 0.55
+  theatricalFovSmoothTime: 1.2
+  theatricalWaypointCount: 8
+  theatricalMinElevationDeg: -32
+  theatricalMaxElevationDeg: 52
+  theatricalRadiusMinMultiplier: 2.4
+  theatricalRadiusMaxMultiplier: 5.2
+  theatricalOrbitStandoffMultiplier: 3
+  theatricalFovMin: 28
+  theatricalFovMax: 48
+  gameplayFieldOfView: 45
 --- !u!20 &711795281
 Camera:
   m_ObjectHideFlags: 0
@@ -8327,7 +8350,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
   ShowTopMostFoldoutHeaderGroup: 1
-  aiShipsEnabled: 1
+  aiShipsEnabled: 0
   starshipPrefab: {fileID: 0}
   aiShipData: {fileID: 0}
   minAIShipsPerTeam: 5

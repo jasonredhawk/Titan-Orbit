@@ -1399,6 +1399,7 @@ namespace TitanOrbit.Entities
             return planet.IsWorldPositionInOrbitRing(tPos);
         }
         private bool wasMovePressedLastFrame;
+        private bool wasShootPressedLastFrame;
         /// <summary>While gem-moon docked: deposit chunks per second (each chunk = <see cref="ShipLevel"/> gems).</summary>
         private const float GemMoonDepositChunksPerSecond = 3f;
         private float depositAccumulator;
@@ -2727,14 +2728,15 @@ namespace TitanOrbit.Entities
             if (movePressed && !wasMovePressedLastFrame && gemMoonDocked.Value)
                 RequestUndockGemMoonServerRpc();
 
-            // When the local player begins moving (e.g. right click), trigger camera zoom-in if a galactic zoom is active.
-            if (IsLocalPlayerShip() && movePressed && !wasMovePressedLastFrame)
+            // When the local player begins moving or firing, restore gameplay camera (galactic zoom / theatrical orbit).
+            if (IsLocalPlayerShip() && ((movePressed && !wasMovePressedLastFrame) || (shootPressed && !wasShootPressedLastFrame)))
             {
                 if (s_cachedCameraController == null)
                     s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
                 if (s_cachedCameraController != null)
                 {
                     s_cachedCameraController.TriggerGalacticZoomReturn();
+                    s_cachedCameraController.TriggerTheatricalReturn();
                 }
             }
 
@@ -2780,6 +2782,7 @@ namespace TitanOrbit.Entities
             }
 
             wasMovePressedLastFrame = movePressed;
+            wasShootPressedLastFrame = shootPressed;
         }
 
         private void LateUpdate()
@@ -4384,6 +4387,15 @@ namespace TitanOrbit.Entities
         {
             if (IsBulletElectricShockDisabled)
                 return;
+
+            EnsureCachedCameraControllerForShake();
+            if (s_cachedCameraController != null && s_cachedCameraController.IsTheatricalShipRotationLocked)
+            {
+                if (rb != null)
+                    rb.angularVelocity = Vector3.zero;
+                return;
+            }
+
             // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
             // Always rotate toward mouse cursor - works in place, no movement required
             UnityEngine.Camera cam = UnityEngine.Camera.main;

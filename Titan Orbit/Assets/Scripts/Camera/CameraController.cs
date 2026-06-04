@@ -94,6 +94,49 @@ namespace TitanOrbit.Camera
         [Tooltip("If true, wheel does not zoom while the pointer is over UI.")]
         [SerializeField] private bool ignoreMouseZoomOverUi = true;
 
+        [Header("Theatrical Idle Camera")]
+        [Tooltip("When the local player stops moving and firing for the idle duration, orbit the ship with a cinematic camera.")]
+        [SerializeField] private bool theatricalModeEnabled = true;
+        [Tooltip("Seconds without move/fire input (and low drift speed) before theatrical mode begins.")]
+        [Min(0.5f)]
+        [SerializeField] private float theatricalIdleDurationSeconds = 3f;
+        [Tooltip("Planar speed (m/s) at or below this counts as not moving while inputs are released.")]
+        [Min(0f)]
+        [SerializeField] private float theatricalIdleMaxPlanarSpeed = 0.35f;
+        [Tooltip("Seconds to gently travel one full spline pass (3× slower epic pacing).")]
+        [Min(8f)]
+        [SerializeField] private float theatricalPathDurationMinSeconds = 360f;
+        [Min(8f)]
+        [SerializeField] private float theatricalPathDurationMaxSeconds = 540f;
+        [Tooltip("Look-at focus smoothing while orbiting (higher = slower, more cinematic).")]
+        [Min(0.05f)]
+        [SerializeField] private float theatricalLookSmoothTime = 0.9f;
+        [Tooltip("FOV zoom smoothing while orbiting (higher = slower).")]
+        [Min(0.05f)]
+        [SerializeField] private float theatricalFovSmoothTime = 2f;
+        [Tooltip("Random points on each closed spline loop (plus the live camera anchor).")]
+        [Range(4, 14)]
+        [SerializeField] private int theatricalWaypointCount = 8;
+        [Tooltip("Min elevation in degrees relative to the ship focus (− = below horizon).")]
+        [SerializeField] private float theatricalMinElevationDeg = -32f;
+        [Tooltip("Max elevation in degrees relative to the ship focus.")]
+        [SerializeField] private float theatricalMaxElevationDeg = 52f;
+        [Tooltip("Standoff radius multipliers on ship visual size.")]
+        [SerializeField] private float theatricalRadiusMinMultiplier = 2.4f;
+        [SerializeField] private float theatricalRadiusMaxMultiplier = 5.2f;
+        [Tooltip("Extra scale on orbit standoff (1.5 = default range; was 3× before halving max zoom-out).")]
+        [Min(0.5f)]
+        [SerializeField] private float theatricalOrbitStandoffMultiplier = 1.5f;
+        [Tooltip("Perspective FOV at closest orbit (zoomed in).")]
+        [Range(18f, 55f)]
+        [SerializeField] private float theatricalFovMin = 28f;
+        [Tooltip("Perspective FOV at farthest orbit (zoomed out).")]
+        [Range(18f, 70f)]
+        [SerializeField] private float theatricalFovMax = 48f;
+        [Tooltip("Gameplay perspective FOV restored after theatrical mode.")]
+        [Range(30f, 70f)]
+        [SerializeField] private float gameplayFieldOfView = 45f;
+
         private UnityEngine.Camera cam;
         private Starship targetShip;
         private Vector3 smoothedFollowXZ;
@@ -121,6 +164,25 @@ namespace TitanOrbit.Camera
         private float timedShakeIntensity;
         private float timedShakeEndTime;
         private float collisionShakeSeed;
+
+        private readonly CameraTheatricalOrbit theatricalOrbit = new CameraTheatricalOrbit();
+        private bool theatricalModeActive;
+        private float theatricalIdleTimer;
+        private float theatricalSavedGameplayZoomDistance;
+        private float theatricalFovVelocity;
+        private Vector3 theatricalLookVelocity;
+        private float theatricalSmoothedFov;
+        private bool hasTheatricalSmoothedFov;
+        private Vector3 theatricalSmoothedLookTarget;
+        private bool hasTheatricalSmoothedLookTarget;
+        private Quaternion theatricalFrozenShipRotation = Quaternion.identity;
+        private bool theatricalOrbitInitialized;
+
+        /// <summary>True while the cinematic orbit is active.</summary>
+        public bool IsTheatricalCameraEngaged => theatricalModeActive;
+
+        /// <summary>True only during the orbit itself — rotation unlocks immediately when the player takes control.</summary>
+        public bool IsTheatricalShipRotationLocked => theatricalModeActive;
 
         private float GetManualZoomedDistance(float defaultDistance)
         {
@@ -150,7 +212,7 @@ namespace TitanOrbit.Camera
             }
 
             cam.orthographic = false;
-            cam.fieldOfView = 45f;
+            cam.fieldOfView = gameplayFieldOfView;
 
             if (spaceBackground == null)
             {
@@ -167,6 +229,8 @@ namespace TitanOrbit.Camera
         {
             if (target == null) return;
 
+            bool playerActivelyPlaying = IsPlayerActivelyMovingOrFiring();
+
             int level = 1;
             var ship = target.GetComponent<Starship>();
             if (ship != null)
@@ -182,7 +246,7 @@ namespace TitanOrbit.Camera
             float defaultDistance = zoomDistanceAtReferenceLevel * currentScale;
             float activeZoomDistance = defaultDistance;
 
-            if (!galacticZoomActive)
+            if (!galacticZoomActive && !theatricalModeActive)
             {
                 if (mouseZoomEnabled && target != null)
                 {
@@ -208,7 +272,7 @@ namespace TitanOrbit.Camera
 
                 activeZoomDistance = GetManualZoomedDistance(defaultDistance);
             }
-            else
+            else if (galacticZoomActive)
             {
                 galacticZoomElapsed += Time.deltaTime;
 
@@ -239,6 +303,18 @@ namespace TitanOrbit.Camera
                     }
                 }
             }
+            else
+            {
+                // Theatrical orbit only — preserve gameplay zoom distance (height) for a correct return.
+                activeZoomDistance = theatricalSavedGameplayZoomDistance > 0.0001f
+                    ? theatricalSavedGameplayZoomDistance
+                    : GetManualZoomedDistance(defaultDistance);
+            }
+
+            bool wasTheatricalEngaged = theatricalModeActive;
+            UpdateTheatricalModeState(playerActivelyPlaying);
+            if (!wasTheatricalEngaged && theatricalModeActive)
+                theatricalSavedGameplayZoomDistance = activeZoomDistance;
 
             lastActiveZoomDistance = activeZoomDistance;
 
@@ -320,7 +396,227 @@ namespace TitanOrbit.Camera
                 }
             }
 
+            Quaternion finalRotation = Quaternion.Euler(90f, 0f, 0f);
+            float finalFov = gameplayFieldOfView;
+
+            if (theatricalModeActive)
+            {
+                ApplyTheatricalCamera(
+                    targetPosition,
+                    followWorld,
+                    out Vector3 finalPosition,
+                    out finalRotation,
+                    out finalFov,
+                    playerActivelyPlaying);
+                targetPosition = finalPosition;
+            }
+
+            transform.rotation = finalRotation;
             transform.position = targetPosition;
+            if (cam != null && !cam.orthographic)
+                cam.fieldOfView = finalFov;
+
+            UpdateTheatricalSpaceBackgroundVisibility();
+        }
+
+        private void UpdateTheatricalSpaceBackgroundVisibility()
+        {
+            if (spaceBackground == null)
+                return;
+
+            if (theatricalModeActive)
+                spaceBackground.SetTemporarilyHidden(true);
+            else if (!galacticZoomActive)
+                spaceBackground.SetTemporarilyHidden(false);
+        }
+
+        private bool IsPlayerActivelyMovingOrFiring()
+        {
+            if (targetShip == null)
+                return false;
+
+            if (targetShip.IsMoveForwardPressedForGemMoonLanding
+                || targetShip.IsShootPressedForGemMoonLanding)
+                return true;
+
+            return targetShip.GetPlanarSpeedWorld() > theatricalIdleMaxPlanarSpeed;
+        }
+
+        private void UpdateTheatricalModeState(bool playerActivelyPlaying)
+        {
+            if (!theatricalModeEnabled || galacticZoomActive)
+            {
+                theatricalIdleTimer = 0f;
+                if (theatricalModeActive)
+                    EndTheatricalMode();
+                return;
+            }
+
+            if (playerActivelyPlaying)
+            {
+                theatricalIdleTimer = 0f;
+                if (theatricalModeActive)
+                    EndTheatricalMode();
+                return;
+            }
+
+            if (theatricalModeActive)
+                return;
+
+            theatricalIdleTimer += Time.deltaTime;
+            if (theatricalIdleTimer >= theatricalIdleDurationSeconds)
+                BeginTheatricalMode();
+        }
+
+        private void BeginTheatricalMode()
+        {
+            theatricalModeActive = true;
+            theatricalIdleTimer = 0f;
+            theatricalOrbitInitialized = false;
+            hasTheatricalSmoothedLookTarget = false;
+            hasTheatricalSmoothedFov = false;
+            theatricalFrozenShipRotation = target.rotation;
+
+            TryGetShipVisualFocus(target, out _, out float radius);
+            theatricalOrbit.SetCharacteristicRadius(radius);
+        }
+
+        private void EnsureTheatricalOrbitInitialized(Vector3 cameraWorldPosition, Vector3 focus, float radius)
+        {
+            if (theatricalOrbitInitialized)
+                return;
+
+            theatricalOrbit.SetCharacteristicRadius(radius);
+            float standoff = Mathf.Max(0.5f, theatricalOrbitStandoffMultiplier);
+            theatricalOrbit.ConfigurePathGeneration(
+                theatricalWaypointCount,
+                theatricalMinElevationDeg,
+                theatricalMaxElevationDeg,
+                theatricalRadiusMinMultiplier * standoff,
+                theatricalRadiusMaxMultiplier * standoff,
+                theatricalPathDurationMinSeconds,
+                theatricalPathDurationMaxSeconds);
+
+            theatricalOrbit.BeginPathFromCamera(
+                cameraWorldPosition,
+                focus,
+                theatricalFrozenShipRotation);
+            theatricalOrbitInitialized = true;
+        }
+
+        private void EndTheatricalMode()
+        {
+            if (!theatricalModeActive)
+                return;
+
+            theatricalModeActive = false;
+            theatricalOrbitInitialized = false;
+            theatricalIdleTimer = 0f;
+            hasTheatricalSmoothedLookTarget = false;
+            hasTheatricalSmoothedFov = false;
+        }
+
+        private void ApplyTheatricalCamera(
+            Vector3 gameplayPosition,
+            Vector3 followWorld,
+            out Vector3 finalPosition,
+            out Quaternion finalRotation,
+            out float finalFov,
+            bool playerActivelyPlaying)
+        {
+            finalPosition = gameplayPosition;
+            finalRotation = Quaternion.Euler(90f, 0f, 0f);
+            finalFov = gameplayFieldOfView;
+
+            TryGetShipVisualFocus(target, out Vector3 boundsFocus, out float radius);
+            float focusYOffset = boundsFocus.y - target.position.y;
+            Vector3 focus = new Vector3(followWorld.x, followWorld.y + focusYOffset, followWorld.z);
+            theatricalOrbit.SetCharacteristicRadius(radius);
+
+            if (!theatricalOrbitInitialized)
+            {
+                EnsureTheatricalOrbitInitialized(gameplayPosition, focus, radius);
+            }
+
+            theatricalOrbit.Advance(Time.deltaTime, focus, theatricalFrozenShipRotation);
+
+            theatricalOrbit.Sample(
+                focus,
+                theatricalFrozenShipRotation,
+                out Vector3 orbitPosition,
+                out Vector3 lookTarget,
+                out float zoomT);
+
+            if (!hasTheatricalSmoothedLookTarget)
+            {
+                theatricalSmoothedLookTarget = lookTarget;
+                hasTheatricalSmoothedLookTarget = true;
+            }
+
+            theatricalSmoothedLookTarget = Vector3.SmoothDamp(
+                theatricalSmoothedLookTarget,
+                lookTarget,
+                ref theatricalLookVelocity,
+                theatricalLookSmoothTime,
+                Mathf.Infinity,
+                Time.deltaTime);
+
+            Quaternion orbitRotation = Quaternion.LookRotation(
+                theatricalSmoothedLookTarget - orbitPosition,
+                Vector3.up);
+
+            float targetOrbitFov = Mathf.Lerp(theatricalFovMax, theatricalFovMin, zoomT);
+            if (!hasTheatricalSmoothedFov)
+            {
+                theatricalSmoothedFov = cam != null ? cam.fieldOfView : gameplayFieldOfView;
+                hasTheatricalSmoothedFov = true;
+            }
+
+            theatricalSmoothedFov = Mathf.SmoothDamp(
+                theatricalSmoothedFov,
+                targetOrbitFov,
+                ref theatricalFovVelocity,
+                theatricalFovSmoothTime);
+
+            finalPosition = orbitPosition;
+            finalRotation = orbitRotation;
+            finalFov = theatricalSmoothedFov;
+        }
+
+        private static bool TryGetShipVisualFocus(Transform shipRoot, out Vector3 lookTarget, out float characteristicRadius)
+        {
+            lookTarget = shipRoot.position;
+            characteristicRadius = 4f;
+
+            if (shipRoot == null)
+                return false;
+
+            var renderers = shipRoot.GetComponentsInChildren<Renderer>();
+            Bounds? bounds = null;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+                if (r == null || !r.enabled || r is ParticleSystemRenderer)
+                    continue;
+
+                if (!bounds.HasValue)
+                    bounds = r.bounds;
+                else
+                {
+                    Bounds b = bounds.Value;
+                    b.Encapsulate(r.bounds);
+                    bounds = b;
+                }
+            }
+
+            if (!bounds.HasValue)
+                return false;
+
+            Bounds wb = bounds.Value;
+            lookTarget = wb.center + Vector3.up * (wb.extents.y * 0.1f);
+            characteristicRadius = Mathf.Max(wb.extents.x, wb.extents.y, wb.extents.z) * 2.8f;
+            characteristicRadius = Mathf.Max(3f, characteristicRadius);
+            return true;
         }
 
         /// <summary>Impulse shake for the local player (decays over time).</summary>
@@ -414,6 +710,12 @@ namespace TitanOrbit.Camera
             galacticZoomActive = false;
             galacticZoomReturning = false;
             galacticZoomElapsed = 0f;
+            theatricalModeActive = false;
+            theatricalIdleTimer = 0f;
+            theatricalSavedGameplayZoomDistance = 0f;
+            theatricalOrbitInitialized = false;
+            hasTheatricalSmoothedLookTarget = false;
+            hasTheatricalSmoothedFov = false;
 
             int level = targetShip != null ? targetShip.ShipLevel : minShipLevelForZoom;
             float levelScale = GetZoomScaleForShipLevel(level);
@@ -441,6 +743,9 @@ namespace TitanOrbit.Camera
 
             if (cam == null) return;
 
+            if (theatricalModeActive)
+                EndTheatricalMode();
+
             galacticZoomActive = true;
             galacticZoomReturning = false;
             galacticZoomElapsed = 0f;
@@ -458,10 +763,16 @@ namespace TitanOrbit.Camera
             if (!galacticZoomEnabled || !galacticZoomActive || galacticZoomReturning || cam == null)
                 return;
 
+            if (theatricalModeActive)
+                EndTheatricalMode();
+
             galacticZoomReturning = true;
             galacticZoomElapsed = 0f;
             galacticZoomStartSize = GetActiveZoomDistanceForGalacticTransition();
         }
+
+        /// <summary>Ends theatrical orbit instantly and restores gameplay follow.</summary>
+        public void TriggerTheatricalReturn() => EndTheatricalMode();
 
         private float GetActiveZoomDistanceForGalacticTransition()
         {
