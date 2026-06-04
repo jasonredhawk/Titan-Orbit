@@ -450,8 +450,8 @@ namespace TitanOrbit.UI
 
             view.BindSlot(level, branch, node, w, h, trackW);
             view.EnsureStableButtonRendering();
-            view.SetPriceClickHandler(() => _station.OnUpgradeTreeNodeClicked(level, branch));
             _station.PopulateTreeNode(view, ComputeMaxDisplayPower());
+            view.SetPriceClickHandler(() => _station.OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex));
             _nodes.Add(view);
             _visuals.Add(view.gameObject);
             return view;

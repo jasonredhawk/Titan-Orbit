@@ -251,6 +251,21 @@ namespace TitanOrbit.Editor
                     ShipFamilyMenuPreviewGenerator.GenerateForFamily(def);
                 }
 
+                if (GUILayout.Button("Generate Menu Preview Images (Theatrical)"))
+                {
+                    ShipFamilyMenuPreviewGenerator.GenerateTheatricalForFamily(def);
+                }
+
+                if (GUILayout.Button("Generate Component Menu Preview Images (Top-Down)"))
+                {
+                    ShipFamilyMenuPreviewGenerator.GenerateComponentPreviewsForFamily(def);
+                }
+
+                if (GUILayout.Button("Generate Component Menu Preview Images (Theatrical)"))
+                {
+                    ShipFamilyMenuPreviewGenerator.GenerateTheatricalComponentPreviewsForFamily(def);
+                }
+
                 if (GUILayout.Button("Auto-Detect Team Materials From Upgrade Tree (5 Teams)"))
                 {
                     AutoDetectTeamMaterialsFromUpgradeTree(def);
@@ -268,6 +283,15 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
+                MessageType.None);
+            EditorGUILayout.HelpBox(
+                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera. Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
+                MessageType.None);
+            EditorGUILayout.HelpBox(
+                "Component Menu Preview Images: renders each component entry from the strongest upgrade-tree prefab into ComponentMenuPreviews/<variant>/ and assigns menuPreviewSprite on each ShipFamilyComponentEntry (used by the moon dock equipment store).",
+                MessageType.None);
+            EditorGUILayout.HelpBox(
+                "Theatrical Component Menu Preview Images: same assignment as top-down but uses the 3/4 hero camera. Overwrites PNGs in ComponentMenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each component entry.",
                 MessageType.None);
 
             EditorGUILayout.Space(10);

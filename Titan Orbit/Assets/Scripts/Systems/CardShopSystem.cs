@@ -399,9 +399,7 @@ namespace TitanOrbit.Systems
         /// <summary>Gem cost for one spin at this card tier (matches upgrade-tree tier pricing).</summary>
         public float GetCardSpinCost(int spinCardTier)
         {
-            int t = Mathf.Max(1, spinCardTier);
-            int gemLevel = Mathf.Clamp(t + 1, 2, 24);
-            if (gemLevel <= 1) return 15f;
+            int gemLevel = Mathf.Clamp(Mathf.Max(1, spinCardTier), 1, 24);
             return Mathf.Max(15f, 20f * gemLevel * gemLevel);
         }
 
@@ -774,7 +772,7 @@ namespace TitanOrbit.Systems
         /// <summary>Client entry: debug-select any upgrade-tree hull (free). Runs on server when host, else sends ServerRpc.</summary>
         public void RequestDebugSelectUpgradeTreeNode(ulong planetNetworkId, ulong shipNetworkId, int targetLevel, int targetBranchIndex)
         {
-            if (GameManager.Instance == null || !GameManager.Instance.DebugFreeShipUpgradeTree)
+            if (!IsDebugFreeShipUpgradeTreeAuthorized())
                 return;
 
             if (IsServer)
@@ -794,7 +792,7 @@ namespace TitanOrbit.Systems
 
         private void DebugSelectUpgradeTreeNodeInternal(ulong planetNetworkId, ulong shipNetworkId, int targetLevel, int targetBranchIndex, ulong clientId)
         {
-            if (GameManager.Instance == null || !GameManager.Instance.DebugFreeShipUpgradeTree)
+            if (!IsDebugFreeShipUpgradeTreeAuthorized())
                 return;
 
             NetworkObject shipNet = GetNetworkObject(shipNetworkId);
@@ -993,7 +991,17 @@ namespace TitanOrbit.Systems
                 if (stationUi != null)
                     stationUi.RefreshShipTreeAfterShipChange();
             }
+            else if (NetworkManager.Singleton != null && ship.OwnerClientId == NetworkManager.Singleton.LocalClientId)
+            {
+                var stationUi = OrbitStationUI.GetOrCreate();
+                if (stationUi != null)
+                    stationUi.RefreshShipTreeAfterShipChange();
+            }
         }
+
+        private static bool IsDebugFreeShipUpgradeTreeAuthorized() =>
+            GameManager.Instance != null
+            && (GameManager.Instance.DebugFreeShipUpgradeTree || GameManager.Instance.DebugMode);
 
         #endregion
 

@@ -26,9 +26,15 @@ namespace TitanOrbit.UI
         public static readonly Color UpgradeCardsAccent = new Color(0.35f, 0.55f, 0.95f, 1f);
         /// <summary>Accent stripe for equipment / store-item sections.</summary>
         public static readonly Color EquipmentAccent = new Color(0.28f, 0.72f, 0.48f, 1f);
+        /// <summary>Accent stripe for bank / contributed gem balance.</summary>
+        public static readonly Color BankBalanceAccent = new Color(0.95f, 0.78f, 0.22f, 1f);
 
         private const float NavStripHeight = 44f;
         private const float CurrentShipNodeHeight = 92f;
+        private const float BankBalanceBannerHeight = 72f;
+        private const float AutoDepositToggleHeight = 38f;
+        public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
+        public const int AutoDepositGemsDefaultEnabled = 1;
 
         [SerializeField] private Sprite panelBackgroundSprite;
         [SerializeField] private Sprite buttonSprite;
@@ -39,6 +45,12 @@ namespace TitanOrbit.UI
         private RectTransform _loadoutHost;
         private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
+        private TextMeshProUGUI _bankAmountText;
+        private Button _autoDepositToggle;
+        private Image _autoDepositToggleBg;
+        private TextMeshProUGUI _autoDepositToggleStateLabel;
+        private Action<bool> _onAutoDepositChanged;
+        private bool _autoDepositEnabled;
         private ShipUpgradeTreeNodeUI _currentShipNode;
         private Button _navUpgradesBtn;
         private Button _navStoreBtn;
@@ -79,7 +91,11 @@ namespace TitanOrbit.UI
         public void EnsureBuilt()
         {
             if (_built)
+            {
+                if (_autoDepositToggle == null)
+                    CreateAutoDepositToggle(_contentRoot);
                 return;
+            }
 
             _built = true;
 
@@ -147,7 +163,8 @@ namespace TitanOrbit.UI
             CreateSectionHeader(_contentRoot, "Your Ship", 28f);
             _currentShipHost = CreateStretchHost(_contentRoot, "CurrentShipHost", CurrentShipNodeHeight);
 
-            _bankText = CreateBodyLabel(_contentRoot, "Bank", "Bank balance: 0 gems", 22f);
+            CreateBankBalanceBanner(_contentRoot);
+            CreateAutoDepositToggle(_contentRoot);
 
             CreateAccentSectionHeader(_contentRoot, SectionTitleUpgradeCards,
                 "Equipped cards — tap ✕ to remove.", UpgradeCardsAccent);
@@ -274,11 +291,24 @@ namespace TitanOrbit.UI
             _currentShipNode = view;
         }
 
+        public void BindAutoDeposit(Action<bool> onChanged)
+        {
+            _onAutoDepositChanged = onChanged;
+        }
+
+        public void RefreshAutoDepositToggle(bool enabled)
+        {
+            EnsureBuilt();
+            SetAutoDepositToggleVisual(enabled, notify: false);
+        }
+
         public void RefreshBank(float contributedGems)
         {
             EnsureBuilt();
-            if (_bankText != null)
-                _bankText.text = $"Bank balance: {contributedGems:F0} gems";
+            if (_bankAmountText != null)
+                _bankAmountText.text = $"{contributedGems:F0} g";
+            else if (_bankText != null)
+                _bankText.text = $"Bank balance: {contributedGems:F0} g";
         }
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
@@ -366,6 +396,184 @@ namespace TitanOrbit.UI
                 subTmp.color = new Color(0.68f, 0.74f, 0.86f, 0.95f);
                 subTmp.raycastTarget = false;
                 ApplyFont(subTmp);
+            }
+        }
+
+        private void CreateBankBalanceBanner(Transform parent)
+        {
+            var bannerGo = new GameObject("BankBalance");
+            bannerGo.transform.SetParent(parent, false);
+            var bannerLe = bannerGo.AddComponent<LayoutElement>();
+            bannerLe.preferredHeight = BankBalanceBannerHeight;
+            bannerLe.minHeight = BankBalanceBannerHeight;
+            bannerLe.flexibleHeight = 0f;
+            bannerLe.flexibleWidth = 1f;
+
+            var bannerBg = bannerGo.AddComponent<Image>();
+            bannerBg.color = new Color(0.1f, 0.12f, 0.18f, 0.98f);
+            bannerBg.raycastTarget = false;
+            if (panelBackgroundSprite != null)
+            {
+                bannerBg.sprite = panelBackgroundSprite;
+                bannerBg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+            }
+
+            var bannerOutline = bannerGo.AddComponent<Outline>();
+            bannerOutline.effectColor = new Color(BankBalanceAccent.r, BankBalanceAccent.g, BankBalanceAccent.b, 0.55f);
+            bannerOutline.effectDistance = new Vector2(1f, -1f);
+
+            var bannerVlg = bannerGo.AddComponent<VerticalLayoutGroup>();
+            bannerVlg.spacing = 3f;
+            bannerVlg.padding = new RectOffset(8, 8, 6, 8);
+            bannerVlg.childAlignment = TextAnchor.UpperCenter;
+            bannerVlg.childControlWidth = true;
+            bannerVlg.childControlHeight = true;
+            bannerVlg.childForceExpandWidth = true;
+            bannerVlg.childForceExpandHeight = false;
+
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(bannerGo.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = 4f;
+            accentLe.minHeight = 4f;
+            var accentImg = accentGo.AddComponent<Image>();
+            accentImg.color = BankBalanceAccent;
+            accentImg.raycastTarget = false;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(bannerGo.transform, false);
+            var labelLe = labelGo.AddComponent<LayoutElement>();
+            labelLe.preferredHeight = 14f;
+            labelLe.minHeight = 12f;
+            _bankText = labelGo.AddComponent<TextMeshProUGUI>();
+            _bankText.text = "Bank balance";
+            _bankText.fontSize = 11f;
+            _bankText.fontStyle = FontStyles.Bold;
+            _bankText.characterSpacing = 2f;
+            _bankText.alignment = TextAlignmentOptions.Center;
+            _bankText.color = new Color(0.78f, 0.84f, 0.94f, 0.95f);
+            _bankText.raycastTarget = false;
+            ApplyFont(_bankText);
+
+            var amountGo = new GameObject("Amount");
+            amountGo.transform.SetParent(bannerGo.transform, false);
+            var amountLe = amountGo.AddComponent<LayoutElement>();
+            amountLe.preferredHeight = 32f;
+            amountLe.minHeight = 28f;
+            amountLe.flexibleHeight = 0f;
+            _bankAmountText = amountGo.AddComponent<TextMeshProUGUI>();
+            _bankAmountText.text = "0 g";
+            _bankAmountText.fontSize = 26f;
+            _bankAmountText.fontStyle = FontStyles.Bold;
+            _bankAmountText.alignment = TextAlignmentOptions.Center;
+            _bankAmountText.color = new Color(1f, 0.92f, 0.55f, 1f);
+            _bankAmountText.enableWordWrapping = false;
+            _bankAmountText.overflowMode = TextOverflowModes.Ellipsis;
+            _bankAmountText.raycastTarget = false;
+            ApplyFont(_bankAmountText);
+        }
+
+        private void CreateAutoDepositToggle(Transform parent)
+        {
+            var rowGo = new GameObject("AutoDepositToggle");
+            rowGo.transform.SetParent(parent, false);
+            var rowLe = rowGo.AddComponent<LayoutElement>();
+            rowLe.preferredHeight = AutoDepositToggleHeight;
+            rowLe.minHeight = AutoDepositToggleHeight;
+            rowLe.flexibleHeight = 0f;
+            rowLe.flexibleWidth = 1f;
+
+            var rowBg = rowGo.AddComponent<Image>();
+            rowBg.color = new Color(0.09f, 0.11f, 0.17f, 0.96f);
+            rowBg.raycastTarget = false;
+            if (panelBackgroundSprite != null)
+            {
+                rowBg.sprite = panelBackgroundSprite;
+                rowBg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+            }
+
+            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
+            rowHlg.spacing = 8f;
+            rowHlg.padding = new RectOffset(10, 8, 6, 6);
+            rowHlg.childAlignment = TextAnchor.MiddleCenter;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = false;
+            rowHlg.childForceExpandHeight = true;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(rowGo.transform, false);
+            var labelLe = labelGo.AddComponent<LayoutElement>();
+            labelLe.flexibleWidth = 1f;
+            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = "Auto Deposit Gems";
+            labelTmp.fontSize = 12f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.alignment = TextAlignmentOptions.Left;
+            labelTmp.color = new Color(0.88f, 0.92f, 1f, 0.98f);
+            labelTmp.raycastTarget = false;
+            ApplyFont(labelTmp);
+
+            var toggleGo = new GameObject("Toggle");
+            toggleGo.transform.SetParent(rowGo.transform, false);
+            var toggleLe = toggleGo.AddComponent<LayoutElement>();
+            toggleLe.preferredWidth = 52f;
+            toggleLe.minWidth = 52f;
+            toggleLe.preferredHeight = 24f;
+            toggleLe.minHeight = 24f;
+            _autoDepositToggleBg = toggleGo.AddComponent<Image>();
+            _autoDepositToggleBg.color = new Color(0.14f, 0.18f, 0.28f, 0.95f);
+            if (buttonSprite != null)
+            {
+                _autoDepositToggleBg.sprite = buttonSprite;
+                _autoDepositToggleBg.type = Image.Type.Sliced;
+            }
+
+            _autoDepositToggle = toggleGo.AddComponent<Button>();
+            _autoDepositToggle.onClick.AddListener(OnAutoDepositToggleClicked);
+
+            var stateGo = new GameObject("State");
+            stateGo.transform.SetParent(toggleGo.transform, false);
+            var stateRt = stateGo.AddComponent<RectTransform>();
+            stateRt.anchorMin = Vector2.zero;
+            stateRt.anchorMax = Vector2.one;
+            stateRt.offsetMin = Vector2.zero;
+            stateRt.offsetMax = Vector2.zero;
+            _autoDepositToggleStateLabel = stateGo.AddComponent<TextMeshProUGUI>();
+            _autoDepositToggleStateLabel.fontSize = 11f;
+            _autoDepositToggleStateLabel.fontStyle = FontStyles.Bold;
+            _autoDepositToggleStateLabel.alignment = TextAlignmentOptions.Center;
+            _autoDepositToggleStateLabel.color = Color.white;
+            _autoDepositToggleStateLabel.raycastTarget = false;
+            ApplyFont(_autoDepositToggleStateLabel);
+
+            bool saved = PlayerPrefs.GetInt(AutoDepositGemsPrefsKey, AutoDepositGemsDefaultEnabled) != 0;
+            SetAutoDepositToggleVisual(saved, notify: false);
+        }
+
+        private void OnAutoDepositToggleClicked()
+        {
+            SetAutoDepositToggleVisual(!_autoDepositEnabled, notify: true);
+        }
+
+        private void SetAutoDepositToggleVisual(bool enabled, bool notify)
+        {
+            _autoDepositEnabled = enabled;
+            if (_autoDepositToggleBg != null)
+            {
+                _autoDepositToggleBg.color = enabled
+                    ? new Color(0.16f, 0.52f, 0.34f, 0.98f)
+                    : new Color(0.14f, 0.18f, 0.28f, 0.95f);
+            }
+
+            if (_autoDepositToggleStateLabel != null)
+                _autoDepositToggleStateLabel.text = enabled ? "ON" : "OFF";
+
+            if (notify)
+            {
+                PlayerPrefs.SetInt(AutoDepositGemsPrefsKey, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+                _onAutoDepositChanged?.Invoke(enabled);
             }
         }
 

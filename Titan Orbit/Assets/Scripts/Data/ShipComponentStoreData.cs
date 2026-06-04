@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -58,8 +59,15 @@ namespace TitanOrbit.Data
         {
             if (entry == null)
                 return 0f;
+            return GetPowerBreakdown(entry, shipLevel).Total;
+        }
+
+        public static ShipFamilyPowerScoreBreakdown GetPowerBreakdown(ShipFamilyComponentEntry entry, int shipLevel)
+        {
+            if (entry == null)
+                return default;
             ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(entry.stats, shipLevel);
-            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective).Total;
+            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective);
         }
 
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
@@ -105,6 +113,15 @@ namespace TitanOrbit.Data
                 default:
                     return entry.componentId.Trim().Substring(0, 1).ToUpperInvariant();
             }
+        }
+
+        public static Sprite GetMenuPreviewSprite(ShipFamilyDefinition family, ShipFamilyComponentEntry entry, TeamManager.Team team = TeamManager.Team.None)
+        {
+            if (entry != null && entry.GetMenuPreviewSprite(team) != null)
+                return entry.GetMenuPreviewSprite(team);
+            if (family != null && entry != null && !string.IsNullOrWhiteSpace(entry.componentId))
+                return family.GetMenuPreviewSpriteForComponent(entry.componentId, team);
+            return null;
         }
 
         public static int GetAbilityColorStatIndex(ShipFamilyComponentEntry entry)

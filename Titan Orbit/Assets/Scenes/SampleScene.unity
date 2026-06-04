@@ -4155,6 +4155,9 @@ MonoBehaviour:
   zoomScaleAtLevel1: 1
   zoomScaleAtMaxShipLevel: 1.5
   distanceChangeSmoothTime: 1.5
+  gemMoonOrbitFollowSmoothTime: 0.12
+  gemMoonOrbitSmoothingEnterSpeed: 0.35
+  gemMoonOrbitSmoothingExitSpeed: 0.6
   spawnZoomScale: 1
   galacticZoomEnabled: 0
   galacticZoomDistance: 111
@@ -9416,7 +9419,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   ShowTopMostFoldoutHeaderGroup: 1
   debugMode: 0
-  debugFreeShipUpgradeTree: 0
+  debugFreeShipUpgradeTree: 1
   maxPlayersPerTeam: 20
   attributeScaleExaggeration: 0.15
   numberOfTeams: 3
@@ -10250,6 +10253,7 @@ MonoBehaviour:
   mainMenuPanel: {fileID: 1064900433}
   lobbyPanel: {fileID: 1345699743}
   teamSelectionPanel: {fileID: 376194405}
+  rescueOldShipUI: {fileID: 0}
   loadingScreenController: {fileID: 867079293}
   playButton: {fileID: 0}
   hostOnlineButton: {fileID: 0}

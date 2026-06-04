@@ -291,7 +291,6 @@ namespace TitanOrbit.UI
             int nodeLevel = view.Level;
             int nodeBranch = view.BranchIndex;
 
-            view.SetPriceClickHandler(() => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch));
             view.SetInteractable(true);
             view.EnsureStableButtonRendering();
             view.SetInteractable(true);
@@ -310,6 +309,7 @@ namespace TitanOrbit.UI
 
             view.SetPrice("Free");
             view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
+            view.SetPriceClickHandler(() => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch));
         }
 
         private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, float maxPower)
@@ -413,6 +413,10 @@ namespace TitanOrbit.UI
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
+
+            var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
+            if (shipNo == null || !shipNo.IsSpawned) return;
+
             var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
 
@@ -421,14 +425,20 @@ namespace TitanOrbit.UI
                 if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
                     return;
 
-                if (!CardShopSystem.Instance.IsSpawned)
+                var nm = Unity.Netcode.NetworkManager.Singleton;
+                bool shopReady = CardShopSystem.Instance.IsSpawned
+                    || (nm != null && nm.IsServer && nm.IsListening);
+                if (!shopReady)
                 {
-                    Debug.LogWarning("OrbitStationUI: CardShopSystem is not spawned — start a networked game (host) to change ships.");
+                    Debug.LogWarning("OrbitStationUI: CardShopSystem is not ready — start a networked game (host) to change ships.");
                     return;
                 }
 
                 CardShopSystem.Instance.RequestDebugSelectUpgradeTreeNode(
-                    planetNo.NetworkObjectId, currentShip.NetworkObjectId, nodeLevel, targetBranchIndex);
+                    planetNo.NetworkObjectId, shipNo.NetworkObjectId, nodeLevel, targetBranchIndex);
+
+                if (nm != null && nm.IsServer)
+                    RefreshShipTreeAfterShipChange();
                 return;
             }
 

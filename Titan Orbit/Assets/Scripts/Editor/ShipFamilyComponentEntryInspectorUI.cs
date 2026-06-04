@@ -42,6 +42,8 @@ namespace TitanOrbit.Editor
             SerializedProperty statCategoriesProp = element.FindPropertyRelative("statCategories");
             SerializedProperty statsProp = element.FindPropertyRelative("stats");
             SerializedProperty bulletPrefabIndexProp = element.FindPropertyRelative("bulletPrefabIndex");
+            SerializedProperty menuPreviewSpriteProp = element.FindPropertyRelative("menuPreviewSprite");
+            SerializedProperty teamMenuPreviewSpritesProp = element.FindPropertyRelative("teamMenuPreviewSprites");
             string componentId = componentIdProp.stringValue ?? string.Empty;
 
             string header = string.IsNullOrWhiteSpace(componentId)
@@ -86,9 +88,20 @@ namespace TitanOrbit.Editor
             y = DrawStatsByCategory(new Rect(position.x, y, width, line), statsProp, statCategories, componentId, line, gap);
 
             if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
-                DrawStandardProperty(new Rect(position.x, y, width, line), bulletPrefabIndexProp, gap);
+                y = DrawStandardProperty(new Rect(position.x, y, width, line), bulletPrefabIndexProp, gap);
+
+            float menuPreviewHeight = EditorGUI.GetPropertyHeight(menuPreviewSpriteProp, true);
+            y = DrawPropertyBlock(new Rect(position.x, y, width, menuPreviewHeight), menuPreviewSpriteProp, gap);
+            float teamPreviewHeight = EditorGUI.GetPropertyHeight(teamMenuPreviewSpritesProp, true);
+            DrawPropertyBlock(new Rect(position.x, y, width, teamPreviewHeight), teamMenuPreviewSpritesProp, gap);
 
             EditorGUI.EndProperty();
+        }
+
+        private static float DrawPropertyBlock(Rect rect, SerializedProperty prop, float gap)
+        {
+            EditorGUI.PropertyField(rect, prop, true);
+            return rect.y + rect.height + gap;
         }
 
         private static float GetExpandedBodyHeight(SerializedProperty element, float line, float gap)
@@ -108,6 +121,9 @@ namespace TitanOrbit.Editor
 
             if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
                 height += line + gap; // bulletPrefabIndex
+
+            height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("menuPreviewSprite"), true) + gap;
+            height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("teamMenuPreviewSprites"), true) + gap;
 
             return height;
         }

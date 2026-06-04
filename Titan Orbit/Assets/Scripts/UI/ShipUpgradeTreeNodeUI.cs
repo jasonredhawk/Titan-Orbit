@@ -677,6 +677,8 @@ namespace TitanOrbit.UI
         {
             if (button == null) return;
             button.onClick.RemoveAllListeners();
+            if (handler != null)
+                button.onClick.AddListener(handler);
         }
 
         public void SetPriceClickHandler(UnityEngine.Events.UnityAction handler)

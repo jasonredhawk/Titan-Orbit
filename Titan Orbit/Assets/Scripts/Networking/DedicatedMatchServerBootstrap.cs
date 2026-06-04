@@ -629,7 +629,6 @@ namespace TitanOrbit.Networking
             _ = MatchSessionHealthLoopAsync(
                 maxPlayers,
                 relayProtocol,
-                isLatest,
                 relayAllocTimeoutMs,
                 lobbyCreateTimeoutMs);
             _ = RotationLoopAsync(
@@ -745,6 +744,10 @@ namespace TitanOrbit.Networking
                 await Task.Delay(TimeSpan.FromSeconds(30));
                 try
                 {
+                    // RecreateEmptyMatchInProcessAsync intentionally calls Shutdown() before StartServer().
+                    if (_recreateEmptyMatchInProgress)
+                        continue;
+
                     if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
                     {
                         Debug.LogError(
@@ -778,7 +781,6 @@ namespace TitanOrbit.Networking
         private static async Task<bool> RecreateEmptyMatchInProcessAsync(
             int maxPlayers,
             string relayProtocol,
-            bool isLatest,
             TimeSpan relayTimeout,
             int lobbyCreateTimeoutMs)
         {
@@ -792,6 +794,7 @@ namespace TitanOrbit.Networking
             if (transport == null || string.IsNullOrWhiteSpace(oldLobbyId))
                 return false;
 
+            bool isLatest = _matchIsLatest;
             _recreateEmptyMatchInProgress = true;
             try
             {
@@ -918,7 +921,10 @@ namespace TitanOrbit.Networking
                     long ageSeconds = nowEpochSeconds - createdAtEpochSeconds;
 
                     // Idle empty lobby: replace lobby + relay after a long period with no joiners (same process; no extra VM processes).
-                    if (playerCount == 0 && _emptySinceUtc.HasValue && !string.IsNullOrWhiteSpace(lobbyId))
+                    if (!_recreateEmptyMatchInProgress &&
+                        playerCount == 0 &&
+                        _emptySinceUtc.HasValue &&
+                        !string.IsNullOrWhiteSpace(lobbyId))
                     {
                         double emptySeconds = (DateTime.UtcNow - _emptySinceUtc.Value).TotalSeconds;
                         if (emptySeconds >= emptyMatchRecreateSeconds)
@@ -926,7 +932,6 @@ namespace TitanOrbit.Networking
                             bool recreated = await RecreateEmptyMatchInProcessAsync(
                                 maxPlayers,
                                 relayProtocol,
-                                isLatest,
                                 TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
                                 lobbyCreateTimeoutMs);
                             if (recreated)
@@ -943,6 +948,7 @@ namespace TitanOrbit.Networking
                     {
                         spawnedFromAge = true;
                         isLatest = false;
+                        _matchIsLatest = false;
 
                         await UpdateLobbyFlagsAsync(lobbyId, isOpen: false, isLatest: false);
                         Debug.Log(
@@ -958,6 +964,7 @@ namespace TitanOrbit.Networking
 
                         bool nextIsLatest = isLatest;
                         isLatest = false;
+                        _matchIsLatest = false;
 
                         await UpdateLobbyFlagsAsync(lobbyId, isOpen: false, isLatest: false);
                         Debug.Log($"[DedicatedMatchServerBootstrap] Lobby full rotation: spawned next match (old lobby {lobbyId} closed). NextIsLatest={nextIsLatest}.");
@@ -1057,7 +1064,6 @@ namespace TitanOrbit.Networking
         private static async Task MatchSessionHealthLoopAsync(
             int maxPlayers,
             string relayProtocol,
-            bool isLatest,
             int relayAllocTimeoutMs,
             int lobbyCreateTimeoutMs)
         {
@@ -1067,6 +1073,8 @@ namespace TitanOrbit.Networking
                 await Task.Delay(interval);
                 try
                 {
+                    if (_recreateEmptyMatchInProgress)
+                        continue;
                     if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
                         continue;
                     if (NetworkManager.Singleton.ConnectedClients.Count > 0)
@@ -1090,7 +1098,6 @@ namespace TitanOrbit.Networking
                     await RecreateEmptyMatchInProcessAsync(
                         maxPlayers,
                         relayProtocol,
-                        isLatest,
                         TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
                         lobbyCreateTimeoutMs);
                 }

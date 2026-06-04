@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -53,6 +54,23 @@ namespace TitanOrbit.UI
         private const float SidebarSlotCardWidth = 228f;
         private const float SidebarSlotCardHeight = 68f;
         private const float SidebarSlotCellSpacing = 8f;
+        private const float SidebarEquipmentSlotCardHeight = 196f;
+        private const float SidebarEquipmentIconHeight = 64f;
+        private const float SidebarEquipmentIconMinHeight = 48f;
+        private const float SidebarEquipmentAbilityFontSize = 10f;
+        private const float SidebarEquipmentAbilityAreaHeight = 54f;
+        private const float SidebarEquipmentStatsFooterHeight = 74f;
+        private static readonly Color SidebarEquipmentEmptyAccent = new Color(0.35f, 0.4f, 0.48f, 0.85f);
+        private const float MoonDockUpgradeSpinCardHeight = 168f;
+        private const float MoonDockUpgradeSpinIconHeight = 48f;
+        private const float MoonDockUpgradeSpinDescHeight = 44f;
+        private const float MoonDockUpgradeSpinDescFontSize = 10f;
+        private const float SidebarUpgradeCardSlotHeight = 172f;
+        private const float SidebarUpgradeCardIconHeight = 56f;
+        private const float SidebarUpgradeCardIconMinHeight = 44f;
+        private const float SidebarUpgradeCardDescHeight = 52f;
+        private const float SidebarUpgradeCardDescFontSize = 10f;
+        private static readonly Color SidebarUpgradeCardEmptyAccent = new Color(0.35f, 0.42f, 0.55f, 0.85f);
 
         private GameObject rootPanel;
         private GameObject slotPanel;
@@ -164,6 +182,8 @@ namespace TitanOrbit.UI
         private RectTransform _moonDockStoreGridContent;
         private GridLayoutGroup _moonDockStoreGrid;
         private string _moonDockStoreBuiltForFamilyKey;
+        private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
+        private const int MoonDockEquipmentCardLayoutVersion = 3;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -172,9 +192,12 @@ namespace TitanOrbit.UI
             public StoreItemType supportItem;
             public GameObject root;
             public Image bgImage;
+            public Image iconImage;
+            public TextMeshProUGUI iconGlyph;
             public TextMeshProUGUI titleText;
             public TextMeshProUGUI descriptionText;
             public TextMeshProUGUI sublineText;
+            public ShipUpgradeTreePowerBarUI powerBar;
             public Button buyButton;
             public Image buyImage;
             public TextMeshProUGUI buyLabel;
@@ -182,12 +205,56 @@ namespace TitanOrbit.UI
 
         private readonly List<MoonDockStoreCardBinding> _moonDockStoreCards = new List<MoonDockStoreCardBinding>();
 
+        private sealed class SidebarEquipmentSlotUi
+        {
+            public Image accentImage;
+            public Image iconImage;
+            public TextMeshProUGUI iconGlyph;
+            public TextMeshProUGUI sublineText;
+            public ShipUpgradeTreePowerBarUI powerBar;
+            public GameObject statsFooter;
+            public GameObject iconRoot;
+        }
+
+        private SidebarEquipmentSlotUi[] _sidebarEquipmentSlotUi;
+        private bool _equipmentSlotRichLayoutActive;
+
+        private sealed class SidebarUpgradeCardSlotUi
+        {
+            public Image accentImage;
+            public Image iconImage;
+            public TextMeshProUGUI iconGlyph;
+            public TextMeshProUGUI sublineText;
+            public GameObject iconRoot;
+            public GameObject descFooter;
+        }
+
+        private SidebarUpgradeCardSlotUi[] _sidebarUpgradeCardSlotUi;
+        private bool _upgradeCardSlotRichLayoutActive;
+        private bool _upgradeSpinRowUsesTallLayout;
+
         private const int MoonDockStoreTilesPerRow = 7;
         private const float MoonDockStoreTileSpacing = 6f;
         private const float MoonDockStoreTileMinWidth = 72f;
         private const float MoonDockStoreCardHeight = 118f;
-        private const float MoonDockEquipmentCardHeight = 172f;
-        private const float MoonDockEquipmentPanelHeight = 420f;
+        private const float MoonDockEquipmentCardHeight = 324f;
+        private const float MoonDockEquipmentIconHeight = 136f;
+        private const float MoonDockEquipmentIconMinHeight = 104f;
+        private const float MoonDockEquipmentAbilityFontSize = 11f;
+        private const float MoonDockEquipmentAbilityAreaHeight = 80f;
+        private const float MoonDockEquipmentStatsFooterHeight = 112f;
+        private const float MoonDockEquipmentPowerBarHeight = 8f;
+        private const float MoonDockEquipmentPowerBarPairGap = 2f;
+        private const float MoonDockEquipmentScrollMinHeight = 200f;
+        private const float MoonDockSectionHeaderHeight = 60f;
+        private const float MoonDockSectionHeaderTitleHeight = 22f;
+        private const float MoonDockSectionHeaderSubtitleHeight = 36f;
+        private const float MoonDockSectionHeaderTextSpacing = 2f;
+        private const float MoonDockCardsToEquipmentGap = 12f;
+        private const float MoonDockEquipmentHeaderToGridGap = 10f;
+        private static readonly Color MoonDockEquipmentCardBg = new Color(0.1f, 0.14f, 0.22f, 0.98f);
+        private static readonly Color MoonDockEquipmentStatsFooterBg = new Color(0.06f, 0.08f, 0.12f, 0.96f);
+        private static readonly Color MoonDockEquipmentPowerBarTrackBg = new Color(0.04f, 0.05f, 0.08f, 0.98f);
         private static readonly Color MoonDockStoreCardFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
         private static readonly Color MoonDockStoreCardInnerShade = new Color(0f, 0f, 0f, 0.22f);
         private static readonly Color MoonDockItemTileButtonIdle = new Color(0.08f, 0.1f, 0.16f, 0.88f);
@@ -849,6 +916,9 @@ namespace TitanOrbit.UI
             spinBlockGo.transform.SetParent(cardsTabContent.transform, false);
             var spinBlockLe = spinBlockGo.AddComponent<LayoutElement>();
             spinBlockLe.flexibleWidth = 1f;
+            spinBlockLe.flexibleHeight = 0f;
+            spinBlockLe.preferredHeight = 36f + 6f + MoonDockUpgradeSpinCardHeight;
+            spinBlockLe.minHeight = spinBlockLe.preferredHeight;
             var spinBlockVlg = spinBlockGo.AddComponent<VerticalLayoutGroup>();
             spinBlockVlg.spacing = 6f;
             spinBlockVlg.padding = new RectOffset(0, 0, 0, 0);
@@ -903,8 +973,8 @@ namespace TitanOrbit.UI
             cardSpinRowGo.transform.SetParent(spinBlockGo.transform, false);
             var cardSpinRowLe = cardSpinRowGo.AddComponent<LayoutElement>();
             cardSpinRowLe.flexibleWidth = 0f;
-            cardSpinRowLe.preferredHeight = MoonDockStoreCardHeight;
-            cardSpinRowLe.minHeight = MoonDockStoreCardHeight;
+            cardSpinRowLe.preferredHeight = MoonDockUpgradeSpinCardHeight;
+            cardSpinRowLe.minHeight = MoonDockUpgradeSpinCardHeight;
             _cardSpinRowLayout = cardSpinRowGo.AddComponent<HorizontalLayoutGroup>();
             _cardSpinRowLayout.spacing = 6f;
             _cardSpinRowLayout.padding = new RectOffset(0, 0, 0, 0);
@@ -925,21 +995,21 @@ namespace TitanOrbit.UI
             cardRarityLabels = new TextMeshProUGUI[maxStoreCards];
             for (int i = 0; i < maxStoreCards; i++)
             {
-                CreateCompactSpinOfferCard(cardSpinRowGo.transform, i, out cardRoots[i], out cardRarityFrameImages[i], out cardBgImages[i], out cardIconImages[i], out cardTitleTexts[i], out cardLevelTexts[i], out cardRarityLabels[i], out cardDescTexts[i], out cardButtons[i]);
+                CreateUpgradeSpinOfferCard(cardSpinRowGo.transform, i, out cardRoots[i], out cardRarityFrameImages[i], out cardBgImages[i], out cardIconImages[i], out cardTitleTexts[i], out cardLevelTexts[i], out cardRarityLabels[i], out cardDescTexts[i], out cardButtons[i]);
                 if (cardRoots[i] != null)
                     cardRoots[i].AddComponent<ScrollRectForwarder>();
                 int idx = i;
                 cardButtons[i].onClick.AddListener(() => OnTakeSpinOffer(idx));
             }
+            _upgradeSpinRowUsesTallLayout = true;
 
             var cardsLayoutEl = cardsTabContent.AddComponent<LayoutElement>();
-            cardsLayoutEl.preferredHeight = 228f;
-            cardsLayoutEl.minHeight = 220f;
+            cardsLayoutEl.flexibleHeight = 0f;
             cardsLayoutEl.flexibleWidth = 1f;
             var cardsTabFitter = cardsTabContent.AddComponent<ContentSizeFitter>();
-            cardsTabFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            cardsTabFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
             cardsTabFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            _cardsContentHeight = 228f;
+            ApplyMoonDockUpgradeCardsSectionHeight();
 
             // Ships tab content — fixed list of ship slots (like Cards tab), populated when tab is shown
             shipsTabContent = new GameObject("ShipsTabContent");
@@ -1718,6 +1788,471 @@ namespace TitanOrbit.UI
             deleteButton.gameObject.SetActive(false);
         }
 
+        private void SetEquipmentSlotLayoutMode(bool richLayout)
+        {
+            if (equipmentGridRoot == null)
+                return;
+
+            if (_equipmentSlotRichLayoutActive == richLayout && equipmentBoxes != null && equipmentBoxes[0] != null)
+                return;
+
+            _equipmentSlotRichLayoutActive = richLayout;
+            _sidebarEquipmentSlotUi = richLayout ? new SidebarEquipmentSlotUi[MaxSlotRows] : null;
+
+            for (int i = 0; i < MaxSlotRows; i++)
+            {
+                if (equipmentBoxes != null && equipmentBoxes[i] != null)
+                    Destroy(equipmentBoxes[i]);
+                if (equipmentBoxes != null)
+                    equipmentBoxes[i] = null;
+            }
+
+            equipmentBoxes = new GameObject[MaxSlotRows];
+            equipmentBgImages = new Image[MaxSlotRows];
+            equipmentBorderImages = new Image[MaxSlotRows];
+            equipmentChargeTexts = new TextMeshProUGUI[MaxSlotRows];
+            equipmentTitleTexts = new TextMeshProUGUI[MaxSlotRows];
+            equipmentDescTexts = new TextMeshProUGUI[MaxSlotRows];
+            equipmentDeleteButtons = new Button[MaxSlotRows];
+
+            for (int i = 0; i < MaxSlotRows; i++)
+            {
+                int idx = i;
+                if (richLayout)
+                {
+                    CreateSidebarEquipmentSlotCard(
+                        equipmentGridRoot.transform,
+                        i,
+                        out equipmentBoxes[i],
+                        out equipmentBgImages[i],
+                        out equipmentTitleTexts[i],
+                        out equipmentDescTexts[i],
+                        out equipmentDeleteButtons[i],
+                        out _sidebarEquipmentSlotUi[i]);
+                }
+                else
+                {
+                    CreateSlotBoxForGrid(
+                        equipmentGridRoot.transform,
+                        SlotCardWidth,
+                        SlotCardHeight,
+                        i,
+                        out equipmentBoxes[i],
+                        out equipmentBgImages[i],
+                        out equipmentBorderImages[i],
+                        out equipmentChargeTexts[i],
+                        out equipmentTitleTexts[i],
+                        out equipmentDescTexts[i],
+                        out equipmentDeleteButtons[i]);
+                }
+
+                if (equipmentDeleteButtons[i] != null)
+                    equipmentDeleteButtons[i].onClick.AddListener(() => ShowEquipmentRemoveConfirm(idx));
+            }
+        }
+
+        private void CreateSidebarEquipmentSlotCard(
+            Transform gridParent,
+            int index,
+            out GameObject boxRoot,
+            out Image bgImage,
+            out TextMeshProUGUI titleText,
+            out TextMeshProUGUI descText,
+            out Button deleteButton,
+            out SidebarEquipmentSlotUi slotUi)
+        {
+            slotUi = new SidebarEquipmentSlotUi();
+            float trackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
+
+            boxRoot = new GameObject("EquipmentSlot_" + (index + 1));
+            boxRoot.transform.SetParent(gridParent, false);
+            var cardLe = boxRoot.AddComponent<LayoutElement>();
+            cardLe.flexibleWidth = 0f;
+            cardLe.flexibleHeight = 0f;
+            cardLe.preferredWidth = SidebarSlotCardWidth;
+            cardLe.minWidth = SidebarSlotCardWidth;
+            cardLe.preferredHeight = SidebarEquipmentSlotCardHeight;
+            cardLe.minHeight = SidebarEquipmentSlotCardHeight;
+
+            bgImage = boxRoot.AddComponent<Image>();
+            bgImage.color = MoonDockEquipmentCardBg;
+            bgImage.raycastTarget = false;
+            var cardOutline = boxRoot.AddComponent<Outline>();
+            cardOutline.effectColor = MoonDockStoreCardFrameColor;
+            cardOutline.effectDistance = new Vector2(1f, 1f);
+
+            var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
+            cardVlg.spacing = 3f;
+            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.childAlignment = TextAnchor.UpperCenter;
+            cardVlg.childControlWidth = true;
+            cardVlg.childControlHeight = true;
+            cardVlg.childForceExpandWidth = true;
+            cardVlg.childForceExpandHeight = false;
+
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(boxRoot.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = 4f;
+            accentLe.minHeight = 4f;
+            slotUi.accentImage = accentGo.AddComponent<Image>();
+            slotUi.accentImage.color = SidebarEquipmentEmptyAccent;
+            slotUi.accentImage.raycastTarget = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(boxRoot.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 14f;
+            titleLe.minHeight = 12f;
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.text = "Empty";
+            titleText.fontSize = 10f;
+            titleText.fontStyle = FontStyles.Bold;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.color = Color.white;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.raycastTarget = false;
+            if (fontAsset != null) titleText.font = fontAsset;
+
+            slotUi.iconRoot = new GameObject("Icon");
+            slotUi.iconRoot.transform.SetParent(boxRoot.transform, false);
+            var iconLe = slotUi.iconRoot.AddComponent<LayoutElement>();
+            iconLe.flexibleHeight = 0f;
+            iconLe.minHeight = SidebarEquipmentIconMinHeight;
+            iconLe.preferredHeight = SidebarEquipmentIconHeight;
+            slotUi.iconImage = slotUi.iconRoot.AddComponent<Image>();
+            slotUi.iconImage.color = new Color(1f, 1f, 1f, 0f);
+            slotUi.iconImage.preserveAspect = true;
+            slotUi.iconImage.raycastTarget = false;
+
+            var glyphGo = new GameObject("Glyph");
+            glyphGo.transform.SetParent(slotUi.iconRoot.transform, false);
+            var glyphRt = glyphGo.AddComponent<RectTransform>();
+            glyphRt.anchorMin = Vector2.zero;
+            glyphRt.anchorMax = Vector2.one;
+            glyphRt.offsetMin = Vector2.zero;
+            glyphRt.offsetMax = Vector2.zero;
+            slotUi.iconGlyph = glyphGo.AddComponent<TextMeshProUGUI>();
+            slotUi.iconGlyph.fontSize = 34f;
+            slotUi.iconGlyph.alignment = TextAlignmentOptions.Center;
+            slotUi.iconGlyph.color = new Color(1f, 1f, 1f, 0.95f);
+            slotUi.iconGlyph.raycastTarget = false;
+            if (fontAsset != null) slotUi.iconGlyph.font = fontAsset;
+
+            slotUi.statsFooter = new GameObject("StatsFooter");
+            slotUi.statsFooter.transform.SetParent(boxRoot.transform, false);
+            var statsFooterLe = slotUi.statsFooter.AddComponent<LayoutElement>();
+            statsFooterLe.flexibleHeight = 0f;
+            statsFooterLe.minHeight = SidebarEquipmentStatsFooterHeight;
+            statsFooterLe.preferredHeight = SidebarEquipmentStatsFooterHeight;
+            var statsFooterBg = slotUi.statsFooter.AddComponent<Image>();
+            statsFooterBg.color = MoonDockEquipmentStatsFooterBg;
+            statsFooterBg.raycastTarget = false;
+            var statsFooterVlg = slotUi.statsFooter.AddComponent<VerticalLayoutGroup>();
+            statsFooterVlg.spacing = 2f;
+            statsFooterVlg.padding = new RectOffset(4, 4, 4, 4);
+            statsFooterVlg.childAlignment = TextAnchor.UpperCenter;
+            statsFooterVlg.childControlWidth = true;
+            statsFooterVlg.childControlHeight = true;
+            statsFooterVlg.childForceExpandWidth = true;
+            statsFooterVlg.childForceExpandHeight = false;
+
+            var descriptionGo = new GameObject("Description");
+            descriptionGo.transform.SetParent(slotUi.statsFooter.transform, false);
+            var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
+            descriptionLe.flexibleHeight = 0f;
+            descriptionLe.minHeight = SidebarEquipmentAbilityAreaHeight;
+            descriptionLe.preferredHeight = SidebarEquipmentAbilityAreaHeight;
+            descText = descriptionGo.AddComponent<TextMeshProUGUI>();
+            descText.text = string.Empty;
+            descText.fontSize = SidebarEquipmentAbilityFontSize;
+            descText.alignment = TextAlignmentOptions.Top;
+            descText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
+            descText.enableWordWrapping = true;
+            descText.richText = true;
+            descText.overflowMode = TextOverflowModes.Overflow;
+            descText.maxVisibleLines = 6;
+            descText.raycastTarget = false;
+            if (fontAsset != null) descText.font = fontAsset;
+
+            slotUi.powerBar = ShipUpgradeTreePowerBarUI.CreateInTrack(
+                slotUi.statsFooter.transform,
+                MoonDockEquipmentPowerBarTrackBg,
+                MoonDockEquipmentPowerBarHeight,
+                MoonDockEquipmentPowerBarPairGap,
+                trackWidth);
+
+            var sublineGo = new GameObject("Subline");
+            sublineGo.transform.SetParent(boxRoot.transform, false);
+            var sublineLe = sublineGo.AddComponent<LayoutElement>();
+            sublineLe.preferredHeight = 11f;
+            sublineLe.minHeight = 10f;
+            slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
+            slotUi.sublineText.fontSize = 8.5f;
+            slotUi.sublineText.fontStyle = FontStyles.Bold;
+            slotUi.sublineText.alignment = TextAlignmentOptions.Center;
+            slotUi.sublineText.color = new Color(1f, 1f, 1f, 0.82f);
+            slotUi.sublineText.overflowMode = TextOverflowModes.Ellipsis;
+            slotUi.sublineText.raycastTarget = false;
+            if (fontAsset != null) slotUi.sublineText.font = fontAsset;
+
+            var delGo = new GameObject("Delete");
+            delGo.transform.SetParent(boxRoot.transform, false);
+            var delRt = delGo.AddComponent<RectTransform>();
+            delRt.anchorMin = new Vector2(0f, 1f);
+            delRt.anchorMax = new Vector2(0f, 1f);
+            delRt.pivot = new Vector2(0f, 1f);
+            delRt.anchoredPosition = new Vector2(4f, -8f);
+            delRt.sizeDelta = new Vector2(22f, 22f);
+            delGo.AddComponent<LayoutElement>().ignoreLayout = true;
+            var delImg = delGo.AddComponent<Image>();
+            delImg.color = new Color(0.42f, 0.18f, 0.2f, 0.96f);
+            if (buttonSprite != null) { delImg.sprite = buttonSprite; delImg.type = Image.Type.Sliced; }
+            deleteButton = delGo.AddComponent<Button>();
+            var delTxtGo = new GameObject("Text");
+            delTxtGo.transform.SetParent(delGo.transform, false);
+            var delTxtRect = delTxtGo.AddComponent<RectTransform>();
+            delTxtRect.anchorMin = Vector2.zero;
+            delTxtRect.anchorMax = Vector2.one;
+            delTxtRect.offsetMin = Vector2.zero;
+            delTxtRect.offsetMax = Vector2.zero;
+            var delTmp = delTxtGo.AddComponent<TextMeshProUGUI>();
+            delTmp.text = "×";
+            delTmp.fontSize = 16;
+            delTmp.alignment = TextAlignmentOptions.Center;
+            delTmp.color = new Color(1f, 0.92f, 0.92f, 1f);
+            if (fontAsset != null) delTmp.font = fontAsset;
+            delTmp.raycastTarget = false;
+            deleteButton.gameObject.SetActive(false);
+        }
+
+        private void SetUpgradeCardSlotLayoutMode(bool richLayout)
+        {
+            if (slotGridRoot == null)
+                return;
+
+            if (_upgradeCardSlotRichLayoutActive == richLayout && slotBoxes != null && slotBoxes[0] != null)
+                return;
+
+            _upgradeCardSlotRichLayoutActive = richLayout;
+            _sidebarUpgradeCardSlotUi = richLayout ? new SidebarUpgradeCardSlotUi[MaxSlotRows] : null;
+
+            for (int i = 0; i < MaxSlotRows; i++)
+            {
+                if (slotBoxes != null && slotBoxes[i] != null)
+                    Destroy(slotBoxes[i]);
+                if (slotBoxes != null)
+                    slotBoxes[i] = null;
+            }
+
+            slotBoxes = new GameObject[MaxSlotRows];
+            slotBgImages = new Image[MaxSlotRows];
+            slotBorderImages = new Image[MaxSlotRows];
+            slotLevelTexts = new TextMeshProUGUI[MaxSlotRows];
+            slotTitleTexts = new TextMeshProUGUI[MaxSlotRows];
+            slotDescTexts = new TextMeshProUGUI[MaxSlotRows];
+            slotDeleteButtons = new Button[MaxSlotRows];
+
+            for (int i = 0; i < MaxSlotRows; i++)
+            {
+                int idx = i;
+                if (richLayout)
+                {
+                    CreateSidebarUpgradeCardSlotCard(
+                        slotGridRoot.transform,
+                        i,
+                        out slotBoxes[i],
+                        out slotBgImages[i],
+                        out slotTitleTexts[i],
+                        out slotDescTexts[i],
+                        out slotDeleteButtons[i],
+                        out _sidebarUpgradeCardSlotUi[i]);
+                }
+                else
+                {
+                    CreateSlotBoxForGrid(
+                        slotGridRoot.transform,
+                        SlotCardWidth,
+                        SlotCardHeight,
+                        i,
+                        out slotBoxes[i],
+                        out slotBgImages[i],
+                        out slotBorderImages[i],
+                        out slotLevelTexts[i],
+                        out slotTitleTexts[i],
+                        out slotDescTexts[i],
+                        out slotDeleteButtons[i]);
+                }
+
+                if (slotDeleteButtons[i] != null)
+                    slotDeleteButtons[i].onClick.AddListener(() => ShowCardRemoveConfirm(idx));
+            }
+        }
+
+        private void CreateSidebarUpgradeCardSlotCard(
+            Transform gridParent,
+            int index,
+            out GameObject boxRoot,
+            out Image bgImage,
+            out TextMeshProUGUI titleText,
+            out TextMeshProUGUI descText,
+            out Button deleteButton,
+            out SidebarUpgradeCardSlotUi slotUi)
+        {
+            slotUi = new SidebarUpgradeCardSlotUi();
+
+            boxRoot = new GameObject("UpgradeCardSlot_" + (index + 1));
+            boxRoot.transform.SetParent(gridParent, false);
+            var cardLe = boxRoot.AddComponent<LayoutElement>();
+            cardLe.flexibleWidth = 0f;
+            cardLe.flexibleHeight = 0f;
+            cardLe.preferredWidth = SidebarSlotCardWidth;
+            cardLe.minWidth = SidebarSlotCardWidth;
+            cardLe.preferredHeight = SidebarUpgradeCardSlotHeight;
+            cardLe.minHeight = SidebarUpgradeCardSlotHeight;
+
+            bgImage = boxRoot.AddComponent<Image>();
+            bgImage.color = MoonDockEquipmentCardBg;
+            bgImage.raycastTarget = false;
+            var cardOutline = boxRoot.AddComponent<Outline>();
+            cardOutline.effectColor = MoonDockStoreCardFrameColor;
+            cardOutline.effectDistance = new Vector2(1f, 1f);
+
+            var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
+            cardVlg.spacing = 3f;
+            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.childAlignment = TextAnchor.UpperCenter;
+            cardVlg.childControlWidth = true;
+            cardVlg.childControlHeight = true;
+            cardVlg.childForceExpandWidth = true;
+            cardVlg.childForceExpandHeight = false;
+
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(boxRoot.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = 4f;
+            accentLe.minHeight = 4f;
+            slotUi.accentImage = accentGo.AddComponent<Image>();
+            slotUi.accentImage.color = SidebarUpgradeCardEmptyAccent;
+            slotUi.accentImage.raycastTarget = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(boxRoot.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 14f;
+            titleLe.minHeight = 12f;
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.text = "Empty";
+            titleText.fontSize = 10f;
+            titleText.fontStyle = FontStyles.Bold;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.color = Color.white;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.raycastTarget = false;
+            if (fontAsset != null) titleText.font = fontAsset;
+
+            slotUi.iconRoot = new GameObject("Icon");
+            slotUi.iconRoot.transform.SetParent(boxRoot.transform, false);
+            var iconLe = slotUi.iconRoot.AddComponent<LayoutElement>();
+            iconLe.flexibleHeight = 0f;
+            iconLe.minHeight = SidebarUpgradeCardIconMinHeight;
+            iconLe.preferredHeight = SidebarUpgradeCardIconHeight;
+            slotUi.iconImage = slotUi.iconRoot.AddComponent<Image>();
+            slotUi.iconImage.color = new Color(1f, 1f, 1f, 0f);
+            slotUi.iconImage.preserveAspect = true;
+            slotUi.iconImage.raycastTarget = false;
+
+            var glyphGo = new GameObject("Glyph");
+            glyphGo.transform.SetParent(slotUi.iconRoot.transform, false);
+            var glyphRt = glyphGo.AddComponent<RectTransform>();
+            glyphRt.anchorMin = Vector2.zero;
+            glyphRt.anchorMax = Vector2.one;
+            glyphRt.offsetMin = Vector2.zero;
+            glyphRt.offsetMax = Vector2.zero;
+            slotUi.iconGlyph = glyphGo.AddComponent<TextMeshProUGUI>();
+            slotUi.iconGlyph.fontSize = 32f;
+            slotUi.iconGlyph.alignment = TextAlignmentOptions.Center;
+            slotUi.iconGlyph.color = new Color(1f, 1f, 1f, 0.95f);
+            slotUi.iconGlyph.raycastTarget = false;
+            if (fontAsset != null) slotUi.iconGlyph.font = fontAsset;
+
+            slotUi.descFooter = new GameObject("DescFooter");
+            slotUi.descFooter.transform.SetParent(boxRoot.transform, false);
+            var descFooterLe = slotUi.descFooter.AddComponent<LayoutElement>();
+            descFooterLe.flexibleHeight = 0f;
+            descFooterLe.minHeight = SidebarUpgradeCardDescHeight;
+            descFooterLe.preferredHeight = SidebarUpgradeCardDescHeight;
+            var descFooterBg = slotUi.descFooter.AddComponent<Image>();
+            descFooterBg.color = MoonDockEquipmentStatsFooterBg;
+            descFooterBg.raycastTarget = false;
+            var descFooterVlg = slotUi.descFooter.AddComponent<VerticalLayoutGroup>();
+            descFooterVlg.padding = new RectOffset(4, 4, 4, 4);
+            descFooterVlg.childAlignment = TextAnchor.UpperCenter;
+            descFooterVlg.childControlWidth = true;
+            descFooterVlg.childControlHeight = true;
+            descFooterVlg.childForceExpandWidth = true;
+            descFooterVlg.childForceExpandHeight = true;
+
+            var descriptionGo = new GameObject("Description");
+            descriptionGo.transform.SetParent(slotUi.descFooter.transform, false);
+            var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
+            descriptionLe.flexibleHeight = 1f;
+            descriptionLe.minHeight = SidebarUpgradeCardDescHeight - 8f;
+            descText = descriptionGo.AddComponent<TextMeshProUGUI>();
+            descText.text = string.Empty;
+            descText.fontSize = SidebarUpgradeCardDescFontSize;
+            descText.alignment = TextAlignmentOptions.Top;
+            descText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
+            descText.enableWordWrapping = true;
+            descText.overflowMode = TextOverflowModes.Ellipsis;
+            descText.maxVisibleLines = 5;
+            descText.raycastTarget = false;
+            if (fontAsset != null) descText.font = fontAsset;
+
+            var sublineGo = new GameObject("Subline");
+            sublineGo.transform.SetParent(boxRoot.transform, false);
+            var sublineLe = sublineGo.AddComponent<LayoutElement>();
+            sublineLe.preferredHeight = 11f;
+            sublineLe.minHeight = 10f;
+            slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
+            slotUi.sublineText.fontSize = 8.5f;
+            slotUi.sublineText.fontStyle = FontStyles.Bold;
+            slotUi.sublineText.alignment = TextAlignmentOptions.Center;
+            slotUi.sublineText.color = new Color(1f, 1f, 1f, 0.82f);
+            slotUi.sublineText.overflowMode = TextOverflowModes.Ellipsis;
+            slotUi.sublineText.raycastTarget = false;
+            if (fontAsset != null) slotUi.sublineText.font = fontAsset;
+
+            var delGo = new GameObject("Delete");
+            delGo.transform.SetParent(boxRoot.transform, false);
+            var delRt = delGo.AddComponent<RectTransform>();
+            delRt.anchorMin = new Vector2(0f, 1f);
+            delRt.anchorMax = new Vector2(0f, 1f);
+            delRt.pivot = new Vector2(0f, 1f);
+            delRt.anchoredPosition = new Vector2(4f, -8f);
+            delRt.sizeDelta = new Vector2(22f, 22f);
+            delGo.AddComponent<LayoutElement>().ignoreLayout = true;
+            var delImg = delGo.AddComponent<Image>();
+            delImg.color = new Color(0.42f, 0.18f, 0.2f, 0.96f);
+            if (buttonSprite != null) { delImg.sprite = buttonSprite; delImg.type = Image.Type.Sliced; }
+            deleteButton = delGo.AddComponent<Button>();
+            var delTxtGo = new GameObject("Text");
+            delTxtGo.transform.SetParent(delGo.transform, false);
+            var delTxtRect = delTxtGo.AddComponent<RectTransform>();
+            delTxtRect.anchorMin = Vector2.zero;
+            delTxtRect.anchorMax = Vector2.one;
+            delTxtRect.offsetMin = Vector2.zero;
+            delTxtRect.offsetMax = Vector2.zero;
+            var delTmp = delTxtGo.AddComponent<TextMeshProUGUI>();
+            delTmp.text = "×";
+            delTmp.fontSize = 16;
+            delTmp.alignment = TextAlignmentOptions.Center;
+            delTmp.color = new Color(1f, 0.92f, 0.92f, 1f);
+            if (fontAsset != null) delTmp.font = fontAsset;
+            delTmp.raycastTarget = false;
+            deleteButton.gameObject.SetActive(false);
+        }
+
         private void CreateSlotBox(Transform parent, int index, ref float y, out GameObject boxRoot, out Image iconImage, out TextMeshProUGUI levelText)
         {
             boxRoot = new GameObject("SlotBox_" + (index + 1));
@@ -1826,7 +2361,8 @@ namespace TitanOrbit.UI
 
         private static void ApplySpaceCardOutline(TextMeshProUGUI tmp, float width = 0.2f)
         {
-            if (tmp == null) return;
+            if (tmp == null || tmp.font == null)
+                return;
             tmp.outlineWidth = width;
             tmp.outlineColor = new Color(0.02f, 0.05f, 0.12f, 0.92f);
         }
@@ -2000,42 +2536,189 @@ namespace TitanOrbit.UI
             if (fontAsset != null) actionLabelTmp.font = fontAsset;
         }
 
-        /// <summary>Upgrade spin-offer tile — same footprint as equipment store tiles.</summary>
-        private void CreateCompactSpinOfferCard(Transform parent, int index, out GameObject root, out Image accentImage, out Image bgImage, out Image iconImage, out TextMeshProUGUI titleText, out TextMeshProUGUI levelText, out TextMeshProUGUI metaLabel, out TextMeshProUGUI descText, out Button takeButton)
+        private static Color GetSlotTypeAccentColor(SlotType slotType)
         {
-            TextMeshProUGUI iconGlyph;
-            Image actionImage;
-            CreateMoonDockItemTile(
-                parent,
-                "SpinOffer_" + (index + 1),
-                new Color(0.12f, 0.2f, 0.32f, 0.95f),
-                OrbitDockSidebarPanelUI.UpgradeCardsAccent,
-                "Choose",
-                out root,
-                out accentImage,
-                out bgImage,
-                out iconImage,
-                out iconGlyph,
-                out titleText,
-                out metaLabel,
-                out takeButton,
-                out actionImage);
-
-            if (titleText != null)
-                titleText.text = $"Slot {index + 1}";
-            if (metaLabel != null)
-                metaLabel.text = "Spin to reveal";
-            if (iconGlyph != null)
+            switch (slotType)
             {
-                iconGlyph.text = "?";
-                iconGlyph.gameObject.SetActive(true);
+                case SlotType.Weapon: return new Color(0.92f, 0.38f, 0.28f, 1f);
+                case SlotType.Ship: return OrbitDockSidebarPanelUI.UpgradeCardsAccent;
+                case SlotType.Cargo: return new Color(0.34f, 0.82f, 0.52f, 1f);
+                default: return OrbitDockSidebarPanelUI.UpgradeCardsAccent;
             }
+        }
+
+        /// <summary>Upgrade spin-offer tile with icon, description, and choose action.</summary>
+        private void CreateUpgradeSpinOfferCard(
+            Transform parent,
+            int index,
+            out GameObject root,
+            out Image accentImage,
+            out Image bgImage,
+            out Image iconImage,
+            out TextMeshProUGUI titleText,
+            out TextMeshProUGUI levelText,
+            out TextMeshProUGUI metaLabel,
+            out TextMeshProUGUI descText,
+            out Button takeButton)
+        {
+            root = new GameObject("SpinOffer_" + (index + 1));
+            root.transform.SetParent(parent, false);
+            var cardLe = root.AddComponent<LayoutElement>();
+            cardLe.flexibleWidth = 0f;
+            cardLe.flexibleHeight = 0f;
+            cardLe.minWidth = MoonDockStoreTileMinWidth;
+            cardLe.preferredWidth = MoonDockStoreTileMinWidth;
+            cardLe.preferredHeight = MoonDockUpgradeSpinCardHeight;
+            cardLe.minHeight = MoonDockUpgradeSpinCardHeight;
+
+            bgImage = root.AddComponent<Image>();
+            bgImage.color = MoonDockEquipmentCardBg;
+            bgImage.raycastTarget = false;
+            var cardOutline = root.AddComponent<Outline>();
+            cardOutline.effectColor = MoonDockStoreCardFrameColor;
+            cardOutline.effectDistance = new Vector2(1f, 1f);
+
+            var cardVlg = root.AddComponent<VerticalLayoutGroup>();
+            cardVlg.spacing = 3f;
+            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.childAlignment = TextAnchor.UpperCenter;
+            cardVlg.childControlWidth = true;
+            cardVlg.childControlHeight = true;
+            cardVlg.childForceExpandWidth = true;
+            cardVlg.childForceExpandHeight = false;
+
+            var accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(root.transform, false);
+            var accentLe = accentGo.AddComponent<LayoutElement>();
+            accentLe.preferredHeight = 4f;
+            accentLe.minHeight = 4f;
+            accentImage = accentGo.AddComponent<Image>();
+            accentImage.color = OrbitDockSidebarPanelUI.UpgradeCardsAccent;
+            accentImage.raycastTarget = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(root.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 14f;
+            titleLe.minHeight = 12f;
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.text = $"Offer {index + 1}";
+            titleText.fontSize = 10f;
+            titleText.fontStyle = FontStyles.Bold;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.color = Color.white;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.raycastTarget = false;
+            if (fontAsset != null) titleText.font = fontAsset;
+
+            var iconGo = new GameObject("Icon");
+            iconGo.transform.SetParent(root.transform, false);
+            var iconLe = iconGo.AddComponent<LayoutElement>();
+            iconLe.flexibleHeight = 0f;
+            iconLe.minHeight = 36f;
+            iconLe.preferredHeight = MoonDockUpgradeSpinIconHeight;
+            iconImage = iconGo.AddComponent<Image>();
+            iconImage.color = new Color(1f, 1f, 1f, 0f);
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+
+            var glyphGo = new GameObject("Glyph");
+            glyphGo.transform.SetParent(iconGo.transform, false);
+            var glyphRt = glyphGo.AddComponent<RectTransform>();
+            glyphRt.anchorMin = Vector2.zero;
+            glyphRt.anchorMax = Vector2.one;
+            glyphRt.offsetMin = Vector2.zero;
+            glyphRt.offsetMax = Vector2.zero;
+            var iconGlyphText = glyphGo.AddComponent<TextMeshProUGUI>();
+            iconGlyphText.text = "?";
+            iconGlyphText.fontSize = 30f;
+            iconGlyphText.alignment = TextAlignmentOptions.Center;
+            iconGlyphText.color = new Color(1f, 1f, 1f, 0.95f);
+            iconGlyphText.raycastTarget = false;
+            if (fontAsset != null) iconGlyphText.font = fontAsset;
+
+            var descFooterGo = new GameObject("DescFooter");
+            descFooterGo.transform.SetParent(root.transform, false);
+            var descFooterLe = descFooterGo.AddComponent<LayoutElement>();
+            descFooterLe.flexibleHeight = 0f;
+            descFooterLe.minHeight = MoonDockUpgradeSpinDescHeight;
+            descFooterLe.preferredHeight = MoonDockUpgradeSpinDescHeight;
+            var descFooterBg = descFooterGo.AddComponent<Image>();
+            descFooterBg.color = MoonDockEquipmentStatsFooterBg;
+            descFooterBg.raycastTarget = false;
+            var descFooterVlg = descFooterGo.AddComponent<VerticalLayoutGroup>();
+            descFooterVlg.padding = new RectOffset(4, 4, 4, 4);
+            descFooterVlg.childAlignment = TextAnchor.UpperCenter;
+            descFooterVlg.childControlWidth = true;
+            descFooterVlg.childControlHeight = true;
+            descFooterVlg.childForceExpandWidth = true;
+            descFooterVlg.childForceExpandHeight = true;
+
+            var descriptionGo = new GameObject("Description");
+            descriptionGo.transform.SetParent(descFooterGo.transform, false);
+            var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
+            descriptionLe.flexibleHeight = 1f;
+            descriptionLe.minHeight = MoonDockUpgradeSpinDescHeight - 8f;
+            descText = descriptionGo.AddComponent<TextMeshProUGUI>();
+            descText.text = "Spin to reveal card abilities.";
+            descText.fontSize = MoonDockUpgradeSpinDescFontSize;
+            descText.alignment = TextAlignmentOptions.Top;
+            descText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
+            descText.enableWordWrapping = true;
+            descText.overflowMode = TextOverflowModes.Ellipsis;
+            descText.maxVisibleLines = 4;
+            descText.raycastTarget = false;
+            if (fontAsset != null) descText.font = fontAsset;
+
+            var sublineGo = new GameObject("Subline");
+            sublineGo.transform.SetParent(root.transform, false);
+            var sublineLe = sublineGo.AddComponent<LayoutElement>();
+            sublineLe.preferredHeight = 11f;
+            sublineLe.minHeight = 10f;
+            metaLabel = sublineGo.AddComponent<TextMeshProUGUI>();
+            metaLabel.text = "Spin to reveal";
+            metaLabel.fontSize = 8.5f;
+            metaLabel.fontStyle = FontStyles.Bold;
+            metaLabel.alignment = TextAlignmentOptions.Center;
+            metaLabel.color = new Color(1f, 1f, 1f, 0.82f);
+            metaLabel.overflowMode = TextOverflowModes.Ellipsis;
+            metaLabel.raycastTarget = false;
+            if (fontAsset != null) metaLabel.font = fontAsset;
+
+            var actionGo = new GameObject("Action");
+            actionGo.transform.SetParent(root.transform, false);
+            var actionLe = actionGo.AddComponent<LayoutElement>();
+            actionLe.preferredHeight = 22f;
+            actionLe.minHeight = 20f;
+            var actionButtonImage = actionGo.AddComponent<Image>();
+            actionButtonImage.color = MoonDockItemTileButtonIdle;
+            if (buttonSprite != null)
+            {
+                actionButtonImage.sprite = buttonSprite;
+                actionButtonImage.type = Image.Type.Sliced;
+            }
+            takeButton = actionGo.AddComponent<Button>();
+            takeButton.targetGraphic = actionButtonImage;
+            var actionLabelGo = new GameObject("Label");
+            actionLabelGo.transform.SetParent(actionGo.transform, false);
+            var actionLabelRt = actionLabelGo.AddComponent<RectTransform>();
+            actionLabelRt.anchorMin = Vector2.zero;
+            actionLabelRt.anchorMax = Vector2.one;
+            actionLabelRt.offsetMin = new Vector2(2f, 1f);
+            actionLabelRt.offsetMax = new Vector2(-2f, -1f);
+            var actionLabelTmp = actionLabelGo.AddComponent<TextMeshProUGUI>();
+            actionLabelTmp.text = "Choose";
+            actionLabelTmp.fontSize = 10f;
+            actionLabelTmp.fontStyle = FontStyles.Bold;
+            actionLabelTmp.alignment = TextAlignmentOptions.Center;
+            actionLabelTmp.color = Color.white;
+            actionLabelTmp.raycastTarget = false;
+            if (fontAsset != null) actionLabelTmp.font = fontAsset;
 
             var levelHidden = new GameObject("LevelUnused");
             levelHidden.transform.SetParent(root.transform, false);
             levelHidden.SetActive(false);
             levelText = levelHidden.AddComponent<TextMeshProUGUI>();
-            descText = metaLabel;
         }
 
         private static void CreateMoonDockSectionHeader(Transform parent, string title, string subtitle, Color accent)
@@ -2043,8 +2726,8 @@ namespace TitanOrbit.UI
             var blockGo = new GameObject("SectionHeader_" + title.Replace(" ", ""));
             blockGo.transform.SetParent(parent, false);
             var blockLe = blockGo.AddComponent<LayoutElement>();
-            blockLe.preferredHeight = 46f;
-            blockLe.minHeight = 40f;
+            blockLe.preferredHeight = MoonDockSectionHeaderHeight;
+            blockLe.minHeight = MoonDockSectionHeaderHeight;
             blockLe.flexibleHeight = 0f;
 
             var row = blockGo.AddComponent<HorizontalLayoutGroup>();
@@ -2053,23 +2736,29 @@ namespace TitanOrbit.UI
             row.childControlWidth = true;
             row.childControlHeight = true;
             row.childForceExpandWidth = false;
-            row.childForceExpandHeight = true;
+            row.childForceExpandHeight = false;
 
             var accentGo = new GameObject("Accent");
             accentGo.transform.SetParent(blockGo.transform, false);
             var accentLe = accentGo.AddComponent<LayoutElement>();
             accentLe.preferredWidth = 4f;
             accentLe.minWidth = 4f;
-            accentLe.flexibleHeight = 1f;
+            accentLe.preferredHeight = MoonDockSectionHeaderHeight;
+            accentLe.minHeight = MoonDockSectionHeaderHeight;
+            accentLe.flexibleHeight = 0f;
             var accentImg = accentGo.AddComponent<Image>();
             accentImg.color = accent;
             accentImg.raycastTarget = false;
 
             var textColGo = new GameObject("TextCol");
             textColGo.transform.SetParent(blockGo.transform, false);
-            textColGo.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var textColLe = textColGo.AddComponent<LayoutElement>();
+            textColLe.flexibleWidth = 1f;
+            textColLe.preferredHeight = MoonDockSectionHeaderTitleHeight + MoonDockSectionHeaderTextSpacing + MoonDockSectionHeaderSubtitleHeight;
+            textColLe.minHeight = textColLe.preferredHeight;
+            textColLe.flexibleHeight = 0f;
             var textVlg = textColGo.AddComponent<VerticalLayoutGroup>();
-            textVlg.spacing = 2f;
+            textVlg.spacing = MoonDockSectionHeaderTextSpacing;
             textVlg.childAlignment = TextAnchor.UpperLeft;
             textVlg.childControlWidth = true;
             textVlg.childControlHeight = true;
@@ -2078,7 +2767,10 @@ namespace TitanOrbit.UI
 
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(textColGo.transform, false);
-            titleGo.AddComponent<LayoutElement>().preferredHeight = 22f;
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = MoonDockSectionHeaderTitleHeight;
+            titleLe.minHeight = MoonDockSectionHeaderTitleHeight;
+            titleLe.flexibleHeight = 0f;
             var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
             titleTmp.text = title;
             titleTmp.fontSize = 20f;
@@ -2091,13 +2783,96 @@ namespace TitanOrbit.UI
             {
                 var subGo = new GameObject("Subtitle");
                 subGo.transform.SetParent(textColGo.transform, false);
-                subGo.AddComponent<LayoutElement>().preferredHeight = 18f;
+                var subLe = subGo.AddComponent<LayoutElement>();
+                subLe.preferredHeight = MoonDockSectionHeaderSubtitleHeight;
+                subLe.minHeight = MoonDockSectionHeaderSubtitleHeight;
+                subLe.flexibleHeight = 0f;
                 var subTmp = subGo.AddComponent<TextMeshProUGUI>();
                 subTmp.text = subtitle;
                 subTmp.fontSize = 12f;
-                subTmp.alignment = TextAlignmentOptions.Left;
+                subTmp.lineSpacing = -4f;
+                subTmp.alignment = TextAlignmentOptions.TopLeft;
                 subTmp.color = new Color(0.72f, 0.8f, 0.94f, 0.95f);
+                subTmp.enableWordWrapping = true;
+                subTmp.overflowMode = TextOverflowModes.Ellipsis;
+                subTmp.maxVisibleLines = 2;
                 subTmp.raycastTarget = false;
+            }
+        }
+
+        private static void ApplyMoonDockSectionHeaderMetrics(Transform headerRoot)
+        {
+            if (headerRoot == null)
+                return;
+
+            var blockLe = headerRoot.GetComponent<LayoutElement>();
+            if (blockLe != null)
+            {
+                blockLe.preferredHeight = MoonDockSectionHeaderHeight;
+                blockLe.minHeight = MoonDockSectionHeaderHeight;
+                blockLe.flexibleHeight = 0f;
+            }
+
+            var row = headerRoot.GetComponent<HorizontalLayoutGroup>();
+            if (row != null)
+                row.childForceExpandHeight = false;
+
+            var accent = headerRoot.Find("Accent");
+            if (accent != null)
+            {
+                var accentLe = accent.GetComponent<LayoutElement>();
+                if (accentLe != null)
+                {
+                    accentLe.preferredHeight = MoonDockSectionHeaderHeight;
+                    accentLe.minHeight = MoonDockSectionHeaderHeight;
+                    accentLe.flexibleHeight = 0f;
+                }
+            }
+
+            var textCol = headerRoot.Find("TextCol");
+            if (textCol == null)
+                return;
+
+            var textColLe = textCol.GetComponent<LayoutElement>();
+            if (textColLe != null)
+            {
+                textColLe.preferredHeight = MoonDockSectionHeaderTitleHeight + MoonDockSectionHeaderTextSpacing + MoonDockSectionHeaderSubtitleHeight;
+                textColLe.minHeight = textColLe.preferredHeight;
+                textColLe.flexibleHeight = 0f;
+            }
+
+            var title = textCol.Find("Title");
+            if (title != null)
+            {
+                var titleLe = title.GetComponent<LayoutElement>();
+                if (titleLe != null)
+                {
+                    titleLe.preferredHeight = MoonDockSectionHeaderTitleHeight;
+                    titleLe.minHeight = MoonDockSectionHeaderTitleHeight;
+                    titleLe.flexibleHeight = 0f;
+                }
+            }
+
+            var subtitle = textCol.Find("Subtitle");
+            if (subtitle != null)
+            {
+                var subLe = subtitle.GetComponent<LayoutElement>();
+                if (subLe != null)
+                {
+                    subLe.preferredHeight = MoonDockSectionHeaderSubtitleHeight;
+                    subLe.minHeight = MoonDockSectionHeaderSubtitleHeight;
+                    subLe.flexibleHeight = 0f;
+                }
+
+                var subTmp = subtitle.GetComponent<TextMeshProUGUI>();
+                if (subTmp != null)
+                {
+                    subTmp.lineSpacing = -4f;
+                    subTmp.alignment = TextAlignmentOptions.TopLeft;
+                    subTmp.enableWordWrapping = true;
+                    subTmp.overflowMode = TextOverflowModes.Ellipsis;
+                    subTmp.maxVisibleLines = 2;
+                }
             }
         }
 
@@ -2208,14 +2983,16 @@ namespace TitanOrbit.UI
                 {
                     if (cardTitleTexts[i] != null)
                     {
-                        cardTitleTexts[i].fontSize = 11f;
+                        cardTitleTexts[i].fontSize = 10f;
                         cardTitleTexts[i].color = new Color(0.75f, 0.82f, 0.95f, 0.9f);
-                        cardTitleTexts[i].text = $"Slot {i + 1}";
+                        cardTitleTexts[i].text = $"Offer {i + 1}";
                     }
+                    if (cardDescTexts != null && i < cardDescTexts.Length && cardDescTexts[i] != null)
+                        cardDescTexts[i].text = "Spin to reveal card abilities.";
                     if (cardRarityLabels != null && i < cardRarityLabels.Length && cardRarityLabels[i] != null)
                     {
-                        cardRarityLabels[i].fontSize = 10f;
-                        cardRarityLabels[i].text = "Spin to reveal";
+                        cardRarityLabels[i].fontSize = 8.5f;
+                        cardRarityLabels[i].text = "Awaiting spin";
                     }
                     if (cardRarityFrameImages != null && i < cardRarityFrameImages.Length && cardRarityFrameImages[i] != null)
                         cardRarityFrameImages[i].color = OrbitDockSidebarPanelUI.UpgradeCardsAccent;
@@ -2226,7 +3003,7 @@ namespace TitanOrbit.UI
                     }
                     SetTileIconGlyphVisible(cardRoots[i], true, "?");
                     if (cardBgImages != null && i < cardBgImages.Length && cardBgImages[i] != null)
-                        cardBgImages[i].color = new Color(0.1f, 0.16f, 0.26f, 0.95f);
+                        cardBgImages[i].color = MoonDockEquipmentCardBg;
                     if (cardButtons[i] != null)
                     {
                         cardButtons[i].interactable = false;
@@ -2245,16 +3022,22 @@ namespace TitanOrbit.UI
 
                 if (cardTitleTexts[i] != null)
                 {
-                    cardTitleTexts[i].fontSize = 11f;
+                    cardTitleTexts[i].fontSize = 10f;
                     cardTitleTexts[i].color = Color.white;
                     cardTitleTexts[i].text = card.GetDisplayNameOrDefault();
                 }
                 int rar = Mathf.Clamp((int)card.rarity, 1, 5);
                 int cl = Mathf.Max(1, card.cardLevel);
                 if (cardRarityFrameImages != null && i < cardRarityFrameImages.Length && cardRarityFrameImages[i] != null)
-                    cardRarityFrameImages[i].color = OrbitDockSidebarPanelUI.UpgradeCardsAccent;
+                    cardRarityFrameImages[i].color = GetSlotTypeAccentColor(card.slotType);
                 if (cardBgImages != null && i < cardBgImages.Length && cardBgImages[i] != null)
-                    cardBgImages[i].color = Color.Lerp(new Color(0.08f, 0.1f, 0.14f, 0.98f), GetSlotTypeColor(card.slotType), 0.72f);
+                    cardBgImages[i].color = MoonDockEquipmentCardBg;
+                if (cardDescTexts != null && i < cardDescTexts.Length && cardDescTexts[i] != null)
+                {
+                    cardDescTexts[i].text = !string.IsNullOrEmpty(card.description)
+                        ? card.description
+                        : "No description.";
+                }
                 if (cardIconImages != null && i < cardIconImages.Length && cardIconImages[i] != null)
                 {
                     if (card.icon != null)
@@ -2273,8 +3056,8 @@ namespace TitanOrbit.UI
                 }
                 if (cardRarityLabels != null && i < cardRarityLabels.Length && cardRarityLabels[i] != null)
                 {
-                    cardRarityLabels[i].fontSize = 10f;
-                    cardRarityLabels[i].text = $"Lv.{cl} · {GetCardSlotTypeLabel(card.slotType)} · {GetCardRarityLabel(rar)}";
+                    cardRarityLabels[i].fontSize = 8.5f;
+                    cardRarityLabels[i].text = $"Lv {cl} · {GetCardSlotTypeLabel(card.slotType)} · {GetCardRarityLabel(rar)}";
                     cardRarityLabels[i].color = new Color(1f, 1f, 1f, 0.88f);
                 }
                 int cardLvl = Mathf.Max(1, card.cardLevel);
@@ -2309,9 +3092,36 @@ namespace TitanOrbit.UI
                 return;
 
             orbitDockSidebar.RefreshBank(contributedGems);
+            ApplyAutoDepositPreferenceToShip();
+            orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
             float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;
             orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxPower);
             RefreshMoonDockStore();
+        }
+
+        private static bool GetSavedAutoDepositGems()
+        {
+            return PlayerPrefs.GetInt(OrbitDockSidebarPanelUI.AutoDepositGemsPrefsKey,
+                OrbitDockSidebarPanelUI.AutoDepositGemsDefaultEnabled) != 0;
+        }
+
+        private void OnAutoDepositToggleChanged(bool enabled)
+        {
+            ApplyAutoDepositToShip(enabled);
+        }
+
+        private void ApplyAutoDepositPreferenceToShip()
+        {
+            ApplyAutoDepositToShip(GetSavedAutoDepositGems());
+        }
+
+        private void ApplyAutoDepositToShip(bool wantDeposit)
+        {
+            if (currentShip == null)
+                return;
+            if (currentShip.WantToDepositGems == wantDeposit)
+                return;
+            currentShip.SetWantToDepositGemsServerRpc(wantDeposit);
         }
 
         private void RefreshMoonDockStore()
@@ -2324,7 +3134,22 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
             string familyKey = family != null ? family.familyId : string.Empty;
-            if (!string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal))
+            bool needsEquipmentRebuild = !string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal)
+                || _moonDockEquipmentCardLayoutVersionBuilt != MoonDockEquipmentCardLayoutVersion;
+            if (!needsEquipmentRebuild && family?.components != null && family.components.Count > 0)
+            {
+                for (int c = 0; c < _moonDockStoreCards.Count; c++)
+                {
+                    MoonDockStoreCardBinding existing = _moonDockStoreCards[c];
+                    if (existing != null && existing.isComponent && existing.powerBar == null)
+                    {
+                        needsEquipmentRebuild = true;
+                        break;
+                    }
+                }
+            }
+
+            if (needsEquipmentRebuild)
                 RebuildMoonDockEquipmentStore(family);
 
             int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
@@ -2349,9 +3174,22 @@ namespace TitanOrbit.UI
                     float power = componentEntry != null
                         ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel)
                         : 0f;
-                    subline = owned ? "Equipped" : $"PWR {power:F0}";
+                    subline = FormatMoonDockEquipmentSubline(shipLevel, power, owned);
                     if (card.descriptionText != null && componentEntry != null)
-                        card.descriptionText.text = ShipComponentStoreData.GetStatsDescription(componentEntry, shipLevel);
+                        ApplyEquipmentCardAbilityDescription(card.descriptionText, componentEntry, shipLevel);
+                    if (card.powerBar != null && componentEntry != null)
+                    {
+                        ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel);
+                        float maxPower = GetMoonDockComponentMaxDisplayPower(family, shipLevel);
+                        float trackW = Mathf.Max(40f, MoonDockStoreTileMinWidth - 14f);
+                        card.powerBar.ConfigureLayoutScale(1f, 1f);
+                        card.powerBar.ApplyEquipmentBreakdown(breakdown, maxPower, trackW);
+                    }
+                    ApplyMoonDockEquipmentTileIcon(
+                        card.iconImage,
+                        card.iconGlyph,
+                        ShipComponentStoreData.GetMenuPreviewSprite(family, componentEntry, currentShip != null ? currentShip.ShipTeam : TeamManager.Team.None),
+                        componentEntry != null ? ShipComponentStoreData.GetIconGlyph(componentEntry) : "?");
                 }
                 else
                 {
@@ -2388,9 +3226,21 @@ namespace TitanOrbit.UI
                 }
                 if (card.bgImage != null)
                 {
-                    var c = card.bgImage.color;
-                    c.a = canBuy ? 0.92f : 0.58f;
-                    card.bgImage.color = c;
+                    if (card.isComponent)
+                    {
+                        float alpha = canBuy ? 0.98f : 0.72f;
+                        card.bgImage.color = new Color(
+                            MoonDockEquipmentCardBg.r,
+                            MoonDockEquipmentCardBg.g,
+                            MoonDockEquipmentCardBg.b,
+                            alpha);
+                    }
+                    else
+                    {
+                        var c = card.bgImage.color;
+                        c.a = canBuy ? 0.92f : 0.58f;
+                        card.bgImage.color = c;
+                    }
                 }
             }
 
@@ -2417,9 +3267,12 @@ namespace TitanOrbit.UI
                 }
                 sorted.Sort((a, b) =>
                 {
-                    float pb = ShipComponentStoreData.GetComponentPowerScore(b, shipLevel);
-                    float pa = ShipComponentStoreData.GetComponentPowerScore(a, shipLevel);
-                    return pb.CompareTo(pa);
+                    string nameA = ShipComponentStoreData.GetDisplayName(a);
+                    string nameB = ShipComponentStoreData.GetDisplayName(b);
+                    int cmp = string.Compare(nameA, nameB, StringComparison.OrdinalIgnoreCase);
+                    if (cmp != 0)
+                        return cmp;
+                    return string.Compare(a?.componentId, b?.componentId, StringComparison.OrdinalIgnoreCase);
                 });
 
                 for (int i = 0; i < sorted.Count; i++)
@@ -2434,6 +3287,7 @@ namespace TitanOrbit.UI
             }
 
             _moonDockStoreBuiltForFamilyKey = family != null ? family.familyId : string.Empty;
+            _moonDockEquipmentCardLayoutVersionBuilt = MoonDockEquipmentCardLayoutVersion;
             ApplyMoonDockCardGridWidth();
         }
 
@@ -2465,7 +3319,7 @@ namespace TitanOrbit.UI
             return Mathf.Max(MoonDockStoreTileMinWidth, (rowInnerWidth - totalSpacing) / MoonDockStoreTilesPerRow);
         }
 
-        private static void ApplyMoonDockTileLayoutToRow(RectTransform row, float tileWidth)
+        private static void ApplyMoonDockTileLayoutToRow(RectTransform row, float tileWidth, float tileHeight = MoonDockStoreCardHeight)
         {
             if (row == null || tileWidth <= 1f) return;
             for (int i = 0; i < row.childCount; i++)
@@ -2478,8 +3332,8 @@ namespace TitanOrbit.UI
                 le.flexibleHeight = 0f;
                 le.preferredWidth = tileWidth;
                 le.minWidth = tileWidth;
-                le.preferredHeight = MoonDockStoreCardHeight;
-                le.minHeight = MoonDockStoreCardHeight;
+                le.preferredHeight = tileHeight;
+                le.minHeight = tileHeight;
             }
         }
 
@@ -2503,9 +3357,10 @@ namespace TitanOrbit.UI
             sectionVlg.childControlWidth = true;
             sectionVlg.childControlHeight = true;
             sectionVlg.childForceExpandWidth = true;
-            sectionVlg.childForceExpandHeight = false;
+            sectionVlg.childForceExpandHeight = true;
             var sectionLe = moonDockStoreSection.AddComponent<LayoutElement>();
-            sectionLe.flexibleHeight = 0f;
+            sectionLe.flexibleHeight = 1f;
+            sectionLe.flexibleWidth = 1f;
 
             CreateMoonDockSectionHeader(
                 moonDockStoreSection.transform,
@@ -2516,9 +3371,8 @@ namespace TitanOrbit.UI
             var scrollGo = new GameObject("EquipmentStoreScroll");
             scrollGo.transform.SetParent(moonDockStoreSection.transform, false);
             var scrollLe = scrollGo.AddComponent<LayoutElement>();
-            scrollLe.preferredHeight = MoonDockEquipmentPanelHeight;
-            scrollLe.minHeight = MoonDockEquipmentPanelHeight;
-            scrollLe.flexibleHeight = 0f;
+            scrollLe.flexibleHeight = 1f;
+            scrollLe.minHeight = MoonDockEquipmentScrollMinHeight;
             scrollLe.flexibleWidth = 1f;
             var scrollRect = scrollGo.AddComponent<ScrollRect>();
             scrollRect.horizontal = false;
@@ -2545,7 +3399,6 @@ namespace TitanOrbit.UI
             _moonDockStoreGridContent.anchorMax = new Vector2(1f, 1f);
             _moonDockStoreGridContent.pivot = new Vector2(0.5f, 1f);
             _moonDockStoreGridContent.anchoredPosition = Vector2.zero;
-            _moonDockStoreGridContent.sizeDelta = new Vector2(0f, MoonDockEquipmentPanelHeight);
             _moonDockStoreGrid = contentGo.AddComponent<GridLayoutGroup>();
             _moonDockStoreGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             _moonDockStoreGrid.constraintCount = MoonDockStoreTilesPerRow;
@@ -2560,40 +3413,80 @@ namespace TitanOrbit.UI
             scrollRect.content = _moonDockStoreGridContent;
         }
 
+        private void ApplyMoonDockUpgradeCardsSectionHeight()
+        {
+            if (cardsTabContent == null)
+                return;
+
+            const float sectionSpacing = 6f;
+            const float spinButtonHeight = 36f;
+            const float spinBlockSpacing = 6f;
+            const float spinRowHeight = MoonDockUpgradeSpinCardHeight;
+            float verticalPadding = _moonDockLayoutActive ? 12f : 16f;
+            float contentHeight = MoonDockSectionHeaderHeight + sectionSpacing + spinButtonHeight + spinBlockSpacing + spinRowHeight + verticalPadding;
+
+            var cardsLe = cardsTabContent.GetComponent<LayoutElement>();
+            if (cardsLe != null)
+            {
+                cardsLe.flexibleHeight = 0f;
+                cardsLe.minHeight = contentHeight;
+                cardsLe.preferredHeight = contentHeight;
+            }
+
+            _cardsContentHeight = contentHeight;
+        }
+
         private void CreateMoonDockEquipmentStoreCard(Transform parent, ShipFamilyComponentEntry entry, int shipLevel)
         {
             if (entry == null) return;
 
-            Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+            Color accentColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 ShipComponentStoreData.GetAbilityColorStatIndex(entry), 0.92f);
             float price = ShipComponentStoreData.GetComponentGemPrice(entry, shipLevel);
             float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel);
+            ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
+                : null;
 
             CreateMoonDockEquipmentItemTile(
                 parent,
                 "Component_" + entry.componentId,
-                cardColor,
-                OrbitDockSidebarPanelUI.EquipmentAccent,
+                MoonDockEquipmentCardBg,
+                accentColor,
                 $"{price:F0}g",
+                componentStatLayout: true,
                 out GameObject root,
                 out _,
                 out Image cardBg,
-                out _,
+                out Image iconImg,
                 out TextMeshProUGUI iconGlyph,
                 out TextMeshProUGUI titleTmp,
                 out TextMeshProUGUI descriptionTmp,
                 out TextMeshProUGUI sublineTmp,
+                out ShipUpgradeTreePowerBarUI powerBar,
                 out Button buyBtn,
                 out Image buyImg);
 
             if (titleTmp != null)
                 titleTmp.text = ShipComponentStoreData.GetDisplayName(entry);
-            if (iconGlyph != null)
-                iconGlyph.text = ShipComponentStoreData.GetIconGlyph(entry);
             if (descriptionTmp != null)
-                descriptionTmp.text = ShipComponentStoreData.GetStatsDescription(entry, shipLevel);
+                ApplyEquipmentCardAbilityDescription(descriptionTmp, entry, shipLevel);
             if (sublineTmp != null)
-                sublineTmp.text = $"PWR {power:F0}";
+                sublineTmp.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: false);
+
+            ApplyMoonDockEquipmentTileIcon(
+                iconImg,
+                iconGlyph,
+                ShipComponentStoreData.GetMenuPreviewSprite(family, entry, currentShip != null ? currentShip.ShipTeam : TeamManager.Team.None),
+                ShipComponentStoreData.GetIconGlyph(entry));
+
+            if (powerBar != null)
+            {
+                float maxPower = GetMoonDockComponentMaxDisplayPower(family, shipLevel);
+                float trackW = Mathf.Max(40f, MoonDockStoreTileMinWidth - 14f);
+                powerBar.ConfigureLayoutScale(1f, 1f);
+                powerBar.ApplyEquipmentBreakdown(ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel), maxPower, trackW);
+            }
 
             _moonDockStoreCards.Add(new MoonDockStoreCardBinding
             {
@@ -2601,9 +3494,12 @@ namespace TitanOrbit.UI
                 componentId = entry.componentId,
                 root = root,
                 bgImage = cardBg,
+                iconImage = iconImg,
+                iconGlyph = iconGlyph,
                 titleText = titleTmp,
                 descriptionText = descriptionTmp,
                 sublineText = sublineTmp,
+                powerBar = powerBar,
                 buyButton = buyBtn,
                 buyImage = buyImg,
                 buyLabel = buyBtn != null ? buyBtn.GetComponentInChildren<TextMeshProUGUI>() : null
@@ -2621,23 +3517,24 @@ namespace TitanOrbit.UI
                 cardColor,
                 OrbitDockSidebarPanelUI.EquipmentAccent,
                 $"{StoreItemData.GetPrice(itemType):F0}g",
+                componentStatLayout: false,
                 out GameObject root,
                 out _,
                 out Image cardBg,
-                out _,
+                out Image iconImg,
                 out TextMeshProUGUI iconGlyph,
                 out TextMeshProUGUI titleTmp,
                 out TextMeshProUGUI descriptionTmp,
                 out TextMeshProUGUI sublineTmp,
+                out _,
                 out Button buyBtn,
                 out Image buyImg);
 
             if (titleTmp != null)
                 titleTmp.text = StoreItemData.GetShortDisplayName(itemType);
-            if (iconGlyph != null)
-                iconGlyph.text = StoreItemData.GetIconGlyph(itemType);
             if (descriptionTmp != null)
                 descriptionTmp.text = StoreItemData.GetDescription(itemType);
+            ApplyMoonDockEquipmentTileIcon(iconImg, iconGlyph, null, StoreItemData.GetIconGlyph(itemType));
 
             _moonDockStoreCards.Add(new MoonDockStoreCardBinding
             {
@@ -2645,6 +3542,8 @@ namespace TitanOrbit.UI
                 supportItem = itemType,
                 root = root,
                 bgImage = cardBg,
+                iconImage = iconImg,
+                iconGlyph = iconGlyph,
                 titleText = titleTmp,
                 descriptionText = descriptionTmp,
                 sublineText = sublineTmp,
@@ -2654,12 +3553,139 @@ namespace TitanOrbit.UI
             });
         }
 
+        private static void ApplyMoonDockEquipmentTileIcon(Image iconImage, TextMeshProUGUI iconGlyph, Sprite sprite, string fallbackGlyph)
+        {
+            bool hasSprite = sprite != null;
+            if (iconImage != null)
+            {
+                iconImage.sprite = sprite;
+                iconImage.color = hasSprite ? Color.white : new Color(1f, 1f, 1f, 0f);
+                iconImage.preserveAspect = true;
+            }
+
+            if (iconGlyph != null)
+            {
+                iconGlyph.gameObject.SetActive(!hasSprite);
+                if (!hasSprite && !string.IsNullOrEmpty(fallbackGlyph))
+                    iconGlyph.text = fallbackGlyph;
+            }
+        }
+
+        private static string FormatMoonDockEquipmentSubline(int shipLevel, float power, bool owned)
+        {
+            int level = Mathf.Max(1, shipLevel);
+            if (owned)
+                return $"Equipped · Lv {level}";
+            return $"Lv {level} · PWR {power:F0}";
+        }
+
+        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, int maxLines = 8)
+        {
+            if (entry == null)
+                return string.Empty;
+
+            ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel);
+            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(entry.stats, shipLevel);
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
+            var sb = new StringBuilder(128);
+            int count = 0;
+            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
+            {
+                float value = breakdown.GetDisplayStatValue(i);
+                if (Mathf.Abs(value) < 0.05f)
+                    continue;
+                if (count >= maxLines)
+                    break;
+
+                AppendMoonDockComponentStatLine(sb, ref count, maxLines, value, ShipAbilityCategoryColors.PowerBreakdownStatFullLabels[i], i);
+            }
+
+            if (partType == "Weapon")
+                AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.fireRate, "Fire Rate", 1);
+            AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.rammingPower, "Ramming Power", 0);
+
+            return count == 0 ? "<color=#888888>—</color>" : sb.ToString();
+        }
+
+        private static void AppendMoonDockComponentStatLine(
+            StringBuilder sb,
+            ref int count,
+            int maxLines,
+            float value,
+            string label,
+            int colorStatIndex)
+        {
+            if (count >= maxLines || Mathf.Abs(value) < 0.05f)
+                return;
+
+            if (count > 0)
+                sb.Append('\n');
+
+            Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(colorStatIndex);
+            sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(statColor)).Append('>');
+            sb.Append('+').Append(FormatMoonDockComponentStatValue(value)).Append(' ');
+            sb.Append(label);
+            sb.Append("</color>");
+            count++;
+        }
+
+        private static void ApplyEquipmentCardAbilityDescription(
+            TextMeshProUGUI descriptionTmp,
+            ShipFamilyComponentEntry entry,
+            int shipLevel)
+        {
+            if (descriptionTmp == null)
+                return;
+
+            descriptionTmp.text = entry != null
+                ? BuildMoonDockComponentStatRichText(entry, shipLevel)
+                : string.Empty;
+            descriptionTmp.ForceMeshUpdate(true);
+
+            RectTransform descriptionRt = descriptionTmp.rectTransform;
+            if (descriptionRt != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(descriptionRt);
+                Transform layoutRoot = descriptionRt.parent;
+                if (layoutRoot is RectTransform parentRt)
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
+            }
+        }
+
+        private static string FormatMoonDockComponentStatValue(float value)
+        {
+            if (Mathf.Abs(value - Mathf.Round(value)) < 0.05f)
+                return Mathf.RoundToInt(value).ToString();
+            return value.ToString("0.#");
+        }
+
+        private float GetMoonDockComponentMaxDisplayPower(ShipFamilyDefinition family, int shipLevel)
+        {
+            float max = 0.001f;
+            if (family?.components == null)
+                return max;
+
+            for (int i = 0; i < family.components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = family.components[i];
+                if (entry == null)
+                    continue;
+                float total = ShipUpgradeTreePowerBarUI.GetEquipmentBarDisplayTotal(
+                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel));
+                if (total > max)
+                    max = total;
+            }
+
+            return max;
+        }
+
         private void CreateMoonDockEquipmentItemTile(
             Transform parent,
             string tileName,
             Color tileColor,
             Color accentColor,
             string actionLabel,
+            bool componentStatLayout,
             out GameObject root,
             out Image accentImage,
             out Image bgImage,
@@ -2668,9 +3694,15 @@ namespace TitanOrbit.UI
             out TextMeshProUGUI titleText,
             out TextMeshProUGUI descriptionText,
             out TextMeshProUGUI sublineText,
+            out ShipUpgradeTreePowerBarUI powerBar,
             out Button actionButton,
             out Image actionButtonImage)
         {
+            powerBar = null;
+            float cardHeight = componentStatLayout ? MoonDockEquipmentCardHeight : MoonDockStoreCardHeight;
+            float iconHeight = componentStatLayout ? MoonDockEquipmentIconHeight : 28f;
+            float iconMinHeight = componentStatLayout ? MoonDockEquipmentIconMinHeight : 24f;
+
             root = new GameObject(tileName);
             root.transform.SetParent(parent, false);
             var cardLe = root.AddComponent<LayoutElement>();
@@ -2678,8 +3710,8 @@ namespace TitanOrbit.UI
             cardLe.flexibleHeight = 0f;
             cardLe.minWidth = MoonDockStoreTileMinWidth;
             cardLe.preferredWidth = MoonDockStoreTileMinWidth;
-            cardLe.preferredHeight = MoonDockEquipmentCardHeight;
-            cardLe.minHeight = MoonDockEquipmentCardHeight;
+            cardLe.preferredHeight = cardHeight;
+            cardLe.minHeight = cardHeight;
 
             bgImage = root.AddComponent<Image>();
             bgImage.color = tileColor;
@@ -2688,32 +3720,35 @@ namespace TitanOrbit.UI
             cardOutline.effectColor = MoonDockStoreCardFrameColor;
             cardOutline.effectDistance = new Vector2(1f, 1f);
 
-            var innerShadeGo = new GameObject("InnerShade");
-            innerShadeGo.transform.SetParent(root.transform, false);
-            var innerShadeRt = innerShadeGo.AddComponent<RectTransform>();
-            innerShadeRt.anchorMin = Vector2.zero;
-            innerShadeRt.anchorMax = Vector2.one;
-            innerShadeRt.offsetMin = new Vector2(3f, 3f);
-            innerShadeRt.offsetMax = new Vector2(-3f, -3f);
-            var innerShadeImg = innerShadeGo.AddComponent<Image>();
-            innerShadeImg.color = MoonDockStoreCardInnerShade;
-            innerShadeImg.raycastTarget = false;
-            innerShadeGo.AddComponent<LayoutElement>().ignoreLayout = true;
+            if (!componentStatLayout)
+            {
+                var innerShadeGo = new GameObject("InnerShade");
+                innerShadeGo.transform.SetParent(root.transform, false);
+                var innerShadeRt = innerShadeGo.AddComponent<RectTransform>();
+                innerShadeRt.anchorMin = Vector2.zero;
+                innerShadeRt.anchorMax = Vector2.one;
+                innerShadeRt.offsetMin = new Vector2(3f, 3f);
+                innerShadeRt.offsetMax = new Vector2(-3f, -3f);
+                var innerShadeImg = innerShadeGo.AddComponent<Image>();
+                innerShadeImg.color = MoonDockStoreCardInnerShade;
+                innerShadeImg.raycastTarget = false;
+                innerShadeGo.AddComponent<LayoutElement>().ignoreLayout = true;
+            }
 
             var cardVlg = root.AddComponent<VerticalLayoutGroup>();
-            cardVlg.spacing = 2f;
+            cardVlg.spacing = componentStatLayout ? 3f : 2f;
             cardVlg.padding = new RectOffset(4, 4, 5, 4);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
             cardVlg.childForceExpandWidth = true;
-            cardVlg.childForceExpandHeight = false;
+            cardVlg.childForceExpandHeight = componentStatLayout;
 
             var accentGo = new GameObject("Accent");
             accentGo.transform.SetParent(root.transform, false);
             var accentLe = accentGo.AddComponent<LayoutElement>();
-            accentLe.preferredHeight = 3f;
-            accentLe.minHeight = 3f;
+            accentLe.preferredHeight = componentStatLayout ? 4f : 3f;
+            accentLe.minHeight = componentStatLayout ? 4f : 3f;
             accentImage = accentGo.AddComponent<Image>();
             accentImage.color = accentColor;
             accentImage.raycastTarget = false;
@@ -2721,10 +3756,10 @@ namespace TitanOrbit.UI
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(root.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 18f;
-            titleLe.minHeight = 16f;
+            titleLe.preferredHeight = componentStatLayout ? 16f : 18f;
+            titleLe.minHeight = componentStatLayout ? 14f : 16f;
             titleText = titleGo.AddComponent<TextMeshProUGUI>();
-            titleText.fontSize = 10f;
+            titleText.fontSize = componentStatLayout ? 9.5f : 10f;
             titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.color = Color.white;
@@ -2735,9 +3770,9 @@ namespace TitanOrbit.UI
             var iconGo = new GameObject("Icon");
             iconGo.transform.SetParent(root.transform, false);
             var iconLe = iconGo.AddComponent<LayoutElement>();
-            iconLe.flexibleHeight = 0f;
-            iconLe.minHeight = 24f;
-            iconLe.preferredHeight = 28f;
+            iconLe.flexibleHeight = componentStatLayout ? 1f : 0f;
+            iconLe.minHeight = iconMinHeight;
+            iconLe.preferredHeight = iconHeight;
             iconImage = iconGo.AddComponent<Image>();
             iconImage.color = new Color(1f, 1f, 1f, 0f);
             iconImage.preserveAspect = true;
@@ -2751,35 +3786,78 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             iconGlyphText = glyphGo.AddComponent<TextMeshProUGUI>();
-            iconGlyphText.fontSize = 22f;
+            iconGlyphText.fontSize = componentStatLayout ? 42f : 22f;
             iconGlyphText.alignment = TextAlignmentOptions.Center;
             iconGlyphText.color = new Color(1f, 1f, 1f, 0.95f);
             iconGlyphText.raycastTarget = false;
             if (fontAsset != null) iconGlyphText.font = fontAsset;
 
+            Transform statsParent = root.transform;
+            if (componentStatLayout)
+            {
+                var statsFooterGo = new GameObject("StatsFooter");
+                statsFooterGo.transform.SetParent(root.transform, false);
+                var statsFooterLe = statsFooterGo.AddComponent<LayoutElement>();
+                statsFooterLe.flexibleHeight = 0f;
+                statsFooterLe.minHeight = MoonDockEquipmentStatsFooterHeight;
+                statsFooterLe.preferredHeight = MoonDockEquipmentStatsFooterHeight;
+                var statsFooterBg = statsFooterGo.AddComponent<Image>();
+                statsFooterBg.color = MoonDockEquipmentStatsFooterBg;
+                statsFooterBg.raycastTarget = false;
+                var statsFooterVlg = statsFooterGo.AddComponent<VerticalLayoutGroup>();
+                statsFooterVlg.spacing = 2f;
+                statsFooterVlg.padding = new RectOffset(4, 4, 4, 4);
+                statsFooterVlg.childAlignment = TextAnchor.UpperCenter;
+                statsFooterVlg.childControlWidth = true;
+                statsFooterVlg.childControlHeight = true;
+                statsFooterVlg.childForceExpandWidth = true;
+                statsFooterVlg.childForceExpandHeight = false;
+                statsParent = statsFooterGo.transform;
+            }
+
             var descriptionGo = new GameObject("Description");
-            descriptionGo.transform.SetParent(root.transform, false);
+            descriptionGo.transform.SetParent(statsParent, false);
             var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
-            descriptionLe.flexibleHeight = 1f;
-            descriptionLe.minHeight = 36f;
-            descriptionLe.preferredHeight = 44f;
+            if (componentStatLayout)
+            {
+                descriptionLe.flexibleHeight = 0f;
+                descriptionLe.minHeight = MoonDockEquipmentAbilityAreaHeight;
+                descriptionLe.preferredHeight = MoonDockEquipmentAbilityAreaHeight;
+            }
+            else
+            {
+                descriptionLe.flexibleHeight = 1f;
+                descriptionLe.minHeight = 36f;
+                descriptionLe.preferredHeight = 44f;
+            }
             descriptionText = descriptionGo.AddComponent<TextMeshProUGUI>();
-            descriptionText.fontSize = 9f;
-            descriptionText.alignment = TextAlignmentOptions.Top;
+            descriptionText.fontSize = componentStatLayout ? MoonDockEquipmentAbilityFontSize : 9f;
+            descriptionText.alignment = componentStatLayout ? TextAlignmentOptions.Top : TextAlignmentOptions.Top;
             descriptionText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
             descriptionText.enableWordWrapping = true;
-            descriptionText.overflowMode = TextOverflowModes.Ellipsis;
-            descriptionText.maxVisibleLines = 4;
+            descriptionText.richText = componentStatLayout;
+            descriptionText.overflowMode = componentStatLayout ? TextOverflowModes.Overflow : TextOverflowModes.Ellipsis;
+            descriptionText.maxVisibleLines = componentStatLayout ? 8 : 4;
             descriptionText.raycastTarget = false;
             if (fontAsset != null) descriptionText.font = fontAsset;
+
+            if (componentStatLayout)
+            {
+                powerBar = ShipUpgradeTreePowerBarUI.CreateInTrack(
+                    statsParent,
+                    MoonDockEquipmentPowerBarTrackBg,
+                    MoonDockEquipmentPowerBarHeight,
+                    MoonDockEquipmentPowerBarPairGap,
+                    Mathf.Max(40f, MoonDockStoreTileMinWidth - 14f));
+            }
 
             var sublineGo = new GameObject("Subline");
             sublineGo.transform.SetParent(root.transform, false);
             var sublineLe = sublineGo.AddComponent<LayoutElement>();
-            sublineLe.preferredHeight = 12f;
+            sublineLe.preferredHeight = componentStatLayout ? 12f : 12f;
             sublineLe.minHeight = 10f;
             sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
-            sublineText.fontSize = 9f;
+            sublineText.fontSize = componentStatLayout ? 9f : 9f;
             sublineText.fontStyle = FontStyles.Bold;
             sublineText.alignment = TextAlignmentOptions.Center;
             sublineText.color = new Color(1f, 1f, 1f, 0.82f);
@@ -2898,10 +3976,11 @@ namespace TitanOrbit.UI
                 return;
 
             int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
-            float slotGridTotalH = rows * SidebarSlotCardHeight + (rows - 1) * SidebarSlotCellSpacing;
+            float cardHeight = _upgradeCardSlotRichLayoutActive ? SidebarUpgradeCardSlotHeight : SidebarSlotCardHeight;
+            float slotGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
             gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             gridLayout.constraintCount = SidebarSlotColumns;
-            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, SidebarSlotCardHeight);
+            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
             gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
 
             if (slotPanelRect != null)
@@ -3546,11 +4625,22 @@ namespace TitanOrbit.UI
                 slotBoxes[i].SetActive(visible);
                 if (!visible) continue;
                 CardData card = (cards != null && i < cards.Count) ? cards[i] : null;
+
+                SidebarUpgradeCardSlotUi slotUi = _upgradeCardSlotRichLayoutActive && _sidebarUpgradeCardSlotUi != null && i < _sidebarUpgradeCardSlotUi.Length
+                    ? _sidebarUpgradeCardSlotUi[i]
+                    : null;
+
+                if (_upgradeCardSlotRichLayoutActive)
+                {
+                    RefreshSidebarUpgradeCardSlotRich(i, card, slotUi);
+                    continue;
+                }
+
                 if (slotTitleTexts != null && i < slotTitleTexts.Length && slotTitleTexts[i] != null)
                     slotTitleTexts[i].text = card != null ? card.displayName : "Empty";
                 if (slotDescTexts != null && i < slotDescTexts.Length && slotDescTexts[i] != null)
                     slotDescTexts[i].text = card != null && !string.IsNullOrEmpty(card.description) ? card.description : "";
-                if (slotLevelTexts[i] != null)
+                if (slotLevelTexts != null && i < slotLevelTexts.Length && slotLevelTexts[i] != null)
                 {
                     slotLevelTexts[i].text = card != null ? Mathf.Max(1, card.cardLevel).ToString() : "—";
                     var bubble = slotLevelTexts[i].transform.parent;
@@ -3571,6 +4661,126 @@ namespace TitanOrbit.UI
             }
         }
 
+        private void RefreshSidebarUpgradeCardSlotRich(int index, CardData card, SidebarUpgradeCardSlotUi slotUi)
+        {
+            if (slotBgImages != null && index < slotBgImages.Length && slotBgImages[index] != null)
+                slotBgImages[index].color = MoonDockEquipmentCardBg;
+
+            Color accentColor = card != null ? GetSlotTypeAccentColor(card.slotType) : SidebarUpgradeCardEmptyAccent;
+            if (slotUi?.accentImage != null)
+                slotUi.accentImage.color = accentColor;
+
+            if (slotTitleTexts != null && index < slotTitleTexts.Length && slotTitleTexts[index] != null)
+                slotTitleTexts[index].text = card != null ? card.GetDisplayNameOrDefault() : "Empty";
+
+            if (slotDescTexts != null && index < slotDescTexts.Length && slotDescTexts[index] != null)
+            {
+                if (card != null && !string.IsNullOrEmpty(card.description))
+                    slotDescTexts[index].text = card.description;
+                else
+                    slotDescTexts[index].text = card != null ? "No description." : "Spin cards from the store below.";
+            }
+
+            if (slotUi?.sublineText != null)
+            {
+                if (card != null)
+                {
+                    int cl = Mathf.Max(1, card.cardLevel);
+                    int rar = Mathf.Clamp((int)card.rarity, 1, 5);
+                    slotUi.sublineText.text = $"Equipped · Lv {cl} · {GetCardRarityLabel(rar)}";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else
+                    slotUi.sublineText.gameObject.SetActive(false);
+            }
+
+            if (slotUi != null)
+            {
+                if (card != null)
+                {
+                    if (card.icon != null && slotUi.iconImage != null)
+                    {
+                        slotUi.iconImage.sprite = card.icon;
+                        slotUi.iconImage.color = Color.white;
+                        if (slotUi.iconGlyph != null)
+                            slotUi.iconGlyph.gameObject.SetActive(false);
+                    }
+                    else
+                    {
+                        if (slotUi.iconImage != null)
+                        {
+                            slotUi.iconImage.sprite = null;
+                            slotUi.iconImage.color = new Color(1f, 1f, 1f, 0f);
+                        }
+                        if (slotUi.iconGlyph != null)
+                        {
+                            slotUi.iconGlyph.gameObject.SetActive(true);
+                            slotUi.iconGlyph.text = GetSlotTypeIconChar(card.slotType);
+                        }
+                    }
+
+                    if (slotUi.iconRoot != null)
+                        slotUi.iconRoot.SetActive(true);
+                }
+                else if (slotUi.iconRoot != null)
+                    slotUi.iconRoot.SetActive(false);
+            }
+
+            if (slotDeleteButtons != null && index < slotDeleteButtons.Length && slotDeleteButtons[index] != null)
+            {
+                slotDeleteButtons[index].gameObject.SetActive(card != null);
+                slotDeleteButtons[index].interactable = card != null;
+            }
+        }
+
+        private void RebuildUpgradeSpinOfferRowIfNeeded()
+        {
+            if (_upgradeSpinRowUsesTallLayout || _cardSpinRowLayout == null)
+                return;
+
+            Transform row = _cardSpinRowLayout.transform;
+            for (int i = row.childCount - 1; i >= 0; i--)
+                Destroy(row.GetChild(i).gameObject);
+
+            const int maxStoreCards = 3;
+            cardRoots = new GameObject[maxStoreCards];
+            cardBgImages = new Image[maxStoreCards];
+            cardTitleTexts = new TextMeshProUGUI[maxStoreCards];
+            cardLevelTexts = new TextMeshProUGUI[maxStoreCards];
+            cardDescTexts = new TextMeshProUGUI[maxStoreCards];
+            cardButtons = new Button[maxStoreCards];
+            cardEntries = new CardData[maxStoreCards];
+            cardRarityFrameImages = new Image[maxStoreCards];
+            cardIconImages = new Image[maxStoreCards];
+            cardRarityLabels = new TextMeshProUGUI[maxStoreCards];
+
+            for (int i = 0; i < maxStoreCards; i++)
+            {
+                CreateUpgradeSpinOfferCard(row, i, out cardRoots[i], out cardRarityFrameImages[i], out cardBgImages[i], out cardIconImages[i], out cardTitleTexts[i], out cardLevelTexts[i], out cardRarityLabels[i], out cardDescTexts[i], out cardButtons[i]);
+                if (cardRoots[i] != null)
+                    cardRoots[i].AddComponent<ScrollRectForwarder>();
+                int idx = i;
+                cardButtons[i].onClick.AddListener(() => OnTakeSpinOffer(idx));
+            }
+
+            var spinBlockLe = row.parent != null ? row.parent.GetComponent<LayoutElement>() : null;
+            if (spinBlockLe != null)
+            {
+                spinBlockLe.preferredHeight = 36f + 6f + MoonDockUpgradeSpinCardHeight;
+                spinBlockLe.minHeight = spinBlockLe.preferredHeight;
+            }
+
+            var spinRowLe = row.GetComponent<LayoutElement>();
+            if (spinRowLe != null)
+            {
+                spinRowLe.preferredHeight = MoonDockUpgradeSpinCardHeight;
+                spinRowLe.minHeight = MoonDockUpgradeSpinCardHeight;
+            }
+
+            _upgradeSpinRowUsesTallLayout = true;
+            ApplyMoonDockUpgradeCardsSectionHeight();
+        }
+
         private void RefreshEquipmentSlots()
         {
             if (currentShip == null || equipmentBoxes == null) return;
@@ -3586,6 +4796,15 @@ namespace TitanOrbit.UI
                 equipmentSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleEquipment;
 
             var equipment = currentShip.EquippedEquipment;
+            ShipFamilyDefinition shipFamily = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
+                : null;
+            int shipLevel = currentShip.ShipLevel;
+            float maxComponentPower = shipFamily != null
+                ? GetMoonDockComponentMaxDisplayPower(shipFamily, shipLevel)
+                : 0.001f;
+            float sidebarPowerTrackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
+
             for (int i = 0; i < equipmentBoxes.Length; i++)
             {
                 if (equipmentBoxes[i] == null) continue;
@@ -3597,10 +4816,27 @@ namespace TitanOrbit.UI
                 bool filled = equipment != null && i < equipment.Count;
                 StoreItemType itemType = filled ? entry.ItemType : default;
                 ShipFamilyComponentEntry componentEntry = null;
-                if (filled && entry.IsShipComponent && CardShopSystem.Instance != null && currentShip != null)
+                if (filled && entry.IsShipComponent && shipFamily != null)
+                    shipFamily.TryGetComponentEntry(entry.ComponentId, out componentEntry);
+
+                SidebarEquipmentSlotUi slotUi = _equipmentSlotRichLayoutActive && _sidebarEquipmentSlotUi != null && i < _sidebarEquipmentSlotUi.Length
+                    ? _sidebarEquipmentSlotUi[i]
+                    : null;
+
+                if (_equipmentSlotRichLayoutActive)
                 {
-                    ShipFamilyDefinition family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
-                    family?.TryGetComponentEntry(entry.ComponentId, out componentEntry);
+                    RefreshSidebarEquipmentSlotRich(
+                        i,
+                        filled,
+                        entry,
+                        itemType,
+                        componentEntry,
+                        shipFamily,
+                        shipLevel,
+                        maxComponentPower,
+                        sidebarPowerTrackWidth,
+                        slotUi);
+                    continue;
                 }
 
                 if (equipmentTitleTexts != null && i < equipmentTitleTexts.Length && equipmentTitleTexts[i] != null)
@@ -3665,6 +4901,134 @@ namespace TitanOrbit.UI
             UpdateLegacyOrbitStorePanelTop(currentShip.SlotCount, slotCount);
         }
 
+        private void RefreshSidebarEquipmentSlotRich(
+            int index,
+            bool filled,
+            EquippedEquipmentEntry entry,
+            StoreItemType itemType,
+            ShipFamilyComponentEntry componentEntry,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            float maxComponentPower,
+            float trackWidth,
+            SidebarEquipmentSlotUi slotUi)
+        {
+            if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
+                equipmentBgImages[index].color = MoonDockEquipmentCardBg;
+
+            Color accentColor = SidebarEquipmentEmptyAccent;
+            if (filled)
+            {
+                if (entry.IsShipComponent && componentEntry != null)
+                {
+                    accentColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                        ShipComponentStoreData.GetAbilityColorStatIndex(componentEntry));
+                }
+                else
+                {
+                    accentColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                        StoreItemData.GetAbilityColorStatIndex(itemType));
+                }
+            }
+
+            if (slotUi?.accentImage != null)
+                slotUi.accentImage.color = accentColor;
+
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+            {
+                if (!filled)
+                    equipmentTitleTexts[index].text = "Empty";
+                else if (entry.IsShipComponent && componentEntry != null)
+                    equipmentTitleTexts[index].text = ShipComponentStoreData.GetDisplayName(componentEntry);
+                else if (entry.IsShipComponent)
+                    equipmentTitleTexts[index].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
+                else
+                    equipmentTitleTexts[index].text = StoreItemData.GetShortDisplayName(itemType);
+            }
+
+            if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
+            {
+                if (!filled)
+                    equipmentDescTexts[index].text = "<color=#888888>Buy from equipment store</color>";
+                else if (entry.IsShipComponent && componentEntry != null)
+                {
+                    equipmentDescTexts[index].richText = true;
+                    ApplyEquipmentCardAbilityDescription(equipmentDescTexts[index], componentEntry, shipLevel);
+                }
+                else
+                {
+                    equipmentDescTexts[index].richText = false;
+                    equipmentDescTexts[index].text = StoreItemData.GetDescription(itemType);
+                }
+            }
+
+            if (slotUi?.sublineText != null)
+            {
+                if (filled && entry.IsShipComponent && componentEntry != null)
+                {
+                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel);
+                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: true);
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else if (filled && !entry.IsShipComponent && !StoreItemData.IsDrone(itemType))
+                {
+                    slotUi.sublineText.text = $"\u00d7{entry.remainingCharges} charges";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else
+                    slotUi.sublineText.gameObject.SetActive(false);
+            }
+
+            bool showComponentPowerBar = filled && entry.IsShipComponent && componentEntry != null;
+            if (slotUi?.powerBar != null)
+            {
+                slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
+                if (showComponentPowerBar)
+                {
+                    slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
+                    slotUi.powerBar.ApplyEquipmentBreakdown(
+                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel),
+                        maxComponentPower,
+                        trackWidth);
+                }
+            }
+
+            if (slotUi != null)
+            {
+                if (filled && entry.IsShipComponent && componentEntry != null)
+                {
+                    ApplyMoonDockEquipmentTileIcon(
+                        slotUi.iconImage,
+                        slotUi.iconGlyph,
+                        ShipComponentStoreData.GetMenuPreviewSprite(
+                            family,
+                            componentEntry,
+                            currentShip != null ? currentShip.ShipTeam : TeamManager.Team.None),
+                        ShipComponentStoreData.GetIconGlyph(componentEntry));
+                    if (slotUi.iconRoot != null)
+                        slotUi.iconRoot.SetActive(true);
+                }
+                else if (filled)
+                {
+                    ApplyMoonDockEquipmentTileIcon(
+                        slotUi.iconImage,
+                        slotUi.iconGlyph,
+                        null,
+                        StoreItemData.GetIconGlyph(itemType));
+                    if (slotUi.iconRoot != null)
+                        slotUi.iconRoot.SetActive(true);
+                }
+                else if (slotUi.iconRoot != null)
+                    slotUi.iconRoot.SetActive(false);
+            }
+
+            if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
+            {
+                equipmentDeleteButtons[index].gameObject.SetActive(filled);
+                equipmentDeleteButtons[index].interactable = filled;
+            }
+        }
+
         private void UpdateLegacyOrbitStorePanelTop(int cardSlotCount, int equipmentSlotCount)
         {
             if (_moonDockLayoutActive || slotPanelRect == null || equipmentPanelRect == null || storePanelRect == null)
@@ -3702,10 +5066,11 @@ namespace TitanOrbit.UI
                 return;
 
             int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
-            float equipmentGridTotalH = rows * SidebarSlotCardHeight + (rows - 1) * SidebarSlotCellSpacing;
+            float cardHeight = _equipmentSlotRichLayoutActive ? SidebarEquipmentSlotCardHeight : SidebarSlotCardHeight;
+            float equipmentGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
             gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             gridLayout.constraintCount = SidebarSlotColumns;
-            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, SidebarSlotCardHeight);
+            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
             gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
 
             if (equipmentPanelRect != null)
@@ -3822,6 +5187,7 @@ namespace TitanOrbit.UI
             orbitDockSidebar.ConfigureVisuals(panelBackgroundSprite, buttonSprite, fontAsset);
             orbitDockSidebar.BindStation(this);
             orbitDockSidebar.BindNavigation(OnSidebarNavSelected);
+            orbitDockSidebar.BindAutoDeposit(OnAutoDepositToggleChanged);
             orbitDockSidebar.EnsureBuilt();
 
             moonDockMainHost = new GameObject("MoonDockMainHost").AddComponent<RectTransform>();
@@ -3867,13 +5233,13 @@ namespace TitanOrbit.UI
             cardsHostBg.color = new Color(0.07f, 0.08f, 0.12f, 0.96f);
             if (panelBackgroundSprite != null) { cardsHostBg.sprite = panelBackgroundSprite; cardsHostBg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple; }
             var cardsVlg = moonDockCenterCardsHost.gameObject.AddComponent<VerticalLayoutGroup>();
-            cardsVlg.spacing = 16f;
+            cardsVlg.spacing = 10f;
             cardsVlg.childAlignment = TextAnchor.UpperCenter;
             cardsVlg.childControlWidth = true;
             cardsVlg.childControlHeight = true;
             cardsVlg.childForceExpandWidth = true;
             cardsVlg.childForceExpandHeight = false;
-            cardsVlg.padding = new RectOffset(20, 20, 20, 32);
+            cardsVlg.padding = new RectOffset(20, 20, 16, 20);
             var cardsFitter = moonDockCenterCardsHost.gameObject.AddComponent<ContentSizeFitter>();
             cardsFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             cardsFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -4061,12 +5427,13 @@ namespace TitanOrbit.UI
                 _moonDockCardsToEquipmentDivider = new GameObject("CardsToEquipmentDivider");
                 _moonDockCardsToEquipmentDivider.transform.SetParent(moonDockCenterCardsHost, false);
                 var divLe = _moonDockCardsToEquipmentDivider.AddComponent<LayoutElement>();
-                divLe.preferredHeight = 8f;
-                divLe.minHeight = 6f;
+                divLe.preferredHeight = 0f;
+                divLe.minHeight = 0f;
                 divLe.flexibleHeight = 0f;
+                _moonDockCardsToEquipmentDivider.SetActive(false);
             }
-            if (_moonDockCardsToEquipmentDivider != null && moonDockStoreSection != null)
-                _moonDockCardsToEquipmentDivider.transform.SetSiblingIndex(moonDockStoreSection.transform.GetSiblingIndex());
+            else if (_moonDockCardsToEquipmentDivider != null)
+                _moonDockCardsToEquipmentDivider.SetActive(false);
 
             if (_moonDockStoreToCardsDivider != null)
                 _moonDockStoreToCardsDivider.SetActive(false);
@@ -4102,8 +5469,7 @@ namespace TitanOrbit.UI
             var cardsLe = cardsTabContent.GetComponent<LayoutElement>();
             if (cardsLe == null) cardsLe = cardsTabContent.AddComponent<LayoutElement>();
             cardsLe.flexibleHeight = 0f;
-            cardsLe.minHeight = 520f;
-            cardsLe.preferredHeight = Mathf.Max(cardsLe.preferredHeight, 520f);
+            ApplyMoonDockUpgradeCardsSectionHeight();
 
             var shipsTabLe = shipsTabContent.GetComponent<LayoutElement>();
             if (shipsTabLe == null) shipsTabLe = shipsTabContent.AddComponent<LayoutElement>();
@@ -4120,6 +5486,96 @@ namespace TitanOrbit.UI
             shipsRt.sizeDelta = Vector2.zero;
 
             _moonDockReparentDone = true;
+            RebuildUpgradeSpinOfferRowIfNeeded();
+            SetUpgradeCardSlotLayoutMode(true);
+            SetEquipmentSlotLayoutMode(true);
+            RefreshSlots();
+            RefreshEquipmentSlots();
+            ApplyMoonDockCardsHostLayout();
+        }
+
+        private void ApplyMoonDockCardsHostLayout()
+        {
+            if (!_moonDockLayoutActive || moonDockCenterCardsHost == null)
+                return;
+
+            moonDockCenterCardsHost.anchorMin = Vector2.zero;
+            moonDockCenterCardsHost.anchorMax = Vector2.one;
+            moonDockCenterCardsHost.pivot = new Vector2(0.5f, 0.5f);
+            moonDockCenterCardsHost.offsetMin = Vector2.zero;
+            moonDockCenterCardsHost.offsetMax = Vector2.zero;
+            moonDockCenterCardsHost.sizeDelta = Vector2.zero;
+
+            var cardsFitter = moonDockCenterCardsHost.GetComponent<ContentSizeFitter>();
+            if (cardsFitter != null)
+                cardsFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            var cardsVlg = moonDockCenterCardsHost.GetComponent<VerticalLayoutGroup>();
+            if (cardsVlg != null)
+            {
+                cardsVlg.spacing = MoonDockCardsToEquipmentGap;
+                cardsVlg.childForceExpandHeight = false;
+            }
+
+            if (cardsTabContent != null)
+            {
+                var cardsTabVlg = cardsTabContent.GetComponent<VerticalLayoutGroup>();
+                if (cardsTabVlg != null)
+                    cardsTabVlg.padding = new RectOffset(12, 12, 8, 4);
+
+                var cardsLe = cardsTabContent.GetComponent<LayoutElement>();
+                if (cardsLe == null)
+                    cardsLe = cardsTabContent.AddComponent<LayoutElement>();
+                cardsLe.flexibleHeight = 0f;
+                ApplyMoonDockUpgradeCardsSectionHeight();
+
+                var upgradeHeader = cardsTabContent.transform.Find("SectionHeader_UpgradeCards");
+                ApplyMoonDockSectionHeaderMetrics(upgradeHeader);
+            }
+
+            if (_moonDockCardsToEquipmentDivider != null)
+                _moonDockCardsToEquipmentDivider.SetActive(false);
+
+            if (moonDockStoreSection != null)
+            {
+                var sectionLe = moonDockStoreSection.GetComponent<LayoutElement>();
+                if (sectionLe == null)
+                    sectionLe = moonDockStoreSection.AddComponent<LayoutElement>();
+                sectionLe.flexibleHeight = 1f;
+                sectionLe.flexibleWidth = 1f;
+
+                var sectionVlg = moonDockStoreSection.GetComponent<VerticalLayoutGroup>();
+                if (sectionVlg != null)
+                {
+                    sectionVlg.spacing = MoonDockEquipmentHeaderToGridGap;
+                    sectionVlg.padding = new RectOffset(12, 12, 0, 0);
+                    sectionVlg.childForceExpandHeight = false;
+                }
+
+                var equipmentHeader = moonDockStoreSection.transform.Find("SectionHeader_Equipment");
+                ApplyMoonDockSectionHeaderMetrics(equipmentHeader);
+
+                Transform scrollTransform = moonDockStoreSection.transform.Find("EquipmentStoreScroll");
+                if (scrollTransform != null)
+                {
+                    var scrollLe = scrollTransform.GetComponent<LayoutElement>();
+                    if (scrollLe != null)
+                    {
+                        scrollLe.flexibleHeight = 1f;
+                        scrollLe.flexibleWidth = 1f;
+                        scrollLe.minHeight = MoonDockEquipmentScrollMinHeight;
+                    }
+                }
+            }
+
+            if (_moonDockStoreGridContent != null)
+                _moonDockStoreGridContent.sizeDelta = new Vector2(0f, 0f);
+
+            if (moonDockCardsScroll != null)
+            {
+                moonDockCardsScroll.verticalNormalizedPosition = 1f;
+                moonDockCardsScroll.enabled = true;
+            }
         }
 
         private void RestoreMoonDockParents()
@@ -4156,10 +5612,37 @@ namespace TitanOrbit.UI
                 if (equipmentPanelImg != null)
                     equipmentPanelImg.color = new Color(0.08f, 0.1f, 0.16f, 0.94f);
             }
+            SetEquipmentSlotLayoutMode(false);
+            SetUpgradeCardSlotLayoutMode(false);
+            RefreshEquipmentSlots();
+            RefreshSlots();
             if (cardsTabContent != null && _moonDockSavedCardsTabParent != null)
             {
                 cardsTabContent.transform.SetParent(_moonDockSavedCardsTabParent, false);
                 cardsTabContent.transform.SetSiblingIndex(_moonDockSavedCardsTabSibling);
+                var cardsTabVlg = cardsTabContent.GetComponent<VerticalLayoutGroup>();
+                if (cardsTabVlg != null)
+                    cardsTabVlg.padding = new RectOffset(12, 12, 8, 8);
+            }
+
+            if (moonDockCenterCardsHost != null)
+            {
+                var cardsVlg = moonDockCenterCardsHost.GetComponent<VerticalLayoutGroup>();
+                if (cardsVlg != null)
+                {
+                    cardsVlg.spacing = 10f;
+                    cardsVlg.childForceExpandHeight = false;
+                }
+            }
+
+            if (moonDockStoreSection != null)
+            {
+                var sectionVlg = moonDockStoreSection.GetComponent<VerticalLayoutGroup>();
+                if (sectionVlg != null)
+                {
+                    sectionVlg.spacing = 4f;
+                    sectionVlg.padding = new RectOffset(0, 0, 0, 0);
+                }
             }
             if (shipsTabContent != null && _moonDockSavedShipsTabParent != null)
             {
@@ -4218,6 +5701,7 @@ namespace TitanOrbit.UI
                 activeStoreTab = 0;
                 _moonDockShipTreeHorizontal = false;
                 RefreshStoreTabVisibility();
+                ApplyMoonDockCardsHostLayout();
                 ApplyMoonDockCardGridWidth();
                 RefreshSlots();
                 RefreshEquipmentSlots();
@@ -4243,6 +5727,7 @@ namespace TitanOrbit.UI
 
         private void RebuildMoonDockLayoutsAfterShow()
         {
+            ApplyMoonDockCardsHostLayout();
             if (moonDockCenterCardsHost != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterCardsHost);
             if (slotGridRoot != null)
@@ -4256,6 +5741,8 @@ namespace TitanOrbit.UI
 
         private void ApplyMoonDockCardGridWidth()
         {
+            ApplyMoonDockUpgradeCardsSectionHeight();
+            ApplyMoonDockCardsHostLayout();
             if (moonDockCenterCardsHost != null)
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterCardsHost);
             else if (storeContentRoot != null)
@@ -4273,15 +5760,15 @@ namespace TitanOrbit.UI
             if (_cardSpinRowLayout != null)
             {
                 var spinRowRt = _cardSpinRowLayout.GetComponent<RectTransform>();
-                ApplyMoonDockTileLayoutToRow(spinRowRt, tileWidth);
+                ApplyMoonDockTileLayoutToRow(spinRowRt, tileWidth, MoonDockUpgradeSpinCardHeight);
                 var spinRowLe = spinRowRt.GetComponent<LayoutElement>();
                 if (spinRowLe == null) spinRowLe = spinRowRt.gameObject.AddComponent<LayoutElement>();
                 spinRowLe.flexibleWidth = 0f;
                 spinRowLe.flexibleHeight = 0f;
                 spinRowLe.preferredWidth = spinBandWidth;
                 spinRowLe.minWidth = spinBandWidth;
-                spinRowLe.preferredHeight = MoonDockStoreCardHeight;
-                spinRowLe.minHeight = MoonDockStoreCardHeight;
+                spinRowLe.preferredHeight = MoonDockUpgradeSpinCardHeight;
+                spinRowLe.minHeight = MoonDockUpgradeSpinCardHeight;
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(spinRowRt);
             }
             if (_cardSpinButtonLayout != null)

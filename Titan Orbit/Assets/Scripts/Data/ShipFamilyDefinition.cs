@@ -1204,6 +1204,50 @@ namespace TitanOrbit.Data
 
         [Tooltip("For weapons: index into CombatSystem's Bullet Prefab Bank. -1 = use family default (ShipFamilyDefinition.bulletPrefabIndex).")]
         public int bulletPrefabIndex = -1;
+
+        [Tooltip("Moon dock equipment store thumbnail. Assign manually or generate in editor (Ship Family inspector: Generate Component Menu Preview Images).")]
+        public Sprite menuPreviewSprite;
+
+        [Tooltip("Per-team/material-variant menu preview sprites for this component.")]
+        public List<ShipFamilyMenuPreviewSprite> teamMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
+
+        [Tooltip("Theatrical (3/4 hero) equipment-store thumbnail. Assign manually or generate in editor.")]
+        public Sprite theatricalMenuPreviewSprite;
+
+        [Tooltip("Per-team theatrical menu preview sprites for this component.")]
+        public List<ShipFamilyMenuPreviewSprite> teamTheatricalMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
+
+        /// <summary>Team-aware equipment-store thumbnail; falls back to <see cref="menuPreviewSprite"/>.</summary>
+        public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
+        {
+            if (teamMenuPreviewSprites != null && team != TeamManager.Team.None)
+            {
+                for (int i = 0; i < teamMenuPreviewSprites.Count; i++)
+                {
+                    ShipFamilyMenuPreviewSprite variant = teamMenuPreviewSprites[i];
+                    if (variant != null && variant.team == team && variant.sprite != null)
+                        return variant.sprite;
+                }
+            }
+
+            return menuPreviewSprite;
+        }
+
+        /// <summary>Team-aware theatrical equipment-store thumbnail; falls back to <see cref="theatricalMenuPreviewSprite"/>.</summary>
+        public Sprite GetTheatricalMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
+        {
+            if (teamTheatricalMenuPreviewSprites != null && team != TeamManager.Team.None)
+            {
+                for (int i = 0; i < teamTheatricalMenuPreviewSprites.Count; i++)
+                {
+                    ShipFamilyMenuPreviewSprite variant = teamTheatricalMenuPreviewSprites[i];
+                    if (variant != null && variant.team == team && variant.sprite != null)
+                        return variant.sprite;
+                }
+            }
+
+            return theatricalMenuPreviewSprite;
+        }
     }
 
     /// <summary>
@@ -1231,6 +1275,10 @@ namespace TitanOrbit.Data
         public float firePower;
         [Tooltip("Bullet Speed (upgrade menu stat, level-1 effective value).")]
         public float bulletSpeed;
+        [Tooltip("Fire Rate (upgrade menu stat, level-1 effective value).")]
+        public float fireRate;
+        [Tooltip("Ramming Power (upgrade menu stat, level-1 effective value).")]
+        public float rammingPower;
         [Tooltip("Health Cap (upgrade menu stat, level-1 effective value).")]
         public float healthCap;
         [Tooltip("Health Regen (upgrade menu stat, level-1 effective value).")]
@@ -1315,6 +1363,8 @@ namespace TitanOrbit.Data
             {
                 firePower = s.firePower,
                 bulletSpeed = s.bulletSpeed,
+                fireRate = s.fireRate,
+                rammingPower = s.rammingPower,
                 healthCap = s.healthCap,
                 healthRegen = s.healthRegen,
                 energyCap = s.energyCap,
@@ -1690,6 +1740,11 @@ namespace TitanOrbit.Data
         [Tooltip("Per-team/material-variant menu preview sprites generated from this family's team material sets.")]
         public List<ShipFamilyMenuPreviewSprite> teamMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
 
+        [Tooltip("Theatrical (3/4 hero) orbit store / upgrade tree thumbnail. Assign manually or generate in editor.")]
+        public Sprite theatricalMenuPreviewSprite;
+        [Tooltip("Per-team theatrical menu preview sprites generated from this family's team material sets.")]
+        public List<ShipFamilyMenuPreviewSprite> teamTheatricalMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
+
         [Tooltip("Minimum home planet level required to unlock this chassis in the upgrade tree.")]
         public int minHomePlanetLevel = 1;
 
@@ -1846,11 +1901,14 @@ namespace TitanOrbit.Data
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
 
         [Header("Menu preview generation (editor)")]
-        [Tooltip("Clear color when rendering top-down PNGs into MenuPreviews/.")]
+        [Tooltip("Clear color when rendering menu preview PNGs into MenuPreviews/ and ComponentMenuPreviews/.")]
         public Color menuPreviewBackgroundColor = new Color(0.06f, 0.09f, 0.14f, 1f);
         [Tooltip("Framing margin around combined renderer bounds (larger = more padding).")]
         [Range(1f, 2.2f)]
         public float menuPreviewBoundsPadding = 1.22f;
+        [Tooltip("Perspective field of view for theatrical (3/4 hero) menu preview renders.")]
+        [Range(20f, 55f)]
+        public float menuPreviewTheatricalFieldOfView = 36f;
 
         private readonly Dictionary<string, ShipComponentAbilityStats> _lookup =
             new Dictionary<string, ShipComponentAbilityStats>(StringComparer.OrdinalIgnoreCase);
@@ -1881,7 +1939,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Maps Engine1 ↔ Engine_1 (and thruster/wing variants) so prefab suffixes match family entries.</summary>
-        internal static string GetAlternateComponentIdForm(string componentId)
+        public static string GetAlternateComponentIdForm(string componentId)
         {
             if (string.IsNullOrWhiteSpace(componentId))
                 return string.Empty;
@@ -2083,6 +2141,14 @@ namespace TitanOrbit.Data
                 }
             }
             return false;
+        }
+
+        /// <summary>Equipment store / UI thumbnail for a component entry on this family.</summary>
+        public Sprite GetMenuPreviewSpriteForComponent(string componentId, TeamManager.Team team = TeamManager.Team.None)
+        {
+            return TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) && entry != null
+                ? entry.GetMenuPreviewSprite(team)
+                : null;
         }
 
         /// <summary>
