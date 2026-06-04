@@ -54,7 +54,7 @@ namespace TitanOrbit.UI
         private const float SidebarSlotCardWidth = 228f;
         private const float SidebarSlotCardHeight = 68f;
         private const float SidebarSlotCellSpacing = 8f;
-        private const float SidebarEquipmentSlotCardHeight = 196f;
+        private const float SidebarEquipmentSlotCardHeight = 300f;
         private const float SidebarEquipmentIconHeight = 64f;
         private const float SidebarEquipmentIconMinHeight = 48f;
         private const float SidebarEquipmentAbilityFontSize = 10f;
@@ -88,6 +88,9 @@ namespace TitanOrbit.UI
         private const float ShipRowSpacing = 8f;
         private const int ShipPreviewRenderSize = 128;
         private Transform shipPreviewsRoot;
+        private string _currentShipPreviewCacheKey = "";
+        private Sprite _currentShipPreviewSprite;
+        private Texture2D _currentShipPreviewTexture;
         private Transform shipsRowsContainer;
         private Starship currentShip;
         private Planet currentPlanet;
@@ -124,6 +127,7 @@ namespace TitanOrbit.UI
         private GameObject equipmentRemoveConfirmRoot;
         private TextMeshProUGUI equipmentRemoveConfirmBodyText;
         private int _pendingRemoveEquipmentSlotIndex = -1;
+        private Starship _equipmentUiWatchShip;
 
         private GameObject cardRemoveConfirmRoot;
         private TextMeshProUGUI cardRemoveConfirmBodyText;
@@ -205,6 +209,9 @@ namespace TitanOrbit.UI
 
         private readonly List<MoonDockStoreCardBinding> _moonDockStoreCards = new List<MoonDockStoreCardBinding>();
 
+        private const float EquipmentPlacementNudgeStep = 0.03f;
+        private const float EquipmentRotationSnapStep = 45f;
+
         private sealed class SidebarEquipmentSlotUi
         {
             public Image accentImage;
@@ -214,6 +221,8 @@ namespace TitanOrbit.UI
             public ShipUpgradeTreePowerBarUI powerBar;
             public GameObject statsFooter;
             public GameObject iconRoot;
+            public GameObject placementPanel;
+            public TextMeshProUGUI placementReadout;
         }
 
         private SidebarEquipmentSlotUi[] _sidebarEquipmentSlotUi;
@@ -356,6 +365,7 @@ namespace TitanOrbit.UI
         {
             CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
+            ReleaseCurrentShipPreviewResources();
         }
 
         private void OnClientSpinOfferReceived()
@@ -607,7 +617,9 @@ namespace TitanOrbit.UI
 
         public void Show(Starship ship, Planet planet)
         {
+            UnsubscribeEquipmentUiWatch();
             currentShip = ship;
+            SubscribeEquipmentUiWatch(ship);
             currentPlanet = planet;
             if (ship != null && (currentHomePlanet == null || Time.time - _lastHomePlanetLookupTime >= HomePlanetLookupInterval))
             {
@@ -658,6 +670,7 @@ namespace TitanOrbit.UI
             HideCardRemoveConfirm();
             _moonDockMenuClosedByUser = false;
             ExitMoonDockLayout();
+            UnsubscribeEquipmentUiWatch();
             currentShip = null;
             currentPlanet = null;
             currentHomePlanet = null; // Clear so next Show does fresh lookup
@@ -668,6 +681,26 @@ namespace TitanOrbit.UI
         {
             contributedGems = lastReceivedGems;
             RefreshStoreLabels();
+        }
+
+        private void SubscribeEquipmentUiWatch(Starship ship)
+        {
+            if (ship?.EquippedEquipmentNetworkList == null)
+                return;
+            _equipmentUiWatchShip = ship;
+            ship.EquippedEquipmentNetworkList.OnListChanged += OnWatchedEquipmentListChanged;
+        }
+
+        private void UnsubscribeEquipmentUiWatch()
+        {
+            if (_equipmentUiWatchShip?.EquippedEquipmentNetworkList != null)
+                _equipmentUiWatchShip.EquippedEquipmentNetworkList.OnListChanged -= OnWatchedEquipmentListChanged;
+            _equipmentUiWatchShip = null;
+        }
+
+        private void OnWatchedEquipmentListChanged(Unity.Netcode.NetworkListEvent<EquippedEquipmentEntry> changeEvent)
+        {
+            RefreshEquipmentSlots();
         }
 
         private void RefreshAll()
@@ -1562,7 +1595,96 @@ namespace TitanOrbit.UI
         private Sprite ResolveCurrentShipPreviewSprite()
         {
             if (currentShip == null || CardShopSystem.Instance == null) return null;
-            return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, currentShip.ShipTeam);
+            return ResolveCurrentShipDynamicPreviewSprite()
+                ?? CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, currentShip.ShipTeam);
+        }
+
+        private Sprite ResolveCurrentShipDynamicPreviewSprite()
+        {
+            if (currentShip == null || CardShopSystem.Instance == null)
+                return null;
+
+            ShipFamilyDefinition family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
+            if (family == null)
+                return null;
+
+            string cacheKey = BuildCurrentShipPreviewCacheKey(currentShip);
+            if (string.Equals(cacheKey, _currentShipPreviewCacheKey, StringComparison.Ordinal)
+                && _currentShipPreviewSprite != null)
+            {
+                return _currentShipPreviewSprite;
+            }
+
+            Sprite previousSprite = _currentShipPreviewSprite;
+            Texture2D previousTexture = _currentShipPreviewTexture;
+            _currentShipPreviewSprite = null;
+            _currentShipPreviewTexture = null;
+            _currentShipPreviewCacheKey = "";
+
+            if (!ShipFamilyTheatricalPreviewRenderer.TryRenderCurrentShipPreview(currentShip, family, out Sprite rendered)
+                || rendered == null)
+            {
+                _currentShipPreviewSprite = previousSprite;
+                _currentShipPreviewTexture = previousTexture;
+                _currentShipPreviewCacheKey = previousSprite != null ? cacheKey : "";
+                return previousSprite;
+            }
+
+            if (previousSprite != null)
+                Destroy(previousSprite);
+            if (previousTexture != null && previousTexture != rendered.texture)
+                Destroy(previousTexture);
+
+            _currentShipPreviewCacheKey = cacheKey;
+            _currentShipPreviewSprite = rendered;
+            _currentShipPreviewTexture = rendered.texture;
+            return _currentShipPreviewSprite;
+        }
+
+        private static string BuildCurrentShipPreviewCacheKey(Starship ship)
+        {
+            if (ship == null)
+                return string.Empty;
+
+            var sb = new StringBuilder(256);
+            sb.Append(ship.CurrentChassisId).Append('|').Append((int)ship.ShipTeam).Append('|');
+            IReadOnlyList<EquippedEquipmentEntry> equipment = ship.EquippedEquipment;
+            if (equipment == null || equipment.Count == 0)
+                return sb.ToString();
+
+            for (int i = 0; i < equipment.Count; i++)
+            {
+                EquippedEquipmentEntry entry = equipment[i];
+                sb.Append(i).Append(':')
+                    .Append(entry.itemType).Append(':')
+                    .Append(entry.remainingCharges).Append(':')
+                    .Append(entry.componentId).Append(':')
+                    .Append(entry.localPosX).Append(',')
+                    .Append(entry.localPosY).Append(',')
+                    .Append(entry.localPosZ).Append(':')
+                    .Append(entry.localRotX).Append(',')
+                    .Append(entry.localRotY).Append(',')
+                    .Append(entry.localRotZ).Append(';');
+            }
+
+            return sb.ToString();
+        }
+
+        private void ReleaseCurrentShipPreviewResources()
+        {
+            if (_currentShipPreviewSprite != null)
+            {
+                Destroy(_currentShipPreviewSprite);
+                _currentShipPreviewSprite = null;
+            }
+
+            if (_currentShipPreviewTexture != null)
+            {
+                Destroy(_currentShipPreviewTexture);
+                _currentShipPreviewTexture = null;
+            }
+
+            _currentShipPreviewCacheKey = "";
         }
 
         private string GetCurrentShipDisplayName()
@@ -1996,6 +2118,41 @@ namespace TitanOrbit.UI
             slotUi.sublineText.raycastTarget = false;
             if (fontAsset != null) slotUi.sublineText.font = fontAsset;
 
+            slotUi.placementPanel = new GameObject("Placement");
+            slotUi.placementPanel.transform.SetParent(boxRoot.transform, false);
+            var placementLe = slotUi.placementPanel.AddComponent<LayoutElement>();
+            placementLe.preferredHeight = 112f;
+            placementLe.minHeight = 112f;
+            var placementVlg = slotUi.placementPanel.AddComponent<VerticalLayoutGroup>();
+            placementVlg.spacing = 3f;
+            placementVlg.padding = new RectOffset(2, 2, 0, 0);
+            placementVlg.childAlignment = TextAnchor.UpperCenter;
+            placementVlg.childControlWidth = true;
+            placementVlg.childControlHeight = true;
+            placementVlg.childForceExpandWidth = true;
+            placementVlg.childForceExpandHeight = false;
+
+            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move X", index, moveAxis: 0);
+            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move Y", index, moveAxis: 1);
+            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move Z", index, moveAxis: 2);
+            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn X", index, rotateAxis: 0);
+            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn Y", index, rotateAxis: 1);
+            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn Z", index, rotateAxis: 2);
+
+            var readoutGo = new GameObject("PlacementReadout");
+            readoutGo.transform.SetParent(slotUi.placementPanel.transform, false);
+            var readoutLe = readoutGo.AddComponent<LayoutElement>();
+            readoutLe.preferredHeight = 12f;
+            readoutLe.minHeight = 11f;
+            slotUi.placementReadout = readoutGo.AddComponent<TextMeshProUGUI>();
+            slotUi.placementReadout.fontSize = 7.5f;
+            slotUi.placementReadout.alignment = TextAlignmentOptions.Center;
+            slotUi.placementReadout.color = new Color(0.72f, 0.8f, 0.92f, 0.88f);
+            slotUi.placementReadout.raycastTarget = false;
+            if (fontAsset != null) slotUi.placementReadout.font = fontAsset;
+
+            slotUi.placementPanel.SetActive(false);
+
             var delGo = new GameObject("Delete");
             delGo.transform.SetParent(boxRoot.transform, false);
             var delRt = delGo.AddComponent<RectTransform>();
@@ -2024,6 +2181,143 @@ namespace TitanOrbit.UI
             if (fontAsset != null) delTmp.font = fontAsset;
             delTmp.raycastTarget = false;
             deleteButton.gameObject.SetActive(false);
+        }
+
+        private void CreateSidebarEquipmentPlacementMoveRow(Transform parent, string label, int slotIndex, int moveAxis)
+        {
+            CreateSidebarEquipmentPlacementAxisRow(
+                parent,
+                label,
+                slotIndex,
+                axisIndex: moveAxis,
+                negativeLabel: "−",
+                positiveLabel: "+",
+                onStep: (slot, axis, direction) =>
+                {
+                    Vector3 delta = Vector3.zero;
+                    delta[axis] = direction * EquipmentPlacementNudgeStep;
+                    NudgeSidebarEquipmentPlacement(slot, delta, Vector3.zero);
+                });
+        }
+
+        private void CreateSidebarEquipmentPlacementRotateRow(Transform parent, string label, int slotIndex, int rotateAxis)
+        {
+            CreateSidebarEquipmentPlacementAxisRow(
+                parent,
+                label,
+                slotIndex,
+                axisIndex: rotateAxis,
+                negativeLabel: "↺",
+                positiveLabel: "↻",
+                onStep: (slot, axis, direction) =>
+                {
+                    Vector3 deltaEuler = Vector3.zero;
+                    deltaEuler[axis] = direction * EquipmentRotationSnapStep;
+                    NudgeSidebarEquipmentPlacement(slot, Vector3.zero, deltaEuler);
+                });
+        }
+
+        private void CreateSidebarEquipmentPlacementAxisRow(
+            Transform parent,
+            string label,
+            int slotIndex,
+            int axisIndex,
+            string negativeLabel,
+            string positiveLabel,
+            System.Action<int, int, int> onStep)
+        {
+            var rowGo = new GameObject(label.Replace(' ', '_') + "Row");
+            rowGo.transform.SetParent(parent, false);
+            var rowLe = rowGo.AddComponent<LayoutElement>();
+            rowLe.preferredHeight = 16f;
+            rowLe.minHeight = 15f;
+            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
+            rowHlg.spacing = 3f;
+            rowHlg.childAlignment = TextAnchor.MiddleCenter;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = false;
+            rowHlg.childForceExpandHeight = true;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(rowGo.transform, false);
+            var labelLe = labelGo.AddComponent<LayoutElement>();
+            labelLe.preferredWidth = 42f;
+            labelLe.minWidth = 42f;
+            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 7.5f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.alignment = TextAlignmentOptions.MidlineLeft;
+            labelTmp.color = new Color(0.75f, 0.82f, 0.95f, 0.92f);
+            labelTmp.raycastTarget = false;
+            if (fontAsset != null) labelTmp.font = fontAsset;
+
+            CreateSidebarEquipmentPlacementStepButton(rowGo.transform, negativeLabel, 18f, () => onStep?.Invoke(slotIndex, axisIndex, -1));
+            CreateSidebarEquipmentPlacementStepButton(rowGo.transform, positiveLabel, 18f, () => onStep?.Invoke(slotIndex, axisIndex, 1));
+        }
+
+        private void CreateSidebarEquipmentPlacementStepButton(Transform parent, string text, float width, UnityEngine.Events.UnityAction onClick)
+        {
+            var btnGo = new GameObject("Step_" + text);
+            btnGo.transform.SetParent(parent, false);
+            var btnLe = btnGo.AddComponent<LayoutElement>();
+            btnLe.preferredWidth = width;
+            btnLe.minWidth = width;
+            btnLe.preferredHeight = 16f;
+            btnLe.minHeight = 16f;
+            var btnImg = btnGo.AddComponent<Image>();
+            btnImg.color = new Color(0.12f, 0.16f, 0.24f, 0.96f);
+            if (buttonSprite != null)
+            {
+                btnImg.sprite = buttonSprite;
+                btnImg.type = Image.Type.Sliced;
+            }
+            var btn = btnGo.AddComponent<Button>();
+            btn.onClick.AddListener(onClick);
+
+            var txtGo = new GameObject("Text");
+            txtGo.transform.SetParent(btnGo.transform, false);
+            var txtRt = txtGo.AddComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+            var tmp = txtGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = 9f;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = new Color(0.92f, 0.96f, 1f, 0.96f);
+            tmp.raycastTarget = false;
+            if (fontAsset != null) tmp.font = fontAsset;
+        }
+
+        private static string FormatEquipmentPlacementCompact(Vector3 pos, Vector3 euler) =>
+            string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Pos {0:0.##}, {1:0.##}, {2:0.##}   Rot {3:0.#}°, {4:0.#}°, {5:0.#}°",
+                pos.x, pos.y, pos.z, euler.x, euler.y, euler.z);
+
+        private void NudgeSidebarEquipmentPlacement(int slotIndex, Vector3 deltaPosition, Vector3 deltaEuler)
+        {
+            if (currentShip == null || slotIndex < 0)
+                return;
+
+            var equipment = currentShip.EquippedEquipment;
+            if (equipment == null || slotIndex >= equipment.Count)
+                return;
+
+            EquippedEquipmentEntry entry = equipment[slotIndex];
+            if (!entry.IsShipComponent)
+                return;
+
+            Vector3 pos = entry.LocalPosition + deltaPosition;
+            Vector3 rot = EquippedComponentPlacementUtility.SnapEulerAngles(entry.LocalEulerAngles + deltaEuler);
+
+            currentShip.UpdateEquippedComponentPlacementServerRpc(
+                slotIndex,
+                pos.x, pos.y, pos.z,
+                rot.x, rot.y, rot.z);
         }
 
         private void SetUpgradeCardSlotLayoutMode(bool richLayout)
@@ -5033,6 +5327,16 @@ namespace TitanOrbit.UI
             {
                 equipmentDeleteButtons[index].gameObject.SetActive(filled);
                 equipmentDeleteButtons[index].interactable = filled;
+            }
+
+            bool showPlacement = filled && entry.IsShipComponent && componentEntry != null;
+            if (slotUi?.placementPanel != null)
+                slotUi.placementPanel.SetActive(showPlacement);
+
+            if (showPlacement && slotUi != null)
+            {
+                if (slotUi.placementReadout != null)
+                    slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
             }
         }
 

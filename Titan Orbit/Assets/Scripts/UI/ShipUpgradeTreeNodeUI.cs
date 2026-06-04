@@ -58,6 +58,8 @@ namespace TitanOrbit.UI
         /// <summary>Moon tree: dedicated top-left node showing the player's current hull (not a ladder slot).</summary>
         public bool IsCurrentShipDisplay { get; private set; }
         private bool _sidebarLayoutMember;
+        private bool _sidebarHeroLayout;
+        private bool _sidebarHeroLayoutConfigured;
         public RectTransform Rect => transform as RectTransform;
         public float NodeButtonWidth { get; private set; }
         public float PowerBarTrackWidth { get; private set; }
@@ -80,6 +82,7 @@ namespace TitanOrbit.UI
         private VerticalLayoutGroup _rootVlg;
         private LayoutElement _contentRowLe;
         private HorizontalLayoutGroup _contentRowHlg;
+        private VerticalLayoutGroup _contentRowVlg;
         private VerticalLayoutGroup _leftVlg;
         private LayoutElement _leftLe;
         private LayoutElement _levelLe;
@@ -123,11 +126,29 @@ namespace TitanOrbit.UI
             ApplyFixedLayoutSize(width, height);
         }
 
+        /// <summary>Current-ship node in sidebar with a large hero preview on top.</summary>
+        public void ApplySidebarHeroPreviewLayout(float width, float height, float powerTrackWidth)
+        {
+            IsCurrentShipDisplay = true;
+            _sidebarLayoutMember = true;
+            _sidebarHeroLayout = true;
+            _sidebarHeroLayoutConfigured = false;
+            Level = 0;
+            BranchIndex = 0;
+            Node = null;
+            NodeButtonWidth = width;
+            PowerBarTrackWidth = powerTrackWidth;
+            _boundHeight = height;
+            ApplyFixedLayoutSize(width, height);
+        }
+
         /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
         public void ApplySidebarPanelLayout(float width, float height, float powerTrackWidth)
         {
             IsCurrentShipDisplay = true;
             _sidebarLayoutMember = true;
+            _sidebarHeroLayout = false;
+            _sidebarHeroLayoutConfigured = false;
             Level = 0;
             BranchIndex = 0;
             Node = null;
@@ -216,9 +237,53 @@ namespace TitanOrbit.UI
 
             if (sizeChanged)
             {
+                if (_sidebarHeroLayout)
+                    EnsureSidebarHeroLayout();
                 ApplyScaledChildLayout(width, height);
                 LayoutRebuilder.ForceRebuildLayoutImmediate(Rect);
             }
+        }
+
+        private void EnsureSidebarHeroLayout()
+        {
+            if (!_sidebarHeroLayout || _sidebarHeroLayoutConfigured)
+                return;
+
+            Transform contentRow = transform.Find("ContentRow");
+            if (contentRow == null)
+                return;
+
+            var hlg = contentRow.GetComponent<HorizontalLayoutGroup>();
+            if (hlg != null)
+            {
+                _contentRowHlg = null;
+                DestroyImmediate(hlg);
+            }
+
+            var vlg = contentRow.GetComponent<VerticalLayoutGroup>();
+            if (vlg == null)
+                vlg = contentRow.gameObject.AddComponent<VerticalLayoutGroup>();
+            if (vlg == null)
+                return;
+
+            _contentRowVlg = vlg;
+            _layoutCached = false;
+            vlg.spacing = 4f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            Transform previewCol = contentRow.Find("PreviewColumn");
+            Transform leftCol = contentRow.Find("LeftColumn");
+            if (previewCol != null)
+                previewCol.SetAsFirstSibling();
+            if (leftCol != null)
+                leftCol.SetAsLastSibling();
+
+            _sidebarHeroLayoutConfigured = true;
         }
 
         private void EnsureLayoutCached()
@@ -234,6 +299,7 @@ namespace TitanOrbit.UI
             {
                 _contentRowLe = contentRow.GetComponent<LayoutElement>();
                 _contentRowHlg = contentRow.GetComponent<HorizontalLayoutGroup>();
+                _contentRowVlg = contentRow.GetComponent<VerticalLayoutGroup>();
             }
 
             var leftCol = contentRow != null ? contentRow.Find("LeftColumn") : null;
@@ -271,6 +337,8 @@ namespace TitanOrbit.UI
                 return;
 
             EnsureLayoutCached();
+            if (_sidebarHeroLayout)
+                EnsureSidebarHeroLayout();
 
             float wScale = width / layoutWidth;
             float hScale = height / layoutHeight;
@@ -287,8 +355,15 @@ namespace TitanOrbit.UI
             }
 
             if (_contentRowLe != null)
-                _contentRowLe.minHeight = ScalePx(RefLayout.ContentMinHeight, hScale);
-            if (_contentRowHlg != null)
+            {
+                _contentRowLe.minHeight = _sidebarHeroLayout
+                    ? height * 0.92f
+                    : ScalePx(RefLayout.ContentMinHeight, hScale);
+            }
+
+            if (_sidebarHeroLayout && _contentRowVlg != null)
+                _contentRowVlg.spacing = RefLayout.ContentHSpacing * hScale;
+            else if (_contentRowHlg != null)
                 _contentRowHlg.spacing = RefLayout.ContentHSpacing * wScale;
 
             if (_leftVlg != null)
@@ -305,20 +380,30 @@ namespace TitanOrbit.UI
                 _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
 
             float previewColW = ScalePx(RefLayout.PreviewColWidth, wScale);
+            float previewW = ScalePx(RefLayout.PreviewSize, wScale);
+            float previewH = ScalePx(RefLayout.PreviewSize, hScale);
+            float previewMinH = ScalePx(RefLayout.PreviewMinHeight, hScale);
+
+            if (_sidebarHeroLayout)
+            {
+                previewColW = width - ScalePx(RefLayout.RootPadLeft + RefLayout.RootPadRight, wScale);
+                previewW = previewColW;
+                previewH = height * 0.58f;
+                previewMinH = previewH * 0.85f;
+            }
+
             if (_previewColLe != null)
             {
                 _previewColLe.preferredWidth = previewColW;
                 _previewColLe.minWidth = previewColW;
+                _previewColLe.flexibleWidth = _sidebarHeroLayout ? 1f : 0f;
             }
-
-            float previewW = ScalePx(RefLayout.PreviewSize, wScale);
-            float previewH = ScalePx(RefLayout.PreviewSize, hScale);
-            float previewMinH = ScalePx(RefLayout.PreviewMinHeight, hScale);
             if (_previewImgLe != null)
             {
                 _previewImgLe.preferredWidth = previewW;
                 _previewImgLe.preferredHeight = previewH;
                 _previewImgLe.minHeight = previewMinH;
+                _previewImgLe.flexibleWidth = _sidebarHeroLayout ? 1f : 0f;
             }
 
             float barH = ScalePx(RefLayout.PowerBarHeight, hScale);
@@ -661,6 +746,7 @@ namespace TitanOrbit.UI
         {
             if (previewImage == null) return;
             previewImage.sprite = sprite;
+            previewImage.preserveAspect = sprite != null;
             previewImage.color = sprite != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
         }
 

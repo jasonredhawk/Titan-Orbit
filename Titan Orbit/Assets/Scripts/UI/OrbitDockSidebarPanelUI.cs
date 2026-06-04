@@ -30,7 +30,7 @@ namespace TitanOrbit.UI
         public static readonly Color BankBalanceAccent = new Color(0.95f, 0.78f, 0.22f, 1f);
 
         private const float NavStripHeight = 44f;
-        private const float CurrentShipNodeHeight = 92f;
+        private const float CurrentShipNodeHeight = 232f;
         private const float BankBalanceBannerHeight = 72f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
@@ -280,7 +280,7 @@ namespace TitanOrbit.UI
                 }
             }
 
-            view.ApplySidebarPanelLayout(innerW, CurrentShipNodeHeight, trackW);
+            view.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
             view.ConfigureLayout(true);
             view.EnsureStableButtonRendering();
             view.SetPriceClickHandler(() =>

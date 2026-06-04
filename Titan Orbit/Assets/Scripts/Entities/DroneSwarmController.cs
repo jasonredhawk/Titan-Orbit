@@ -103,6 +103,8 @@ namespace TitanOrbit.Entities
         /// <summary>Child of ship; world rotation locked so drones do not inherit ship spin.</summary>
         private Transform droneWorldHub;
         private bool subscribed;
+        /// <summary>Drones hidden and non-combat while the owner is inside a gem-moon orbit shell.</summary>
+        private bool stowedForGemMoonOrbit;
 
         public Starship OwnerShip => ownerShip;
 
@@ -123,6 +125,7 @@ namespace TitanOrbit.Entities
             EnsureDroneWorldHub();
             SubscribeEquipmentList();
             RebuildVisualsFromEquipment();
+            RefreshGemMoonOrbitStowState();
         }
 
         public void OnStarshipNetworkDespawn()
@@ -248,6 +251,9 @@ namespace TitanOrbit.Entities
                 orbitInitialized = false
             });
 
+            if (stowedForGemMoonOrbit && instance != null)
+                instance.SetActive(false);
+
             if (instance != null)
             {
                 DroneSwarmPositioning.GetShipBasis(ownerShip, out Vector3 shipPos, out Vector3 forward, out Vector3 right);
@@ -260,7 +266,7 @@ namespace TitanOrbit.Entities
         /// <summary>World positions for colliderless bullet hit tests.</summary>
         public void EnumerateDroneHitTargets(System.Action<DroneBody, Vector3> visit)
         {
-            if (visit == null || ownerShip == null || ownerShip.IsDead) return;
+            if (visit == null || ownerShip == null || ownerShip.IsDead || stowedForGemMoonOrbit) return;
             for (int i = 0; i < visuals.Count; i++)
             {
                 SlotVisual v = visuals[i];
@@ -394,6 +400,25 @@ namespace TitanOrbit.Entities
             visuals.Clear();
         }
 
+        private void SetVisualsActive(bool active)
+        {
+            for (int i = 0; i < visuals.Count; i++)
+            {
+                if (visuals[i].instance != null)
+                    visuals[i].instance.SetActive(active);
+            }
+        }
+
+        private void RefreshGemMoonOrbitStowState()
+        {
+            bool shouldStow = ownerShip != null && ownerShip.IsInGemMoonOrbitStowingDrones();
+            if (shouldStow == stowedForGemMoonOrbit)
+                return;
+
+            stowedForGemMoonOrbit = shouldStow;
+            SetVisualsActive(!stowedForGemMoonOrbit);
+        }
+
         private GameObject GetPrefab(StoreItemType itemType)
         {
             switch (itemType)
@@ -410,6 +435,10 @@ namespace TitanOrbit.Entities
             if (ownerShip == null || ownerShip.IsDead)
                 return;
 
+            RefreshGemMoonOrbitStowState();
+            if (stowedForGemMoonOrbit)
+                return;
+
             var equipment = ownerShip.EquippedEquipment;
             if (equipment == null) return;
 
@@ -420,6 +449,10 @@ namespace TitanOrbit.Entities
         private void LateUpdate()
         {
             if (ownerShip == null || ownerShip.IsDead || visuals.Count == 0)
+                return;
+
+            RefreshGemMoonOrbitStowState();
+            if (stowedForGemMoonOrbit)
                 return;
 
             var equipment = ownerShip.EquippedEquipment;
@@ -504,8 +537,9 @@ namespace TitanOrbit.Entities
         private float GetDroneOrbitRadiusFromHull()
         {
             float mul = Mathf.Max(0.1f, droneOrbitRadiusMultiplier);
-            if (ownerShip == null) return (2.5f + droneMarginBeyondHull) * mul;
-            return (ownerShip.GetShipMoonDockRadiusXZ() + droneMarginBeyondHull) * mul;
+            float wingScale = GetDroneOrbitRadiusScale();
+            if (ownerShip == null) return (2.5f + droneMarginBeyondHull) * mul * wingScale;
+            return (ownerShip.GetShipMoonDockRadiusXZ() + droneMarginBeyondHull) * mul * wingScale;
         }
 
         private float GetDroneFormationSpacingScale()
@@ -513,11 +547,52 @@ namespace TitanOrbit.Entities
             return ownerShip != null ? ownerShip.LevelScaleFactor : 1f;
         }
 
-        private DroneSwarmPositioning.OrbitSlotTarget ComputeOrbitSlotTarget(SlotVisual v, IReadOnlyList<EquippedEquipmentEntry> equipment, double serverTime)
+        /// <summary>Push drones further aft when gem-capacity upgrades enlarge wing meshes.</summary>
+        private float GetDroneOrbitRadiusScale()
+        {
+            return ownerShip != null ? ownerShip.WingCapacityVisualScaleFactor : 1f;
+        }
+
+        public float GetOrbitRadiusForHullRadius(float hullRadiusXZ)
+        {
+            float mul = Mathf.Max(0.1f, droneOrbitRadiusMultiplier);
+            float wingScale = GetDroneOrbitRadiusScale();
+            return (hullRadiusXZ + droneMarginBeyondHull) * mul * wingScale;
+        }
+
+        /// <summary>Menu preview: same formation math as runtime, using a supplied hull radius (combat-scale visual).</summary>
+        public DroneSwarmPositioning.OrbitSlotTarget GetMenuPreviewOrbitSlot(int slotIndex, StoreItemType itemType, float hullRadiusXZ)
+        {
+            if (ownerShip == null)
+                return default;
+
+            IReadOnlyList<EquippedEquipmentEntry> equipment = ownerShip.EquippedEquipment;
+            var visual = new SlotVisual
+            {
+                slotIndex = slotIndex,
+                itemType = itemType,
+                buzzPhase = DroneSwarmPositioning.PerDroneBuzzPhase(ownerShip.NetworkObjectId, slotIndex, itemType)
+            };
+            return ComputeOrbitSlotTarget(visual, equipment, 0d, GetOrbitRadiusForHullRadius(hullRadiusXZ));
+        }
+
+        public static Vector3 OrbitSlotToCanonicalLocalOffset(DroneSwarmPositioning.OrbitSlotTarget slot)
+        {
+            float rad = slot.angleDeg * Mathf.Deg2Rad;
+            return Vector3.forward * (Mathf.Cos(rad) * slot.radius)
+                + Vector3.right * (Mathf.Sin(rad) * slot.radius)
+                + slot.buzz;
+        }
+
+        private DroneSwarmPositioning.OrbitSlotTarget ComputeOrbitSlotTarget(
+            SlotVisual v,
+            IReadOnlyList<EquippedEquipmentEntry> equipment,
+            double serverTime,
+            float orbitRadiusOverride = -1f)
         {
             int rearClusterCount = CountRearClusterDrones(equipment);
             int rearClusterOrdinal = RearClusterOrdinalAtSlot(equipment, v.slotIndex);
-            float orbitRadius = GetDroneOrbitRadiusFromHull();
+            float orbitRadius = orbitRadiusOverride > 0f ? orbitRadiusOverride : GetDroneOrbitRadiusFromHull();
             float formationScale = GetDroneFormationSpacingScale();
 
             switch (v.itemType)

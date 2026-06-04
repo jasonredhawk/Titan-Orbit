@@ -123,6 +123,8 @@ namespace TitanOrbit.Systems
         public readonly int[] EquipmentItemTypes;
         public readonly int[] EquipmentCharges;
         public readonly string[] EquipmentComponentIds;
+        /// <summary>6 floats per equipment slot: localPos xyz + localEuler xyz.</summary>
+        public readonly float[] EquipmentPlacement;
         public readonly int SmallRockets;
         public readonly int LargeRockets;
         public readonly int SmallMines;
@@ -152,6 +154,7 @@ namespace TitanOrbit.Systems
             int[] equipmentItemTypes,
             int[] equipmentCharges,
             string[] equipmentComponentIds,
+            float[] equipmentPlacement,
             int smallRockets,
             int largeRockets,
             int smallMines,
@@ -180,6 +183,7 @@ namespace TitanOrbit.Systems
             EquipmentItemTypes = equipmentItemTypes ?? System.Array.Empty<int>();
             EquipmentCharges = equipmentCharges ?? System.Array.Empty<int>();
             EquipmentComponentIds = equipmentComponentIds ?? System.Array.Empty<string>();
+            EquipmentPlacement = equipmentPlacement ?? System.Array.Empty<float>();
             SmallRockets = smallRockets;
             LargeRockets = largeRockets;
             SmallMines = smallMines;

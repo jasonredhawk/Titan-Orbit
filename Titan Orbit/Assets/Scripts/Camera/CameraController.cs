@@ -379,7 +379,8 @@ namespace TitanOrbit.Camera
                 return false;
             }
 
-            if (targetShip.IsMoveForwardPressedForGemMoonLanding)
+            if (targetShip.IsMoveForwardPressedForGemMoonLanding
+                || targetShip.IsShootPressedForGemMoonLanding)
             {
                 gemMoonOrbitSmoothingActive = false;
                 return false;

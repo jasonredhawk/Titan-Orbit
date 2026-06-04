@@ -1458,8 +1458,14 @@ namespace TitanOrbit.Entities
             if (shipTeam == TeamManager.Team.None) return false;
             if (shipTeam != planetTeam) return false;
 
-            // Players must release forward thrust (right mouse) and coast down before landing — same intent as planet orbit UI.
+            // Players must release forward thrust and stop firing before landing — defensive orbit allows move + shoot.
             if (ship.IsMoveForwardPressedForGemMoonLanding)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            if (ship.IsShootPressedForGemMoonLanding)
             {
                 ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
                 return false;

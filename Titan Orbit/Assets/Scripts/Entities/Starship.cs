@@ -46,22 +46,43 @@ namespace TitanOrbit.Entities
         public int itemType;
         public int remainingCharges;
         public Unity.Collections.FixedString64Bytes componentId;
+        public float localPosX;
+        public float localPosY;
+        public float localPosZ;
+        public float localRotX;
+        public float localRotY;
+        public float localRotZ;
 
         public StoreItemType ItemType => (StoreItemType)itemType;
         public bool IsShipComponent => ItemType == StoreItemType.ShipComponent;
         public string ComponentId => componentId.ToString();
+        public Vector3 LocalPosition => new Vector3(localPosX, localPosY, localPosZ);
+        public Vector3 LocalEulerAngles => new Vector3(localRotX, localRotY, localRotZ);
+        public Quaternion LocalRotation => Quaternion.Euler(localRotX, localRotY, localRotZ);
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref itemType);
             serializer.SerializeValue(ref remainingCharges);
             serializer.SerializeValue(ref componentId);
+            serializer.SerializeValue(ref localPosX);
+            serializer.SerializeValue(ref localPosY);
+            serializer.SerializeValue(ref localPosZ);
+            serializer.SerializeValue(ref localRotX);
+            serializer.SerializeValue(ref localRotY);
+            serializer.SerializeValue(ref localRotZ);
         }
 
         public bool Equals(EquippedEquipmentEntry other) =>
             itemType == other.itemType &&
             remainingCharges == other.remainingCharges &&
-            componentId.Equals(other.componentId);
+            componentId.Equals(other.componentId) &&
+            localPosX == other.localPosX &&
+            localPosY == other.localPosY &&
+            localPosZ == other.localPosZ &&
+            localRotX == other.localRotX &&
+            localRotY == other.localRotY &&
+            localRotZ == other.localRotZ;
     }
 
     /// <summary>
@@ -116,9 +137,11 @@ namespace TitanOrbit.Entities
         [SerializeField] private float gemMoonSnapVelocityAlign = 18f;
 
         [Header("Gem Moon Landing")]
-        [Tooltip("Scale at the outer dock ring (blend 0). Usually 1 = full size.")]
+        [Tooltip("Scale while inside a friendly gem-moon orbit shell (defensive stance). Landing eases from this toward surface scale.")]
         [SerializeField, Range(0.05f, 1.5f)]
-        private float gemMoonDockScaleAtOrbitEdge = 1f;
+        private float gemMoonDockScaleAtOrbitEdge = 1f / 3f;
+        [Tooltip("Seconds to ease ship visual scale when entering or leaving the friendly gem-moon orbit shell.")]
+        [SerializeField] private float gemMoonOrbitZoneScaleTransitionSeconds = 0.35f;
         [Tooltip("Scale when fully blended to the moon surface (blend 1). Set to 1 for no shrink. Overall ship size also uses Ship Visual Scale Multiplier on this component.")]
         [SerializeField, Range(0.05f, 1.5f), FormerlySerializedAs("gemMoonLandingVisualScale")]
         private float gemMoonDockScaleAtSurface = 0.24f;
@@ -238,6 +261,8 @@ namespace TitanOrbit.Entities
         private List<Transform> wingScaleTransforms = new List<Transform>();
         private List<Vector3> wingBaseScales = new List<Vector3>();
         private List<Vector3> wingBasePositions = new List<Vector3>();
+        /// <summary>Cached wing mesh scale from gem-capacity attribute upgrades (1 = authored size).</summary>
+        private float _wingCapacityVisualScaleFactor = 1f;
         private readonly List<WingTractorBeamSlot> wingTractorBeams = new List<WingTractorBeamSlot>();
         private List<Transform> weaponScaleTransforms = new List<Transform>();
         private List<Vector3> weaponBaseScales = new List<Vector3>();
@@ -251,6 +276,17 @@ namespace TitanOrbit.Entities
         private List<Transform> partScaleTransforms = new List<Transform>();
         private List<Vector3> partBaseScales = new List<Vector3>();
         private List<Vector3> partBasePositions = new List<Vector3>();
+        private bool _subscribedEquippedEquipmentVisuals;
+        private int _equipmentVisualRebuildSuppressDepth;
+
+        private readonly List<Vector3> _authoredWingPositions = new List<Vector3>();
+        private readonly List<Quaternion> _authoredWingRotations = new List<Quaternion>();
+        private readonly List<Vector3> _authoredWeaponPositions = new List<Vector3>();
+        private readonly List<Quaternion> _authoredWeaponRotations = new List<Quaternion>();
+        private readonly List<Vector3> _authoredCockpitPositions = new List<Vector3>();
+        private readonly List<Quaternion> _authoredCockpitRotations = new List<Quaternion>();
+        private readonly List<Vector3> _authoredPartPositions = new List<Vector3>();
+        private readonly List<Quaternion> _authoredPartRotations = new List<Quaternion>();
         private List<float> muzzleBaseSizes = new List<float>();
         private List<float> muzzleBaseSpeeds = new List<float>();
 
@@ -682,6 +718,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<bool> wantToExpelGems = new NetworkVariable<bool>(false);
         /// <summary>Owner-synced: right-click / move-forward held (server uses this for gem-moon landing gating).</summary>
         private NetworkVariable<bool> moveForwardPressedNet = new NetworkVariable<bool>(
+            false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Owner);
+        /// <summary>Owner-synced: shoot held (server uses this for gem-moon landing gating).</summary>
+        private NetworkVariable<bool> shootPressedNet = new NetworkVariable<bool>(
             false,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Owner);
@@ -1823,6 +1864,9 @@ namespace TitanOrbit.Entities
         /// <summary>Server: owner-synced thrust (right mouse). AI ships always read false.</summary>
         public bool IsMoveForwardPressedForGemMoonLanding =>
             !_isAIControlled && moveForwardPressedNet.Value;
+        /// <summary>Server: owner-synced fire held. AI ships always read false.</summary>
+        public bool IsShootPressedForGemMoonLanding =>
+            !_isAIControlled && shootPressedNet.Value;
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
 
@@ -1929,6 +1973,52 @@ namespace TitanOrbit.Entities
 
         /// <summary>Uniform visual scale from ship level (1.15^(level-1) by default). Multiplies prefab root in LateUpdate.</summary>
         public float LevelScaleFactor => Mathf.Pow(Mathf.Max(1f, shipLevelScalePerLevel), Mathf.Max(0, ShipLevel - 1));
+
+        /// <summary>Visual wing scale from gem-capacity attribute upgrades (1 = base wings). Drives drone orbit clearance.</summary>
+        public float WingCapacityVisualScaleFactor => _wingCapacityVisualScaleFactor;
+
+        /// <summary>
+        /// Prefab-root localScale for menu thumbnails: chassis base × ship level, excluding moon-dock shrink.
+        /// </summary>
+        public Vector3 GetMenuPreviewHullLocalScale()
+        {
+            Vector3 prefabScale = lastPrefabScale.sqrMagnitude > 0.001f ? lastPrefabScale : Vector3.one;
+            float levelVisual = Mathf.Max(0.001f, visualBaseScale) * LevelScaleFactor;
+            return Vector3.Scale(prefabScale, Vector3.one * levelVisual);
+        }
+
+        /// <summary>Refreshes attribute-upgrade component scales on the live hull before menu preview capture.</summary>
+        public void EnsureMenuPreviewVisualSourceUpToDate()
+        {
+            ApplyComponentAttributeScaling();
+        }
+
+        /// <summary>Copies per-component positions/rotations/scales (attribute upgrades, equipped parts) onto a preview clone.</summary>
+        public void SyncMenuPreviewComponentScales(Transform previewHullRoot)
+        {
+            Transform liveRoot = GetCardVisualRoot();
+            if (liveRoot == null || previewHullRoot == null)
+                return;
+
+            SyncMenuPreviewTransformChildren(liveRoot, previewHullRoot);
+        }
+
+        private static void SyncMenuPreviewTransformChildren(Transform source, Transform dest)
+        {
+            int count = source.childCount;
+            for (int i = 0; i < count; i++)
+            {
+                Transform srcChild = source.GetChild(i);
+                Transform destChild = i < dest.childCount ? dest.GetChild(i) : dest.Find(srcChild.name);
+                if (destChild == null)
+                    continue;
+
+                destChild.localPosition = srcChild.localPosition;
+                destChild.localRotation = srcChild.localRotation;
+                destChild.localScale = srcChild.localScale;
+                SyncMenuPreviewTransformChildren(srcChild, destChild);
+            }
+        }
 
         /// <summary>Cached so we don't call GetComponent every frame in Update.</summary>
         private bool _isAIControlled;
@@ -2072,6 +2162,7 @@ namespace TitanOrbit.Entities
         private void OnDestroy()
         {
             isDead.OnValueChanged -= HandleIsDeadChangedForBurnVfx;
+            UnsubscribeEquippedEquipmentVisuals();
             ClearClientBurnVfx();
             // Remove from global registry if present
             AllStarships.Remove(this);
@@ -2213,6 +2304,9 @@ namespace TitanOrbit.Entities
             SyncInputHandlerForTeamSelectionState();
 
             droneSwarm?.OnStarshipNetworkSpawn();
+
+            SubscribeEquippedEquipmentVisuals();
+            RebuildEquippedComponentVisuals();
 
             // Ship loadout grid is shown by OrbitStationUI when in orbit; no separate ShipCardGridUI needed.
         }
@@ -2367,6 +2461,7 @@ namespace TitanOrbit.Entities
                 CaptureEquipmentItemTypes(),
                 CaptureEquipmentCharges(),
                 CaptureEquipmentComponentIds(),
+                CaptureEquipmentPlacement(),
                 smallRocketsCount.Value,
                 largeRocketsCount.Value,
                 smallMinesCount.Value,
@@ -2616,6 +2711,8 @@ namespace TitanOrbit.Entities
             {
                 if (moveForwardPressedNet.Value)
                     moveForwardPressedNet.Value = false;
+                if (shootPressedNet.Value)
+                    shootPressedNet.Value = false;
                 return;
             }
 
@@ -2623,6 +2720,9 @@ namespace TitanOrbit.Entities
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
             if (moveForwardPressedNet.Value != movePressed)
                 moveForwardPressedNet.Value = movePressed;
+            bool shootPressed = inputHandler != null && inputHandler.ShootPressed;
+            if (shootPressedNet.Value != shootPressed)
+                shootPressedNet.Value = shootPressed;
 
             if (movePressed && !wasMovePressedLastFrame && gemMoonDocked.Value)
                 RequestUndockGemMoonServerRpc();
@@ -2838,6 +2938,7 @@ namespace TitanOrbit.Entities
             float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(rGem, rHealth), vis, 0.85f));
 
             wingScale = Mathf.Min(wingScale, 3.5f);
+            _wingCapacityVisualScaleFactor = wingScale;
             cockpitScale = Mathf.Min(cockpitScale, 3f);
             weaponScale = Mathf.Min(weaponScale, 3f);
             engineScale = Mathf.Min(engineScale, 2f);
@@ -3452,19 +3553,27 @@ namespace TitanOrbit.Entities
                 gemMoonUndockBlendElapsed += Time.fixedDeltaTime;
                 float u = Mathf.Clamp01(gemMoonUndockBlendElapsed / dockDuration);
                 float uEase = GemMoonDockEaseInOut(u);
-                gemMoonVisualScaleMultiplier = Mathf.Lerp(gemMoonUndockStartScale, 1f, uEase);
+                float undockTargetScale = IsInsideFriendlyGemMoonOrbitZone()
+                    ? gemMoonDockScaleAtOrbitEdge
+                    : 1f;
+                gemMoonVisualScaleMultiplier = Mathf.Lerp(gemMoonUndockStartScale, undockTargetScale, uEase);
                 if (u >= 0.999f)
                 {
-                    gemMoonVisualScaleMultiplier = 1f;
+                    gemMoonVisualScaleMultiplier = undockTargetScale;
                     gemMoonUndockBlendActive = false;
                 }
             }
             else
             {
+                float orbitZoneTargetScale = IsInsideFriendlyGemMoonOrbitZone()
+                    ? gemMoonDockScaleAtOrbitEdge
+                    : 1f;
+                float orbitZoneScaleStep = Mathf.Abs(1f - gemMoonDockScaleAtOrbitEdge)
+                    / Mathf.Max(0.05f, gemMoonOrbitZoneScaleTransitionSeconds);
                 gemMoonVisualScaleMultiplier = Mathf.MoveTowards(
                     gemMoonVisualScaleMultiplier,
-                    1f,
-                    Mathf.Max(0.001f, gemMoonLandingScaleLerpSpeed * Time.fixedDeltaTime)
+                    orbitZoneTargetScale,
+                    Mathf.Max(0.001f, orbitZoneScaleStep * Time.fixedDeltaTime)
                 );
             }
 
@@ -4469,7 +4578,7 @@ namespace TitanOrbit.Entities
             if (combat == null)
                 combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
             if (combat == null) return;
-            if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
+            if (ServerBlocksOrbitZoneWeaponFire(shipPosition)) return;
             if (gemMoonDocked.Value) return;
             if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
             EnsureBulletLastFireTime();
@@ -4556,7 +4665,7 @@ namespace TitanOrbit.Entities
                 combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
             if (combat == null) return;
             // Use owner-reported position for the orbit band: cached currentOrbitPlanet is not replicated and can block all shots on dedicated server.
-            if (ServerWorldPositionInsideAnyOrbitZone(shipPosition)) return;
+            if (ServerBlocksOrbitZoneWeaponFire(shipPosition)) return;
             if (gemMoonDocked.Value) return;
             if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
             EnsureBulletLastFireTime();
@@ -6718,6 +6827,18 @@ namespace TitanOrbit.Entities
             return false;
         }
 
+        /// <summary>True inside any gem-moon orbit shell — equipped drones are stowed until the ship exits.</summary>
+        public bool IsInGemMoonOrbitStowingDrones(float radiusMultiplier = 1f)
+        {
+            for (int i = 0; i < PlanetGemMoon.ActiveMoonCount; i++)
+            {
+                PlanetGemMoon moon = PlanetGemMoon.GetActiveMoonAt(i);
+                if (moon != null && moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier))
+                    return true;
+            }
+            return false;
+        }
+
         public void ServerSetGemMoonDocked(bool value, Planet planetContext = null)
         {
             if (!IsServer) return;
@@ -6900,11 +7021,18 @@ namespace TitanOrbit.Entities
             foreach (var planet in Planet.AllPlanets)
             {
                 if (planet == null) continue;
-                float dist = ToroidalMap.ToroidalDistance(shipWorldPos, planet.GetOrbitGameplayCenterWorld());
                 if (planet.IsWorldPositionInOrbitRing(shipWorldPos))
                     return true;
             }
             return false;
+        }
+
+        /// <summary>Planet orbit rings block weapons fire unless the ship is in a friendly gem-moon defensive shell.</summary>
+        private bool ServerBlocksOrbitZoneWeaponFire(Vector3 shipWorldPos)
+        {
+            if (!ServerWorldPositionInsideAnyOrbitZone(shipWorldPos))
+                return false;
+            return !IsInsideFriendlyGemMoonOrbitZone();
         }
 
         /// <summary>True if this ship is the local player's ship (not AI or other players).</summary>
@@ -7170,6 +7298,7 @@ namespace TitanOrbit.Entities
             ApplyChassisComponentStats(root, data, familyPrefix, previewStats, previewFamilyDef, matchedComponentIds, perComponentStatsList);
             ApplyHullIdentityColor();
             UpdateMoonDockProbeCollider();
+            RebuildEquippedComponentVisuals();
         }
 
         /// <summary>Derives family prefix from prefab name (e.g. CraizanStar3 -> CraizanStar). USC modular prefabs use FamilyName + number.</summary>
@@ -7626,6 +7755,41 @@ namespace TitanOrbit.Entities
 
             if (IsServer && IsSpawned)
                 ClampCarriedResourcesToCapacity();
+
+            SnapshotAuthoredChassisPlacements();
+        }
+
+        private void SnapshotAuthoredChassisPlacements()
+        {
+            CopyAuthoredPlacementList(wingScaleTransforms, wingBasePositions, _authoredWingPositions, _authoredWingRotations);
+            CopyAuthoredPlacementList(weaponScaleTransforms, weaponBasePositions, _authoredWeaponPositions, _authoredWeaponRotations);
+            CopyAuthoredPlacementList(cockpitScaleTransforms, cockpitBasePositions, _authoredCockpitPositions, _authoredCockpitRotations, skipHull: true);
+            CopyAuthoredPlacementList(partScaleTransforms, partBasePositions, _authoredPartPositions, _authoredPartRotations);
+        }
+
+        private static void CopyAuthoredPlacementList(
+            List<Transform> transforms,
+            List<Vector3> basePositions,
+            List<Vector3> authoredPositions,
+            List<Quaternion> authoredRotations,
+            bool skipHull = false)
+        {
+            authoredPositions.Clear();
+            authoredRotations.Clear();
+            if (transforms == null)
+                return;
+
+            for (int i = 0; i < transforms.Count; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null)
+                    continue;
+                if (skipHull && t.name == "Hull")
+                    continue;
+
+                authoredPositions.Add(i < basePositions?.Count ? basePositions[i] : t.localPosition);
+                authoredRotations.Add(t.localRotation);
+            }
         }
 
         /// <summary>
@@ -8090,17 +8254,540 @@ namespace TitanOrbit.Entities
             if (equippedEquipmentEntries == null) return false;
             if (equippedEquipment.Count >= EquipmentSlotCount) return false;
 
+            string trimmedId = componentId.Trim();
             var entry = new EquippedEquipmentEntry
             {
                 itemType = (int)StoreItemType.ShipComponent,
                 remainingCharges = 1,
-                componentId = new Unity.Collections.FixedString64Bytes(componentId.Trim())
+                componentId = new Unity.Collections.FixedString64Bytes(trimmedId)
             };
+            int slotIndex = equippedEquipment.Count;
+            equippedEquipment.Add(entry);
+            ApplyDefaultPlacementForNewComponent(slotIndex, trimmedId);
+            equippedEquipmentEntries.Add(equippedEquipment[slotIndex]);
+            RecalculateEquippedComponentStatSum();
+            ClampCarriedResourcesToCapacity();
+            return true;
+        }
+
+        /// <summary>Server-only: add a ship-family component with saved placement (map restore).</summary>
+        public bool AddComponentEquipmentFromServerWithPlacement(string componentId, Vector3 localPosition, Vector3 localEuler)
+        {
+            if (!IsServer || string.IsNullOrWhiteSpace(componentId)) return false;
+            if (HasComponentEquipped(componentId)) return false;
+            if (equippedEquipment == null) equippedEquipment = new List<EquippedEquipmentEntry>();
+            if (equippedEquipmentEntries == null) return false;
+            if (equippedEquipment.Count >= EquipmentSlotCount) return false;
+
+            string trimmedId = componentId.Trim();
+            var entry = new EquippedEquipmentEntry
+            {
+                itemType = (int)StoreItemType.ShipComponent,
+                remainingCharges = 1,
+                componentId = new Unity.Collections.FixedString64Bytes(trimmedId)
+            };
+            EquippedComponentPlacementUtility.ApplyPlacementToEntry(ref entry, localPosition, Quaternion.Euler(localEuler));
             equippedEquipment.Add(entry);
             equippedEquipmentEntries.Add(entry);
             RecalculateEquippedComponentStatSum();
             ClampCarriedResourcesToCapacity();
             return true;
+        }
+
+        [ServerRpc(RequireOwnership = true)]
+        public void UpdateEquippedComponentPlacementServerRpc(int slotIndex, float posX, float posY, float posZ, float rotX, float rotY, float rotZ)
+        {
+            if (!IsServer || equippedEquipment == null || equippedEquipmentEntries == null) return;
+            if (slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
+
+            EquippedEquipmentEntry entry = equippedEquipment[slotIndex];
+            if (!entry.IsShipComponent) return;
+
+            entry.localPosX = posX;
+            entry.localPosY = posY;
+            entry.localPosZ = posZ;
+            Vector3 snappedEuler = EquippedComponentPlacementUtility.SnapEulerAngles(new Vector3(rotX, rotY, rotZ));
+            entry.localRotX = snappedEuler.x;
+            entry.localRotY = snappedEuler.y;
+            entry.localRotZ = snappedEuler.z;
+            equippedEquipment[slotIndex] = entry;
+            if (slotIndex < equippedEquipmentEntries.Count)
+                equippedEquipmentEntries[slotIndex] = entry;
+
+            RebuildEquippedComponentVisuals();
+        }
+
+        private void SubscribeEquippedEquipmentVisuals()
+        {
+            if (_subscribedEquippedEquipmentVisuals || equippedEquipmentEntries == null)
+                return;
+            equippedEquipmentEntries.OnListChanged += OnEquippedEquipmentListChanged;
+            _subscribedEquippedEquipmentVisuals = true;
+        }
+
+        private void UnsubscribeEquippedEquipmentVisuals()
+        {
+            if (!_subscribedEquippedEquipmentVisuals || equippedEquipmentEntries == null)
+                return;
+            equippedEquipmentEntries.OnListChanged -= OnEquippedEquipmentListChanged;
+            _subscribedEquippedEquipmentVisuals = false;
+        }
+
+        private void OnEquippedEquipmentListChanged(NetworkListEvent<EquippedEquipmentEntry> changeEvent)
+        {
+            if (_equipmentVisualRebuildSuppressDepth > 0)
+                return;
+
+            ApplyLocalChassisLayoutsForEquippedComponents();
+            RebuildEquippedComponentVisuals();
+        }
+
+        public void RebuildEquippedComponentVisuals()
+        {
+            Transform root = GetCardVisualRoot();
+            if (root == null || lastVisualApplyPrefab == null)
+                return;
+
+            ShipFamilyDefinition family = currentVisualFamilyDefinition ?? ResolveFamilyForEquipment();
+            EquippedComponentVisualBuilder.RebuildAll(
+                this,
+                root,
+                lastVisualApplyPrefab,
+                family,
+                GetEquippedEquipmentForDisplay());
+        }
+
+        private void ApplyDefaultPlacementForNewComponent(int slotIndex, string componentId)
+        {
+            if (equippedEquipment == null || slotIndex < 0 || slotIndex >= equippedEquipment.Count)
+                return;
+
+            string partType = EquippedComponentPlacementUtility.ResolvePartType(componentId);
+            SynchronizeEquipmentLayoutForPartType(partType);
+        }
+
+        private void SynchronizeEquipmentLayoutForPartType(string partType)
+        {
+            if (string.IsNullOrEmpty(partType))
+                return;
+
+            _equipmentVisualRebuildSuppressDepth++;
+            try
+            {
+                ApplyEquipmentLayoutForPartType(partType, writeEquippedEntries: IsServer);
+            }
+            finally
+            {
+                _equipmentVisualRebuildSuppressDepth--;
+            }
+        }
+
+        private void ApplyLocalChassisLayoutsForEquippedComponents()
+        {
+            var partTypes = CollectEquippedComponentPartTypes();
+            for (int i = 0; i < partTypes.Count; i++)
+                ApplyEquipmentLayoutForPartType(partTypes[i], writeEquippedEntries: false);
+
+            RestoreAuthoredChassisForUnusedPartTypes(partTypes);
+        }
+
+        private List<string> CollectEquippedComponentPartTypes()
+        {
+            var types = new List<string>();
+            IReadOnlyList<EquippedEquipmentEntry> equipment = GetEquippedEquipmentForDisplay();
+            if (equipment == null)
+                return types;
+
+            for (int i = 0; i < equipment.Count; i++)
+            {
+                if (!equipment[i].IsShipComponent)
+                    continue;
+                string partType = EquippedComponentPlacementUtility.ResolvePartType(equipment[i].ComponentId);
+                if (string.IsNullOrEmpty(partType))
+                    continue;
+                bool exists = false;
+                for (int t = 0; t < types.Count; t++)
+                {
+                    if (string.Equals(types[t], partType, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                    types.Add(partType);
+            }
+            return types;
+        }
+
+        private void RestoreAuthoredChassisForUnusedPartTypes(List<string> activePartTypes)
+        {
+            RestoreAuthoredIfInactive("Wing", activePartTypes);
+            RestoreAuthoredIfInactive("Weapon", activePartTypes);
+            RestoreAuthoredIfInactive("Cockpit", activePartTypes);
+            RestoreAuthoredIfInactive("Part", activePartTypes);
+        }
+
+        private void RestoreAuthoredIfInactive(string partType, List<string> activePartTypes)
+        {
+            for (int i = 0; i < activePartTypes.Count; i++)
+            {
+                if (string.Equals(activePartTypes[i], partType, System.StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            RestoreAuthoredChassisPlacements(partType);
+        }
+
+        private void ApplyEquipmentLayoutForPartType(string partType, bool writeEquippedEntries)
+        {
+            if (equippedEquipment == null || string.IsNullOrEmpty(partType))
+                return;
+
+            int chassisCount = CountChassisOfPartType(partType);
+            var equippedSlots = new List<int>();
+            IReadOnlyList<EquippedEquipmentEntry> source = writeEquippedEntries
+                ? equippedEquipment
+                : GetEquippedEquipmentForDisplay();
+
+            if (source == null)
+                return;
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                if (!source[i].IsShipComponent)
+                    continue;
+                string t = EquippedComponentPlacementUtility.ResolvePartType(source[i].ComponentId);
+                if (string.Equals(t, partType, System.StringComparison.OrdinalIgnoreCase))
+                    equippedSlots.Add(i);
+            }
+
+            if (equippedSlots.Count == 0)
+            {
+                RestoreAuthoredChassisPlacements(partType);
+                return;
+            }
+
+            int totalCount = chassisCount + equippedSlots.Count;
+            if (totalCount <= 0)
+                return;
+
+            var reference = BuildPlacementReference(partType);
+            var positions = new List<Vector3>();
+            var rotations = new List<Quaternion>();
+            EquippedComponentPlacementUtility.ComputeAllPlacementsForType(
+                partType, totalCount, in reference, positions, rotations);
+
+            ApplyChassisPlacementsForPartType(partType, positions, rotations, chassisCount);
+
+            for (int e = 0; e < equippedSlots.Count; e++)
+            {
+                int slot = equippedSlots[e];
+                int placementIndex = chassisCount + e;
+                if (placementIndex >= positions.Count)
+                    continue;
+
+                if (!writeEquippedEntries)
+                    continue;
+
+                EquippedEquipmentEntry entry = equippedEquipment[slot];
+                EquippedComponentPlacementUtility.ApplyPlacementToEntry(
+                    ref entry,
+                    positions[placementIndex],
+                    rotations[placementIndex]);
+                equippedEquipment[slot] = entry;
+                if (equippedEquipmentEntries != null && slot < equippedEquipmentEntries.Count)
+                    equippedEquipmentEntries[slot] = entry;
+            }
+        }
+
+        private void RestoreAuthoredChassisPlacements(string partType)
+        {
+            if (string.Equals(partType, "Wing", System.StringComparison.OrdinalIgnoreCase))
+            {
+                RestoreAuthoredPlacementList(wingScaleTransforms, wingBasePositions, _authoredWingPositions, _authoredWingRotations);
+                return;
+            }
+
+            if (string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
+            {
+                RestoreAuthoredPlacementList(weaponScaleTransforms, weaponBasePositions, _authoredWeaponPositions, _authoredWeaponRotations);
+                return;
+            }
+
+            if (string.Equals(partType, "Cockpit", System.StringComparison.OrdinalIgnoreCase))
+            {
+                RestoreAuthoredCockpitPlacements();
+                return;
+            }
+
+            if (string.Equals(partType, "Part", System.StringComparison.OrdinalIgnoreCase))
+                RestoreAuthoredPlacementList(partScaleTransforms, partBasePositions, _authoredPartPositions, _authoredPartRotations);
+        }
+
+        private void RestoreAuthoredCockpitPlacements()
+        {
+            if (cockpitScaleTransforms == null || cockpitBasePositions == null)
+                return;
+
+            int authoredIndex = 0;
+            for (int i = 0; i < cockpitScaleTransforms.Count; i++)
+            {
+                Transform t = cockpitScaleTransforms[i];
+                if (t == null || t.name == "Hull")
+                    continue;
+                if (authoredIndex >= _authoredCockpitPositions.Count)
+                    break;
+
+                Vector3 pos = _authoredCockpitPositions[authoredIndex];
+                t.localPosition = pos;
+                if (i < cockpitBasePositions.Count)
+                    cockpitBasePositions[i] = pos;
+                if (authoredIndex < _authoredCockpitRotations.Count)
+                    t.localRotation = _authoredCockpitRotations[authoredIndex];
+                authoredIndex++;
+            }
+        }
+
+        private static void RestoreAuthoredPlacementList(
+            List<Transform> transforms,
+            List<Vector3> basePositions,
+            List<Vector3> authoredPositions,
+            List<Quaternion> authoredRotations)
+        {
+            if (transforms == null || basePositions == null || authoredPositions == null)
+                return;
+
+            int applyCount = Mathf.Min(transforms.Count, authoredPositions.Count);
+            for (int i = 0; i < applyCount; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null)
+                    continue;
+
+                Vector3 pos = authoredPositions[i];
+                t.localPosition = pos;
+                if (i < basePositions.Count)
+                    basePositions[i] = pos;
+                if (authoredRotations != null && i < authoredRotations.Count)
+                    t.localRotation = authoredRotations[i];
+            }
+        }
+
+        private EquippedComponentPlacementUtility.PlacementReference BuildPlacementReference(string partType)
+        {
+            var reference = new EquippedComponentPlacementUtility.PlacementReference
+            {
+                positions = new List<Vector3>(),
+                rotations = new List<Quaternion>()
+            };
+
+            CollectAuthoredReferenceForPartType(partType, "Wing", _authoredWingPositions, _authoredWingRotations, reference);
+            CollectAuthoredReferenceForPartType(partType, "Weapon", _authoredWeaponPositions, _authoredWeaponRotations, reference);
+            CollectAuthoredReferenceForPartType(partType, "Cockpit", _authoredCockpitPositions, _authoredCockpitRotations, reference);
+            CollectAuthoredReferenceForPartType(partType, "Part", _authoredPartPositions, _authoredPartRotations, reference);
+
+            if (reference.positions.Count == 0 &&
+                (string.Equals(partType, "Tail", System.StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(partType, "Fin", System.StringComparison.OrdinalIgnoreCase)))
+            {
+                CollectRearReferenceFromVisualRoot(reference);
+            }
+
+            if (reference.positions.Count == 0 && engineBasePositions != null && engineBasePositions.Count > 0)
+            {
+                for (int i = 0; i < engineBasePositions.Count; i++)
+                    reference.positions.Add(engineBasePositions[i]);
+            }
+
+            return reference;
+        }
+
+        private static void CollectAuthoredReferenceForPartType(
+            string targetPartType,
+            string listPartType,
+            List<Vector3> authoredPositions,
+            List<Quaternion> authoredRotations,
+            EquippedComponentPlacementUtility.PlacementReference reference)
+        {
+            if (!string.Equals(targetPartType, listPartType, System.StringComparison.OrdinalIgnoreCase))
+                return;
+            if (authoredPositions == null || authoredPositions.Count == 0)
+                return;
+
+            for (int i = 0; i < authoredPositions.Count; i++)
+            {
+                reference.positions.Add(authoredPositions[i]);
+                if (authoredRotations != null && i < authoredRotations.Count)
+                    reference.rotations.Add(authoredRotations[i]);
+                else
+                    reference.rotations.Add(Quaternion.identity);
+            }
+        }
+
+        private void CollectRearReferenceFromVisualRoot(EquippedComponentPlacementUtility.PlacementReference reference)
+        {
+            Transform root = GetCardVisualRoot();
+            if (root == null)
+                return;
+
+            float minZ = 0f;
+            bool found = false;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (child == null || child.name.StartsWith(EquippedComponentVisualBuilder.VisualNamePrefix))
+                    continue;
+
+                string lower = child.name.ToLowerInvariant();
+                if (lower.IndexOf("_tail", System.StringComparison.Ordinal) >= 0 ||
+                    lower.IndexOf("_fin", System.StringComparison.Ordinal) >= 0 ||
+                    lower.IndexOf("_engine", System.StringComparison.Ordinal) >= 0)
+                {
+                    if (!found || child.localPosition.z < minZ)
+                    {
+                        minZ = child.localPosition.z;
+                        found = true;
+                    }
+                    reference.positions.Add(child.localPosition);
+                    reference.rotations.Add(child.localRotation);
+                }
+            }
+
+            if (!found)
+                reference.positions.Add(new Vector3(0f, 0f, -EquippedComponentPlacementUtility.DefaultRearOffset));
+        }
+
+        private int CountChassisOfPartType(string partType)
+        {
+            if (string.Equals(partType, "Wing", System.StringComparison.OrdinalIgnoreCase))
+                return wingScaleTransforms != null ? wingScaleTransforms.Count : 0;
+            if (string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
+                return weaponScaleTransforms != null ? weaponScaleTransforms.Count : 0;
+            if (string.Equals(partType, "Cockpit", System.StringComparison.OrdinalIgnoreCase))
+            {
+                int count = 0;
+                if (cockpitScaleTransforms != null)
+                {
+                    for (int i = 0; i < cockpitScaleTransforms.Count; i++)
+                    {
+                        Transform t = cockpitScaleTransforms[i];
+                        if (t != null && t.name != "Hull")
+                            count++;
+                    }
+                }
+                return count;
+            }
+            if (string.Equals(partType, "Tail", System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partType, "Fin", System.StringComparison.OrdinalIgnoreCase))
+                return CountRearChassisParts(partType);
+            if (string.Equals(partType, "Part", System.StringComparison.OrdinalIgnoreCase))
+                return partScaleTransforms != null ? partScaleTransforms.Count : 0;
+            return 0;
+        }
+
+        private int CountRearChassisParts(string partType)
+        {
+            Transform root = GetCardVisualRoot();
+            if (root == null)
+                return 0;
+
+            int count = 0;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                if (child == null || child.name.StartsWith(EquippedComponentVisualBuilder.VisualNamePrefix))
+                    continue;
+
+                string lower = child.name.ToLowerInvariant();
+                bool isTail = lower.IndexOf("_tail", System.StringComparison.Ordinal) >= 0;
+                bool isFin = lower.IndexOf("_fin", System.StringComparison.Ordinal) >= 0;
+                if (string.Equals(partType, "Tail", System.StringComparison.OrdinalIgnoreCase) && isTail)
+                    count++;
+                else if (string.Equals(partType, "Fin", System.StringComparison.OrdinalIgnoreCase) && isFin)
+                    count++;
+            }
+            return count;
+        }
+
+        private void ApplyChassisPlacementsForPartType(
+            string partType,
+            List<Vector3> positions,
+            List<Quaternion> rotations,
+            int chassisCount)
+        {
+            if (positions == null || chassisCount <= 0)
+                return;
+
+            if (string.Equals(partType, "Wing", System.StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyChassisPlacementList(wingScaleTransforms, wingBasePositions, positions, rotations, chassisCount);
+                return;
+            }
+
+            if (string.Equals(partType, "Weapon", System.StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyChassisPlacementList(weaponScaleTransforms, weaponBasePositions, positions, rotations, chassisCount);
+                return;
+            }
+
+            if (string.Equals(partType, "Cockpit", System.StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyChassisCockpitPlacements(positions, rotations, chassisCount);
+                return;
+            }
+
+            if (string.Equals(partType, "Part", System.StringComparison.OrdinalIgnoreCase))
+                ApplyChassisPlacementList(partScaleTransforms, partBasePositions, positions, rotations, chassisCount);
+        }
+
+        private void ApplyChassisCockpitPlacements(List<Vector3> positions, List<Quaternion> rotations, int chassisCount)
+        {
+            if (cockpitScaleTransforms == null || cockpitBasePositions == null || positions == null)
+                return;
+
+            int cockpitIndex = 0;
+            int applyCount = Mathf.Min(chassisCount, positions.Count);
+            for (int i = 0; i < cockpitScaleTransforms.Count && cockpitIndex < applyCount; i++)
+            {
+                Transform t = cockpitScaleTransforms[i];
+                if (t == null || t.name == "Hull")
+                    continue;
+
+                Vector3 pos = positions[cockpitIndex];
+                t.localPosition = pos;
+                if (i < cockpitBasePositions.Count)
+                    cockpitBasePositions[i] = pos;
+                if (rotations != null && cockpitIndex < rotations.Count)
+                    t.localRotation = rotations[cockpitIndex];
+                cockpitIndex++;
+            }
+        }
+
+        private static void ApplyChassisPlacementList(
+            List<Transform> transforms,
+            List<Vector3> basePositions,
+            List<Vector3> positions,
+            List<Quaternion> rotations,
+            int count)
+        {
+            if (transforms == null || basePositions == null)
+                return;
+
+            int applyCount = Mathf.Min(count, transforms.Count, positions.Count);
+            for (int i = 0; i < applyCount; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null)
+                    continue;
+
+                Vector3 pos = positions[i];
+                t.localPosition = pos;
+                if (i < basePositions.Count)
+                    basePositions[i] = pos;
+
+                if (rotations != null && i < rotations.Count)
+                    t.localRotation = rotations[i];
+            }
         }
 
         public bool HasComponentEquipped(string componentId)
@@ -8153,9 +8840,29 @@ namespace TitanOrbit.Entities
             if (equippedEquipment == null) return;
             if (slotIndex < 0 || slotIndex >= equippedEquipment.Count) return;
 
-            equippedEquipment.RemoveAt(slotIndex);
-            if (equippedEquipmentEntries != null && slotIndex < equippedEquipmentEntries.Count)
-                equippedEquipmentEntries.RemoveAt(slotIndex);
+            EquippedEquipmentEntry removed = equippedEquipment[slotIndex];
+            bool removedComponent = removed.IsShipComponent;
+            string removedPartType = removedComponent
+                ? EquippedComponentPlacementUtility.ResolvePartType(removed.ComponentId)
+                : null;
+
+            _equipmentVisualRebuildSuppressDepth++;
+            try
+            {
+                equippedEquipment.RemoveAt(slotIndex);
+                if (equippedEquipmentEntries != null && slotIndex < equippedEquipmentEntries.Count)
+                    equippedEquipmentEntries.RemoveAt(slotIndex);
+
+                if (removedComponent && !string.IsNullOrEmpty(removedPartType))
+                    SynchronizeEquipmentLayoutForPartType(removedPartType);
+            }
+            finally
+            {
+                _equipmentVisualRebuildSuppressDepth--;
+            }
+
+            ApplyLocalChassisLayoutsForEquippedComponents();
+            RebuildEquippedComponentVisuals();
 
             RecalculateEquippedComponentStatSum();
             ClampCarriedResourcesToCapacity();
@@ -8274,6 +8981,49 @@ namespace TitanOrbit.Entities
             return ids;
         }
 
+        private float[] CaptureEquipmentPlacement()
+        {
+            if (equippedEquipment == null || equippedEquipment.Count == 0)
+                return System.Array.Empty<float>();
+            var placement = new float[equippedEquipment.Count * 6];
+            for (int i = 0; i < equippedEquipment.Count; i++)
+            {
+                EquippedEquipmentEntry entry = equippedEquipment[i];
+                int o = i * 6;
+                placement[o] = entry.localPosX;
+                placement[o + 1] = entry.localPosY;
+                placement[o + 2] = entry.localPosZ;
+                placement[o + 3] = entry.localRotX;
+                placement[o + 4] = entry.localRotY;
+                placement[o + 5] = entry.localRotZ;
+            }
+            return placement;
+        }
+
+        private static bool TryReadEquipmentPlacement(float[] placement, int slotIndex, out Vector3 localPosition, out Vector3 localEuler)
+        {
+            localPosition = Vector3.zero;
+            localEuler = Vector3.zero;
+            if (placement == null || slotIndex < 0)
+                return false;
+
+            int o = slotIndex * 6;
+            if (placement.Length < o + 6)
+                return false;
+
+            localPosition = new Vector3(placement[o], placement[o + 1], placement[o + 2]);
+            localEuler = new Vector3(placement[o + 3], placement[o + 4], placement[o + 5]);
+            return EquippedComponentPlacementUtility.HasPlacement(new EquippedEquipmentEntry
+            {
+                localPosX = placement[o],
+                localPosY = placement[o + 1],
+                localPosZ = placement[o + 2],
+                localRotX = placement[o + 3],
+                localRotY = placement[o + 4],
+                localRotZ = placement[o + 5]
+            });
+        }
+
         private void RestoreEquipmentFromSnapshot(in PlayerShipProgressSnapshot snapshot)
         {
             if (snapshot.EquipmentItemTypes != null && snapshot.EquipmentItemTypes.Length > 0)
@@ -8292,7 +9042,12 @@ namespace TitanOrbit.Entities
                             ? snapshot.EquipmentComponentIds[i]
                             : null;
                         if (!string.IsNullOrWhiteSpace(componentId))
-                            AddComponentEquipmentFromServer(componentId);
+                        {
+                            if (TryReadEquipmentPlacement(snapshot.EquipmentPlacement, i, out Vector3 pos, out Vector3 euler))
+                                AddComponentEquipmentFromServerWithPlacement(componentId, pos, euler);
+                            else
+                                AddComponentEquipmentFromServer(componentId);
+                        }
                     }
                     else
                     {
@@ -8302,6 +9057,7 @@ namespace TitanOrbit.Entities
                     }
                 }
                 RecalculateEquippedComponentStatSum();
+                RebuildEquippedComponentVisuals();
                 return;
             }
 
