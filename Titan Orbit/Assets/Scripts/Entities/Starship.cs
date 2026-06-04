@@ -225,7 +225,7 @@ namespace TitanOrbit.Entities
         [Header("Component Attribute Scaling")]
         [Tooltip("Per-ship fallback when GameManager.AttributeScaleExaggeration is 0. 0.2 = 20% per attribute unit. GameManager overrides when set.")]
         [SerializeField] private float attributeScaleExaggeration = 0.2f;
-        [Tooltip("How much component mesh scale reflects stat upgrades. 0.5 = 10% stat increase → 5% bigger component; 1 = 1:1. Set higher so upgrades are clearly visible.")]
+        [Tooltip("How much component mesh scale reflects attribute upgrade grid levels. 0.5 = 10% stat increase → 5% bigger component; 1 = 1:1. Does not include ship level (see Ship Level Scale Per Level).")]
         [SerializeField] [Range(0.2f, 1.5f)] private float componentScaleVisibility = 0.6f;
         [Tooltip("Extra influence of gem capacity upgrades on wing size. 1.67 with visibility 0.6 means +100% gem capacity can produce about 2x wing scale.")]
         [SerializeField] [Range(1f, 3f)] private float wingGemScaleBoost = 1.67f;
@@ -635,6 +635,8 @@ namespace TitanOrbit.Entities
         public Transform BankPivotTransform => visualRoot;
         [Tooltip("Multiplies the loaded ship prefab scale (chassis size in the world). Lower values make the whole ship look smaller; gem-moon dock scales apply on top of this.")]
         [SerializeField] private float shipVisualScaleMultiplier = 0.175f;
+        [Tooltip("Uniform scale multiplier per ship level above 1 (level 6 → 1.15^5 ≈ 2.01×). Sole source of level-based hull size; attribute upgrades add per-component scale on top.")]
+        [SerializeField] private float shipLevelScalePerLevel = 1.15f;
 
         [Header("Banking (fallback when shipData has no values)")]
         [SerializeField] private float defaultMaxBankAngle = 111f;
@@ -648,6 +650,8 @@ namespace TitanOrbit.Entities
         private int _lastAppliedChassisIndex = -2;
         /// <summary>Ship level used when <see cref="ApplyShipVisualFromPrefab"/> last ran; re-apply when level syncs after chassis (rescue restore).</summary>
         private int _lastAppliedShipLevel = -1;
+        /// <summary>Invalidate gem pickup radius cache when ship level changes.</summary>
+        private int _lastRadiusCacheShipLevel = -1;
         /// <summary>Server: true after default spawn or map-instance restore has run for this human player ship.</summary>
         private bool _playerSpawnSetupComplete;
 
@@ -1923,8 +1927,8 @@ namespace TitanOrbit.Entities
 
         private const float FIXED_Y_POSITION = 0f;
 
-        /// <summary>Ship level scale disabled. Was 1.2^(level-1); now always 1.</summary>
-        public float LevelScaleFactor => 1f;
+        /// <summary>Uniform visual scale from ship level (1.15^(level-1) by default). Multiplies prefab root in LateUpdate.</summary>
+        public float LevelScaleFactor => Mathf.Pow(Mathf.Max(1f, shipLevelScalePerLevel), Mathf.Max(0, ShipLevel - 1));
 
         /// <summary>Cached so we don't call GetComponent every frame in Update.</summary>
         private bool _isAIControlled;
@@ -2702,9 +2706,14 @@ namespace TitanOrbit.Entities
                 Transform root = GetPrefabTransform();
                 if (root != null)
                 {
-                    float v = visualBaseScale * Mathf.Max(0.001f, gemMoonVisualScaleMultiplier);
+                    float v = visualBaseScale * Mathf.Max(0.001f, gemMoonVisualScaleMultiplier) * LevelScaleFactor;
                     root.localScale = Vector3.Scale(lastPrefabScale, Vector3.one * v);
                 }
+            }
+            if (_lastRadiusCacheShipLevel != ShipLevel)
+            {
+                cachedGemFlythroughPickupRadius = -1f;
+                _lastRadiusCacheShipLevel = ShipLevel;
             }
             ApplyComponentAttributeScaling();
             UpdateMoonDockProbeCollider();
@@ -2775,26 +2784,17 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Scale ship components by effective stat vs chassis baseline (no cards, no ability upgrades). E.g. +40 gems on 40 base → ratio 2 → larger wings; ability levels scale the same way.</summary>
+        /// <summary>
+        /// Visual scale multiplier from orbit-station attribute upgrades only (not ship level, cards, or equipment stats).
+        /// Ship level uses <see cref="LevelScaleFactor"/> on the prefab root; this stacks on top per component type.
+        /// </summary>
+        private float AttributeUpgradeRatio(int attributeLevel) =>
+            1f + attributeLevel * ATTR_MULTIPLIER_PER_LEVEL;
+
+        /// <summary>Scale ship components by attribute upgrade grid only. Level size is handled by <see cref="LevelScaleFactor"/> on the prefab root.</summary>
         private void ApplyComponentAttributeScaling()
         {
             float vis = Mathf.Max(0.2f, componentScaleVisibility);
-
-            // Stat ratios: current (chassis + cards, then × ability multiplier) / raw chassis. Ratio = 1 with no cards and no ability upgrades.
-            float ratioHealth = MaxHealth / BaseMaxHealthNoAttr;
-            float ratioGem = GemCapacity / BaseGemCapacityNoAttr;
-            float ratioPeople = PeopleCapacity / BasePeopleCapacityNoAttr;
-            float ratioEnergyCap = EffectiveEnergyCapacity / BaseEnergyCapacityNoAttr;
-            float ratioEnergyRegen = EffectiveEnergyRegen / BaseEnergyRegenNoAttr;
-            float ratioTurn = EffectiveRotationSpeed / BaseRotationSpeedNoAttr;
-            float ratioRegen = EffectiveHealthRegen / BaseHealthRegenNoAttr;
-            float ratioMove = EffectiveMaxSpeed / BaseMaxSpeedNoAttr;
-            // Use EffectiveMass, not rb.mass: mass is applied in FixedUpdate; LateUpdate can run first and leave prefab mass, inflating accel ratio and engine scale for a frame.
-            float massForVisualAccel = Mathf.Max(0.5f, EffectiveMass);
-            float currentAccelForVisualScale = EffectiveEngineThrust / massForVisualAccel;
-            float ratioAcceleration = currentAccelForVisualScale / BaseHorizontalAccelerationNoAttr;
-            float ratioDamage = DamageMultiplier / BaseDamageMultiplierNoAttr;
-            float ratioBulletSpeed = SpeedMultiplier / BaseSpeedMultiplierNoAttr;
 
             float StatScale(float ratio, float visibility, float boost = 1f)
             {
@@ -2802,22 +2802,40 @@ namespace TitanOrbit.Entities
                 return Mathf.Max(1f, 1f + (clampedRatio - 1f) * visibility * Mathf.Max(0.01f, boost));
             }
 
-            // Blend average with strongest contributor so a large single upgrade still shows clearly.
-            float avgCockpit = (ratioHealth + ratioPeople + ratioEnergyCap + ratioEnergyRegen) * 0.25f;
-            float avgWeapon = (ratioDamage + ratioBulletSpeed) * 0.5f;
-            float avgPart = (ratioHealth + ratioRegen + ratioGem + ratioPeople) * 0.25f;
+            float rHealth = AttributeUpgradeRatio(attrMaxHealth.Value);
+            float rHealthRegen = AttributeUpgradeRatio(attrHealthRegen.Value);
+            float rEnergyCap = AttributeUpgradeRatio(attrEnergyCapacity.Value);
+            float rEnergyRegen = AttributeUpgradeRatio(attrEnergyRegen.Value);
+            float rPeople = AttributeUpgradeRatio(attrPeopleCapacity.Value);
+            float rGem = AttributeUpgradeRatio(attrGemCapacity.Value);
+            float rMove = AttributeUpgradeRatio(attrMovementSpeed.Value);
+            float rTurn = AttributeUpgradeRatio(attrRotationSpeed.Value);
+            float rDamage = AttributeUpgradeRatio(attrFirePower.Value);
+            float rBulletSpeed = AttributeUpgradeRatio(attrBulletSpeed.Value);
 
-            float cockpitScale = Mathf.Max(StatScale(avgCockpit, vis), StatScale(Mathf.Max(Mathf.Max(ratioHealth, ratioPeople), Mathf.Max(ratioEnergyCap, ratioEnergyRegen)), vis, 0.9f));
-            float wingScaleFromGem = StatScale(ratioGem, vis, wingGemScaleBoost);
-            float wingScaleFromTurn = StatScale(ratioTurn, vis, 0.9f);
-            float wingScale = Mathf.Max(wingScaleFromGem, StatScale((ratioGem + ratioTurn) * 0.5f, vis));
+            float avgBody = (rHealth + rPeople + rEnergyCap + rEnergyRegen) * 0.25f;
+            float avgWeapon = (rDamage + rBulletSpeed) * 0.5f;
+            float avgPart = (rHealth + rHealthRegen + rGem + rPeople) * 0.25f;
+
+            float cockpitScale = Mathf.Max(
+                StatScale(avgBody, vis),
+                StatScale(Mathf.Max(Mathf.Max(rHealth, rPeople), Mathf.Max(rEnergyCap, rEnergyRegen)), vis, 0.9f));
+
+            float wingScaleFromGem = StatScale(rGem, vis, wingGemScaleBoost);
+            float wingScaleFromTurn = StatScale(rTurn, vis, 0.9f);
+            float wingScale = Mathf.Max(wingScaleFromGem, StatScale((rGem + rTurn) * 0.5f, vis));
             wingScale = Mathf.Max(wingScale, wingScaleFromTurn);
-            float weaponScale = Mathf.Max(StatScale(avgWeapon, vis), StatScale(Mathf.Max(ratioDamage, ratioBulletSpeed), vis, 0.9f));
-            // Engines now represent acceleration; keep their visual scaling tied to acceleration changes, not top speed.
-            float engineScale = Mathf.Max(StatScale(ratioAcceleration, vis), StatScale((ratioAcceleration + ratioHealth) * 0.5f, vis, 0.85f));
-            // Thrusters are movement-speed related; blend move + turn so speed upgrades are visible on thrusters.
-            float thrusterScale = Mathf.Max(StatScale(ratioMove, vis, 0.9f), StatScale(ratioTurn, vis, 0.8f));
-            float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(ratioGem, ratioHealth), vis, 0.85f));
+
+            float weaponScale = Mathf.Max(
+                StatScale(avgWeapon, vis),
+                StatScale(Mathf.Max(rDamage, rBulletSpeed), vis, 0.9f));
+            // Weapon meshes often hold cannon energy; reflect health/energy upgrades when there is no Cockpit child.
+            if (HasWeaponComponentEnergy || cockpitScaleTransforms.Count == 0)
+                weaponScale = Mathf.Max(weaponScale, StatScale(avgBody, vis, 0.85f));
+
+            float engineScale = Mathf.Max(StatScale(rMove, vis), StatScale((rMove + rHealth) * 0.5f, vis, 0.85f));
+            float thrusterScale = Mathf.Max(StatScale(rMove, vis, 0.9f), StatScale(rTurn, vis, 0.8f));
+            float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(rGem, rHealth), vis, 0.85f));
 
             wingScale = Mathf.Min(wingScale, 3.5f);
             cockpitScale = Mathf.Min(cockpitScale, 3f);
@@ -2881,8 +2899,8 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // Muzzle particles: size follows weapon scale, speed follows bullet speed ratio
-            float muzzleSpeedScale = Mathf.Max(0.5f, ratioBulletSpeed);
+            // Muzzle particles: size follows weapon scale, speed follows bullet speed upgrades
+            float muzzleSpeedScale = Mathf.Max(0.5f, rBulletSpeed);
             for (int i = 0; i < bulletMuzzleParticleSystems.Count; i++)
             {
                 var ps = bulletMuzzleParticleSystems[i];
@@ -2895,9 +2913,9 @@ namespace TitanOrbit.Entities
                 }
             }
 
-            // Root Rigidbody has no "size" — physics uses the Starship BoxCollider. Child meshes scale here; match collider so hull/wings do not tunnel.
-            float maxAttrVisualScale = Mathf.Max(1f, wingScale, cockpitScale, weaponScale, engineScale, thrusterScale, partScale);
-            ApplyRootColliderForAttributeScale(maxAttrVisualScale);
+            // Root collider: level base × largest attribute-upgrade component scale (prefab root already carries level scale).
+            float maxUpgradeVisualScale = Mathf.Max(1f, wingScale, cockpitScale, weaponScale, engineScale, thrusterScale, partScale);
+            ApplyRootColliderForAttributeScale(LevelScaleFactor * maxUpgradeVisualScale);
         }
 
         private void TryCaptureRootBoxColliderBaseline()
@@ -2934,15 +2952,15 @@ namespace TitanOrbit.Entities
             moonDockProbeCollider.radius = worldRadius / parentScale;
         }
 
-        /// <summary>Scales the authored root BoxCollider so it stays aligned with attribute-driven component mesh scaling.</summary>
-        private void ApplyRootColliderForAttributeScale(float maxComponentScaleFactor)
+        /// <summary>Scales the authored root BoxCollider: level base × attribute-upgrade component scale.</summary>
+        private void ApplyRootColliderForAttributeScale(float combinedScaleFactor)
         {
             TryCaptureRootBoxColliderBaseline();
             if (!rootColliderBaselineCaptured) return;
             if (rootCollider == null) rootCollider = GetComponent<Collider>();
             if (!(rootCollider is BoxCollider box)) return;
 
-            float m = Mathf.Max(0.01f, maxComponentScaleFactor) * Mathf.Max(1f, rootColliderAttributeScalePadding);
+            float m = Mathf.Max(0.01f, combinedScaleFactor) * Mathf.Max(1f, rootColliderAttributeScalePadding);
             box.size = rootColliderBaselineSize * m;
             box.center = rootColliderBaselineCenter * m;
             cachedGemFlythroughPickupRadius = -1f;
@@ -6239,13 +6257,9 @@ namespace TitanOrbit.Entities
         public float GetShipMoonDockRadiusXZ()
         {
             float colliderR = GetShipCollisionRadiusXZ();
-            Transform visual = GetCardVisualRoot();
-            if (visual == null) return colliderR;
-            Vector3 ls = visual.lossyScale;
-            float hullScale = Mathf.Max(0.01f, Mathf.Max(ls.x, ls.y, ls.z));
-            // Attribute upgrades can inflate visuals 2–3×; uncapped probe radius enters the moon shell while still at orbit speed.
-            float dockProbeHullScale = Mathf.Min(hullScale, 1.65f);
-            return Mathf.Max(colliderR, colliderR * dockProbeHullScale);
+            float levelFactor = LevelScaleFactor;
+            // Collider already includes level × upgrade scale; add a small margin beyond it for moon triggers.
+            return Mathf.Max(colliderR, colliderR + 0.15f * levelFactor);
         }
 
         private float GetCollisionVfxShipMinRelativeSpeed()
@@ -7561,6 +7575,15 @@ namespace TitanOrbit.Entities
                 {
                     if (t != null) { partScaleTransforms.Add(t); partBaseScales.Add(t.localScale); partBasePositions.Add(t.localPosition); }
                 }
+            }
+
+            // Hull mesh (root body) scales with health/energy/people attribute upgrades like Cockpit parts.
+            Transform hull = root.Find("Hull");
+            if (hull != null)
+            {
+                cockpitScaleTransforms.Add(hull);
+                cockpitBaseScales.Add(hull.localScale);
+                cockpitBasePositions.Add(hull.localPosition);
             }
 
             // Engine VFX (movement) and Thruster VFX (rotation)

@@ -508,11 +508,17 @@ namespace TitanOrbit.Entities
             return (ownerShip.GetShipMoonDockRadiusXZ() + droneMarginBeyondHull) * mul;
         }
 
+        private float GetDroneFormationSpacingScale()
+        {
+            return ownerShip != null ? ownerShip.LevelScaleFactor : 1f;
+        }
+
         private DroneSwarmPositioning.OrbitSlotTarget ComputeOrbitSlotTarget(SlotVisual v, IReadOnlyList<EquippedEquipmentEntry> equipment, double serverTime)
         {
             int rearClusterCount = CountRearClusterDrones(equipment);
             int rearClusterOrdinal = RearClusterOrdinalAtSlot(equipment, v.slotIndex);
             float orbitRadius = GetDroneOrbitRadiusFromHull();
+            float formationScale = GetDroneFormationSpacingScale();
 
             switch (v.itemType)
             {
@@ -524,7 +530,7 @@ namespace TitanOrbit.Entities
                         rearClusterOrdinal,
                         rearClusterCount,
                         orbitRadius,
-                        rearLateralSpread,
+                        rearLateralSpread * formationScale,
                         rearBuzzAmplitude,
                         rearBuzzSpeed,
                         serverTime,
@@ -547,7 +553,7 @@ namespace TitanOrbit.Entities
                                 assign.indexOnEnemy,
                                 assign.countOnEnemy,
                                 orbitRadius,
-                                shieldFormationSpacing,
+                                shieldFormationSpacing * formationScale,
                                 rearBuzzAmplitude,
                                 rearBuzzSpeed,
                                 serverTime,
