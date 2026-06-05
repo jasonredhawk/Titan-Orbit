@@ -28,6 +28,7 @@ namespace TitanOrbit.Entities
         private static UnityEngine.Camera s_cachedGameplayCamera;
         private static readonly Dictionary<uint, ClientBulletTracer> s_bySequence = new Dictionary<uint, ClientBulletTracer>(256);
         private static readonly List<ClientBulletTracer> s_ownerPredicted = new List<ClientBulletTracer>(32);
+        private static readonly HashSet<uint> s_ownerImpactVfxAlreadyShown = new HashSet<uint>(64);
         private static readonly RaycastHit[] s_ownerPredictedHits = new RaycastHit[32];
 
         private Vector3 logicalSpawn;
@@ -44,6 +45,57 @@ namespace TitanOrbit.Entities
         private TeamManager.Team ownerTeam;
         private float damageForImpactPitch;
         private int visualPrefabBankIndex;
+        private float bulletVisualScaleMultiplier = 1f;
+        private uint assignedServerSequence;
+        private bool pendingImpactVfxShown;
+        private bool impactVfxShown;
+
+        /// <summary>
+        /// Called when the server spawn batch arrives so owner-predicted tracers can link to their
+        /// authoritative sequence (used to avoid duplicate impact VFX).
+        /// </summary>
+        public static void AssociateOwnerPredictedWithServerSequence(uint sequence)
+        {
+            if (sequence == 0) return;
+            for (int i = 0; i < s_ownerPredicted.Count; i++)
+            {
+                ClientBulletTracer tracer = s_ownerPredicted[i];
+                if (tracer == null || tracer.assignedServerSequence != 0)
+                    continue;
+
+                tracer.assignedServerSequence = sequence;
+                if (tracer.pendingImpactVfxShown || tracer.impactVfxShown)
+                    s_ownerImpactVfxAlreadyShown.Add(sequence);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// True when owner-predicted VFX already ran for this server bullet (skip duplicate RPC VFX).
+        /// </summary>
+        public static bool ShouldSkipOwnerServerImpactVfx(uint sequence)
+        {
+            if (sequence != 0 && s_ownerImpactVfxAlreadyShown.Remove(sequence))
+                return true;
+
+            for (int i = 0; i < s_ownerPredicted.Count; i++)
+            {
+                ClientBulletTracer tracer = s_ownerPredicted[i];
+                if (tracer != null && tracer.pendingImpactVfxShown)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void MarkOwnerImpactVfxShown()
+        {
+            impactVfxShown = true;
+            if (assignedServerSequence != 0)
+                s_ownerImpactVfxAlreadyShown.Add(assignedServerSequence);
+            else
+                pendingImpactVfxShown = true;
+        }
 
         /// <summary>NetworkObjectId of the local player's ship, or 0 when unavailable.</summary>
         public static ulong GetLocalPlayerOwnedShipNetworkObjectId()
@@ -83,6 +135,7 @@ namespace TitanOrbit.Entities
             tracer.ownerTeam = (TeamManager.Team)payload.OwnerTeamByte;
             tracer.damageForImpactPitch = Mathf.Max(0.01f, payload.Damage);
             tracer.visualPrefabBankIndex = payload.VisualPrefabBankIndex;
+            tracer.bulletVisualScaleMultiplier = Mathf.Max(0.1f, payload.ScaleMultiplier);
             s_ownerPredicted.Add(tracer);
 
             go.transform.position = spawn;
@@ -124,6 +177,7 @@ namespace TitanOrbit.Entities
             tracer.sequence = payload.Sequence;
             if (payload.Sequence != 0)
                 s_bySequence[payload.Sequence] = tracer;
+            tracer.bulletVisualScaleMultiplier = Mathf.Max(0.1f, payload.ScaleMultiplier);
 
             // Initial visual position uses elapsed since server spawn (one-way client latency),
             // so the bullet appears where the server has already simulated it to instead of at
@@ -334,61 +388,47 @@ namespace TitanOrbit.Entities
             Starship attachBurnToShip = null)
         {
             position.y = 0f;
+            position = BulletVisualFactory.ResolveClientImpactWorldPosition(position);
             float pitch = BulletHitResolver.GetImpactSoundPitch(damageForImpactPitch);
-            float impactScale = BulletVisualFactory.GetImpactScale(popupInfo.IsAsteroidHit);
+            float impactScale = BulletVisualFactory.GetImpactScale(bulletVisualScaleMultiplier, popupInfo.IsAsteroidHit);
 
-            if (Application.isMobilePlatform)
+            GameObject prefab = null;
+            if (visualPrefabBankIndex >= 0 && CombatSystem.Instance != null)
+                prefab = CombatSystem.Instance.GetImpactPrefabFromBank(visualPrefabBankIndex, ownerTeam);
+
+            float burnDur = 0f;
+            if (visualPrefabBankIndex >= 0
+                && BulletBankProfileUtility.TryGetProfile(visualPrefabBankIndex, out BulletBankProfile profile)
+                && profile != null
+                && profile.HasBurn)
             {
-                BulletVisualFactory.SpawnMobileImpact(position, ownerTeam, impactScale);
+                burnDur = profile.GetBurnDuration();
             }
-            else
+
+            Transform attach = null;
+            Vector3 localOff = Vector3.zero;
+            if (burnDur > 0.05f && attachBurnToShip != null)
             {
-                GameObject prefab = null;
-                if (visualPrefabBankIndex >= 0 && CombatSystem.Instance != null)
-                    prefab = CombatSystem.Instance.GetImpactPrefabFromBank(visualPrefabBankIndex, ownerTeam);
-                if (prefab != null)
+                attach = attachBurnToShip.GetBurnVfxAttachTransform();
+                if (attach != null)
                 {
-                    float burnDur = 0f;
-                    if (visualPrefabBankIndex >= 0
-                        && BulletBankProfileUtility.TryGetProfile(visualPrefabBankIndex, out BulletBankProfile profile)
-                        && profile != null
-                        && profile.HasBurn)
-                    {
-                        burnDur = profile.GetBurnDuration();
-                    }
-
-                    if (burnDur > 0.05f)
-                    {
-                        Transform attach = attachBurnToShip != null
-                            ? attachBurnToShip.GetBurnVfxAttachTransform()
-                            : null;
-                        Vector3 localOff = Vector3.zero;
-                        if (attach != null)
-                        {
-                            localOff = attach.InverseTransformPoint(position);
-                            localOff.y = 0f;
-                        }
-
-                        BulletVisualFactory.SpawnLoopingImpactAt(
-                            position,
-                            prefab,
-                            pitch,
-                            impactScale,
-                            burnDur,
-                            attach,
-                            localOff);
-                    }
-                    else
-                    {
-                        BulletVisualFactory.SpawnImpactAt(
-                            position,
-                            prefab,
-                            pitch,
-                            impactScale,
-                            BulletVisualFactory.DefaultImpactDuration);
-                    }
+                    localOff = attach.InverseTransformPoint(position);
+                    localOff.y = 0f;
                 }
             }
+
+            BulletVisualFactory.SpawnBulletImpactVfx(
+                position,
+                prefab,
+                ownerTeam,
+                pitch,
+                impactScale,
+                BulletVisualFactory.DefaultImpactDuration,
+                attach,
+                localOff,
+                burnDur);
+
+            MarkOwnerImpactVfxShown();
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);

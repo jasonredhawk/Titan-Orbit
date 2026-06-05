@@ -62,26 +62,47 @@ namespace TitanOrbit.Entities
 
                     if (!GemTractorBeamSettings.PassesBasicMagneticPullEligibility(ship, gem))
                         continue;
-                    if (!GemTractorBeamSettings.IsWithinCandidateMagneticPullRange(ship, gem))
+                    if (!GemTractorBeamSettings.HasTractorInvolvement(ship, gem))
+                        continue;
+                    if (!GemTractorBeamSettings.IsWithinMagneticPullRange(ship, gem))
                         continue;
 
                     long key = PairKey(ship.GetInstanceID(), gem.GetInstanceID());
                     active.Add(key);
 
-                    if (stateByPair.ContainsKey(key))
-                        continue;
+                    int lockingWingIndex = GemTractorBeamSettings.GetPrimaryAssignedWingIndex(ship, gem);
+                    if (lockingWingIndex < 0)
+                        lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
 
-                    int lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
-                    Vector3 origin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
-                    Vector3 gemPos = GetGemWorldPosition(gem);
-                    float dist = ToroidalMap.ToroidalDistance(origin, gemPos);
-                    float extendDuration = ComputeExtendDuration(dist);
+                    if (stateByPair.TryGetValue(key, out DeployState existing))
+                    {
+                        if (existing.lockingWingIndex != lockingWingIndex)
+                        {
+                            Vector3 origin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
+                            Vector3 gemPos = GetGemWorldPosition(gem);
+                            float dist = ToroidalMap.ToroidalDistance(origin, gemPos);
+                            stateByPair[key] = new DeployState
+                            {
+                                lockStartTime = now,
+                                lockDistance = dist,
+                                extendDuration = ComputeExtendDuration(dist),
+                                lockingWingIndex = lockingWingIndex
+                            };
+                        }
+
+                        continue;
+                    }
+
+                    Vector3 beamOrigin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
+                    Vector3 gemWorldPos = GetGemWorldPosition(gem);
+                    float lockDist = ToroidalMap.ToroidalDistance(beamOrigin, gemWorldPos);
+                    float extendDur = ComputeExtendDuration(lockDist);
 
                     stateByPair[key] = new DeployState
                     {
                         lockStartTime = now,
-                        lockDistance = dist,
-                        extendDuration = extendDuration,
+                        lockDistance = lockDist,
+                        extendDuration = extendDur,
                         lockingWingIndex = lockingWingIndex
                     };
                 }
@@ -115,10 +136,14 @@ namespace TitanOrbit.Entities
                 return;
             if (!GemTractorBeamSettings.PassesBasicMagneticPullEligibility(ship, gem))
                 return;
-            if (!GemTractorBeamSettings.IsWithinCandidateMagneticPullRange(ship, gem))
+            if (!GemTractorBeamSettings.HasTractorInvolvement(ship, gem))
+                return;
+            if (!GemTractorBeamSettings.IsWithinMagneticPullRange(ship, gem))
                 return;
 
-            int lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
+            int lockingWingIndex = GemTractorBeamSettings.GetPrimaryAssignedWingIndex(ship, gem);
+            if (lockingWingIndex < 0)
+                lockingWingIndex = GemTractorBeamSettings.GetClosestInRangeWingIndex(ship, gem);
             Vector3 origin = GemTractorBeamSettings.GetWingBeamOrigin(ship, lockingWingIndex);
             Vector3 gemPos = GetGemWorldPosition(gem);
             float dist = ToroidalMap.ToroidalDistance(origin, gemPos);

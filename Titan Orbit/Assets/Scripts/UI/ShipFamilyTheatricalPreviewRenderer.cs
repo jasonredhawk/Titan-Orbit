@@ -185,12 +185,16 @@ namespace TitanOrbit.UI
                 DroneSwarmPositioning.OrbitSlotTarget target =
                     swarm.GetMenuPreviewOrbitSlot(slot, entry.ItemType, orbitHullRadius);
                 Vector3 localPos = DroneSwarmController.OrbitSlotToCanonicalLocalOffset(target);
+                float visualScale = entry.ItemType == StoreItemType.ShieldDrone
+                    ? swarm.GetShieldDroneVisualScale()
+                    : 1f;
                 SpawnPreviewDrone(
                     prefab,
                     subject,
                     localPos,
                     Quaternion.LookRotation(Vector3.forward, Vector3.up),
-                    entry.ItemType + "_Slot" + slot);
+                    entry.ItemType + "_Slot" + slot,
+                    visualScale);
             }
         }
 
@@ -199,12 +203,14 @@ namespace TitanOrbit.UI
             Transform subject,
             Vector3 localPosition,
             Quaternion localRotation,
-            string nameHint)
+            string nameHint,
+            float uniformScale = 1f)
         {
             GameObject drone = Object.Instantiate(prefab, subject, false);
             drone.name = "PreviewDrone_" + nameHint;
             drone.transform.localPosition = localPosition;
             drone.transform.localRotation = localRotation;
+            drone.transform.localScale = drone.transform.localScale * Mathf.Max(0.001f, uniformScale);
             StripToRenderersOnly(drone.transform);
             DisableParticleRenderers(drone.transform);
         }

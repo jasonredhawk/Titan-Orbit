@@ -18,7 +18,7 @@ namespace TitanOrbit.Entities
             DroneBody bestDrone = null;
             Vector3 bestImpact = to;
             float bestDistSq = float.MaxValue;
-            float hitRadius = DroneSwarmPositioning.DroneHitSphereRadius + Mathf.Max(0.01f, bulletRadius);
+            float bulletPad = Mathf.Max(0.01f, bulletRadius);
 
             foreach (var ship in Starship.AllStarships)
             {
@@ -28,6 +28,7 @@ namespace TitanOrbit.Entities
                 swarm.EnumerateDroneHitTargets((body, worldPos) =>
                 {
                     if (body == null || body.IsDestroyed || !body.IsEnemyTeam(ownerTeam)) return;
+                    float hitRadius = body.HitSphereRadius + bulletPad;
                     if (!DroneSwarmPositioning.SegmentIntersectsSphere(from, to, worldPos, hitRadius, out Vector3 closest))
                         return;
                     float dSq = (closest - from).sqrMagnitude;
@@ -47,12 +48,14 @@ namespace TitanOrbit.Entities
                 if (!loot.IsEnemyTeam(ownerTeam)) continue;
                 Vector3 pos = loot.transform.position;
                 pos.y = DroneSwarmLogic.FixedY;
+                DroneBody body = loot.GetComponent<DroneBody>();
+                if (body == null) continue;
+                float hitRadius = body.HitSphereRadius + bulletPad;
                 if (!DroneSwarmPositioning.SegmentIntersectsSphere(from, to, pos, hitRadius, out Vector3 closest))
                     continue;
                 float dSq = (closest - from).sqrMagnitude;
                 if (dSq < bestDistSq)
                 {
-                    DroneBody body = loot.GetComponent<DroneBody>();
                     if (body != null)
                     {
                         bestDistSq = dSq;
@@ -76,7 +79,7 @@ namespace TitanOrbit.Entities
         {
             DroneBody bestDrone = null;
             Vector3 bestImpact = position;
-            float hitRadius = DroneSwarmPositioning.DroneHitSphereRadius + Mathf.Max(0.01f, bulletRadius);
+            float bulletPad = Mathf.Max(0.01f, bulletRadius);
             float bestDistSq = float.MaxValue;
 
             foreach (var ship in Starship.AllStarships)
@@ -87,6 +90,7 @@ namespace TitanOrbit.Entities
                 swarm.EnumerateDroneHitTargets((body, worldPos) =>
                 {
                     if (body == null || body.IsDestroyed || !body.IsEnemyTeam(ownerTeam)) return;
+                    float hitRadius = body.HitSphereRadius + bulletPad;
                     float dSq = ToroidalMap.WrapPosition(worldPos - position).sqrMagnitude;
                     if (dSq > hitRadius * hitRadius || dSq >= bestDistSq) return;
                     bestDistSq = dSq;
@@ -102,9 +106,11 @@ namespace TitanOrbit.Entities
                 if (!loot.IsEnemyTeam(ownerTeam)) continue;
                 Vector3 pos = loot.transform.position;
                 pos.y = DroneSwarmLogic.FixedY;
+                DroneBody body = loot.GetComponent<DroneBody>();
+                if (body == null) continue;
+                float hitRadius = body.HitSphereRadius + bulletPad;
                 float dSq = ToroidalMap.WrapPosition(pos - position).sqrMagnitude;
                 if (dSq > hitRadius * hitRadius || dSq >= bestDistSq) continue;
-                DroneBody body = loot.GetComponent<DroneBody>();
                 if (body != null)
                 {
                     bestDistSq = dSq;

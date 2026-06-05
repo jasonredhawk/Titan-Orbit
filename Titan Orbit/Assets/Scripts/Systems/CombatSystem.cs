@@ -336,13 +336,20 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>Client-side muzzle flash matching ship weapon fire (Sci-Fi Arsenal or mobile fallback).</summary>
-        public void PlayWeaponMuzzleVfxAt(Vector3 position, Vector3 direction, int bankIndex, TeamManager.Team team, float pitch = 1f)
+        public void PlayWeaponMuzzleVfxAt(
+            Vector3 position,
+            Vector3 direction,
+            int bankIndex,
+            TeamManager.Team team,
+            float pitch = 1f,
+            float visualScaleMultiplier = 1f)
         {
             Vector3 dir = direction;
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
             else dir.Normalize();
             position.y = 0f;
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(Mathf.Max(0.1f, visualScaleMultiplier));
 
             if (!Application.isMobilePlatform)
             {
@@ -353,6 +360,7 @@ namespace TitanOrbit.Systems
                     GameObject muzzle = Instantiate(sciFi.muzzleParticle, position, Quaternion.LookRotation(-dir));
                     if (muzzle != null)
                     {
+                        VfxUrpCompat.ApplyImpactVisualScale(muzzle, visualScale);
                         VfxUrpCompat.PrepareVfxInstance(muzzle);
                         SetMuzzleAudioPitchInHierarchy(muzzle, pitch);
                         Destroy(muzzle, 1.5f);
@@ -364,7 +372,7 @@ namespace TitanOrbit.Systems
             Color flashColor = TeamManager.Instance != null
                 ? TeamManager.GetTeamColor(team)
                 : new Color(1f, 0.88f, 0.45f);
-            VfxUrpCompat.SpawnMobileMuzzleFlash(position, dir, flashColor);
+            VfxUrpCompat.SpawnMobileMuzzleFlash(position, dir, flashColor, visualScale);
         }
 
         private static void SetMuzzleAudioPitchInHierarchy(GameObject root, float pitch)

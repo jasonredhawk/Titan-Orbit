@@ -38,5 +38,10 @@ namespace TitanOrbit.Entities
                 return loot.IsEnemyTeam(team);
             return swarm != null && swarm.IsEnemyTeam(team);
         }
+
+        public float HitSphereRadius =>
+            swarm != null
+                ? swarm.GetHitSphereRadiusForSlot(equipmentSlotIndex)
+                : DroneSwarmPositioning.DroneHitSphereRadius;
     }
 }

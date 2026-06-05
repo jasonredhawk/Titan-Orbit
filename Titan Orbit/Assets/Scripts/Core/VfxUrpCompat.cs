@@ -68,8 +68,8 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Uniformly scales impact VFX. Sci-Fi Arsenal / AllIn1 prefabs often use world-space particles
-        /// and ignore <see cref="Transform.localScale"/> alone — adjust particle modules directly.
+        /// Uniformly scales impact VFX. Hierarchy-mode particles follow <see cref="Transform.localScale"/>.
+        /// World/local-space Sci-Fi Arsenal / AllIn1 prefabs ignore transform scale — scale their modules instead.
         /// </summary>
         public static void ApplyImpactVisualScale(GameObject root, float scale)
         {
@@ -84,7 +84,10 @@ namespace TitanOrbit.Core
                 if (ps == null) continue;
 
                 var main = ps.main;
-                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                if (main.scalingMode == ParticleSystemScalingMode.Hierarchy)
+                    continue;
+
+                // Local / shape / world scaling: prefab size ignores root transform alone.
                 main.startSizeMultiplier *= s;
                 main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
                 main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
@@ -111,13 +114,14 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>Weapon fire: compact cone burst using URP Particles Unlit only (mobile; no AllIn1 prefabs).</summary>
-        public static void SpawnMobileMuzzleFlash(Vector3 position, Vector3 forwardHorizontal, Color color)
+        public static void SpawnMobileMuzzleFlash(Vector3 position, Vector3 forwardHorizontal, Color color, float scale = 1f)
         {
             forwardHorizontal.y = 0f;
             if (forwardHorizontal.sqrMagnitude < 0.0001f)
                 forwardHorizontal = Vector3.forward;
             forwardHorizontal.Normalize();
             Quaternion rot = Quaternion.LookRotation(forwardHorizontal);
+            scale = Mathf.Max(0.15f, scale);
 
             GameObject go = new GameObject("MobileMuzzleFlash");
             go.transform.SetPositionAndRotation(position, rot);
@@ -127,8 +131,8 @@ namespace TitanOrbit.Core
             main.loop = false;
             main.duration = 0.14f;
             main.startLifetime = 0.07f;
-            main.startSpeed = new ParticleSystem.MinMaxCurve(2.5f, 6f);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.11f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(2.5f * scale, 6f * scale);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.035f * scale, 0.11f * scale);
             main.startColor = new ParticleSystem.MinMaxGradient(color, color * 0.65f);
             main.maxParticles = 40;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
@@ -140,7 +144,7 @@ namespace TitanOrbit.Core
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Cone;
             shape.angle = 26f;
-            shape.radius = 0.02f;
+            shape.radius = 0.02f * scale;
 
             var col = ps.colorOverLifetime;
             col.enabled = true;

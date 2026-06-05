@@ -103,23 +103,23 @@ namespace TitanOrbit.Camera
         [Tooltip("Planar speed (m/s) at or below this counts as not moving while inputs are released.")]
         [Min(0f)]
         [SerializeField] private float theatricalIdleMaxPlanarSpeed = 0.35f;
-        [Tooltip("Seconds to gently travel one full spline pass (3× slower epic pacing).")]
+        [Tooltip("Seconds to gently travel one full spline pass (6× slower epic pacing).")]
         [Min(8f)]
-        [SerializeField] private float theatricalPathDurationMinSeconds = 360f;
+        [SerializeField] private float theatricalPathDurationMinSeconds = 720f;
         [Min(8f)]
-        [SerializeField] private float theatricalPathDurationMaxSeconds = 540f;
+        [SerializeField] private float theatricalPathDurationMaxSeconds = 1080f;
         [Tooltip("Seconds to blend from gameplay top-down into the theatrical orbit pose.")]
         [Min(0f)]
-        [SerializeField] private float theatricalEnterBlendDuration = 1.75f;
+        [SerializeField] private float theatricalEnterBlendDuration = 3.5f;
         [Tooltip("Look-at focus smoothing while orbiting (higher = slower, more cinematic).")]
         [Min(0.05f)]
-        [SerializeField] private float theatricalLookSmoothTime = 0.9f;
+        [SerializeField] private float theatricalLookSmoothTime = 1.8f;
         [Tooltip("Rotation smoothing while orbiting (higher = slower).")]
         [Min(0.05f)]
-        [SerializeField] private float theatricalRotationSmoothTime = 0.65f;
+        [SerializeField] private float theatricalRotationSmoothTime = 1.3f;
         [Tooltip("FOV zoom smoothing while orbiting (higher = slower).")]
         [Min(0.05f)]
-        [SerializeField] private float theatricalFovSmoothTime = 2f;
+        [SerializeField] private float theatricalFovSmoothTime = 4f;
         [Tooltip("Random points on each closed spline loop (plus the live camera anchor).")]
         [Range(4, 14)]
         [SerializeField] private int theatricalWaypointCount = 8;
@@ -190,6 +190,8 @@ namespace TitanOrbit.Camera
         private float theatricalBlendStartFov;
         private Quaternion theatricalSmoothedRotation = Quaternion.identity;
         private bool hasTheatricalSmoothedRotation;
+        private bool wasTargetShipDead;
+        private CameraClearFlags gameplayClearFlags = CameraClearFlags.SolidColor;
 
         /// <summary>True while the cinematic orbit is active.</summary>
         public bool IsTheatricalCameraEngaged => theatricalModeActive;
@@ -226,6 +228,7 @@ namespace TitanOrbit.Camera
 
             cam.orthographic = false;
             cam.fieldOfView = gameplayFieldOfView;
+            gameplayClearFlags = cam.clearFlags;
 
             if (spaceBackground == null)
             {
@@ -434,18 +437,34 @@ namespace TitanOrbit.Camera
 
         private void UpdateTheatricalSpaceBackgroundVisibility()
         {
-            if (spaceBackground == null)
-                return;
-
             if (theatricalModeActive)
-                spaceBackground.SetTemporarilyHidden(true);
-            else if (!galacticZoomActive)
+            {
+                // Perspective orbit cannot use the flat scrolling quad; show RenderSettings skybox instead.
+                bool useSkybox = RenderSettings.skybox != null;
+                if (spaceBackground != null)
+                    spaceBackground.SetTemporarilyHidden(useSkybox);
+
+                if (cam != null)
+                    cam.clearFlags = useSkybox ? CameraClearFlags.Skybox : gameplayClearFlags;
+                return;
+            }
+
+            if (spaceBackground != null && !galacticZoomActive)
                 spaceBackground.SetTemporarilyHidden(false);
+
+            if (cam != null)
+                cam.clearFlags = gameplayClearFlags;
         }
 
         private bool IsPlayerActivelyMovingOrFiring()
         {
             if (targetShip == null)
+                return false;
+
+            if (targetShip.IsDead)
+                return false;
+
+            if (targetShip.IsInteractingWithOrbitStationMenu)
                 return false;
 
             if (targetShip.IsMoveForwardPressedForGemMoonLanding
@@ -457,6 +476,27 @@ namespace TitanOrbit.Camera
 
         private void UpdateTheatricalModeState(bool playerActivelyPlaying)
         {
+            bool targetDead = targetShip != null && targetShip.IsDead;
+            if (wasTargetShipDead && !targetDead && theatricalModeActive)
+                EndTheatricalMode();
+            wasTargetShipDead = targetDead;
+
+            if (targetDead)
+            {
+                if (galacticZoomActive)
+                {
+                    galacticZoomActive = false;
+                    galacticZoomReturning = false;
+                    if (spaceBackground != null)
+                        spaceBackground.SetTemporarilyHidden(false);
+                }
+
+                theatricalIdleTimer = 0f;
+                if (theatricalModeEnabled && !theatricalModeActive)
+                    BeginTheatricalMode();
+                return;
+            }
+
             if (!theatricalModeEnabled || galacticZoomActive)
             {
                 theatricalIdleTimer = 0f;
@@ -801,6 +841,7 @@ namespace TitanOrbit.Camera
             hasTheatricalSmoothedRotation = false;
             theatricalEnterBlendElapsed = 0f;
             theatricalCapturingEnterBlendStart = false;
+            wasTargetShipDead = false;
 
             int level = targetShip != null ? targetShip.ShipLevel : minShipLevelForZoom;
             float levelScale = GetZoomScaleForShipLevel(level);

@@ -1,5 +1,7 @@
 using UnityEngine;
+using Unity.Netcode;
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 
 namespace TitanOrbit.Entities
@@ -18,12 +20,113 @@ namespace TitanOrbit.Entities
         public const float DefaultTailWidth = 0.12f;
         public const float DefaultTailFade = 0.7f;
         public const float DefaultImpactScale = 0.5f;
-        /// <summary>Multiplier applied to bullet impact VFX scale when hitting asteroids.</summary>
+        /// <summary>Legacy asteroid-only shrink; impacts now follow <see cref="GetBulletVisualScale"/> like bullets.</summary>
         public const float AsteroidImpactScaleFactor = 0.25f;
         public const float DefaultImpactDuration = 3f;
 
-        public static float GetImpactScale(bool isAsteroidHit) =>
-            DefaultImpactScale * (isAsteroidHit ? AsteroidImpactScaleFactor : 1f);
+        /// <summary>Same transform scale applied to client bullet visuals (<see cref="BuildVisual"/>).</summary>
+        public static float GetBulletVisualScale(float scaleMultiplier)
+        {
+            float globalScale = CombatSystem.Instance != null ? CombatSystem.Instance.BulletVisualScaleMultiplier : 1f;
+            return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
+        }
+
+        /// <summary>Impact burst scale — matches bullet/muzzle visual size for this shot.</summary>
+        public static float GetImpactScale(float bulletScaleMultiplier, bool isAsteroidHit = false) =>
+            GetBulletVisualScale(bulletScaleMultiplier);
+
+        /// <summary>
+        /// Server / host use logical physics coordinates for VFX. Pure clients remap logical hit
+        /// points into the toroidal display tile the local camera sees (matches <see cref="ToroidalRenderer"/>).
+        /// </summary>
+        public static Vector3 ResolveClientImpactWorldPosition(Vector3 worldOrLogicalPosition)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsClient || nm.IsServer)
+            {
+                Vector3 logical = worldOrLogicalPosition;
+                logical.y = 0f;
+                return logical;
+            }
+
+            Vector3 reference = ResolveToroidalVfxReference();
+            Vector3 logicalPos = worldOrLogicalPosition;
+            logicalPos.y = 0f;
+            return ToroidalMap.GetDisplayPosition(logicalPos, reference);
+        }
+
+        private static Vector3 ResolveToroidalVfxReference()
+        {
+            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            if (cam == null || !cam.isActiveAndEnabled)
+            {
+                var cc = Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
+                if (cc != null)
+                    cam = cc.GetComponent<UnityEngine.Camera>();
+            }
+
+            Vector3 reference = cam != null ? cam.transform.position : Vector3.zero;
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsClient && nm.SpawnManager != null)
+            {
+                NetworkObject localPlayer = nm.SpawnManager.GetLocalPlayerObject();
+                if (localPlayer != null)
+                {
+                    var ship = localPlayer.GetComponent<Starship>();
+                    if (ship != null)
+                    {
+                        Vector3 shipRef = ship.GetCameraFollowWorldPosition();
+                        reference.x = shipRef.x;
+                        reference.z = shipRef.z;
+                    }
+                }
+            }
+
+            return reference;
+        }
+
+        /// <summary>Spawns bank impact VFX (or procedural fallback) at a hit point on this client.</summary>
+        public static void SpawnBulletImpactVfx(
+            Vector3 worldOrLogicalPosition,
+            GameObject prefab,
+            TeamManager.Team team,
+            float pitch,
+            float scale,
+            float duration,
+            Transform attachParent = null,
+            Vector3 localOffset = default,
+            float loopingDuration = 0f)
+        {
+            Vector3 position = ResolveClientImpactWorldPosition(worldOrLogicalPosition);
+
+            if (Application.isMobilePlatform)
+            {
+                SpawnMobileImpact(position, team, scale);
+                return;
+            }
+
+            if (prefab == null)
+            {
+                SpawnMobileImpact(position, team, scale);
+                return;
+            }
+
+            if (loopingDuration > 0.05f)
+            {
+                SpawnLoopingImpactAt(
+                    position,
+                    prefab,
+                    pitch,
+                    scale,
+                    loopingDuration,
+                    attachParent,
+                    localOffset);
+            }
+            else
+            {
+                SpawnImpactAt(position, prefab, pitch, scale, duration);
+            }
+        }
 
         private static Material trailMat;
         private static Material defaultBulletMat;
@@ -59,8 +162,7 @@ namespace TitanOrbit.Entities
             float bulletSpeed,
             bool noTrail)
         {
-            float globalScale = CombatSystem.Instance != null ? CombatSystem.Instance.BulletVisualScaleMultiplier : 1f;
-            float scale = DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
+            float scale = GetBulletVisualScale(scaleMultiplier);
             Color color = GetTeamBulletColor(team);
 
             GameObject visualPrefab = null;
@@ -153,8 +255,7 @@ namespace TitanOrbit.Entities
             GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
-            VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
-            VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
+            VfxUrpCompat.PrepareVfxInstance(go);
             Object.Destroy(go, duration);
         }
 
@@ -182,9 +283,8 @@ namespace TitanOrbit.Entities
             GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
-            VfxUrpCompat.FixAllIn1MaterialsForUrp(go);
             ConfigureLoopingImpactParticles(go, duration, simulateInLocalSpace: false);
-            VfxUrpCompat.PlayParticleSystemsInHierarchy(go);
+            VfxUrpCompat.PrepareVfxInstance(go);
             Object.Destroy(go, duration + 0.25f);
             return go;
         }

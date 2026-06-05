@@ -1065,7 +1065,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Runtime weapon stats: ship-level *PerLevel terms are baked into <see cref="bulletConfig"/>;
+        /// Runtime weapon stats: ship-level *PerLevel terms are baked into <see cref="bulletConfig"/> (except bullet speed, which stays at authored base);
         /// attribute upgrades and cards apply here (same pattern as <see cref="ComputeMaxHealthLocal"/>).
         /// </summary>
         private void ResolveEffectiveCannonStats(CannonConfig c, int bulletBankIndex, out float damage, out float speed, out float fireRate, out float energyCostPerShot)
@@ -1121,7 +1121,8 @@ namespace TitanOrbit.Entities
                 direction,
                 bankIndex,
                 (TeamManager.Team)teamByte,
-                pitch);
+                pitch,
+                DroneSwarmController.DroneBulletVisualScale);
         }
 
         /// <summary>Server: electric shock — movement, rotation, and firing disabled for the duration.</summary>
@@ -1871,6 +1872,13 @@ namespace TitanOrbit.Entities
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
 
+        /// <summary>
+        /// True while the gem-moon orbit station menu is open and the pointer is over its UI.
+        /// Clicks there should browse the menu, not exit theatrical camera or count as combat input.
+        /// </summary>
+        public bool IsInteractingWithOrbitStationMenu =>
+            _orbitUiVisible && IsPointerOverUI();
+
         /// <summary>Planar speed in world XZ (m/s) for camera / UI.</summary>
         public float GetPlanarSpeedWorld()
         {
@@ -2274,7 +2282,7 @@ namespace TitanOrbit.Entities
             {
                 // Defer starter ship / vitals until map-instance restore is attempted (owner sends auth id via ServerRpc).
                 if (IsOwner)
-                    TryRestoreOrApplyDefaultSpawnSetup(UnityGameServicesBootstrap.PlayerId);
+                    TryRestoreOrApplyDefaultSpawnSetup(UnityGameServicesBootstrap.PlayerId, NetworkGameManager.PendingRestoreChoice);
             }
             else if (IsServer && _isAIControlled)
             {
@@ -2282,7 +2290,9 @@ namespace TitanOrbit.Entities
             }
 
             if (IsClient && IsOwner && !_isAIControlled)
-                RegisterMapInstanceProgressServerRpc(UnityGameServicesBootstrap.PlayerId ?? string.Empty);
+                RegisterMapInstanceProgressServerRpc(
+                    UnityGameServicesBootstrap.PlayerId ?? string.Empty,
+                    (int)NetworkGameManager.PendingRestoreChoice);
 
             // Initialize banking state so first LateUpdate doesn't spike
             if (rb != null)
@@ -2333,24 +2343,24 @@ namespace TitanOrbit.Entities
         }
 
         [ServerRpc(RequireOwnership = true)]
-        private void RegisterMapInstanceProgressServerRpc(string authPlayerId, ServerRpcParams rpcParams = default)
+        private void RegisterMapInstanceProgressServerRpc(string authPlayerId, int restoreChoiceInt, ServerRpcParams rpcParams = default)
         {
             if (!IsServer || _isAIControlled) return;
             if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
             MapInstanceShipProgressStore.RegisterClientAuthId(
                 OwnerClientId,
                 MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId));
-            TryRestoreOrApplyDefaultSpawnSetup(authPlayerId);
+            TryRestoreOrApplyDefaultSpawnSetup(authPlayerId, (NetworkGameManager.ShipRestoreChoice)restoreChoiceInt);
         }
 
-        private void TryRestoreOrApplyDefaultSpawnSetup(string authPlayerId)
+        private void TryRestoreOrApplyDefaultSpawnSetup(string authPlayerId, NetworkGameManager.ShipRestoreChoice restoreChoice)
         {
             if (!IsServer || _isAIControlled || _playerSpawnSetupComplete) return;
 
             string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId);
             MapInstanceShipProgressStore.RegisterClientAuthId(OwnerClientId, key);
 
-            if (NetworkGameManager.PendingRestoreChoice == NetworkGameManager.ShipRestoreChoice.StartAnew)
+            if (restoreChoice == NetworkGameManager.ShipRestoreChoice.StartAnew)
             {
                 MapInstanceShipProgressStore.RemoveSnapshot(key);
                 ApplyDefaultPlayerSpawnSetup();
@@ -2368,7 +2378,8 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
-                ApplyMapInstanceProgress(snapshot);
+                bool useRescueVitals = restoreChoice == NetworkGameManager.ShipRestoreChoice.Rescue;
+                ApplyMapInstanceProgress(snapshot, useRescueVitals);
             }
             else
                 ApplyDefaultPlayerSpawnSetup();
@@ -2474,7 +2485,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Server: restore loadout saved for this map instance.</summary>
-        private void ApplyMapInstanceProgress(in PlayerShipProgressSnapshot snapshot)
+        private void ApplyMapInstanceProgress(in PlayerShipProgressSnapshot snapshot, bool useRescueVitals = false)
         {
             if (!IsServer || _isAIControlled) return;
             _playerSpawnSetupComplete = true;
@@ -2523,10 +2534,20 @@ namespace TitanOrbit.Entities
             largeMinesCount.Value = snapshot.LargeMines;
 
             RefreshSyncedCapacitiesOnServer();
-            currentHealth.Value = Mathf.Clamp(snapshot.CurrentHealth, 0f, MaxHealth);
-            currentGems.Value = Mathf.Clamp(snapshot.CurrentGems, 0f, GemCapacity);
-            currentPeople.Value = Mathf.Clamp(snapshot.CurrentPeople, 0f, PeopleCapacity);
-            currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
+            if (useRescueVitals)
+            {
+                currentHealth.Value = MaxHealth;
+                currentGems.Value = 0f;
+                currentPeople.Value = 0f;
+                RefillCannonEnergyFromServer();
+            }
+            else
+            {
+                currentHealth.Value = Mathf.Clamp(snapshot.CurrentHealth, 0f, MaxHealth);
+                currentGems.Value = Mathf.Clamp(snapshot.CurrentGems, 0f, GemCapacity);
+                currentPeople.Value = Mathf.Clamp(snapshot.CurrentPeople, 0f, PeopleCapacity);
+                currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
+            }
 
             // Apply hull after level, attributes, cards, and equipment are restored so per-level stats and component scaling match.
             TryApplyChassisVisualFromNetworkState();
@@ -2729,7 +2750,9 @@ namespace TitanOrbit.Entities
                 RequestUndockGemMoonServerRpc();
 
             // When the local player begins moving or firing, restore gameplay camera (galactic zoom / theatrical orbit).
-            if (IsLocalPlayerShip() && ((movePressed && !wasMovePressedLastFrame) || (shootPressed && !wasShootPressedLastFrame)))
+            if (IsLocalPlayerShip()
+                && !IsInteractingWithOrbitStationMenu
+                && ((movePressed && !wasMovePressedLastFrame) || (shootPressed && !wasShootPressedLastFrame)))
             {
                 if (s_cachedCameraController == null)
                     s_cachedCameraController = UnityEngine.Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
@@ -4807,6 +4830,10 @@ namespace TitanOrbit.Entities
                             GameObject muzzle = Instantiate(sciFi.muzzleParticle, pos, Quaternion.LookRotation(-fwd));
                             if (muzzle != null)
                             {
+                                float cannonScale = 1f;
+                                if (bulletConfig != null && idx >= 0 && idx < bulletConfig.cannons.Count)
+                                    cannonScale = bulletConfig.cannons[idx].bulletScale * BulletScaleMultiplier;
+                                VfxUrpCompat.ApplyImpactVisualScale(muzzle, BulletVisualFactory.GetBulletVisualScale(cannonScale));
                                 // Same URP/mobile fix as Bullet VFX: muzzle prefabs use AllIn1 GrabPass otherwise invisible on device.
                                 VfxUrpCompat.PrepareVfxInstance(muzzle);
                                 // Pitch any muzzle audio contained in the particle prefab.
@@ -4838,7 +4865,14 @@ namespace TitanOrbit.Entities
                         Color flashColor = TeamManager.Instance != null
                             ? TeamManager.GetTeamColor(shipTeam.Value)
                             : new Color(1f, 0.88f, 0.45f);
-                        VfxUrpCompat.SpawnMobileMuzzleFlash(pt.position, fwd, flashColor);
+                        float cannonScale = 1f;
+                        if (bulletConfig != null && idx >= 0 && idx < bulletConfig.cannons.Count)
+                            cannonScale = bulletConfig.cannons[idx].bulletScale * BulletScaleMultiplier;
+                        VfxUrpCompat.SpawnMobileMuzzleFlash(
+                            pt.position,
+                            fwd,
+                            flashColor,
+                            BulletVisualFactory.GetBulletVisualScale(cannonScale));
                     }
                 }
             }
@@ -7547,7 +7581,7 @@ namespace TitanOrbit.Entities
                             {
                                 ShipComponentAbilityStats comp = perComponentStats[k];
                                 float wp = comp.firePower + comp.firePowerPerLevel * perLvlWeapon;
-                                float bs = comp.bulletSpeed + comp.bulletSpeedPerLevel * perLvlWeapon;
+                                float bs = comp.bulletSpeed;
                                 float fr = Mathf.Max(0.01f, comp.fireRate + comp.fireRatePerLevel * perLvlWeapon);
                                 c.damagePerBullet = wp;
                                 c.bulletSpeed = bs;
@@ -7566,7 +7600,7 @@ namespace TitanOrbit.Entities
                     {
                         ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(defStats, wt, componentId);
                         float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlWeapon;
-                        float bs = scaled.bulletSpeed + scaled.bulletSpeedPerLevel * perLvlWeapon;
+                        float bs = scaled.bulletSpeed;
                         float fr = Mathf.Max(0.01f, scaled.fireRate + scaled.fireRatePerLevel * perLvlWeapon);
                         c.damagePerBullet = wp;
                         c.bulletSpeed = bs;
@@ -7592,7 +7626,7 @@ namespace TitanOrbit.Entities
 
                             ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(entry.stats, wt, entry.componentId);
                             float wp = scaled.firePower + scaled.firePowerPerLevel * perLvlWeapon;
-                            float bs = scaled.bulletSpeed + scaled.bulletSpeedPerLevel * perLvlWeapon;
+                            float bs = scaled.bulletSpeed;
                             float fr = Mathf.Max(0.01f, scaled.fireRate + scaled.fireRatePerLevel * perLvlWeapon);
                             c.damagePerBullet = wp;
                             c.bulletSpeed = bs;

@@ -647,7 +647,8 @@ namespace TitanOrbit.Entities
             impactPos.y = FIXED_Y_POSITION;
             int bankIdx = cachedVisualPrefabBankIndex >= 0 ? cachedVisualPrefabBankIndex : visualPrefabBankIndex.Value;
             float impactPitch = GetImpactSoundPitch();
-            float impactScale = impactEffectScale * (isAsteroidHit ? BulletVisualFactory.AsteroidImpactScaleFactor : 1f);
+            float scaleMult = cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value;
+            float impactScale = BulletVisualFactory.GetImpactScale(Mathf.Max(0.1f, scaleMult));
             GameObject impactPrefab = GetResolvedImpactPrefab(bankIdx);
             // Mobile uses procedural URP particle burst in SpawnImpactAt; still spawn if bank prefab missing.
             bool spawnImpactFx = impactPrefab != null || Application.isMobilePlatform;
@@ -734,7 +735,9 @@ namespace TitanOrbit.Entities
         {
             TeamManager.Team teamForResolve = (TeamManager.Team)bulletOwnerTeamByte.Value;
             if (teamForResolve == TeamManager.Team.None) teamForResolve = ownerTeam;
-            float impactScale = impactEffectScale * (isAsteroidHit ? BulletVisualFactory.AsteroidImpactScaleFactor : 1f);
+            float impactScale = BulletVisualFactory.GetImpactScale(
+                Mathf.Max(0.1f, cachedVisualScaleMultiplier != 1f ? cachedVisualScaleMultiplier : bulletVisualScaleMultiplier.Value),
+                isAsteroidHit);
             if (Application.isMobilePlatform)
             {
                 SpawnImpactAt(position, null, pitch, impactScale);

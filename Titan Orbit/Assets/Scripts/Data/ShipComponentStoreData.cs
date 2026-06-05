@@ -25,7 +25,7 @@ namespace TitanOrbit.Data
             {
                 firePower = stats.firePower + stats.firePowerPerLevel * perLvl,
                 firePowerPerLevel = stats.firePowerPerLevel,
-                bulletSpeed = stats.bulletSpeed + stats.bulletSpeedPerLevel * perLvl,
+                bulletSpeed = stats.bulletSpeed,
                 bulletSpeedPerLevel = stats.bulletSpeedPerLevel,
                 fireRate = stats.fireRate + stats.fireRatePerLevel * perLvl,
                 fireRatePerLevel = stats.fireRatePerLevel,

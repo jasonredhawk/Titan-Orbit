@@ -18,8 +18,8 @@ namespace TitanOrbit.Camera
         private float minElevationDeg = -32f;
         private float maxElevationDeg = 52f;
         private int waypointCount = 8;
-        private float pathDurationMinSeconds = 360f;
-        private float pathDurationMaxSeconds = 540f;
+        private float pathDurationMinSeconds = 720f;
+        private float pathDurationMaxSeconds = 1080f;
         private Vector3 entryControlLocalOffset;
         private System.Random rng;
         private bool hasPath;

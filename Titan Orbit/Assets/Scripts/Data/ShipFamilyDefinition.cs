@@ -17,7 +17,8 @@ namespace TitanOrbit.Data
         public float firePower;            // Fire Power (damage / shot strength)
         public float firePowerPerLevel;    // Fire Power gained per ship level
         public float bulletSpeed;          // Bullet Speed
-        public float bulletSpeedPerLevel;  // Bullet Speed gained per ship level
+        [Tooltip("Legacy/editor field. Runtime bullet speed does not scale per ship level (unlike fire power, fire rate, etc.).")]
+        public float bulletSpeedPerLevel;
         public float fireRate;             // Bullets per second
         public float fireRatePerLevel;     // Fire rate gained per ship level
         [Tooltip("Ramming / collision offense: base ramming power (authored small; high mass already amplifies damage).")]
@@ -1391,7 +1392,6 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
         {
             stats.firePower += stats.firePowerPerLevel * upgradeCount;
-            stats.bulletSpeed += stats.bulletSpeedPerLevel * upgradeCount;
             stats.fireRate += stats.fireRatePerLevel * upgradeCount;
             stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
             stats.healthCap += stats.healthCapPerLevel * upgradeCount;

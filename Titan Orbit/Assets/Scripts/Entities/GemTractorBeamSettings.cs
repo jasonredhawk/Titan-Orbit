@@ -137,16 +137,13 @@ namespace TitanOrbit.Entities
             return GemTractorBeamDeployTracker.IsPullPhysicsActive(ship, gem);
         }
 
-        /// <summary>Beam lock, wing assignment, or active deploy toward this gem.</summary>
+        /// <summary>True when this gem is in the ship's wing-assigned pull set (one beam budget per wing).</summary>
         public static bool HasTractorInvolvement(Starship ship, Gem gem)
         {
             if (ship == null || gem == null)
                 return false;
 
-            if (GetMagneticPullState(ship).gemIds.Contains(gem.GetInstanceID()))
-                return true;
-
-            return GemTractorBeamDeployTracker.HasActiveLock(ship, gem);
+            return GetMagneticPullState(ship).gemIds.Contains(gem.GetInstanceID());
         }
 
         public static void GetAttractionParams(bool inOrbitZone, out float searchRadius, out float attractionSpeed)
@@ -223,21 +220,17 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// True when this gem is assigned to a wing tractor and/or has an active beam lock on a wing.
+        /// True when this gem is assigned to at least one wing tractor and still within that wing's reach.
         /// </summary>
         public static bool CanShipMagneticallyPull(Starship ship, Gem gem)
         {
             if (!PassesBasicMagneticPullEligibility(ship, gem))
                 return false;
 
-            if (GetMagneticPullState(ship).gemIds.Contains(gem.GetInstanceID()))
-                return true;
-
-            if (!GemTractorBeamDeployTracker.HasActiveLock(ship, gem))
+            if (!GetMagneticPullState(ship).gemIds.Contains(gem.GetInstanceID()))
                 return false;
 
-            int lockWing = GetTractorRangeWingIndex(ship, gem);
-            return lockWing >= 0 && IsGemWithinWingTractorRange(ship, gem, lockWing);
+            return IsWithinMagneticPullRange(ship, gem);
         }
 
         /// <summary>Pull speed for this gem from all assigned wings, scaled by gem size (small = faster).</summary>
@@ -299,18 +292,18 @@ namespace TitanOrbit.Entities
             return GetWingBeamOrigin(ship, GetPullWingIndex(ship, gem));
         }
 
-        /// <summary>Wing used for reach checks: deploy lock, then assigned, then closest in-range.</summary>
+        /// <summary>Wing used for reach checks: assigned wing first, then deploy lock, then closest in-range.</summary>
         public static int GetTractorRangeWingIndex(Starship ship, Gem gem)
         {
             if (ship == null || gem == null)
                 return -1;
 
-            if (GemTractorBeamDeployTracker.TryGetLockingWingIndex(ship, gem, out int lockWing) && lockWing >= 0)
-                return lockWing;
-
             int assignedClosest = GetClosestAssignedWingIndex(ship, gem);
             if (assignedClosest >= 0)
                 return assignedClosest;
+
+            if (GemTractorBeamDeployTracker.TryGetLockingWingIndex(ship, gem, out int lockWing) && lockWing >= 0)
+                return lockWing;
 
             return GetClosestInRangeWingIndex(ship, gem);
         }

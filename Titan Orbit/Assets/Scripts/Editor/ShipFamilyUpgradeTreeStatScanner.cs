@@ -172,7 +172,7 @@ namespace TitanOrbit.Editor
             ShipComponentAbilityStats atMinLevel = SumStatsAtShipLevelWithFallbacks(total, matchedIds, perComponentStats, shipLevel: 1, def);
 
             preview.firePower = RangeFromPerLevel(atMinLevel.firePower, atMinLevel.firePowerPerLevel, maxUpgrades);
-            preview.bulletSpeed = RangeFromPerLevel(atMinLevel.bulletSpeed, atMinLevel.bulletSpeedPerLevel, maxUpgrades);
+            preview.bulletSpeed = new StatMinMax(atMinLevel.bulletSpeed, atMinLevel.bulletSpeed);
             preview.fireRate = RangeFromPerLevel(atMinLevel.fireRate, atMinLevel.fireRatePerLevel, maxUpgrades);
             preview.ramPower = RangeFromPerLevel(atMinLevel.rammingPower, atMinLevel.rammingPowerPerLevel, maxUpgrades);
             preview.healthCap = RangeFromPerLevel(atMinLevel.healthCap, atMinLevel.healthCapPerLevel, maxUpgrades);

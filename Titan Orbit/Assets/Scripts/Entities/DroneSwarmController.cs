@@ -93,6 +93,7 @@ namespace TitanOrbit.Entities
             public float orbitAngleDeg;
             public float orbitRadius;
             public bool orbitInitialized;
+            public Vector3 baseLocalScale = Vector3.one;
         }
 
         private readonly List<SlotVisual> visuals = new List<SlotVisual>(8);
@@ -105,6 +106,7 @@ namespace TitanOrbit.Entities
         private bool subscribed;
         /// <summary>Drones hidden and non-combat while the owner is inside a gem-moon orbit shell.</summary>
         private bool stowedForGemMoonOrbit;
+        private float _lastAppliedShieldDroneLevelScale = -1f;
 
         public Starship OwnerShip => ownerShip;
 
@@ -238,7 +240,7 @@ namespace TitanOrbit.Entities
                 body = instance.AddComponent<DroneBody>();
             body.Initialize(this, slotIndex);
 
-            visuals.Add(new SlotVisual
+            var visual = new SlotVisual
             {
                 slotIndex = slotIndex,
                 itemType = itemType,
@@ -248,8 +250,11 @@ namespace TitanOrbit.Entities
                 lastFireTime = -999f,
                 knockbackOffset = Vector3.zero,
                 buzzPhase = DroneSwarmPositioning.PerDroneBuzzPhase(ownerShip.NetworkObjectId, slotIndex, itemType),
-                orbitInitialized = false
-            });
+                orbitInitialized = false,
+                baseLocalScale = instance.transform.localScale
+            };
+            visuals.Add(visual);
+            ApplyShieldDroneVisualScale(visual);
 
             if (stowedForGemMoonOrbit && instance != null)
                 instance.SetActive(false);
@@ -398,6 +403,7 @@ namespace TitanOrbit.Entities
                     Destroy(visuals[i].instance);
             }
             visuals.Clear();
+            _lastAppliedShieldDroneLevelScale = -1f;
         }
 
         private void SetVisualsActive(bool active)
@@ -460,6 +466,7 @@ namespace TitanOrbit.Entities
 
             ApplyCounterRotateHub();
             UpdateDroneTransforms(Time.deltaTime, applyOrbitLag: false, runCombat: false, equipment);
+            RefreshShieldDroneVisualScales();
         }
 
         private void UpdateDroneTransforms(float dt, bool applyOrbitLag, bool runCombat, IReadOnlyList<EquippedEquipmentEntry> equipment)
@@ -545,6 +552,42 @@ namespace TitanOrbit.Entities
         private float GetDroneFormationSpacingScale()
         {
             return ownerShip != null ? ownerShip.LevelScaleFactor : 1f;
+        }
+
+        /// <summary>Shield mesh scale tracks ship level (same curve as hull <see cref="Starship.LevelScaleFactor"/>).</summary>
+        public float GetShieldDroneVisualScale()
+        {
+            return GetDroneFormationSpacingScale();
+        }
+
+        public float GetHitSphereRadiusForSlot(int slotIndex)
+        {
+            float baseRadius = DroneSwarmPositioning.DroneHitSphereRadius;
+            for (int i = 0; i < visuals.Count; i++)
+            {
+                SlotVisual v = visuals[i];
+                if (v.slotIndex != slotIndex) continue;
+                if (v.itemType == StoreItemType.ShieldDrone)
+                    return baseRadius * GetShieldDroneVisualScale();
+                return baseRadius;
+            }
+            return baseRadius;
+        }
+
+        private void ApplyShieldDroneVisualScale(SlotVisual v)
+        {
+            if (v.instance == null || v.itemType != StoreItemType.ShieldDrone) return;
+            float scale = GetShieldDroneVisualScale();
+            v.instance.transform.localScale = v.baseLocalScale * scale;
+        }
+
+        private void RefreshShieldDroneVisualScales()
+        {
+            float scale = GetShieldDroneVisualScale();
+            if (Mathf.Approximately(scale, _lastAppliedShieldDroneLevelScale)) return;
+            _lastAppliedShieldDroneLevelScale = scale;
+            for (int i = 0; i < visuals.Count; i++)
+                ApplyShieldDroneVisualScale(visuals[i]);
         }
 
         /// <summary>Push drones further aft when gem-capacity upgrades enlarge wing meshes.</summary>

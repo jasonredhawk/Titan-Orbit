@@ -138,6 +138,7 @@ namespace TitanOrbit.Systems
             public float LingeringFireDuration;
             public ulong AttachBurnNetworkObjectId;
             public bool IsDroneShot;
+            public float VisualScaleMultiplier;
         }
 
         private ServerBullet[] serverBullets;
@@ -556,6 +557,7 @@ namespace TitanOrbit.Systems
                 LingeringFireDuration = lingerFire,
                 AttachBurnNetworkObjectId = attachBurnId,
                 IsDroneShot = (b.SpawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0,
+                VisualScaleMultiplier = b.ScaleMultiplier,
             });
             ReleaseSlot(slot);
         }
@@ -605,7 +607,8 @@ namespace TitanOrbit.Systems
                     p.IsAsteroidHit,
                     p.LingeringFireDuration,
                     p.AttachBurnNetworkObjectId,
-                    p.IsDroneShot);
+                    p.IsDroneShot,
+                    p.VisualScaleMultiplier);
             }
             pendingImpacts.Clear();
         }
@@ -622,7 +625,10 @@ namespace TitanOrbit.Systems
                 // Drone shots never use owner prediction — always show the batched tracer.
                 bool isDroneShot = (p.SpawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0;
                 if (!isDroneShot && localShipId != 0 && p.OwnerShipNetworkId == localShipId)
+                {
+                    ClientBulletTracer.AssociateOwnerPredictedWithServerSequence(p.Sequence);
                     continue;
+                }
                 ClientBulletTracer.Spawn(p);
             }
         }
@@ -643,7 +649,8 @@ namespace TitanOrbit.Systems
             bool isAsteroidHit,
             float lingeringFireDuration,
             ulong attachBurnNetworkObjectId,
-            bool isDroneShot)
+            bool isDroneShot,
+            float visualScaleMultiplier)
         {
             ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
             TeamManager.Team team = (TeamManager.Team)teamByte;
@@ -657,64 +664,65 @@ namespace TitanOrbit.Systems
                     asteroidRemainingGems: asteroidRemainingGems)
                 : BulletHitResolver.BulletHitPopupInfo.None;
 
-            // Firing owner uses local-only tracer impacts for ship weapons; drone shots always use server impact VFX.
+            // Firing owner normally uses owner-predicted impact VFX; fall back to server RPC when prediction missed.
             if (!isDroneShot && localShipId != 0 && bulletOwnerShipNetworkId == localShipId)
             {
                 ClientBulletTracer.DespawnBySequence(sequence);
                 if (popup.HasAsteroidFeedback)
-                    BulletHitResolver.SpawnBulletHitFeedbackLocal(position, popup, team);
-                return;
-            }
+                {
+                    BulletHitResolver.SpawnBulletHitFeedbackLocal(
+                        BulletVisualFactory.ResolveClientImpactWorldPosition(position),
+                        popup,
+                        team);
+                }
 
-            ClientBulletTracer.DespawnBySequence(sequence);
-
-            float impactScale = BulletVisualFactory.GetImpactScale(isAsteroidHit);
-            if (Application.isMobilePlatform)
-            {
-                BulletVisualFactory.SpawnMobileImpact(position, team, impactScale);
+                if (ClientBulletTracer.ShouldSkipOwnerServerImpactVfx(sequence))
+                    return;
             }
             else
             {
-                GameObject prefab = impactPrefabBankIndex >= 0
-                    ? GetImpactPrefabFromBank(impactPrefabBankIndex, team)
-                    : null;
-                if (prefab != null)
-                {
-                    if (lingeringFireDuration > 0.05f)
-                    {
-                        Transform attach = null;
-                        Vector3 localOffset = Vector3.zero;
-                        if (attachBurnNetworkObjectId != 0
-                            && NetworkManager.Singleton != null
-                            && NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(
-                                attachBurnNetworkObjectId, out NetworkObject attachNo)
-                            && attachNo != null)
-                        {
-                            attach = attachNo.transform;
-                            localOffset = attach.InverseTransformPoint(position);
-                        }
-
-                        BulletVisualFactory.SpawnLoopingImpactAt(
-                            position,
-                            prefab,
-                            pitch,
-                            impactScale,
-                            lingeringFireDuration,
-                            attach,
-                            localOffset);
-                    }
-                    else
-                    {
-                        BulletVisualFactory.SpawnImpactAt(
-                            position, prefab, pitch, impactScale, BulletVisualFactory.DefaultImpactDuration);
-                    }
-                }
+                ClientBulletTracer.DespawnBySequence(sequence);
             }
+
+            float impactScale = BulletVisualFactory.GetImpactScale(
+                Mathf.Max(0.1f, visualScaleMultiplier),
+                isAsteroidHit);
+            GameObject prefab = impactPrefabBankIndex >= 0
+                ? GetImpactPrefabFromBank(impactPrefabBankIndex, team)
+                : null;
+
+            Transform attach = null;
+            Vector3 localOffset = Vector3.zero;
+            if (lingeringFireDuration > 0.05f
+                && attachBurnNetworkObjectId != 0
+                && NetworkManager.Singleton != null
+                && NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(
+                    attachBurnNetworkObjectId, out NetworkObject attachNo)
+                && attachNo != null)
+            {
+                attach = attachNo.transform;
+                Vector3 displayImpact = BulletVisualFactory.ResolveClientImpactWorldPosition(position);
+                localOffset = attach.InverseTransformPoint(displayImpact);
+            }
+
+            BulletVisualFactory.SpawnBulletImpactVfx(
+                position,
+                prefab,
+                team,
+                pitch,
+                impactScale,
+                BulletVisualFactory.DefaultImpactDuration,
+                attach,
+                localOffset,
+                lingeringFireDuration);
 
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlayImpactSound(pitch);
 
-            BulletHitResolver.SpawnBulletHitFeedbackLocal(position, popup, team);
+            BulletHitResolver.SpawnBulletHitFeedbackLocal(
+                BulletVisualFactory.ResolveClientImpactWorldPosition(position),
+                popup,
+                team);
         }
 
         /// <summary>
