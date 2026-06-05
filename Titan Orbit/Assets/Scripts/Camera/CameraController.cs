@@ -108,9 +108,15 @@ namespace TitanOrbit.Camera
         [SerializeField] private float theatricalPathDurationMinSeconds = 360f;
         [Min(8f)]
         [SerializeField] private float theatricalPathDurationMaxSeconds = 540f;
+        [Tooltip("Seconds to blend from gameplay top-down into the theatrical orbit pose.")]
+        [Min(0f)]
+        [SerializeField] private float theatricalEnterBlendDuration = 1.75f;
         [Tooltip("Look-at focus smoothing while orbiting (higher = slower, more cinematic).")]
         [Min(0.05f)]
         [SerializeField] private float theatricalLookSmoothTime = 0.9f;
+        [Tooltip("Rotation smoothing while orbiting (higher = slower).")]
+        [Min(0.05f)]
+        [SerializeField] private float theatricalRotationSmoothTime = 0.65f;
         [Tooltip("FOV zoom smoothing while orbiting (higher = slower).")]
         [Min(0.05f)]
         [SerializeField] private float theatricalFovSmoothTime = 2f;
@@ -177,6 +183,13 @@ namespace TitanOrbit.Camera
         private bool hasTheatricalSmoothedLookTarget;
         private Quaternion theatricalFrozenShipRotation = Quaternion.identity;
         private bool theatricalOrbitInitialized;
+        private float theatricalEnterBlendElapsed;
+        private bool theatricalCapturingEnterBlendStart;
+        private Vector3 theatricalBlendStartPosition;
+        private Quaternion theatricalBlendStartRotation = Quaternion.identity;
+        private float theatricalBlendStartFov;
+        private Quaternion theatricalSmoothedRotation = Quaternion.identity;
+        private bool hasTheatricalSmoothedRotation;
 
         /// <summary>True while the cinematic orbit is active.</summary>
         public bool IsTheatricalCameraEngaged => theatricalModeActive;
@@ -475,6 +488,9 @@ namespace TitanOrbit.Camera
             theatricalOrbitInitialized = false;
             hasTheatricalSmoothedLookTarget = false;
             hasTheatricalSmoothedFov = false;
+            hasTheatricalSmoothedRotation = false;
+            theatricalEnterBlendElapsed = 0f;
+            theatricalCapturingEnterBlendStart = true;
             theatricalFrozenShipRotation = target.rotation;
 
             TryGetShipVisualFocus(target, out _, out float radius);
@@ -514,6 +530,9 @@ namespace TitanOrbit.Camera
             theatricalIdleTimer = 0f;
             hasTheatricalSmoothedLookTarget = false;
             hasTheatricalSmoothedFov = false;
+            hasTheatricalSmoothedRotation = false;
+            theatricalEnterBlendElapsed = 0f;
+            theatricalCapturingEnterBlendStart = false;
         }
 
         private void ApplyTheatricalCamera(
@@ -533,12 +552,25 @@ namespace TitanOrbit.Camera
             Vector3 focus = new Vector3(followWorld.x, followWorld.y + focusYOffset, followWorld.z);
             theatricalOrbit.SetCharacteristicRadius(radius);
 
+            if (theatricalCapturingEnterBlendStart)
+            {
+                theatricalBlendStartPosition = gameplayPosition;
+                theatricalBlendStartRotation = Quaternion.Euler(90f, 0f, 0f);
+                theatricalBlendStartFov = cam != null ? cam.fieldOfView : gameplayFieldOfView;
+                theatricalCapturingEnterBlendStart = false;
+            }
+
             if (!theatricalOrbitInitialized)
             {
                 EnsureTheatricalOrbitInitialized(gameplayPosition, focus, radius);
             }
 
-            theatricalOrbit.Advance(Time.deltaTime, focus, theatricalFrozenShipRotation);
+            bool enterBlendActive = theatricalEnterBlendDuration > 0.0001f
+                && theatricalEnterBlendElapsed < theatricalEnterBlendDuration;
+            if (enterBlendActive)
+                theatricalEnterBlendElapsed += Time.deltaTime;
+            else
+                theatricalOrbit.Advance(Time.deltaTime, focus, theatricalFrozenShipRotation);
 
             theatricalOrbit.Sample(
                 focus,
@@ -561,14 +593,28 @@ namespace TitanOrbit.Camera
                 Mathf.Infinity,
                 Time.deltaTime);
 
-            Quaternion orbitRotation = Quaternion.LookRotation(
-                theatricalSmoothedLookTarget - orbitPosition,
-                Vector3.up);
+            Quaternion targetOrbitRotation = TryLookAtRotation(
+                orbitPosition,
+                theatricalSmoothedLookTarget,
+                theatricalBlendStartRotation);
+
+            if (!hasTheatricalSmoothedRotation)
+            {
+                theatricalSmoothedRotation = theatricalBlendStartRotation;
+                hasTheatricalSmoothedRotation = true;
+            }
+
+            float rotationBlend = 1f - Mathf.Exp(
+                -Time.deltaTime / Mathf.Max(0.05f, theatricalRotationSmoothTime));
+            theatricalSmoothedRotation = Quaternion.Slerp(
+                theatricalSmoothedRotation,
+                targetOrbitRotation,
+                rotationBlend);
 
             float targetOrbitFov = Mathf.Lerp(theatricalFovMax, theatricalFovMin, zoomT);
             if (!hasTheatricalSmoothedFov)
             {
-                theatricalSmoothedFov = cam != null ? cam.fieldOfView : gameplayFieldOfView;
+                theatricalSmoothedFov = theatricalBlendStartFov;
                 hasTheatricalSmoothedFov = true;
             }
 
@@ -578,9 +624,45 @@ namespace TitanOrbit.Camera
                 ref theatricalFovVelocity,
                 theatricalFovSmoothTime);
 
-            finalPosition = orbitPosition;
-            finalRotation = orbitRotation;
-            finalFov = theatricalSmoothedFov;
+            if (enterBlendActive)
+            {
+                float blendT = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.Clamp01(theatricalEnterBlendElapsed / theatricalEnterBlendDuration));
+                finalPosition = Vector3.Lerp(theatricalBlendStartPosition, orbitPosition, blendT);
+                finalRotation = Quaternion.Slerp(
+                    theatricalBlendStartRotation,
+                    theatricalSmoothedRotation,
+                    blendT);
+                finalFov = Mathf.Lerp(theatricalBlendStartFov, theatricalSmoothedFov, blendT);
+            }
+            else
+            {
+                finalPosition = orbitPosition;
+                finalRotation = theatricalSmoothedRotation;
+                finalFov = theatricalSmoothedFov;
+            }
+        }
+
+        /// <summary>
+        /// Stable look-at when the camera is nearly straight above/below the focus
+        /// (LookRotation with forward parallel to world up spins unpredictably).
+        /// </summary>
+        private static Quaternion TryLookAtRotation(
+            Vector3 from,
+            Vector3 to,
+            Quaternion fallbackRotation)
+        {
+            Vector3 forward = to - from;
+            if (forward.sqrMagnitude < 0.0001f)
+                return fallbackRotation;
+
+            forward.Normalize();
+            if (Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.98f)
+                return Quaternion.Euler(forward.y > 0f ? -90f : 90f, 0f, 0f);
+
+            return Quaternion.LookRotation(forward, Vector3.up);
         }
 
         private static bool TryGetShipVisualFocus(Transform shipRoot, out Vector3 lookTarget, out float characteristicRadius)
@@ -716,6 +798,9 @@ namespace TitanOrbit.Camera
             theatricalOrbitInitialized = false;
             hasTheatricalSmoothedLookTarget = false;
             hasTheatricalSmoothedFov = false;
+            hasTheatricalSmoothedRotation = false;
+            theatricalEnterBlendElapsed = 0f;
+            theatricalCapturingEnterBlendStart = false;
 
             int level = targetShip != null ? targetShip.ShipLevel : minShipLevelForZoom;
             float levelScale = GetZoomScaleForShipLevel(level);

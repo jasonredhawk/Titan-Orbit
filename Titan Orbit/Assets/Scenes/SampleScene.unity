@@ -4181,13 +4181,6 @@ MonoBehaviour:
   theatricalModeEnabled: 1
   theatricalIdleDurationSeconds: 3
   theatricalIdleMaxPlanarSpeed: 0.35
-  theatricalIntroDurationSeconds: 3.5
-  theatricalIntroDropHeightFraction: 0.28
-  theatricalEnterBlendDuration: 1.25
-  theatricalExitBlendDuration: 2
-  theatricalPositionSmoothTime: 0.35
-  theatricalEnterRotationLagExponent: 2.4
-  theatricalOrbitMotionStartBlend: 0.98
   theatricalPathDurationMinSeconds: 55
   theatricalPathDurationMaxSeconds: 95
   theatricalLookSmoothTime: 0.55
@@ -8437,12 +8430,12 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    asteroidDamage: 1
-    asteroidHealthRemaining: 1
+    asteroidDamage: 0
+    asteroidHealthRemaining: 0
     asteroidGemsRemaining: 0
     asteroidImpactForce: 0
-    damageShipOrDrone: 1
-    damageMoon: 1
+    damageShipOrDrone: 0
+    damageMoon: 0
     healthChange: 0
     peopleLoad: 1
     peopleUnload: 1
