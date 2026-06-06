@@ -1103,7 +1103,12 @@ namespace TitanOrbit.Networking
 
         /// <summary>Queries UGS for joinable dedicated lobbies (optionally only &quot;latest&quot;).</summary>
         /// <param name="emptyStabilizationAttempt">Leave default; used internally to retry empty-but-successful results while UGS indexes catch up.</param>
-        public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(bool latestOnly, int count = 20, int emptyStabilizationAttempt = 0)
+        /// <param name="maxEmptyStabilizationAttemptsOverride">When &gt;= 0, caps stabilization retries (0 = no retries).</param>
+        public async Task<List<LobbySummary>> QueryOpenLobbiesAsync(
+            bool latestOnly,
+            int count = 20,
+            int emptyStabilizationAttempt = 0,
+            int maxEmptyStabilizationAttemptsOverride = -1)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             while (!OpenLobbyRefreshGate.Wait(0))
@@ -1113,7 +1118,11 @@ namespace TitanOrbit.Networking
 #endif
             try
             {
-                return await QueryOpenLobbiesInternalAsync(latestOnly, count, emptyStabilizationAttempt);
+                return await QueryOpenLobbiesInternalAsync(
+                    latestOnly,
+                    count,
+                    emptyStabilizationAttempt,
+                    maxEmptyStabilizationAttemptsOverride);
             }
             finally
             {
@@ -1121,7 +1130,82 @@ namespace TitanOrbit.Networking
             }
         }
 
-        private async Task<List<LobbySummary>> QueryOpenLobbiesInternalAsync(bool latestOnly, int count = 20, int emptyStabilizationAttempt = 0)
+        /// <summary>Queries all open dedicated lobbies and applies in-memory joinability filters.</summary>
+        public async Task<List<LobbySummary>> QueryJoinableDedicatedLobbiesAsync(
+            int count = 40,
+            bool skipEmptyStabilization = false)
+        {
+            int stabilizationCap = skipEmptyStabilization ? 0 : -1;
+            List<LobbySummary> raw = await QueryOpenLobbiesAsync(
+                latestOnly: false,
+                count: count,
+                emptyStabilizationAttempt: 0,
+                maxEmptyStabilizationAttemptsOverride: stabilizationCap);
+            return FilterToJoinableDedicatedLobbies(raw);
+        }
+
+        /// <summary>
+        /// Signals the headless server to publish a fresh dedicated match when none is listed.
+        /// </summary>
+        public async Task<bool> RequestDedicatedMatchCreationAsync()
+        {
+            try
+            {
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return false;
+
+                await AcquireLobbyApiGateAsync();
+                try
+                {
+                    long requestedAtEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                    string requestName = "DedicatedMatchRequest-" + requestedAtEpoch.ToString(CultureInfo.InvariantCulture);
+                    await WithLobbyApiTimeoutAsync(
+                        LobbyService.Instance.CreateLobbyAsync(
+                            requestName,
+                            2,
+                            new CreateLobbyOptions
+                            {
+                                IsPrivate = true,
+                                Data = new Dictionary<string, DataObject>
+                                {
+                                    {
+                                        LobbyGameNameKey,
+                                        new DataObject(
+                                            DataObject.VisibilityOptions.Public,
+                                            DedicatedMatchServerBootstrap.LobbyMatchRequestGameName,
+                                            DataObject.IndexOptions.S1)
+                                    },
+                                    {
+                                        DedicatedMatchServerBootstrap.LobbyMatchRequestEpochKey,
+                                        new DataObject(
+                                            DataObject.VisibilityOptions.Public,
+                                            requestedAtEpoch.ToString(CultureInfo.InvariantCulture),
+                                            DataObject.IndexOptions.N1)
+                                    }
+                                }
+                            }),
+                        TimeSpan.FromSeconds(30),
+                        "LobbyService.CreateLobbyAsync(match_request)");
+                    Debug.Log("[NetworkGameManager] Dedicated match creation request published.");
+                    return true;
+                }
+                finally
+                {
+                    LobbyApiGate.Release();
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] RequestDedicatedMatchCreationAsync failed: " + e.Message);
+                return false;
+            }
+        }
+
+        private async Task<List<LobbySummary>> QueryOpenLobbiesInternalAsync(
+            bool latestOnly,
+            int count = 20,
+            int emptyStabilizationAttempt = 0,
+            int maxEmptyStabilizationAttemptsOverride = -1)
         {
             var results = new List<LobbySummary>();
             LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Ok;
@@ -1204,16 +1288,24 @@ namespace TitanOrbit.Networking
             // while Relay/Lobby creation finishes or while indexed filters (N1/N2) catch up — not "no server".
             const int maxEmptyStabilizationAttemptsBroad = 14;
             const int maxEmptyStabilizationAttemptsLatestOnly = 5;
-            int maxEmptyStabilizationAttempts = latestOnly ? maxEmptyStabilizationAttemptsLatestOnly : maxEmptyStabilizationAttemptsBroad;
+            int maxEmptyStabilizationAttempts = maxEmptyStabilizationAttemptsOverride >= 0
+                ? maxEmptyStabilizationAttemptsOverride
+                : (latestOnly ? maxEmptyStabilizationAttemptsLatestOnly : maxEmptyStabilizationAttemptsBroad);
             if (results.Count == 0 && LastOpenLobbyQueryKind == OpenLobbyQueryResultKind.Ok &&
+                maxEmptyStabilizationAttempts > 0 &&
                 emptyStabilizationAttempt < maxEmptyStabilizationAttempts - 1)
             {
                 int backoffMs = 1200 + Mathf.Min(emptyStabilizationAttempt * 150, 900);
                 await Task.Delay(backoffMs);
-                return await QueryOpenLobbiesInternalAsync(latestOnly, count, emptyStabilizationAttempt + 1);
+                return await QueryOpenLobbiesInternalAsync(
+                    latestOnly,
+                    count,
+                    emptyStabilizationAttempt + 1,
+                    maxEmptyStabilizationAttemptsOverride);
             }
 
             if (results.Count == 0 && LastOpenLobbyQueryKind == OpenLobbyQueryResultKind.Ok &&
+                maxEmptyStabilizationAttempts > 0 &&
                 emptyStabilizationAttempt >= maxEmptyStabilizationAttempts - 1)
             {
                 Debug.LogWarning(

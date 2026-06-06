@@ -47,6 +47,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Button browseLobbiesButton;
         [SerializeField] private Button refreshLobbiesButton;
         [SerializeField] private Button joinSelectedLobbyButton;
+        [SerializeField] private Button requestDedicatedMatchButton;
         [SerializeField] private Transform lobbyListContainer;
         [SerializeField] private GameObject lobbyListRowPrefab;
         [SerializeField] private TextMeshProUGUI lobbyBrowserStatusText;
@@ -57,6 +58,10 @@ namespace TitanOrbit.UI
         private readonly List<Image> lobbyRowBackgrounds = new List<Image>();
         private readonly List<TextMeshProUGUI> lobbyRowDurationLabels = new List<TextMeshProUGUI>();
         private float lobbyDurationRefreshTimer;
+        private float lobbyListAutoRefreshTimer;
+        private bool _lobbyListRefreshInProgress;
+        private bool _dedicatedMatchRequestInProgress;
+        private float _lastSuccessfulLobbyFetchRealtime = -1f;
         private string selectedLobbyId;
         private int selectedLobbyRowIndex = -1;
         private GameObject lobbyBrowserRoot;
@@ -79,6 +84,10 @@ namespace TitanOrbit.UI
         private Coroutine returningShipQueryRoutine;
 
         private const float LobbyScreenContentWidth = 540f;
+        /// <summary>How often to re-query UGS while the open-matches screen is visible (server heartbeats every 15s).</summary>
+        private const float LobbyListAutoRefreshIntervalSeconds = 20f;
+        /// <summary>Keep showing the last good lobby list for this long when a refresh temporarily returns zero rows.</summary>
+        private const float LobbyListCacheGraceSeconds = 180f;
 
         private RectTransform _authMainCardRt;
         private Image _authMainCardBg;
@@ -653,13 +662,23 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
-            if (lobbyScreenRoot != null && lobbyScreenRoot.activeSelf && cachedLobbySummaries.Count > 0)
+            if (lobbyScreenRoot != null && lobbyScreenRoot.activeSelf)
             {
-                lobbyDurationRefreshTimer += Time.unscaledDeltaTime;
-                if (lobbyDurationRefreshTimer >= 1f)
+                if (cachedLobbySummaries.Count > 0)
                 {
-                    lobbyDurationRefreshTimer = 0f;
-                    RefreshLobbyRowDurations();
+                    lobbyDurationRefreshTimer += Time.unscaledDeltaTime;
+                    if (lobbyDurationRefreshTimer >= 1f)
+                    {
+                        lobbyDurationRefreshTimer = 0f;
+                        RefreshLobbyRowDurations();
+                    }
+                }
+
+                lobbyListAutoRefreshTimer += Time.unscaledDeltaTime;
+                if (lobbyListAutoRefreshTimer >= LobbyListAutoRefreshIntervalSeconds)
+                {
+                    lobbyListAutoRefreshTimer = 0f;
+                    TryAutoRefreshLobbyList();
                 }
             }
 
@@ -847,7 +866,64 @@ namespace TitanOrbit.UI
 
         private async void OnRefreshLobbiesClicked()
         {
-            await RefreshLobbyListAsync();
+            lobbyListAutoRefreshTimer = 0f;
+            await RefreshLobbyListAsync(preserveSelection: false, silent: false);
+        }
+
+        private void TryAutoRefreshLobbyList()
+        {
+            if (_lobbyListRefreshInProgress || _dedicatedMatchRequestInProgress)
+                return;
+            if (NetworkGameManager.Instance == null)
+                return;
+            if (NetworkGameManager.LobbyRateLimitRemainingSeconds > 0f)
+                return;
+
+            _ = RefreshLobbyListAsync(preserveSelection: true, silent: true);
+        }
+
+        private async void OnRequestDedicatedMatchClicked()
+        {
+            if (NetworkGameManager.Instance == null || _dedicatedMatchRequestInProgress)
+                return;
+
+            _dedicatedMatchRequestInProgress = true;
+            lobbyListAutoRefreshTimer = 0f;
+            UpdateDedicatedMatchRequestButtonState();
+
+            try
+            {
+                SetLobbyBrowserStatus("Requesting a new dedicated match on the server…");
+                bool requested = await NetworkGameManager.Instance.RequestDedicatedMatchCreationAsync();
+                if (!requested)
+                {
+                    SetLobbyBrowserStatus("Could not request a dedicated match. Check your connection and try again.");
+                    return;
+                }
+
+                SetLobbyBrowserStatus("Dedicated match requested. Waiting for the server to publish a new lobby…");
+                for (int attempt = 0; attempt < 18; attempt++)
+                {
+                    await Task.Delay(5000);
+                    if (lobbyScreenRoot == null || !lobbyScreenRoot.activeSelf)
+                        return;
+
+                    await RefreshLobbyListAsync(preserveSelection: false, silent: true);
+                    if (cachedLobbySummaries.Count > 0)
+                    {
+                        SetLobbyBrowserStatus("A dedicated match is ready. Select it and tap Join.");
+                        return;
+                    }
+                }
+
+                SetLobbyBrowserStatus(
+                    "Still waiting for a dedicated match. The headless server may be offline — keep this screen open or tap Refresh.");
+            }
+            finally
+            {
+                _dedicatedMatchRequestInProgress = false;
+                UpdateDedicatedMatchRequestButtonState();
+            }
         }
 
         private async void OnJoinSelectedLobbyClicked()
@@ -897,7 +973,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        private async Task RefreshLobbyListAsync()
+        private async Task RefreshLobbyListAsync(bool preserveSelection = false, bool silent = false)
         {
             if (NetworkGameManager.Instance == null)
             {
@@ -905,80 +981,77 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            if (_lobbyListRefreshInProgress)
+                return;
+
+            _lobbyListRefreshInProgress = true;
+            string previousSelection = preserveSelection ? selectedLobbyId : null;
+
             _dbgLobbyRefreshCount++;
             float now = Time.realtimeSinceStartup;
             float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
             _dbgLastLobbyRefreshRealtime = now;
 
-            SetLobbyBrowserStatus("Loading lobbies...");
-            if (refreshLobbiesButton != null)
+            if (!silent)
+                SetLobbyBrowserStatus("Loading lobbies...");
+            if (!silent && refreshLobbiesButton != null)
                 refreshLobbiesButton.interactable = false;
-            if (joinSelectedLobbyButton != null)
+            if (!silent && joinSelectedLobbyButton != null)
                 joinSelectedLobbyButton.interactable = false;
 
             try
             {
-                var fetched = await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40);
+                var fetched = await NetworkGameManager.Instance.QueryJoinableDedicatedLobbiesAsync(
+                    40,
+                    skipEmptyStabilization: silent);
                 var kind = NetworkGameManager.LastOpenLobbyQueryKind;
-                // If strict/latest query returns empty while services are otherwise OK, immediately retry with latestOnly=false.
-                // This avoids transient "no games" states when latest/index flags lag behind lobby creation.
-                if (fetched.Count == 0 &&
-                    latestOnlyFilter &&
-                    kind == NetworkGameManager.OpenLobbyQueryResultKind.Ok)
-                {
-                    var retry = await NetworkGameManager.Instance.QueryOpenLobbiesAsync(false, 40);
-                    var retryKind = NetworkGameManager.LastOpenLobbyQueryKind;
-                    if (retryKind == NetworkGameManager.OpenLobbyQueryResultKind.Ok && retry.Count > 0)
-                    {
-                        fetched = NetworkGameManager.FilterToJoinableDedicatedLobbies(retry);
-                        kind = retryKind;
-                    }
-                }
-
-                fetched = NetworkGameManager.FilterToJoinableDedicatedLobbies(fetched);
 
                 if (fetched.Count > 0)
                 {
-                    selectedLobbyId = null;
-                    selectedLobbyRowIndex = -1;
-                    cachedLobbySummaries.Clear();
-                    cachedLobbySummaries.AddRange(fetched);
-                    RenderLobbyList();
+                    _lastSuccessfulLobbyFetchRealtime = Time.realtimeSinceStartup;
+                    ApplyFetchedLobbySummaries(fetched, previousSelection, silent);
                     return;
                 }
 
                 if (kind == NetworkGameManager.OpenLobbyQueryResultKind.RateLimitBackoff)
                 {
                     int waitSec = Mathf.Max(1, Mathf.CeilToInt(NetworkGameManager.LobbyRateLimitRemainingSeconds));
-                    SetLobbyBrowserStatus(
-                        "Lobby list is temporarily rate-limited by Unity. " +
-                        (cachedLobbySummaries.Count > 0
-                            ? $"Showing the previous list. Retry in about {waitSec}s."
-                            : $"Wait about {waitSec}s, then tap Refresh."));
+                    if (!silent)
+                    {
+                        SetLobbyBrowserStatus(
+                            "Lobby list is temporarily rate-limited by Unity. " +
+                            (cachedLobbySummaries.Count > 0
+                                ? $"Showing the previous list. Retry in about {waitSec}s."
+                                : $"Wait about {waitSec}s, then tap Refresh."));
+                    }
                     if (cachedLobbySummaries.Count > 0)
                         RenderLobbyList();
                     else
                         ClearLobbyListRows();
+                    UpdateDedicatedMatchRequestButtonState();
                     return;
                 }
 
                 if (kind == NetworkGameManager.OpenLobbyQueryResultKind.UnityServicesNotReady)
                 {
-                    SetLobbyBrowserStatus("Connecting to multiplayer services… try Refresh in a few seconds.");
+                    if (!silent)
+                        SetLobbyBrowserStatus("Connecting to multiplayer services… try Refresh in a few seconds.");
                     if (cachedLobbySummaries.Count > 0)
                         RenderLobbyList();
                     else
                         ClearLobbyListRows();
+                    UpdateDedicatedMatchRequestButtonState();
                     return;
                 }
 
                 if (kind == NetworkGameManager.OpenLobbyQueryResultKind.Error)
                 {
-                    // Keep previous lobby list visible on transient query errors.
                     if (cachedLobbySummaries.Count > 0)
                     {
-                        SetLobbyBrowserStatus("Lobby refresh failed. Showing previous list.");
+                        if (!silent)
+                            SetLobbyBrowserStatus("Lobby refresh failed. Showing previous list.");
                         RenderLobbyList();
+                        UpdateDedicatedMatchRequestButtonState();
                         return;
                     }
 
@@ -986,29 +1059,91 @@ namespace TitanOrbit.UI
                     selectedLobbyRowIndex = -1;
                     cachedLobbySummaries.Clear();
                     ClearLobbyListRows();
-                    if (!string.IsNullOrEmpty(NetworkGameManager.LastOpenLobbyQueryErrorDetail))
+                    if (!silent)
                     {
-                        string detail = NetworkGameManager.LastOpenLobbyQueryErrorDetail;
-                        if (detail.Length > 96)
-                            detail = detail.Substring(0, 93) + "…";
-                        SetLobbyBrowserStatus("Could not load lobbies: " + detail);
+                        if (!string.IsNullOrEmpty(NetworkGameManager.LastOpenLobbyQueryErrorDetail))
+                        {
+                            string detail = NetworkGameManager.LastOpenLobbyQueryErrorDetail;
+                            if (detail.Length > 96)
+                                detail = detail.Substring(0, 93) + "…";
+                            SetLobbyBrowserStatus("Could not load lobbies: " + detail);
+                        }
+                        else
+                            SetLobbyBrowserStatus("Could not load lobbies. Check your connection and tap Refresh.");
                     }
-                    else
-                        SetLobbyBrowserStatus("Could not load lobbies. Check your connection and tap Refresh.");
+                    UpdateDedicatedMatchRequestButtonState();
                     return;
                 }
 
-                selectedLobbyId = null;
-                selectedLobbyRowIndex = -1;
-                cachedLobbySummaries.Clear();
-                cachedLobbySummaries.AddRange(fetched);
-                RenderLobbyList();
+                if (ShouldKeepCachedLobbyList())
+                {
+                    RenderLobbyList();
+                    if (!silent)
+                    {
+                        SetLobbyBrowserStatus(
+                            "Searching for dedicated matches… showing the previous list until a fresh lobby appears.");
+                    }
+                    UpdateDedicatedMatchRequestButtonState();
+                    return;
+                }
+
+                ApplyFetchedLobbySummaries(fetched, previousSelection, silent);
             }
             finally
             {
+                _lobbyListRefreshInProgress = false;
                 if (refreshLobbiesButton != null)
                     refreshLobbiesButton.interactable = true;
             }
+        }
+
+        private void ApplyFetchedLobbySummaries(
+            List<NetworkGameManager.LobbySummary> fetched,
+            string previousSelection,
+            bool silent)
+        {
+            cachedLobbySummaries.Clear();
+            cachedLobbySummaries.AddRange(fetched);
+            RenderLobbyList();
+
+            if (!string.IsNullOrWhiteSpace(previousSelection))
+            {
+                for (int i = 0; i < cachedLobbySummaries.Count; i++)
+                {
+                    if (cachedLobbySummaries[i].LobbyId == previousSelection)
+                    {
+                        OnLobbyRowSelected(i);
+                        return;
+                    }
+                }
+            }
+
+            selectedLobbyId = null;
+            selectedLobbyRowIndex = -1;
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+            if (!silent)
+                SetLobbyBrowserStatus(cachedLobbySummaries.Count == 0
+                    ? "No dedicated matches listed."
+                    : "Select a lobby to join.");
+            UpdateDedicatedMatchRequestButtonState();
+        }
+
+        private bool ShouldKeepCachedLobbyList()
+        {
+            if (cachedLobbySummaries.Count == 0 || _lastSuccessfulLobbyFetchRealtime < 0f)
+                return false;
+            return Time.realtimeSinceStartup - _lastSuccessfulLobbyFetchRealtime <= LobbyListCacheGraceSeconds;
+        }
+
+        private void UpdateDedicatedMatchRequestButtonState()
+        {
+            if (requestDedicatedMatchButton == null)
+                return;
+
+            bool show = cachedLobbySummaries.Count == 0;
+            requestDedicatedMatchButton.gameObject.SetActive(show);
+            requestDedicatedMatchButton.interactable = show && !_dedicatedMatchRequestInProgress && !_lobbyListRefreshInProgress;
         }
 
         private void RenderLobbyList()
@@ -1017,9 +1152,12 @@ namespace TitanOrbit.UI
 
             if (cachedLobbySummaries.Count == 0)
             {
-                SetLobbyBrowserStatus("No open lobbies found.");
+                SetLobbyBrowserStatus("No dedicated matches listed. Create one on the headless server or tap Refresh.");
+                UpdateDedicatedMatchRequestButtonState();
                 return;
             }
+
+            UpdateDedicatedMatchRequestButtonState();
 
             for (int i = 0; i < cachedLobbySummaries.Count; i++)
             {
@@ -1065,6 +1203,7 @@ namespace TitanOrbit.UI
             }
 
             SetLobbyBrowserStatus("Select a lobby to join.");
+            UpdateDedicatedMatchRequestButtonState();
         }
 
         private void OnLobbyRowSelected(int index)
@@ -1350,6 +1489,7 @@ namespace TitanOrbit.UI
                 mainMenuPanel.SetActive(false);
             if (storeScreenRoot != null)
                 storeScreenRoot.SetActive(false);
+            lobbyListAutoRefreshTimer = 0f;
             _ = RefreshLobbyListAsync();
         }
 
@@ -1357,6 +1497,7 @@ namespace TitanOrbit.UI
         {
             if (lobbyScreenRoot != null)
                 lobbyScreenRoot.SetActive(false);
+            lobbyListAutoRefreshTimer = 0f;
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(true);
             LayoutMainMenuActionStack();
@@ -1661,6 +1802,11 @@ namespace TitanOrbit.UI
                 joinSelectedLobbyButton.onClick.RemoveListener(OnJoinSelectedLobbyClicked);
                 joinSelectedLobbyButton.onClick.AddListener(OnJoinSelectedLobbyClicked);
             }
+            if (requestDedicatedMatchButton != null)
+            {
+                requestDedicatedMatchButton.onClick.RemoveListener(OnRequestDedicatedMatchClicked);
+                requestDedicatedMatchButton.onClick.AddListener(OnRequestDedicatedMatchClicked);
+            }
         }
 
         private static void ApplyLobbyContentColumnLayout(LayoutElement layoutElement)
@@ -1829,7 +1975,15 @@ namespace TitanOrbit.UI
             ApplyLobbyContentColumnLayout(footerLe);
 
             refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: false);
+            requestDedicatedMatchButton = CreateMenuButton(
+                "RequestDedicatedMatchButton",
+                "Create dedicated match",
+                Vector2.zero,
+                new Vector2(250f, 44f),
+                footerRect,
+                isPrimary: true);
             joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: true);
+            requestDedicatedMatchButton.gameObject.SetActive(false);
 
             lobbyListRowPrefab = CreateLobbyRowPrefab();
             if (lobbyListRowPrefab != null)

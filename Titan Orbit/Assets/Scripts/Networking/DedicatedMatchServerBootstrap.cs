@@ -41,6 +41,10 @@ namespace TitanOrbit.Networking
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
         /// <summary>Live Netcode player count published on heartbeat so clients show accurate joinable listings.</summary>
         public const string LobbyActivePlayersKey = "ActivePlayers";
+        /// <summary>Indexed game name for client-created wake lobbies (not shown in the browser).</summary>
+        public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
+        public const string LobbyMatchRequestEpochKey = "RequestedAt";
+        private static readonly HashSet<string> ProcessedMatchRequestLobbyIds = new HashSet<string>(StringComparer.Ordinal);
         private const int DefaultDedicatedLobbyStaleSeconds = 120;
         private static int _dbgWatchdogFailCount;
         private static string _activeLobbyId;
@@ -654,6 +658,11 @@ namespace TitanOrbit.Networking
                 ageThresholdSeconds,
                 emptyMatchRecreateSeconds
             );
+            _ = MatchRequestWatchdogAsync(
+                maxPlayers,
+                relayProtocol,
+                relayAllocTimeoutMs,
+                lobbyCreateTimeoutMs);
         }
 
         private static async Task CloseLobbyForNewJoinersAsync(string lobbyId, string reason)
@@ -924,8 +933,6 @@ namespace TitanOrbit.Networking
             _recreateEmptyMatchInProgress = true;
             try
             {
-                await CloseLobbyForNewJoinersAsync(oldLobbyId, "empty_match_recreate");
-
                 int maxConnections = Mathf.Max(1, maxPlayers - 1);
                 Allocation allocation = await WithTimeoutAsync(
                     RelayService.Instance.CreateAllocationAsync(maxConnections),
@@ -999,19 +1006,22 @@ namespace TitanOrbit.Networking
                     TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
                     "LobbyService.CreateLobbyAsync(empty_recreate)");
 
+                _activeLobbyId = newLobby.Id;
+                _matchIsLatest = isLatest;
+                _emptySinceUtc = DateTime.UtcNow;
+
+                await CloseLobbyForNewJoinersAsync(oldLobbyId, "empty_match_recreate");
                 try
                 {
                     await LobbyService.Instance.DeleteLobbyAsync(oldLobbyId);
                 }
-                catch (Exception deleteEx)
+                catch (Exception deleteOldEx)
                 {
                     Debug.LogWarning(
-                        "[DedicatedMatchServerBootstrap] Could not delete old lobby after empty recreate: " + deleteEx.Message);
+                        "[DedicatedMatchServerBootstrap] Could not delete superseded lobby after recreate: " +
+                        deleteOldEx.Message);
                 }
 
-                _activeLobbyId = newLobby.Id;
-                _matchIsLatest = isLatest;
-                _emptySinceUtc = DateTime.UtcNow;
                 Debug.Log(
                     "[DedicatedMatchServerBootstrap] Empty match recreated: new lobby " + newLobby.Id +
                     " (replaced " + oldLobbyId + ").");
@@ -1084,12 +1094,13 @@ namespace TitanOrbit.Networking
                         spawnedFromAge = true;
                         isLatest = false;
                         _matchIsLatest = false;
+                        string closingLobbyId = lobbyId;
 
-                        await UpdateLobbyFlagsAsync(lobbyId, isOpen: false, isLatest: false);
                         Debug.Log(
-                            "[DedicatedMatchServerBootstrap] Age rotation: closed lobby " + lobbyId +
-                            " and spawned next match.");
+                            "[DedicatedMatchServerBootstrap] Age rotation: spawning successor match before closing " +
+                            closingLobbyId + ".");
                         SpawnNextMatch(maxPlayers, serverPort, relayProtocol, nextIsLatest: true);
+                        _ = HandoffAndCloseLobbyForNewJoinersAsync(closingLobbyId, "age_rotation");
                     }
 
                     // Full-based rotation (when max players are reached).
@@ -1100,10 +1111,13 @@ namespace TitanOrbit.Networking
                         bool nextIsLatest = isLatest;
                         isLatest = false;
                         _matchIsLatest = false;
+                        string closingLobbyId = lobbyId;
 
-                        await UpdateLobbyFlagsAsync(lobbyId, isOpen: false, isLatest: false);
-                        Debug.Log($"[DedicatedMatchServerBootstrap] Lobby full rotation: spawned next match (old lobby {lobbyId} closed). NextIsLatest={nextIsLatest}.");
+                        Debug.Log(
+                            "[DedicatedMatchServerBootstrap] Lobby full rotation: spawning successor before closing " +
+                            closingLobbyId + ". NextIsLatest=" + nextIsLatest + ".");
                         SpawnNextMatch(maxPlayers, serverPort, relayProtocol, nextIsLatest: nextIsLatest);
+                        _ = HandoffAndCloseLobbyForNewJoinersAsync(closingLobbyId, "full_rotation");
                     }
                 }
                 catch (Exception e)
@@ -1112,6 +1126,143 @@ namespace TitanOrbit.Networking
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(3));
+            }
+        }
+
+        private static async Task HandoffAndCloseLobbyForNewJoinersAsync(string lobbyId, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(lobbyId))
+                return;
+
+            bool successorReady = await WaitForSuccessorLatestLobbyAsync(lobbyId, TimeSpan.FromSeconds(120));
+            if (!successorReady)
+            {
+                Debug.LogWarning(
+                    "[DedicatedMatchServerBootstrap] Successor latest lobby not detected before handoff timeout; closing " +
+                    lobbyId + " anyway (" + reason + ").");
+            }
+
+            await CloseLobbyForNewJoinersAsync(lobbyId, reason);
+        }
+
+        private static async Task<bool> WaitForSuccessorLatestLobbyAsync(string excludeLobbyId, TimeSpan timeout)
+        {
+            DateTime deadline = DateTime.UtcNow.Add(timeout);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                    {
+                        Count = 10,
+                        Filters = new List<QueryFilter>
+                        {
+                            new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
+                            new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
+                            new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ),
+                        }
+                    });
+
+                    if (response?.Results != null)
+                    {
+                        for (int i = 0; i < response.Results.Count; i++)
+                        {
+                            Lobby candidate = response.Results[i];
+                            if (candidate == null || string.IsNullOrWhiteSpace(candidate.Id))
+                                continue;
+                            if (string.Equals(candidate.Id, excludeLobbyId, StringComparison.Ordinal))
+                                continue;
+                            if (candidate.Data == null || !candidate.Data.ContainsKey(LobbyServerListenAddressKey))
+                                continue;
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] WaitForSuccessorLatestLobby query failed: " + e.Message);
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(3));
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Clients publish short-lived request lobbies when no joinable dedicated match is listed; recreate immediately when idle.
+        /// </summary>
+        private static async Task MatchRequestWatchdogAsync(
+            int maxPlayers,
+            string relayProtocol,
+            int relayAllocTimeoutMs,
+            int lobbyCreateTimeoutMs)
+        {
+            var interval = TimeSpan.FromSeconds(20);
+            while (true)
+            {
+                await Task.Delay(interval);
+                try
+                {
+                    if (_recreateEmptyMatchInProgress || !_matchIsLatest)
+                        continue;
+
+                    QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
+                    {
+                        Count = 10,
+                        Filters = new List<QueryFilter>
+                        {
+                            new QueryFilter(
+                                QueryFilter.FieldOptions.S1,
+                                LobbyMatchRequestGameName,
+                                QueryFilter.OpOptions.EQ),
+                        },
+                        Order = new List<QueryOrder>
+                        {
+                            new QueryOrder(asc: false, field: QueryOrder.FieldOptions.Created)
+                        }
+                    });
+
+                    if (response?.Results == null || response.Results.Count == 0)
+                        continue;
+
+                    bool foundNewRequest = false;
+                    for (int i = 0; i < response.Results.Count; i++)
+                    {
+                        Lobby requestLobby = response.Results[i];
+                        if (requestLobby == null || string.IsNullOrWhiteSpace(requestLobby.Id))
+                            continue;
+                        if (!ProcessedMatchRequestLobbyIds.Add(requestLobby.Id))
+                            continue;
+                        foundNewRequest = true;
+                    }
+
+                    if (!foundNewRequest)
+                        continue;
+
+                    int playerCount = NetworkManager.Singleton != null
+                        ? NetworkManager.Singleton.ConnectedClients.Count
+                        : 0;
+                    if (playerCount > 0)
+                    {
+                        DedicatedServerFileLog.Append(
+                            "lobby",
+                            "Dedicated match request received while players are connected; skipping recreate.");
+                        continue;
+                    }
+
+                    DedicatedServerFileLog.Append("lobby", "Dedicated match request received; recreating empty match.");
+                    await RecreateEmptyMatchInProcessAsync(
+                        maxPlayers,
+                        relayProtocol,
+                        TimeSpan.FromMilliseconds(relayAllocTimeoutMs),
+                        lobbyCreateTimeoutMs);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("[DedicatedMatchServerBootstrap] MatchRequestWatchdog error: " + e.Message);
+                }
             }
         }
 

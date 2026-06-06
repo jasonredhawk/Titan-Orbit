@@ -7,7 +7,8 @@ namespace TitanOrbit.Entities
 {
     /// <summary>
     /// Draws Saturn-style tilted rings around a HomePlanet using Shapes immediate mode.
-    /// Ring count = Home Planet level (1–6). Level 1 has 1 ring, adds one per level up to 6.
+    /// Ring count = Home Planet level (1–6). Level 1 has 1 band, adds one per level up to 6.
+    /// Each band is drawn as a few varied sub-rings plus dense granule discs.
     /// Optional MeshRenderer backup matches <see cref="GemMoonOrbitZoneVisual"/> / <see cref="PlanetRingsDrawer"/> when Shapes IM fails. Keep off when IM works to avoid duplicate transparent geometry flickering against tilted rings.
     /// </summary>
     [ExecuteAlways]
@@ -152,7 +153,6 @@ namespace TitanOrbit.Entities
             {
                 float alpha = Mathf.Clamp01(ringOpacity + (level - 1) * opacityPerLevel);
                 Color baseColor = TeamManager.GetTeamColor(homePlanet.TeamOwnership);
-                Color color = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
                 using (Draw.Command(cam))
                 {
                     Draw.ResetAllDrawStates();
@@ -160,12 +160,9 @@ namespace TitanOrbit.Entities
                     Draw.ThicknessSpace = ThicknessSpace.Meters;
                     Draw.DiscGeometry = DiscGeometry.Flat2D;
                     Draw.Matrix = planetMatrix * Matrix4x4.TRS(Vector3.zero, tilt, Vector3.one);
-                    float currentRadius = innerRadius;
-                    for (int i = 0; i < ringCount; i++)
-                    {
-                        Draw.Ring(Vector3.zero, Quaternion.identity, currentRadius, ringThickness, color);
-                        currentRadius += ringThickness + gapBetweenBands;
-                    }
+                    PlanetRingMeshBuilder.DrawSaturnStyleLevelBands(
+                        innerRadius, ringThickness, gapBetweenBands, ringCount,
+                        baseColor, alpha, homePlanet.GetInstanceID());
                 }
             }
         }
