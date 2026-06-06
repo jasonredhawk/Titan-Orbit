@@ -431,6 +431,8 @@ namespace TitanOrbit.Entities
         private readonly List<int> _sharedPoolReadyCannonsScratch = new List<int>(8);
         private readonly List<float> _sharedPoolReadyCostsScratch = new List<float>(8);
         private readonly List<int> _cannonsToFireScratch = new List<int>(8);
+        /// <summary>True when shared-pool energy is too low for a volley; round-robin regen cadence applies.</summary>
+        private bool _sharedPoolRoundRobinMode;
 
         private void EnsureCannonEnergyState(int cannonCount)
         {
@@ -458,22 +460,51 @@ namespace TitanOrbit.Entities
             regen = Mathf.Max(0f, stats.energyRegen + stats.energyRegenPerLevel * perLvlWeapon);
         }
 
-        private float ComputeCannonEnergyCapacity(int cannonIndex)
+        private float GetSummedWeaponEnergyCapacityBase()
         {
-            if (!HasWeaponComponentEnergy || cannonIndex < 0 || cannonIndex >= cannonEnergyCapacityBase.Length)
-                return ComputeEnergyCapacityLocal();
-            float baseWithCards = cannonEnergyCapacityBase[cannonIndex] + GetCardEnergyCapacityAdd();
-            float attrScale = 1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
-            return Mathf.Max(0.1f, baseWithCards * attrScale);
+            if (!HasWeaponComponentEnergy)
+                return 0f;
+            float sum = 0f;
+            for (int i = 0; i < cannonEnergyCapacityBase.Length; i++)
+                sum += Mathf.Max(0.1f, cannonEnergyCapacityBase[i]);
+            return sum;
         }
 
-        private float ComputeCannonEnergyRegen(int cannonIndex)
+        private float GetSummedWeaponEnergyRegenBase()
         {
-            if (!HasWeaponComponentEnergy || cannonIndex < 0 || cannonIndex >= cannonEnergyRegenBase.Length)
-                return EffectiveEnergyRegen;
-            float baseWithCards = cannonEnergyRegenBase[cannonIndex] + GetCardEnergyRegenAdd();
-            float attrScale = 1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
-            return Mathf.Max(0.01f, baseWithCards * attrScale);
+            if (!HasWeaponComponentEnergy)
+                return 0f;
+            float sum = 0f;
+            for (int i = 0; i < cannonEnergyRegenBase.Length; i++)
+                sum += Mathf.Max(0f, cannonEnergyRegenBase[i]);
+            return sum;
+        }
+
+        /// <summary>Seconds the shared pool must recharge before the next round-robin shot (cost / pooled regen).</summary>
+        private float ComputeSharedPoolRegenIntervalForShot(float shotCost) =>
+            shotCost / Mathf.Max(0.01f, EffectiveEnergyRegen);
+
+        private bool SharedPoolRegenReadyForShot(float shotCost)
+        {
+            if (!UsesSharedWeaponEnergyPool)
+                return true;
+            float minInterval = ComputeSharedPoolRegenIntervalForShot(shotCost);
+            return Time.time - lastSharedPoolShotTime.Value >= minInterval - 0.0001f;
+        }
+
+        private void RecordSharedPoolShot(float shotCost)
+        {
+            if (!UsesSharedWeaponEnergyPool || !IsServer)
+                return;
+            if (!_sharedPoolRoundRobinMode)
+            {
+                lastSharedPoolShotTime.Value = Time.time;
+                return;
+            }
+
+            float minInterval = ComputeSharedPoolRegenIntervalForShot(shotCost);
+            float earliest = lastSharedPoolShotTime.Value + minInterval;
+            lastSharedPoolShotTime.Value = Mathf.Max(Time.time, earliest);
         }
 
         private bool CannonHasEnergyForShot(int cannonIndex, float cost) =>
@@ -487,7 +518,10 @@ namespace TitanOrbit.Entities
                 return false;
             currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - cost);
             if (UsesSharedWeaponEnergyPool)
+            {
                 lastSharedPoolWeaponFiredIndex.Value = cannonIndex;
+                RecordSharedPoolShot(cost);
+            }
             return true;
         }
 
@@ -497,7 +531,10 @@ namespace TitanOrbit.Entities
         private void ResetSharedPoolWeaponFiredIndex()
         {
             if (IsServer)
+            {
                 lastSharedPoolWeaponFiredIndex.Value = -1;
+                lastSharedPoolShotTime.Value = -999f;
+            }
         }
 
         /// <summary>Next weapon slot in shared-pool round-robin, skipping invalid fire points.</summary>
@@ -554,6 +591,7 @@ namespace TitanOrbit.Entities
         private bool TryCollectCannonsToFire(List<int> cannonsToFire, bool requireEnergy = true)
         {
             cannonsToFire.Clear();
+            _sharedPoolRoundRobinMode = false;
             if (bulletConfig?.cannons == null || bulletConfig.cannons.Count == 0)
                 return false;
 
@@ -587,6 +625,7 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
+            _sharedPoolRoundRobinMode = true;
             int turn = ResolveSharedPoolTurnCannonIndex();
             if (turn < 0)
                 return false;
@@ -596,8 +635,14 @@ namespace TitanOrbit.Entities
                 if (_sharedPoolReadyCannonsScratch[r] != turn)
                     continue;
                 float cost = _sharedPoolReadyCostsScratch[r];
-                if (!requireEnergy || CannonHasEnergyForShot(turn, cost))
-                    cannonsToFire.Add(turn);
+                if (requireEnergy)
+                {
+                    if (!CannonHasEnergyForShot(turn, cost))
+                        break;
+                    if (!SharedPoolRegenReadyForShot(cost))
+                        break;
+                }
+                cannonsToFire.Add(turn);
                 break;
             }
 
@@ -697,6 +742,8 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentEnergy = new NetworkVariable<float>(50f);
         /// <summary>Last weapon index that consumed shared-pool energy; next shot round-robins from here.</summary>
         private NetworkVariable<int> lastSharedPoolWeaponFiredIndex = new NetworkVariable<int>(-1);
+        /// <summary>Server time when the shared pool last paid for a round-robin shot (gates regen between shots).</summary>
+        private NetworkVariable<float> lastSharedPoolShotTime = new NetworkVariable<float>(-999f);
         /// <summary>Server-authoritative gem/people/health/energy caps for HUD (clients may not resolve all card bonuses locally).</summary>
         private NetworkVariable<float> networkGemCapacity = new NetworkVariable<float>(100f);
         private NetworkVariable<float> networkPeopleCapacity = new NetworkVariable<float>(10f);
@@ -896,17 +943,12 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                if (HasWeaponComponentEnergy)
-                {
-                    float sum = 0f;
-                    for (int i = 0; i < cannonEnergyRegenBase.Length; i++)
-                        sum += ComputeCannonEnergyRegen(i);
-                    return sum;
-                }
-
-                float baseWithCards = energyRegenRate + _equippedComponentStatSum.energyRegen + GetCardEnergyRegenAdd();
+                float baseWithCards = HasWeaponComponentEnergy
+                    ? GetSummedWeaponEnergyRegenBase() + GetCardEnergyRegenAdd()
+                    : energyRegenRate + _equippedComponentStatSum.energyRegen + GetCardEnergyRegenAdd();
                 float attrScale = 1f + attrEnergyRegen.Value * ATTR_MULTIPLIER_PER_LEVEL;
-                return baseWithCards * attrScale;
+                float regen = baseWithCards * attrScale;
+                return HasWeaponComponentEnergy ? Mathf.Max(0.01f, regen) : regen;
             }
         }
 
@@ -2249,7 +2291,10 @@ namespace TitanOrbit.Entities
             if (IsServer && networkShipLevel != null)
                 networkShipLevel.Value = Mathf.Max(1, shipLevel);
             if (IsServer)
+            {
                 lastSharedPoolWeaponFiredIndex.Value = -1;
+                lastSharedPoolShotTime.Value = -999f;
+            }
             if (IsServer && networkBranchIndex != null && shipData != null)
                 networkBranchIndex.Value = shipData.branchIndex;
 
@@ -8100,15 +8145,9 @@ namespace TitanOrbit.Entities
 
         private float ComputeEnergyCapacityLocal()
         {
-            if (HasWeaponComponentEnergy)
-            {
-                float sum = 0f;
-                for (int i = 0; i < cannonEnergyCapacityBase.Length; i++)
-                    sum += ComputeCannonEnergyCapacity(i);
-                return Mathf.Max(0.1f, sum);
-            }
-
-            float baseWithCards = energyCapacity + _equippedComponentStatSum.energyCap + GetCardEnergyCapacityAdd();
+            float baseWithCards = HasWeaponComponentEnergy
+                ? GetSummedWeaponEnergyCapacityBase() + GetCardEnergyCapacityAdd()
+                : energyCapacity + _equippedComponentStatSum.energyCap + GetCardEnergyCapacityAdd();
             float attrScale = 1f + attrEnergyCapacity.Value * ATTR_MULTIPLIER_PER_LEVEL;
             return Mathf.Max(0.1f, baseWithCards * attrScale);
         }

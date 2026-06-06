@@ -8,7 +8,7 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Draws Saturn-style tilted rings around a regular (non-home) planet using Shapes.
     /// Ring count = planet level (1–6), matching max regular planet level. One level band per level,
-    /// each band rendered as a few varied sub-rings plus dense granule discs.
+    /// each band rendered as a few varied sub-rings inside a clear level frame.
     /// Optional MeshRenderer backup matches <see cref="GemMoonOrbitZoneVisual"/> when Shapes IM is culled or fails on a given URP/camera setup. Keep it off when IM works: drawing the same transparent orbit fill and rings twice causes flicker where tilted rings intersect the flat zone.
     /// </summary>
     [ExecuteAlways]
@@ -340,10 +340,9 @@ namespace TitanOrbit.Entities
         internal const int OrbitRingShapeGradientSteps = 32;
         private const int MinSubRingsPerLevelBand = 2;
         private const int MaxSubRingsPerLevelBand = 5;
-        private const int GranulesPerLevelBand = 185;
 
         /// <summary>
-        /// Draws one Saturn-style level band: edge frame + soft fill, interior sub-rings, and dense granules.
+        /// Draws one Saturn-style level band: edge frame, soft fill, and interior sub-rings.
         /// Call inside an active Shapes Draw.Command with matrix and draw states already set.
         /// </summary>
         internal static void DrawSaturnStyleLevelBands(
@@ -429,29 +428,6 @@ namespace TitanOrbit.Entities
                     float angularOffset = RingHash(seed, s + 280) * 360f;
                     Draw.Ring(Vector3.zero, Quaternion.Euler(0f, 0f, angularOffset), radialPos, subThickness,
                         DiscColors.Angular(streakBright, streakDim));
-                }
-            }
-
-            for (int g = 0; g < GranulesPerLevelBand; g++)
-            {
-                float angle = RingHash(seed, g + 360) * Mathf.PI * 2f;
-                float radialPos = detailInner + RingHash(seed, g + 400) * detailSpan;
-                float sizeRoll = RingHash(seed, g + 440);
-                float granuleRadius = sizeRoll > 0.9f
-                    ? Mathf.Lerp(0.004f, 0.0075f, RingHash(seed, g + 441))
-                    : Mathf.Lerp(0.0005f, 0.003f, sizeRoll);
-                float granuleAlpha = baseAlpha * Mathf.Lerp(0.25f, 0.88f, RingHash(seed, g + 480));
-                float granuleBright = Mathf.Lerp(0.82f, 1.38f, RingHash(seed, g + 520));
-
-                Vector3 pos = new Vector3(Mathf.Cos(angle) * radialPos, Mathf.Sin(angle) * radialPos, 0f);
-                Color granuleColor = WithAlpha(ScaleRgb(baseColor, granuleBright), granuleAlpha);
-                Draw.Disc(pos, granuleRadius, granuleColor);
-
-                if (RingHash(seed, g + 560) > 0.92f)
-                {
-                    Draw.BlendMode = ShapesBlendMode.Additive;
-                    Draw.Disc(pos, granuleRadius * 0.5f, WithAlpha(ScaleRgb(baseColor, 1.4f), granuleAlpha * 0.28f));
-                    Draw.BlendMode = ShapesBlendMode.Transparent;
                 }
             }
         }

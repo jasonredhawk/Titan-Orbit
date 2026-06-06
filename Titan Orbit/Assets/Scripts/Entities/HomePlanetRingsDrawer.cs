@@ -8,7 +8,7 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Draws Saturn-style tilted rings around a HomePlanet using Shapes immediate mode.
     /// Ring count = Home Planet level (1–6). Level 1 has 1 band, adds one per level up to 6.
-    /// Each band is drawn as a few varied sub-rings plus dense granule discs.
+    /// Each band is drawn as a few varied sub-rings inside a clear level frame.
     /// Optional MeshRenderer backup matches <see cref="GemMoonOrbitZoneVisual"/> / <see cref="PlanetRingsDrawer"/> when Shapes IM fails. Keep off when IM works to avoid duplicate transparent geometry flickering against tilted rings.
     /// </summary>
     [ExecuteAlways]
