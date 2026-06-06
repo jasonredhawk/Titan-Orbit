@@ -17,6 +17,7 @@ using UnityEngine;
 using TitanOrbit.Data;
 using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Networking
 {
@@ -38,6 +39,8 @@ namespace TitanOrbit.Networking
         private const string LobbyServerAliveEpochKey = "ServerAliveAt";
         private const string LobbyRelayProtocolKey = "RelayProtocol";
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
+        /// <summary>Live Netcode player count published on heartbeat so clients show accurate joinable listings.</summary>
+        public const string LobbyActivePlayersKey = "ActivePlayers";
         private const int DefaultDedicatedLobbyStaleSeconds = 120;
         private static int _dbgWatchdogFailCount;
         private static string _activeLobbyId;
@@ -45,10 +48,12 @@ namespace TitanOrbit.Networking
         private static ushort _matchServerPort;
         private static string _matchRelayProtocol;
         private static bool _matchIsLatest;
+        private static int _matchEmptyRecreateSeconds = DefaultEmptyMatchRecreateSeconds;
         private static DateTime? _emptySinceUtc;
         private static bool _recreateEmptyMatchInProgress;
+        private static bool _dedicatedClientCallbacksWired;
         /// <summary>After this many seconds with zero connected players, close the lobby and publish a new one (same process).</summary>
-        private const int DefaultEmptyMatchRecreateSeconds = 30 * 60;
+        private const int DefaultEmptyMatchRecreateSeconds = 15 * 60;
 
         /// <summary>Called from <see cref="Core.MatchManager"/> when a dedicated match ends so new players cannot join a finished game.</summary>
         public static void NotifyDedicatedMatchEnded()
@@ -597,7 +602,14 @@ namespace TitanOrbit.Networking
                                     )
                                 },
                                 { LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, relayProtocol) },
-                                { LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) }
+                                { LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
+                                {
+                                    LobbyActivePlayersKey,
+                                    new DataObject(
+                                        DataObject.VisibilityOptions.Public,
+                                        "0",
+                                        DataObject.IndexOptions.N4)
+                                }
                             }
                         }),
                     TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
@@ -622,7 +634,9 @@ namespace TitanOrbit.Networking
             _matchServerPort = serverPort;
             _matchRelayProtocol = relayProtocol;
             _matchIsLatest = isLatest;
+            _matchEmptyRecreateSeconds = emptyMatchRecreateSeconds;
             _emptySinceUtc = DateTime.UtcNow;
+            WireDedicatedClientCallbacks();
             _ = HeartbeatLoopAsync();
             _ = LobbyPresenceWatchdogAsync();
             _ = NetcodeHealthLoopAsync();
@@ -725,6 +739,7 @@ namespace TitanOrbit.Networking
                     {
                         await LobbyService.Instance.SendHeartbeatPingAsync(lobbyId);
                         await TouchLobbyServerAliveAsync(lobbyId);
+                        await ReconcileLobbyMembersAsync(lobbyId);
                     }
                 }
                 catch (Exception e)
@@ -775,6 +790,117 @@ namespace TitanOrbit.Networking
                 _emptySinceUtc = DateTime.UtcNow;
         }
 
+        private static void WireDedicatedClientCallbacks()
+        {
+            if (NetworkManager.Singleton == null)
+                return;
+
+            UnwireDedicatedClientCallbacks();
+            NetworkManager.Singleton.OnClientConnectedCallback += OnDedicatedClientConnected;
+            NetworkManager.Singleton.OnClientDisconnectCallback += OnDedicatedClientDisconnected;
+            _dedicatedClientCallbacksWired = true;
+        }
+
+        private static void UnwireDedicatedClientCallbacks()
+        {
+            if (!_dedicatedClientCallbacksWired || NetworkManager.Singleton == null)
+                return;
+
+            NetworkManager.Singleton.OnClientConnectedCallback -= OnDedicatedClientConnected;
+            NetworkManager.Singleton.OnClientDisconnectCallback -= OnDedicatedClientDisconnected;
+            _dedicatedClientCallbacksWired = false;
+        }
+
+        private static void OnDedicatedClientConnected(ulong clientId)
+        {
+            _emptySinceUtc = null;
+        }
+
+        private static void OnDedicatedClientDisconnected(ulong clientId)
+        {
+            string authPlayerId = MapInstanceShipProgressStore.ResolveAuthPlayerId(clientId);
+            _ = RemoveLobbyMemberAsync(authPlayerId, "client_disconnect");
+        }
+
+        private static async Task RemoveLobbyMemberAsync(string playerId, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(_activeLobbyId) || string.IsNullOrWhiteSpace(playerId))
+                return;
+
+            string hostPlayerId = AuthenticationService.Instance.PlayerId;
+            if (!string.IsNullOrWhiteSpace(hostPlayerId) &&
+                string.Equals(playerId, hostPlayerId, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                await LobbyService.Instance.RemovePlayerAsync(_activeLobbyId, playerId);
+                DedicatedServerFileLog.Append("lobby", "Removed ghost lobby member (" + reason + ") playerId=" + playerId);
+            }
+            catch (LobbyServiceException e)
+            {
+                if (e.Reason != LobbyExceptionReason.PlayerNotFound &&
+                    e.Reason != LobbyExceptionReason.LobbyNotFound &&
+                    e.Reason != LobbyExceptionReason.Forbidden)
+                {
+                    Debug.LogWarning(
+                        "[DedicatedMatchServerBootstrap] RemoveLobbyMemberAsync failed (" + reason + "): " + e.Message);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning(
+                    "[DedicatedMatchServerBootstrap] RemoveLobbyMemberAsync error (" + reason + "): " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// UGS lobby membership can outlive Netcode disconnects; drop members who are no longer connected.
+        /// </summary>
+        private static async Task ReconcileLobbyMembersAsync(string lobbyId)
+        {
+            if (string.IsNullOrWhiteSpace(lobbyId))
+                return;
+
+            try
+            {
+                Lobby lobby = await LobbyService.Instance.GetLobbyAsync(lobbyId);
+                if (lobby?.Players == null || lobby.Players.Count == 0)
+                    return;
+
+                string hostPlayerId = lobby.HostId;
+                if (string.IsNullOrWhiteSpace(hostPlayerId))
+                    hostPlayerId = AuthenticationService.Instance.PlayerId;
+
+                var expectedMemberIds = new HashSet<string>(StringComparer.Ordinal);
+                if (!string.IsNullOrWhiteSpace(hostPlayerId))
+                    expectedMemberIds.Add(hostPlayerId);
+
+                if (NetworkManager.Singleton != null)
+                {
+                    foreach (KeyValuePair<ulong, NetworkClient> pair in NetworkManager.Singleton.ConnectedClients)
+                    {
+                        string authId = MapInstanceShipProgressStore.ResolveAuthPlayerId(pair.Key);
+                        if (!string.IsNullOrWhiteSpace(authId))
+                            expectedMemberIds.Add(authId);
+                    }
+                }
+
+                for (int i = 0; i < lobby.Players.Count; i++)
+                {
+                    Player member = lobby.Players[i];
+                    if (member == null || string.IsNullOrWhiteSpace(member.Id))
+                        continue;
+                    if (!expectedMemberIds.Contains(member.Id))
+                        await RemoveLobbyMemberAsync(member.Id, "reconcile");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[DedicatedMatchServerBootstrap] ReconcileLobbyMembers failed: " + e.Message);
+            }
+        }
+
         /// <summary>
         /// After a long idle period with no players, delete the old UGS lobby and publish a new one (same server process).
         /// </summary>
@@ -817,6 +943,7 @@ namespace TitanOrbit.Networking
 
                 ResetServerMapBeforeNetcodeRestart("empty_match_recreate");
 
+                UnwireDedicatedClientCallbacks();
                 if (NetworkManager.Singleton.IsListening)
                     NetworkManager.Singleton.Shutdown();
 
@@ -825,6 +952,7 @@ namespace TitanOrbit.Networking
                     throw new InvalidOperationException("Netcode StartServer returned false after empty match recreate.");
 
                 TryEnsureServerMapReadyAfterNetcodeStart("empty_match_recreate");
+                WireDedicatedClientCallbacks();
 
                 long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 long serverAliveEpochSeconds = createdAtEpochSeconds;
@@ -858,7 +986,14 @@ namespace TitanOrbit.Networking
                                     )
                                 },
                                 { LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, relayProtocol) },
-                                { LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) }
+                                { LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
+                                {
+                                    LobbyActivePlayersKey,
+                                    new DataObject(
+                                        DataObject.VisibilityOptions.Public,
+                                        "0",
+                                        DataObject.IndexOptions.N4)
+                                }
                             }
                         }),
                     TimeSpan.FromMilliseconds(lobbyCreateTimeoutMs),
@@ -1000,6 +1135,9 @@ namespace TitanOrbit.Networking
             try
             {
                 long aliveEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                int activePlayers = NetworkManager.Singleton != null
+                    ? NetworkManager.Singleton.ConnectedClients.Count
+                    : 0;
                 await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
                 {
                     Data = new Dictionary<string, DataObject>
@@ -1009,6 +1147,12 @@ namespace TitanOrbit.Networking
                             new DataObject(
                                 DataObject.VisibilityOptions.Public,
                                 aliveEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                        },
+                        {
+                            LobbyActivePlayersKey,
+                            new DataObject(
+                                DataObject.VisibilityOptions.Public,
+                                activePlayers.ToString(System.Globalization.CultureInfo.InvariantCulture))
                         }
                     }
                 });
@@ -1128,13 +1272,17 @@ namespace TitanOrbit.Networking
                     return;
                 }
 
+                string serverListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
                 string args =
 #if !UNITY_SERVER
                     "-batchmode -nographics " +
 #endif
+                    "--titanOrbitDedicated=1 " +
                     $"--maxPlayers={maxPlayers} " +
                     $"--serverPort={childServerPort} " +
                     $"--relayProtocol={relayProtocol} " +
+                    $"--serverListenAddress={serverListenAddress} " +
+                    $"--emptyMatchRecreateSeconds={_matchEmptyRecreateSeconds} " +
                     $"--isLatest={(nextIsLatest ? 1 : 0)}";
 
                 var psi = new System.Diagnostics.ProcessStartInfo(exePath, args)

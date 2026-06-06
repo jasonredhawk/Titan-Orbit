@@ -19,7 +19,9 @@ namespace TitanOrbit.Editor.Build
         const string SgtPlanetShaderPath =
             "Assets/Plugins/CW/SpaceGraphicsToolkit/Features/Planet/Required/Shaders/Planet.shader";
 
-        static readonly string[] TextureRootFolders =
+        const string NeedsWebGlTextureRefreshKey = "TitanOrbit_NeedsWebGlTextureRefresh";
+
+        internal static readonly string[] TextureRootFolders =
         {
             "Assets/UltimateSpaceshipsCreator/Textures",
             "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Textures",
@@ -27,11 +29,13 @@ namespace TitanOrbit.Editor.Build
             "Assets/StarSparrow/Textures",
             "Assets/HiRezSpaceshipsCreatorFree/Textures",
             "Assets/DinV/Dynamic Space Background/Sprites",
+            "Assets/Textures",
         };
 
         const string BuildProfilesFolder = "Assets/Settings/Build Profiles";
         const int WebGlBuildTargetEnum = 20; // BuildTarget.WebGL
         const int DxtSubtarget = 0; // WebGLTextureSubtarget.DXT
+        const int WebGlGenericTextureCompression = 0; // PlayerSettings WebGL: Generic / no global override
 
         public int callbackOrder => -200;
 
@@ -39,7 +43,34 @@ namespace TitanOrbit.Editor.Build
         {
             ApplyWebGlTextureSubtarget();
             EnsureWebGlBuildProfilesUseDxt(log: false);
+            EnsureWebGlPlayerDefaultTextureCompression(log: false);
             BuildPlayerWindow.RegisterBuildPlayerHandler(OnBuildPlayerFromWindow);
+
+            EditorUserBuildSettings.activeBuildTargetChanged += OnActiveBuildTargetChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        static void OnActiveBuildTargetChanged()
+        {
+            if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
+            {
+                ApplyWebGlTextureSubtarget();
+                EnsureWebGlBuildProfilesUseDxt(log: false);
+                return;
+            }
+
+            MarkWebGlTextureRefreshNeeded();
+        }
+
+        static void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.ExitingEditMode)
+                MarkWebGlTextureRefreshNeeded();
+        }
+
+        internal static void MarkWebGlTextureRefreshNeeded()
+        {
+            SessionState.SetBool(NeedsWebGlTextureRefreshKey, true);
         }
 
         public void OnPreprocessBuild(BuildReport report)
@@ -74,10 +105,15 @@ namespace TitanOrbit.Editor.Build
         {
             ApplyWebGlTextureSubtarget();
             EnsureWebGlBuildProfilesUseDxt(log);
+            EnsureWebGlPlayerDefaultTextureCompression(log);
             EnsureSgtPlanetShaderIncluded();
             DisableSrpBatcherOnWebGlPipelineAsset();
 
-            int fixedCount = ApplyWebGlGameplayTextureImports(log: log);
+            bool forceReimport = SessionState.GetBool(NeedsWebGlTextureRefreshKey, true);
+            int fixedCount = ApplyWebGlGameplayTextureImports(log: log, forceReimport: forceReimport);
+
+            ValidateGameplayTextureWebGlImports();
+
             if (log)
             {
                 Debug.Log(
@@ -92,22 +128,146 @@ namespace TitanOrbit.Editor.Build
                     "[WebGLTextureImportBuildFix] WebGL texture subtarget must be DXT for desktop browsers. " +
                     "Use TitanOrbit → Build → WebGL Production or Fix WebGL Texture Import.");
             }
+
+            SessionState.SetBool(NeedsWebGlTextureRefreshKey, false);
         }
 
         [MenuItem("TitanOrbit/Build/Fix WebGL Texture Import (disable Crunch)")]
         public static void FixFromMenu()
         {
+            MarkWebGlTextureRefreshNeeded();
             PrepareWebGlBuild(log: true);
             EditorUtility.DisplayDialog(
                 "WebGL textures",
                 "Gameplay textures configured for WebGL (RGBA32 uncompressed, no Crunch). " +
-                "SRP Batcher disabled on WebGL pipeline. Build subtarget set to DXT.",
+                "SRP Batcher disabled on the WebGL pipeline. Build subtarget set to DXT.",
                 "OK");
         }
 
         internal static void ApplyWebGlTextureSubtarget()
         {
             EditorUserBuildSettings.webGLBuildSubtarget = WebGLTextureSubtarget.DXT;
+        }
+
+        internal static bool IsGameplayTexturePath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath))
+                return false;
+
+            string normalized = assetPath.Replace('\\', '/');
+            foreach (string root in TextureRootFolders)
+            {
+                if (normalized.StartsWith(root + "/", System.StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Equals(root, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        internal static int GetGameplayTextureMaxSize(string path)
+        {
+            if (path.StartsWith(
+                    "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Textures",
+                    System.StringComparison.OrdinalIgnoreCase))
+            {
+                return 1024;
+            }
+
+            if (path.StartsWith(
+                    "Assets/DinV/Dynamic Space Background/Sprites",
+                    System.StringComparison.OrdinalIgnoreCase))
+            {
+                return 1024;
+            }
+
+            return 512;
+        }
+
+        /// <summary>
+        /// Applies WebGL RGBA32 import overrides. Returns true when importer settings were changed.
+        /// </summary>
+        internal static bool ApplyWebGlSettingsToImporter(TextureImporter importer, string path)
+        {
+            if (importer == null)
+                return false;
+
+            int maxSize = GetGameplayTextureMaxSize(path);
+            TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
+            if (webgl == null || string.IsNullOrEmpty(webgl.name))
+                webgl = new TextureImporterPlatformSettings { name = "WebGL" };
+
+            bool changed = false;
+            if (!webgl.overridden)
+            {
+                webgl.overridden = true;
+                changed = true;
+            }
+
+            if (webgl.maxTextureSize > maxSize)
+            {
+                webgl.maxTextureSize = maxSize;
+                changed = true;
+            }
+
+            if (webgl.crunchedCompression)
+            {
+                webgl.crunchedCompression = false;
+                changed = true;
+            }
+
+            // Uncompressed RGBA avoids DXT/ASTC mismatch on desktop WebGL (invisible albedo, not magenta).
+            if (webgl.textureCompression != TextureImporterCompression.Uncompressed)
+            {
+                webgl.textureCompression = TextureImporterCompression.Uncompressed;
+                changed = true;
+            }
+
+            if (webgl.format != TextureImporterFormat.RGBA32)
+            {
+                webgl.format = TextureImporterFormat.RGBA32;
+                changed = true;
+            }
+
+            if (!changed)
+                return false;
+
+            importer.SetPlatformTextureSettings(webgl);
+            return true;
+        }
+
+        static void ValidateGameplayTextureWebGlImports()
+        {
+            var invalid = new List<string>();
+            string[] guids = AssetDatabase.FindAssets("t:Texture2D", TextureRootFolders);
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (importer == null)
+                    continue;
+
+                TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
+                if (webgl == null ||
+                    !webgl.overridden ||
+                    webgl.textureCompression != TextureImporterCompression.Uncompressed ||
+                    webgl.format != TextureImporterFormat.RGBA32 ||
+                    webgl.crunchedCompression)
+                {
+                    invalid.Add(path);
+                }
+            }
+
+            if (invalid.Count == 0)
+                return;
+
+            throw new BuildFailedException(
+                "[WebGLTextureImportBuildFix] Gameplay textures still have invalid WebGL import settings " +
+                $"(expected RGBA32 uncompressed). Examples: {string.Join(", ", invalid.GetRange(0, System.Math.Min(5, invalid.Count)))}. " +
+                "Run TitanOrbit → Build → Fix WebGL Texture Import (disable Crunch), then rebuild.");
         }
 
         /// <summary>
@@ -180,7 +340,58 @@ namespace TitanOrbit.Editor.Build
                 AssetDatabase.SaveAssets();
         }
 
-        internal static int ApplyWebGlGameplayTextureImports(bool log)
+        /// <summary>
+        /// PlayerSettings can default WebGL to BC/ASTC; per-texture overrides should win, but keep Generic
+        /// so switching build targets in the Editor does not recompress gameplay albedos unexpectedly.
+        /// </summary>
+        internal static void EnsureWebGlPlayerDefaultTextureCompression(bool log)
+        {
+            const string projectSettingsPath = "ProjectSettings/ProjectSettings.asset";
+            Object[] assets = AssetDatabase.LoadAllAssetsAtPath(projectSettingsPath);
+            if (assets == null || assets.Length == 0)
+                return;
+
+            var so = new SerializedObject(assets[0]);
+            SerializedProperty formats = so.FindProperty("m_BuildTargetDefaultTextureCompressionFormat");
+            if (formats == null)
+                return;
+
+            bool changed = false;
+            for (int i = 0; i < formats.arraySize; i++)
+            {
+                SerializedProperty entry = formats.GetArrayElementAtIndex(i);
+                SerializedProperty buildTarget = entry.FindPropertyRelative("m_BuildTarget");
+                SerializedProperty formatList = entry.FindPropertyRelative("m_Formats");
+                if (buildTarget == null || formatList == null || buildTarget.intValue != WebGlBuildTargetEnum)
+                    continue;
+
+                if (formatList.arraySize == 0)
+                {
+                    formatList.InsertArrayElementAtIndex(0);
+                    formatList.GetArrayElementAtIndex(0).intValue = WebGlGenericTextureCompression;
+                    changed = true;
+                    continue;
+                }
+
+                if (formatList.GetArrayElementAtIndex(0).intValue == WebGlGenericTextureCompression)
+                    continue;
+
+                formatList.GetArrayElementAtIndex(0).intValue = WebGlGenericTextureCompression;
+                changed = true;
+            }
+
+            if (!changed)
+                return;
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            if (log)
+            {
+                Debug.Log(
+                    "[WebGLTextureImportBuildFix] PlayerSettings WebGL default texture compression set to Generic.");
+            }
+        }
+
+        internal static int ApplyWebGlGameplayTextureImports(bool log, bool forceReimport = false)
         {
             ApplyWebGlTextureSubtarget();
 
@@ -194,55 +405,9 @@ namespace TitanOrbit.Editor.Build
                 if (importer == null)
                     continue;
 
-                bool isPlanetTexture = path.StartsWith(
-                    "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Textures",
-                    System.StringComparison.OrdinalIgnoreCase);
-                bool isBackgroundTexture = path.StartsWith(
-                    "Assets/DinV/Dynamic Space Background/Sprites",
-                    System.StringComparison.OrdinalIgnoreCase);
-                int maxSize = isPlanetTexture ? 1024 : isBackgroundTexture ? 1024 : 512;
-
-                TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
-                if (webgl == null || string.IsNullOrEmpty(webgl.name))
-                    webgl = new TextureImporterPlatformSettings { name = "WebGL" };
-
-                bool changed = false;
-                if (!webgl.overridden)
-                {
-                    webgl.overridden = true;
-                    changed = true;
-                }
-
-                if (webgl.maxTextureSize > maxSize)
-                {
-                    webgl.maxTextureSize = maxSize;
-                    changed = true;
-                }
-
-                if (webgl.crunchedCompression)
-                {
-                    webgl.crunchedCompression = false;
-                    changed = true;
-                }
-
-                // Uncompressed RGBA avoids DXT/ASTC mismatch on desktop WebGL (invisible albedo, not magenta).
-                if (webgl.textureCompression != TextureImporterCompression.Uncompressed)
-                {
-                    webgl.textureCompression = TextureImporterCompression.Uncompressed;
-                    changed = true;
-                }
-
-                if (webgl.format != TextureImporterFormat.RGBA32)
-                {
-                    webgl.format = TextureImporterFormat.RGBA32;
-                    changed = true;
-                }
-
-                if (!changed)
-                    continue;
-
-                importer.SetPlatformTextureSettings(webgl);
-                pathsToReimport.Add(path);
+                bool changed = ApplyWebGlSettingsToImporter(importer, path);
+                if (changed || forceReimport)
+                    pathsToReimport.Add(path);
             }
 
             if (pathsToReimport.Count == 0)
@@ -259,11 +424,16 @@ namespace TitanOrbit.Editor.Build
                 AssetDatabase.StopAssetEditing();
             }
 
+            AssetDatabase.SaveAssets();
+
             if (log)
             {
                 Debug.Log(
-                    $"[WebGLTextureImportBuildFix] Reimported {pathsToReimport.Count} textures as WebGL RGBA32 " +
-                    $"(folders: {string.Join(", ", TextureRootFolders)}).");
+                    forceReimport
+                        ? $"[WebGLTextureImportBuildFix] Refreshed {pathsToReimport.Count} gameplay textures for WebGL " +
+                          $"(Editor/Play Mode session detected — rebuilding Library WebGL variants as RGBA32)."
+                        : $"[WebGLTextureImportBuildFix] Reimported {pathsToReimport.Count} textures as WebGL RGBA32 " +
+                          $"(folders: {string.Join(", ", TextureRootFolders)}).");
             }
 
             return pathsToReimport.Count;
@@ -314,6 +484,7 @@ namespace TitanOrbit.Editor.Build
                 useBatch.boolValue = false;
                 so.ApplyModifiedPropertiesWithoutUndo();
                 EditorUtility.SetDirty(pipeline);
+                AssetDatabase.SaveAssets();
                 Debug.Log("[WebGLTextureImportBuildFix] Disabled SRP Batcher on Mobile_RPAsset (WebGL quality pipeline).");
             }
         }
@@ -321,5 +492,24 @@ namespace TitanOrbit.Editor.Build
         /// <summary>Legacy entry point used by older call sites.</summary>
         internal static int DisableWebGlCrunchOnGameplayTextures(bool log) =>
             ApplyWebGlGameplayTextureImports(log);
+    }
+
+    /// <summary>
+    /// Keeps gameplay texture WebGL import settings stable when Unity reimports after Editor Play Mode
+    /// or active build target switches (common cause of recurring invisible ship/planet WebGL builds).
+    /// </summary>
+    sealed class WebGLGameplayTextureImportPostprocessor : AssetPostprocessor
+    {
+        void OnPreprocessTexture()
+        {
+            if (!WebGLTextureImportBuildFix.IsGameplayTexturePath(assetPath))
+                return;
+
+            var importer = assetImporter as TextureImporter;
+            if (importer == null)
+                return;
+
+            WebGLTextureImportBuildFix.ApplyWebGlSettingsToImporter(importer, assetPath);
+        }
     }
 }

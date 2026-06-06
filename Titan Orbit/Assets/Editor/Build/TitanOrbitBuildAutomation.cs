@@ -18,6 +18,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
+            WebGLTextureImportBuildFix.MarkWebGlTextureRefreshNeeded();
             WebGLTextureImportBuildFix.PrepareWebGlBuild(log: true);
 
             var options = new BuildPlayerOptions

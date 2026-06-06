@@ -39,6 +39,8 @@ namespace TitanOrbit.Networking
             public long CreatedAtEpochSeconds;
             /// <summary>UTC unix-seconds from dedicated server heartbeat; 0 if not published yet.</summary>
             public long ServerAliveAtEpochSeconds;
+            /// <summary>Live Netcode player count from dedicated server heartbeat; -1 if not published yet.</summary>
+            public int ActivePlayers = -1;
         }
 
         /// <summary>Skip dedicated lobbies whose server has not heartbeated recently (ghost listing after process death).</summary>
@@ -129,6 +131,7 @@ namespace TitanOrbit.Networking
         private const string LobbyServerAliveEpochKey = "ServerAliveAt";
         private const string LobbyRelayProtocolKey = "RelayProtocol";
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
+        private const string LobbyActivePlayersKey = DedicatedMatchServerBootstrap.LobbyActivePlayersKey;
         private Lobby currentLobby;
         private float nextLobbyHeartbeatTime;
         private Coroutine pendingTeamRequestCoroutine;
@@ -974,37 +977,23 @@ namespace TitanOrbit.Networking
         /// Some hosts lag updating indexed lobby data (N1/N2). After the strict query returns nothing, re-query by game name only and filter in memory.
         /// </summary>
         /// <summary>
-        /// Keeps only open dedicated lobbies that are still the active join target (IsLatest), or the newest few if index flags lag.
+        /// Keeps only open, fresh, latest dedicated lobbies that the headless server is actively hosting.
         /// </summary>
         public static List<LobbySummary> FilterToJoinableDedicatedLobbies(List<LobbySummary> lobbies)
         {
             if (lobbies == null || lobbies.Count == 0)
                 return lobbies ?? new List<LobbySummary>();
 
-            var open = new List<LobbySummary>();
+            var joinable = new List<LobbySummary>();
             for (int i = 0; i < lobbies.Count; i++)
             {
                 LobbySummary l = lobbies[i];
-                if (l != null && l.IsOpen && !IsDedicatedLobbySummaryStale(l))
-                    open.Add(l);
+                if (l == null || !l.IsOpen || !l.IsLatest || IsDedicatedLobbySummaryStale(l))
+                    continue;
+                joinable.Add(l);
             }
 
-            if (open.Count == 0)
-                return open;
-
-            var latest = new List<LobbySummary>();
-            for (int i = 0; i < open.Count; i++)
-            {
-                if (open[i].IsLatest)
-                    latest.Add(open[i]);
-            }
-
-            if (latest.Count > 0)
-                return latest;
-
-            open.Sort((a, b) => b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds));
-            int keep = Mathf.Min(3, open.Count);
-            return open.GetRange(0, keep);
+            return joinable;
         }
 
         private static bool LobbyPassesJoinBrowserFilters(Lobby lobby, bool latestOnly)
@@ -1043,6 +1032,13 @@ namespace TitanOrbit.Networking
             if (IsDedicatedLobbyStale(lobby))
             {
                 rejectReason = "server heartbeat is stale (match may have ended)";
+                return false;
+            }
+
+            if (lobby.Data.TryGetValue(LobbyIsLatestKey, out DataObject latestObj) && latestObj != null &&
+                !string.Equals(latestObj.Value, "1", StringComparison.Ordinal))
+            {
+                rejectReason = "lobby is no longer the active match";
                 return false;
             }
 
@@ -1258,6 +1254,22 @@ namespace TitanOrbit.Networking
             if (isDedicatedServerLobby)
                 normalizedPlayerCount = Mathf.Max(0, normalizedPlayerCount - 1);
 
+            int activePlayersFromServer = -1;
+            if (lobby.Data != null &&
+                lobby.Data.TryGetValue(LobbyActivePlayersKey, out DataObject activePlayersObj) &&
+                activePlayersObj != null &&
+                int.TryParse(
+                    activePlayersObj.Value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int parsedActivePlayers))
+            {
+                activePlayersFromServer = Mathf.Max(0, parsedActivePlayers);
+            }
+
+            if (isDedicatedServerLobby && activePlayersFromServer >= 0)
+                normalizedPlayerCount = activePlayersFromServer;
+
             var summary = new LobbySummary
             {
                 LobbyId = lobby.Id,
@@ -1268,7 +1280,8 @@ namespace TitanOrbit.Networking
                 MaxPlayers = maxPlayerCapacity,
                 IsOpen = true,
                 IsLatest = false,
-                CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ActivePlayers = activePlayersFromServer
             };
 
             if (lobby.Data == null)
