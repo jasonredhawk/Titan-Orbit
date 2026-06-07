@@ -160,8 +160,17 @@ namespace TitanOrbit.UI
         private void UpdatePanelPlacement()
         {
             if (rootRect == null || moon == null) return;
-            float bodyRadius = Mathf.Max(0.01f, moon.GetMoonBodyRadiusLocal());
-            rootRect.localPosition = new Vector3(0f, bodyRadius + MoonSurfacePaddingLocal, 0f);
+            float bodyRadiusLocal = Mathf.Max(0.01f, moon.GetMoonBodyRadiusLocal());
+            float localY = bodyRadiusLocal + MoonSurfacePaddingLocal;
+            Vector3 lossyScale = moon.transform.lossyScale;
+            float uniformScale = (Mathf.Abs(lossyScale.x) + Mathf.Abs(lossyScale.y) + Mathf.Abs(lossyScale.z)) / 3f;
+            float bodyRadiusWorld = bodyRadiusLocal * uniformScale;
+            TheatricalWorldSpaceLabelRotation.ApplyPanelPlacement(
+                rootRect,
+                moon.transform,
+                bodyRadiusWorld,
+                localY,
+                MoonSurfacePaddingLocal * uniformScale);
         }
 
         private static TextMeshProUGUI AddText(Transform parent, string content, int fontSize)
@@ -215,8 +224,7 @@ namespace TitanOrbit.UI
             if (canvas != null && !canvas.gameObject.activeSelf)
                 canvas.gameObject.SetActive(true);
             UpdatePanelPlacement();
-            if (rootRect != null)
-                rootRect.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            TheatricalWorldSpaceLabelRotation.ApplyPanelRotation(rootRect, gameplayUsesLocalRotation: true);
 
             if (Time.time - lastRefresh < RefreshInterval) return;
             lastRefresh = Time.time;

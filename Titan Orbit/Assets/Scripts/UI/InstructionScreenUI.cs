@@ -84,6 +84,12 @@ namespace TitanOrbit.UI
             onContinue = onContinueCallback;
             if (panelRoot != null)
                 panelRoot.SetActive(true);
+
+            if (stepsContentRoot != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                LayoutRebuilder.ForceRebuildLayoutImmediate(stepsContentRoot);
+            }
         }
 
         /// <summary>Assign screenshots from the MainMenu inspector (one per instruction step).</summary>
@@ -108,6 +114,8 @@ namespace TitanOrbit.UI
             callback?.Invoke();
         }
 
+        private const float ContentMaxWidth = 820f;
+
         private void EnsureUiBuilt()
         {
             if (uiBuilt && panelRoot != null)
@@ -131,18 +139,27 @@ namespace TitanOrbit.UI
 
             if (titleText == null)
             {
-                titleText = CreateLabel(panelRoot.transform, "Title", "HOW TO PLAY", 36,
-                    new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                    new Vector2(0f, -28f), new Vector2(680f, 48f), FontStyles.Bold);
+                titleText = CreateHeaderLabel(panelRoot.transform, "Title", "HOW TO PLAY", 36, FontStyles.Bold);
+                var titleRect = titleText.rectTransform;
+                titleRect.anchorMin = new Vector2(0.5f, 1f);
+                titleRect.anchorMax = new Vector2(0.5f, 1f);
+                titleRect.pivot = new Vector2(0.5f, 1f);
+                titleRect.anchoredPosition = new Vector2(0f, -20f);
+                titleRect.sizeDelta = new Vector2(ContentMaxWidth, 44f);
             }
 
             if (subtitleText == null)
             {
-                subtitleText = CreateLabel(panelRoot.transform, "Subtitle",
+                subtitleText = CreateHeaderLabel(panelRoot.transform, "Subtitle",
                     "Quick guide — tap Continue when you're ready to enter the match.",
-                    18, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                    new Vector2(0f, -68f), new Vector2(680f, 32f), FontStyles.Normal);
+                    18, FontStyles.Normal);
                 subtitleText.color = new Color(0.65f, 0.78f, 0.92f, 0.95f);
+                var subtitleRect = subtitleText.rectTransform;
+                subtitleRect.anchorMin = new Vector2(0.5f, 1f);
+                subtitleRect.anchorMax = new Vector2(0.5f, 1f);
+                subtitleRect.pivot = new Vector2(0.5f, 1f);
+                subtitleRect.anchoredPosition = new Vector2(0f, -62f);
+                subtitleRect.sizeDelta = new Vector2(ContentMaxWidth, 28f);
             }
 
             if (stepsContentRoot == null)
@@ -159,12 +176,11 @@ namespace TitanOrbit.UI
         {
             var scrollRoot = new GameObject("StepsScroll");
             scrollRoot.transform.SetParent(panel, false);
-            var scrollRect = scrollRoot.AddComponent<RectTransform>();
-            scrollRect.anchorMin = new Vector2(0.5f, 0f);
-            scrollRect.anchorMax = new Vector2(0.5f, 1f);
-            scrollRect.pivot = new Vector2(0.5f, 0.5f);
-            scrollRect.anchoredPosition = new Vector2(0f, -24f);
-            scrollRect.sizeDelta = new Vector2(760f, -168f);
+            var scrollRectTransform = scrollRoot.AddComponent<RectTransform>();
+            scrollRectTransform.anchorMin = new Vector2(0.04f, 0.12f);
+            scrollRectTransform.anchorMax = new Vector2(0.96f, 0.84f);
+            scrollRectTransform.offsetMin = Vector2.zero;
+            scrollRectTransform.offsetMax = Vector2.zero;
 
             var scroll = scrollRoot.AddComponent<ScrollRect>();
             scroll.horizontal = false;
@@ -192,8 +208,8 @@ namespace TitanOrbit.UI
             stepsContentRoot.sizeDelta = new Vector2(0f, 0f);
 
             var layout = content.AddComponent<VerticalLayoutGroup>();
-            layout.spacing = 14f;
-            layout.padding = new RectOffset(8, 8, 8, 8);
+            layout.spacing = 16f;
+            layout.padding = new RectOffset(4, 4, 4, 12);
             layout.childAlignment = TextAnchor.UpperCenter;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
@@ -250,52 +266,66 @@ namespace TitanOrbit.UI
             var row = new GameObject("Step_" + (index + 1));
             row.transform.SetParent(parent, false);
 
-            var rowRect = row.AddComponent<RectTransform>();
+            row.AddComponent<RectTransform>();
+
             var rowLayout = row.AddComponent<HorizontalLayoutGroup>();
-            rowLayout.spacing = 16f;
-            rowLayout.padding = new RectOffset(12, 12, 12, 12);
+            rowLayout.spacing = 18f;
+            rowLayout.padding = new RectOffset(16, 16, 14, 14);
             rowLayout.childAlignment = TextAnchor.UpperLeft;
-            rowLayout.childControlWidth = false;
+            rowLayout.childControlWidth = true;
             rowLayout.childControlHeight = true;
-            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandWidth = true;
             rowLayout.childForceExpandHeight = false;
 
             var rowBg = row.AddComponent<Image>();
             rowBg.color = new Color(0.08f, 0.11f, 0.2f, 0.88f);
 
-            var rowFitter = row.AddComponent<LayoutElement>();
-            rowFitter.preferredHeight = 112f;
-            rowFitter.minHeight = 96f;
+            var rowFitter = row.AddComponent<ContentSizeFitter>();
+            rowFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            rowFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var rowWidth = row.AddComponent<LayoutElement>();
+            rowWidth.minHeight = 110f;
+            rowWidth.flexibleWidth = 1f;
 
             stepImageSlots[index] = CreateImagePlaceholder(row.transform, step.PlaceholderLabel);
 
             var textCol = new GameObject("TextColumn");
             textCol.transform.SetParent(row.transform, false);
+            textCol.AddComponent<RectTransform>();
+
             var textColLayout = textCol.AddComponent<LayoutElement>();
             textColLayout.flexibleWidth = 1f;
-            textColLayout.preferredWidth = 480f;
-            textColLayout.minWidth = 280f;
+            textColLayout.minWidth = 200f;
 
             var textGroup = textCol.AddComponent<VerticalLayoutGroup>();
-            textGroup.spacing = 6f;
+            textGroup.spacing = 8f;
+            textGroup.padding = new RectOffset(0, 0, 0, 0);
             textGroup.childAlignment = TextAnchor.UpperLeft;
             textGroup.childControlWidth = true;
             textGroup.childControlHeight = true;
             textGroup.childForceExpandWidth = true;
             textGroup.childForceExpandHeight = false;
 
-            var title = CreateLabel(textCol.transform, "StepTitle", step.Title, 22,
-                Vector2.zero, Vector2.one, new Vector2(0f, 1f),
-                Vector2.zero, new Vector2(0f, 28f), FontStyles.Bold);
-            title.alignment = TextAlignmentOptions.TopLeft;
-            title.color = new Color(0.92f, 0.96f, 1f, 1f);
+            var textColFitter = textCol.AddComponent<ContentSizeFitter>();
+            textColFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            textColFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var body = CreateLabel(textCol.transform, "StepBody", step.Body, 17,
-                Vector2.zero, Vector2.one, new Vector2(0f, 1f),
-                Vector2.zero, new Vector2(0f, 64f), FontStyles.Normal);
-            body.alignment = TextAlignmentOptions.TopLeft;
-            body.enableWordWrapping = true;
+            var title = CreateStepText(textCol.transform, "StepTitle", step.Title, 22, FontStyles.Bold);
+            title.color = new Color(0.92f, 0.96f, 1f, 1f);
+            var titleLe = title.gameObject.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 30f;
+            titleLe.flexibleWidth = 1f;
+
+            var body = CreateStepText(textCol.transform, "StepBody", step.Body, 17, FontStyles.Normal);
             body.color = new Color(0.72f, 0.82f, 0.94f, 0.98f);
+            body.enableWordWrapping = true;
+            body.overflowMode = TextOverflowModes.Overflow;
+            var bodyLe = body.gameObject.AddComponent<LayoutElement>();
+            bodyLe.flexibleWidth = 1f;
+            var bodyFitter = body.gameObject.AddComponent<ContentSizeFitter>();
+            bodyFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            bodyFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         }
 
         private static Image CreateImagePlaceholder(Transform parent, string label)
@@ -349,7 +379,7 @@ namespace TitanOrbit.UI
             rect.anchorMin = new Vector2(0.5f, 0f);
             rect.anchorMax = new Vector2(0.5f, 0f);
             rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 28f);
+            rect.anchoredPosition = new Vector2(0f, 24f);
             rect.sizeDelta = new Vector2(320f, 52f);
 
             var img = go.AddComponent<Image>();
@@ -358,41 +388,52 @@ namespace TitanOrbit.UI
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
 
-            var label = CreateLabel(go.transform, "Label", "Continue", 24,
-                Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
-                Vector2.zero, Vector2.zero, FontStyles.Bold);
+            var label = CreateHeaderLabel(go.transform, "Label", "Continue", 24, FontStyles.Bold);
             label.alignment = TextAlignmentOptions.Center;
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
 
             return btn;
         }
 
-        private static TextMeshProUGUI CreateLabel(
-            Transform parent,
-            string name,
-            string text,
-            int fontSize,
-            Vector2 anchorMin,
-            Vector2 anchorMax,
-            Vector2 pivot,
-            Vector2 anchoredPosition,
-            Vector2 sizeDelta,
-            FontStyles fontStyle)
+        private static TextMeshProUGUI CreateHeaderLabel(Transform parent, string name, string text, int fontSize, FontStyles fontStyle)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
 
-            var rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = pivot;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = sizeDelta;
+            go.AddComponent<RectTransform>();
 
             var tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
             tmp.fontSize = fontSize;
             tmp.fontStyle = fontStyle;
             tmp.alignment = TextAlignmentOptions.Center;
+            tmp.enableWordWrapping = true;
+            tmp.color = new Color(0.85f, 0.92f, 1f, 1f);
+            return tmp;
+        }
+
+        private static TextMeshProUGUI CreateStepText(Transform parent, string name, string text, int fontSize, FontStyles fontStyle)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = Vector2.zero;
+
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = fontSize;
+            tmp.fontStyle = fontStyle;
+            tmp.alignment = TextAlignmentOptions.TopLeft;
+            tmp.enableWordWrapping = true;
+            tmp.richText = true;
             tmp.color = new Color(0.85f, 0.92f, 1f, 1f);
             return tmp;
         }

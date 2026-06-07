@@ -115,7 +115,13 @@ namespace TitanOrbit.UI
             float size = Mathf.Max(0.01f, planet.PlanetSize);
             // Sphere radius in world ~= PlanetSize * 0.5. Convert desired world padding into local space.
             float localY = 0.5f + (SurfacePaddingWorld / size);
-            rootRect.localPosition = new Vector3(0f, localY, 0f);
+            float bodyRadiusWorld = size * 0.5f;
+            TheatricalWorldSpaceLabelRotation.ApplyPanelPlacement(
+                rootRect,
+                planet.transform,
+                bodyRadiusWorld,
+                localY,
+                SurfacePaddingWorld);
         }
 
         private static TextMeshProUGUI AddText(Transform parent, string content, int fontSize)
@@ -160,8 +166,7 @@ namespace TitanOrbit.UI
                 return;
             }
             UpdatePanelPlacement();
-            if (rootRect != null)
-                rootRect.rotation = Quaternion.Euler(90f, 0f, 0f);
+            TheatricalWorldSpaceLabelRotation.ApplyPanelRotation(rootRect, gameplayUsesLocalRotation: false);
 
             if (Time.time - lastRefresh < RefreshInterval) return;
             lastRefresh = Time.time;

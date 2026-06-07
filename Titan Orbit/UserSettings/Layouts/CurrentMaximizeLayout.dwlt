@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 1787
+  controlID: 4971
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -152,7 +152,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 1788
+  controlID: 4972
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -178,7 +178,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 1789
+  controlID: 4973
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -204,7 +204,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 1790
+  controlID: 4974
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -277,6 +277,9 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
+      - m_Data: -15847058
+      - m_Data: -15846686
+      - m_Data: -15846538
       - m_Data: -2564978
       - m_Data: -2564606
       - m_Data: -2564462
@@ -290,6 +293,7 @@ MonoBehaviour:
       - m_Data: -4496
       - m_Data: -4348
       - m_Data: -1368
+      - m_Data: 211962
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1021,7 +1025,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 870
-    width: 1533
+    width: 1604
     height: 188
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -1047,7 +1051,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Prefabs
+    - Assets/Prefabs/Ships/StriderOx
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1057,18 +1061,18 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Prefabs
+  - Assets/Prefabs/Ships/StriderOx
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 300}
+    scrollPos: {x: 0, y: 540}
     m_SelectedIDs:
-    - m_Data: 180394
+    - m_Data: 218416
     m_LastClickedID:
-      m_Data: 180394
+      m_Data: 218416
     m_ExpandedIDs:
     - m_Data: 0
     - m_Data: 180392
@@ -1081,6 +1085,8 @@ MonoBehaviour:
     - m_Data: 180406
     - m_Data: 180408
     - m_Data: 180410
+    - m_Data: 1000000000
+    - m_Data: 2147483647
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1124,6 +1130,8 @@ MonoBehaviour:
     - m_Data: 180406
     - m_Data: 180408
     - m_Data: 180410
+    - m_Data: 1000000000
+    - m_Data: 2147483647
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1198,7 +1206,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 57.5}
+    m_ScrollPosition: {x: 0, y: 227}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
