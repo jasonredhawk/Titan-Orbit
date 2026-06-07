@@ -23,7 +23,10 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject lobbyPanel;
         [SerializeField] private GameObject teamSelectionPanel;
         [SerializeField] private RescueOldShipUI rescueOldShipUI;
+        [SerializeField] private InstructionScreenUI instructionScreenUI;
         [SerializeField] private LoadingScreenController loadingScreenController;
+        [Tooltip("Optional how-to-play screenshots (Objective, Transport, Mining, Upgrades, Planet Ships).")]
+        [SerializeField] private Sprite[] instructionStepScreenshots;
         [SerializeField] private Button playButton;
         [SerializeField] private Button hostOnlineButton; // wired as dedicated quick join (Relay client only)
         [SerializeField] private Button joinOnlineButton;
@@ -2199,6 +2202,14 @@ namespace TitanOrbit.UI
                     lobbyPanel.SetActive(false);
                 if (teamSelectionPanel != null)
                     teamSelectionPanel.SetActive(false);
+
+                EnsureInstructionScreenUi();
+                if (instructionScreenUI != null)
+                {
+                    instructionScreenUI.Show(BeginLoadingAfterInstructions);
+                    return;
+                }
+
                 loadingScreenController.ShowLoading();
                 return;
             }
@@ -2209,6 +2220,13 @@ namespace TitanOrbit.UI
 
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(false);
+        }
+
+        /// <summary>Called when the player dismisses the how-to-play screen; starts the map build loading sequence.</summary>
+        public void BeginLoadingAfterInstructions()
+        {
+            if (loadingScreenController != null)
+                loadingScreenController.ShowLoading();
         }
 
         /// <summary>Called by LoadingScreenController when loading is complete. Queries for a returning ship, then team or rescue UI.</summary>
@@ -2283,6 +2301,27 @@ namespace TitanOrbit.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = rect.offsetMax = Vector2.zero;
             rescueOldShipUI = go.AddComponent<RescueOldShipUI>();
+        }
+
+        private void EnsureInstructionScreenUi()
+        {
+            if (instructionScreenUI != null)
+            {
+                if (instructionStepScreenshots != null && instructionStepScreenshots.Length > 0)
+                    instructionScreenUI.SetStepScreenshots(instructionStepScreenshots);
+                return;
+            }
+
+            Transform parent = transform;
+            var go = new GameObject("InstructionScreenUI");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            instructionScreenUI = go.AddComponent<InstructionScreenUI>();
+            if (instructionStepScreenshots != null && instructionStepScreenshots.Length > 0)
+                instructionScreenUI.SetStepScreenshots(instructionStepScreenshots);
         }
 
         private void UpdateLobbyInfo()

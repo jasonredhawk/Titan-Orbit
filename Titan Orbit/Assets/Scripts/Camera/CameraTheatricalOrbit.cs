@@ -4,8 +4,8 @@ using UnityEngine;
 namespace TitanOrbit.Camera
 {
     /// <summary>
-    /// Closed Catmull-Rom loop around the ship. Waypoint 0 is always the camera anchor
-    /// (current pose when the path is built). Segment 0 departs straight toward waypoint 1.
+    /// Closed Catmull-Rom loop around the ship. Waypoint 0 is a pullback point farther from
+    /// the ship than the live camera anchor. Segment 0 sweeps from pullback into the orbit.
     /// </summary>
     internal sealed class CameraTheatricalOrbit
     {
@@ -46,7 +46,27 @@ namespace TitanOrbit.Camera
         }
 
         /// <summary>
-        /// Waypoint 0 = camera anchor; remaining points are random. Closed loop.
+        /// Shared pullback distance used by the enter blend and the first orbit waypoint.
+        /// </summary>
+        public static Vector3 ComputePullbackLocal(
+            Vector3 anchorLocal,
+            float characteristicRadius,
+            float radiusMaxMultiplier)
+        {
+            float anchorDist = Mathf.Max(0.01f, anchorLocal.magnitude);
+            float farRadius = Mathf.Max(2f, characteristicRadius * radiusMaxMultiplier);
+            float pullbackDist = Mathf.Max(
+                anchorDist + characteristicRadius * 0.75f,
+                farRadius * 0.92f);
+
+            if (anchorLocal.sqrMagnitude < 0.0001f)
+                return Vector3.up * pullbackDist;
+
+            return anchorLocal.normalized * pullbackDist;
+        }
+
+        /// <summary>
+        /// Waypoint 0 = pullback (farther than the live camera); remaining points are random. Closed loop.
         /// </summary>
         public void BeginPathFromCamera(
             Vector3 cameraWorldPosition,
@@ -58,15 +78,19 @@ namespace TitanOrbit.Camera
 
             Quaternion invRot = Quaternion.Inverse(shipRotation);
             Vector3 anchorLocal = invRot * (cameraWorldPosition - focusWorld);
+            Vector3 pullbackLocal = ComputePullbackLocal(
+                anchorLocal,
+                characteristicRadiusCached,
+                pathRadiusMaxMultiplier);
 
             localWaypoints.Clear();
-            localWaypoints.Add(anchorLocal);
+            localWaypoints.Add(pullbackLocal);
 
             int randomCount = Mathf.Max(4, waypointCount - 1);
             for (int i = 0; i < randomCount; i++)
                 localWaypoints.Add(GenerateRandomLocalOffset());
 
-            // Match p0 to the anchor so segment 0 departs forward toward waypoint 1 instead of pulling back.
+            // p0 nearer than pullback so segment 0 departs the pullback point toward the orbit arc.
             entryControlLocalOffset = anchorLocal;
 
             pathProgress = 0f;

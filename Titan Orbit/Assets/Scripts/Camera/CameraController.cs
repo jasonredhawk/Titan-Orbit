@@ -670,12 +670,37 @@ namespace TitanOrbit.Camera
                     0f,
                     1f,
                     Mathf.Clamp01(theatricalEnterBlendElapsed / theatricalEnterBlendDuration));
-                finalPosition = Vector3.Lerp(theatricalBlendStartPosition, orbitPosition, blendT);
-                finalRotation = Quaternion.Slerp(
-                    theatricalBlendStartRotation,
-                    theatricalSmoothedRotation,
-                    blendT);
-                finalFov = Mathf.Lerp(theatricalBlendStartFov, theatricalSmoothedFov, blendT);
+
+                float standoff = Mathf.Max(0.5f, theatricalOrbitStandoffMultiplier);
+                Quaternion invShipRot = Quaternion.Inverse(theatricalFrozenShipRotation);
+                Vector3 anchorLocal = invShipRot * (theatricalBlendStartPosition - focus);
+                Vector3 pullbackLocal = CameraTheatricalOrbit.ComputePullbackLocal(
+                    anchorLocal,
+                    radius,
+                    theatricalRadiusMaxMultiplier * standoff);
+                Vector3 pullbackPosition = focus + theatricalFrozenShipRotation * pullbackLocal;
+
+                const float pullbackPhaseEnd = 0.55f;
+                if (blendT < pullbackPhaseEnd)
+                {
+                    float phaseT = Mathf.SmoothStep(0f, 1f, blendT / pullbackPhaseEnd);
+                    finalPosition = Vector3.Lerp(theatricalBlendStartPosition, pullbackPosition, phaseT);
+                    finalRotation = theatricalBlendStartRotation;
+                    finalFov = Mathf.Lerp(theatricalBlendStartFov, theatricalFovMax, phaseT);
+                }
+                else
+                {
+                    float phaseT = Mathf.SmoothStep(
+                        0f,
+                        1f,
+                        (blendT - pullbackPhaseEnd) / (1f - pullbackPhaseEnd));
+                    finalPosition = orbitPosition;
+                    finalRotation = Quaternion.Slerp(
+                        theatricalBlendStartRotation,
+                        theatricalSmoothedRotation,
+                        phaseT);
+                    finalFov = Mathf.Lerp(theatricalFovMax, theatricalSmoothedFov, phaseT);
+                }
             }
             else
             {
