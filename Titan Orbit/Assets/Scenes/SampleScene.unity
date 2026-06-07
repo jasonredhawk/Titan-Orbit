@@ -8221,10 +8221,10 @@ MonoBehaviour:
   maxPlanetSize: 16
   planetRingPlacementMargin: 3
   asteroidPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  asteroidsAtMinMapSize: 444
-  asteroidsAtMaxMapSize: 888
-  minAsteroidClusters: 11
-  maxAsteroidClusters: 22
+  asteroidsAtMinMapSize: 777
+  asteroidsAtMaxMapSize: 777
+  minAsteroidClusters: 9
+  maxAsteroidClusters: 12
   minAsteroidSize: 1
   maxAsteroidSize: 200
   minAsteroidSpacing: 1.5
@@ -10297,6 +10297,7 @@ MonoBehaviour:
   browseLobbiesButton: {fileID: 0}
   refreshLobbiesButton: {fileID: 0}
   joinSelectedLobbyButton: {fileID: 0}
+  requestDedicatedMatchButton: {fileID: 0}
   lobbyListContainer: {fileID: 0}
   lobbyListRowPrefab: {fileID: 0}
   lobbyBrowserStatusText: {fileID: 0}
