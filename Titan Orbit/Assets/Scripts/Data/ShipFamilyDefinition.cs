@@ -1103,6 +1103,34 @@ namespace TitanOrbit.Data
             baseTurnSpeed * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
+    /// <summary>Scan/auto-populate move speed and acceleration for engine and thruster components.</summary>
+    public static class ShipComponentPropulsionSuggestions
+    {
+        /// <summary>Engine/thruster move speed at version 1 (Engine_1), before <see cref="ShipPropulsionAggregation.OverallPropulsionSpeedMultiplier"/>.</summary>
+        public const float MoveSpeedV1 = 9f;
+
+        /// <summary>Move speed added per version tier (v2 = 11, v3 = 13, …), before global propulsion scale.</summary>
+        public const float MoveSpeedPerVersion = 3f;
+
+        /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
+        public const float AccelerationFractionOfMoveSpeed = 0.5f;
+
+        public static float GetSuggestedMoveSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return MoveSpeedV1 + (v - 1) * MoveSpeedPerVersion;
+        }
+
+        public static float GetSuggestedAccelerationCap(int version) =>
+            GetSuggestedMoveSpeed(version) * AccelerationFractionOfMoveSpeed;
+
+        public static float GetSuggestedMoveSpeedPerLevel(int version) =>
+            GetSuggestedMoveSpeed(version) * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
+
+        public static float GetSuggestedAccelerationCapPerLevel(int version) =>
+            GetSuggestedAccelerationCap(version) * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
+    }
+
     /// <summary>
     /// One named component entry within a ship family, e.g. "Cockpit", "Wing1", "Weapon_1".
     /// </summary>
@@ -1809,7 +1837,7 @@ namespace TitanOrbit.Data
             float maxGems = 8f * v;
             float maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(v);
             float perLevel = ShipPropulsionAggregation.PerLevelFractionOfBase;
-            const float baselineMoveSpeed = 9f;
+            const float baselineMoveSpeed = 13.5f;
             const float baselineTurnSpeed = 14f;
             float moveSpeed = baselineMoveSpeed;
             float accelerationCap = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(

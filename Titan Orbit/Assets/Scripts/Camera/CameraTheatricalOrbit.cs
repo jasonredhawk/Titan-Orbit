@@ -71,14 +71,15 @@ namespace TitanOrbit.Camera
         public void BeginPathFromCamera(
             Vector3 cameraWorldPosition,
             Vector3 focusWorld,
-            Quaternion shipRotation)
+            Quaternion shipRotation,
+            Vector3? pullbackLocalOverride = null)
         {
             if (rng == null)
                 rng = new System.Random(Random.Range(int.MinValue, int.MaxValue));
 
             Quaternion invRot = Quaternion.Inverse(shipRotation);
             Vector3 anchorLocal = invRot * (cameraWorldPosition - focusWorld);
-            Vector3 pullbackLocal = ComputePullbackLocal(
+            Vector3 pullbackLocal = pullbackLocalOverride ?? ComputePullbackLocal(
                 anchorLocal,
                 characteristicRadiusCached,
                 pathRadiusMaxMultiplier);

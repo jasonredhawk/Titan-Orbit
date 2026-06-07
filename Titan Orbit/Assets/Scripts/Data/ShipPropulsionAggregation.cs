@@ -7,7 +7,7 @@ namespace TitanOrbit.Data
     /// Engine and thruster move speed and acceleration rules shared by <see cref="Entities.Starship"/> and editor previews.
     /// Engines and thrusters share one propulsion pool: the single best base <see cref="ShipComponentAbilityStats.moveSpeed"/>
     /// plus half the sum of every other part's <see cref="ShipComponentAbilityStats.moveSpeedPerLevel"/>.
-    /// Example: 6 identical v1 parts (moveSpeed 6, moveSpeedPerLevel 1.2) → (6 + (5 × 1.2) / 2) × 0.8 ≈ 7.2 effective top speed.
+    /// Example: 6 identical v1 parts (moveSpeed 9, moveSpeedPerLevel 1.8) → (9 + (5 × 1.8) / 2) × 0.8 ≈ 10.8 effective top speed.
     /// Acceleration caps sum across all engines and thrusters (same global scale).
     /// </summary>
     public static class ShipPropulsionAggregation
@@ -27,39 +27,43 @@ namespace TitanOrbit.Data
         /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
 
-        /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
-        public const float SuggestedPropulsionMoveSpeedV1 = 6f;
+        /// <summary>
+        /// Visual banking (°) at <see cref="VisualBankReferenceMaxTurnSpeedAuthoredUnits"/> × Starship's family turn-to-degrees scale.
+        /// Slower ships scale down proportionally to their own max turn speed.
+        /// </summary>
+        public const float VisualBankReferenceMaxAngleDegrees = 111f;
 
-        /// <summary>Move speed added per version tier (v2 = 8, v3 = 10, …), before global propulsion scale.</summary>
-        public const float SuggestedPropulsionMoveSpeedPerVersion = 2f;
+        /// <summary>
+        /// Fastest authored ship turn speed (family definition units, level 1) used as the banking reference cap.
+        /// Matches AstroEagle_Feather total turn speed; update if a faster build is added.
+        /// </summary>
+        public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 252f;
+
+        /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
+        public const float SuggestedPropulsionMoveSpeedV1 = ShipComponentPropulsionSuggestions.MoveSpeedV1;
+
+        /// <summary>Move speed added per version tier (v2 = 11, v3 = 13, …), before global propulsion scale.</summary>
+        public const float SuggestedPropulsionMoveSpeedPerVersion = ShipComponentPropulsionSuggestions.MoveSpeedPerVersion;
 
         /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
-        public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed = 0.5f;
+        public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed =
+            ShipComponentPropulsionSuggestions.AccelerationFractionOfMoveSpeed;
 
-        /// <summary>Engine/thruster move speed from version: v1=6, v2=8, v3=10, …</summary>
-        public static float GetSuggestedPropulsionMoveSpeed(int version)
-        {
-            int v = Mathf.Max(1, version);
-            return SuggestedPropulsionMoveSpeedV1 + (v - 1) * SuggestedPropulsionMoveSpeedPerVersion;
-        }
+        /// <summary>Engine/thruster move speed from version: v1=9, v2=11, v3=13, …</summary>
+        public static float GetSuggestedPropulsionMoveSpeed(int version) =>
+            ShipComponentPropulsionSuggestions.GetSuggestedMoveSpeed(version);
 
         /// <summary>Engine/thruster acceleration cap from version (half of move speed by default).</summary>
-        public static float GetSuggestedPropulsionAccelerationCap(int version)
-        {
-            return GetSuggestedPropulsionMoveSpeed(version) * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
-        }
+        public static float GetSuggestedPropulsionAccelerationCap(int version) =>
+            ShipComponentPropulsionSuggestions.GetSuggestedAccelerationCap(version);
 
         /// <summary>moveSpeedPerLevel for scan/auto-populate (20% of base move speed for that version).</summary>
-        public static float GetSuggestedPropulsionMoveSpeedPerLevel(int version)
-        {
-            return GetSuggestedPropulsionMoveSpeed(version) * PropulsionPerLevelFractionOfBase;
-        }
+        public static float GetSuggestedPropulsionMoveSpeedPerLevel(int version) =>
+            ShipComponentPropulsionSuggestions.GetSuggestedMoveSpeedPerLevel(version);
 
         /// <summary>accelerationCapPerLevel for scan/auto-populate (20% of base acceleration for that version).</summary>
-        public static float GetSuggestedPropulsionAccelerationCapPerLevel(int version)
-        {
-            return GetSuggestedPropulsionAccelerationCap(version) * PropulsionPerLevelFractionOfBase;
-        }
+        public static float GetSuggestedPropulsionAccelerationCapPerLevel(int version) =>
+            ShipComponentPropulsionSuggestions.GetSuggestedAccelerationCapPerLevel(version);
 
         public static float ApplyOverallPropulsionSpeedScale(float value)
         {

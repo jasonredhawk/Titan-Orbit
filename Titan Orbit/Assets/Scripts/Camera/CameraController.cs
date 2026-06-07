@@ -190,6 +190,8 @@ namespace TitanOrbit.Camera
         private float theatricalBlendStartFov;
         private Quaternion theatricalSmoothedRotation = Quaternion.identity;
         private bool hasTheatricalSmoothedRotation;
+        private Vector3 theatricalEnterPullbackLocal;
+        private bool theatricalEnterBlendHandoffPending;
         private bool wasTargetShipDead;
         private CameraClearFlags gameplayClearFlags = CameraClearFlags.SolidColor;
 
@@ -531,6 +533,7 @@ namespace TitanOrbit.Camera
             hasTheatricalSmoothedRotation = false;
             theatricalEnterBlendElapsed = 0f;
             theatricalCapturingEnterBlendStart = true;
+            theatricalEnterBlendHandoffPending = true;
             theatricalFrozenShipRotation = target.rotation;
 
             TryGetShipVisualFocus(target, out _, out float radius);
@@ -556,7 +559,8 @@ namespace TitanOrbit.Camera
             theatricalOrbit.BeginPathFromCamera(
                 cameraWorldPosition,
                 focus,
-                theatricalFrozenShipRotation);
+                theatricalFrozenShipRotation,
+                theatricalEnterPullbackLocal);
             theatricalOrbitInitialized = true;
         }
 
@@ -573,6 +577,27 @@ namespace TitanOrbit.Camera
             hasTheatricalSmoothedRotation = false;
             theatricalEnterBlendElapsed = 0f;
             theatricalCapturingEnterBlendStart = false;
+            theatricalEnterBlendHandoffPending = false;
+        }
+
+        private Vector3 GetTheatricalEnterPullbackWorld(Vector3 focus) =>
+            focus + theatricalFrozenShipRotation * theatricalEnterPullbackLocal;
+
+        private void SyncTheatricalSmoothedStateAfterEnterBlend(Vector3 focus, Vector3 pullbackWorld)
+        {
+            theatricalSmoothedLookTarget = focus;
+            hasTheatricalSmoothedLookTarget = true;
+            theatricalLookVelocity = Vector3.zero;
+
+            theatricalSmoothedRotation = TryLookAtRotation(
+                pullbackWorld,
+                focus,
+                theatricalBlendStartRotation);
+            hasTheatricalSmoothedRotation = true;
+
+            theatricalSmoothedFov = theatricalFovMax;
+            hasTheatricalSmoothedFov = true;
+            theatricalFovVelocity = 0f;
         }
 
         private void ApplyTheatricalCamera(
@@ -597,6 +622,13 @@ namespace TitanOrbit.Camera
                 theatricalBlendStartPosition = gameplayPosition;
                 theatricalBlendStartRotation = Quaternion.Euler(90f, 0f, 0f);
                 theatricalBlendStartFov = cam != null ? cam.fieldOfView : gameplayFieldOfView;
+                float standoff = Mathf.Max(0.5f, theatricalOrbitStandoffMultiplier);
+                Quaternion invShipRot = Quaternion.Inverse(theatricalFrozenShipRotation);
+                Vector3 anchorLocal = invShipRot * (gameplayPosition - focus);
+                theatricalEnterPullbackLocal = CameraTheatricalOrbit.ComputePullbackLocal(
+                    anchorLocal,
+                    radius,
+                    theatricalRadiusMaxMultiplier * standoff);
                 theatricalCapturingEnterBlendStart = false;
             }
 
@@ -619,50 +651,65 @@ namespace TitanOrbit.Camera
                 out Vector3 lookTarget,
                 out float zoomT);
 
-            if (!hasTheatricalSmoothedLookTarget)
-            {
-                theatricalSmoothedLookTarget = lookTarget;
-                hasTheatricalSmoothedLookTarget = true;
-            }
-
-            theatricalSmoothedLookTarget = Vector3.SmoothDamp(
-                theatricalSmoothedLookTarget,
-                lookTarget,
-                ref theatricalLookVelocity,
-                theatricalLookSmoothTime,
-                Mathf.Infinity,
-                Time.deltaTime);
-
-            Quaternion targetOrbitRotation = TryLookAtRotation(
-                orbitPosition,
-                theatricalSmoothedLookTarget,
+            Vector3 pullbackWorld = GetTheatricalEnterPullbackWorld(focus);
+            Quaternion enterHeroRotation = TryLookAtRotation(
+                pullbackWorld,
+                focus,
                 theatricalBlendStartRotation);
 
-            if (!hasTheatricalSmoothedRotation)
+            if (!enterBlendActive)
             {
-                theatricalSmoothedRotation = theatricalBlendStartRotation;
-                hasTheatricalSmoothedRotation = true;
+                if (theatricalEnterBlendHandoffPending)
+                {
+                    SyncTheatricalSmoothedStateAfterEnterBlend(focus, pullbackWorld);
+                    theatricalEnterBlendHandoffPending = false;
+                }
+
+                if (!hasTheatricalSmoothedLookTarget)
+                {
+                    theatricalSmoothedLookTarget = lookTarget;
+                    hasTheatricalSmoothedLookTarget = true;
+                }
+
+                theatricalSmoothedLookTarget = Vector3.SmoothDamp(
+                    theatricalSmoothedLookTarget,
+                    lookTarget,
+                    ref theatricalLookVelocity,
+                    theatricalLookSmoothTime,
+                    Mathf.Infinity,
+                    Time.deltaTime);
+
+                Quaternion targetOrbitRotation = TryLookAtRotation(
+                    orbitPosition,
+                    theatricalSmoothedLookTarget,
+                    theatricalBlendStartRotation);
+
+                if (!hasTheatricalSmoothedRotation)
+                {
+                    theatricalSmoothedRotation = enterHeroRotation;
+                    hasTheatricalSmoothedRotation = true;
+                }
+
+                float rotationBlend = 1f - Mathf.Exp(
+                    -Time.deltaTime / Mathf.Max(0.05f, theatricalRotationSmoothTime));
+                theatricalSmoothedRotation = Quaternion.Slerp(
+                    theatricalSmoothedRotation,
+                    targetOrbitRotation,
+                    rotationBlend);
+
+                float targetOrbitFov = Mathf.Lerp(theatricalFovMax, theatricalFovMin, zoomT);
+                if (!hasTheatricalSmoothedFov)
+                {
+                    theatricalSmoothedFov = theatricalFovMax;
+                    hasTheatricalSmoothedFov = true;
+                }
+
+                theatricalSmoothedFov = Mathf.SmoothDamp(
+                    theatricalSmoothedFov,
+                    targetOrbitFov,
+                    ref theatricalFovVelocity,
+                    theatricalFovSmoothTime);
             }
-
-            float rotationBlend = 1f - Mathf.Exp(
-                -Time.deltaTime / Mathf.Max(0.05f, theatricalRotationSmoothTime));
-            theatricalSmoothedRotation = Quaternion.Slerp(
-                theatricalSmoothedRotation,
-                targetOrbitRotation,
-                rotationBlend);
-
-            float targetOrbitFov = Mathf.Lerp(theatricalFovMax, theatricalFovMin, zoomT);
-            if (!hasTheatricalSmoothedFov)
-            {
-                theatricalSmoothedFov = theatricalBlendStartFov;
-                hasTheatricalSmoothedFov = true;
-            }
-
-            theatricalSmoothedFov = Mathf.SmoothDamp(
-                theatricalSmoothedFov,
-                targetOrbitFov,
-                ref theatricalFovVelocity,
-                theatricalFovSmoothTime);
 
             if (enterBlendActive)
             {
@@ -671,36 +718,22 @@ namespace TitanOrbit.Camera
                     1f,
                     Mathf.Clamp01(theatricalEnterBlendElapsed / theatricalEnterBlendDuration));
 
-                float standoff = Mathf.Max(0.5f, theatricalOrbitStandoffMultiplier);
-                Quaternion invShipRot = Quaternion.Inverse(theatricalFrozenShipRotation);
-                Vector3 anchorLocal = invShipRot * (theatricalBlendStartPosition - focus);
-                Vector3 pullbackLocal = CameraTheatricalOrbit.ComputePullbackLocal(
-                    anchorLocal,
-                    radius,
-                    theatricalRadiusMaxMultiplier * standoff);
-                Vector3 pullbackPosition = focus + theatricalFrozenShipRotation * pullbackLocal;
-
                 const float pullbackPhaseEnd = 0.55f;
-                if (blendT < pullbackPhaseEnd)
-                {
-                    float phaseT = Mathf.SmoothStep(0f, 1f, blendT / pullbackPhaseEnd);
-                    finalPosition = Vector3.Lerp(theatricalBlendStartPosition, pullbackPosition, phaseT);
-                    finalRotation = theatricalBlendStartRotation;
-                    finalFov = Mathf.Lerp(theatricalBlendStartFov, theatricalFovMax, phaseT);
-                }
-                else
-                {
-                    float phaseT = Mathf.SmoothStep(
-                        0f,
-                        1f,
-                        (blendT - pullbackPhaseEnd) / (1f - pullbackPhaseEnd));
-                    finalPosition = orbitPosition;
-                    finalRotation = Quaternion.Slerp(
-                        theatricalBlendStartRotation,
-                        theatricalSmoothedRotation,
-                        phaseT);
-                    finalFov = Mathf.Lerp(theatricalFovMax, theatricalSmoothedFov, phaseT);
-                }
+                float pullBackT = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.Clamp01(blendT / pullbackPhaseEnd));
+                float rotT = Mathf.SmoothStep(
+                    0f,
+                    1f,
+                    Mathf.InverseLerp(pullbackPhaseEnd, 1f, blendT));
+
+                finalPosition = Vector3.Lerp(theatricalBlendStartPosition, pullbackWorld, pullBackT);
+                finalRotation = Quaternion.Slerp(
+                    theatricalBlendStartRotation,
+                    enterHeroRotation,
+                    rotT);
+                finalFov = Mathf.Lerp(theatricalBlendStartFov, theatricalFovMax, pullBackT);
             }
             else
             {

@@ -720,7 +720,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float shipLevelScalePerLevel = 1.15f;
 
         [Header("Banking (fallback when shipData has no values)")]
-        [SerializeField] private float defaultMaxBankAngle = 111f;
+        [SerializeField] private float defaultMaxBankAngle = ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees;
         [SerializeField] private float defaultBankSmoothing = 2f;
 
         private MaterialPropertyBlock hullColorBlock;
@@ -3416,9 +3416,9 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            float maxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
+            float referenceMaxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
-            // Roll (Z): bank whenever turning; amount based on turn rate, independent of forward speed.
+            // Roll (Z): bank from turn rate vs game-wide reference max turn speed; each ship's cap scales with its own max turn.
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
             Vector3 velFlat = rb.linearVelocity;
             velFlat.y = 0f;
@@ -3426,8 +3426,12 @@ namespace TitanOrbit.Entities
                 && Mathf.Abs(signedAngle) < IdleBankSignedAngleDeadbandDeg)
                 signedAngle = 0f;
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
-            float turnRatio = Mathf.Clamp01(angularVelDegPerSec / EffectiveRotationSpeed);
-            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * maxBank;
+            float referenceMaxTurnDegPerSec = ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits
+                * ShipTurnDefinitionToDegreesPerSecond;
+            float turnRatio = referenceMaxTurnDegPerSec > 0f
+                ? Mathf.Clamp01(angularVelDegPerSec / referenceMaxTurnDegPerSec)
+                : 0f;
+            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * referenceMaxBank;
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
