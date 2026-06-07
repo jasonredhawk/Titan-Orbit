@@ -60,46 +60,47 @@ set "ERR=0"
 
 REM All build artifacts under Build\ and root (loader, index, etc.)
 for /r "%SRCBASE%" %%F in (*) do (
-  set "FULL=%%~fF"
-  set "REL=!FULL:%SRCBASE%\=!"
-  set "GS=gs://%BUCKET%/!REL:\=/!"
-  set "NAME=%%~nxF"
-  set "EXT=%%~xF"
-
-  REM Skip directories (for /r still enumerates dirs in some cases — only process files)
-  if exist "%%F\" continue
-
-  set "CT="
-  set "ENC="
-
-  if /i "!EXT!"==".html" set "CT=text/html"
-  if /i "!EXT!"==".css" set "CT=text/css"
-  if /i "!EXT!"==".ico" set "CT=image/x-icon"
-  if /i "!EXT!"==".png" set "CT=image/png"
-  if /i "!EXT!"==".json" set "CT=application/json"
-  if /i "!EXT!"==".js" set "CT=application/javascript"
-  if /i "!EXT!"==".wasm" set "CT=application/wasm"
-  if /i "!EXT!"==".data" set "CT=application/octet-stream"
-  if /i "!EXT!"==".unityweb" set "CT=application/octet-stream"
-  if /i "!EXT!"==".br" set "CT=application/octet-stream"
-
-  if /i "!NAME:~-14!"==".wasm.unityweb" set "CT=application/wasm"
-  if /i "!NAME:~-14!"==".json.unityweb" set "CT=application/json"
-  if /i "!NAME:~-12!"==".js.unityweb" set "CT=application/javascript"
-  if /i "!NAME:~-8!"==".wasm.br" set "CT=application/wasm"
-  if /i "!NAME:~-6!"==".js.br" set "CT=application/javascript"
-  if /i "!NAME:~-8!"==".json.br" set "CT=application/json"
-
-  if "!CT!"=="" continue
-
-  for /f "usebackq delims=" %%E in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%ENCODING_PS1%" "!FULL!" 2^>nul`) do set "ENC=%%E"
-
-  if /i "!ENC!"=="br" (
-    call :RunUpdate "!GS!" br "!CT!"
-  ) else if /i "!ENC!"=="gzip" (
-    call :RunUpdate "!GS!" gzip "!CT!"
+  if exist "%%F\" (
+    rem Skip directories.
   ) else (
-    call :RunUpdate "!GS!" "" "!CT!"
+    set "FULL=%%~fF"
+    set "REL=!FULL:%SRCBASE%\=!"
+    set "GS=gs://%BUCKET%/!REL:\=/!"
+    set "NAME=%%~nxF"
+    set "EXT=%%~xF"
+
+    set "CT="
+    set "ENC="
+
+    if /i "!EXT!"==".html" set "CT=text/html"
+    if /i "!EXT!"==".css" set "CT=text/css"
+    if /i "!EXT!"==".ico" set "CT=image/x-icon"
+    if /i "!EXT!"==".png" set "CT=image/png"
+    if /i "!EXT!"==".json" set "CT=application/json"
+    if /i "!EXT!"==".js" set "CT=application/javascript"
+    if /i "!EXT!"==".wasm" set "CT=application/wasm"
+    if /i "!EXT!"==".data" set "CT=application/octet-stream"
+    if /i "!EXT!"==".unityweb" set "CT=application/octet-stream"
+    if /i "!EXT!"==".br" set "CT=application/octet-stream"
+
+    if /i "!NAME:~-14!"==".wasm.unityweb" set "CT=application/wasm"
+    if /i "!NAME:~-14!"==".json.unityweb" set "CT=application/json"
+    if /i "!NAME:~-12!"==".js.unityweb" set "CT=application/javascript"
+    if /i "!NAME:~-8!"==".wasm.br" set "CT=application/wasm"
+    if /i "!NAME:~-6!"==".js.br" set "CT=application/javascript"
+    if /i "!NAME:~-8!"==".json.br" set "CT=application/json"
+
+    if not "!CT!"=="" (
+      for /f "usebackq delims=" %%E in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%ENCODING_PS1%" "!FULL!" 2^>nul`) do set "ENC=%%E"
+
+      if /i "!ENC!"=="br" (
+        call :RunUpdate "!GS!" br "!CT!"
+      ) else if /i "!ENC!"=="gzip" (
+        call :RunUpdate "!GS!" gzip "!CT!"
+      ) else (
+        call :RunUpdate "!GS!" "" "!CT!"
+      )
+    )
   )
 )
 
@@ -114,9 +115,9 @@ exit /b 0
 :RunUpdate
 REM Args: gs URL, content-encoding or empty, content-type
 if "%~2"=="" (
-  for %%I in ("%~1") do call gcloud --project "%PROJECT_ID%" storage objects update "%%~I" --clear-content-encoding --content-type="%~3" --continue-on-error
+  gcloud --project "%PROJECT_ID%" storage objects update "%~1" --clear-content-encoding --content-type="%~3" --cache-control=no-cache
 ) else (
-  for %%I in ("%~1") do call gcloud --project "%PROJECT_ID%" storage objects update "%%~I" --content-encoding="%~2" --content-type="%~3" --continue-on-error
+  gcloud --project "%PROJECT_ID%" storage objects update "%~1" --content-encoding="%~2" --content-type="%~3" --cache-control=no-cache
 )
 if errorlevel 1 set "ERR=1"
 exit /b 0

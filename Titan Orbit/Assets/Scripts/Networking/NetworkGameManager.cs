@@ -421,14 +421,9 @@ namespace TitanOrbit.Networking
             // WebGL players must use WSS; desktop/editor clients use DTLS to match dedicated DTLS hosts (WSS fallback).
             string t = NormalizeRelaySdkConnectionType(ResolveRelayConnectionType(relayConnectionType));
 #if UNITY_EDITOR
-            if (UnityEditor.EditorUserBuildSettings.activeBuildTarget == UnityEditor.BuildTarget.WebGL)
-            {
-                t = "wss";
-                Debug.LogWarning(
-                    "[NetworkGameManager] Active Build Target is WebGL: Unity Multiplayer Relay APIs in the Editor only allow WSS for JoinAllocation, "
-                    + "and Relay WSS from Editor Play often fails to reach IsConnectedClient against a DTLS dedicated host. "
-                    + "Switch **File > Build Settings** active platform to **Windows/Mac/Linux Standalone** to test joining the same dedicated server from the Editor.");
-            }
+            // UTP WebSockets are unavailable in Editor Play Mode regardless of active build target.
+            if (string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase))
+                t = "dtls";
 #endif
             if (string.Equals(t, "wss", StringComparison.OrdinalIgnoreCase))
             {

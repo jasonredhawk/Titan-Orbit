@@ -24,4 +24,18 @@ REM   deploy_webgl_gcs.bat "C:\path\to\TitanOrbitWebGL" your-gcp-project-id
 call "%~dp0upload_webgl_to_gcs.bat" %*
 if errorlevel 1 exit /b 1
 call "%~dp0set_webgl_gcs_metadata.bat" %*
-exit /b %errorlevel%
+if errorlevel 1 exit /b 1
+
+echo.
+echo [4/4] Verifying GCS object sizes and Content-Encoding...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verify_gcs_upload.ps1" %1 %2
+if errorlevel 1 (
+  echo.
+  echo ERROR: GCS verification failed. Do NOT assume the site will load until this passes.
+  echo If sizes match on GCS but the public site is wrong, purge Cloudflare cache for titanorbit.io.
+  exit /b 1
+)
+
+echo.
+echo Deploy complete. IMPORTANT: purge Cloudflare cache for titanorbit.io, then clear browser site data.
+exit /b 0

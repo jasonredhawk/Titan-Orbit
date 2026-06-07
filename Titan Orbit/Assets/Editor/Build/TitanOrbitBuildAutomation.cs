@@ -18,8 +18,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
-            WebGLTextureImportBuildFix.MarkWebGlTextureRefreshNeeded();
-            WebGLTextureImportBuildFix.PrepareWebGlBuild(log: true);
+            BuildTarget previousTarget = EditorUserBuildSettings.activeBuildTarget;
 
             var options = new BuildPlayerOptions
             {
@@ -34,7 +33,10 @@ namespace TitanOrbit.Editor.Build
 
             Debug.Log("[TitanOrbitBuild] WebGL production build: texture subtarget=DXT (desktop browsers).");
 
+            // PrepareWebGlBuild runs in IPreprocessBuildWithReport; restore Standalone/PC target after if needed.
             BuildReport report = BuildPipeline.BuildPlayer(options);
+            WebGLTextureImportBuildFix.RestoreBuildTargetAfterProductionBuild(previousTarget);
+
             if (report.summary.result != BuildResult.Succeeded)
                 Debug.LogError($"[TitanOrbitBuild] WebGL build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
         }
