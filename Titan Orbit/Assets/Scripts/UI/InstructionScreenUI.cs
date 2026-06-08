@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -25,6 +27,12 @@ namespace TitanOrbit.UI
             }
         }
 
+        private struct StepCardLayout
+        {
+            public LayoutElement CardWidth;
+            public LayoutElement ImageFrame;
+        }
+
         private static readonly InstructionStep[] DefaultSteps =
         {
             new InstructionStep(
@@ -49,9 +57,11 @@ namespace TitanOrbit.UI
                 "InstructionScreens/instruction_planet_ships"),
         };
 
-        private const float CardWidth = 300f;
+        private const float CardViewportWidthFraction = 0.9f;
+        private const float MinCardWidth = 480f;
+        private const float MaxCardWidth = 760f;
         private const float CardImageAspect = 4f / 3f;
-        private const float ContentMaxWidth = 820f;
+        private const float ContentMaxWidth = 920f;
 
         [SerializeField] private GameObject panelRoot;
         [SerializeField] private TextMeshProUGUI titleText;
@@ -63,8 +73,11 @@ namespace TitanOrbit.UI
         [Tooltip("Optional screenshots that override the built-in placeholder art (Objective, Transport, Mining, Upgrades, Planet Ships).")]
         [SerializeField] private Sprite[] stepScreenshots;
 
+        private readonly List<StepCardLayout> stepCardLayouts = new List<StepCardLayout>();
+        private readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
         private Action onContinue;
         private bool uiBuilt;
+        private Coroutine refreshLayoutRoutine;
 
         public bool IsVisible => panelRoot != null && panelRoot.activeSelf;
 
@@ -87,17 +100,34 @@ namespace TitanOrbit.UI
         {
             EnsureUiBuilt();
             onContinue = onContinueCallback;
+
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas != null)
+            {
+                transform.SetParent(canvas.transform, false);
+                var hostRect = transform as RectTransform;
+                if (hostRect == null)
+                    hostRect = gameObject.AddComponent<RectTransform>();
+                hostRect.anchorMin = Vector2.zero;
+                hostRect.anchorMax = Vector2.one;
+                hostRect.offsetMin = hostRect.offsetMax = Vector2.zero;
+                transform.SetAsLastSibling();
+            }
+
+            PreloadInstructionSprites();
+
             if (panelRoot != null)
+            {
                 panelRoot.SetActive(true);
+                panelRoot.transform.SetAsLastSibling();
+            }
 
             if (stepsScrollRect != null)
                 stepsScrollRect.horizontalNormalizedPosition = 0f;
 
-            if (stepsContentRoot != null)
-            {
-                Canvas.ForceUpdateCanvases();
-                LayoutRebuilder.ForceRebuildLayoutImmediate(stepsContentRoot);
-            }
+            if (refreshLayoutRoutine != null)
+                StopCoroutine(refreshLayoutRoutine);
+            refreshLayoutRoutine = StartCoroutine(CoRefreshLayoutAfterShow());
         }
 
         /// <summary>Assign screenshots from the MainMenu inspector (one per instruction step).</summary>
@@ -110,6 +140,12 @@ namespace TitanOrbit.UI
 
         public void Hide()
         {
+            if (refreshLayoutRoutine != null)
+            {
+                StopCoroutine(refreshLayoutRoutine);
+                refreshLayoutRoutine = null;
+            }
+
             if (panelRoot != null)
                 panelRoot.SetActive(false);
             onContinue = null;
@@ -120,6 +156,21 @@ namespace TitanOrbit.UI
             var callback = onContinue;
             Hide();
             callback?.Invoke();
+        }
+
+        private IEnumerator CoRefreshLayoutAfterShow()
+        {
+            yield return null;
+            UpdateCardLayoutSizes();
+            ApplyStepScreenshots();
+
+            if (stepsContentRoot != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                LayoutRebuilder.ForceRebuildLayoutImmediate(stepsContentRoot);
+            }
+
+            refreshLayoutRoutine = null;
         }
 
         private void EnsureUiBuilt()
@@ -183,8 +234,8 @@ namespace TitanOrbit.UI
             var scrollRoot = new GameObject("StepsScroll");
             scrollRoot.transform.SetParent(panel, false);
             var scrollRectTransform = scrollRoot.AddComponent<RectTransform>();
-            scrollRectTransform.anchorMin = new Vector2(0.04f, 0.12f);
-            scrollRectTransform.anchorMax = new Vector2(0.96f, 0.84f);
+            scrollRectTransform.anchorMin = new Vector2(0.03f, 0.12f);
+            scrollRectTransform.anchorMax = new Vector2(0.97f, 0.84f);
             scrollRectTransform.offsetMin = Vector2.zero;
             scrollRectTransform.offsetMax = Vector2.zero;
 
@@ -214,8 +265,8 @@ namespace TitanOrbit.UI
             stepsContentRoot.sizeDelta = new Vector2(0f, 0f);
 
             var layout = content.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = 20f;
-            layout.padding = new RectOffset(8, 8, 4, 4);
+            layout.spacing = 24f;
+            layout.padding = new RectOffset(12, 12, 6, 6);
             layout.childAlignment = TextAnchor.MiddleLeft;
             layout.childControlWidth = false;
             layout.childControlHeight = true;
@@ -238,12 +289,53 @@ namespace TitanOrbit.UI
             for (int i = stepsContentRoot.childCount - 1; i >= 0; i--)
                 Destroy(stepsContentRoot.GetChild(i).gameObject);
 
+            stepCardLayouts.Clear();
             stepImageSlots = new Image[DefaultSteps.Length];
 
             for (int i = 0; i < DefaultSteps.Length; i++)
                 CreateStepCard(stepsContentRoot, DefaultSteps[i], i);
 
+            UpdateCardLayoutSizes();
             ApplyStepScreenshots();
+        }
+
+        private void UpdateCardLayoutSizes()
+        {
+            float cardWidth = ComputeCardWidth();
+            float imageWidth = Mathf.Max(200f, cardWidth - 32f);
+            float imageHeight = imageWidth / CardImageAspect;
+
+            foreach (var layout in stepCardLayouts)
+            {
+                if (layout.CardWidth != null)
+                {
+                    layout.CardWidth.preferredWidth = cardWidth;
+                    layout.CardWidth.minWidth = cardWidth;
+                }
+
+                if (layout.ImageFrame != null)
+                {
+                    layout.ImageFrame.preferredWidth = imageWidth;
+                    layout.ImageFrame.minWidth = imageWidth;
+                    layout.ImageFrame.preferredHeight = imageHeight;
+                    layout.ImageFrame.minHeight = imageHeight;
+                }
+            }
+        }
+
+        private float ComputeCardWidth()
+        {
+            float viewportWidth = 960f;
+            if (stepsScrollRect != null && stepsScrollRect.viewport != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                viewportWidth = stepsScrollRect.viewport.rect.width;
+            }
+
+            if (viewportWidth < 80f)
+                viewportWidth = Screen.width;
+
+            return Mathf.Clamp(viewportWidth * CardViewportWidthFraction, MinCardWidth, MaxCardWidth);
         }
 
         private void ApplyStepScreenshots()
@@ -261,16 +353,59 @@ namespace TitanOrbit.UI
                     sprite = stepScreenshots[i];
 
                 if (sprite == null && i < DefaultSteps.Length)
-                    sprite = Resources.Load<Sprite>(DefaultSteps[i].SpriteResourcePath);
+                    sprite = LoadInstructionSprite(DefaultSteps[i].SpriteResourcePath);
 
                 if (sprite == null)
+                {
+                    stepImageSlots[i].sprite = null;
+                    stepImageSlots[i].color = new Color(0.2f, 0.24f, 0.34f, 1f);
                     continue;
+                }
 
                 stepImageSlots[i].sprite = sprite;
                 stepImageSlots[i].color = Color.white;
                 stepImageSlots[i].preserveAspect = true;
                 stepImageSlots[i].type = Image.Type.Simple;
+                stepImageSlots[i].enabled = true;
             }
+        }
+
+        private void PreloadInstructionSprites()
+        {
+            for (int i = 0; i < DefaultSteps.Length; i++)
+                LoadInstructionSprite(DefaultSteps[i].SpriteResourcePath);
+        }
+
+        private Sprite LoadInstructionSprite(string resourcePath)
+        {
+            if (string.IsNullOrEmpty(resourcePath))
+                return null;
+
+            if (spriteCache.TryGetValue(resourcePath, out Sprite cached) && cached != null)
+                return cached;
+
+            Sprite sprite = Resources.Load<Sprite>(resourcePath);
+            if (sprite == null)
+            {
+                var texture = Resources.Load<Texture2D>(resourcePath);
+                if (texture != null)
+                {
+                    sprite = Sprite.Create(
+                        texture,
+                        new Rect(0f, 0f, texture.width, texture.height),
+                        new Vector2(0.5f, 0.5f),
+                        100f);
+                }
+            }
+
+            if (sprite == null)
+            {
+                Debug.LogWarning("[InstructionScreenUI] Could not load instruction art at Resources/" + resourcePath);
+                return null;
+            }
+
+            spriteCache[resourcePath] = sprite;
+            return sprite;
         }
 
         private void CreateStepCard(Transform parent, InstructionStep step, int index)
@@ -279,33 +414,33 @@ namespace TitanOrbit.UI
             card.transform.SetParent(parent, false);
             card.AddComponent<RectTransform>();
 
-            var cardLayout = card.AddComponent<LayoutElement>();
-            cardLayout.preferredWidth = CardWidth;
-            cardLayout.minWidth = CardWidth;
-            cardLayout.flexibleHeight = 1f;
+            var cardWidthElement = card.AddComponent<LayoutElement>();
+            cardWidthElement.preferredWidth = MinCardWidth;
+            cardWidthElement.minWidth = MinCardWidth;
+            cardWidthElement.flexibleHeight = 1f;
 
             var cardBg = card.AddComponent<Image>();
             cardBg.color = new Color(0.08f, 0.11f, 0.2f, 0.92f);
 
             var cardGroup = card.AddComponent<VerticalLayoutGroup>();
-            cardGroup.spacing = 12f;
-            cardGroup.padding = new RectOffset(14, 14, 14, 14);
+            cardGroup.spacing = 14f;
+            cardGroup.padding = new RectOffset(16, 16, 16, 16);
             cardGroup.childAlignment = TextAnchor.UpperCenter;
             cardGroup.childControlWidth = true;
             cardGroup.childControlHeight = true;
             cardGroup.childForceExpandWidth = true;
             cardGroup.childForceExpandHeight = false;
 
-            var title = CreateStepText(card.transform, "StepTitle", step.Title, 21, FontStyles.Bold);
+            var title = CreateStepText(card.transform, "StepTitle", step.Title, 24, FontStyles.Bold);
             title.alignment = TextAlignmentOptions.Center;
             title.color = new Color(0.92f, 0.96f, 1f, 1f);
             var titleLe = title.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 34f;
+            titleLe.preferredHeight = 36f;
             titleLe.flexibleWidth = 1f;
 
-            stepImageSlots[index] = CreateStepImage(card.transform, CardWidth - 28f);
+            stepImageSlots[index] = CreateStepImage(card.transform, out LayoutElement imageFrameElement);
 
-            var body = CreateStepText(card.transform, "StepBody", step.Body, 16, FontStyles.Normal);
+            var body = CreateStepText(card.transform, "StepBody", step.Body, 18, FontStyles.Normal);
             body.alignment = TextAlignmentOptions.TopLeft;
             body.color = new Color(0.72f, 0.82f, 0.94f, 0.98f);
             body.enableWordWrapping = true;
@@ -313,26 +448,33 @@ namespace TitanOrbit.UI
             var bodyLe = body.gameObject.AddComponent<LayoutElement>();
             bodyLe.flexibleWidth = 1f;
             bodyLe.flexibleHeight = 1f;
-            bodyLe.minHeight = 72f;
+            bodyLe.minHeight = 80f;
             var bodyFitter = body.gameObject.AddComponent<ContentSizeFitter>();
             bodyFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             bodyFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            stepCardLayouts.Add(new StepCardLayout
+            {
+                CardWidth = cardWidthElement,
+                ImageFrame = imageFrameElement,
+            });
         }
 
-        private static Image CreateStepImage(Transform parent, float width)
+        private static Image CreateStepImage(Transform parent, out LayoutElement frameElement)
         {
             var frame = new GameObject("ImageFrame");
             frame.transform.SetParent(parent, false);
             frame.AddComponent<RectTransform>();
 
-            float imageHeight = width / CardImageAspect;
-            var frameLe = frame.AddComponent<LayoutElement>();
-            frameLe.preferredWidth = width;
-            frameLe.preferredHeight = imageHeight;
-            frameLe.minHeight = imageHeight;
+            frameElement = frame.AddComponent<LayoutElement>();
+            frameElement.preferredWidth = MinCardWidth - 32f;
+            frameElement.minWidth = MinCardWidth - 32f;
+            frameElement.preferredHeight = (MinCardWidth - 32f) / CardImageAspect;
+            frameElement.minHeight = frameElement.preferredHeight;
 
             var frameBg = frame.AddComponent<Image>();
             frameBg.color = new Color(0.04f, 0.06f, 0.1f, 1f);
+            frameBg.raycastTarget = false;
 
             var imageGo = new GameObject("StepImage");
             imageGo.transform.SetParent(frame.transform, false);
@@ -343,9 +485,10 @@ namespace TitanOrbit.UI
             imageRect.offsetMax = new Vector2(-4f, -4f);
 
             var img = imageGo.AddComponent<Image>();
-            img.color = new Color(0.55f, 0.62f, 0.74f, 1f);
+            img.color = new Color(0.2f, 0.24f, 0.34f, 1f);
             img.preserveAspect = true;
             img.type = Image.Type.Simple;
+            img.raycastTarget = false;
 
             return img;
         }

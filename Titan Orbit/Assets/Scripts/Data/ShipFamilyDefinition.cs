@@ -1107,10 +1107,10 @@ namespace TitanOrbit.Data
     public static class ShipComponentPropulsionSuggestions
     {
         /// <summary>Engine/thruster move speed at version 1 (Engine_1), before <see cref="ShipPropulsionAggregation.OverallPropulsionSpeedMultiplier"/>.</summary>
-        public const float MoveSpeedV1 = 9f;
+        public const float MoveSpeedV1 = 7.8f;
 
-        /// <summary>Move speed added per version tier (v2 = 11, v3 = 13, …), before global propulsion scale.</summary>
-        public const float MoveSpeedPerVersion = 3f;
+        /// <summary>Move speed added per version tier (v2 = 10.4, v3 = 13, …), before global propulsion scale.</summary>
+        public const float MoveSpeedPerVersion = 2.6f;
 
         /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
         public const float AccelerationFractionOfMoveSpeed = 0.5f;
@@ -1837,7 +1837,7 @@ namespace TitanOrbit.Data
             float maxGems = 8f * v;
             float maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(v);
             float perLevel = ShipPropulsionAggregation.PerLevelFractionOfBase;
-            const float baselineMoveSpeed = 13.5f;
+            const float baselineMoveSpeed = 11.7f;
             const float baselineTurnSpeed = 14f;
             float moveSpeed = baselineMoveSpeed;
             float accelerationCap = ShipPropulsionAggregation.ApplyOverallPropulsionSpeedScale(

@@ -43,7 +43,7 @@ namespace TitanOrbit.Data
         public Color shipColor = Color.white;
 
         [Header("Banking (per-ship)")]
-        [Tooltip("Maximum roll angle (degrees) at the game's reference max turn speed (see ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits). Each ship scales down with its own turn speed.")]
+        [Tooltip("Maximum roll angle (degrees) for the fastest-turning ship at full turn. Others scale down toward 35°.")]
         public float maxBankAngle = 111f;
         [Tooltip("How quickly roll catches up to the target.")]
         public float bankSmoothing = 2f;

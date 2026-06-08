@@ -261,8 +261,6 @@ namespace TitanOrbit.Entities
         private List<Transform> wingScaleTransforms = new List<Transform>();
         private List<Vector3> wingBaseScales = new List<Vector3>();
         private List<Vector3> wingBasePositions = new List<Vector3>();
-        /// <summary>Cached wing mesh scale from gem-capacity attribute upgrades (1 = authored size).</summary>
-        private float _wingCapacityVisualScaleFactor = 1f;
         private readonly List<WingTractorBeamSlot> wingTractorBeams = new List<WingTractorBeamSlot>();
         private List<Transform> weaponScaleTransforms = new List<Transform>();
         private List<Vector3> weaponBaseScales = new List<Vector3>();
@@ -1505,8 +1503,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>Below this horizontal speed (m/s), visual banking ignores microscopic yaw and forward-accel pitch is not derived from velocity (stops idle rocking from mouse jitter + in-place rotation).</summary>
         private const float IdleVisualLinearSpeedThreshold = 0.12f;
-        /// <summary>When nearly stationary, per-frame yaw smaller than this (degrees) does not drive bank angle.</summary>
-        private const float IdleBankSignedAngleDeadbandDeg = 0.55f;
+        /// <summary>When nearly stationary, turn rates below this (°/s) do not drive bank angle.</summary>
+        private const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
         public float CurrentHealth => currentHealth.Value;
         public float MaxHealth
@@ -2025,9 +2023,6 @@ namespace TitanOrbit.Entities
         /// <summary>Uniform visual scale from ship level (1.15^(level-1) by default). Multiplies prefab root in LateUpdate.</summary>
         public float LevelScaleFactor => Mathf.Pow(Mathf.Max(1f, shipLevelScalePerLevel), Mathf.Max(0, ShipLevel - 1));
 
-        /// <summary>Visual wing scale from gem-capacity attribute upgrades (1 = base wings). Drives drone orbit clearance.</summary>
-        public float WingCapacityVisualScaleFactor => _wingCapacityVisualScaleFactor;
-
         /// <summary>
         /// Prefab-root localScale for menu thumbnails: chassis base × ship level, excluding moon-dock shrink.
         /// </summary>
@@ -2342,7 +2337,7 @@ namespace TitanOrbit.Entities
             // Initialize banking state so first LateUpdate doesn't spike
             if (rb != null)
             {
-                Vector3 fwd = rb.rotation * Vector3.forward;
+                Vector3 fwd = transform.rotation * Vector3.forward;
                 fwd.y = 0f;
                 if (fwd.sqrMagnitude > 0.01f)
                 {
@@ -3009,7 +3004,6 @@ namespace TitanOrbit.Entities
             float partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(rGem, rHealth), vis, 0.85f));
 
             wingScale = Mathf.Min(wingScale, 3.5f);
-            _wingCapacityVisualScaleFactor = wingScale;
             cockpitScale = Mathf.Min(cockpitScale, 3f);
             weaponScale = Mathf.Min(weaponScale, 3f);
             engineScale = Mathf.Min(engineScale, 2f);
@@ -3394,7 +3388,7 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 fwd = rb.rotation * Vector3.forward;
+            Vector3 fwd = transform.rotation * Vector3.forward;
             fwd.y = 0f;
             if (fwd.sqrMagnitude < 0.01f) return;
             fwd.Normalize();
@@ -3418,20 +3412,21 @@ namespace TitanOrbit.Entities
 
             float referenceMaxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
-            // Roll (Z): bank from turn rate vs game-wide reference max turn speed; each ship's cap scales with its own max turn.
+            // Roll (Z): turn fraction vs this ship's max turn rate; max bank scales with turn-speed tier.
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
+            float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             Vector3 velFlat = rb.linearVelocity;
             velFlat.y = 0f;
             if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
-                && Mathf.Abs(signedAngle) < IdleBankSignedAngleDeadbandDeg)
+                && angularVelDegPerSec < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngle = 0f;
-            float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             float referenceMaxTurnDegPerSec = ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits
                 * ShipTurnDefinitionToDegreesPerSecond;
-            float turnRatio = referenceMaxTurnDegPerSec > 0f
-                ? Mathf.Clamp01(angularVelDegPerSec / referenceMaxTurnDegPerSec)
-                : 0f;
-            float targetBankAngle = Mathf.Sign(signedAngle) * turnRatio * referenceMaxBank;
+            float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
+                Mathf.Sign(signedAngle) * angularVelDegPerSec,
+                EffectiveRotationSpeed,
+                referenceMaxBank,
+                referenceMaxTurnDegPerSec);
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 

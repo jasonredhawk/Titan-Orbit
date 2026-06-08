@@ -7,7 +7,7 @@ namespace TitanOrbit.Data
     /// Engine and thruster move speed and acceleration rules shared by <see cref="Entities.Starship"/> and editor previews.
     /// Engines and thrusters share one propulsion pool: the single best base <see cref="ShipComponentAbilityStats.moveSpeed"/>
     /// plus half the sum of every other part's <see cref="ShipComponentAbilityStats.moveSpeedPerLevel"/>.
-    /// Example: 6 identical v1 parts (moveSpeed 9, moveSpeedPerLevel 1.8) → (9 + (5 × 1.8) / 2) × 0.8 ≈ 10.8 effective top speed.
+    /// Example: 6 identical v1 parts (moveSpeed 7.8, moveSpeedPerLevel 1.56) → (7.8 + (5 × 1.56) / 2) × 0.8 ≈ 9.36 effective top speed.
     /// Acceleration caps sum across all engines and thrusters (same global scale).
     /// </summary>
     public static class ShipPropulsionAggregation
@@ -39,6 +39,28 @@ namespace TitanOrbit.Data
         /// </summary>
         public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 252f;
 
+        /// <summary>
+        /// Target visual bank angle (°) from signed turn rate, this ship's max turn rate, and reference banking caps.
+        /// Slower-turning ships get a proportionally lower max bank; turn fraction uses this ship's own max turn rate.
+        /// </summary>
+        public static float ComputeVisualBankTargetAngle(
+            float signedAngularVelDegPerSec,
+            float shipMaxTurnDegPerSec,
+            float referenceMaxBankDegrees,
+            float referenceMaxTurnDegPerSec)
+        {
+            if (referenceMaxTurnDegPerSec <= 0f || shipMaxTurnDegPerSec <= 0f)
+                return 0f;
+
+            float effectiveMaxBank = referenceMaxBankDegrees
+                * Mathf.Clamp01(shipMaxTurnDegPerSec / referenceMaxTurnDegPerSec);
+            float turnRatio = Mathf.Clamp01(Mathf.Abs(signedAngularVelDegPerSec) / shipMaxTurnDegPerSec);
+            if (Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
+                return 0f;
+
+            return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * effectiveMaxBank;
+        }
+
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
         public const float SuggestedPropulsionMoveSpeedV1 = ShipComponentPropulsionSuggestions.MoveSpeedV1;
 
@@ -49,7 +71,7 @@ namespace TitanOrbit.Data
         public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed =
             ShipComponentPropulsionSuggestions.AccelerationFractionOfMoveSpeed;
 
-        /// <summary>Engine/thruster move speed from version: v1=9, v2=11, v3=13, …</summary>
+        /// <summary>Engine/thruster move speed from version: v1=7.8, v2=10.4, v3=13, …</summary>
         public static float GetSuggestedPropulsionMoveSpeed(int version) =>
             ShipComponentPropulsionSuggestions.GetSuggestedMoveSpeed(version);
 

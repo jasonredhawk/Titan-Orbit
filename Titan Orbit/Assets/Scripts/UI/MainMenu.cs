@@ -85,6 +85,7 @@ namespace TitanOrbit.UI
         private float _dbgLastLobbyRefreshRealtime = -1f;
         private int _dbgLobbyRefreshCount;
         private Coroutine returningShipQueryRoutine;
+        private bool teamJoinFlowReadyPending;
 
         private const float LobbyScreenContentWidth = 540f;
         /// <summary>How often to re-query UGS while the open-matches screen is visible (server heartbeats every 15s).</summary>
@@ -2206,8 +2207,8 @@ namespace TitanOrbit.UI
                 EnsureInstructionScreenUi();
                 if (instructionScreenUI != null)
                 {
-                    instructionScreenUI.Show(BeginLoadingAfterInstructions);
-                    return;
+                    teamJoinFlowReadyPending = false;
+                    instructionScreenUI.Show(OnInstructionDismissed);
                 }
 
                 loadingScreenController.ShowLoading();
@@ -2222,11 +2223,21 @@ namespace TitanOrbit.UI
                 teamSelectionPanel.SetActive(false);
         }
 
-        /// <summary>Called when the player dismisses the how-to-play screen; starts the map build loading sequence.</summary>
+        /// <summary>Player tapped Continue on the how-to-play screen, or loading finished while it was still open.</summary>
+        private void OnInstructionDismissed()
+        {
+            if (teamJoinFlowReadyPending)
+            {
+                teamJoinFlowReadyPending = false;
+                ShowPostLoadingJoinFlow();
+            }
+        }
+
+        /// <summary>Called when the player dismisses the how-to-play screen early (loading may still be running).</summary>
         public void BeginLoadingAfterInstructions()
         {
-            if (loadingScreenController != null)
-                loadingScreenController.ShowLoading();
+            instructionScreenUI?.Hide();
+            OnInstructionDismissed();
         }
 
         /// <summary>Called by LoadingScreenController when loading is complete. Queries for a returning ship, then team or rescue UI.</summary>
@@ -2285,6 +2296,14 @@ namespace TitanOrbit.UI
         /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
         public void ShowLobbyAndTeamSelection()
         {
+            if (instructionScreenUI != null && instructionScreenUI.IsVisible)
+            {
+                teamJoinFlowReadyPending = true;
+                instructionScreenUI.Hide();
+                OnInstructionDismissed();
+                return;
+            }
+
             ShowPostLoadingJoinFlow();
         }
 

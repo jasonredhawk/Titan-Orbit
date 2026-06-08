@@ -544,9 +544,8 @@ namespace TitanOrbit.Entities
         private float GetDroneOrbitRadiusFromHull()
         {
             float mul = Mathf.Max(0.1f, droneOrbitRadiusMultiplier);
-            float wingScale = GetDroneOrbitRadiusScale();
-            if (ownerShip == null) return (2.5f + droneMarginBeyondHull) * mul * wingScale;
-            return (ownerShip.GetShipMoonDockRadiusXZ() + droneMarginBeyondHull) * mul * wingScale;
+            if (ownerShip == null) return (2.5f + droneMarginBeyondHull) * mul;
+            return (ownerShip.GetShipMoonDockRadiusXZ() + droneMarginBeyondHull) * mul;
         }
 
         private float GetDroneFormationSpacingScale()
@@ -590,17 +589,10 @@ namespace TitanOrbit.Entities
                 ApplyShieldDroneVisualScale(visuals[i]);
         }
 
-        /// <summary>Push drones further aft when gem-capacity upgrades enlarge wing meshes.</summary>
-        private float GetDroneOrbitRadiusScale()
-        {
-            return ownerShip != null ? ownerShip.WingCapacityVisualScaleFactor : 1f;
-        }
-
         public float GetOrbitRadiusForHullRadius(float hullRadiusXZ)
         {
             float mul = Mathf.Max(0.1f, droneOrbitRadiusMultiplier);
-            float wingScale = GetDroneOrbitRadiusScale();
-            return (hullRadiusXZ + droneMarginBeyondHull) * mul * wingScale;
+            return (hullRadiusXZ + droneMarginBeyondHull) * mul;
         }
 
         /// <summary>Menu preview: same formation math as runtime, using a supplied hull radius (combat-scale visual).</summary>
