@@ -41,6 +41,11 @@ namespace TitanOrbit.Data
         DamageMultiplierVsGem = 8,
         /// <summary>Multiplies damage vs targets selected in <see cref="BulletBankAbility.damageTarget"/> (incl. Everything).</summary>
         DamageMultiplier = 9,
+        /// <summary>
+        /// Client-only: bullet visual length scales from <see cref="BulletBankAbility.radius"/> at spawn
+        /// to <see cref="BulletBankAbility.magnitude"/> at max travel distance.
+        /// </summary>
+        StretchLengthInFlight = 10,
     }
 
     /// <summary>
@@ -192,5 +197,20 @@ namespace TitanOrbit.Data
         }
 
         public bool HasBurn => HasAbility(BulletBankAbilityType.BurnOverTime);
+
+        public bool HasStretchLengthInFlight => HasAbility(BulletBankAbilityType.StretchLengthInFlight);
+
+        /// <summary>Start/end length multipliers for <see cref="BulletBankAbilityType.StretchLengthInFlight"/> (defaults 0.5 → 2).</summary>
+        public bool TryGetStretchLengthFactors(out float startFactor, out float endFactor)
+        {
+            startFactor = 0.5f;
+            endFactor = 2f;
+            if (!TryGetAbility(BulletBankAbilityType.StretchLengthInFlight, out BulletBankAbility ability) || ability == null)
+                return false;
+
+            startFactor = ability.radius > 0f ? ability.radius : 0.5f;
+            endFactor = ability.magnitude > 0f ? ability.magnitude : 2f;
+            return true;
+        }
     }
 }

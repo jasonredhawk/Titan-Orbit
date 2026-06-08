@@ -16,6 +16,8 @@ namespace TitanOrbit.Systems
     public static class BulletHitResolver
     {
         public const float FixedY = 0f;
+        /// <summary>When both bullet endpoints are within this raw-world distance of an asteroid, server physics handles hits.</summary>
+        private const float ToroidalSweepWorldDistanceMargin = 2f;
 
         /// <summary>Damage popup metadata for a bullet hit, spawned client-side at impact VFX.</summary>
         public readonly struct BulletHitPopupInfo
@@ -296,6 +298,45 @@ namespace TitanOrbit.Systems
             return false;
         }
 
+        /// <summary>Logical asteroid center for hit tests (display tile on clients, world position on server).</summary>
+        public static Vector3 GetAsteroidLogicalCenter(Asteroid asteroid)
+        {
+            if (asteroid != null
+                && asteroid.TryGetComponent<ToroidalRenderer>(out ToroidalRenderer renderer)
+                && renderer.TryGetLogicalPosition(out Vector3 logical))
+            {
+                return logical;
+            }
+
+            return asteroid != null ? asteroid.transform.position : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Toroidal segment fallback is only needed when bullet endpoints are far in raw world space from the
+        /// asteroid (cross-tile shots). Pure clients always use toroidal math because colliders are display-shifted.
+        /// </summary>
+        public static bool NeedsToroidalAsteroidSweep(Vector3 from, Vector3 to, Vector3 asteroidLogicalCenter)
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsClient && !nm.IsServer)
+                return true;
+
+            float halfW = ToroidalMap.GetMapWidth() * 0.5f;
+            float halfH = ToroidalMap.GetMapHeight() * 0.5f;
+            float threshold = Mathf.Min(halfW, halfH) - ToroidalSweepWorldDistanceMargin;
+            if (threshold < 1f)
+                threshold = 1f;
+
+            float thresholdSq = threshold * threshold;
+            float fromDx = from.x - asteroidLogicalCenter.x;
+            float fromDz = from.z - asteroidLogicalCenter.z;
+            float toDx = to.x - asteroidLogicalCenter.x;
+            float toDz = to.z - asteroidLogicalCenter.z;
+            float fromSq = fromDx * fromDx + fromDz * fromDz;
+            float toSq = toDx * toDx + toDz * toDz;
+            return fromSq > thresholdSq || toSq > thresholdSq;
+        }
+
         /// <summary>
         /// Toroidal asteroid segment test without applying damage (owner-predicted client tracer only).
         /// </summary>
@@ -324,8 +365,11 @@ namespace TitanOrbit.Systems
                 Asteroid asteroid = Asteroid.AllAsteroids[i];
                 if (asteroid == null || asteroid.IsDestroyed) continue;
 
-                float combinedRadius = asteroid.GetCollisionRadiusWorld() + radiusPad;
-                Vector3 center = asteroid.transform.position;
+                Vector3 center = GetAsteroidLogicalCenter(asteroid);
+                if (!NeedsToroidalAsteroidSweep(from, to, center))
+                    continue;
+
+                float combinedRadius = asteroid.GetBulletHitRadiusWorld() + radiusPad;
 
                 Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
                 Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
@@ -480,8 +524,11 @@ namespace TitanOrbit.Systems
                 Asteroid asteroid = Asteroid.AllAsteroids[i];
                 if (asteroid == null || asteroid.IsDestroyed) continue;
 
-                float combinedRadius = asteroid.GetCollisionRadiusWorld() + radiusPad;
-                Vector3 center = asteroid.transform.position;
+                Vector3 center = GetAsteroidLogicalCenter(asteroid);
+                if (!NeedsToroidalAsteroidSweep(from, to, center))
+                    continue;
+
+                float combinedRadius = asteroid.GetBulletHitRadiusWorld() + radiusPad;
 
                 Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
                 Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);

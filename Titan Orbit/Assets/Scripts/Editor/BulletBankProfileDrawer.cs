@@ -11,6 +11,16 @@ namespace TitanOrbit.Editor
     {
         private static readonly Dictionary<string, ReorderableList> AbilityLists = new();
 
+        static BulletBankProfileDrawer()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload += ClearAbilityListCache;
+        }
+
+        private static void ClearAbilityListCache()
+        {
+            AbilityLists.Clear();
+        }
+
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
         {
             if (!property.isExpanded)
@@ -20,7 +30,9 @@ namespace TitanOrbit.Editor
             SerializedProperty statMods = property.FindPropertyRelative("statModifiers");
             h += EditorGUI.GetPropertyHeight(statMods, true);
             h += EditorGUIUtility.standardVerticalSpacing;
-            h += GetAbilityList(property).GetHeight();
+            ReorderableList list = GetAbilityList(property);
+            if (list != null)
+                h += list.GetHeight();
             return h;
         }
 
@@ -45,29 +57,56 @@ namespace TitanOrbit.Editor
             y += statH + EditorGUIUtility.standardVerticalSpacing;
 
             ReorderableList list = GetAbilityList(property);
-            float listH = list.GetHeight();
-            list.DoList(new Rect(position.x, y, position.width, listH));
+            if (list != null)
+            {
+                float listH = list.GetHeight();
+                list.DoList(new Rect(position.x, y, position.width, listH));
+            }
 
             EditorGUI.EndProperty();
         }
 
         private static ReorderableList GetAbilityList(SerializedProperty profileProperty)
         {
-            string key = profileProperty.propertyPath;
-            if (AbilityLists.TryGetValue(key, out ReorderableList existing) && existing.serializedProperty != null)
-                return existing;
+            if (profileProperty == null || profileProperty.serializedObject == null)
+                return null;
+
+            UnityEngine.Object target = profileProperty.serializedObject.targetObject;
+            if (target == null)
+                return null;
+
+            string key = target.GetInstanceID() + ":" + profileProperty.propertyPath;
+            if (AbilityLists.TryGetValue(key, out ReorderableList existing))
+            {
+                if (IsAbilityListValid(existing, profileProperty))
+                    return existing;
+                AbilityLists.Remove(key);
+            }
 
             SerializedProperty abilities = profileProperty.FindPropertyRelative("abilities");
+            if (abilities == null)
+                return null;
+
             var list = new ReorderableList(profileProperty.serializedObject, abilities, true, true, true, true)
             {
                 drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Abilities"),
                 elementHeightCallback = index =>
                 {
+                    if (abilities == null || !IsSerializedPropertyAlive(abilities))
+                        return EditorGUIUtility.singleLineHeight + 4f;
+                    if (index < 0 || index >= abilities.arraySize)
+                        return EditorGUIUtility.singleLineHeight + 4f;
+
                     SerializedProperty element = abilities.GetArrayElementAtIndex(index);
                     return BulletBankAbilityEditorUI.GetHeight(element) + 4f;
                 },
                 drawElementCallback = (rect, index, active, focused) =>
                 {
+                    if (abilities == null || !IsSerializedPropertyAlive(abilities))
+                        return;
+                    if (index < 0 || index >= abilities.arraySize)
+                        return;
+
                     SerializedProperty element = abilities.GetArrayElementAtIndex(index);
                     rect.y += 2f;
                     rect.height -= 4f;
@@ -85,6 +124,33 @@ namespace TitanOrbit.Editor
 
             AbilityLists[key] = list;
             return list;
+        }
+
+        private static bool IsAbilityListValid(ReorderableList list, SerializedProperty profileProperty)
+        {
+            if (list?.serializedProperty == null || profileProperty == null)
+                return false;
+
+            if (!IsSerializedPropertyAlive(list.serializedProperty))
+                return false;
+
+            return list.serializedProperty.serializedObject == profileProperty.serializedObject;
+        }
+
+        private static bool IsSerializedPropertyAlive(SerializedProperty property)
+        {
+            if (property == null)
+                return false;
+
+            try
+            {
+                SerializedObject serializedObject = property.serializedObject;
+                return serializedObject != null && serializedObject.targetObject != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

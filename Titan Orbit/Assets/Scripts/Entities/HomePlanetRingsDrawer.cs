@@ -22,7 +22,7 @@ namespace TitanOrbit.Entities
         [Tooltip("Radial width of each ring band.")]
         [SerializeField] private float ringThickness = 0.06f;
         [Tooltip("Gap between ring bands.")]
-        [SerializeField] private float gapBetweenBands = 0.015f;
+        [SerializeField] private float gapBetweenBands = 0.022f;
         [Header("Appearance")]
         [Tooltip("Base opacity of rings. Slightly transparent so planet shows through.")]
         [Range(0.2f, 1f)]

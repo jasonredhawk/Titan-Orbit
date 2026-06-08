@@ -440,6 +440,8 @@ namespace TitanOrbit.Systems
                 Collider c = s_overlapHits[i];
                 if (c == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(c, b.OwnerShipNetworkId)) continue;
+                // Asteroids use SphereCast / toroidal segment tests with tight radii; overlap padding causes near-miss hits.
+                if (c.GetComponentInParent<Asteroid>() != null) continue;
                 Vector3 cp = c.ClosestPoint(b.Position);
                 float dSq = (cp - b.Position).sqrMagnitude;
                 if (dSq < bestDistSq)

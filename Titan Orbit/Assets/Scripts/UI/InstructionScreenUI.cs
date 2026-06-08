@@ -8,8 +8,7 @@ using TMPro;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Quick-read how-to-play screen shown after joining a match and before the map build animation.
-    /// Steps scroll horizontally; each card shows title, illustration, and description.
+    /// How-to-play overlay: five equal columns side-by-side, each with title, image, and description stacked vertically.
     /// </summary>
     public class InstructionScreenUI : MonoBehaviour
     {
@@ -27,63 +26,74 @@ namespace TitanOrbit.UI
             }
         }
 
-        private struct StepCardLayout
+        private sealed class StepColumn
         {
-            public LayoutElement CardWidth;
-            public LayoutElement ImageFrame;
+            public RectTransform ColumnRoot;
+            public RectTransform AccentBar;
+            public TextMeshProUGUI Title;
+            public RectTransform ImageFrame;
+            public Image Illustration;
+            public TextMeshProUGUI Body;
         }
 
-        private static readonly InstructionStep[] DefaultSteps =
+        private static readonly InstructionStep[] Steps =
         {
             new InstructionStep(
                 "Capture All Planets",
-                "Your team wins by controlling every planet on the map. Grow your empire by moving population between worlds.",
+                "Win by controlling every planet. Move population between worlds to grow your empire.",
                 "InstructionScreens/instruction_objective"),
             new InstructionStep(
                 "Transport People",
-                "Fly to a friendly planet, pick up people, then deliver them to neutral or enemy planets to capture and hold territory.",
+                "Pick up people at friendly planets and deliver them to capture neutral or enemy worlds.",
                 "InstructionScreens/instruction_transport"),
             new InstructionStep(
-                "Mine Asteroids for Gems",
-                "Pilot your ship into asteroid fields and mine them. Gems are the currency you need for upgrades.",
+                "Mine Asteroids",
+                "Fly into asteroid fields and mine them. Gems are currency for upgrades.",
                 "InstructionScreens/instruction_mining"),
             new InstructionStep(
-                "Upgrade Ships & Planets",
-                "Spend gems to upgrade your ship and level up planets. Stronger ships and higher-level planets give you an edge.",
+                "Upgrade",
+                "Spend gems to upgrade your ship and level up planets for a stronger fleet.",
                 "InstructionScreens/instruction_upgrades"),
             new InstructionStep(
-                "Unique Planet Ships",
-                "Each planet sells its own ship types. Visit different worlds to discover and purchase new ships for your fleet.",
+                "Planet Ships",
+                "Each planet sells unique ships. Visit new worlds to expand your fleet.",
                 "InstructionScreens/instruction_planet_ships"),
         };
 
-        private const float CardViewportWidthFraction = 0.9f;
-        private const float MinCardWidth = 480f;
-        private const float MaxCardWidth = 760f;
-        private const float CardImageAspect = 4f / 3f;
-        private const float ContentMaxWidth = 920f;
+        private static readonly Color[] AccentColors =
+        {
+            new Color(0.28f, 0.62f, 0.98f, 1f),
+            new Color(0.34f, 0.78f, 0.62f, 1f),
+            new Color(0.95f, 0.72f, 0.28f, 1f),
+            new Color(0.78f, 0.42f, 0.95f, 1f),
+            new Color(0.98f, 0.48f, 0.38f, 1f),
+        };
 
-        [SerializeField] private GameObject panelRoot;
-        [SerializeField] private TextMeshProUGUI titleText;
-        [SerializeField] private TextMeshProUGUI subtitleText;
-        [SerializeField] private RectTransform stepsContentRoot;
-        [SerializeField] private ScrollRect stepsScrollRect;
-        [SerializeField] private Button continueButton;
-        [SerializeField] private Image[] stepImageSlots;
-        [Tooltip("Optional screenshots that override the built-in placeholder art (Objective, Transport, Mining, Upgrades, Planet Ships).")]
+        private const int StepCount = 5;
+        private const float HeaderHeight = 88f;
+        private const float FooterHeight = 76f;
+        private const float RowSidePadding = 18f;
+        private const float ColumnGap = 12f;
+        private const float CardInnerPadding = 10f;
+        private const float ImageAspect = 0.75f; // height / width (4:3)
+
         [SerializeField] private Sprite[] stepScreenshots;
 
-        private readonly List<StepCardLayout> stepCardLayouts = new List<StepCardLayout>();
+        private readonly List<StepColumn> columns = new List<StepColumn>();
         private readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
+
+        private RectTransform panelRoot;
+        private RectTransform columnsRow;
+        private Button continueButton;
         private Action onContinue;
         private bool uiBuilt;
-        private Coroutine refreshLayoutRoutine;
+        private Coroutine layoutRoutine;
 
-        public bool IsVisible => panelRoot != null && panelRoot.activeSelf;
+        public bool IsVisible => panelRoot != null && panelRoot.gameObject.activeSelf;
 
         private void Awake()
         {
-            EnsureUiBuilt();
+            BuildUi();
             Hide();
         }
 
@@ -98,56 +108,36 @@ namespace TitanOrbit.UI
 
         public void Show(Action onContinueCallback)
         {
-            EnsureUiBuilt();
+            BuildUi();
             onContinue = onContinueCallback;
+            transform.SetAsLastSibling();
+            panelRoot.gameObject.SetActive(true);
 
-            var canvas = GetComponentInParent<Canvas>();
-            if (canvas != null)
-            {
-                transform.SetParent(canvas.transform, false);
-                var hostRect = transform as RectTransform;
-                if (hostRect == null)
-                    hostRect = gameObject.AddComponent<RectTransform>();
-                hostRect.anchorMin = Vector2.zero;
-                hostRect.anchorMax = Vector2.one;
-                hostRect.offsetMin = hostRect.offsetMax = Vector2.zero;
-                transform.SetAsLastSibling();
-            }
+            PreloadSprites();
+            ApplySprites();
 
-            PreloadInstructionSprites();
-
-            if (panelRoot != null)
-            {
-                panelRoot.SetActive(true);
-                panelRoot.transform.SetAsLastSibling();
-            }
-
-            if (stepsScrollRect != null)
-                stepsScrollRect.horizontalNormalizedPosition = 0f;
-
-            if (refreshLayoutRoutine != null)
-                StopCoroutine(refreshLayoutRoutine);
-            refreshLayoutRoutine = StartCoroutine(CoRefreshLayoutAfterShow());
+            if (layoutRoutine != null)
+                StopCoroutine(layoutRoutine);
+            layoutRoutine = StartCoroutine(CoLayoutAfterShow());
         }
 
-        /// <summary>Assign screenshots from the MainMenu inspector (one per instruction step).</summary>
         public void SetStepScreenshots(Sprite[] sprites)
         {
             stepScreenshots = sprites;
             if (uiBuilt)
-                ApplyStepScreenshots();
+                ApplySprites();
         }
 
         public void Hide()
         {
-            if (refreshLayoutRoutine != null)
+            if (layoutRoutine != null)
             {
-                StopCoroutine(refreshLayoutRoutine);
-                refreshLayoutRoutine = null;
+                StopCoroutine(layoutRoutine);
+                layoutRoutine = null;
             }
 
             if (panelRoot != null)
-                panelRoot.SetActive(false);
+                panelRoot.gameObject.SetActive(false);
             onContinue = null;
         }
 
@@ -158,225 +148,207 @@ namespace TitanOrbit.UI
             callback?.Invoke();
         }
 
-        private IEnumerator CoRefreshLayoutAfterShow()
+        private IEnumerator CoLayoutAfterShow()
         {
             yield return null;
-            UpdateCardLayoutSizes();
-            ApplyStepScreenshots();
-
-            if (stepsContentRoot != null)
-            {
-                Canvas.ForceUpdateCanvases();
-                LayoutRebuilder.ForceRebuildLayoutImmediate(stepsContentRoot);
-            }
-
-            refreshLayoutRoutine = null;
+            LayoutColumns();
+            ApplySprites();
+            layoutRoutine = null;
         }
 
-        private void EnsureUiBuilt()
+        private void OnRectTransformDimensionsChange()
         {
-            if (uiBuilt && panelRoot != null)
+            if (uiBuilt && IsVisible)
+                LayoutColumns();
+        }
+
+        private void BuildUi()
+        {
+            if (uiBuilt)
                 return;
 
-            Transform parent = transform;
+            var host = transform as RectTransform ?? gameObject.AddComponent<RectTransform>();
+            StretchFill(host, 0f, 0f, 0f, 0f);
 
-            if (panelRoot == null)
-            {
-                panelRoot = new GameObject("InstructionScreenPanel");
-                panelRoot.transform.SetParent(parent, false);
+            panelRoot = CreateRect("Panel", host);
+            StretchFill(panelRoot, 0f, 0f, 0f, 0f);
+            var backdrop = panelRoot.gameObject.AddComponent<Image>();
+            backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.97f);
 
-                var panelRect = panelRoot.AddComponent<RectTransform>();
-                panelRect.anchorMin = Vector2.zero;
-                panelRect.anchorMax = Vector2.one;
-                panelRect.offsetMin = panelRect.offsetMax = Vector2.zero;
+            // Header
+            var header = CreateRect("Header", panelRoot);
+            AnchorTopBand(header, HeaderHeight);
 
-                var backdrop = panelRoot.AddComponent<Image>();
-                backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.96f);
-            }
+            var headerTitle = CreateText(header, "Title", "HOW TO PLAY", 32, FontStyles.Bold, TextAlignmentOptions.Center);
+            StretchFill(headerTitle.rectTransform, 0f, 36f, 0f, 8f);
 
-            if (titleText == null)
-            {
-                titleText = CreateHeaderLabel(panelRoot.transform, "Title", "HOW TO PLAY", 36, FontStyles.Bold);
-                var titleRect = titleText.rectTransform;
-                titleRect.anchorMin = new Vector2(0.5f, 1f);
-                titleRect.anchorMax = new Vector2(0.5f, 1f);
-                titleRect.pivot = new Vector2(0.5f, 1f);
-                titleRect.anchoredPosition = new Vector2(0f, -20f);
-                titleRect.sizeDelta = new Vector2(ContentMaxWidth, 44f);
-            }
+            var headerSubtitle = CreateText(header, "Subtitle",
+                "Five quick steps — tap Continue when you're ready to join a team.",
+                16, FontStyles.Normal, TextAlignmentOptions.Center);
+            StretchFill(headerSubtitle.rectTransform, 0f, 8f, 0f, 36f);
+            headerSubtitle.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
 
-            if (subtitleText == null)
-            {
-                subtitleText = CreateHeaderLabel(panelRoot.transform, "Subtitle",
-                    "Swipe through the steps — tap Continue when you're ready to enter the match.",
-                    18, FontStyles.Normal);
-                subtitleText.color = new Color(0.65f, 0.78f, 0.92f, 0.95f);
-                var subtitleRect = subtitleText.rectTransform;
-                subtitleRect.anchorMin = new Vector2(0.5f, 1f);
-                subtitleRect.anchorMax = new Vector2(0.5f, 1f);
-                subtitleRect.pivot = new Vector2(0.5f, 1f);
-                subtitleRect.anchoredPosition = new Vector2(0f, -62f);
-                subtitleRect.sizeDelta = new Vector2(ContentMaxWidth, 28f);
-            }
+            // Five-column row
+            columnsRow = CreateRect("ColumnsRow", panelRoot);
+            StretchFill(columnsRow, RowSidePadding, FooterHeight, RowSidePadding, HeaderHeight);
 
-            if (stepsContentRoot == null)
-                BuildScrollArea(panelRoot.transform);
+            columns.Clear();
+            for (int i = 0; i < StepCount; i++)
+                columns.Add(CreateColumn(columnsRow, Steps[i], i));
 
-            if (continueButton == null)
-                continueButton = CreateContinueButton(panelRoot.transform);
-
-            PopulateSteps();
+            continueButton = CreateContinueButton(panelRoot);
             uiBuilt = true;
         }
 
-        private void BuildScrollArea(Transform panel)
+        private StepColumn CreateColumn(RectTransform row, InstructionStep step, int index)
         {
-            var scrollRoot = new GameObject("StepsScroll");
-            scrollRoot.transform.SetParent(panel, false);
-            var scrollRectTransform = scrollRoot.AddComponent<RectTransform>();
-            scrollRectTransform.anchorMin = new Vector2(0.03f, 0.12f);
-            scrollRectTransform.anchorMax = new Vector2(0.97f, 0.84f);
-            scrollRectTransform.offsetMin = Vector2.zero;
-            scrollRectTransform.offsetMax = Vector2.zero;
+            var columnRoot = CreateRect("Column_" + (index + 1), row);
+            var cardBg = columnRoot.gameObject.AddComponent<Image>();
+            cardBg.color = new Color(0.07f, 0.1f, 0.18f, 0.94f);
+            cardBg.raycastTarget = false;
 
-            stepsScrollRect = scrollRoot.AddComponent<ScrollRect>();
-            stepsScrollRect.horizontal = true;
-            stepsScrollRect.vertical = false;
-            stepsScrollRect.movementType = ScrollRect.MovementType.Elastic;
-            stepsScrollRect.scrollSensitivity = 24f;
+            var accentBar = CreateRect("Accent", columnRoot);
+            var accentImage = accentBar.gameObject.AddComponent<Image>();
+            accentImage.color = AccentColors[index % AccentColors.Length];
+            accentImage.raycastTarget = false;
 
-            var viewport = new GameObject("Viewport");
-            viewport.transform.SetParent(scrollRoot.transform, false);
-            var viewportRect = viewport.AddComponent<RectTransform>();
-            viewportRect.anchorMin = Vector2.zero;
-            viewportRect.anchorMax = Vector2.one;
-            viewportRect.offsetMin = viewportRect.offsetMax = Vector2.zero;
-            viewport.AddComponent<RectMask2D>();
-            var viewportImg = viewport.AddComponent<Image>();
-            viewportImg.color = new Color(0f, 0f, 0f, 0.01f);
+            var title = CreateText(columnRoot, "Title", step.Title, 18, FontStyles.Bold, TextAlignmentOptions.Center);
+            title.color = new Color(0.94f, 0.97f, 1f, 1f);
 
-            var content = new GameObject("Content");
-            content.transform.SetParent(viewport.transform, false);
-            stepsContentRoot = content.AddComponent<RectTransform>();
-            stepsContentRoot.anchorMin = new Vector2(0f, 0f);
-            stepsContentRoot.anchorMax = new Vector2(0f, 1f);
-            stepsContentRoot.pivot = new Vector2(0f, 0.5f);
-            stepsContentRoot.anchoredPosition = Vector2.zero;
-            stepsContentRoot.sizeDelta = new Vector2(0f, 0f);
+            var imageFrame = CreateRect("ImageFrame", columnRoot);
+            var frameBg = imageFrame.gameObject.AddComponent<Image>();
+            frameBg.color = new Color(0.03f, 0.05f, 0.09f, 1f);
+            frameBg.raycastTarget = false;
 
-            var layout = content.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = 24f;
-            layout.padding = new RectOffset(12, 12, 6, 6);
-            layout.childAlignment = TextAnchor.MiddleLeft;
-            layout.childControlWidth = false;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = true;
+            var illustrationGo = CreateRect("Illustration", imageFrame);
+            StretchFill(illustrationGo, 4f, 4f, 4f, 4f);
+            var illustration = illustrationGo.gameObject.AddComponent<Image>();
+            illustration.preserveAspect = true;
+            illustration.type = Image.Type.Simple;
+            illustration.color = new Color(0.18f, 0.22f, 0.32f, 1f);
+            illustration.raycastTarget = false;
 
-            var fitter = content.AddComponent<ContentSizeFitter>();
-            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+            var body = CreateText(columnRoot, "Body", step.Body, 14, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            body.color = new Color(0.7f, 0.8f, 0.92f, 0.98f);
+            body.enableWordWrapping = true;
+            body.overflowMode = TextOverflowModes.Ellipsis;
+            body.lineSpacing = -4f;
 
-            stepsScrollRect.viewport = viewportRect;
-            stepsScrollRect.content = stepsContentRoot;
+            return new StepColumn
+            {
+                ColumnRoot = columnRoot,
+                AccentBar = accentBar,
+                Title = title,
+                ImageFrame = imageFrame,
+                Illustration = illustration,
+                Body = body,
+            };
         }
 
-        private void PopulateSteps()
+        private void LayoutColumns()
         {
-            if (stepsContentRoot == null)
+            if (columnsRow == null || columns.Count == 0)
                 return;
 
-            for (int i = stepsContentRoot.childCount - 1; i >= 0; i--)
-                Destroy(stepsContentRoot.GetChild(i).gameObject);
+            Canvas.ForceUpdateCanvases();
 
-            stepCardLayouts.Clear();
-            stepImageSlots = new Image[DefaultSteps.Length];
+            float rowWidth = columnsRow.rect.width;
+            float rowHeight = columnsRow.rect.height;
+            if (rowWidth < 10f || rowHeight < 10f)
+                return;
 
-            for (int i = 0; i < DefaultSteps.Length; i++)
-                CreateStepCard(stepsContentRoot, DefaultSteps[i], i);
+            float totalGaps = ColumnGap * (StepCount - 1);
+            float columnWidth = (rowWidth - totalGaps) / StepCount;
+            columnWidth = Mathf.Max(columnWidth, 40f);
 
-            UpdateCardLayoutSizes();
-            ApplyStepScreenshots();
-        }
-
-        private void UpdateCardLayoutSizes()
-        {
-            float cardWidth = ComputeCardWidth();
-            float imageWidth = Mathf.Max(200f, cardWidth - 32f);
-            float imageHeight = imageWidth / CardImageAspect;
-
-            foreach (var layout in stepCardLayouts)
+            for (int i = 0; i < columns.Count; i++)
             {
-                if (layout.CardWidth != null)
-                {
-                    layout.CardWidth.preferredWidth = cardWidth;
-                    layout.CardWidth.minWidth = cardWidth;
-                }
+                StepColumn col = columns[i];
+                float x = i * (columnWidth + ColumnGap);
 
-                if (layout.ImageFrame != null)
-                {
-                    layout.ImageFrame.preferredWidth = imageWidth;
-                    layout.ImageFrame.minWidth = imageWidth;
-                    layout.ImageFrame.preferredHeight = imageHeight;
-                    layout.ImageFrame.minHeight = imageHeight;
-                }
+                col.ColumnRoot.anchorMin = new Vector2(0f, 0f);
+                col.ColumnRoot.anchorMax = new Vector2(0f, 1f);
+                col.ColumnRoot.pivot = new Vector2(0f, 0.5f);
+                col.ColumnRoot.anchoredPosition = new Vector2(x, 0f);
+                col.ColumnRoot.sizeDelta = new Vector2(columnWidth, 0f);
+
+                LayoutColumnContent(col, columnWidth, rowHeight);
             }
         }
 
-        private float ComputeCardWidth()
+        private static void LayoutColumnContent(StepColumn col, float columnWidth, float columnHeight)
         {
-            float viewportWidth = 960f;
-            if (stepsScrollRect != null && stepsScrollRect.viewport != null)
-            {
-                Canvas.ForceUpdateCanvases();
-                viewportWidth = stepsScrollRect.viewport.rect.width;
-            }
+            const float accentHeight = 4f;
+            float innerWidth = columnWidth - CardInnerPadding * 2f;
+            float titleHeight = Mathf.Clamp(columnHeight * 0.11f, 36f, 52f);
+            float titleTop = CardInnerPadding;
 
-            if (viewportWidth < 80f)
-                viewportWidth = Screen.width;
+            float imageWidth = innerWidth;
+            float imageHeight = imageWidth * ImageAspect;
+            float maxImageHeight = columnHeight * 0.42f;
+            if (imageHeight > maxImageHeight)
+                imageHeight = maxImageHeight;
 
-            return Mathf.Clamp(viewportWidth * CardViewportWidthFraction, MinCardWidth, MaxCardWidth);
+            float imageTop = titleTop + titleHeight + 8f;
+            float bodyTop = imageTop + imageHeight + 10f;
+            float bodyBottom = CardInnerPadding;
+
+            // Accent stripe
+            col.AccentBar.anchorMin = new Vector2(0f, 1f);
+            col.AccentBar.anchorMax = new Vector2(1f, 1f);
+            col.AccentBar.pivot = new Vector2(0.5f, 1f);
+            col.AccentBar.anchoredPosition = Vector2.zero;
+            col.AccentBar.sizeDelta = new Vector2(0f, accentHeight);
+
+            // Title
+            col.Title.rectTransform.anchorMin = new Vector2(0f, 1f);
+            col.Title.rectTransform.anchorMax = new Vector2(1f, 1f);
+            col.Title.rectTransform.pivot = new Vector2(0.5f, 1f);
+            col.Title.rectTransform.anchoredPosition = new Vector2(0f, -(titleTop + accentHeight));
+            col.Title.rectTransform.sizeDelta = new Vector2(-CardInnerPadding * 2f, titleHeight);
+            col.Title.fontSize = Mathf.Clamp(columnWidth * 0.075f, 14f, 20f);
+
+            // Image
+            col.ImageFrame.anchorMin = new Vector2(0f, 1f);
+            col.ImageFrame.anchorMax = new Vector2(1f, 1f);
+            col.ImageFrame.pivot = new Vector2(0.5f, 1f);
+            col.ImageFrame.anchoredPosition = new Vector2(0f, -imageTop);
+            col.ImageFrame.sizeDelta = new Vector2(-CardInnerPadding * 2f, imageHeight);
+
+            // Body fills remaining space
+            col.Body.rectTransform.anchorMin = Vector2.zero;
+            col.Body.rectTransform.anchorMax = Vector2.one;
+            col.Body.rectTransform.offsetMin = new Vector2(CardInnerPadding, bodyBottom);
+            col.Body.rectTransform.offsetMax = new Vector2(-CardInnerPadding, -bodyTop);
+            col.Body.fontSize = Mathf.Clamp(columnWidth * 0.058f, 12f, 16f);
         }
 
-        private void ApplyStepScreenshots()
+        private void PreloadSprites()
         {
-            if (stepImageSlots == null)
-                return;
+            for (int i = 0; i < Steps.Length; i++)
+                LoadSprite(Steps[i].SpriteResourcePath);
+        }
 
-            for (int i = 0; i < stepImageSlots.Length; i++)
+        private void ApplySprites()
+        {
+            for (int i = 0; i < columns.Count; i++)
             {
-                if (stepImageSlots[i] == null)
+                Image image = columns[i].Illustration;
+                if (image == null)
                     continue;
 
                 Sprite sprite = null;
                 if (stepScreenshots != null && i < stepScreenshots.Length)
                     sprite = stepScreenshots[i];
-
-                if (sprite == null && i < DefaultSteps.Length)
-                    sprite = LoadInstructionSprite(DefaultSteps[i].SpriteResourcePath);
-
                 if (sprite == null)
-                {
-                    stepImageSlots[i].sprite = null;
-                    stepImageSlots[i].color = new Color(0.2f, 0.24f, 0.34f, 1f);
-                    continue;
-                }
+                    sprite = LoadSprite(Steps[i].SpriteResourcePath);
 
-                stepImageSlots[i].sprite = sprite;
-                stepImageSlots[i].color = Color.white;
-                stepImageSlots[i].preserveAspect = true;
-                stepImageSlots[i].type = Image.Type.Simple;
-                stepImageSlots[i].enabled = true;
+                image.sprite = sprite;
+                image.color = sprite != null ? Color.white : new Color(0.18f, 0.22f, 0.32f, 1f);
             }
         }
 
-        private void PreloadInstructionSprites()
-        {
-            for (int i = 0; i < DefaultSteps.Length; i++)
-                LoadInstructionSprite(DefaultSteps[i].SpriteResourcePath);
-        }
-
-        private Sprite LoadInstructionSprite(string resourcePath)
+        private Sprite LoadSprite(string resourcePath)
         {
             if (string.IsNullOrEmpty(resourcePath))
                 return null;
@@ -387,7 +359,7 @@ namespace TitanOrbit.UI
             Sprite sprite = Resources.Load<Sprite>(resourcePath);
             if (sprite == null)
             {
-                var texture = Resources.Load<Texture2D>(resourcePath);
+                Texture2D texture = Resources.Load<Texture2D>(resourcePath);
                 if (texture != null)
                 {
                     sprite = Sprite.Create(
@@ -399,165 +371,70 @@ namespace TitanOrbit.UI
             }
 
             if (sprite == null)
-            {
-                Debug.LogWarning("[InstructionScreenUI] Could not load instruction art at Resources/" + resourcePath);
-                return null;
-            }
+                Debug.LogWarning("[InstructionScreenUI] Missing art at Resources/" + resourcePath);
 
             spriteCache[resourcePath] = sprite;
             return sprite;
         }
 
-        private void CreateStepCard(Transform parent, InstructionStep step, int index)
+        private static Button CreateContinueButton(RectTransform panel)
         {
-            var card = new GameObject("Step_" + (index + 1));
-            card.transform.SetParent(parent, false);
-            card.AddComponent<RectTransform>();
+            var buttonRect = CreateRect("ContinueButton", panel);
+            buttonRect.anchorMin = new Vector2(0.5f, 0f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0f);
+            buttonRect.pivot = new Vector2(0.5f, 0f);
+            buttonRect.anchoredPosition = new Vector2(0f, 16f);
+            buttonRect.sizeDelta = new Vector2(300f, 48f);
 
-            var cardWidthElement = card.AddComponent<LayoutElement>();
-            cardWidthElement.preferredWidth = MinCardWidth;
-            cardWidthElement.minWidth = MinCardWidth;
-            cardWidthElement.flexibleHeight = 1f;
+            var image = buttonRect.gameObject.AddComponent<Image>();
+            image.color = new Color(0.22f, 0.52f, 0.88f, 0.95f);
 
-            var cardBg = card.AddComponent<Image>();
-            cardBg.color = new Color(0.08f, 0.11f, 0.2f, 0.92f);
+            var button = buttonRect.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
 
-            var cardGroup = card.AddComponent<VerticalLayoutGroup>();
-            cardGroup.spacing = 14f;
-            cardGroup.padding = new RectOffset(16, 16, 16, 16);
-            cardGroup.childAlignment = TextAnchor.UpperCenter;
-            cardGroup.childControlWidth = true;
-            cardGroup.childControlHeight = true;
-            cardGroup.childForceExpandWidth = true;
-            cardGroup.childForceExpandHeight = false;
-
-            var title = CreateStepText(card.transform, "StepTitle", step.Title, 24, FontStyles.Bold);
-            title.alignment = TextAlignmentOptions.Center;
-            title.color = new Color(0.92f, 0.96f, 1f, 1f);
-            var titleLe = title.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 36f;
-            titleLe.flexibleWidth = 1f;
-
-            stepImageSlots[index] = CreateStepImage(card.transform, out LayoutElement imageFrameElement);
-
-            var body = CreateStepText(card.transform, "StepBody", step.Body, 18, FontStyles.Normal);
-            body.alignment = TextAlignmentOptions.TopLeft;
-            body.color = new Color(0.72f, 0.82f, 0.94f, 0.98f);
-            body.enableWordWrapping = true;
-            body.overflowMode = TextOverflowModes.Overflow;
-            var bodyLe = body.gameObject.AddComponent<LayoutElement>();
-            bodyLe.flexibleWidth = 1f;
-            bodyLe.flexibleHeight = 1f;
-            bodyLe.minHeight = 80f;
-            var bodyFitter = body.gameObject.AddComponent<ContentSizeFitter>();
-            bodyFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            bodyFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            stepCardLayouts.Add(new StepCardLayout
-            {
-                CardWidth = cardWidthElement,
-                ImageFrame = imageFrameElement,
-            });
+            var label = CreateText(buttonRect, "Label", "Continue", 22, FontStyles.Bold, TextAlignmentOptions.Center);
+            StretchFill(label.rectTransform, 0f, 0f, 0f, 0f);
+            return button;
         }
 
-        private static Image CreateStepImage(Transform parent, out LayoutElement frameElement)
+        private static RectTransform CreateRect(string name, Transform parent)
         {
-            var frame = new GameObject("ImageFrame");
-            frame.transform.SetParent(parent, false);
-            frame.AddComponent<RectTransform>();
-
-            frameElement = frame.AddComponent<LayoutElement>();
-            frameElement.preferredWidth = MinCardWidth - 32f;
-            frameElement.minWidth = MinCardWidth - 32f;
-            frameElement.preferredHeight = (MinCardWidth - 32f) / CardImageAspect;
-            frameElement.minHeight = frameElement.preferredHeight;
-
-            var frameBg = frame.AddComponent<Image>();
-            frameBg.color = new Color(0.04f, 0.06f, 0.1f, 1f);
-            frameBg.raycastTarget = false;
-
-            var imageGo = new GameObject("StepImage");
-            imageGo.transform.SetParent(frame.transform, false);
-            var imageRect = imageGo.AddComponent<RectTransform>();
-            imageRect.anchorMin = Vector2.zero;
-            imageRect.anchorMax = Vector2.one;
-            imageRect.offsetMin = new Vector2(4f, 4f);
-            imageRect.offsetMax = new Vector2(-4f, -4f);
-
-            var img = imageGo.AddComponent<Image>();
-            img.color = new Color(0.2f, 0.24f, 0.34f, 1f);
-            img.preserveAspect = true;
-            img.type = Image.Type.Simple;
-            img.raycastTarget = false;
-
-            return img;
-        }
-
-        private static Button CreateContinueButton(Transform panel)
-        {
-            var go = new GameObject("ContinueButton");
-            go.transform.SetParent(panel, false);
-
-            var rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 24f);
-            rect.sizeDelta = new Vector2(320f, 52f);
-
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.22f, 0.52f, 0.88f, 0.95f);
-
-            var btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
-
-            var label = CreateHeaderLabel(go.transform, "Label", "Continue", 24, FontStyles.Bold);
-            label.alignment = TextAlignmentOptions.Center;
-            var labelRect = label.rectTransform;
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
-
-            return btn;
-        }
-
-        private static TextMeshProUGUI CreateHeaderLabel(Transform parent, string name, string text, int fontSize, FontStyles fontStyle)
-        {
-            var go = new GameObject(name);
+            var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
-            go.AddComponent<RectTransform>();
+            return go.GetComponent<RectTransform>();
+        }
 
+        private static void StretchFill(RectTransform rt, float left, float bottom, float right, float top)
+        {
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(left, bottom);
+            rt.offsetMax = new Vector2(-right, -top);
+        }
+
+        private static void AnchorTopBand(RectTransform rt, float height)
+        {
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(0f, height);
+        }
+
+        private static TextMeshProUGUI CreateText(Transform parent, string name, string text, int fontSize, FontStyles style, TextAlignmentOptions alignment)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
             var tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
             tmp.fontSize = fontSize;
-            tmp.fontStyle = fontStyle;
-            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.fontStyle = style;
+            tmp.alignment = alignment;
             tmp.enableWordWrapping = true;
-            tmp.color = new Color(0.85f, 0.92f, 1f, 1f);
-            return tmp;
-        }
-
-        private static TextMeshProUGUI CreateStepText(Transform parent, string name, string text, int fontSize, FontStyles fontStyle)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-
-            var rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = Vector2.zero;
-
-            var tmp = go.AddComponent<TextMeshProUGUI>();
-            tmp.text = text;
-            tmp.fontSize = fontSize;
-            tmp.fontStyle = fontStyle;
-            tmp.alignment = TextAlignmentOptions.TopLeft;
-            tmp.enableWordWrapping = true;
-            tmp.richText = true;
-            tmp.color = new Color(0.85f, 0.92f, 1f, 1f);
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
             return tmp;
         }
     }
 }
+

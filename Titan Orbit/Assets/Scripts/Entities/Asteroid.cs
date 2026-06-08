@@ -98,6 +98,21 @@ namespace TitanOrbit.Entities
             return Mathf.Max(0.01f, avg * 0.5f);
         }
 
+        /// <summary>
+        /// Radius used for bullet segment tests — matches the synced <see cref="SphereCollider"/>, not loose bounds.
+        /// </summary>
+        public float GetBulletHitRadiusWorld()
+        {
+            if (col is SphereCollider sphereCol)
+            {
+                Vector3 s = transform.lossyScale;
+                float maxScale = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
+                return Mathf.Max(0.01f, sphereCol.radius * maxScale);
+            }
+
+            return GetCollisionRadiusWorld();
+        }
+
         // Tracks how much damage each ship dealt to this asteroid (server only).
         private readonly Dictionary<ulong, float> damageByShip = new Dictionary<ulong, float>();
 

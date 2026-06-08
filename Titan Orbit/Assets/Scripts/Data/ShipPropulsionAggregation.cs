@@ -28,37 +28,36 @@ namespace TitanOrbit.Data
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
 
         /// <summary>
-        /// Visual banking (°) at <see cref="VisualBankReferenceMaxTurnSpeedAuthoredUnits"/> × Starship's family turn-to-degrees scale.
-        /// Slower ships scale down proportionally to their own max turn speed.
+        /// Visual banking (°) when turn rate equals the global max ship turn speed (see <see cref="ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits"/>).
         /// </summary>
         public const float VisualBankReferenceMaxAngleDegrees = 111f;
 
         /// <summary>
-        /// Fastest authored ship turn speed (family definition units, level 1) used as the banking reference cap.
-        /// Matches AstroEagle_Feather total turn speed; update if a faster build is added.
+        /// Fallback max turn speed (authored units, level 1) when no upgrade-tree breakdown is available.
+        /// Matches ForceBadger tier scan (~43.4); runtime uses the max across all loaded families when possible.
         /// </summary>
-        public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 252f;
+        public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 43.40541f;
 
         /// <summary>
-        /// Target visual bank angle (°) from signed turn rate, this ship's max turn rate, and reference banking caps.
-        /// Slower-turning ships get a proportionally lower max bank; turn fraction uses this ship's own max turn rate.
+        /// Target visual bank angle (°): 0 turn rate → 0°, global max turn rate → <paramref name="maxBankDegrees"/>.
         /// </summary>
         public static float ComputeVisualBankTargetAngle(
             float signedAngularVelDegPerSec,
-            float shipMaxTurnDegPerSec,
-            float referenceMaxBankDegrees,
-            float referenceMaxTurnDegPerSec)
+            float maxBankDegrees,
+            float globalMaxTurnDegPerSec)
         {
-            if (referenceMaxTurnDegPerSec <= 0f || shipMaxTurnDegPerSec <= 0f)
+            if (globalMaxTurnDegPerSec <= 0f || Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
                 return 0f;
 
-            float effectiveMaxBank = referenceMaxBankDegrees
-                * Mathf.Clamp01(shipMaxTurnDegPerSec / referenceMaxTurnDegPerSec);
-            float turnRatio = Mathf.Clamp01(Mathf.Abs(signedAngularVelDegPerSec) / shipMaxTurnDegPerSec);
-            if (Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
-                return 0f;
+            float turnRatio = Mathf.Clamp01(Mathf.Abs(signedAngularVelDegPerSec) / globalMaxTurnDegPerSec);
+            return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * maxBankDegrees;
+        }
 
-            return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * effectiveMaxBank;
+        /// <summary>Global max ship turn speed in °/s for visual banking (family definition units × scale).</summary>
+        public static float GetGlobalMaxTurnSpeedDegreesPerSecond(float definitionUnitsToDegreesPerSecond = 10f)
+        {
+            float authored = ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
+            return authored * definitionUnitsToDegreesPerSecond;
         }
 
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
@@ -263,7 +262,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sets each weapon's energy stats from <see cref="ShipComponentWeaponSuggestions"/> (burst at full fire rate, regen below sustained drain).
+        /// Sets each weapon's energy stats from <see cref="ShipComponentWeaponSuggestions"/> (burst pool from legacy drain rate, regen below sustained drain).
         /// </summary>
         public static void BalanceWeaponEnergyForComponents(
             IList<ShipFamilyComponentEntry> components,

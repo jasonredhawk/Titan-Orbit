@@ -109,6 +109,11 @@ namespace TitanOrbit.Editor
                 case BulletBankAbilityType.DamageMultiplierVsGem:
                     DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Damage Multiplier");
                     break;
+
+                case BulletBankAbilityType.StretchLengthInFlight:
+                    y = DrawLabeledRow(rect, y, line, gap, radiusProp, "Start Length (×)");
+                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "End Length (×)");
+                    break;
             }
         }
 
@@ -142,6 +147,7 @@ namespace TitanOrbit.Editor
                 BulletBankAbilityType.DamageMultiplierVsShip => 1,
                 BulletBankAbilityType.DamageMultiplierVsGemMoon => 1,
                 BulletBankAbilityType.DamageMultiplierVsGem => 1,
+                BulletBankAbilityType.StretchLengthInFlight => 2,
                 _ => 1,
             };
         }

@@ -4183,7 +4183,6 @@ MonoBehaviour:
   theatricalIdleMaxPlanarSpeed: 0.35
   theatricalPathDurationMinSeconds: 110
   theatricalPathDurationMaxSeconds: 190
-  theatricalEnterBlendDuration: 3.5
   theatricalLookSmoothTime: 1.1
   theatricalRotationSmoothTime: 1.3
   theatricalFovSmoothTime: 2.4
@@ -8604,7 +8603,13 @@ MonoBehaviour:
         fireRateMultiplier: 1
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
-      abilities: []
+      abilities:
+      - type: 10
+        magnitude: 4
+        duration: 0
+        tickInterval: 0
+        radius: 0.5
+        damageTarget: 0
   - categoryName: Bullets
     prefabs:
     - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
@@ -10273,7 +10278,9 @@ MonoBehaviour:
   lobbyPanel: {fileID: 1345699743}
   teamSelectionPanel: {fileID: 376194405}
   rescueOldShipUI: {fileID: 0}
+  instructionScreenUI: {fileID: 0}
   loadingScreenController: {fileID: 867079293}
+  instructionStepScreenshots: []
   playButton: {fileID: 0}
   hostOnlineButton: {fileID: 0}
   joinOnlineButton: {fileID: 0}

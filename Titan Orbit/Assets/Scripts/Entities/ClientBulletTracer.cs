@@ -49,6 +49,7 @@ namespace TitanOrbit.Entities
         private uint assignedServerSequence;
         private bool pendingImpactVfxShown;
         private bool impactVfxShown;
+        private ClientBulletStretchVisual stretchVisual;
 
         /// <summary>
         /// Called when the server spawn batch arrives so owner-predicted tracers can link to their
@@ -64,6 +65,7 @@ namespace TitanOrbit.Entities
                     continue;
 
                 tracer.assignedServerSequence = sequence;
+                s_bySequence[sequence] = tracer;
                 if (tracer.pendingImpactVfxShown || tracer.impactVfxShown)
                     s_ownerImpactVfxAlreadyShown.Add(sequence);
                 return;
@@ -142,15 +144,11 @@ namespace TitanOrbit.Entities
             if (vel.sqrMagnitude > 0.0001f)
                 go.transform.rotation = Quaternion.LookRotation(vel.normalized, Vector3.up);
 
-            BulletShape shape = (BulletShape)Mathf.Clamp(payload.ShapeIndex, 0, 2);
-            float speedForVisual = vel.magnitude;
-            BulletVisualFactory.BuildVisual(
-                go.transform,
+            tracer.SetupVisual(
                 payload.VisualPrefabBankIndex,
-                tracer.ownerTeam,
-                shape,
+                (BulletShape)Mathf.Clamp(payload.ShapeIndex, 0, 2),
+                vel.magnitude,
                 payload.ScaleMultiplier,
-                speedForVisual,
                 payload.NoTrailFlag != 0);
 
             return go;
@@ -178,6 +176,8 @@ namespace TitanOrbit.Entities
             if (payload.Sequence != 0)
                 s_bySequence[payload.Sequence] = tracer;
             tracer.bulletVisualScaleMultiplier = Mathf.Max(0.1f, payload.ScaleMultiplier);
+            tracer.visualPrefabBankIndex = payload.VisualPrefabBankIndex;
+            tracer.ownerTeam = (TeamManager.Team)payload.OwnerTeamByte;
 
             // Initial visual position uses elapsed since server spawn (one-way client latency),
             // so the bullet appears where the server has already simulated it to instead of at
@@ -189,16 +189,13 @@ namespace TitanOrbit.Entities
             if (vel.sqrMagnitude > 0.0001f)
                 go.transform.rotation = Quaternion.LookRotation(vel.normalized, Vector3.up);
 
-            BulletShape shape = (BulletShape)Mathf.Clamp(payload.ShapeIndex, 0, 2);
-            float speedForVisual = vel.magnitude;
-            BulletVisualFactory.BuildVisual(
-                go.transform,
+            tracer.SetupVisual(
                 payload.VisualPrefabBankIndex,
-                (TeamManager.Team)payload.OwnerTeamByte,
-                shape,
+                (BulletShape)Mathf.Clamp(payload.ShapeIndex, 0, 2),
+                vel.magnitude,
                 payload.ScaleMultiplier,
-                speedForVisual,
-                payload.NoTrailFlag != 0);
+                payload.NoTrailFlag != 0,
+                logical);
 
             return go;
         }
@@ -208,7 +205,17 @@ namespace TitanOrbit.Entities
         {
             if (seq == 0) return;
             if (s_bySequence.TryGetValue(seq, out ClientBulletTracer tracer) && tracer != null)
+            {
                 Destroy(tracer.gameObject);
+                return;
+            }
+
+            for (int i = s_ownerPredicted.Count - 1; i >= 0; i--)
+            {
+                ClientBulletTracer predicted = s_ownerPredicted[i];
+                if (predicted != null && predicted.assignedServerSequence == seq)
+                    Destroy(predicted.gameObject);
+            }
         }
 
         private void OnDestroy()
@@ -227,11 +234,53 @@ namespace TitanOrbit.Entities
             s_pool = poolGo.transform;
         }
 
+        private void SetupVisual(
+            int bankIndex,
+            BulletShape shape,
+            float bulletSpeed,
+            float scaleMultiplier,
+            bool noTrail,
+            Vector3? initialLogical = null)
+        {
+            GameObject visual = BulletVisualFactory.BuildVisual(
+                transform,
+                bankIndex,
+                ownerTeam,
+                shape,
+                scaleMultiplier,
+                bulletSpeed,
+                noTrail);
+
+            if (BulletBankProfileUtility.TryGetProfile(bankIndex, out BulletBankProfile profile)
+                && profile != null
+                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
+                && ClientBulletStretchVisual.TryAttach(transform, visual, startFactor, endFactor))
+            {
+                stretchVisual = GetComponent<ClientBulletStretchVisual>();
+            }
+
+            if (stretchVisual != null)
+            {
+                Vector3 logical = initialLogical ?? logicalSpawn;
+                float progress = GetTravelProgress(logical);
+                stretchVisual.ApplyTravelProgress(progress);
+            }
+        }
+
+        private float GetTravelProgress(Vector3 logicalPosition)
+        {
+            float travelled = ToroidalMap.ToroidalDistance(logicalPosition, logicalSpawn);
+            return travelled / Mathf.Max(0.5f, maxDistance);
+        }
+
         private void LateUpdate()
         {
             float elapsed = GetElapsedSinceServerSpawn();
             Vector3 logical = logicalSpawn + velocity * elapsed;
             logical.y = 0f;
+
+            if (stretchVisual != null)
+                stretchVisual.ApplyTravelProgress(GetTravelProgress(logical));
 
             if (ownerPredictedVisual)
             {
@@ -270,6 +319,22 @@ namespace TitanOrbit.Entities
             if (pathLen < 0.001f)
                 return false;
 
+            // Asteroids: toroidal segment in logical space (matches server). Pure clients cannot use
+            // SphereCast here because asteroid colliders are display-shifted while the tracer is logical.
+            if (BulletHitResolver.TryToroidalAsteroidSegmentCosmeticOnly(
+                    from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
+            {
+                toroidalImpact.y = 0f;
+                PlayOwnerPredictedImpact(
+                    toroidalImpact,
+                    new BulletHitResolver.BulletHitPopupInfo(
+                        true,
+                        FloatingCountChannel.DamageAsteroid,
+                        damageForImpactPitch,
+                        isAsteroidHit: true));
+                return true;
+            }
+
             Vector3 rayDir = (to - from) / pathLen;
             int hitCount = Physics.SphereCastNonAlloc(
                 from,
@@ -283,11 +348,16 @@ namespace TitanOrbit.Entities
             if (hitCount > 1)
                 SortOwnerPredictedHitsByDistance(hitCount);
 
+            var nm = NetworkManager.Singleton;
+            bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
+
             for (int i = 0; i < hitCount; i++)
             {
                 RaycastHit hit = s_ownerPredictedHits[i];
                 if (hit.collider == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, ownerShipNetworkId))
+                    continue;
+                if (pureClient && hit.collider.GetComponentInParent<Asteroid>() != null)
                     continue;
 
                 if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam, visualPrefabBankIndex))
@@ -334,20 +404,6 @@ namespace TitanOrbit.Entities
                     PlayOwnerPredictedImpact(hit.point);
                     return true;
                 }
-            }
-
-            if (BulletHitResolver.TryToroidalAsteroidSegmentCosmeticOnly(
-                    from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
-            {
-                toroidalImpact.y = 0f;
-                PlayOwnerPredictedImpact(
-                    toroidalImpact,
-                    new BulletHitResolver.BulletHitPopupInfo(
-                        true,
-                        FloatingCountChannel.DamageAsteroid,
-                        damageForImpactPitch,
-                        isAsteroidHit: true));
-                return true;
             }
 
             if (BulletHitResolver.TryToroidalGemMoonSegmentCosmeticOnly(

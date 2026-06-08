@@ -131,6 +131,19 @@ namespace TitanOrbit.Entities
             logicalPositionStored = true;
         }
 
+        /// <summary>Logical world position before display-tile repositioning (for hit tests that use logical bullet paths).</summary>
+        public bool TryGetLogicalPosition(out Vector3 logical)
+        {
+            if (!logicalPositionStored)
+            {
+                logical = transform.position;
+                return false;
+            }
+
+            logical = logicalPosition;
+            return true;
+        }
+
         private void LateUpdate()
         {
             if (Time.frameCount != s_cachedCameraFrame)

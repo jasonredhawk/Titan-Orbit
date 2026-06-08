@@ -46,6 +46,6 @@ namespace TitanOrbit.Data
         [Tooltip("Maximum roll angle (degrees) for the fastest-turning ship at full turn. Others scale down toward 35°.")]
         public float maxBankAngle = 111f;
         [Tooltip("How quickly roll catches up to the target.")]
-        public float bankSmoothing = 2f;
+        public float bankSmoothing = 8f;
     }
 }

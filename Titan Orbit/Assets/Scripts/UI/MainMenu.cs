@@ -2331,13 +2331,18 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            Transform parent = transform;
+            var canvas = GetComponentInParent<Canvas>();
+            Transform parent = canvas != null ? canvas.transform : transform;
+
             var go = new GameObject("InstructionScreenUI");
             go.transform.SetParent(parent, false);
             var rect = go.AddComponent<RectTransform>();
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
-            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            go.transform.SetAsLastSibling();
+
             instructionScreenUI = go.AddComponent<InstructionScreenUI>();
             if (instructionStepScreenshots != null && instructionStepScreenshots.Length > 0)
                 instructionScreenUI.SetStepScreenshots(instructionStepScreenshots);

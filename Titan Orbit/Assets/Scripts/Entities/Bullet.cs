@@ -396,8 +396,11 @@ namespace TitanOrbit.Entities
                 if (asteroid == null || asteroid.IsDestroyed)
                     continue;
 
-                float combinedRadius = asteroid.GetCollisionRadiusWorld() + Mathf.Max(0.01f, bulletRadius);
-                Vector3 center = asteroid.transform.position;
+                Vector3 center = BulletHitResolver.GetAsteroidLogicalCenter(asteroid);
+                if (!BulletHitResolver.NeedsToroidalAsteroidSweep(from, to, center))
+                    continue;
+
+                float combinedRadius = asteroid.GetBulletHitRadiusWorld() + Mathf.Max(0.01f, bulletRadius);
 
                 Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
                 Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);

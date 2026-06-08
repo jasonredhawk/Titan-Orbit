@@ -719,7 +719,7 @@ namespace TitanOrbit.Entities
 
         [Header("Banking (fallback when shipData has no values)")]
         [SerializeField] private float defaultMaxBankAngle = ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees;
-        [SerializeField] private float defaultBankSmoothing = 2f;
+        [SerializeField] private float defaultBankSmoothing = 8f;
 
         private MaterialPropertyBlock hullColorBlock;
         private int lastVisualApplyFrame = -1;
@@ -1732,8 +1732,14 @@ namespace TitanOrbit.Entities
                 peopleInTransit = Mathf.Max(0f, peopleInTransit - amount);
         }
 
-        /// <summary>Server: people moved per load/unload projectile (ship level).</summary>
-        public float GetPeopleTransferChunkSize() => Mathf.Max(1f, ShipLevel);
+        /// <summary>Server: people moved per orbit load/unload projectile — capped by both ship and planet level.</summary>
+        public float GetPeopleTransferChunkSize(Planet planet)
+        {
+            float shipChunk = Mathf.Max(1f, ShipLevel);
+            if (planet == null)
+                return shipChunk;
+            return Mathf.Max(1f, Mathf.Min(shipChunk, planet.PlanetLevel));
+        }
 
         /// <summary>Server: remaining crew capacity accounting for in-flight load projectiles.</summary>
         public float GetPeopleLoadSpaceRemaining()
@@ -3412,7 +3418,7 @@ namespace TitanOrbit.Entities
 
             float referenceMaxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
-            // Roll (Z): turn fraction vs this ship's max turn rate; max bank scales with turn-speed tier.
+            // Roll (Z): 0 turn rate → 0 bank; fastest ship's max turn rate → full bank.
             float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
             float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
             Vector3 velFlat = rb.linearVelocity;
@@ -3420,13 +3426,12 @@ namespace TitanOrbit.Entities
             if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
                 && angularVelDegPerSec < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngle = 0f;
-            float referenceMaxTurnDegPerSec = ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits
-                * ShipTurnDefinitionToDegreesPerSecond;
+            float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond(
+                ShipTurnDefinitionToDegreesPerSecond);
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 Mathf.Sign(signedAngle) * angularVelDegPerSec,
-                EffectiveRotationSpeed,
                 referenceMaxBank,
-                referenceMaxTurnDegPerSec);
+                globalMaxTurnDegPerSec);
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
             currentBankAngle = Mathf.Lerp(currentBankAngle, targetBankAngle, bankT);
 
@@ -5241,7 +5246,7 @@ namespace TitanOrbit.Entities
             // No passive gem drain - gems only reduce when bullets hit (and get expelled)
         }
 
-        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full. At/above 50%, surplus loads are dispatched by <see cref="Planet"/> (growth-gated, round-robin). Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Unload rate and chunk size scale with ship level (card-scaled). Transfer only after <see cref="CanAccumulatePeopleTransferDwell"/> for <see cref="peopleTransferStationaryHoldSeconds"/>.</summary>
+        /// <summary>Server: friendly planets below 50% max population pull crew from ships until half full. At/above 50%, surplus loads are dispatched by <see cref="Planet"/> (growth-gated, round-robin). Non-friendly: unload onto neutral/enemy as invasion. People beam as projectiles. Chunk size is min(ship level, planet level); transfer rate scales with chunk size (card-scaled). Transfer only after <see cref="CanAccumulatePeopleTransferDwell"/> for <see cref="peopleTransferStationaryHoldSeconds"/>.</summary>
         /// <summary>Pick the orbit planet whose shell contains this ship (closest toroidal match). Used on server and local owner — physics triggers miss wrapped tiles.</summary>
         private void RefreshOrbitPlanetFromPosition()
         {
@@ -5337,8 +5342,8 @@ namespace TitanOrbit.Entities
             float peopleSpaceAvailable = PeopleCapacity - currentPeople.Value - peopleInTransit;
             bool debugModeEnabled = GameManager.Instance != null && GameManager.Instance.DebugMode;
 
-            float peopleDropValue = Mathf.Max(1f, ShipLevel); // people moved per load/unload projectile (ship level)
-            float peopleTransferStep = peopleDropValue * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier(); // ship level people/s, card-scaled
+            float peopleDropValue = GetPeopleTransferChunkSize(currentOrbitPlanet);
+            float peopleTransferStep = peopleDropValue * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier();
             float loadRate = peopleTransferStep;
             float unloadAccumStep = peopleTransferStep;
             if (debugModeEnabled)
@@ -7225,6 +7230,8 @@ namespace TitanOrbit.Entities
         {
             if (shipPrefab == null) return;
             ApplyShipVisual(shipPrefab, shipData);
+            _lastAppliedChassisIndex = currentChassisIndex.Value;
+            _lastAppliedShipLevel = ShipLevel;
             var composer = GetComponent<ShipVisualComposer>();
             if (composer != null) composer.RebuildVisuals();
             ApplyHullIdentityColor();
@@ -7282,7 +7289,12 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            if (lastVisualApplyFrame == Time.frameCount && lastVisualApplyPrefab == shipPrefab)
+            // Skip duplicate applies in one frame only when chassis/level/prefab are unchanged (avoids stacking work).
+            // Do not skip when chassis or level changed — a prior apply may have scanned ghost weapons from deferred Destroy.
+            if (lastVisualApplyFrame == Time.frameCount
+                && lastVisualApplyPrefab == shipPrefab
+                && _lastAppliedChassisIndex == currentChassisIndex.Value
+                && _lastAppliedShipLevel == ShipLevel)
             {
                 return;
             }
@@ -7327,6 +7339,8 @@ namespace TitanOrbit.Entities
                 var oldColliders = oldChild.GetComponentsInChildren<Collider>(true);
                 foreach (var c in oldColliders) if (c != null) c.enabled = false;
 
+                // Detach before Destroy so ChassisComponentStats.FromTransform does not count weapons from the old hull this frame.
+                oldChild.SetParent(null, false);
                 Object.Destroy(oldChild.gameObject);
             }
 

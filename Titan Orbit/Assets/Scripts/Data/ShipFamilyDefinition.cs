@@ -886,7 +886,7 @@ namespace TitanOrbit.Data
         }
 
         public static float GetSuggestedRammingPowerPerLevel(int version) =>
-            GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase;
+            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase));
 
         /// <summary>Summed family ramming stat = bullet-comparable rating before massFactor (excludes ship prefab baseRammingPower).</summary>
         public static float ComputeDamageRatingFromFamilyPower(float summedFamilyRammingPower)
@@ -954,15 +954,18 @@ namespace TitanOrbit.Data
             ComputeMassDamageFactor(mass, hullBaselineMass, SelfMassDamageExponent);
     }
 
-    /// <summary>Scan/auto-populate weapon offense and energy (burst ~2s at full fire rate, regen below sustained drain).</summary>
+    /// <summary>Scan/auto-populate weapon offense and energy (burst pool sized for legacy 3 shots/s drain; regen below sustained drain).</summary>
     public static class ShipComponentWeaponSuggestions
     {
         public const float FirePowerV1 = 3f;
-        public const float FireRate = 3f;
+        public const float FireRate = 6f;
         public const float FireRatePerLevel = 0f;
         public const float BulletSpeedV1 = 12f;
 
-        /// <summary>Seconds of continuous fire at authored fire rate before the pool is empty (no regen).</summary>
+        /// <summary>Fire rate used when sizing burst energy cap on scan (independent of authored max fire rate).</summary>
+        public const float BurstEnergyBalanceFireRate = 3f;
+
+        /// <summary>Seconds of continuous fire at burst energy drain rate before the pool is empty (no regen).</summary>
         public const float BurstSecondsAtFullDrain = 2f;
 
         /// <summary>
@@ -983,10 +986,10 @@ namespace TitanOrbit.Data
         }
 
         public static float GetSuggestedFirePowerPerLevel(int version) =>
-            GetSuggestedFirePower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedFirePower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
 
         public static float GetSuggestedBulletSpeedPerLevel(int version) =>
-            GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
 
         public static float ComputeSustainedEnergyDrain(float firePower, float fireRate) =>
             Mathf.Max(0f, firePower) * Mathf.Max(0.01f, fireRate);
@@ -1005,7 +1008,7 @@ namespace TitanOrbit.Data
             int levelAfterFirst = 0)
         {
             float firePower = stats.firePower + stats.firePowerPerLevel * Mathf.Max(0, levelAfterFirst);
-            float drain = ComputeSustainedEnergyDrain(stats, levelAfterFirst);
+            float drain = ComputeSustainedEnergyDrain(firePower, BurstEnergyBalanceFireRate);
             if (firePower <= 0f || drain <= 0f)
                 return;
 
@@ -1383,6 +1386,24 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Canonical total power score for upgrade-tree ordering. Matches <see cref="ShipFamilyChassisTierEntry.powerScore"/>
+        /// and the inspector "Power Score Total" row.
+        /// </summary>
+        public float GetUpgradeTreeSortPowerScore() => Total;
+
+        /// <summary>Compares two breakdowns for left→right slot order (ascending total power score).</summary>
+        public static int CompareForUpgradeTreeSort(
+            ShipFamilyPowerScoreBreakdown a,
+            ShipFamilyPowerScoreBreakdown b)
+        {
+            int cmp = a.Total.CompareTo(b.Total);
+            if (cmp != 0)
+                return cmp;
+
+            return a.GetDisplayTotalForUi().CompareTo(b.GetDisplayTotalForUi());
+        }
+
+        /// <summary>
         /// Category and per-stat breakdown from summed ship stats (level-1 effective values, no heuristic scaling).
         /// Input stats must already include per-component localScale (see ShipFamilyUpgradeTreeStatScanner in the Editor assembly).
         /// </summary>
@@ -1537,8 +1558,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Branch slot order for one upgrade-tree level row (left → right).
-        /// Anchors highest fire power on the left and highest gem cap on the right; remaining ships are
-        /// placed on a fire→gems skew axis so the row visibly trends fire-heavy left and gem-heavy right.
+        /// Weakest total power score on the left, strongest on the right.
         /// </summary>
         public static int[] ComputeBranchLayoutOrder(IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns)
         {
@@ -1546,185 +1566,15 @@ namespace TitanOrbit.Data
             if (n <= 1)
                 return n == 1 ? new[] { 0 } : Array.Empty<int>();
 
-            var slotTargets = new float[n];
+            var indices = new int[n];
             for (int i = 0; i < n; i++)
-                slotTargets[i] = ComputeFireGemsSlotTarget(breakdowns, i);
+                indices[i] = i;
 
-            int leftAnchor = FindBestAnchorIndex(
-                breakdowns,
-                b => b.firePower,
-                preferLowerGemsOnTie: true,
-                preferLowerFireOnTie: false);
-
-            int rightAnchor = FindBestAnchorIndex(
-                breakdowns,
-                b => b.gemCap,
-                preferLowerGemsOnTie: false,
-                preferLowerFireOnTie: true,
-                excludedIndex: leftAnchor);
-
-            var interior = new List<int>(n);
-            for (int i = 0; i < n; i++)
-            {
-                if (i == leftAnchor || i == rightAnchor)
-                    continue;
-                interior.Add(i);
-            }
-
-            interior.Sort((a, b) => CompareFireGemsBranchOrder(breakdowns, slotTargets, a, b));
-
-            var order = new int[n];
-            order[0] = leftAnchor;
-            if (n >= 2)
-                order[n - 1] = rightAnchor;
-
-            int interiorSlot = 0;
-            for (int slot = 1; slot < n - 1; slot++)
-                order[slot] = interior[interiorSlot++];
-
-            return order;
+            Array.Sort(indices, (a, b) => CompareForUpgradeTreeSort(breakdowns[a], breakdowns[b]));
+            return indices;
         }
 
-        /// <summary>0 = fire branch (left), 1 = gem branch (right).</summary>
-        private static float ComputeFireGemsSlotTarget(IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns, int index)
-        {
-            int n = breakdowns.Count;
-            float fireNorm = NormalizeBranchStat(breakdowns, index, b => b.firePower);
-            float gemNorm = NormalizeBranchStat(breakdowns, index, b => b.gemCap);
-            return (1f - fireNorm + gemNorm) * 0.5f;
-        }
-
-        private static float NormalizeBranchStat(
-            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
-            int index,
-            Func<ShipFamilyPowerScoreBreakdown, float> metric)
-        {
-            int n = breakdowns.Count;
-            if (n <= 1)
-                return 0.5f;
-
-            float min = float.MaxValue;
-            float max = float.MinValue;
-            for (int i = 0; i < n; i++)
-            {
-                float v = metric(breakdowns[i]);
-                min = Mathf.Min(min, v);
-                max = Mathf.Max(max, v);
-            }
-
-            float value = metric(breakdowns[index]);
-            if (max - min <= 0.0001f)
-                return ComputeBranchRankNorm(breakdowns, index, metric);
-
-            return (value - min) / (max - min);
-        }
-
-        private static float ComputeBranchRankNorm(
-            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
-            int index,
-            Func<ShipFamilyPowerScoreBreakdown, float> metric)
-        {
-            int n = breakdowns.Count;
-            if (n <= 1)
-                return 0.5f;
-
-            int rank = 0;
-            float value = metric(breakdowns[index]);
-            for (int i = 0; i < n; i++)
-            {
-                if (metric(breakdowns[i]) < value - 0.0001f)
-                    rank++;
-            }
-
-            return rank / (float)(n - 1);
-        }
-
-        private static int CompareFireGemsBranchOrder(
-            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
-            float[] slotTargets,
-            int a,
-            int b)
-        {
-            int cmp = slotTargets[a].CompareTo(slotTargets[b]);
-            if (cmp != 0)
-                return cmp;
-
-            cmp = breakdowns[b].firePower.CompareTo(breakdowns[a].firePower);
-            if (cmp != 0)
-                return cmp;
-
-            cmp = breakdowns[a].gemCap.CompareTo(breakdowns[b].gemCap);
-            if (cmp != 0)
-                return cmp;
-
-            return breakdowns[b].GetDisplayTotalForUi().CompareTo(breakdowns[a].GetDisplayTotalForUi());
-        }
-
-        private static int FindBestAnchorIndex(
-            IReadOnlyList<ShipFamilyPowerScoreBreakdown> breakdowns,
-            Func<ShipFamilyPowerScoreBreakdown, float> metric,
-            bool preferLowerGemsOnTie,
-            bool preferLowerFireOnTie,
-            int excludedIndex = -1)
-        {
-            int n = breakdowns.Count;
-            int best = -1;
-            float bestVal = float.NegativeInfinity;
-            float bestGems = float.PositiveInfinity;
-            float bestFire = float.PositiveInfinity;
-            float bestTotal = float.NegativeInfinity;
-
-            for (int i = 0; i < n; i++)
-            {
-                if (i == excludedIndex)
-                    continue;
-
-                float v = metric(breakdowns[i]);
-                float gems = breakdowns[i].gemCap;
-                float fire = breakdowns[i].firePower;
-                float total = breakdowns[i].GetDisplayTotalForUi();
-                if (v > bestVal + 0.0001f)
-                {
-                    bestVal = v;
-                    bestGems = gems;
-                    bestFire = fire;
-                    bestTotal = total;
-                    best = i;
-                    continue;
-                }
-
-                if (!Mathf.Approximately(v, bestVal))
-                    continue;
-
-                if (preferLowerGemsOnTie && gems < bestGems - 0.0001f)
-                {
-                    bestGems = gems;
-                    bestFire = fire;
-                    bestTotal = total;
-                    best = i;
-                    continue;
-                }
-
-                if (preferLowerFireOnTie && fire < bestFire - 0.0001f)
-                {
-                    bestFire = fire;
-                    bestGems = gems;
-                    bestTotal = total;
-                    best = i;
-                    continue;
-                }
-
-                if (Mathf.Approximately(gems, bestGems) && Mathf.Approximately(fire, bestFire) && total > bestTotal + 0.0001f)
-                {
-                    bestTotal = total;
-                    best = i;
-                }
-            }
-
-            return best;
-        }
-
-        /// <summary>Reorders <paramref name="items"/> left→right for one planet tier row using <see cref="ComputeBranchLayoutOrder"/>.</summary>
+        /// <summary>Reorders <paramref name="items"/> left→right for one planet tier row (ascending total power score).</summary>
         public static void ReorderListByBranchLayout<T>(List<T> items, Func<T, ShipFamilyPowerScoreBreakdown> selector)
         {
             if (items == null || items.Count <= 1 || selector == null)
@@ -1847,9 +1697,9 @@ namespace TitanOrbit.Data
             return new ShipComponentAbilityStats
             {
                 firePower = weaponFirePower,
-                firePowerPerLevel = weaponFirePower * perLevel,
+                firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(v),
                 bulletSpeed = weaponBulletSpeed,
-                bulletSpeedPerLevel = weaponBulletSpeed * perLevel,
+                bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(v),
                 fireRate = weaponFireRate,
                 fireRatePerLevel = ShipComponentWeaponSuggestions.FireRatePerLevel,
                 rammingPower = ShipComponentRammingSuggestions.GetSuggestedRammingPower(v),
@@ -2011,6 +1861,7 @@ namespace TitanOrbit.Data
             EnforceComponentStatCategories();
             EnsureDefaultFallbackStats();
             InvalidateComponentStatsLookup();
+            InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
         }
 
@@ -2274,6 +2125,56 @@ namespace TitanOrbit.Data
                     return set.materials;
             }
             return null;
+        }
+
+        private static float s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
+
+        /// <summary>
+        /// Highest level-1 turn speed among upgrade-tree chassis tiers (from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>).
+        /// </summary>
+        public static float GetMaxUpgradeTreeTurnSpeedAuthoredUnits(System.Collections.Generic.IEnumerable<ShipFamilyDefinition> families)
+        {
+            float max = 0f;
+            if (families == null)
+                return max;
+
+            foreach (ShipFamilyDefinition def in families)
+            {
+                if (def?.upgradeTree == null)
+                    continue;
+
+                for (int i = 0; i < def.upgradeTree.Count; i++)
+                {
+                    ShipFamilyChassisTierEntry tier = def.upgradeTree[i];
+                    if (tier == null)
+                        continue;
+                    max = Mathf.Max(max, tier.powerScoreBreakdown.turnSpeed);
+                }
+            }
+
+            return max;
+        }
+
+        /// <summary>
+        /// Cached global max turn speed (authored units, level 1) across every loaded ship family upgrade tree.
+        /// </summary>
+        public static float GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits()
+        {
+            if (s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored >= 0f)
+                return s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored;
+
+            ShipFamilyDefinition[] all = Resources.FindObjectsOfTypeAll<ShipFamilyDefinition>();
+            s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = GetMaxUpgradeTreeTurnSpeedAuthoredUnits(all);
+
+            return s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored > 0f
+                ? s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored
+                : ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits;
+        }
+
+        /// <summary>Clears cached global max turn speed (call after upgrade-tree stat scans in the editor).</summary>
+        public static void InvalidateGlobalMaxUpgradeTreeTurnSpeedCache()
+        {
+            s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
         }
     }
 }

@@ -278,7 +278,7 @@ namespace TitanOrbit.Editor
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Resort Upgrade Tree: recomputes power scores from prefabs and reorders unlocked tiers (weaker ships unlock earlier; each level row anchors max fire power on the left and max gem cap on the right, with interior ships placed on a fire→gems skew axis). Entries with Lock In Upgrade Tree enabled stay at their list index.",
+                "Resort Upgrade Tree: recomputes power scores from prefabs and reorders unlocked tiers (weaker ships unlock earlier; within each level row, ships are sorted left→right by ascending total power score — the same value shown as Power Score Total in each tier's breakdown). Entries with Lock In Upgrade Tree enabled stay at their list index.",
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
@@ -510,7 +510,7 @@ namespace TitanOrbit.Editor
 
                 ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
                 ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
-                float power = breakdown.Total;
+                float power = breakdown.GetUpgradeTreeSortPowerScore();
                 list.Add((prefab, power, breakdown));
             }
 
@@ -522,8 +522,7 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Weaker ships unlock earlier (global order by power). Within each planet tier row, anchor max fire
-            // on the left and max gems on the right; interior slots follow a fire→gems skew axis.
+            // Weaker ships unlock earlier (global order by total power score). Within each level row, sort left→right the same way.
             list.Sort((a, b) => a.power.CompareTo(b.power));
             var orderedForTree = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
             int listIdx = 0;
@@ -633,7 +632,7 @@ namespace TitanOrbit.Editor
 
                 ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
                 ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
-                float power = breakdown.Total;
+                float power = breakdown.GetUpgradeTreeSortPowerScore();
                 tier.powerScoreBreakdown = breakdown;
                 tier.componentMass = def.ComputeComponentMassFromPrefab(tier.prefab);
 
@@ -746,7 +745,7 @@ namespace TitanOrbit.Editor
             ShipComponentAbilityStats stats,
             ShipFamilyPowerScoreBreakdown breakdown)
         {
-            entry.powerScore = breakdown.Total;
+            entry.powerScore = breakdown.GetUpgradeTreeSortPowerScore();
             entry.powerScoreBreakdown = breakdown;
             int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(entry.minHomePlanetLevel);
             entry.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(

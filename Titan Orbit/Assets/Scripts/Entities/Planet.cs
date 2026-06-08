@@ -103,7 +103,7 @@ namespace TitanOrbit.Entities
         /// <summary>Must stay in sync with <see cref="PlanetRingsDrawer"/> / <see cref="HomePlanetRingsDrawer"/> ring layout.</summary>
         private const float GemMoonRingsInnerRadiusLocal = 0.68f;
         private const float GemMoonRingThicknessLocal = 0.06f;
-        private const float GemMoonRingGapLocal = 0.015f;
+        private const float GemMoonRingGapLocal = 0.022f;
         /// <summary>Dock/orbit shell outer radius ÷ moon body radius (1.95 × 1.2).</summary>
         private const float GemMoonDockOrbitZoneRadiusOverBody = 1.95f * 1.2f;
 
@@ -665,7 +665,7 @@ namespace TitanOrbit.Entities
                 if (ship == null || !ship.CanReceivePlanetSurplusPeopleLoadFrom(this))
                     continue;
                 SurplusLoadShipScratch.Add(ship);
-                maxEligibleChunk = Mathf.Max(maxEligibleChunk, ship.GetPeopleTransferChunkSize());
+                maxEligibleChunk = Mathf.Max(maxEligibleChunk, ship.GetPeopleTransferChunkSize(this));
             }
 
             int shipCount = SurplusLoadShipScratch.Count;
@@ -686,7 +686,7 @@ namespace TitanOrbit.Entities
                 if (surplus <= 0.0001f)
                     break;
 
-                float chunk = ship.GetPeopleTransferChunkSize();
+                float chunk = ship.GetPeopleTransferChunkSize(this);
                 float space = ship.GetPeopleLoadSpaceRemaining();
                 float sendAmount = 0f;
 
