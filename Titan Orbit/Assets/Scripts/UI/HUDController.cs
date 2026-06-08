@@ -167,11 +167,12 @@ namespace TitanOrbit.UI
 
         private void UpdateHUD()
         {
+            float displayHealth = playerShip.GetHealthForDisplay();
             if (healthBar != null)
-                healthBar.value = playerShip.CurrentHealth / playerShip.MaxHealth;
+                healthBar.value = playerShip.MaxHealth > 0 ? displayHealth / playerShip.MaxHealth : 0f;
 
             if (healthText != null)
-                healthText.text = $"{playerShip.CurrentHealth:F0}/{playerShip.MaxHealth:F0}";
+                healthText.text = $"{displayHealth:F0}/{playerShip.MaxHealth:F0}";
 
             if (gemBar != null)
                 gemBar.value = playerShip.GemCapacity > 0 ? playerShip.CurrentGems / playerShip.GemCapacity : 0f;

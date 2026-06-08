@@ -154,8 +154,8 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            UpdateRow(ref _rows[0], ship.CurrentHealth, ship.MaxHealth);
-            UpdateRow(ref _rows[1], ship.CurrentEnergy, ship.EnergyCapacity);
+            UpdateRow(ref _rows[0], ship.GetHealthForDisplay(), ship.MaxHealth);
+            UpdateRow(ref _rows[1], ship.GetEnergyForDisplay(), ship.EnergyCapacity);
             UpdateRow(ref _rows[2], ship.CurrentGems, ship.GemCapacity);
             UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity);
 

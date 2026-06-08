@@ -457,14 +457,17 @@ namespace TitanOrbit.Camera
             if (targetShip.IsDead)
                 return false;
 
-            if (targetShip.IsInteractingWithOrbitStationMenu)
+            if (targetShip.IsOrbitStationMenuVisible)
                 return false;
 
             if (targetShip.IsMoveForwardPressedForGemMoonLanding
                 || targetShip.IsShootPressedForGemMoonLanding)
                 return true;
 
-            return targetShip.GetPlanarSpeedWorld() > theatricalIdleMaxPlanarSpeed;
+            if (targetShip.GetPlanarSpeedWorld() > theatricalIdleMaxPlanarSpeed)
+                return true;
+
+            return targetShip.IsRotatingTowardMousePointer();
         }
 
         private void UpdateTheatricalModeState(bool playerActivelyPlaying)

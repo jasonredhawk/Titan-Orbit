@@ -70,8 +70,8 @@ namespace TitanOrbit.UI
         };
 
         private const int StepCount = 5;
-        private const float HeaderHeight = 88f;
         private const float FooterHeight = 76f;
+        private const float TitleAbovePanelGap = 12f;
         private const float RowSidePadding = 18f;
         private const float ColumnGap = 12f;
         private const float CardInnerPadding = 10f;
@@ -83,6 +83,9 @@ namespace TitanOrbit.UI
         private readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
 
         private RectTransform panelRoot;
+        private RectTransform headerRoot;
+        private TextMeshProUGUI headerTitle;
+        private TextMeshProUGUI headerSubtitle;
         private RectTransform columnsRow;
         private Button continueButton;
         private Action onContinue;
@@ -175,22 +178,17 @@ namespace TitanOrbit.UI
             var backdrop = panelRoot.gameObject.AddComponent<Image>();
             backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.97f);
 
-            // Header
-            var header = CreateRect("Header", panelRoot);
-            AnchorTopBand(header, HeaderHeight);
-
-            var headerTitle = CreateText(header, "Title", "HOW TO PLAY", 32, FontStyles.Bold, TextAlignmentOptions.Center);
-            StretchFill(headerTitle.rectTransform, 0f, 36f, 0f, 8f);
-
-            var headerSubtitle = CreateText(header, "Subtitle",
+            // Header — positioned in LayoutColumns, just above the panel row
+            headerRoot = CreateRect("Header", panelRoot);
+            headerTitle = CreateText(headerRoot, "Title", "HOW TO PLAY", 32, FontStyles.Bold, TextAlignmentOptions.Center);
+            headerSubtitle = CreateText(headerRoot, "Subtitle",
                 "Five quick steps — tap Continue when you're ready to join a team.",
                 16, FontStyles.Normal, TextAlignmentOptions.Center);
-            StretchFill(headerSubtitle.rectTransform, 0f, 8f, 0f, 36f);
             headerSubtitle.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
 
             // Five-column row
             columnsRow = CreateRect("ColumnsRow", panelRoot);
-            StretchFill(columnsRow, RowSidePadding, FooterHeight, RowSidePadding, HeaderHeight);
+            StretchFill(columnsRow, RowSidePadding, FooterHeight, RowSidePadding, 0f);
 
             columns.Clear();
             for (int i = 0; i < StepCount; i++)
@@ -286,6 +284,29 @@ namespace TitanOrbit.UI
 
                 ApplyColumnLayout(col, columnWidth, metrics[i]);
             }
+
+            float panelTopFromRootBottom = columnsRow.offsetMin.y + verticalOffset + uniformCardHeight;
+            LayoutHeader(panelTopFromRootBottom);
+        }
+
+        private void LayoutHeader(float panelTopFromRootBottom)
+        {
+            if (headerRoot == null || headerTitle == null || headerSubtitle == null)
+                return;
+
+            const float titleBandHeight = 40f;
+            const float subtitleBandHeight = 24f;
+            const float subtitleGap = 4f;
+            float headerHeight = titleBandHeight + subtitleGap + subtitleBandHeight;
+
+            headerRoot.anchorMin = new Vector2(0f, 0f);
+            headerRoot.anchorMax = new Vector2(1f, 0f);
+            headerRoot.pivot = new Vector2(0.5f, 0f);
+            headerRoot.anchoredPosition = new Vector2(0f, panelTopFromRootBottom + TitleAbovePanelGap);
+            headerRoot.sizeDelta = new Vector2(0f, headerHeight);
+
+            StretchFill(headerTitle.rectTransform, 0f, subtitleBandHeight + subtitleGap, 0f, 0f);
+            StretchFill(headerSubtitle.rectTransform, 0f, 0f, 0f, titleBandHeight + subtitleGap);
         }
 
         private struct ColumnLayoutMetrics
