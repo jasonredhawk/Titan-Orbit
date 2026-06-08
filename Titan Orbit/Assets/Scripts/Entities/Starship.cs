@@ -421,16 +421,29 @@ namespace TitanOrbit.Entities
             && bulletConfig.cannons != null
             && bulletConfig.cannons.Count > 0;
 
-        /// <summary>Multiple weapons share one energy pool; volley when full, round-robin when depleted.</summary>
+        /// <summary>Multiple weapons share one energy pool: volley when full, sequential round-robin when low.</summary>
         private bool UsesSharedWeaponEnergyPool =>
             HasWeaponComponentEnergy
             && bulletConfig.cannons.Count > 1;
 
+        private readonly List<int> _cannonsToFireScratch = new List<int>(8);
         private readonly List<int> _sharedPoolReadyCannonsScratch = new List<int>(8);
         private readonly List<float> _sharedPoolReadyCostsScratch = new List<float>(8);
-        private readonly List<int> _cannonsToFireScratch = new List<int>(8);
-        /// <summary>True when shared-pool energy is too low for a volley; round-robin regen cadence applies.</summary>
-        private bool _sharedPoolRoundRobinMode;
+        /// <summary>Owner: local weapon pool while hold-firing (avoids fighting replicated energy each shot).</summary>
+        private bool ownerFiringSessionActive;
+        private float ownerFiringEnergy;
+        private int ownerFiringPoolCursor = -1;
+        /// <summary>Clients: last synced energy for smooth HUD regen between network updates.</summary>
+        private float _energyRegenBaseline;
+        private double _energyRegenBaselineServerTime;
+        /// <summary>Clients: last synced health for smooth HUD regen between network updates.</summary>
+        private float _healthRegenBaseline;
+        private double _healthRegenBaselineServerTime;
+        private double _healthRegenDelayUntilServerTime;
+        /// <summary>Ignore small client/server stat drift so regen bars do not dip on every network tick.</summary>
+        private const float StatDisplaySyncDeadband = 1.5f;
+        /// <summary>Treat larger drops as real spend/damage; regen ticks may wobble slightly below prediction.</summary>
+        private const float StatDisplaySpendSnapThreshold = 0.75f;
 
         private void EnsureCannonEnergyState(int cannonCount)
         {
@@ -478,81 +491,103 @@ namespace TitanOrbit.Entities
             return sum;
         }
 
-        /// <summary>Seconds the shared pool must recharge before the next round-robin shot (cost / pooled regen).</summary>
-        private float ComputeSharedPoolRegenIntervalForShot(float shotCost) =>
-            shotCost / Mathf.Max(0.01f, EffectiveEnergyRegen);
-
-        private bool SharedPoolRegenReadyForShot(float shotCost)
+        private float GetFiringPoolEnergy()
         {
-            if (!UsesSharedWeaponEnergyPool)
-                return true;
-            float minInterval = ComputeSharedPoolRegenIntervalForShot(shotCost);
-            return Time.time - lastSharedPoolShotTime.Value >= minInterval - 0.0001f;
-        }
-
-        private void RecordSharedPoolShot(float shotCost)
-        {
-            if (!UsesSharedWeaponEnergyPool || !IsServer)
-                return;
-            if (!_sharedPoolRoundRobinMode)
-            {
-                lastSharedPoolShotTime.Value = Time.time;
-                return;
-            }
-
-            float minInterval = ComputeSharedPoolRegenIntervalForShot(shotCost);
-            float earliest = lastSharedPoolShotTime.Value + minInterval;
-            lastSharedPoolShotTime.Value = Mathf.Max(Time.time, earliest);
+            if (IsOwner && ownerFiringSessionActive)
+                return ownerFiringEnergy;
+            return currentEnergy.Value;
         }
 
         private bool CannonHasEnergyForShot(int cannonIndex, float cost) =>
-            currentEnergy.Value >= cost;
+            GetFiringPoolEnergy() >= cost;
 
-        private bool TryConsumeCannonEnergy(int cannonIndex, float cost)
+        private bool TryConsumeFiringPoolEnergy(int cannonIndex, float cost)
         {
+            if (IsOwner && ownerFiringSessionActive)
+            {
+                if (ownerFiringEnergy < cost)
+                    return false;
+                ownerFiringEnergy = Mathf.Max(0f, ownerFiringEnergy - cost);
+                if (UsesSharedWeaponEnergyPool)
+                    ownerFiringPoolCursor = cannonIndex;
+                return true;
+            }
+
             if (!IsServer)
                 return false;
             if (currentEnergy.Value < cost)
                 return false;
             currentEnergy.Value = Mathf.Max(0f, currentEnergy.Value - cost);
             if (UsesSharedWeaponEnergyPool)
-            {
                 lastSharedPoolWeaponFiredIndex.Value = cannonIndex;
-                RecordSharedPoolShot(cost);
-            }
             return true;
         }
 
-        private int SharedPoolRoundRobinCursor =>
-            UsesSharedWeaponEnergyPool ? lastSharedPoolWeaponFiredIndex.Value : -1;
+        private int GetSharedPoolRoundRobinCursor()
+        {
+            if (!UsesSharedWeaponEnergyPool)
+                return -1;
+            if (IsOwner && ownerFiringSessionActive)
+                return ownerFiringPoolCursor;
+            return lastSharedPoolWeaponFiredIndex.Value;
+        }
 
         private void ResetSharedPoolWeaponFiredIndex()
         {
             if (IsServer)
-            {
                 lastSharedPoolWeaponFiredIndex.Value = -1;
-                lastSharedPoolShotTime.Value = -999f;
-            }
+            ownerFiringPoolCursor = -1;
         }
 
-        /// <summary>Next weapon slot in shared-pool round-robin, skipping invalid fire points.</summary>
+        private void BeginOwnerWeaponFiringSession()
+        {
+            if (!IsOwner)
+                return;
+            ownerFiringSessionActive = true;
+            ownerFiringEnergy = currentEnergy.Value;
+            ownerFiringPoolCursor = lastSharedPoolWeaponFiredIndex.Value;
+        }
+
+        private void EndOwnerWeaponFiringSession()
+        {
+            if (!IsOwner)
+                return;
+            ownerFiringSessionActive = false;
+            float authoritative = currentEnergy.Value;
+            float deadband = GetStatDisplaySyncDeadband(EnergyCapacity);
+            _energyRegenBaseline = Mathf.Abs(ownerFiringEnergy - authoritative) <= deadband
+                ? ownerFiringEnergy
+                : authoritative;
+            _energyRegenBaselineServerTime = GetServerTimeNowSeconds();
+        }
+
+        private void TickOwnerFiringEnergyRegen()
+        {
+            if (!IsOwner || !ownerFiringSessionActive)
+                return;
+
+            float cap = EffectiveEnergyCapacity;
+            if (ownerFiringEnergy >= cap)
+                return;
+
+            float regen = EffectiveEnergyRegen * Time.fixedDeltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                regen *= 100f;
+            ownerFiringEnergy = Mathf.Min(ownerFiringEnergy + regen, cap);
+        }
+
+        /// <summary>Strict next weapon index in shared-pool round-robin (0 → 1 → … → N-1 → 0).</summary>
         private int ResolveSharedPoolTurnCannonIndex()
         {
             if (bulletConfig?.cannons == null || bulletConfig.cannons.Count == 0)
                 return -1;
 
             int count = bulletConfig.cannons.Count;
-            int cursor = SharedPoolRoundRobinCursor;
-            int startStep = cursor < 0 ? 0 : 1;
-            for (int step = startStep; step < count + startStep; step++)
-            {
-                int i = cursor < 0 ? step : (cursor + step) % count;
-                if (i < 0 || i >= count)
-                    continue;
-                if (IsValidWeaponFirePointIndex(i))
-                    return i;
-            }
-            return -1;
+            int cursor = GetSharedPoolRoundRobinCursor();
+            int turn = cursor < 0 ? 0 : (cursor + 1) % count;
+            if (turn < 0 || turn >= count)
+                return -1;
+            return turn;
         }
 
         private bool TryCanCannonFireRateReady(int cannonIndex, out float energyCostPerShot)
@@ -582,69 +617,78 @@ namespace TitanOrbit.Entities
             return true;
         }
 
+        /// <summary>Sum of per-shot costs for every weapon in the shared pool (volley threshold).</summary>
+        private float GetSharedPoolVolleyEnergyThreshold()
+        {
+            if (bulletConfig?.cannons == null || bulletConfig.cannons.Count == 0)
+                return 0f;
+
+            float sum = 0f;
+            int count = bulletConfig.cannons.Count;
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsValidWeaponFirePointIndex(i))
+                    continue;
+                var c = bulletConfig.cannons[i];
+                int bankIdx = ResolveBulletBankIndexForCannon(c, CombatSystem.Instance);
+                ResolveEffectiveCannonStats(c, bankIdx, out _, out _, out _, out float energyCostPerShot);
+                sum += energyCostPerShot;
+            }
+            return sum;
+        }
+
         /// <summary>
-        /// Builds the cannons to fire this cycle. Full shared-pool energy fires every rate-ready weapon at once;
-        /// otherwise only the next weapon in round-robin may fire.
+        /// Builds cannons to fire this cycle. Full pooled energy fires every rate-ready weapon at once;
+        /// below that threshold only the next weapon in round-robin may fire.
         /// </summary>
         private bool TryCollectCannonsToFire(List<int> cannonsToFire, bool requireEnergy = true)
         {
             cannonsToFire.Clear();
-            _sharedPoolRoundRobinMode = false;
             if (bulletConfig?.cannons == null || bulletConfig.cannons.Count == 0)
                 return false;
 
+            int count = bulletConfig.cannons.Count;
+
+            if (!UsesSharedWeaponEnergyPool)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    if (!TryCanCannonFireNow(i, out _, requireEnergy))
+                        continue;
+                    cannonsToFire.Add(i);
+                    return true;
+                }
+                return false;
+            }
+
             _sharedPoolReadyCannonsScratch.Clear();
             _sharedPoolReadyCostsScratch.Clear();
-            float totalCost = 0f;
-            int count = bulletConfig.cannons.Count;
             for (int i = 0; i < count; i++)
             {
                 if (!TryCanCannonFireRateReady(i, out float cost))
                     continue;
                 _sharedPoolReadyCannonsScratch.Add(i);
                 _sharedPoolReadyCostsScratch.Add(cost);
-                totalCost += cost;
             }
 
             if (_sharedPoolReadyCannonsScratch.Count == 0)
                 return false;
 
-            if (!UsesSharedWeaponEnergyPool)
-            {
-                int i = _sharedPoolReadyCannonsScratch[0];
-                if (!requireEnergy || CannonHasEnergyForShot(i, _sharedPoolReadyCostsScratch[0]))
-                    cannonsToFire.Add(i);
-                return cannonsToFire.Count > 0;
-            }
-
-            if (!requireEnergy || currentEnergy.Value >= totalCost)
+            float volleyThreshold = GetSharedPoolVolleyEnergyThreshold();
+            if (!requireEnergy || GetFiringPoolEnergy() >= volleyThreshold)
             {
                 cannonsToFire.AddRange(_sharedPoolReadyCannonsScratch);
                 return true;
             }
 
-            _sharedPoolRoundRobinMode = true;
             int turn = ResolveSharedPoolTurnCannonIndex();
-            if (turn < 0)
+            if (turn < 0 || !IsValidWeaponFirePointIndex(turn))
+                return false;
+            if (!TryCanCannonFireNow(turn, out _, requireEnergy))
                 return false;
 
-            for (int r = 0; r < _sharedPoolReadyCannonsScratch.Count; r++)
-            {
-                if (_sharedPoolReadyCannonsScratch[r] != turn)
-                    continue;
-                float cost = _sharedPoolReadyCostsScratch[r];
-                if (requireEnergy)
-                {
-                    if (!CannonHasEnergyForShot(turn, cost))
-                        break;
-                    if (!SharedPoolRegenReadyForShot(cost))
-                        break;
-                }
-                cannonsToFire.Add(turn);
-                break;
-            }
-
-            return cannonsToFire.Count > 0;
+            cannonsToFire.Add(turn);
+            return true;
         }
 
         private bool CanAnyCannonFire(bool requireEnergy = true) =>
@@ -740,8 +784,6 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> currentEnergy = new NetworkVariable<float>(50f);
         /// <summary>Last weapon index that consumed shared-pool energy; next shot round-robins from here.</summary>
         private NetworkVariable<int> lastSharedPoolWeaponFiredIndex = new NetworkVariable<int>(-1);
-        /// <summary>Server time when the shared pool last paid for a round-robin shot (gates regen between shots).</summary>
-        private NetworkVariable<float> lastSharedPoolShotTime = new NetworkVariable<float>(-999f);
         /// <summary>Server-authoritative gem/people/health/energy caps for HUD (clients may not resolve all card bonuses locally).</summary>
         private NetworkVariable<float> networkGemCapacity = new NetworkVariable<float>(100f);
         private NetworkVariable<float> networkPeopleCapacity = new NetworkVariable<float>(10f);
@@ -761,6 +803,8 @@ namespace TitanOrbit.Entities
         private NetworkVariable<bool> wantToUnloadPeople = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToDepositGems = new NetworkVariable<bool>(false);
         private NetworkVariable<bool> wantToExpelGems = new NetworkVariable<bool>(false);
+        /// <summary>Owner-synced: combat fire held (UI/orbit gated on client before sending).</summary>
+        private NetworkVariable<bool> wantToFire = new NetworkVariable<bool>(false);
         /// <summary>Owner-synced: right-click / move-forward held (server uses this for gem-moon landing gating).</summary>
         private NetworkVariable<bool> moveForwardPressedNet = new NetworkVariable<bool>(
             false,
@@ -1447,6 +1491,9 @@ namespace TitanOrbit.Entities
         private float lastVoluntaryGemExpulsionServerTime = -999f;
         private int voluntaryGemExpulsionShotIndex;
         private bool localWantToExpelGemsSent;
+        private bool localWantToFireSent;
+        private Vector3[] serverCachedOwnerCannonOrigins;
+        private Vector3[] serverCachedOwnerCannonForwards;
         private float lastDepositSpawnTime = -999f;
         private float peopleUnloadAccumulator;
         /// <summary>Server: orbit planet id used for the current transfer session; accumulators reset when this changes.</summary>
@@ -1472,8 +1519,11 @@ namespace TitanOrbit.Entities
 
         // Banking (visual lean into turn) - only used when visualRoot is set.
         private float currentBankAngle;
-        private Vector3 previousForward;
         private bool bankingInitialized;
+        /// <summary>Smoothed yaw rate (°/s) sampled in FixedUpdate so banking does not jitter between render frames.</summary>
+        private float _cachedBankAngularVelDegPerSec;
+        private float _prevBankYawDeg;
+        private bool _bankYawInitialized;
         
         // Visual pitch: prefer local X on the Prefab mesh container; roll (bank) on BankPivot. See ApplyVisualBanking.
         [Header("Visual pitch & banking")]
@@ -1507,6 +1557,16 @@ namespace TitanOrbit.Entities
         private const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
         public float CurrentHealth => currentHealth.Value;
+
+        /// <summary>Health for HUD (clients extrapolate regen between network syncs).</summary>
+        public float GetHealthForDisplay()
+        {
+            if (!IsSpawned)
+                return currentHealth.Value;
+            if (IsServer)
+                return currentHealth.Value;
+            return ComputeDisplayedHealth(GetServerTimeNowSeconds());
+        }
         public float MaxHealth
         {
             get
@@ -1812,7 +1872,21 @@ namespace TitanOrbit.Entities
                 return ComputePeopleCapacityLocal();
             }
         }
-        public float CurrentEnergy => currentEnergy.Value;
+        public float CurrentEnergy =>
+            IsOwner && ownerFiringSessionActive ? ownerFiringEnergy : currentEnergy.Value;
+
+        /// <summary>Energy for HUD (owner firing uses local pool; otherwise clients extrapolate regen).</summary>
+        public float GetEnergyForDisplay()
+        {
+            if (!IsSpawned)
+                return currentEnergy.Value;
+            if (IsOwner && ownerFiringSessionActive)
+                return ownerFiringEnergy;
+            if (IsServer)
+                return currentEnergy.Value;
+            return ComputeDisplayedEnergy(GetServerTimeNowSeconds());
+        }
+
         public float EnergyCapacity
         {
             get
@@ -1918,6 +1992,9 @@ namespace TitanOrbit.Entities
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
 
+        /// <summary>True while the gem-moon orbit station menu is shown after landing.</summary>
+        public bool IsOrbitStationMenuVisible => _orbitUiVisible;
+
         /// <summary>
         /// True while the gem-moon orbit station menu is open and the pointer is over its UI.
         /// Clicks there should browse the menu, not exit theatrical camera or count as combat input.
@@ -1932,6 +2009,43 @@ namespace TitanOrbit.Entities
             Vector3 v = rb.linearVelocity;
             v.y = 0f;
             return v.magnitude;
+        }
+
+        /// <summary>Below this yaw delta (°), mouse-aim rotation is treated as settled for idle camera.</summary>
+        private const float MouseAimAlignmentToleranceDeg = 1.5f;
+
+        /// <summary>True while the ship is still turning to face the mouse pointer.</summary>
+        public bool IsRotatingTowardMousePointer()
+        {
+            if (IsBulletElectricShockDisabled || rb == null)
+                return false;
+
+            EnsureCachedCameraControllerForShake();
+            if (s_cachedCameraController != null && s_cachedCameraController.IsTheatricalShipRotationLocked)
+                return false;
+
+            if (!TryGetMouseAimRotation(out Quaternion targetRotation))
+                return false;
+
+            return Quaternion.Angle(rb.rotation, targetRotation) > MouseAimAlignmentToleranceDeg;
+        }
+
+        private bool TryGetMouseAimRotation(out Quaternion targetRotation)
+        {
+            targetRotation = Quaternion.identity;
+            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            if (cam == null || inputHandler == null)
+                return false;
+
+            Vector3 mouseWorldPos = inputHandler.GetMouseWorldPosition(cam);
+            Vector3 directionToMouse = mouseWorldPos - transform.position;
+            directionToMouse.y = 0f;
+            if (directionToMouse.sqrMagnitude <= 0.001f)
+                return false;
+
+            directionToMouse.Normalize();
+            targetRotation = Quaternion.LookRotation(directionToMouse);
+            return true;
         }
 
         /// <summary>First friendly gem moon whose dock shell contains this ship (toroidal).</summary>
@@ -2286,16 +2400,16 @@ namespace TitanOrbit.Entities
         public override void OnNetworkSpawn()
         {
             isDead.OnValueChanged += HandleIsDeadChangedForBurnVfx;
+            currentEnergy.OnValueChanged += OnCurrentEnergyDisplaySync;
+            currentHealth.OnValueChanged += OnCurrentHealthDisplaySync;
+            InitializeClientRegenDisplayBaselines();
             if (!AllStarships.Contains(this))
                 AllStarships.Add(this);
             // Server: sync initial ship level so clients show correct slot count
             if (IsServer && networkShipLevel != null)
                 networkShipLevel.Value = Mathf.Max(1, shipLevel);
             if (IsServer)
-            {
                 lastSharedPoolWeaponFiredIndex.Value = -1;
-                lastSharedPoolShotTime.Value = -999f;
-            }
             if (IsServer && networkBranchIndex != null && shipData != null)
                 networkBranchIndex.Value = shipData.branchIndex;
 
@@ -2343,14 +2457,10 @@ namespace TitanOrbit.Entities
             // Initialize banking state so first LateUpdate doesn't spike
             if (rb != null)
             {
-                Vector3 fwd = transform.rotation * Vector3.forward;
-                fwd.y = 0f;
-                if (fwd.sqrMagnitude > 0.01f)
-                {
-                    fwd.Normalize();
-                    previousForward = fwd;
-                    bankingInitialized = true;
-                }
+                _prevBankYawDeg = GetPlanarYawDegrees(rb.rotation);
+                _bankYawInitialized = true;
+                _cachedBankAngularVelDegPerSec = 0f;
+                bankingInitialized = true;
             }
 
             // Team is server-authored; hull materials are applied on server in AssignTeamAndStartInOrbit. Owning client must
@@ -2377,6 +2487,8 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             droneSwarm?.OnStarshipNetworkDespawn();
+            currentEnergy.OnValueChanged -= OnCurrentEnergyDisplaySync;
+            currentHealth.OnValueChanged -= OnCurrentHealthDisplaySync;
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
             if (IsServer && !_isAIControlled
                 && (TeamManager.Instance == null || !TeamManager.Instance.IsTeamEliminated(shipTeam.Value)))
@@ -2579,6 +2691,10 @@ namespace TitanOrbit.Entities
             smallMinesCount.Value = snapshot.SmallMines;
             largeMinesCount.Value = snapshot.LargeMines;
 
+            // Apply hull after level, attributes, cards, and equipment are restored so per-level stats and component scaling match.
+            TryApplyChassisVisualFromNetworkState();
+
+            // Vitals must be set after chassis so MaxHealth / energy caps reflect the restored ship level and loadout.
             RefreshSyncedCapacitiesOnServer();
             if (useRescueVitals)
             {
@@ -2594,9 +2710,6 @@ namespace TitanOrbit.Entities
                 currentPeople.Value = Mathf.Clamp(snapshot.CurrentPeople, 0f, PeopleCapacity);
                 currentEnergy.Value = Mathf.Clamp(snapshot.CurrentEnergy, 0f, EffectiveEnergyCapacity);
             }
-
-            // Apply hull after level, attributes, cards, and equipment are restored so per-level stats and component scaling match.
-            TryApplyChassisVisualFromNetworkState();
 
             if (snapshot.Team != TeamManager.Team.None && TeamManager.Instance != null)
             {
@@ -3342,6 +3455,44 @@ namespace TitanOrbit.Entities
             targetCollisionPitchAngle = Mathf.Clamp(combined, -pitchClamp, pitchClamp);
         }
 
+        /// <summary>Called from FixedUpdate finally so every ship (owner, proxy, AI) gets consistent yaw rate for banking.</summary>
+        private void CacheVisualAngularVelForBanking()
+        {
+            if (rb == null || isDead.Value)
+            {
+                _cachedBankAngularVelDegPerSec = 0f;
+                if (isDead.Value)
+                    _bankYawInitialized = false;
+                return;
+            }
+
+            float yawDeg = GetPlanarYawDegrees(rb.rotation);
+            if (!_bankYawInitialized)
+            {
+                _prevBankYawDeg = yawDeg;
+                _bankYawInitialized = true;
+                _cachedBankAngularVelDegPerSec = 0f;
+                return;
+            }
+
+            float dt = Mathf.Max(1e-5f, Time.fixedDeltaTime);
+            float instantAngularVel = Mathf.DeltaAngle(_prevBankYawDeg, yawDeg) / dt;
+            _prevBankYawDeg = yawDeg;
+
+            float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
+            float velT = 1f - Mathf.Exp(-bankSmooth * dt);
+            _cachedBankAngularVelDegPerSec = Mathf.Lerp(_cachedBankAngularVelDegPerSec, instantAngularVel, velT);
+        }
+
+        private static float GetPlanarYawDegrees(Quaternion rotation)
+        {
+            Vector3 fwd = rotation * Vector3.forward;
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude < 1e-8f)
+                return 0f;
+            return Mathf.Atan2(fwd.x, fwd.z) * Mathf.Rad2Deg;
+        }
+
         /// <summary>Called from FixedUpdate finally so every ship (owner, proxy, AI) gets consistent forward acceleration for visuals.</summary>
         private void CacheVisualForwardAccelForPitch()
         {
@@ -3394,11 +3545,6 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 fwd = transform.rotation * Vector3.forward;
-            fwd.y = 0f;
-            if (fwd.sqrMagnitude < 0.01f) return;
-            fwd.Normalize();
-
             dt = Mathf.Max(dt, 0.0001f);
             UpdateVisualPitchTarget();
 
@@ -3407,7 +3553,6 @@ namespace TitanOrbit.Entities
 
             if (!bankingInitialized)
             {
-                previousForward = fwd;
                 currentBankAngle = 0f;
                 bankingInitialized = true;
                 visualRoot.localRotation = Quaternion.identity;
@@ -3419,17 +3564,16 @@ namespace TitanOrbit.Entities
             float referenceMaxBank = shipData != null ? shipData.maxBankAngle : defaultMaxBankAngle;
             float bankSmooth = shipData != null ? shipData.bankSmoothing : defaultBankSmoothing;
             // Roll (Z): 0 turn rate → 0 bank; fastest ship's max turn rate → full bank.
-            float signedAngle = Vector3.SignedAngle(previousForward, fwd, Vector3.up);
-            float angularVelDegPerSec = Mathf.Abs(signedAngle) / dt;
+            float signedAngularVelDegPerSec = _cachedBankAngularVelDegPerSec;
             Vector3 velFlat = rb.linearVelocity;
             velFlat.y = 0f;
             if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
-                && angularVelDegPerSec < IdleBankAngularVelDeadbandDegPerSec)
-                signedAngle = 0f;
+                && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
+                signedAngularVelDegPerSec = 0f;
             float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond(
                 ShipTurnDefinitionToDegreesPerSecond);
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
-                Mathf.Sign(signedAngle) * angularVelDegPerSec,
+                signedAngularVelDegPerSec,
                 referenceMaxBank,
                 globalMaxTurnDegPerSec);
             float bankT = 1f - Mathf.Exp(-bankSmooth * dt);
@@ -3455,8 +3599,6 @@ namespace TitanOrbit.Entities
             {
                 visualRoot.localRotation = Quaternion.Euler(pitchDeg, 0f, rollDeg);
             }
-
-            previousForward = fwd;
         }
 
         private void FixedUpdate()
@@ -3539,8 +3681,15 @@ namespace TitanOrbit.Entities
                 TickOrbitPopulationTransfer();
                 TickOrbitGemDeposit();
                 TickVoluntaryGemExpulsion();
+                TickPlayerHoldWeaponFiring(authoritative: true);
                 TickNearbyGemAttraction();
                 TickNearbyLootableDroneAttraction();
+            }
+
+            if (IsOwner && ownerFiringSessionActive && !IsServer)
+            {
+                TickOwnerFiringEnergyRegen();
+                TickPlayerHoldWeaponFiring(authoritative: false);
             }
 
             Planet dockPlanet = null;
@@ -3795,6 +3944,7 @@ namespace TitanOrbit.Entities
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
                 CacheVisualForwardAccelForPitch();
+                CacheVisualAngularVelForBanking();
             }
         }
 
@@ -3924,19 +4074,27 @@ namespace TitanOrbit.Entities
             if (mobileHud != null && (mobileHud.ShootButtonPressed
                 || (Application.isMobilePlatform && inputHandler.ShootPressed)))
                 uiBlocksShot = false;
-            if (inputHandler.ShootPressed && CanFire() && !uiBlocksShot)
+            bool canHoldFire = !isDead.Value
+                && !IsBulletElectricShockDisabled
+                && !gemMoonDocked.Value
+                && bulletConfig != null
+                && bulletConfig.cannons != null
+                && bulletConfig.cannons.Count > 0;
+            bool wantFireActive = inputHandler.ShootPressed && !uiBlocksShot && canHoldFire;
+            if (wantFireActive != localWantToFireSent)
             {
-                Vector3 dir = transform.forward;
-                dir.y = 0f;
-                if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
-                else dir.Normalize();
-                Vector3 shipVelForFire = rb != null ? rb.linearVelocity : Vector3.zero;
-                shipVelForFire.y = 0f;
-                TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] cannonOrigins, out Vector3[] cannonForwards);
-                FireServerRpc(transform.position, dir, shipVelForFire, cannonOrigins, cannonForwards);
-                // Owner: immediate cosmetic tracers (host + dedicated client) so shots are not gated on RPC latency.
-                if (ShouldSpawnOwnerPredictedBulletTracers())
-                    TrySpawnOwnerPredictedBulletVolley(transform.position, dir, shipVelForFire, cannonOrigins, cannonForwards);
+                localWantToFireSent = wantFireActive;
+                if (wantFireActive)
+                {
+                    BeginOwnerWeaponFiringSession();
+                    TryBuildOwnerReportedCannonBallisticsForFireRpc(out Vector3[] cannonOrigins, out Vector3[] cannonForwards);
+                    BeginWeaponFiringAimServerRpc(cannonOrigins, cannonForwards);
+                }
+                else
+                {
+                    EndOwnerWeaponFiringSession();
+                }
+                SetWantToFireServerRpc(wantFireActive);
             }
 
             // Rocket: Q key (or FireRocket if bound). Prefer large if available.
@@ -4470,23 +4628,14 @@ namespace TitanOrbit.Entities
 
             // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
             // Always rotate toward mouse cursor - works in place, no movement required
-            UnityEngine.Camera cam = UnityEngine.Camera.main;
-            if (cam != null && inputHandler != null)
+            if (TryGetMouseAimRotation(out Quaternion targetRotation))
             {
-                Vector3 mouseWorldPos = inputHandler.GetMouseWorldPosition(cam);
-                Vector3 directionToMouse = (mouseWorldPos - transform.position);
-                directionToMouse.y = 0f;
-                if (directionToMouse.sqrMagnitude > 0.001f)
-                {
-                    directionToMouse.Normalize();
-                    Quaternion targetRotation = Quaternion.LookRotation(directionToMouse);
-                    Quaternion newRotation = Quaternion.RotateTowards(
-                        rb.rotation,
-                        targetRotation,
-                        EffectiveRotationSpeed * Time.fixedDeltaTime
-                    );
-                    rb.MoveRotation(newRotation);
-                }
+                Quaternion newRotation = Quaternion.RotateTowards(
+                    rb.rotation,
+                    targetRotation,
+                    EffectiveRotationSpeed * Time.fixedDeltaTime
+                );
+                rb.MoveRotation(newRotation);
             }
         }
 
@@ -4529,16 +4678,321 @@ namespace TitanOrbit.Entities
             }
         }
 
+        private double GetServerTimeNowSeconds()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null)
+                return nm.ServerTime.Time;
+            return Time.timeAsDouble;
+        }
+
+        private void InitializeClientRegenDisplayBaselines()
+        {
+            if (!IsClient || IsServer)
+                return;
+
+            double now = GetServerTimeNowSeconds();
+            _energyRegenBaseline = currentEnergy.Value;
+            _energyRegenBaselineServerTime = now;
+            _healthRegenBaseline = currentHealth.Value;
+            _healthRegenBaselineServerTime = now;
+            _healthRegenDelayUntilServerTime = 0;
+        }
+
+        private static float GetStatDisplaySyncDeadband(float capacity)
+        {
+            return Mathf.Max(StatDisplaySyncDeadband, capacity * 0.02f);
+        }
+
+        private void OnCurrentEnergyDisplaySync(float previous, float current)
+        {
+            if (IsServer)
+                return;
+
+            double now = GetServerTimeNowSeconds();
+            if (current < previous - StatDisplaySpendSnapThreshold)
+            {
+                _energyRegenBaseline = current;
+                _energyRegenBaselineServerTime = now;
+                return;
+            }
+
+            float predicted = ComputeDisplayedEnergy(now);
+            if (Mathf.Abs(predicted - current) <= GetStatDisplaySyncDeadband(EnergyCapacity))
+                return;
+
+            _energyRegenBaseline = current;
+            _energyRegenBaselineServerTime = now;
+        }
+
+        private void OnCurrentHealthDisplaySync(float previous, float current)
+        {
+            if (IsServer)
+                return;
+
+            double now = GetServerTimeNowSeconds();
+            if (current < previous - StatDisplaySpendSnapThreshold)
+            {
+                _healthRegenBaseline = current;
+                _healthRegenBaselineServerTime = now;
+                _healthRegenDelayUntilServerTime = now + healthRegenDelayAfterDamage;
+                return;
+            }
+
+            float predicted = ComputeDisplayedHealth(now);
+            if (Mathf.Abs(predicted - current) <= GetStatDisplaySyncDeadband(MaxHealth))
+                return;
+
+            _healthRegenBaseline = current;
+            _healthRegenBaselineServerTime = now;
+        }
+
+        private float ComputeDisplayedEnergy(double now)
+        {
+            float cap = EnergyCapacity;
+            if (_energyRegenBaseline >= cap - 0.001f)
+                return cap;
+
+            float regenPerSec = EffectiveEnergyRegen;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                regenPerSec *= 100f;
+
+            float elapsed = (float)(now - _energyRegenBaselineServerTime);
+            float predicted = Mathf.Clamp(_energyRegenBaseline + regenPerSec * elapsed, 0f, cap);
+            return ApplyStatDisplayDeadband(predicted, currentEnergy.Value, cap);
+        }
+
+        private float ComputeDisplayedHealth(double now)
+        {
+            float cap = MaxHealth;
+            if (_healthRegenBaseline >= cap - 0.001f)
+                return cap;
+
+            if (now < _healthRegenDelayUntilServerTime)
+                return Mathf.Clamp(_healthRegenBaseline, 0f, cap);
+
+            float regenPerSec = EffectiveHealthRegen;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                regenPerSec *= 100f;
+
+            double regenStart = System.Math.Max(_healthRegenBaselineServerTime, _healthRegenDelayUntilServerTime);
+            float elapsed = (float)(now - regenStart);
+            float predicted = Mathf.Clamp(_healthRegenBaseline + regenPerSec * elapsed, 0f, cap);
+            return ApplyStatDisplayDeadband(predicted, currentHealth.Value, cap);
+        }
+
+        /// <summary>Keep extrapolated display smooth when server is only slightly behind (or ahead).</summary>
+        private static float ApplyStatDisplayDeadband(float predicted, float authoritative, float capacity)
+        {
+            float deadband = GetStatDisplaySyncDeadband(capacity);
+            if (Mathf.Abs(predicted - authoritative) <= deadband)
+                return predicted;
+            return Mathf.Clamp(authoritative, 0f, capacity);
+        }
+
         private bool CanFire()
         {
             if (isDead.Value) return false;
             if (IsBulletElectricShockDisabled) return false;
             if (IsAwaitingTeamSelection) return false;
-            // Orbit firing rule is enforced on the server via ServerWorldPositionInsideAnyOrbitZone (FireServerRpc).
-            // Local currentOrbitPlanet is not replicated and often disagrees with the server on relay/dedicated clients,
-            // which prevented FireServerRpc from ever being sent while host/editor looked fine.
             if (gemMoonDocked.Value) return false;
             return CanAnyCannonFire();
+        }
+
+        private bool IsWeaponFiringBlockedByWorldRules(Vector3 shipPosition)
+        {
+            if (gemMoonDocked.Value) return true;
+            return ServerBlocksOrbitZoneWeaponFire(shipPosition);
+        }
+
+        [ServerRpc]
+        private void SetWantToFireServerRpc(bool value)
+        {
+            wantToFire.Value = value;
+            if (!value)
+            {
+                serverCachedOwnerCannonOrigins = null;
+                serverCachedOwnerCannonForwards = null;
+            }
+        }
+
+        [ServerRpc]
+        private void BeginWeaponFiringAimServerRpc(Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
+        {
+            serverCachedOwnerCannonOrigins = ownerReportedCannonOrigins;
+            serverCachedOwnerCannonForwards = ownerReportedCannonForwards;
+        }
+
+        /// <summary>
+        /// Hold-fire tick: volleys all rate-ready weapons when the pool can afford a full burst; otherwise
+        /// fires one weapon per step in round-robin order. Server spawns authoritative bullets; dedicated
+        /// owner client mirrors energy/cursor locally and spawns predicted tracers.
+        /// </summary>
+        private void TickPlayerHoldWeaponFiring(bool authoritative)
+        {
+            if (_isAIControlled) return;
+            if (authoritative)
+            {
+                if (!IsServer || !wantToFire.Value) return;
+            }
+            else if (!ownerFiringSessionActive)
+            {
+                return;
+            }
+
+            if (isDead.Value || IsBulletElectricShockDisabled || IsAwaitingTeamSelection)
+            {
+                if (authoritative && wantToFire.Value)
+                    wantToFire.Value = false;
+                return;
+            }
+            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
+
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            if (IsWeaponFiringBlockedByWorldRules(shipPos))
+            {
+                if (authoritative && wantToFire.Value)
+                    wantToFire.Value = false;
+                return;
+            }
+
+            Vector3 shipFwd = transform.forward;
+            shipFwd.y = 0f;
+            if (shipFwd.sqrMagnitude < 0.01f) shipFwd = Vector3.forward;
+            else shipFwd.Normalize();
+
+            Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            shipVel.y = 0f;
+
+            Vector3[] aimOrigins = authoritative ? serverCachedOwnerCannonOrigins : null;
+            Vector3[] aimForwards = authoritative ? serverCachedOwnerCannonForwards : null;
+            TryFireNextWeaponShot(authoritative, shipPos, shipFwd, shipVel, aimOrigins, aimForwards);
+        }
+
+        /// <summary>Fires the next volley or sequential weapon(s) (pool + per-cannon rate + energy). Returns true if any shot was taken.</summary>
+        private bool TryFireNextWeaponShot(
+            bool authoritative,
+            Vector3 shipPosition,
+            Vector3 shipForward,
+            Vector3 shipVelocity,
+            Vector3[] ownerReportedCannonOrigins,
+            Vector3[] ownerReportedCannonForwards)
+        {
+            if (!TryCollectCannonsToFire(_cannonsToFireScratch, requireEnergy: true))
+                return false;
+
+            CombatSystem combat = CombatSystem.Instance;
+            if (combat == null)
+                combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
+            if (combat == null) return false;
+
+            EnsureBulletLastFireTime();
+            bool useOnlyOwnerBallistics = authoritative && NetworkObject != null && NetworkObject.IsPlayerObject;
+            var bulletIndicesFired = new System.Collections.Generic.List<byte>();
+            var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
+
+            for (int cIdx = 0; cIdx < _cannonsToFireScratch.Count; cIdx++)
+            {
+                int i = _cannonsToFireScratch[cIdx];
+                var c = bulletConfig.cannons[i];
+                if (!IsValidWeaponFirePointIndex(i))
+                    continue;
+
+                int bulletIdx = ResolveBulletBankIndexForCannon(c, combat);
+                ResolveEffectiveCannonStats(c, bulletIdx, out float damage, out float speed, out _, out float energyCostPerShot);
+
+                bool useOwnerPose = useOnlyOwnerBallistics && HasOwnerReportedCannonPose(ownerReportedCannonOrigins, ownerReportedCannonForwards, i);
+                Vector3 fireOrigin;
+                Vector3 cannonFwd;
+                if (useOwnerPose)
+                {
+                    fireOrigin = ownerReportedCannonOrigins[i];
+                    cannonFwd = ownerReportedCannonForwards[i];
+                }
+                else if (!TryResolveCannonFirePose(i, shipForward, out fireOrigin, out cannonFwd))
+                    continue;
+
+                cannonFwd.y = 0f;
+                if (cannonFwd.sqrMagnitude < 0.01f)
+                {
+                    cannonFwd = shipForward;
+                    cannonFwd.y = 0f;
+                }
+                if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
+                cannonFwd.Normalize();
+                Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
+
+                float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
+                Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
+                int numShots = 1;
+                float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
+                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
+                    numShots = Mathf.Max(1, c.spreadProjectileCount);
+
+                bool spawnedAnyForThisCannon = false;
+                for (int s = 0; s < numShots; s++)
+                {
+                    Vector3 dir = baseDir;
+                    if (c.spreadType == CannonSpreadType.RandomSpread)
+                    {
+                        float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
+                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                    }
+                    else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
+                    {
+                        float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
+                        float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
+                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
+                    }
+
+                    float scale = c.bulletScale * BulletScaleMultiplier;
+                    if (authoritative)
+                    {
+                        if (!combat.TrySpawnBulletOnServer(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVelocity, bulletIdx))
+                            continue;
+                        spawnedAnyForThisCannon = true;
+                        if (IsOwner && ShouldSpawnOwnerPredictedBulletTracers())
+                        {
+                            BulletSpawnPayload payload = combat.BuildBulletTracerPayloadForClientPreview(
+                                fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVelocity, bulletIdx);
+                            ClientBulletTracer.SpawnOwnerPredicted(payload);
+                        }
+                        if (rb != null)
+                        {
+                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
+                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                        }
+                    }
+                    else
+                    {
+                        BulletSpawnPayload payload = combat.BuildBulletTracerPayloadForClientPreview(
+                            fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVelocity, bulletIdx);
+                        ClientBulletTracer.SpawnOwnerPredicted(payload);
+                        spawnedAnyForThisCannon = true;
+                    }
+                }
+
+                if (!spawnedAnyForThisCannon)
+                    continue;
+
+                if (!TryConsumeFiringPoolEnergy(i, energyCostPerShot))
+                    return false;
+
+                if (i < bulletLastFireTime.Length)
+                    bulletLastFireTime[i] = Time.time;
+
+                bulletIndicesFired.Add((byte)i);
+                bulletPrefabIndicesFired.Add(bulletIdx);
+            }
+
+            if (authoritative && bulletIndicesFired.Count > 0)
+            {
+                FireClientRpc(
+                    bulletIndicesFired.ToArray(),
+                    bulletPrefabIndicesFired.ToArray());
+            }
+
+            return bulletIndicesFired.Count > 0;
         }
 
         [ServerRpc]
@@ -4648,212 +5102,18 @@ namespace TitanOrbit.Entities
             return forwards[index].sqrMagnitude > 0.0001f;
         }
 
-        /// <summary>
-        /// Owner-only cosmetic tracers using the same volley rules as <see cref="FireServerRpc"/> (instant feedback on host and client).
-        /// </summary>
-        private void TrySpawnOwnerPredictedBulletVolley(
-            Vector3 shipPosition,
-            Vector3 shipForward,
-            Vector3 ownerReportedShipVelocity,
-            Vector3[] ownerReportedCannonOrigins,
-            Vector3[] ownerReportedCannonForwards)
-        {
-            CombatSystem combat = CombatSystem.Instance;
-            if (combat == null)
-                combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
-            if (combat == null) return;
-            if (ServerBlocksOrbitZoneWeaponFire(shipPosition)) return;
-            if (gemMoonDocked.Value) return;
-            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
-            EnsureBulletLastFireTime();
-            Vector3 shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
-                ? ownerReportedShipVelocity
-                : (rb != null ? rb.linearVelocity : Vector3.zero);
-            shipVel.y = 0f;
-
-            bool skipEnergyForHostOwnerCosmetic = IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
-            if (!TryCollectCannonsToFire(_cannonsToFireScratch, requireEnergy: !skipEnergyForHostOwnerCosmetic))
-                return;
-
-            for (int cIdx = 0; cIdx < _cannonsToFireScratch.Count; cIdx++)
-            {
-                int i = _cannonsToFireScratch[cIdx];
-                var c = bulletConfig.cannons[i];
-                if (!IsValidWeaponFirePointIndex(i)) continue;
-
-                int bulletIdx = ResolveBulletBankIndexForCannon(c, combat);
-                ResolveEffectiveCannonStats(c, bulletIdx, out float damage, out float speed, out _, out _);
-
-                bool useOwnerPose = HasOwnerReportedCannonPose(ownerReportedCannonOrigins, ownerReportedCannonForwards, i);
-                Vector3 fireOrigin;
-                Vector3 cannonFwd;
-                if (useOwnerPose)
-                {
-                    fireOrigin = ownerReportedCannonOrigins[i];
-                    cannonFwd = ownerReportedCannonForwards[i];
-                }
-                else if (!TryResolveCannonFirePose(i, shipForward, out fireOrigin, out cannonFwd))
-                    continue;
-                cannonFwd.y = 0f;
-                if (cannonFwd.sqrMagnitude < 0.01f)
-                {
-                    cannonFwd = shipForward;
-                    cannonFwd.y = 0f;
-                }
-                if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
-                cannonFwd.Normalize();
-                Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
-
-                float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
-                Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
-                int numShots = 1;
-                float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
-                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
-                    numShots = Mathf.Max(1, c.spreadProjectileCount);
-                bool spawnedAnyForThisCannon = false;
-                for (int s = 0; s < numShots; s++)
-                {
-                    Vector3 dir = baseDir;
-                    if (c.spreadType == CannonSpreadType.RandomSpread)
-                    {
-                        float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
-                    }
-                    else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
-                    {
-                        float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
-                        float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
-                    }
-                    float scale = c.bulletScale * BulletScaleMultiplier;
-                    BulletSpawnPayload payload = combat.BuildBulletTracerPayloadForClientPreview(
-                        fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx);
-                    ClientBulletTracer.SpawnOwnerPredicted(payload);
-                    spawnedAnyForThisCannon = true;
-                }
-
-                if (!spawnedAnyForThisCannon) continue;
-
-                if (i < bulletLastFireTime.Length)
-                    bulletLastFireTime[i] = Time.time;
-            }
-        }
-
         [ServerRpc(RequireOwnership = true)]
         private void FireServerRpc(Vector3 shipPosition, Vector3 shipForward, Vector3 ownerReportedShipVelocity, Vector3[] ownerReportedCannonOrigins, Vector3[] ownerReportedCannonForwards)
         {
             if (IsAwaitingTeamSelection) return;
             if (IsBulletElectricShockDisabled) return;
-            CombatSystem combat = CombatSystem.Instance;
-            if (combat == null)
-                combat = UnityEngine.Object.FindFirstObjectByType<CombatSystem>(FindObjectsInactive.Include);
-            if (combat == null) return;
-            // Use owner-reported position for the orbit band: cached currentOrbitPlanet is not replicated and can block all shots on dedicated server.
-            if (ServerBlocksOrbitZoneWeaponFire(shipPosition)) return;
             if (gemMoonDocked.Value) return;
-            if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
-            EnsureBulletLastFireTime();
+            if (IsWeaponFiringBlockedByWorldRules(shipPosition)) return;
 
-            bool useOnlyOwnerBallistics = NetworkObject != null && NetworkObject.IsPlayerObject;
-            Vector3 shipVel;
-            if (useOnlyOwnerBallistics)
-            {
-                shipVel = ownerReportedShipVelocity;
-                shipVel.y = 0f;
-            }
-            else
-            {
-                shipVel = ownerReportedShipVelocity.sqrMagnitude > 0.0001f
-                    ? ownerReportedShipVelocity
-                    : (rb != null ? rb.linearVelocity : Vector3.zero);
-                shipVel.y = 0f;
-            }
-
-            var bulletIndicesFired = new System.Collections.Generic.List<byte>();
-            var bulletPrefabIndicesFired = new System.Collections.Generic.List<int>();
-
-            if (!TryCollectCannonsToFire(_cannonsToFireScratch))
-            {
+            Vector3 shipVel = ownerReportedShipVelocity;
+            shipVel.y = 0f;
+            if (!TryFireNextWeaponShot(true, shipPosition, shipForward, shipVel, ownerReportedCannonOrigins, ownerReportedCannonForwards))
                 FireClientRpc(System.Array.Empty<byte>(), System.Array.Empty<int>());
-                return;
-            }
-
-            for (int cIdx = 0; cIdx < _cannonsToFireScratch.Count; cIdx++)
-            {
-                int i = _cannonsToFireScratch[cIdx];
-                var c = bulletConfig.cannons[i];
-                if (!IsValidWeaponFirePointIndex(i))
-                    continue;
-
-                int bulletIdx = ResolveBulletBankIndexForCannon(c, combat);
-                ResolveEffectiveCannonStats(c, bulletIdx, out float damage, out float speed, out _, out float energyCostPerShot);
-
-                bool useOwnerPose = useOnlyOwnerBallistics && HasOwnerReportedCannonPose(ownerReportedCannonOrigins, ownerReportedCannonForwards, i);
-                Vector3 fireOrigin;
-                Vector3 cannonFwd;
-                if (useOwnerPose)
-                {
-                    fireOrigin = ownerReportedCannonOrigins[i];
-                    cannonFwd = ownerReportedCannonForwards[i];
-                }
-                else if (!TryResolveCannonFirePose(i, shipForward, out fireOrigin, out cannonFwd))
-                    continue;
-
-                cannonFwd.y = 0f;
-                if (cannonFwd.sqrMagnitude < 0.01f)
-                {
-                    cannonFwd = shipForward;
-                    cannonFwd.y = 0f;
-                }
-                if (cannonFwd.sqrMagnitude < 0.01f) cannonFwd = Vector3.forward;
-                cannonFwd.Normalize();
-                Vector3 cannonRight = Vector3.Cross(Vector3.up, cannonFwd);
-
-                float baseDirAngle = c.directionAngle * Mathf.Deg2Rad;
-                Vector3 baseDir = (cannonFwd * Mathf.Cos(baseDirAngle) + cannonRight * Mathf.Sin(baseDirAngle)).normalized;
-                int numShots = 1;
-                float angleMin = c.spreadAngleMin, angleMax = c.spreadAngleMax;
-                if (c.spreadType == CannonSpreadType.FixedSpread && c.spreadProjectileCount > 1)
-                    numShots = Mathf.Max(1, c.spreadProjectileCount);
-                bool spawnedAnyForThisCannon = false;
-                for (int s = 0; s < numShots; s++)
-                {
-                    Vector3 dir = baseDir;
-                    if (c.spreadType == CannonSpreadType.RandomSpread)
-                    {
-                        float spread = Random.Range(c.spreadAngleMin, c.spreadAngleMax) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
-                    }
-                    else if (c.spreadType == CannonSpreadType.FixedSpread && numShots > 1)
-                    {
-                        float t = numShots == 1 ? 0.5f : (float)s / (numShots - 1);
-                        float spread = Mathf.Lerp(angleMin, angleMax, t) * Mathf.Deg2Rad;
-                        dir = (baseDir * Mathf.Cos(spread) + cannonRight * Mathf.Sin(spread)).normalized;
-                    }
-                    float scale = c.bulletScale * BulletScaleMultiplier;
-                    if (combat.TrySpawnBulletOnServer(fireOrigin, dir, speed, damage, shipTeam.Value, NetworkObjectId, scale, 0, shipVel, bulletIdx))
-                    {
-                        spawnedAnyForThisCannon = true;
-                        if (rb != null)
-                        {
-                            float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
-                        }
-                    }
-                }
-
-                if (!spawnedAnyForThisCannon)
-                    continue;
-
-                TryConsumeCannonEnergy(i, energyCostPerShot);
-                bulletLastFireTime[i] = Time.time;
-                bulletIndicesFired.Add((byte)i);
-                bulletPrefabIndicesFired.Add(bulletIdx);
-            }
-
-            FireClientRpc(
-                bulletIndicesFired.Count > 0 ? bulletIndicesFired.ToArray() : System.Array.Empty<byte>(),
-                bulletPrefabIndicesFired.Count > 0 ? bulletPrefabIndicesFired.ToArray() : System.Array.Empty<int>());
         }
 
         [ClientRpc]
@@ -4984,13 +5244,15 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             if (isDead.Value) return;
             if (IsBulletElectricShockDisabled) return;
-            if (!CanFire()) return;
+            if (gemMoonDocked.Value) return;
             direction.y = 0f;
             if (direction.sqrMagnitude < 0.01f) direction = transform.forward;
             else direction.Normalize();
             Vector3 serverVel = rb != null ? rb.linearVelocity : Vector3.zero;
             serverVel.y = 0f;
-            FireServerRpc(transform.position, direction, serverVel, null, null);
+            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            if (IsWeaponFiringBlockedByWorldRules(shipPos)) return;
+            TryFireNextWeaponShot(true, shipPos, direction, serverVel, null, null);
         }
 
         [ServerRpc]
@@ -6455,15 +6717,16 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// XZ radius for gem-moon docking only. Scales with the loaded hull (Prefab container) so level-up visuals
-        /// can reach moon triggers without resizing the physics BoxCollider (which would collide with planets).
+        /// XZ radius from ship center to hull edge for moon orbit/dock zones. The physics collider stays small
+        /// to avoid planet collisions, so this scales with ship level the same way the visible prefab root grows.
         /// </summary>
         public float GetShipMoonDockRadiusXZ()
         {
             float colliderR = GetShipCollisionRadiusXZ();
-            float levelFactor = LevelScaleFactor;
-            // Collider already includes level × upgrade scale; add a small margin beyond it for moon triggers.
-            return Mathf.Max(colliderR, colliderR + 0.15f * levelFactor);
+            float levelVisual = Mathf.Max(1f, LevelScaleFactor);
+            // Approximate wing extent beyond the physics collider; capped so probe/trigger radii stay sane.
+            float hullEdge = colliderR * Mathf.Min(levelVisual * 1.25f, 3f);
+            return Mathf.Max(colliderR, hullEdge);
         }
 
         private float GetCollisionVfxShipMinRelativeSpeed()
