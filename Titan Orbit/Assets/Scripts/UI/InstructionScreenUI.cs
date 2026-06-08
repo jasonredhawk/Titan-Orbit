@@ -212,7 +212,7 @@ namespace TitanOrbit.UI
             accentImage.color = AccentColors[index % AccentColors.Length];
             accentImage.raycastTarget = false;
 
-            var title = CreateText(columnRoot, "Title", step.Title, 18, FontStyles.Bold, TextAlignmentOptions.Center);
+            var title = CreateText(columnRoot, "Title", step.Title, 22, FontStyles.Bold, TextAlignmentOptions.Center);
             title.color = new Color(0.94f, 0.97f, 1f, 1f);
 
             var imageFrame = CreateRect("ImageFrame", columnRoot);
@@ -228,7 +228,7 @@ namespace TitanOrbit.UI
             illustration.color = new Color(0.18f, 0.22f, 0.32f, 1f);
             illustration.raycastTarget = false;
 
-            var body = CreateText(columnRoot, "Body", step.Body, 14, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            var body = CreateText(columnRoot, "Body", step.Body, 17, FontStyles.Normal, TextAlignmentOptions.TopLeft);
             body.color = new Color(0.7f, 0.8f, 0.92f, 0.98f);
             body.enableWordWrapping = true;
             body.overflowMode = TextOverflowModes.Ellipsis;
@@ -261,37 +261,92 @@ namespace TitanOrbit.UI
             float columnWidth = (rowWidth - totalGaps) / StepCount;
             columnWidth = Mathf.Max(columnWidth, 40f);
 
+            var metrics = new ColumnLayoutMetrics[columns.Count];
+            float maxCardHeight = 0f;
+            for (int i = 0; i < columns.Count; i++)
+            {
+                metrics[i] = ComputeColumnMetrics(columns[i], columnWidth, rowHeight);
+                maxCardHeight = Mathf.Max(maxCardHeight, metrics[i].TotalHeight);
+            }
+
+            float uniformCardHeight = Mathf.Min(maxCardHeight, rowHeight);
+            float verticalOffset = (rowHeight - uniformCardHeight) * 0.5f;
+
             for (int i = 0; i < columns.Count; i++)
             {
                 StepColumn col = columns[i];
                 float x = i * (columnWidth + ColumnGap);
+                float cardHeight = uniformCardHeight;
 
                 col.ColumnRoot.anchorMin = new Vector2(0f, 0f);
-                col.ColumnRoot.anchorMax = new Vector2(0f, 1f);
-                col.ColumnRoot.pivot = new Vector2(0f, 0.5f);
-                col.ColumnRoot.anchoredPosition = new Vector2(x, 0f);
-                col.ColumnRoot.sizeDelta = new Vector2(columnWidth, 0f);
+                col.ColumnRoot.anchorMax = new Vector2(0f, 0f);
+                col.ColumnRoot.pivot = new Vector2(0f, 0f);
+                col.ColumnRoot.anchoredPosition = new Vector2(x, verticalOffset);
+                col.ColumnRoot.sizeDelta = new Vector2(columnWidth, cardHeight);
 
-                LayoutColumnContent(col, columnWidth, rowHeight);
+                ApplyColumnLayout(col, columnWidth, metrics[i]);
             }
         }
 
-        private static void LayoutColumnContent(StepColumn col, float columnWidth, float columnHeight)
+        private struct ColumnLayoutMetrics
+        {
+            public float TitleFontSize;
+            public float TitleHeight;
+            public float ImageHeight;
+            public float BodyFontSize;
+            public float BodyHeight;
+            public float TotalHeight;
+        }
+
+        private static ColumnLayoutMetrics ComputeColumnMetrics(StepColumn col, float columnWidth, float rowHeight)
         {
             const float accentHeight = 4f;
+            const float titleGap = 8f;
+            const float imageGap = 10f;
+
             float innerWidth = columnWidth - CardInnerPadding * 2f;
-            float titleHeight = Mathf.Clamp(columnHeight * 0.11f, 36f, 52f);
+            float titleFontSize = Mathf.Clamp(columnWidth * 0.085f, 17f, 24f);
+            float bodyFontSize = Mathf.Clamp(columnWidth * 0.068f, 15f, 20f);
+
+            col.Title.fontSize = titleFontSize;
+            col.Body.fontSize = bodyFontSize;
+
+            float titleHeight = col.Title.GetPreferredValues(col.Title.text, innerWidth, 0f).y;
+            float bodyHeight = col.Body.GetPreferredValues(col.Body.text, innerWidth, 0f).y;
+
+            float imageHeight = innerWidth * ImageAspect;
+            float maxImageHeight = rowHeight * 0.45f;
+            imageHeight = Mathf.Min(imageHeight, maxImageHeight);
+
+            float totalHeight = accentHeight
+                + CardInnerPadding
+                + titleHeight
+                + titleGap
+                + imageHeight
+                + imageGap
+                + bodyHeight
+                + CardInnerPadding;
+
+            return new ColumnLayoutMetrics
+            {
+                TitleFontSize = titleFontSize,
+                TitleHeight = titleHeight,
+                ImageHeight = imageHeight,
+                BodyFontSize = bodyFontSize,
+                BodyHeight = bodyHeight,
+                TotalHeight = totalHeight,
+            };
+        }
+
+        private static void ApplyColumnLayout(StepColumn col, float columnWidth, ColumnLayoutMetrics metrics)
+        {
+            const float accentHeight = 4f;
+            const float titleGap = 8f;
+            const float imageGap = 10f;
+
             float titleTop = CardInnerPadding;
-
-            float imageWidth = innerWidth;
-            float imageHeight = imageWidth * ImageAspect;
-            float maxImageHeight = columnHeight * 0.42f;
-            if (imageHeight > maxImageHeight)
-                imageHeight = maxImageHeight;
-
-            float imageTop = titleTop + titleHeight + 8f;
-            float bodyTop = imageTop + imageHeight + 10f;
-            float bodyBottom = CardInnerPadding;
+            float imageTop = titleTop + metrics.TitleHeight + titleGap;
+            float bodyTop = imageTop + metrics.ImageHeight + imageGap;
 
             // Accent stripe
             col.AccentBar.anchorMin = new Vector2(0f, 1f);
@@ -301,26 +356,27 @@ namespace TitanOrbit.UI
             col.AccentBar.sizeDelta = new Vector2(0f, accentHeight);
 
             // Title
+            col.Title.fontSize = metrics.TitleFontSize;
             col.Title.rectTransform.anchorMin = new Vector2(0f, 1f);
             col.Title.rectTransform.anchorMax = new Vector2(1f, 1f);
             col.Title.rectTransform.pivot = new Vector2(0.5f, 1f);
             col.Title.rectTransform.anchoredPosition = new Vector2(0f, -(titleTop + accentHeight));
-            col.Title.rectTransform.sizeDelta = new Vector2(-CardInnerPadding * 2f, titleHeight);
-            col.Title.fontSize = Mathf.Clamp(columnWidth * 0.075f, 14f, 20f);
+            col.Title.rectTransform.sizeDelta = new Vector2(-CardInnerPadding * 2f, metrics.TitleHeight);
 
             // Image
             col.ImageFrame.anchorMin = new Vector2(0f, 1f);
             col.ImageFrame.anchorMax = new Vector2(1f, 1f);
             col.ImageFrame.pivot = new Vector2(0.5f, 1f);
             col.ImageFrame.anchoredPosition = new Vector2(0f, -imageTop);
-            col.ImageFrame.sizeDelta = new Vector2(-CardInnerPadding * 2f, imageHeight);
+            col.ImageFrame.sizeDelta = new Vector2(-CardInnerPadding * 2f, metrics.ImageHeight);
 
-            // Body fills remaining space
-            col.Body.rectTransform.anchorMin = Vector2.zero;
-            col.Body.rectTransform.anchorMax = Vector2.one;
-            col.Body.rectTransform.offsetMin = new Vector2(CardInnerPadding, bodyBottom);
-            col.Body.rectTransform.offsetMax = new Vector2(-CardInnerPadding, -bodyTop);
-            col.Body.fontSize = Mathf.Clamp(columnWidth * 0.058f, 12f, 16f);
+            // Body sized to text, not stretched to card bottom
+            col.Body.fontSize = metrics.BodyFontSize;
+            col.Body.rectTransform.anchorMin = new Vector2(0f, 1f);
+            col.Body.rectTransform.anchorMax = new Vector2(1f, 1f);
+            col.Body.rectTransform.pivot = new Vector2(0.5f, 1f);
+            col.Body.rectTransform.anchoredPosition = new Vector2(0f, -bodyTop);
+            col.Body.rectTransform.sizeDelta = new Vector2(-CardInnerPadding * 2f, metrics.BodyHeight);
         }
 
         private void PreloadSprites()
