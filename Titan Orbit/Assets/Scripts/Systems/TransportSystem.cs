@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Generation;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 
@@ -33,8 +34,10 @@ namespace TitanOrbit.Systems
         {
             if (ship == null || planet == null) return false;
 
-            float distance = Vector3.Distance(ship.transform.position, planet.transform.position);
-            return distance <= orbitRadius;
+            Vector3 shipPos = ship.transform.position;
+            shipPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipPos, planet.transform.position);
+            return planet.IsWorldPositionInOrbitRing(shipPos);
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -67,8 +70,8 @@ namespace TitanOrbit.Systems
 
             if (peopleToLoad > 0)
             {
-                planet.RemovePopulationServerRpc(peopleToLoad);
-                ship.AddPeopleServerRpc(peopleToLoad);
+                planet.RemovePopulationFromServer(peopleToLoad);
+                ship.AddPeopleFromServer(peopleToLoad);
             }
         }
 
@@ -99,8 +102,8 @@ namespace TitanOrbit.Systems
 
             if (peopleToDrop > 0)
             {
-                ship.RemovePeopleServerRpc(peopleToDrop);
-                planet.AddPopulationServerRpc(peopleToDrop, ship.ShipTeam);
+                ship.RemovePeopleFromServer(peopleToDrop);
+                planet.AddPopulationFromServer(peopleToDrop, ship.ShipTeam);
             }
         }
     }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections;
+using System.Globalization;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Core;
@@ -26,6 +27,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> maxGems = new NetworkVariable<float>(100f);
         private NetworkVariable<float> health = new NetworkVariable<float>(50f);
         private NetworkVariable<bool> isDestroyed = new NetworkVariable<bool>(false);
+        /// <summary>Team.None = neutral; otherwise inside that team's moving triangle (gem-moon vertices).</summary>
+        private NetworkVariable<int> territoryTeamInt = new NetworkVariable<int>(
+            (int)TeamManager.Team.None,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         [Header("Visual")]
         [SerializeField] private Renderer asteroidRenderer;
@@ -72,6 +78,9 @@ namespace TitanOrbit.Entities
         public float RemainingHealth => health.Value;
         public float AsteroidSize => asteroidSize;
         public bool IsDestroyed => isDestroyed.Value;
+        /// <summary>Neutral when not inside a team triangle; otherwise the owning team (re-evaluated as triangles move).</summary>
+        public TeamManager.Team TerritoryTeam => (TeamManager.Team)territoryTeamInt.Value;
+        public bool IsInTeamTerritory => TerritoryTeam != TeamManager.Team.None;
         public Vector3 WorldVelocity => rb != null ? rb.linearVelocity : Vector3.zero;
 
         public bool CanBeMined() => !isDestroyed.Value && remainingGems.Value > 0;
@@ -87,6 +96,21 @@ namespace TitanOrbit.Entities
             Vector3 s = transform.lossyScale;
             float avg = (Mathf.Abs(s.x) + Mathf.Abs(s.y) + Mathf.Abs(s.z)) / 3f;
             return Mathf.Max(0.01f, avg * 0.5f);
+        }
+
+        /// <summary>
+        /// Radius used for bullet segment tests — matches the synced <see cref="SphereCollider"/>, not loose bounds.
+        /// </summary>
+        public float GetBulletHitRadiusWorld()
+        {
+            if (col is SphereCollider sphereCol)
+            {
+                Vector3 s = transform.lossyScale;
+                float maxScale = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
+                return Mathf.Max(0.01f, sphereCol.radius * maxScale);
+            }
+
+            return GetCollisionRadiusWorld();
         }
 
         // Tracks how much damage each ship dealt to this asteroid (server only).
@@ -120,8 +144,8 @@ namespace TitanOrbit.Entities
             if (rb != null)
             {
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-                // Lock Y position - asteroids stay on same plane
-                rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+                // Lock Y position only — tumbling uses X/Z rotation; freezing those axes blocks visual spin.
+                rb.constraints = RigidbodyConstraints.FreezePositionY;
             }
             
             // Ensure collider is enabled and not a trigger (for ship collisions)
@@ -152,14 +176,19 @@ namespace TitanOrbit.Entities
         {
             if (!AllAsteroids.Contains(this))
                 AllAsteroids.Add(this);
+            territoryTeamInt.OnValueChanged += OnTerritoryTeamChanged;
+            OnTerritoryTeamChanged((int)TeamManager.Team.None, territoryTeamInt.Value);
+
             // Lock Y position to 0
             Vector3 pos = transform.position;
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
             
+            spawnPosition = transform.position;
+            InitializeDeterministicRotation(spawnPosition);
+
             if (IsServer)
             {
-                spawnPosition = transform.position;
                 spawnScale = transform.localScale;
                 float rawSize = Mathf.Max(0.01f, (spawnScale.x + spawnScale.y + spawnScale.z) / 3f);
                 // Gem value 1-70: map radius [MIN_ASTEROID_RADIUS, MAX_ASTEROID_RADIUS] to [1, 70]
@@ -175,21 +204,52 @@ namespace TitanOrbit.Entities
                 health.Value = maxGems.Value * 3f;
                 isDestroyed.Value = false;
                 damageByShip.Clear();
-                
-                // Set up rotation - deterministic based on position (same for all clients)
-                // Use position hash to ensure same rotation for all clients
-                int hash = (int)(spawnPosition.x * 1000 + spawnPosition.z * 1000);
-                System.Random rng = new System.Random(hash);
-                rotationAxis = new Vector3(
-                    (float)(rng.NextDouble() * 2 - 1),
-                    0f, // Keep rotation in XZ plane
-                    (float)(rng.NextDouble() * 2 - 1)
-                ).normalized;
-                rotationSpeed = 20f + (float)(rng.NextDouble() * 30f); // Faster rotation speed (20-50 degrees per second)
-                
+                territoryTeamInt.Value = (int)TeamManager.Team.None;
+
                 // Ensure physics state is correct
                 EnsurePhysicsState();
             }
+
+            if (!IsServer)
+            {
+                var mapNetObj = GetComponent<NetworkObject>();
+                MapGenerator.Active?.HandleClientMapEntitySpawned(mapNetObj);
+            }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            territoryTeamInt.OnValueChanged -= OnTerritoryTeamChanged;
+            base.OnNetworkDespawn();
+        }
+
+        private void OnTerritoryTeamChanged(int previous, int next)
+        {
+            SetTerritoryHighlight((TeamManager.Team)next);
+        }
+
+        /// <summary>Server-only: set neutral vs team territory from the current moving triangles.</summary>
+        public void ServerRefreshTerritoryTeam(TeamManager.Team team)
+        {
+            if (!IsServer) return;
+            int next = (int)team;
+            if (territoryTeamInt.Value != next)
+                territoryTeamInt.Value = next;
+        }
+
+        /// <summary>Per-asteroid tumble axis/speed from spawn position so every peer matches without network sync.</summary>
+        private void InitializeDeterministicRotation(Vector3 position)
+        {
+            int hash = (int)(position.x * 1000 + position.z * 1000);
+            var rng = new System.Random(hash);
+            rotationAxis = new Vector3(
+                (float)(rng.NextDouble() * 2 - 1),
+                0f,
+                (float)(rng.NextDouble() * 2 - 1)
+            ).normalized;
+            if (rotationAxis.sqrMagnitude < 0.01f)
+                rotationAxis = Vector3.right;
+            rotationSpeed = 20f + (float)(rng.NextDouble() * 30f);
         }
 
         private void Update()
@@ -235,6 +295,15 @@ namespace TitanOrbit.Entities
             sgt.DirtyMesh();
 
             hasAppliedSurfaceVariation = true;
+            SyncSphereColliderToDisplacedPlanet();
+            StartCoroutine(CoSyncColliderAfterMesh());
+        }
+
+        /// <summary>Mesh bounds update one frame after <see cref="SpaceGraphicsToolkit.SgtPlanet.DirtyMesh"/> so hit volume matches displaced visuals.</summary>
+        private IEnumerator CoSyncColliderAfterMesh()
+        {
+            yield return null;
+            SyncSphereColliderToDisplacedPlanet();
         }
 
         private void FixedUpdate()
@@ -250,10 +319,14 @@ namespace TitanOrbit.Entities
             // Position is set by ToroidalRenderer in LateUpdate (display copy closest to camera).
             // Do not wrap here or entities will disappear at edges.
 
-            // Gentle rotation - all clients can see it
+            // Gentle rotation - all clients simulate the same deterministic tumble.
             if (!isDestroyed.Value && rotationAxis.sqrMagnitude > 0.01f)
             {
-                transform.Rotate(rotationAxis, rotationSpeed * Time.fixedDeltaTime, Space.World);
+                float step = rotationSpeed * Time.fixedDeltaTime;
+                if (rb != null)
+                    rb.MoveRotation(Quaternion.AngleAxis(step, rotationAxis) * rb.rotation);
+                else
+                    transform.Rotate(rotationAxis, step, Space.World);
             }
             
             if (!IsServer) return;
@@ -317,8 +390,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Client-side visual highlight for asteroids under a team's triangle territory.
-        /// Does not affect gameplay, only tint. Pass Team.None to clear highlight.
+        /// Visual highlight for neutral vs team triangle territory. Pass Team.None to clear highlight.
         /// Asteroids use SgtPlanet (Graphics.DrawMesh + MaterialPropertyBlock); we set _Color on its Properties.
         /// </summary>
         public void SetTerritoryHighlight(TeamManager.Team team)
@@ -388,10 +460,49 @@ namespace TitanOrbit.Entities
                     sphereCol.isTrigger = false;
                 }
             }
+            SyncSphereColliderToDisplacedPlanet();
+        }
+
+        /// <summary>
+        /// SgtPlanet displaces vertices up to <see cref="SpaceGraphicsToolkit.SgtPlanet.Displacement"/> beyond <see cref="SpaceGraphicsToolkit.SgtPlanet.Radius"/>.
+        /// The default <see cref="SphereCollider"/> radius matched only the base radius, so bullets (and traces) missed the visible rock.
+        /// </summary>
+        private void SyncSphereColliderToDisplacedPlanet()
+        {
+            if (col is not SphereCollider sphereCol) return;
+            var sgt = GetComponent<SpaceGraphicsToolkit.SgtPlanet>();
+            if (sgt == null) return;
+            float outer = sgt.Radius;
+            if (sgt.Displace)
+                outer += Mathf.Max(0f, sgt.Displacement);
+            outer *= 1.12f;
+            sphereCol.radius = Mathf.Max(0.05f, outer);
+
+            Renderer rend = asteroidRenderer != null ? asteroidRenderer : GetComponentInChildren<Renderer>();
+            if (rend != null)
+            {
+                Bounds wb = rend.bounds;
+                float worldR = Mathf.Max(wb.extents.x, wb.extents.z);
+                float maxAxis = Mathf.Max(Mathf.Abs(transform.lossyScale.x), Mathf.Max(Mathf.Abs(transform.lossyScale.y), Mathf.Abs(transform.lossyScale.z)));
+                float localFromBounds = worldR / Mathf.Max(0.01f, maxAxis);
+                sphereCol.radius = Mathf.Max(sphereCol.radius, localFromBounds * 1.06f);
+            }
+        }
+
+        /// <summary>Server-only damage from bullets (same rules as <see cref="TakeDamageServerRpc"/>; avoids nested ServerRpc from another NetworkBehaviour).</summary>
+        public void ApplyDamageFromBulletServer(float damage, ulong attackerShipNetworkId = 0)
+        {
+            if (!IsServer) return;
+            ApplyIncomingDamageServer(damage, attackerShipNetworkId);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(float damage, ulong attackerShipNetworkId = 0)
+        {
+            ApplyIncomingDamageServer(damage, attackerShipNetworkId);
+        }
+
+        private void ApplyIncomingDamageServer(float damage, ulong attackerShipNetworkId)
         {
             if (isDestroyed.Value) return;
 
@@ -405,13 +516,11 @@ namespace TitanOrbit.Entities
 
             health.Value = Mathf.Max(0, health.Value - damage);
             if (health.Value <= 0)
-            {
-                DestroyAsteroidServerRpc();
-            }
+                ApplyAsteroidDestroyedServer();
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void DestroyAsteroidServerRpc()
+        /// <summary>Server-only destroy path (must not be a nested ServerRpc call).</summary>
+        private void ApplyAsteroidDestroyedServer()
         {
             if (isDestroyed.Value) return;
             isDestroyed.Value = true;
@@ -445,25 +554,25 @@ namespace TitanOrbit.Entities
 
                 // Bonus only for same team as triangle: 5% per home planet level. Enemies get no bonus.
                 float bonusMultiplier = 1f;
-                var conn = Systems.PlanetConnectionSystem.Instance;
-                if (conn != null)
+                TeamManager.Team asteroidTeam = TerritoryTeam;
+                if (asteroidTeam != TeamManager.Team.None && topDamagerShipId != 0)
                 {
-                    TeamManager.Team asteroidTeam = conn.GetTeamAtPosition(pos);
-                    if (asteroidTeam != TeamManager.Team.None && topDamagerShipId != 0)
+                    var nm = Unity.Netcode.NetworkManager.Singleton;
+                    if (nm != null && nm.SpawnManager != null && nm.SpawnManager.SpawnedObjects.TryGetValue(topDamagerShipId, out Unity.Netcode.NetworkObject netObj))
                     {
-                        var nm = Unity.Netcode.NetworkManager.Singleton;
-                        if (nm != null && nm.SpawnManager != null && nm.SpawnManager.SpawnedObjects.TryGetValue(topDamagerShipId, out Unity.Netcode.NetworkObject netObj))
-                        {
-                            var ship = netObj != null ? netObj.GetComponent<Starship>() : null;
-                            if (ship != null && ship.ShipTeam == asteroidTeam)
-                                bonusMultiplier = 1f + 0.05f * Systems.PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
-                        }
+                        var ship = netObj != null ? netObj.GetComponent<Starship>() : null;
+                        if (ship != null && ship.ShipTeam == asteroidTeam)
+                            bonusMultiplier = 1f + 0.05f * Systems.PlanetConnectionSystem.GetHomePlanetLevelForTeam(asteroidTeam);
                     }
                 }
 
                 bonusMultiplier = Mathf.Max(1f, bonusMultiplier);
                 float bonusValue = regularValue * Mathf.Max(0f, bonusMultiplier - 1f);
-                GemSpawner.Instance.SpawnGemsServerRpc(pos, regularValue, bonusValue, asteroidSize, physicalSize, topDamagerShipId);
+                GemSpawner.Instance.SpawnGemsFromAsteroidDestroyOnServer(pos, regularValue, bonusValue, asteroidSize, physicalSize, topDamagerShipId);
+            }
+            else
+            {
+                Debug.LogWarning("[Asteroid] GemSpawner.Instance is null — no gems spawned. Ensure a GemSpawner is in the gameplay scene with gem prefab assigned, or ship Gem under Assets/Resources/Gem.prefab for headless builds.");
             }
 
             // Schedule respawn and despawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).

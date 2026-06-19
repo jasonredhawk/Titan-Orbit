@@ -55,14 +55,16 @@ namespace TitanOrbit.UI
             float width = right - left;
 
             // Health bar
-            DrawOneBar(new Rect(left, y, width, barHeight), ship.CurrentHealth / ship.MaxHealth,
-                "HEALTH", $"{ship.CurrentHealth:F0}/{ship.MaxHealth:F0}", healthColor, healthEmptyColor);
+            float displayHealth = ship.GetHealthForDisplay();
+            DrawOneBar(new Rect(left, y, width, barHeight), ship.MaxHealth > 0 ? displayHealth / ship.MaxHealth : 0f,
+                "HEALTH", $"{displayHealth:F0}/{ship.MaxHealth:F0}", healthColor, healthEmptyColor);
             y += barHeight + barGap;
 
             // Energy bar
             float energyCap = ship.EnergyCapacity;
-            DrawOneBar(new Rect(left, y, width, barHeight), energyCap > 0 ? ship.CurrentEnergy / energyCap : 0f,
-                "ENERGY", $"{ship.CurrentEnergy:F0}/{energyCap:F0}", energyColor, energyEmptyColor);
+            float displayEnergy = ship.GetEnergyForDisplay();
+            DrawOneBar(new Rect(left, y, width, barHeight), energyCap > 0 ? displayEnergy / energyCap : 0f,
+                "ENERGY", $"{displayEnergy:F0}/{energyCap:F0}", energyColor, energyEmptyColor);
             y += barHeight + barGap;
 
             // Gems bar

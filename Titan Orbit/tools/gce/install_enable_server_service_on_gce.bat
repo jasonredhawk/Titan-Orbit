@@ -4,21 +4,30 @@ setlocal
 REM Installs and enables a systemd service for Titan Orbit headless server on GCE.
 REM Usage:
 REM   install_enable_server_service_on_gce.bat
+REM   install_enable_server_service_on_gce.bat useIap
 REM   install_enable_server_service_on_gce.bat your-gcp-project-id
+REM   install_enable_server_service_on_gce.bat your-gcp-project-id useIap
+REM If plink times out on Windows, use useIap or install_enable_server_service_on_gce_iap.bat
 
-set "INSTANCE=titan-orbit-compute-engine"
-set "ZONE=us-central1-a"
-set "PROJECT_ID="
+set "INSTANCE=titanorbitcp"
+set "ZONE=us-central1-f"
+set "PROJECT_ID=titan-orbit"
 set "REMOTE_USER=jason"
+set "USE_IAP="
 set "INSTANCE_TARGET=%REMOTE_USER%@%INSTANCE%"
 
 set "SERVICE_NAME=titanorbit-server.service"
 set "REMOTE_DIR=/home/jason/titanorbit-server/TitanOrbitLinux1"
-set "EXE_NAME=TitanOrbitServer.x86_64"
-set "RUN_ARGS=-batchmode -nographics --maxPlayers=60 --serverPort=7777 --relayProtocol=wss --isLatest=1 -logFile /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log"
+REM ExecStart / binary name live in titanorbit-server.service ^(TitanOrbitServer or .x86_64 per Unity build^).
 
-if not "%~1"=="" (
-  set "PROJECT_ID=%~1"
+if /i "%~1"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
+  if not "%~2"=="" set "PROJECT_ID=%~2"
+) else (
+  if not "%~1"=="" set "PROJECT_ID=%~1"
+)
+if /i "%~2"=="useIap" (
+  set "USE_IAP=--tunnel-through-iap"
 )
 
 where gcloud >nul 2>&1
@@ -28,52 +37,56 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%PROJECT_ID%"=="" (
-  for /f "usebackq delims=" %%P in (`call gcloud config get-value project 2^>nul`) do set "PROJECT_ID=%%P"
+echo Installing and enabling %SERVICE_NAME%...
+echo Using project: %PROJECT_ID%
+if not "%USE_IAP%"=="" echo Using IAP tunnel for SSH.
+if "%USE_IAP%"=="" (
+  echo.
+  echo TIP: Without IAP, PuTTY may ask to cache the host key ^(type y^). Or use install_enable_server_service_on_gce_iap.bat ^(OpenSSH, no prompt^).
+  echo TIP: Fresh VM with no Linux build yet is OK: unit installs; upload build then restart the service.
 )
-if "%PROJECT_ID%"=="" (
-  echo ERROR: Could not determine GCP project id.
-  echo Pass project id as first arg, e.g.:
-  echo   install_enable_server_service_on_gce.bat your-gcp-project-id
+
+set "LOCAL_UNIT=%~dp0titanorbit-server.service"
+if not exist "%LOCAL_UNIT%" (
+  echo ERROR: Missing unit file next to this script:
+  echo   %LOCAL_UNIT%
   exit /b 1
 )
 
-echo Installing and enabling %SERVICE_NAME%...
-echo Using project: %PROJECT_ID%
+where powershell >nul 2>&1
+if errorlevel 1 (
+  echo ERROR: PowerShell not found in PATH.
+  exit /b 1
+)
 
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'set -e; test -f %REMOTE_DIR%/%EXE_NAME%; chmod +x %REMOTE_DIR%/%EXE_NAME%; sudo tee /etc/systemd/system/%SERVICE_NAME% >/dev/null <<\"EOF\"
-[Unit]
-Description=Titan Orbit Dedicated Headless Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=%REMOTE_USER%
-WorkingDirectory=%REMOTE_DIR%
-ExecStart=%REMOTE_DIR%/%EXE_NAME% %RUN_ARGS%
-Restart=always
-RestartSec=5
-KillSignal=SIGINT
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-sudo systemctl daemon-reload; sudo systemctl enable --now %SERVICE_NAME%; sudo systemctl status %SERVICE_NAME% --no-pager -l | sed -n \"1,80p\"; echo; echo \"Recent log tail:\"; tail -n 80 /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log || true'"
-
+echo Installing unit via PowerShell ^(no gcloud scp / pscp - remote script via base64 in gcloud --command^) ...
+set "PS_EXTRA="
+if not "%USE_IAP%"=="" set "PS_EXTRA=-UseIap"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install_unit_remote.ps1" -ProjectId "%PROJECT_ID%" -Zone "%ZONE%" -InstanceTarget "%INSTANCE_TARGET%" -RemoteDir "%REMOTE_DIR%" %PS_EXTRA%
 if errorlevel 1 (
   echo.
   echo ERROR: Failed to install or start systemd service.
+  call :InstallSshHints
   exit /b 1
 )
 
 echo.
 echo Service installed and enabled.
 echo Useful commands:
-echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo systemctl status %SERVICE_NAME% --no-pager -l'"
-echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'tail -n 120 /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log'"
-echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo journalctl -u %SERVICE_NAME% -n 120 --no-pager'"
+echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo systemctl status %SERVICE_NAME% --no-pager -l'"
+echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'tail -n 120 /home/jason/titanorbit-server/TitanOrbitLinux1/Player.log'"
+echo   gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --command "bash -lc 'sudo journalctl -u %SERVICE_NAME% -n 120 --no-pager'"
 
 exit /b 0
+
+:InstallSshHints
+echo.
+echo If ^"Connection timed out^" or ^"remote closed^": try IAP:  install_enable_server_service_on_gce_iap.bat
+echo With useIap: read **Windows first-time setup** in tools\gce\README.md ^(OpenSSH Client + first gcloud ssh to create the key^).
+echo Force old plink IAP:  powershell -NoProfile -File ^"%~dp0install_unit_remote.ps1^" -ProjectId ... -UseIap -UsePlinkWithIap
+echo Or Cloud Console -^> VM -^> SSH and install tools/gce/titanorbit-server.service manually.
+echo IAP ^"remote closed^" often means IAM ^(iap.tunnelResourceAccessor^) or OS Login / username mismatch.
+echo IAP error 4003 / failed to connect port 22: run add_iap_ssh_firewall_and_tag.bat ^(or README: IAP tunnel error 4003^).
+echo If IAP tunnel works but ssh resets ^(kex_exchange_identification^): run write_cloudshell_install_unit_script.bat then run the .sh in Cloud Shell.
+goto :eof
 

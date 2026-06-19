@@ -23,19 +23,28 @@ namespace TitanOrbit.Entities
         [Tooltip("Logical id for this planet used to link unique ship families and cards. 0 or negative = not bound to a specific family.")]
         [SerializeField] private int planetId = 0;
         [SerializeField] private float baseMaxPopulation = 100f;
-        [SerializeField] private float baseGrowthRate = 1f / 30f; // Regular planets: 1 person per 30 sec (override in subclasses for home)
+        [SerializeField] private float baseGrowthRate = 1f; // Fallback only if level is unset; normal rate is PlanetLevel people/sec
         [Tooltip("Seconds after the last hostile unload (people dropped on this planet) before passive population growth resumes.")]
         [SerializeField] private float populationGrowthPauseAfterAttackSeconds = 1f;
         [SerializeField] private float planetSize = 1f;
         [SerializeField] private float captureRadius = 5f;
 
-        [Header("Regular Planet Level Settings")]
+        [Header("Planet Level Settings")]
+        [Tooltip("Max gems capacity at level 1. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, etc. Applies to regular and home planets.")]
+        [SerializeField] private float baseMaxGemsLevel1 = 100f;
         [Tooltip("Minimum starting level for neutral regular planets (inclusive).")]
         [SerializeField] private int minStartingLevel = 1;
         [Tooltip("Maximum starting level for neutral regular planets (inclusive). Regular planets can still level up to the global max level.")]
         [SerializeField] private int maxStartingLevel = 3;
         [Tooltip("When enabled, neutral regular planets roll a random starting level in [minStartingLevel, maxStartingLevel]. When disabled they start at level 1.")]
         [SerializeField] private bool randomizeNeutralStartingLevel = true;
+
+        /// <summary>When set before network spawn (e.g. by MapGenerator), overrides random starting level.</summary>
+        private int templateStartingLevel = -1;
+
+        public bool RandomizeNeutralStartingLevel => randomizeNeutralStartingLevel;
+        public int MinStartingLevel => minStartingLevel;
+        public int MaxStartingLevel => maxStartingLevel;
 
         [Header("Visual")]
         [SerializeField] private Renderer planetRenderer;
@@ -83,9 +92,11 @@ namespace TitanOrbit.Entities
         /// <summary>Icons for <see cref="GemMoonStatsDisplay"/> on the gem moon; optional.</summary>
         public Sprite GemMoonHudShieldIcon => gemMoonHudShieldIcon;
 
-        /// <summary>Outer radius of orbit zone in local space at level 1 (1.5x original 0.85, then scaled to 75% of that). Grows 5% per planet level.</summary>
+        /// <summary>Baseline nominal moon-orbit radius in planet-local space at level 1 (moon sits at max of this × factors and ring clearance).</summary>
         private const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
-        private const float OrbitZoneGrowthPerLevel = 0.05f;
+        private const float OrbitRingGrowthPerLevel = 0.05f;
+        /// <summary>Half-width of the people-transfer orbit ring band in planet-local space.</summary>
+        private const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
 
         /// <summary>Reference planet scale for gem-moon sizing: home planets use this size; smaller worlds get larger moons inversely (20/PlanetSize).</summary>
         private const float GemMoonReferencePlanetSize = 20f;
@@ -94,22 +105,84 @@ namespace TitanOrbit.Entities
         /// <summary>Must stay in sync with <see cref="PlanetRingsDrawer"/> / <see cref="HomePlanetRingsDrawer"/> ring layout.</summary>
         private const float GemMoonRingsInnerRadiusLocal = 0.68f;
         private const float GemMoonRingThicknessLocal = 0.06f;
-        private const float GemMoonRingGapLocal = 0.015f;
+        private const float GemMoonRingGapLocal = 0.022f;
+        /// <summary>Dock/orbit shell outer radius ÷ moon body radius (1.95 × 1.2).</summary>
+        private const float GemMoonDockOrbitZoneRadiusOverBody = 1.95f * 1.2f;
 
         /// <summary>Shared fallback materials for planets that don't have team materials assigned (e.g. regular Planet prefab). Populated from first planet that has them (e.g. HomePlanet).</summary>
         private static Material s_sharedNeutral, s_sharedTeamA, s_sharedTeamB, s_sharedTeamC, s_sharedTeamD, s_sharedTeamE;
 
-        /// <summary>Orbit zone outer radius in planet-local space. Base is 1.5x original (0.85); +5% per planet level.</summary>
-        public float GetOrbitZoneOuterRadiusLocal()
+        /// <summary>Orbit ring outer edge in planet-local space. Legacy name kept for triggers.</summary>
+        public float GetOrbitZoneOuterRadiusLocal() => GetOrbitRingOuterRadiusLocal();
+
+        /// <summary>Nominal gem-moon orbit baseline in planet-local space (+5% per planet level).</summary>
+        public float GetMoonNominalOrbitRadiusLocal()
         {
             int level = Mathf.Max(1, planetLevel.Value);
-            return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitZoneGrowthPerLevel, level - 1);
+            return OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitRingGrowthPerLevel, level - 1);
+        }
+
+        /// <summary>World-space outer edge of decorative Saturn rings (for moon clearance).</summary>
+        public float GetRingsStructuralOuterRadiusWorld()
+        {
+            int level = Mathf.Max(1, PlanetLevel);
+            return PlanetSize * GetRingsOuterEdgeRadiusLocal(level);
+        }
+
+        /// <summary>World-space orbit radius of the gem moon (same math as <see cref="PlanetGemMoon.ComputeOrbitRadiusWorld"/>).</summary>
+        public float GetGemMoonOrbitRadiusWorld()
+        {
+            if (gemMoon != null)
+                return gemMoon.ComputeOrbitRadiusWorld();
+            return EstimateGemMoonOrbitRadiusWorld();
+        }
+
+        /// <summary>Center radius of the people-transfer orbit ring — matches gem moon orbit distance.</summary>
+        public float GetOrbitRingCenterRadiusLocal()
+        {
+            return GetGemMoonOrbitRadiusWorld() / Mathf.Max(0.001f, PlanetSize);
+        }
+
+        /// <summary>Inner edge of the planet orbit ring in planet-local space.</summary>
+        public float GetOrbitRingInnerRadiusLocal()
+        {
+            float center = GetOrbitRingCenterRadiusLocal();
+            return Mathf.Max(0.52f, center - OrbitRingHalfThicknessLocal);
+        }
+
+        /// <summary>Outer edge of the planet orbit ring in planet-local space.</summary>
+        public float GetOrbitRingOuterRadiusLocal()
+        {
+            return GetOrbitRingCenterRadiusLocal() + OrbitRingHalfThicknessLocal;
+        }
+
+        /// <summary>True when world XZ lies inside this planet's orbit ring (not the full surface-to-outer band).</summary>
+        public bool IsWorldPositionInOrbitRing(Vector3 shipWorldPos)
+        {
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, GetOrbitGameplayCenterWorld());
+            float inner = PlanetSize * GetOrbitRingInnerRadiusLocal();
+            float outer = PlanetSize * GetOrbitRingOuterRadiusLocal();
+            return dist >= inner && dist <= outer;
+        }
+
+        /// <summary>Expanded orbit ring for replicated-pose jitter (same margin idea as Starship relaxed shell).</summary>
+        public bool IsWorldPositionInOrbitRingRelaxed(Vector3 shipWorldPos, float margin = 0.1f)
+        {
+            shipWorldPos.y = 0f;
+            float dist = ToroidalMap.ToroidalDistance(shipWorldPos, GetOrbitGameplayCenterWorld());
+            float inner = PlanetSize * GetOrbitRingInnerRadiusLocal() * (1f - margin);
+            float outer = PlanetSize * GetOrbitRingOuterRadiusLocal() * (1f + margin);
+            return dist >= inner && dist <= outer;
         }
 
         /// <summary>
         /// Outer edge of decorative Saturn rings in planet-local XZ units (matches ring drawer: one band per level, max 6).
         /// </summary>
-        public float GetRingsOuterEdgeRadiusLocal(int level)
+        public float GetRingsOuterEdgeRadiusLocal(int level) => GetRingsOuterEdgeRadiusLocalStatic(level);
+
+        /// <summary>Static variant for map generation before a planet instance exists.</summary>
+        public static float GetRingsOuterEdgeRadiusLocalStatic(int level)
         {
             int n = Mathf.Clamp(level, 1, 6);
             float step = GemMoonRingThicknessLocal + GemMoonRingGapLocal;
@@ -118,26 +191,63 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
+        /// World-space radius from planet center to the outer gameplay orbit ring edge (moon orbit + band thickness).
+        /// Used by <see cref="Generation.MapGenerator"/> so planet rings do not overlap when placing the map.
+        /// </summary>
+        public const int DefaultMaxPlanetLevel = 6;
+
+        public static float ComputeMapPlacementInfluenceRadiusWorld(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier = 1f)
+        {
+            float moonOrbitWorld = EstimateGemMoonOrbitRadiusWorldStatic(planetSize, planetLevel, gemMoonHomeScaleMultiplier);
+            return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * OrbitRingHalfThicknessLocal;
+        }
+
+        public static float ComputeGemMoonVisualUniformScaleStatic(float planetSize, float gemMoonHomeScaleMultiplier = 1f)
+        {
+            planetSize = Mathf.Max(0.01f, planetSize);
+            float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
+            float inv = GemMoonReferencePlanetSize / planetSize;
+            inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
+            return Mathf.Clamp(baseAtRef * inv * Mathf.Max(0.01f, gemMoonHomeScaleMultiplier), 0.02f, 1.25f);
+        }
+
+        private static float EstimateGemMoonOrbitRadiusWorldStatic(float planetSize, int planetLevel, float gemMoonHomeScaleMultiplier)
+        {
+            const float defaultMoonOrbitOutsideFactor = 1.1f;
+            const float defaultClearanceMarginWorld = 0.4f;
+
+            planetSize = Mathf.Max(0.01f, planetSize);
+            int level = Mathf.Max(1, planetLevel);
+            float moonNominalLocal = OrbitZoneBaseOuterRadiusLocal * Mathf.Pow(1f + OrbitRingGrowthPerLevel, level - 1);
+            float rNominal = planetSize * moonNominalLocal * Mathf.Max(1.01f, defaultMoonOrbitOutsideFactor);
+
+            float gemMoonUniformScale = ComputeGemMoonVisualUniformScaleStatic(planetSize, gemMoonHomeScaleMultiplier);
+            float bodyLocalRadius = 0.5f * gemMoonUniformScale;
+            float dockLocalRadius = bodyLocalRadius * GemMoonDockOrbitZoneRadiusOverBody;
+            float moonDock = dockLocalRadius * planetSize;
+
+            float ringsOuter = planetSize * GetRingsOuterEdgeRadiusLocalStatic(level);
+            float rClear = ringsOuter + moonDock + defaultClearanceMarginWorld;
+            return Mathf.Max(rNominal, rClear);
+        }
+
+        /// <summary>
         /// World-space radius from planet center to the farthest of orbit-zone outer edge or outermost ring (for moon clearance).
         /// </summary>
-        public float GetGemMoonStructuralOuterRadiusWorld()
-        {
-            int level = Mathf.Max(1, PlanetLevel);
-            float ringsOuterLocal = GetRingsOuterEdgeRadiusLocal(level);
-            float zoneOuterLocal = GetOrbitZoneOuterRadiusLocal();
-            return PlanetSize * Mathf.Max(ringsOuterLocal, zoneOuterLocal);
-        }
+        public float GetGemMoonStructuralOuterRadiusWorld() => GetRingsStructuralOuterRadiusWorld();
 
         /// <summary>
         /// Standard clockwise orbit linear speed at a world-space radius (matches Starship outer-band tuning; no per-ship territory bonus).
         /// </summary>
         public float GetStandardOrbitSpeedAtRadiusWorld(float radiusWorld)
         {
-            float innerWorld = PlanetSize * 0.5f;
-            float outerWorld = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            float innerWorld = PlanetSize * GetOrbitRingInnerRadiusLocal();
+            float outerWorld = PlanetSize * GetOrbitRingOuterRadiusLocal();
+            float centerWorld = PlanetSize * GetOrbitRingCenterRadiusLocal();
             if (outerWorld <= innerWorld + 0.001f) return 0.8f;
             float clampedRadius = Mathf.Clamp(radiusWorld, innerWorld, outerWorld);
-            float radiusFactor = Mathf.InverseLerp(outerWorld, innerWorld, clampedRadius);
+            float radiusFactor = 1f - Mathf.Abs(clampedRadius - centerWorld) / Mathf.Max(0.001f, (outerWorld - innerWorld) * 0.5f);
+            radiusFactor = Mathf.Clamp01(radiusFactor);
             const float minSize = 9f;
             const float maxSize = 18f;
             float sizeNorm = Mathf.Clamp01((PlanetSize - minSize) / (maxSize - minSize));
@@ -150,7 +260,7 @@ namespace TitanOrbit.Entities
         /// <summary>Orbit speed at the outer edge of the orbit band (where the gem moon runs).</summary>
         public float GetStandardOrbitSpeedAtOuterOrbit()
         {
-            float r = PlanetSize * GetOrbitZoneOuterRadiusLocal();
+            float r = PlanetSize * GetOrbitRingCenterRadiusLocal();
             return GetStandardOrbitSpeedAtRadiusWorld(r);
         }
 
@@ -159,21 +269,39 @@ namespace TitanOrbit.Entities
         /// <summary>Gem deposit moon for this planet (outer orbit, clockwise). Null before spawn setup.</summary>
         public PlanetGemMoon GemMoon => gemMoon;
 
+        /// <summary>
+        /// Canonical planet center for toroidal orbit/distance math. On clients the root transform may sit in a
+        /// display tile near the camera while gameplay still uses wrapped canonical XZ (same as the server).
+        /// </summary>
+        public Vector3 GetOrbitGameplayCenterWorld()
+        {
+            Vector3 p = transform.position;
+            p.y = 0f;
+            return ToroidalMap.WrapPosition(p);
+        }
+
         /// <summary>World position of the gem moon for AI navigation (falls back to planet center if missing).</summary>
         public Vector3 GetGemMoonWorldPosition()
         {
-            return gemMoon != null ? gemMoon.transform.position : transform.position;
+            return gemMoon != null ? gemMoon.GetGameplayWorldPosition() : GetOrbitGameplayCenterWorld();
         }
 
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes.</summary>
         protected virtual void RefreshOrbitZoneRadius()
         {
-            var oz = GetComponentInChildren<PlanetOrbitZone>();
+            var oz = GetComponent<PlanetOrbitZone>();
+            if (oz == null)
+                oz = GetComponentInChildren<PlanetOrbitZone>(true);
             if (oz != null)
             {
-                var col = oz.GetComponent<SphereCollider>();
-                if (col != null)
-                    col.radius = GetOrbitZoneOuterRadiusLocal();
+                foreach (var col in oz.GetComponents<SphereCollider>())
+                {
+                    if (col.isTrigger)
+                    {
+                        col.radius = GetOrbitRingOuterRadiusLocal();
+                        break;
+                    }
+                }
             }
             RefreshGemMoonDockTriggerRadius();
             ApplyGemMoonVisualScale();
@@ -192,8 +320,8 @@ namespace TitanOrbit.Entities
             // (Refresh order can matter during spawn/setup.)
             float visualLocalScale = Mathf.Abs(GetGemMoonVisualUniformScale());
             float bodyLocalRadius = Mathf.Max(0.01f, 0.5f * visualLocalScale);
-            // Moon dock / orbit zone visual radius (1.5× prior 1.3× body).
-            float dockLocalRadius = bodyLocalRadius * 1.95f;
+            // Moon dock / orbit zone radius (body × GemMoonDockOrbitZoneRadiusOverBody).
+            float dockLocalRadius = bodyLocalRadius * GemMoonDockOrbitZoneRadiusOverBody;
             float shieldLocalRadius = dockLocalRadius * gemMoon.GetMoonShieldBarrierRadiusMultiplierFromDockRadius();
 
             // There can be multiple SphereColliders (older versions, prefab duplicates, etc.).
@@ -251,6 +379,14 @@ namespace TitanOrbit.Entities
         private float lastPopulationDisplayUpdate = -999f;
         /// <summary>Server Time.time when hostile unload last reduced population (capture pressure). Growth waits until pause elapses.</summary>
         private float lastHostilePopulationImpactServerTime = -999f;
+        /// <summary>Server: population units banked from growth above the 50% reserve (used when deployable surplus is tight).</summary>
+        private float surplusPeopleSendCredit;
+        /// <summary>Server: round-robin index for distributing surplus people loads across orbiting ships.</summary>
+        private int surplusPeopleLoadRoundRobinIndex;
+        /// <summary>Server: minimum seconds between surplus people-load projectiles from this planet.</summary>
+        private const float SurplusPeopleLoadIntervalSeconds = 1f;
+        private float lastSurplusPeopleLoadServerTime = -999f;
+        private static readonly System.Collections.Generic.List<Starship> SurplusLoadShipScratch = new System.Collections.Generic.List<Starship>(16);
 
         private NetworkVariable<TeamManager.Team> teamOwnership = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         private NetworkVariable<int> neutralMaterialIndex = new NetworkVariable<int>(-1);
@@ -260,8 +396,6 @@ namespace TitanOrbit.Entities
         private NetworkVariable<int> planetLevel = new NetworkVariable<int>(1);
         private NetworkVariable<float> currentGems = new NetworkVariable<float>(0f);
         private NetworkVariable<int> planetIdNet = new NetworkVariable<int>(0);
-        /// <summary>Server-driven gem moon orbit angle (radians); clients read for deterministic moon position vs per-peer FixedUpdate integration drift.</summary>
-        private readonly NetworkVariable<float> gemMoonOrbitAngle = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         /// <summary>
         /// Connection bonuses from planet‑to‑planet territory triangles.
@@ -294,6 +428,16 @@ namespace TitanOrbit.Entities
             if (IsSpawned) return; // Only allow setting before network spawn
             planetId = id;
         }
+
+        /// <summary>
+        /// Server-side setup helper: assign a starting level before network spawn.
+        /// MapGenerator uses this to spread neutral planet levels evenly across the map.
+        /// </summary>
+        public void SetTemplateStartingLevel(int level)
+        {
+            if (IsSpawned) return;
+            templateStartingLevel = level;
+        }
         public float CurrentPopulation => currentPopulation.Value;
         public float MaxPopulation => maxPopulation.Value * (1f + Mathf.Max(0f, connectionMaxPopulationBonusFraction));
         public float GrowthRate => GetGrowthRatePerSecond();
@@ -301,17 +445,8 @@ namespace TitanOrbit.Entities
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
         public float CurrentGems => currentGems.Value;
-        /// <summary>Max gems at current level. Override GetMaxGemsForLevel in HomePlanet for different thresholds.</summary>
+        /// <summary>Max gems at current level (baseMaxGemsLevel1 * 2^(level-1)).</summary>
         public float MaxGems => GetMaxGemsForLevel(planetLevel.Value);
-
-        /// <summary>Authoritative gem moon orbit phase (radians), replicated from the server.</summary>
-        public float GemMoonOrbitAngleSynced => gemMoonOrbitAngle.Value;
-
-        internal void ServerSetGemMoonOrbitAngle(float angleRadians)
-        {
-            if (!IsServer) return;
-            gemMoonOrbitAngle.Value = angleRadians;
-        }
 
         private const float FIXED_Y_POSITION = 0f;
 
@@ -368,9 +503,8 @@ namespace TitanOrbit.Entities
                 // All planets (neutral and home) start at 100% population capacity.
                 currentPopulation.Value = potentialMax;
                 maxPopulation.Value = potentialMax;
-
-                // Gem moon orbit must match PlanetGemMoon's OnEnable seed so clients stay aligned until NV replicates.
-                gemMoonOrbitAngle.Value = (NetworkObjectId % 6283UL) * 0.001f;
+                // Gem moon orbit phase is now derived deterministically per peer in
+                // PlanetGemMoon.OnEnable (NetworkObjectId % 6283UL * 0.001f); no replication needed.
             }
 
             if (populationText != null)
@@ -404,6 +538,12 @@ namespace TitanOrbit.Entities
             teamOwnership.OnValueChanged += OnOwnershipChanged;
             currentPopulation.OnValueChanged += (float oldVal, float newVal) => UpdatePopulationDisplay();
             planetLevel.OnValueChanged += OnPlanetLevelChanged;
+
+            if (!IsServer)
+            {
+                var mapNetObj = GetComponent<NetworkObject>();
+                MapGenerator.Active?.HandleClientMapEntitySpawned(mapNetObj);
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -488,6 +628,94 @@ namespace TitanOrbit.Entities
             {
                 lastPopulationDisplayUpdate = Time.time;
                 UpdatePopulationDisplay();
+            }
+        }
+
+        private void FixedUpdate()
+        {
+            if (IsServer)
+                TickSurplusPeopleLoadToOrbitingShips();
+        }
+
+        /// <summary>
+        /// Server: at most one people-load projectile per <see cref="SurplusPeopleLoadIntervalSeconds"/> when surplus exists above the 50% reserve.
+        /// Healthy surplus: steady 1/s round-robin while the planet can afford each chunk. Tight surplus (near the 50% floor): also requires growth credit.
+        /// </summary>
+        private void TickSurplusPeopleLoadToOrbitingShips()
+        {
+            float halfCap = 0.5f * MaxPopulation;
+            float surplus = Mathf.Max(0f, CurrentPopulation - halfCap);
+            if (surplus <= 0.0001f)
+            {
+                surplusPeopleSendCredit = 0f;
+                return;
+            }
+
+            float growth = GetGrowthRatePerSecond() * Time.fixedDeltaTime;
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                growth *= 100f;
+            surplusPeopleSendCredit += growth;
+
+            if (Time.time < lastSurplusPeopleLoadServerTime + SurplusPeopleLoadIntervalSeconds)
+                return;
+
+            SurplusLoadShipScratch.Clear();
+            float maxEligibleChunk = 0f;
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || !ship.CanReceivePlanetSurplusPeopleLoadFrom(this))
+                    continue;
+                SurplusLoadShipScratch.Add(ship);
+                maxEligibleChunk = Mathf.Max(maxEligibleChunk, ship.GetPeopleTransferChunkSize(this));
+            }
+
+            int shipCount = SurplusLoadShipScratch.Count;
+            if (shipCount == 0)
+                return;
+
+            // Enough deployable surplus for a full chunk → steady 1/s dispatch. Otherwise growth must bank credit first.
+            bool growthCreditRequired = surplus < maxEligibleChunk - 0.0001f;
+
+            for (int attempt = 0; attempt < shipCount; attempt++)
+            {
+                int idx = (surplusPeopleLoadRoundRobinIndex + attempt) % shipCount;
+                Starship ship = SurplusLoadShipScratch[idx];
+                if (ship == null)
+                    continue;
+
+                surplus = Mathf.Max(0f, CurrentPopulation - halfCap);
+                if (surplus <= 0.0001f)
+                    break;
+
+                float chunk = ship.GetPeopleTransferChunkSize(this);
+                float space = ship.GetPeopleLoadSpaceRemaining();
+                float sendAmount = 0f;
+
+                if (surplus >= chunk - 0.0001f && space >= chunk - 0.0001f)
+                    sendAmount = chunk;
+                else
+                {
+                    float remainder = Mathf.Min(space, surplus);
+                    if (remainder <= 0.0001f || remainder >= chunk - 0.0001f)
+                        continue;
+                    sendAmount = remainder;
+                }
+
+                if (sendAmount <= 0.0001f)
+                    continue;
+
+                if (growthCreditRequired && surplusPeopleSendCredit < sendAmount - 0.0001f)
+                    continue;
+
+                if (ship.TryDispatchPlanetSurplusPeopleLoad(this, sendAmount, out float sent) && sent > 0.0001f)
+                {
+                    if (growthCreditRequired)
+                        surplusPeopleSendCredit = Mathf.Max(0f, surplusPeopleSendCredit - sent);
+                    surplusPeopleLoadRoundRobinIndex = (idx + 1) % shipCount;
+                    lastSurplusPeopleLoadServerTime = Time.time;
+                    return;
+                }
             }
         }
 
@@ -641,34 +869,26 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Orbit zone: surface (0.5) to outer (scaled by level: 1.5x base, +5% per level). Ships orbit at whatever radius they enter; farther = slower.
+        /// Orbit ring: thin band away from the surface (+5% center radius per level). Ships must sit in the ring for people transfer.
+        /// Trigger + <see cref="PlanetOrbitZone"/> live on the planet root (second SphereCollider). Legacy <c>OrbitZone</c> child objects are removed.
         /// </summary>
         private void EnsureOrbitZoneExists()
         {
-            PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
-            if (existing != null)
-            {
-                RefreshOrbitZoneRadius();
-                EnsureOrbitZoneVisual(existing.gameObject);
-                return;
-            }
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCollider = orbitZoneObj.AddComponent<SphereCollider>();
-            orbitCollider.isTrigger = true;
-            orbitCollider.radius = GetOrbitZoneOuterRadiusLocal();
-            PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            zone.SetPlanet(this);
-            EnsureOrbitZoneVisual(orbitZoneObj);
-        }
+            Transform legacy = transform.Find("OrbitZone");
+            if (legacy != null)
+                DestroyImmediate(legacy.gameObject);
 
-        private void EnsureOrbitZoneVisual(GameObject orbitZoneObj)
-        {
-            var shapesVisual = orbitZoneObj.GetComponent<OrbitZoneShapesVisual>();
-            if (shapesVisual == null)
-                orbitZoneObj.AddComponent<OrbitZoneShapesVisual>();
+            PlanetOrbitZone zone = GetComponent<PlanetOrbitZone>();
+            if (zone == null)
+            {
+                SphereCollider orbitCollider = gameObject.AddComponent<SphereCollider>();
+                orbitCollider.isTrigger = true;
+                orbitCollider.radius = GetOrbitRingOuterRadiusLocal();
+                zone = gameObject.AddComponent<PlanetOrbitZone>();
+                zone.SetPlanet(this);
+            }
+
+            RefreshOrbitZoneRadius();
         }
 
         /// <summary>One gem moon per planet: orbits at the outer orbit radius; ships dock here to deposit gems and open the orbit station UI.</summary>
@@ -683,6 +903,7 @@ namespace TitanOrbit.Entities
                 ApplyGemMoonVisualScale();
                 RefreshGemMoonVisualMaterial();
                 InjectGemMoonMatrixShieldPrefabs();
+                RefreshOrbitZoneRadius();
                 return;
             }
 
@@ -728,6 +949,7 @@ namespace TitanOrbit.Entities
             }
 
             InjectGemMoonMatrixShieldPrefabs();
+            RefreshOrbitZoneRadius();
         }
 
         private void InjectGemMoonMatrixShieldPrefabs()
@@ -801,9 +1023,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         protected virtual float GetGemMoonHomeVisualScaleMultiplier() => 1f;
 
-        /// <summary>
-        /// Uniform local scale for GemMoonVisual: baseline as if planet were <see cref="GemMoonReferencePlanetSize"/>, then × (20/PlanetSize), capped.
-        /// </summary>
+        /// <summary>Uniform local scale for GemMoonVisual: baseline as if planet were <see cref="GemMoonReferencePlanetSize"/>, then × (20/PlanetSize), capped.</summary>
         private float GetGemMoonVisualUniformScale()
         {
             float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
@@ -811,6 +1031,12 @@ namespace TitanOrbit.Entities
             inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
             float s = baseAtRef * inv * GetGemMoonHomeVisualScaleMultiplier();
             return Mathf.Clamp(s, 0.02f, 1.25f);
+        }
+
+        /// <summary>Estimate moon orbit radius before <see cref="PlanetGemMoon"/> exists (matches dock/clearance defaults).</summary>
+        private float EstimateGemMoonOrbitRadiusWorld()
+        {
+            return EstimateGemMoonOrbitRadiusWorldStatic(PlanetSize, PlanetLevel, GetGemMoonHomeVisualScaleMultiplier());
         }
 
         private void ApplyGemMoonVisualScale()
@@ -830,7 +1056,28 @@ namespace TitanOrbit.Entities
                 if (child.name == "Ring" || child.name.StartsWith("Ring"))
                     Object.Destroy(child.gameObject);
             }
-            if (GetComponentInChildren<PlanetRingsDrawer>(true) != null) return;
+
+            var allDrawers = GetComponentsInChildren<PlanetRingsDrawer>(true);
+            PlanetRingsDrawer keep = null;
+            foreach (var d in allDrawers)
+            {
+                if (d != null && d.transform.name == "PlanetRings")
+                {
+                    keep = d;
+                    break;
+                }
+            }
+            if (keep == null && allDrawers.Length > 0)
+                keep = allDrawers[0];
+            foreach (var d in allDrawers)
+            {
+                if (d == null || d == keep)
+                    continue;
+                Object.Destroy(d.gameObject);
+            }
+
+            if (keep != null)
+                return;
             GameObject ringsObj = new GameObject("PlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
@@ -892,12 +1139,11 @@ namespace TitanOrbit.Entities
             planetStatsDisplay.Init(this);
         }
 
-        /// <summary>Population per second. Override in HomePlanet for level-based (1 per 5 sec at level 3, doubles each level). Regular: uses stored growthRate (doubles on level up).</summary>
+        /// <summary>Population per second: one person per second per planet level (level 3 → 3/s), plus connection triangle bonus.</summary>
         protected virtual float GetGrowthRatePerSecond()
         {
-            // Use stored growthRate.Value (which doubles on level up) instead of constant baseGrowthRate,
-            // then apply any connection bonus from planet‑to‑planet triangles.
-            float baseRate = growthRate.Value > 0f ? growthRate.Value : baseGrowthRate;
+            int level = PlanetLevel;
+            float baseRate = level > 0 ? level : baseGrowthRate;
             float bonusFactor = 1f + Mathf.Max(0f, connectionGrowthBonusFraction);
             return baseRate * bonusFactor;
         }
@@ -929,6 +1175,9 @@ namespace TitanOrbit.Entities
         protected virtual int GetInitialPlanetLevel()
         {
             // Only regular planets use this implementation; HomePlanet overrides.
+            if (templateStartingLevel >= 1)
+                return Mathf.Clamp(templateStartingLevel, 1, GetMaxLevel());
+
             if (!randomizeNeutralStartingLevel)
                 return 1;
 
@@ -941,12 +1190,11 @@ namespace TitanOrbit.Entities
             return Mathf.Max(1, Mathf.Min(rolledLevel, maxLevel));
         }
 
-        /// <summary>Max gems capacity for a given level. Override in HomePlanet for different thresholds. Regular planets: 200 * 2^(level-1).</summary>
+        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1).</summary>
         protected virtual float GetMaxGemsForLevel(int level)
         {
-            // Regular planets: Level 1 = 200, Level 2 = 400, Level 3 = 800, etc.
             if (level < 1) return 0f;
-            return 200f * Mathf.Pow(2f, level - 1);
+            return baseMaxGemsLevel1 * Mathf.Pow(2f, level - 1);
         }
 
         /// <summary>
@@ -982,12 +1230,11 @@ namespace TitanOrbit.Entities
             {
                 Vector3 popupPos = popupWorldPosition ?? transform.position;
                 popupPos.y = 0f;
-                VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
                     popupPos,
-                    (int)FloatingCountChannel.GemDeposit,
+                    FloatingCountChannel.GemDeposit,
                     delta,
-                    (int)depositingTeam
-                );
+                    depositingTeam);
             }
             if (delta > 0.0001f)
             {
@@ -1021,22 +1268,21 @@ namespace TitanOrbit.Entities
             float maxForLevel = GetMaxGemsForLevel(currentLevel);
             // Level up when gems reach exact max capacity (e.g. 100/100). Use small epsilon for float precision.
             if (maxForLevel > 0f && currentGems.Value >= maxForLevel - 0.001f)
-                LevelUpServerRpc();
+                LevelUpFromServer();
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        private void LevelUpServerRpc()
+        /// <summary>Server-only level-up. Must not be a ServerRpc — deposits run on the server and NGO does not reliably execute self-invoked ServerRpcs.</summary>
+        private void LevelUpFromServer()
         {
-            if (planetLevel.Value >= GetMaxLevel()) return; // Max level
+            if (!IsServer) return;
+            if (planetLevel.Value >= GetMaxLevel()) return;
 
-            int oldLevel = planetLevel.Value;
             planetLevel.Value++;
             currentGems.Value = 0f; // Reset gem count to 0 when leveling up
 
-            // Recompute max population from new level (formula: size * level^1.5); double growth rate
+            // Recompute max population from new level (formula: size * level^1.5); growth rate tracks level (N people/sec)
             maxPopulation.Value = GetMaxPopulationForPlanet();
-            float oldGrowthRate = growthRate.Value;
-            SetGrowthRate(oldGrowthRate * 2f);
+            SetGrowthRate(GetGrowthRatePerSecond());
 
             LevelUpClientRpc(planetLevel.Value, transform.position, planetSize);
         }
@@ -1049,7 +1295,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Client-sync for the gem moon's matrix shield (deplete on hit + client-side regen over time).
+        /// Client-sync for the gem moon's matrix shield (deplete on hit; clients extrapolate regen from server time).
         /// </summary>
         [ClientRpc]
         public void GemMoonShieldClientRpc(float currentShieldPoints, float maxShieldPoints, float lastHitServerTime, float currentMoonGemPoints)
@@ -1074,35 +1320,61 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         public void AddPopulationServerRpc(float amount, TeamManager.Team sourceTeam)
         {
+            AddPopulationFromServer(amount, sourceTeam);
+        }
+
+        /// <summary>Server-only: apply population from people transport (reinforce or hostile unload).</summary>
+        public void AddPopulationFromServer(float amount, TeamManager.Team sourceTeam)
+        {
+            if (!IsServer || amount <= 0f) return;
+
             // Same-team planet: add population (reinforce)
             if (teamOwnership.Value != TeamManager.Team.None && teamOwnership.Value == sourceTeam)
             {
                 currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, MaxPopulation);
                 return;
             }
+
             // Neutral or enemy: unload decreases their population (capture attempt)
-            if (amount > 0f)
-                lastHostilePopulationImpactServerTime = Time.time;
+            lastHostilePopulationImpactServerTime = Time.time;
             currentPopulation.Value -= amount;
             if (currentPopulation.Value <= 0)
-            {
-                CapturePlanetServerRpc(sourceTeam);
-            }
+                CapturePlanetFromServer(sourceTeam);
+        }
+
+        private void CapturePlanetFromServer(TeamManager.Team newTeam)
+        {
+            if (!IsServer) return;
+            teamOwnership.Value = newTeam;
+            currentPopulation.Value = 0f;
+            maxPopulation.Value = GetMaxPopulationForPlanet();
+            CapturePlanetClientRpc(newTeam);
+        }
+
+        /// <summary>Server-only: remove population when crew loads onto a ship (avoids nested ServerRpc from server orbit transfer).</summary>
+        public void RemovePopulationFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            currentPopulation.Value = Mathf.Max(0f, currentPopulation.Value - amount);
+        }
+
+        /// <summary>Server-only: undo hostile invasion impact when a people transport sphere is destroyed in flight.</summary>
+        public void RevertHostileUnloadImpactFromServer(float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            currentPopulation.Value = Mathf.Min(currentPopulation.Value + amount, MaxPopulation);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void RemovePopulationServerRpc(float amount)
         {
-            currentPopulation.Value = Mathf.Max(0f, currentPopulation.Value - amount);
+            RemovePopulationFromServer(amount);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void CapturePlanetServerRpc(TeamManager.Team newTeam)
         {
-            teamOwnership.Value = newTeam;
-            currentPopulation.Value = 0f; // Reset population after capture
-            maxPopulation.Value = GetMaxPopulationForPlanet(); // New owner gets full cap (e.g. 50-150)
-            CapturePlanetClientRpc(newTeam);
+            CapturePlanetFromServer(newTeam);
         }
 
         [ClientRpc]

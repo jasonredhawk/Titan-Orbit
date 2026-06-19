@@ -3,6 +3,7 @@ setlocal EnableDelayedExpansion
 
 REM Set Content-Type and Content-Encoding for Unity WebGL objects already in GCS.
 REM Run after upload_webgl_to_gcs.bat. Walks the local build tree and updates matching gs:// paths.
+REM Encoding is detected per file (Brotli vs plain) — do NOT blindly set br on every .unityweb.
 REM
 REM Usage:
 REM   set_webgl_gcs_metadata.bat
@@ -12,7 +13,8 @@ REM   set_webgl_gcs_metadata.bat "C:\path\to\TitanOrbitWebGL" your-gcp-project-i
 REM Defaults - keep in sync with upload_webgl_to_gcs.bat
 set "BUCKET=titan-orbit-webgl"
 set "PROJECT_ID=titan-orbit"
-set "SOURCE_DIR=C:\Users\jason\Documents\Titan Orbit\Downloads\TitanOrbitWeb1"
+set "SOURCE_DIR=C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit\BuildOutput\WebGL\production\TitanOrbitWebGL"
+set "ENCODING_PS1=%~dp0Get-WebGLEncoding.ps1"
 
 if not "%~1"=="" for %%I in ("%~1") do set "SOURCE_DIR=%%~fI"
 if not "%~2"=="" set "PROJECT_ID=%~2"
@@ -20,6 +22,12 @@ if not "%~2"=="" set "PROJECT_ID=%~2"
 where gcloud >nul 2>&1
 if errorlevel 1 (
   echo ERROR: gcloud was not found in PATH.
+  exit /b 1
+)
+
+if not exist "%ENCODING_PS1%" (
+  echo ERROR: Missing helper script:
+  echo   %ENCODING_PS1%
   exit /b 1
 )
 
@@ -44,67 +52,55 @@ if "%SRCBASE:~-1%"=="\" set "SRCBASE=%SRCBASE:~0,-1%"
 echo.
 echo Setting metadata for gs://%BUCKET%/ ^(project: %PROJECT_ID%^)
 echo Local tree: %SRCBASE%
+echo Preflight: powershell -File "%~dp0verify_webgl_build.ps1" "%SRCBASE%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verify_webgl_build.ps1" "%SRCBASE%"
 echo.
 
 set "ERR=0"
 
-REM Brotli-compressed artifacts
-for /r "%SRCBASE%" %%F in (*.br) do (
-  set "FULL=%%~fF"
-  set "REL=!FULL:%SRCBASE%\=!"
-  set "GS=gs://%BUCKET%/!REL:\=/!"
-  set "NAME=%%~nxF"
-  set "CT=application/octet-stream"
-
-  REM Brotli suffix lengths: wasm data json 8 chars, js 6 chars
-  if /i "!NAME:~-8!"==".wasm.br" set "CT=application/wasm"
-  if /i "!NAME:~-8!"==".data.br" set "CT=application/octet-stream"
-  if /i "!NAME:~-6!"==".js.br" set "CT=application/javascript"
-  if /i "!NAME:~-8!"==".json.br" set "CT=application/json"
-
-  call :RunUpdate "!GS!" br "!CT!"
-)
-
-REM Unity 6+ Brotli-compressed assets use extension .unityweb (not .br). Without Content-Encoding: br
-REM the browser executes compressed bytes as JavaScript -> "Unable to parse ... framework.js.unityweb"
-REM and SyntaxError: Invalid or unexpected token.
-for /r "%SRCBASE%" %%F in (*.unityweb) do (
-  set "FULL=%%~fF"
-  set "REL=!FULL:%SRCBASE%\=!"
-  set "GS=gs://%BUCKET%/!REL:\=/!"
-  set "NAME=%%~nxF"
-  set "CT=application/octet-stream"
-  REM Suffix lengths: .wasm/.data/.json.unityweb = 14 chars; .js.unityweb = 12 chars
-  if /i "!NAME:~-14!"==".wasm.unityweb" set "CT=application/wasm"
-  if /i "!NAME:~-14!"==".data.unityweb" set "CT=application/octet-stream"
-  if /i "!NAME:~-14!"==".json.unityweb" set "CT=application/json"
-  if /i "!NAME:~-12!"==".js.unityweb" set "CT=application/javascript"
-  call :RunUpdate "!GS!" br "!CT!"
-)
-
-REM Uncompressed WebGL files (if present)
-for /r "%SRCBASE%" %%F in (*.wasm) do (
-  set "FULL=%%~fF"
-  set "REL=!FULL:%SRCBASE%\=!"
-  set "GS=gs://%BUCKET%/!REL:\=/!"
-  call :RunUpdate "!GS!" "" "application/wasm"
-)
-for /r "%SRCBASE%" %%F in (*.js) do (
-  set "NAME=%%~nxF"
-  if /i not "!NAME:~-6!"==".js.br" (
+REM All build artifacts under Build\ and root (loader, index, etc.)
+for /r "%SRCBASE%" %%F in (*) do (
+  if exist "%%F\" (
+    rem Skip directories.
+  ) else (
     set "FULL=%%~fF"
     set "REL=!FULL:%SRCBASE%\=!"
     set "GS=gs://%BUCKET%/!REL:\=/!"
-    call :RunUpdate "!GS!" "" "application/javascript"
-  )
-)
-for /r "%SRCBASE%" %%F in (*.data) do (
-  set "NAME=%%~nxF"
-  if /i not "!NAME:~-8!"==".data.br" (
-    set "FULL=%%~fF"
-    set "REL=!FULL:%SRCBASE%\=!"
-    set "GS=gs://%BUCKET%/!REL:\=/!"
-    call :RunUpdate "!GS!" "" "application/octet-stream"
+    set "NAME=%%~nxF"
+    set "EXT=%%~xF"
+
+    set "CT="
+    set "ENC="
+
+    if /i "!EXT!"==".html" set "CT=text/html"
+    if /i "!EXT!"==".css" set "CT=text/css"
+    if /i "!EXT!"==".ico" set "CT=image/x-icon"
+    if /i "!EXT!"==".png" set "CT=image/png"
+    if /i "!EXT!"==".json" set "CT=application/json"
+    if /i "!EXT!"==".js" set "CT=application/javascript"
+    if /i "!EXT!"==".wasm" set "CT=application/wasm"
+    if /i "!EXT!"==".data" set "CT=application/octet-stream"
+    if /i "!EXT!"==".unityweb" set "CT=application/octet-stream"
+    if /i "!EXT!"==".br" set "CT=application/octet-stream"
+
+    if /i "!NAME:~-14!"==".wasm.unityweb" set "CT=application/wasm"
+    if /i "!NAME:~-14!"==".json.unityweb" set "CT=application/json"
+    if /i "!NAME:~-12!"==".js.unityweb" set "CT=application/javascript"
+    if /i "!NAME:~-8!"==".wasm.br" set "CT=application/wasm"
+    if /i "!NAME:~-6!"==".js.br" set "CT=application/javascript"
+    if /i "!NAME:~-8!"==".json.br" set "CT=application/json"
+
+    if not "!CT!"=="" (
+      for /f "usebackq delims=" %%E in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%ENCODING_PS1%" "!FULL!" 2^>nul`) do set "ENC=%%E"
+
+      if /i "!ENC!"=="br" (
+        call :RunUpdate "!GS!" br "!CT!"
+      ) else if /i "!ENC!"=="gzip" (
+        call :RunUpdate "!GS!" gzip "!CT!"
+      ) else (
+        call :RunUpdate "!GS!" "" "!CT!"
+      )
+    )
   )
 )
 
@@ -118,11 +114,10 @@ exit /b 0
 
 :RunUpdate
 REM Args: gs URL, content-encoding or empty, content-type
-REM Use for %%I in ("%~1") so paths expand at call time (reliable when deploy_webgl_gcs.bat call-chains this script).
 if "%~2"=="" (
-  for %%I in ("%~1") do call gcloud --project "%PROJECT_ID%" storage objects update "%%~I" --clear-content-encoding --content-type="%~3" --continue-on-error
+  gcloud --project "%PROJECT_ID%" storage objects update "%~1" --clear-content-encoding --content-type="%~3" --cache-control=no-cache
 ) else (
-  for %%I in ("%~1") do call gcloud --project "%PROJECT_ID%" storage objects update "%%~I" --content-encoding="%~2" --content-type="%~3" --continue-on-error
+  gcloud --project "%PROJECT_ID%" storage objects update "%~1" --content-encoding="%~2" --content-type="%~3" --cache-control=no-cache
 )
 if errorlevel 1 set "ERR=1"
 exit /b 0

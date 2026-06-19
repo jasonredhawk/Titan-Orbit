@@ -3,12 +3,14 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Canonical colors for the five ship-ability categories used by the bottom upgrade bar
-    /// (<see cref="ShipAttributeUpgradeHUD"/>). Power breakdown O/D/E/M/C uses the same palette in order:
-    /// Offense (weapon), Defense (health), Energy, Mobility (ship/movement), Capacity (cargo).
+    /// Canonical colors for ship ability stats. The bottom upgrade bar and orbit ship-tree power bars
+    /// share the same two-tone palette via <see cref="GetPowerBreakdownStatColor"/> /
+    /// <see cref="GetPowerBreakdownStatColorForHud"/> (lighter primary stat, darker secondary per category).
     /// </summary>
     public static class ShipAbilityCategoryColors
     {
+        public const int PowerBreakdownStatCount = 10;
+
         public static readonly Color WeaponForHud = new Color(0.9f, 0.35f, 0.2f, 0.9f);
         public static readonly Color HealthForHud = new Color(0.2f, 0.85f, 0.4f, 0.9f);
         public static readonly Color EnergyForHud = new Color(0.95f, 0.8f, 0.2f, 0.9f);
@@ -24,5 +26,71 @@ namespace TitanOrbit.UI
             new Color(0.2f, 0.7f, 0.95f, 1f),
             new Color(0.65f, 0.4f, 0.9f, 1f)
         };
+
+        /// <summary>Short labels for orbit ship-tree stat columns (matches ship upgrade menu order).</summary>
+        public static readonly string[] PowerBreakdownStatLabels =
+        {
+            "FP", "BS",
+            "HC", "HR",
+            "EC", "ER",
+            "MS", "TS",
+            "GC", "PC"
+        };
+
+        /// <summary>Full labels for the ship-tree power legend (matches ship upgrade menu order).</summary>
+        public static readonly string[] PowerBreakdownStatFullLabels =
+        {
+            "Fire Power", "Bullet Speed",
+            "Health Cap", "Health Regen",
+            "Energy Cap", "Energy Regen",
+            "Move Speed", "Turn Speed",
+            "Gem Cap", "People Cap"
+        };
+
+        public const int PowerBreakdownPairCount = PowerBreakdownStatCount / 2;
+
+        /// <summary>Category titles for legend groups (Offense, Defense, Energy, Movement, Capacity).</summary>
+        public static readonly string[] PowerBreakdownCategoryTitles =
+        {
+            "Offense", "Defense", "Energy", "Movement", "Capacity"
+        };
+
+        public static string GetPowerBreakdownCategoryTitle(int pairIndex)
+        {
+            if (pairIndex < 0 || pairIndex >= PowerBreakdownCategoryTitles.Length)
+                return string.Empty;
+            return PowerBreakdownCategoryTitles[pairIndex];
+        }
+
+        /// <summary>Two tones per category pair — lighter primary stat, darker secondary stat.</summary>
+        public static readonly Color[] PowerBreakdownStatColors = BuildPowerBreakdownStatColors();
+
+        public static Color GetPowerBreakdownStatColor(int statIndex)
+        {
+            if (statIndex < 0 || statIndex >= PowerBreakdownStatColors.Length)
+                return Color.white;
+            return PowerBreakdownStatColors[statIndex];
+        }
+
+        /// <summary>Same two-tone stat colors as the upgrade-tree power bar, with HUD button alpha.</summary>
+        public static Color GetPowerBreakdownStatColorForHud(int statIndex, float alpha = 0.9f)
+        {
+            Color c = GetPowerBreakdownStatColor(statIndex);
+            c.a = alpha;
+            return c;
+        }
+
+        private static Color[] BuildPowerBreakdownStatColors()
+        {
+            var colors = new Color[PowerBreakdownStatCount];
+            for (int category = 0; category < PowerBreakdownOdEmc.Length; category++)
+            {
+                Color baseColor = PowerBreakdownOdEmc[category];
+                colors[category * 2] = Color.Lerp(baseColor, Color.white, 0.28f);
+                colors[category * 2 + 1] = Color.Lerp(baseColor, Color.black, 0.22f);
+            }
+
+            return colors;
+        }
     }
 }

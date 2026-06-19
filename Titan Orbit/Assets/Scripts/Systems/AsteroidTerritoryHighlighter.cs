@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
@@ -6,13 +7,12 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Periodically tints asteroids that are inside team triangles, using PlanetConnectionSystem data.
-    /// Uses canonical (wrapped) position so asteroids stay correct on a toroidal map when display copies move.
-    /// Visual-only; does not affect gameplay values.
+    /// Periodically re-evaluates whether each asteroid is neutral or inside a team's moving triangle
+    /// (gem-moon vertices). Server syncs <see cref="Asteroid.TerritoryTeam"/>; clients tint from that value.
     /// </summary>
     public class AsteroidTerritoryHighlighter : MonoBehaviour
     {
-        [SerializeField] private float refreshInterval = 1f;
+        [SerializeField] private float refreshInterval = 0.25f;
         private float lastRefresh = -999f;
 
         private void Update()
@@ -20,18 +20,19 @@ namespace TitanOrbit.Systems
             if (Time.time - lastRefresh < refreshInterval)
                 return;
 
-            float startTime = Time.realtimeSinceStartup;
-
             lastRefresh = Time.time;
-            var conn = PlanetConnectionSystem.Instance;
-            if (conn == null || conn.CurrentTriangles == null || conn.CurrentTriangles.Count == 0)
+
+            var nm = NetworkManager.Singleton;
+            bool isServer = nm == null || nm.IsServer;
+            if (!isServer)
                 return;
 
+            var conn = PlanetConnectionSystem.Instance;
             var asteroids = Asteroid.AllAsteroids;
             if (asteroids == null || asteroids.Count == 0)
                 return;
 
-            int processed = 0;
+            bool hasTriangles = conn != null && conn.CurrentTriangles != null && conn.CurrentTriangles.Count > 0;
 
             foreach (var asteroid in asteroids)
             {
@@ -39,23 +40,11 @@ namespace TitanOrbit.Systems
                     continue;
 
                 Vector3 canonicalPos = ToroidalMap.WrapPosition(asteroid.transform.position);
-                TeamManager.Team team = conn.GetTeamAtPosition(canonicalPos);
-                asteroid.SetTerritoryHighlight(team);
-                processed++;
+                TeamManager.Team team = hasTriangles
+                    ? conn.GetTeamAtPosition(canonicalPos)
+                    : TeamManager.Team.None;
+                asteroid.ServerRefreshTerritoryTeam(team);
             }
-
-            // #region agent log
-            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-            DebugSessionLog.Write(
-                "AsteroidTerritoryHighlighter.Update",
-                "asteroid territory refresh",
-                "{\"asteroids\":" + (asteroids != null ? asteroids.Count : 0) +
-                ",\"processed\":" + processed +
-                ",\"durationMs\":" + durMs +
-                "}",
-                "AT");
-            // #endregion
         }
     }
 }
-

@@ -146,9 +146,10 @@ namespace TitanOrbit.UI
                         chassisButtons[i].gameObject.SetActive(show);
                         if (show)
                         {
-                            // Use minHomePlanetLevel as the notional tier level when computing cost.
                             int tierLevel = Mathf.Max(1, chassis.minHomePlanetLevel);
-                            float price = ShipUnlockTable.GetTierCost(tierLevel);
+                            int price = CardShopSystem.Instance != null
+                                ? CardShopSystem.Instance.GetPurchaseGemCostForChassisId(chassis.chassisId, tierLevel)
+                                : 0;
                             bool canAfford = contributedGems >= price;
                             chassisButtons[i].interactable = canAfford;
                         }
@@ -159,9 +160,11 @@ namespace TitanOrbit.UI
                         if (show)
                         {
                             int tierLevel = Mathf.Max(1, chassis.minHomePlanetLevel);
-                            float price = ShipUnlockTable.GetTierCost(tierLevel);
+                            int price = CardShopSystem.Instance != null
+                                ? CardShopSystem.Instance.GetPurchaseGemCostForChassisId(chassis.chassisId, tierLevel)
+                                : 0;
                             string family = string.IsNullOrEmpty(chassis.shipFamily) ? "Ship" : chassis.shipFamily;
-                            chassisLabels[i].text = $"{chassis.displayName} ({family} • Tier {tierLevel}) — {price:F0} gems";
+                            chassisLabels[i].text = $"{chassis.displayName} ({family} • Tier {tierLevel}) — {price} gems";
                         }
                         else
                         {
@@ -294,7 +297,7 @@ namespace TitanOrbit.UI
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned) return;
 
-            CardShopSystem.Instance.PurchaseCardServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, card.cardId);
+            CardShopSystem.Instance.PurchaseCardServerRpc(homeNo.NetworkObjectId, currentShip.NetworkObjectId, card.GetStableCardId());
 
             // Refresh contributed gems after purchase.
             pendingGemsRequest = true;

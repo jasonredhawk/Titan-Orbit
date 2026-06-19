@@ -127,11 +127,14 @@ namespace TitanOrbit.UI
             bool localHasNoTeam = true;
             if (NetworkManager.Singleton != null && TeamManager.Instance != null)
                 localHasNoTeam = TeamManager.Instance.GetPlayerTeam(NetworkManager.Singleton.LocalClientId) == TeamManager.Team.None;
-            bool canJoin = localHasNoTeam
+            bool teamEliminated = TeamManager.Instance != null && TeamManager.Instance.IsTeamEliminated(team);
+            bool canJoin = !teamEliminated && (localHasNoTeam
                 ? count < max
-                : count < max && count <= minCount + 1;
+                : count < max && count <= minCount + 1);
             if (refs.joinButton != null)
                 refs.joinButton.interactable = canJoin;
+            if (refs.statsText != null && teamEliminated)
+                refs.statsText.text = "Eliminated";
         }
 
         private static string TeamLabel(TeamManager.Team team)

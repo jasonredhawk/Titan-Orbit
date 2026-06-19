@@ -3,30 +3,32 @@ using UnityEngine;
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Ramming vs asteroids: restitution (bounce) scales with ramming power — high power dissipates normal motion into the rock;
-    /// low power reflects more energy back. Continuous push force into the surface can chip the asteroid (grind).
+    /// Ramming vs asteroids: restitution (bounce) scales down with ramming power and effective hull mass — heavy ships stick
+    /// and slide; light ships rebound. Suppressed bounce energy is applied as impact damage instead of velocity reversal.
+    /// Continuous push force into the surface can chip the asteroid (grind).
     /// </summary>
     public static class AsteroidRammingBehavior
     {
         /// <summary>
-        /// Maps ramming power to a coefficient of restitution between <paramref name="maxRestitution"/> (bouncy)
-        /// and <paramref name="minRestitution"/> (inelastic). Only ramming above <paramref name="restitutionRammingThreshold"/>
-        /// reduces bounce; that excess is blended with <paramref name="referenceExcessPower"/> (halfway blend when excess equals this).
+        /// Maps a stat (ramming power, mass ratio, etc.) to a coefficient of restitution between
+        /// <paramref name="maxRestitution"/> (bouncy) and <paramref name="minRestitution"/> (inelastic).
+        /// Only values above <paramref name="restitutionThreshold"/> reduce bounce; that excess is blended with
+        /// <paramref name="referenceExcess"/> (halfway blend when excess equals this).
         /// </summary>
         public static float ComputeRestitution(
             float maxRestitution,
             float minRestitution,
-            float rammingPower,
-            float restitutionRammingThreshold,
-            float referenceExcessPower)
+            float value,
+            float restitutionThreshold,
+            float referenceExcess)
         {
             maxRestitution = Mathf.Clamp01(maxRestitution);
             minRestitution = Mathf.Clamp01(minRestitution);
             if (minRestitution > maxRestitution)
                 (minRestitution, maxRestitution) = (maxRestitution, minRestitution);
 
-            float excess = Mathf.Max(0f, rammingPower - Mathf.Max(0f, restitutionRammingThreshold));
-            float refP = Mathf.Max(1e-4f, referenceExcessPower);
+            float excess = Mathf.Max(0f, value - Mathf.Max(0f, restitutionThreshold));
+            float refP = Mathf.Max(1e-4f, referenceExcess);
             float t = Mathf.Clamp01(excess / (excess + refP));
             return Mathf.Lerp(maxRestitution, minRestitution, t);
         }

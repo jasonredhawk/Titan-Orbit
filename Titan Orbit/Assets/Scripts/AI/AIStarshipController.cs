@@ -381,7 +381,7 @@ namespace TitanOrbit.AI
                         // Check if already at a friendly planet - if so, deposit and then continue
                         Planet currentDepositPlanet = null;
                         float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                        float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitZoneOuterRadiusLocal();
+                        float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
                         
                         if (distanceToHome <= homeOrbitRadius)
                         {
@@ -398,7 +398,7 @@ namespace TitanOrbit.AI
                             if (nearestCaptured != null)
                             {
                                 float distToCaptured = ToroidalMap.ToroidalDistance(rb.position, nearestCaptured.transform.position);
-                                float capturedOrbitRadius = nearestCaptured.PlanetSize * nearestCaptured.GetOrbitZoneOuterRadiusLocal();
+                                float capturedOrbitRadius = nearestCaptured.PlanetSize * nearestCaptured.GetOrbitRingCenterRadiusLocal();
                                 if (distToCaptured <= capturedOrbitRadius)
                                 {
                                     currentDepositPlanet = nearestCaptured;
@@ -551,7 +551,7 @@ namespace TitanOrbit.AI
                     
                     SetTargetAtGemMoon(depositTarget, ref targetPosition);
                     float distToDepositTarget = ToroidalMap.ToroidalDistance(rb.position, depositTarget.transform.position);
-                    float depositOrbitRadius = depositTarget.PlanetSize * depositTarget.GetOrbitZoneOuterRadiusLocal(); // Use outer orbit band
+                    float depositOrbitRadius = depositTarget.PlanetSize * depositTarget.GetOrbitRingCenterRadiusLocal();
                     
                     if (distToDepositTarget <= depositOrbitRadius)
                     {
@@ -727,6 +727,16 @@ namespace TitanOrbit.AI
             if (starship.GemMoonDocked)
                 return;
 
+            if (starship.IsBulletElectricShockDisabled)
+            {
+                moveDirection = Vector3.zero;
+                Vector3 shockVel = rb.linearVelocity;
+                shockVel.y = 0f;
+                shockVel = Vector3.MoveTowards(shockVel, Vector3.zero, aiDeceleration * 2.5f * Time.fixedDeltaTime);
+                rb.linearVelocity = shockVel;
+                return;
+            }
+
             if (!HasAnyAiCapabilityEnabled())
             {
                 moveDirection = Vector3.zero;
@@ -862,10 +872,11 @@ namespace TitanOrbit.AI
             if (moveDirection.magnitude > 0.1f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
+                float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
                 rb.MoveRotation(Quaternion.RotateTowards(
                     rb.rotation,
                     targetRotation,
-                    aiRotationSpeed * Time.fixedDeltaTime
+                    turnSpeed * Time.fixedDeltaTime
                 ));
             }
 
@@ -901,7 +912,7 @@ namespace TitanOrbit.AI
                 if (!IsFullyMaxedOut() && currentState == AIState.Idle && homePlanet != null)
                 {
                     float distToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                    float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitZoneOuterRadiusLocal();
+                    float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
                     if (distToHome <= homeOrbitRadius && targetAsteroid == null && targetGem == null)
                     {
                         return true; // Idle at home while leveling - allow orbiting
@@ -922,15 +933,20 @@ namespace TitanOrbit.AI
             toShip.y = 0f;
             float dist = toShip.magnitude;
             if (dist < 0.01f) return;
-            float innerWorld = orbitPlanet.PlanetSize * 0.5f;
-            float outerWorld = orbitPlanet.PlanetSize * orbitPlanet.GetOrbitZoneOuterRadiusLocal();
+            float innerWorld = orbitPlanet.PlanetSize * orbitPlanet.GetOrbitRingInnerRadiusLocal();
+            float outerWorld = orbitPlanet.PlanetSize * orbitPlanet.GetOrbitRingOuterRadiusLocal();
+            if (dist < innerWorld || dist > outerWorld)
+                return;
+
             Vector3 radial = toShip / dist;
             Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
+
+            float guidanceRadius = starship.GetOrbitGuidanceRadiusForAI(orbitPlanet, dist, innerWorld, outerWorld);
             Vector3 orbitVelocity = tangent * orbitSpeed;
-            if (dist < innerWorld)
-                orbitVelocity += radial * 2f;
-            else if (dist > outerWorld)
-                orbitVelocity -= radial * 2f;
+            float radiusError = dist - guidanceRadius;
+            if (Mathf.Abs(radiusError) > 0.02f)
+                orbitVelocity -= radial * radiusError * 2f;
+
             orbitVelocity.y = 0f;
             rb.linearVelocity = orbitVelocity;
             Vector3 newPosition = rb.position + orbitVelocity * Time.fixedDeltaTime;
@@ -938,11 +954,14 @@ namespace TitanOrbit.AI
             rb.MovePosition(newPosition);
             transform.position = newPosition;
             transform.rotation = Quaternion.LookRotation(tangent);
+
+            starship.TryLockOrbitRadiusWhenStableFromAI();
         }
 
         private void HandleShootingAsteroid()
         {
             if (targetAsteroid == null || targetAsteroid.IsDestroyed || starship == null || rb == null) return;
+            if (starship.IsBulletElectricShockDisabled) return;
 
             Vector3 dirToAsteroid = ToroidalMap.ToroidalDirection(rb.position, targetAsteroid.transform.position);
             dirToAsteroid.y = 0f;
@@ -951,7 +970,8 @@ namespace TitanOrbit.AI
 
             // Rotate toward asteroid
             Quaternion targetRotation = Quaternion.LookRotation(dirToAsteroid);
-            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, aiRotationSpeed * Time.fixedDeltaTime));
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot (FireAtTarget respects fire rate and energy)
             starship.FireAtTarget(dirToAsteroid);
@@ -960,6 +980,7 @@ namespace TitanOrbit.AI
         private void HandleAttackingEnemy()
         {
             if (targetEnemyShip == null || targetEnemyShip.IsDead || starship == null || rb == null) return;
+            if (starship.IsBulletElectricShockDisabled) return;
 
             Vector3 myPos = rb.position;
             myPos.y = 0f;
@@ -1005,7 +1026,8 @@ namespace TitanOrbit.AI
             }
             
             Quaternion targetRotation = Quaternion.LookRotation(aimDirection);
-            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, aiRotationSpeed * Time.fixedDeltaTime));
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot at enemy (FireAtTarget respects fire rate and energy)
             starship.FireAtTarget(dirToEnemy);
@@ -1097,26 +1119,11 @@ namespace TitanOrbit.AI
             if (!Application.isPlaying) return;
             if (Time.time - lastCacheRefreshTime < cacheRefreshInterval) return;
 
-            float startTime = Time.realtimeSinceStartup;
-
             lastCacheRefreshTime = Time.time;
             cachedAsteroids = Object.FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
             cachedGems = Object.FindObjectsByType<Gem>(FindObjectsSortMode.None);
             cachedPlanets = Planet.AllPlanets.ToArray();
             cachedShips = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
-
-            // #region agent log
-            float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-            TitanOrbit.Core.DebugSessionLog.Write(
-                "AIStarshipController.RefreshObjectCache",
-                "ai cache refresh",
-                "{\"asteroids\":" + (cachedAsteroids != null ? cachedAsteroids.Length : 0) +
-                ",\"gems\":" + (cachedGems != null ? cachedGems.Length : 0) +
-                ",\"planets\":" + (cachedPlanets != null ? cachedPlanets.Length : 0) +
-                ",\"ships\":" + (cachedShips != null ? cachedShips.Length : 0) +
-                ",\"durationMs\":" + durMs + "}",
-                "A");
-            // #endregion
         }
 
         /// <summary>Find nearest gem within maxRange. Used for CollectingGems - only pursue gems in close proximity.</summary>
@@ -1392,7 +1399,7 @@ namespace TitanOrbit.AI
             
             // Check if we're at home planet
             float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-            float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitZoneOuterRadiusLocal();
+            float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
             bool atHome = distanceToHome <= homeOrbitRadius;
             
             if (atHome)
@@ -1548,7 +1555,7 @@ namespace TitanOrbit.AI
                 case AIState.ReturningToHome:
                     SetTargetAtGemMoon(homePlanet, ref targetPosition);
                     float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                    float homeOrbitRadiusReturn = homePlanet.PlanetSize * homePlanet.GetOrbitZoneOuterRadiusLocal();
+                    float homeOrbitRadiusReturn = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
                     
                     if (distToHomeReturn <= homeOrbitRadiusReturn)
                     {
@@ -1599,7 +1606,7 @@ namespace TitanOrbit.AI
         {
             if (planet == null) return;
             Vector3 dirToShip = ToroidalMap.ToroidalDirection(planet.transform.position, rb.position);
-            float orbitDist = planet.PlanetSize * (0.5f + planet.GetOrbitZoneOuterRadiusLocal()) * 0.5f; // Middle of orbit band
+            float orbitDist = planet.PlanetSize * planet.GetOrbitRingCenterRadiusLocal();
             target = planet.transform.position + dirToShip * orbitDist;
         }
 
@@ -1636,12 +1643,7 @@ namespace TitanOrbit.AI
         private bool TryEnterOrbitZoneForPlanet(Planet planet)
         {
             if (planet == null || starship == null || starship.CurrentOrbitPlanet != null) return false;
-            Vector3 toShip = rb.position - planet.transform.position;
-            toShip.y = 0f;
-            float dist = toShip.magnitude;
-            float inner = planet.PlanetSize * 0.5f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            if (dist >= inner && dist <= outer)
+            if (planet.IsWorldPositionInOrbitRing(rb.position))
             {
                 starship.EnterOrbitZone(planet);
                 return true;

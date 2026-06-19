@@ -1,0 +1,31 @@
+[Unit]
+Description=Titan Orbit Dedicated Headless Server
+After=network-online.target google-startup-scripts.service
+Wants=network-online.target
+# Do not start while metadata startup-script is still extracting/replacing the build (race -> IL2CPP exit 1).
+Wants=google-startup-scripts.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=jason
+WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
+StandardOutput=journal
+StandardError=journal
+# Tar/scp/Windows uploads often strip +x; '+' runs these as root regardless of User=.
+ExecStartPre=+/bin/bash -c 'chown -R jason:jason /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
+ExecStartPre=+/bin/bash -c 'chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
+ExecStartPre=+/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
+ExecStartPre=+/bin/bash -c 'BASE=/home/jason/titanorbit-server/TitanOrbitLinux1; fail=0; check(){ SZ=$(stat -c%s "$1" 2>/dev/null||echo 0); if [ "$SZ" -lt "$2" ]; then echo "FATAL: $1 is ${SZ} bytes (need >= $2). Redeploy Linux build (quit Unity before tar)." >&2; fail=1; else echo "OK $1 ${SZ} bytes" >&2; fi; }; check "$BASE/GameAssembly.so" 10000000; check "$BASE/UnityPlayer.so" 5000000; check "$BASE/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat" 1000000; [ "$fail" -eq 0 ] || exit 1'
+ExecStartPre=+/bin/bash -c 'W=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh; [ -x "$W" ] || { echo "FATAL: missing $W — reinstall unit (install_unit_remote.ps1) or redeploy with upload_linux_build_to_gce_openssh.ps1" >&2; exit 1; }'
+# Logs: journalctl -u titanorbit-server -f  (Unity -logFile /dev/stdout via wrapper)
+#   tail -f .../Player.log  (may be empty when using stdout wrapper)
+ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode -nographics --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=900 --waitNetworkManagerSeconds=180
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

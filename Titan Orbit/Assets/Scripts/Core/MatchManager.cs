@@ -140,6 +140,9 @@ namespace TitanOrbit.Core
 
             winningTeam.Value = team;
             matchStarted.Value = false;
+#if UNITY_SERVER
+            TitanOrbit.Networking.DedicatedMatchServerBootstrap.NotifyDedicatedMatchEnded();
+#endif
             EndMatchClientRpc(team);
         }
 

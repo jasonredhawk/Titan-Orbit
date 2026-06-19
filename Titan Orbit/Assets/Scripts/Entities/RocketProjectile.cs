@@ -105,10 +105,10 @@ namespace TitanOrbit.Entities
                 Despawn();
                 return;
             }
-            DroneBase drone = other.GetComponent<DroneBase>();
+            DroneBody drone = other.GetComponentInParent<DroneBody>();
             if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
             {
-                drone.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+                drone.Swarm?.ApplyDamageFromBullet(drone.EquipmentSlotIndex, damage, ownerTeam, ownerShipNetworkId, transform.position);
 
                 if (VisualEffectsManager.Instance != null)
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
@@ -149,6 +149,23 @@ namespace TitanOrbit.Entities
                     VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                         transform.position,
                         (int)FloatingCountChannel.DamageMoon,
+                        damage,
+                        (int)ownerTeam
+                    );
+
+                Despawn();
+                return;
+            }
+
+            PeopleTransportProjectile peopleTransport = other.GetComponentInParent<PeopleTransportProjectile>();
+            if (peopleTransport != null && peopleTransport.PeopleAmount > 0f && peopleTransport.SourceTeam != ownerTeam)
+            {
+                peopleTransport.ApplyDamageFromBulletServer(damage, ownerTeam, transform.position);
+
+                if (VisualEffectsManager.Instance != null)
+                    VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
+                        transform.position,
+                        (int)FloatingCountChannel.DamageShipOrDrone,
                         damage,
                         (int)ownerTeam
                     );

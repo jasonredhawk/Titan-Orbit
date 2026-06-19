@@ -23,7 +23,11 @@ TitanOrbitServer.exe -batchmode -nographics ^
   --ageThresholdSeconds=30
 ```
 
-`--ageThresholdSeconds` is an optional debug/testing override. It defaults to 20 minutes in production.
+`--ageThresholdSeconds` is an optional debug/testing override. It defaults to 30 minutes in production (only applies while the lobby still has players).
+
+`--emptyMatchRecreateSeconds` controls how long a lobby may sit with zero players before the headless server deletes it and publishes a new lobby (default 30 minutes). Relay stay-alive uses UTP transport heartbeats only (no periodic allocation swap).
+
+The dedicated server also publishes `ServerAliveAt` on each lobby heartbeat (every ~15s). Clients skip listings older than ~120s without a fresh heartbeat, and the server regenerates the map after in-process Netcode restarts so empty overnight lobbies do not serve a zero-blueprint world.
 
 ### Linux command variant
 
@@ -51,7 +55,7 @@ Wait for the logs to show:
 Then:
 1. Wait ~35 seconds.
 2. Click `Play` again (fresh session) as free.
-3. Confirm you joined a new lobby (server should have logged a 20min rotation equivalent using your short `ageThresholdSeconds`).
+3. Confirm you joined a new lobby (server should have logged rotation using your short `ageThresholdSeconds`, or empty recreate if you used `--emptyMatchRecreateSeconds`).
 
 Expected server behavior:
 - old lobby gets updated to `IsLatest=0`

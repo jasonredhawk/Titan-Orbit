@@ -35,7 +35,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -159,6 +159,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
   GlobalObjectIdHash: 1413107088
   InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 0
   ActiveSceneSynchronization: 0
@@ -166,6 +168,8 @@ MonoBehaviour:
   SpawnWithObservers: 1
   DontDestroyWithOwner: 0
   AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!114 &8844082102695423001
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -178,6 +182,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e96cb6065543e43c4a752faaa1468eb1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Components::Unity.Netcode.Components.NetworkTransform
+  ShowTopMostFoldoutHeaderGroup: 1
+  NetworkTransformExpanded: 0
+  AutoOwnerAuthorityTickOffset: 1
+  PositionInterpolationType: 0
+  RotationInterpolationType: 0
+  ScaleInterpolationType: 0
+  PositionLerpSmoothing: 1
+  PositionMaxInterpolationTime: 0.1
+  RotationLerpSmoothing: 1
+  RotationMaxInterpolationTime: 0.1
+  ScaleLerpSmoothing: 1
+  ScaleMaxInterpolationTime: 0.1
+  AuthorityMode: 0
+  TickSyncChildren: 0
   UseUnreliableDeltas: 1
   SyncPositionX: 1
   SyncPositionY: 1
@@ -195,6 +213,7 @@ MonoBehaviour:
   UseQuaternionCompression: 0
   UseHalfFloatPrecision: 0
   InLocalSpace: 0
+  SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
 --- !u!114 &8844082102695423002
@@ -209,6 +228,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6c0be61502bb534f922ebb746851216, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Components::Unity.Netcode.Components.NetworkRigidbody
+  ShowTopMostFoldoutHeaderGroup: 1
+  NetworkRigidbodyBaseExpanded: 0
+  UseRigidBodyForMotion: 0
+  AutoUpdateKinematicState: 1
+  AutoSetKinematicOnDespawn: 1
 --- !u!114 &2759333732032392297
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -221,19 +245,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dc4336f72be137847aee0d086ac6b26a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Gem
+  ShowTopMostFoldoutHeaderGroup: 1
   gemValue: 10
   pickupRadius: 2
   stopSpeedThreshold: 0.05
   slowdownDrag: 0.5
-  baseScale: 1
-  visualScaleMultiplier: 1
+  minGemValue: 1
+  maxGemValue: 100
+  scaleAtMinValue: 0.5
+  scaleAtMaxValue: 4
+  pickupRadiusMinMul: 1
+  pickupRadiusMaxMul: 2
   lifetimeSeconds: 20
   shrinkDuration: 5
   magnetSpeed: 8
   collectRadius: 0.6
   shipProximitySlop: 0.35
   shipProximityRadiusMultiplier: 0.45
-  selfPickupDelaySeconds: 0.5
+  asteroidNonPriorityPickupDelaySeconds: 1
+  selfPickupDelaySeconds: 2
   gemTintColor: {r: 1, g: 0, b: 0, a: 0.45}
   bonusGemTintColor: {r: 1, g: 0.9, b: 0.15, a: 0.55}
 --- !u!114 &1238730556394064687

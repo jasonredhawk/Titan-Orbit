@@ -1,7 +1,6 @@
 using UnityEngine;
 using TitanOrbit.Camera;
 using TitanOrbit.Generation;
-using TitanOrbit.Networking;
 using Unity.Netcode;
 
 namespace TitanOrbit.Entities
@@ -20,7 +19,11 @@ namespace TitanOrbit.Entities
 
         private Vector3 logicalPosition;
         private bool logicalPositionStored;
+        private int displayTileK = int.MinValue;
+        private int displayTileM = int.MinValue;
         private Rigidbody rb;
+        private static Starship s_cachedLocalPlayerShip;
+        private static int s_cachedLocalPlayerFrame = -1;
         private Transform visualChild; // For Rigidbody entities: we position this, not the root
         private static UnityEngine.Camera s_cachedMainCamera;
         private static int s_cachedCameraFrame = -1;
@@ -29,7 +32,6 @@ namespace TitanOrbit.Entities
         /// <summary>Cached so we don't call GetComponent&lt;Starship&gt;() every LateUpdate on 300+ asteroids.</summary>
         private bool _isShip;
         private Starship _starship;
-        private static int s_e695ffCamNullLogs;
 
         private void Start()
         {
@@ -43,7 +45,8 @@ namespace TitanOrbit.Entities
             // NetworkRigidbody keeps client RBs kinematic while NetworkTransform drives the root.
             bool isBullet = GetComponent<Bullet>() != null;
             bool isGem = GetComponent<Gem>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet || isGem))
+            bool isPeopleTransport = GetComponent<PeopleTransportProjectile>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem || isPeopleTransport))
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null)
@@ -67,7 +70,8 @@ namespace TitanOrbit.Entities
                 return;
             bool isBullet = GetComponent<Bullet>() != null;
             bool isGem = GetComponent<Gem>() != null;
-            if (rb != null && (!rb.isKinematic || isBullet || isGem) && visualChild == null)
+            bool isPeopleTransport = GetComponent<PeopleTransportProjectile>() != null;
+            if (rb != null && (!rb.isKinematic || isBullet || isGem || isPeopleTransport) && visualChild == null)
             {
                 Transform v = transform.Find(VISUAL_CHILD_NAME);
                 if (v != null) visualChild = v;
@@ -127,6 +131,19 @@ namespace TitanOrbit.Entities
             logicalPositionStored = true;
         }
 
+        /// <summary>Logical world position before display-tile repositioning (for hit tests that use logical bullet paths).</summary>
+        public bool TryGetLogicalPosition(out Vector3 logical)
+        {
+            if (!logicalPositionStored)
+            {
+                logical = transform.position;
+                return false;
+            }
+
+            logical = logicalPosition;
+            return true;
+        }
+
         private void LateUpdate()
         {
             if (Time.frameCount != s_cachedCameraFrame)
@@ -145,15 +162,28 @@ namespace TitanOrbit.Entities
                 cam = s_cachedGameplayCameraFromController;
             if (cam == null)
             {
-                #region agent log e695ff
-                if (!_isShip && rb != null && !rb.isKinematic && s_e695ffCamNullLogs < 12)
-                {
-                    s_e695ffCamNullLogs++;
-                    NetworkGameManager.DebugSessionE695ffLog("B2", "ToroidalRenderer.LateUpdate", "cam_null_skip",
-                        "{\"go\":\"" + gameObject.name + "\"}");
-                }
-                #endregion
                 return;
+            }
+
+            Vector3 toroidalReference = cam.transform.position;
+            if (Time.frameCount != s_cachedLocalPlayerFrame)
+            {
+                s_cachedLocalPlayerFrame = Time.frameCount;
+                s_cachedLocalPlayerShip = null;
+                var nm = NetworkManager.Singleton;
+                if (nm != null && nm.IsClient && nm.SpawnManager != null)
+                {
+                    NetworkObject localPlayer = nm.SpawnManager.GetLocalPlayerObject();
+                    if (localPlayer != null)
+                        s_cachedLocalPlayerShip = localPlayer.GetComponent<Starship>();
+                }
+            }
+
+            if (s_cachedLocalPlayerShip != null && s_cachedLocalPlayerShip.IsLocalPlayerShip())
+            {
+                Vector3 shipRef = s_cachedLocalPlayerShip.GetCameraFollowWorldPosition();
+                toroidalReference.x = shipRef.x;
+                toroidalReference.z = shipRef.z;
             }
 
             if (_isShip && _starship != null)
@@ -164,7 +194,8 @@ namespace TitanOrbit.Entities
                 if (bankPivot == null || bankPivot == transform)
                     return;
                 Vector3 logical = rb != null ? rb.position : transform.position;
-                Vector3 display = ToroidalMap.GetDisplayPosition(logical, cam.transform.position);
+                Vector3 display = ToroidalMap.GetDisplayPositionWithHysteresis(
+                    logical, toroidalReference, ref displayTileK, ref displayTileM);
                 bankPivot.position = display;
                 return;
             }
@@ -174,18 +205,28 @@ namespace TitanOrbit.Entities
 
             if (rb != null)
             {
-                // On non-authority peers, NetworkRigidbody is often kinematic and NetworkTransform drives transform.
-                // Use transform position in that case so we don't sample stale rb.position and freeze visuals.
-                Vector3 sourcePos = rb.isKinematic ? transform.position : rb.position;
-                logicalPosition = ToroidalMap.WrapPosition(sourcePos);
-                logicalPositionStored = true;
+                var peopleTransport = GetComponent<PeopleTransportProjectile>();
+                if (peopleTransport != null && peopleTransport.UsesClientPredictedPosition)
+                {
+                    logicalPosition = ToroidalMap.WrapPosition(peopleTransport.ClientPredictedLogicalPosition);
+                    logicalPositionStored = true;
+                }
+                else
+                {
+                    // On non-authority peers, NetworkRigidbody is often kinematic and NetworkTransform drives transform.
+                    // Use transform position in that case so we don't sample stale rb.position and freeze visuals.
+                    Vector3 sourcePos = rb.isKinematic ? transform.position : rb.position;
+                    logicalPosition = ToroidalMap.WrapPosition(sourcePos);
+                    logicalPositionStored = true;
+                }
             }
             else if (!logicalPositionStored)
             {
                 StoreLogicalPosition();
             }
 
-            Vector3 displayPos = ToroidalMap.GetDisplayPosition(logicalPosition, cam.transform.position);
+            Vector3 displayPos = ToroidalMap.GetDisplayPositionWithHysteresis(
+                logicalPosition, toroidalReference, ref displayTileK, ref displayTileM);
 
             // Bullets may be kinematic on clients (NetworkRigidbody); still offset visuals only, not root.
             if (rb != null && visualChild != null)
@@ -221,7 +262,14 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                // Static or kinematic entity: move root (planets, asteroids with SgtPlanet/procedural mesh)
+                // Static or kinematic entity: move root (planets, asteroids with SgtPlanet/procedural mesh).
+                // Server physics + NetworkTransform must stay at logical coordinates; bullets keep logical RB roots
+                // while ToroidalRenderer offsets only their Visual child. Moving asteroid roots here on a host
+                // with a camera desyncs SphereCasts/traces from bullet paths (dedicated headless skips early — no cam).
+                var nm = NetworkManager.Singleton;
+                if (nm != null && nm.IsServer)
+                    return;
+
                 transform.position = displayPos;
             }
         }

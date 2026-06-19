@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using TitanOrbit.Data;
 using TitanOrbit.Entities;
 using TitanOrbit.Systems;
 using SciFiArsenal;
@@ -80,6 +81,7 @@ namespace TitanOrbit.Editor
             if (categories == null || categories.Count == 0) return;
 
             CombatSystem combat = UnityEngine.Object.FindObjectOfType<CombatSystem>();
+            PreserveBulletBankProfilesFromExisting(combat, categories);
             if (combat != null)
             {
                 SerializedObject so = new SerializedObject(combat);
@@ -155,9 +157,38 @@ namespace TitanOrbit.Editor
             foreach (var kv in byFolder.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var sorted = kv.Value.OrderBy(p => GetColorSortOrder(p != null ? p.name : "")).ToList();
-                categories.Add(new BulletBankCategory { categoryName = kv.Key, prefabs = sorted });
+                categories.Add(new BulletBankCategory
+                {
+                    categoryName = kv.Key,
+                    prefabs = sorted,
+                    profile = new BulletBankProfile(),
+                });
             }
             return categories;
+        }
+
+        /// <summary>Keeps authored stat modifiers and abilities when repopulating prefab lists from disk.</summary>
+        private static void PreserveBulletBankProfilesFromExisting(CombatSystem combat, List<BulletBankCategory> newCategories)
+        {
+            if (combat == null || newCategories == null || newCategories.Count == 0) return;
+            var categoriesField = typeof(CombatSystem).GetField("bulletBankCategories", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (categoriesField == null) return;
+            var existing = categoriesField.GetValue(combat) as List<BulletBankCategory>;
+            if (existing == null || existing.Count == 0) return;
+
+            var byName = new Dictionary<string, BulletBankProfile>(StringComparer.OrdinalIgnoreCase);
+            foreach (BulletBankCategory cat in existing)
+            {
+                if (cat == null || string.IsNullOrEmpty(cat.categoryName) || cat.profile == null) continue;
+                byName[cat.categoryName] = cat.profile;
+            }
+
+            foreach (BulletBankCategory cat in newCategories)
+            {
+                if (cat == null || string.IsNullOrEmpty(cat.categoryName)) continue;
+                if (byName.TryGetValue(cat.categoryName, out BulletBankProfile preserved))
+                    cat.profile = preserved;
+            }
         }
 
         private static int GetColorSortOrder(string prefabName)

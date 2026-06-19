@@ -9,6 +9,10 @@ REM a new Unity build, the browser may still be serving an OLD .data.unityweb fr
 REM loading NEW .js/.wasm. Fix: rename the build output folder (e.g. TitanOrbitWeb2), update the
 REM site to load that folder, or clear site data for the origin. UnityCache "revalidated" in the
 REM console often means stale data was reused.
+REM Invisible ships/planets (game otherwise OK): rebuild after TitanOrbit WebGL texture fix
+REM (disable Crunch on WebGL imports) — see tools/gcs/README.md troubleshooting section.
+REM WASM LinkError / ERR_HTTP2_PROTOCOL_ERROR on .data.unityweb: rerun metadata after upload;
+REM use verify_webgl_build.ps1, purge Cloudflare cache, clear browser site data — see README.
 REM WebAssembly 2023 / BigInt (Player Settings) needs current Chrome/Edge/Firefox/Safari; very old
 REM browsers may fail to instantiate the module.
 REM
@@ -20,4 +24,18 @@ REM   deploy_webgl_gcs.bat "C:\path\to\TitanOrbitWebGL" your-gcp-project-id
 call "%~dp0upload_webgl_to_gcs.bat" %*
 if errorlevel 1 exit /b 1
 call "%~dp0set_webgl_gcs_metadata.bat" %*
-exit /b %errorlevel%
+if errorlevel 1 exit /b 1
+
+echo.
+echo [4/4] Verifying GCS object sizes and Content-Encoding...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verify_gcs_upload.ps1" %1 %2
+if errorlevel 1 (
+  echo.
+  echo ERROR: GCS verification failed. Do NOT assume the site will load until this passes.
+  echo If sizes match on GCS but the public site is wrong, purge Cloudflare cache for titanorbit.io.
+  exit /b 1
+)
+
+echo.
+echo Deploy complete. IMPORTANT: purge Cloudflare cache for titanorbit.io, then clear browser site data.
+exit /b 0

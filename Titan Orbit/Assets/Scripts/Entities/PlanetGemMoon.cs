@@ -15,6 +15,7 @@ namespace TitanOrbit.Entities
     /// Docking uses a trigger collider; collisions use a non-trigger collider on the same Rigidbody.
     /// After the moon's shield reaches 0, it drains planet gems and expels them as collectible gems.
     /// </summary>
+    [DefaultExecutionOrder(32100)] // After ToroidalRenderer (32000): visual orbit follows parent display tile
     public class PlanetGemMoon : MonoBehaviour
     {
         [SerializeField] private Planet planet;
@@ -27,7 +28,7 @@ namespace TitanOrbit.Entities
         [SerializeField] private float moonOrbitRingClearanceMarginWorld = 0.4f;
 
         [Header("Combat")]
-        [Tooltip("Base shield at planet level 1. Effective max shield scales with planet level.")]
+        [Tooltip("Base shield at planet level 1. Effective max = base * 2^(level-1) (same curve as planet gem capacity). Level 1=base, 2=2×, 3=4×, …")]
         [SerializeField] private float maxShieldPoints = 250f;
         [Header("Shield Regeneration")]
         [Tooltip("How long after the last shield hit the moon waits before starting to regenerate.")]
@@ -81,13 +82,24 @@ namespace TitanOrbit.Entities
         private Rigidbody _rb;
         private Transform _visualTransform;
 
+        // Orbit is now driven by a parametric formula tied to NetworkManager.ServerTime so every
+        // peer renders the moon at the same place without any per-tick replication. orbitAngle /
+        // spinAngleDegrees are still updated for any callers that read them, but the source of
+        // truth is the synced time + cached phase offsets below (see ComputeOrbitMotion).
         private float orbitAngle;
         private float spinAngleDegrees;
         private Vector3 cachedWorldVelocity;
+        private double phaseOffset;
+        private float lastOmega;
+        private bool hasLastOmega;
+        private Quaternion _visualBaseRotation = Quaternion.identity;
+        private bool _hasCapturedVisualBaseRotation;
 
         private float shieldPoints;
         private float runtimeMaxShieldPoints;
         private double lastShieldHitServerTime;
+        /// <summary>Remote clients: shield value at <see cref="lastShieldHitServerTime"/> for regen display (mirrors server regen).</summary>
+        private float _shieldRegenBaseline;
 
         private GameObject _matrixShieldInstance;
         private TeamManager.Team _matrixShieldTeam = TeamManager.Team.None;
@@ -110,13 +122,21 @@ namespace TitanOrbit.Entities
         private readonly Dictionary<int, float> _lastPlanetImpactTimeByInstanceId = new Dictionary<int, float>();
         private static readonly List<PlanetGemMoon> ActiveMoons = new List<PlanetGemMoon>();
         private static readonly Collider[] PlanetOverlapBuffer = new Collider[32];
-
         [Header("Enemy Shield Barrier")]
         [Tooltip("When an enemy/non-friendly ship enters the shield area while the shield has points, push it outward to prevent passing through.")]
         [SerializeField] private float enemyShieldRepelMinSpeed = 8f;
         [SerializeField] private float enemyShieldRepelMaxSpeed = 22f;
 
         public Planet Planet => planet;
+
+        /// <summary>Active gem moons in the scene (combat / toroidal bullet sweeps).</summary>
+        public static int ActiveMoonCount => ActiveMoons.Count;
+
+        public static PlanetGemMoon GetActiveMoonAt(int index)
+        {
+            if (index < 0 || index >= ActiveMoons.Count) return null;
+            return ActiveMoons[index];
+        }
         public Vector3 WorldOrbitVelocity => cachedWorldVelocity;
         public float SpinAngleDegrees => spinAngleDegrees;
         public float SpinDegreesPerSecond => spinDegreesPerSecond;
@@ -147,8 +167,13 @@ namespace TitanOrbit.Entities
             return gemPointsClientDisplay;
         }
 
-        /// <summary>Current shield points for UI.</summary>
-        public float GetShieldPointsForDisplay() => Mathf.Max(0f, shieldPoints);
+        /// <summary>Current shield points for UI and VFX (server: simulated; clients: regen from last sync).</summary>
+        public float GetShieldPointsForDisplay()
+        {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                return Mathf.Max(0f, shieldPoints);
+            return Mathf.Max(0f, ComputeDisplayedShieldPoints(GetServerTimeNowSeconds()));
+        }
 
         /// <summary>Max shield points for UI.</summary>
         public float GetMaxShieldPointsForDisplay() => Mathf.Max(0f, runtimeMaxShieldPoints);
@@ -156,7 +181,7 @@ namespace TitanOrbit.Entities
         private float GetScaledMaxShieldPoints()
         {
             int level = planet != null ? Mathf.Max(1, planet.PlanetLevel) : 1;
-            return Mathf.Max(0.001f, maxShieldPoints * level);
+            return Mathf.Max(0.001f, maxShieldPoints * Mathf.Pow(2f, level - 1));
         }
 
         private bool RefreshScaledShieldCapacityServer()
@@ -286,13 +311,46 @@ namespace TitanOrbit.Entities
 
         private void EnsureMoonOrbitZoneVisual()
         {
-            if (transform.Find("MoonOrbitZone") != null) return;
+            Transform existing = transform.Find("MoonOrbitZone");
+            if (existing != null)
+            {
+                Transform legacyMeshFallback = existing.Find("MoonOrbitZoneMeshFallback");
+                if (legacyMeshFallback != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(legacyMeshFallback.gameObject);
+                    else
+                        DestroyImmediate(legacyMeshFallback.gameObject);
+                }
+                if (existing.GetComponent<GemMoonOrbitZoneVisual>() == null)
+                    existing.gameObject.AddComponent<GemMoonOrbitZoneVisual>();
+                EnsureMoonOrbitZoneMeshFallback(existing.gameObject);
+                return;
+            }
             GameObject oz = new GameObject("MoonOrbitZone");
             oz.transform.SetParent(transform, false);
             oz.transform.localPosition = Vector3.zero;
             oz.transform.localRotation = Quaternion.identity;
             oz.transform.localScale = Vector3.one;
             oz.AddComponent<GemMoonOrbitZoneVisual>();
+            EnsureMoonOrbitZoneMeshFallback(oz);
+        }
+
+        /// <summary>Attach optional moon orbit mesh fallback without compile-time type dependency.</summary>
+        private static void EnsureMoonOrbitZoneMeshFallback(GameObject target)
+        {
+            if (target == null) return;
+            System.Type fallbackType = System.Type.GetType("TitanOrbit.Entities.GemMoonOrbitZoneMeshFallback")
+                ?? System.Type.GetType("GemMoonOrbitZoneMeshFallback");
+            if (fallbackType == null)
+            {
+                var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length && fallbackType == null; i++)
+                    fallbackType = assemblies[i].GetType("TitanOrbit.Entities.GemMoonOrbitZoneMeshFallback", false);
+            }
+            if (fallbackType == null) return;
+            if (target.GetComponent(fallbackType) == null)
+                target.AddComponent(fallbackType);
         }
 
         private void OnEnable()
@@ -309,11 +367,18 @@ namespace TitanOrbit.Entities
                 var no = planet.GetComponent<NetworkObject>();
                 if (no != null) id = no.NetworkObjectId;
             }
-            orbitAngle = (id % 6283UL) * 0.001f;
+            // Deterministic phase per planet: every peer derives the same starting angle/spin
+            // from the planet's NetworkObjectId, so the parametric orbit lines up without any
+            // per-tick sync. The integer cast `spinAngleDegrees` is retained only for the
+            // SpinAngleDegrees getter; ComputeOrbitMotion / LateUpdate overwrite it each frame.
+            phaseOffset = (id % 6283UL) * 0.001f;
+            orbitAngle = (float)phaseOffset;
             spinAngleDegrees = (id % 360UL);
+            hasLastOmega = false;
 
             runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
             shieldPoints = runtimeMaxShieldPoints;
+            _shieldRegenBaseline = runtimeMaxShieldPoints;
             lastShieldHitServerTime = GetServerTimeNowSeconds();
 
             // Only the server tracks/updates gem drain & spawning logic.
@@ -326,9 +391,10 @@ namespace TitanOrbit.Entities
             else
             {
                 // Client receives authoritative shield state through RPC shortly after spawn.
-                // Until then, assume full shield so the matrix VFX isn't hidden at 0 (RPC will correct).
-                runtimeMaxShieldPoints = Mathf.Max(0.001f, maxShieldPoints);
+                // Until then, assume full shield at level-scaled max so VFX isn't hidden at 0 (RPC will correct).
+                runtimeMaxShieldPoints = GetScaledMaxShieldPoints();
                 shieldPoints = runtimeMaxShieldPoints;
+                _shieldRegenBaseline = runtimeMaxShieldPoints;
                 lastShieldHitServerTime = GetServerTimeNowSeconds();
             }
 
@@ -399,60 +465,33 @@ namespace TitanOrbit.Entities
         {
             if (planet == null) return;
 
-            Vector3 center = planet.transform.position;
-            center.y = 0f;
+            // Server still drives the kinematic rigidbody at the physics tick so dock / shield /
+            // body trigger callbacks fire on a stable cadence. Visual smoothness comes from
+            // LateUpdate below, which sets transform.position parametrically every render frame.
+            double t = GetSyncedTimeSeconds();
+            ComputeOrbitMotion(t, out Vector3 worldOffset, out cachedWorldVelocity);
 
-            float rNominal = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
-            float moonDock = GetMoonDockSnapRadiusWorld();
-            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
-            float r = Mathf.Max(rNominal, rClear);
-            float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
-            float omega = r > 0.001f ? speed / r : 0f;
-
-            var nm = NetworkManager.Singleton;
-            if (nm == null || !nm.IsListening)
+            // Server: logical world position for triggers/collision. Clients: LateUpdate sets local orbit.
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
-                // Offline / not in a net session: same as original local integration.
-                orbitAngle -= omega * Time.fixedDeltaTime;
+                Vector3 pos = planet.GetOrbitGameplayCenterWorld() + worldOffset;
+                pos.y = 0f;
+                if (_rb != null && _rb.isKinematic)
+                    _rb.MovePosition(pos);
+                else
+                    transform.position = pos;
             }
-            else if (nm.IsServer)
-            {
-                // Counter to ship orbit direction — authoritative integration only on server.
-                orbitAngle -= omega * Time.fixedDeltaTime;
-                planet.ServerSetGemMoonOrbitAngle(orbitAngle);
-            }
-            else
-            {
-                orbitAngle = planet.GemMoonOrbitAngleSynced;
-            }
-
-            Vector3 offset = new Vector3(Mathf.Cos(orbitAngle), 0f, Mathf.Sin(orbitAngle)) * r;
-            Vector3 pos = center + offset;
-            pos.y = 0f;
-
-            Vector3 radial = r > 0.001f ? offset / r : Vector3.forward;
-            cachedWorldVelocity = new Vector3(-radial.z, 0f, radial.x) * speed;
-
-            if (_rb != null && _rb.isKinematic)
-            {
-                _rb.MovePosition(pos);
-            }
-            else
-            {
-                transform.position = pos;
-            }
-
-            // Visual moon spin around same tilted axis as the parent planet/rings.
-            spinAngleDegrees = (spinAngleDegrees + Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime) % 360f;
-            if (_visualTransform == null) _visualTransform = transform.Find("GemMoonVisual");
-            if (_visualTransform != null)
-                _visualTransform.RotateAround(transform.position, SpinAxisWorld, Mathf.Max(0f, spinDegreesPerSecond) * Time.fixedDeltaTime);
 
             // Keep moon shield capacity scaled with current planet level.
             if (RefreshScaledShieldCapacityServer())
                 PushFullStateToClients();
 
-            TickMoonShieldRegen();
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                TickMoonShieldRegen();
+                TickEnemyShieldRepelServer();
+                TickGemMoonDockingServer();
+            }
             UpdateMatrixShieldVisual();
 
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
@@ -460,11 +499,108 @@ namespace TitanOrbit.Entities
             TickMoonCollisionDamageServer();
         }
 
+        /// <summary>
+        /// Deterministic orbit + spin update: every peer (server and clients) reads the synced
+        /// network time and computes the same world position/rotation. Replaces the old
+        /// per-tick NetworkVariable replication of the orbit angle, which produced a
+        /// stair-stepped visual on remote clients.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (planet == null) return;
+
+            double t = GetSyncedTimeSeconds();
+            ComputeOrbitMotion(t, out Vector3 worldOffset, out cachedWorldVelocity);
+            ApplyOrbitOffsetAsLocalPosition(worldOffset);
+
+            if (_visualTransform == null) _visualTransform = transform.Find("GemMoonVisual");
+            if (_visualTransform != null)
+            {
+                if (!_hasCapturedVisualBaseRotation)
+                {
+                    _visualBaseRotation = _visualTransform.rotation;
+                    _hasCapturedVisualBaseRotation = true;
+                }
+                float spinDeg = (float)((Mathf.Max(0f, spinDegreesPerSecond) * t) % 360.0);
+                if (spinDeg < 0f) spinDeg += 360f;
+                spinAngleDegrees = spinDeg;
+                _visualTransform.rotation = Quaternion.AngleAxis(spinDeg, SpinAxisWorld) * _visualBaseRotation;
+            }
+        }
+
+        /// <summary>Synced time on every peer (server-time domain). Falls back to local time when offline.</summary>
+        private double GetSyncedTimeSeconds()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening) return nm.ServerTime.Time;
+            return Time.timeAsDouble;
+        }
+
+        /// <summary>World-space radius of the moon's orbit around its planet (shared with people-transfer orbit ring).</summary>
+        public float ComputeOrbitRadiusWorld()
+        {
+            if (planet == null) return 0f;
+
+            float rNominal = planet.PlanetSize * planet.GetMoonNominalOrbitRadiusLocal() * Mathf.Max(1.01f, moonOrbitOutsideFactor);
+            float moonDock = GetMoonDockSnapRadiusWorld();
+            float rClear = planet.GetGemMoonStructuralOuterRadiusWorld() + moonDock + Mathf.Max(0f, moonOrbitRingClearanceMarginWorld);
+            return Mathf.Max(rNominal, rClear);
+        }
+
+        /// <summary>
+        /// Pure function of planet state + synced time. <paramref name="t"/> is the synced server time
+        /// in seconds. Returns world-space orbit offset from the planet center and tangential velocity.
+        /// When the orbital angular speed changes (planet level up), <see cref="phaseOffset"/> is
+        /// adjusted so the angle stays continuous; both peers run the same correction independently.
+        /// </summary>
+        private void ComputeOrbitMotion(double t, out Vector3 worldOffset, out Vector3 worldVelocity)
+        {
+            float r = ComputeOrbitRadiusWorld();
+            float speed = planet.GetStandardOrbitSpeedAtOuterOrbit();
+            float omega = r > 0.001f ? speed / r : 0f;
+
+            // Maintain angle continuity across omega changes: theta_old(T) == theta_new(T)
+            // <=> phaseOffset += (omegaNew - omegaOld) * T. The original orbit goes counter to
+            // ship orbit direction (negative omega in the integrator), so we subtract omega*t.
+            if (!hasLastOmega)
+            {
+                lastOmega = omega;
+                hasLastOmega = true;
+            }
+            else if (Mathf.Abs(omega - lastOmega) > 1e-5f)
+            {
+                phaseOffset += (omega - lastOmega) * t;
+                lastOmega = omega;
+            }
+
+            float theta = (float)(phaseOffset - omega * t);
+            orbitAngle = theta;
+
+            worldOffset = new Vector3(Mathf.Cos(theta), 0f, Mathf.Sin(theta)) * r;
+
+            Vector3 radial = r > 0.001f ? worldOffset / r : Vector3.forward;
+            // Counter-clockwise tangent for the negative-omega motion above.
+            worldVelocity = new Vector3(-radial.z, 0f, radial.x) * speed;
+        }
+
+        /// <summary>
+        /// Parented orbit offset in planet-local space so the moon follows <see cref="ToroidalRenderer"/>
+        /// display tiles (clients) without breaking toroidal gameplay math on the server.
+        /// </summary>
+        private void ApplyOrbitOffsetAsLocalPosition(Vector3 worldOffset)
+        {
+            if (planet == null) return;
+            Vector3 ls = planet.transform.lossyScale;
+            float sx = Mathf.Max(0.001f, Mathf.Abs(ls.x));
+            float sz = Mathf.Max(0.001f, Mathf.Abs(ls.z));
+            transform.localPosition = new Vector3(worldOffset.x / sx, 0f, worldOffset.z / sz);
+        }
+
         private void TickMoonCollisionDamageServer()
         {
             float now = Time.time;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             float moonRadius = GetMoonBodyRadiusWorld();
             if (moonRadius <= 0.0001f) return;
@@ -509,7 +645,7 @@ namespace TitanOrbit.Entities
                 if (moonDamage > 0.0001f)
                     TakeDamageServer(moonDamage);
                 if (asteroidDamage > 0.0001f)
-                    asteroid.TakeDamageServerRpc(asteroidDamage, 0ul);
+                    asteroid.ApplyDamageFromBulletServer(asteroidDamage, 0ul);
             }
         }
 
@@ -622,6 +758,38 @@ namespace TitanOrbit.Entities
             GemSpawner.Instance.SpawnGemsFromShipServerRpc(transform.position, spawnValue, 0ul);
         }
 
+        private void TickEnemyShieldRepelServer()
+        {
+            if (shieldPoints <= 0.001f) return;
+
+            float radius = GetMoonShieldOuterRadiusWorld();
+            if (radius <= 0.0001f) return;
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || ship.IsDead) continue;
+                TryRepelEnemyShipWithShield(ship);
+            }
+        }
+
+        /// <summary>
+        /// Server: toroidal dock-zone check — physics triggers miss ships on the other side of a map wrap.
+        /// </summary>
+        private void TickGemMoonDockingServer()
+        {
+            if (planet == null) return;
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || ship.IsDead) continue;
+                if (!IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1.05f)) continue;
+
+                ProcessShipGemMoonDocking(ship, overlapsDockTrigger: true);
+            }
+        }
+
         private void TickMoonShieldRegen()
         {
             if (shieldPoints >= runtimeMaxShieldPoints - 0.001f) return;
@@ -658,15 +826,60 @@ namespace TitanOrbit.Entities
 
         public void ApplyShieldClientSync(float currentShieldPoints, float syncMaxShieldPoints, float lastHitServerTimeSeconds, float currentMoonGemPoints)
         {
-            shieldPoints = Mathf.Max(0f, currentShieldPoints);
+            float prevMax = runtimeMaxShieldPoints;
             runtimeMaxShieldPoints = Mathf.Max(0.001f, syncMaxShieldPoints);
-            lastShieldHitServerTime = lastHitServerTimeSeconds;
             gemPointsClientDisplay = Mathf.Max(0f, currentMoonGemPoints);
+
+            // Host/server: shieldPoints are driven by TickMoonShieldRegen — do not overwrite from RPC.
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                UpdateMatrixShieldVisual();
+                if (statsDisplay == null)
+                    statsDisplay = GetComponent<GemMoonStatsDisplay>();
+                if (statsDisplay != null)
+                    statsDisplay.Refresh();
+                return;
+            }
+
+            bool hitAnchorChanged = Mathf.Abs((float)(lastShieldHitServerTime - lastHitServerTimeSeconds)) > 0.05f;
+            bool maxChanged = Mathf.Abs(prevMax - runtimeMaxShieldPoints) > 0.001f;
+            lastShieldHitServerTime = lastHitServerTimeSeconds;
+            if (hitAnchorChanged || maxChanged)
+                _shieldRegenBaseline = Mathf.Max(0f, currentShieldPoints);
+            else
+                _shieldRegenBaseline = Mathf.Min(_shieldRegenBaseline, Mathf.Max(0f, currentShieldPoints));
+
+            shieldPoints = ComputeDisplayedShieldPoints(GetServerTimeNowSeconds());
             UpdateMatrixShieldVisual();
             if (statsDisplay == null)
                 statsDisplay = GetComponent<GemMoonStatsDisplay>();
             if (statsDisplay != null)
                 statsDisplay.Refresh();
+        }
+
+        /// <summary>
+        /// Mirrors server <see cref="TickMoonShieldRegen"/> using synced server time so clients show regen without per-tick RPCs.
+        /// </summary>
+        private float ComputeDisplayedShieldPoints(double now)
+        {
+            float max = Mathf.Max(0.001f, runtimeMaxShieldPoints);
+            if (_shieldRegenBaseline >= max - 0.001f)
+                return max;
+
+            double sinceHit = now - lastShieldHitServerTime;
+            if (sinceHit <= shieldRegenDelaySeconds)
+                return Mathf.Clamp(_shieldRegenBaseline, 0f, max);
+
+            float regenRatePerSecond = max / Mathf.Max(0.01f, shieldRegenSecondsToFull);
+            float regenned = _shieldRegenBaseline + regenRatePerSecond * (float)(sinceHit - shieldRegenDelaySeconds);
+            return Mathf.Clamp(regenned, 0f, max);
+        }
+
+        private void RefreshClientDisplayedShield()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer)
+                return;
+            shieldPoints = ComputeDisplayedShieldPoints(GetServerTimeNowSeconds());
         }
 
         private void EnsureMatrixShieldVisual()
@@ -698,6 +911,7 @@ namespace TitanOrbit.Entities
 
         private void UpdateMatrixShieldVisual()
         {
+            RefreshClientDisplayedShield();
             EnsureMatrixShieldVisual();
             if (_matrixShieldInstance == null) return;
 
@@ -857,12 +1071,101 @@ namespace TitanOrbit.Entities
             return GetMoonDockSnapRadiusLocal();
         }
 
+        /// <summary>
+        /// Deterministic moon world XZ from synced orbit math. Use for toroidal distance against ships that
+        /// stay at unwrapped world coordinates — not the client display tile from <see cref="ToroidalRenderer"/>.
+        /// </summary>
+        public Vector3 GetGameplayWorldPosition()
+        {
+            if (planet == null)
+            {
+                Vector3 p = transform.position;
+                p.y = 0f;
+                return p;
+            }
+            ComputeOrbitMotion(GetSyncedTimeSeconds(), out Vector3 worldOffset, out _);
+            Vector3 pos = planet.GetOrbitGameplayCenterWorld() + worldOffset;
+            pos.y = 0f;
+            return pos;
+        }
+
+        /// <summary>
+        /// Moon center in the same world space as rendered geometry (planet display tile + orbit offset).
+        /// Use for owner-client dock visuals; server and toroidal gameplay checks keep using
+        /// <see cref="GetGameplayWorldPosition"/>.
+        /// </summary>
+        public Vector3 GetDisplayWorldPosition()
+        {
+            if (planet == null)
+            {
+                Vector3 p = transform.position;
+                p.y = 0f;
+                return p;
+            }
+            ComputeOrbitMotion(GetSyncedTimeSeconds(), out Vector3 worldOffset, out _);
+            Vector3 center = planet.transform.position;
+            center.y = 0f;
+            Vector3 pos = center + worldOffset;
+            pos.y = 0f;
+            return pos;
+        }
+
+        /// <summary>Dock pose tracking: display space on owning clients, gameplay space elsewhere.</summary>
+        public Vector3 GetDockTrackingWorldPosition(bool useDisplaySpace) =>
+            useDisplaySpace ? GetDisplayWorldPosition() : GetGameplayWorldPosition();
+
+        /// <summary>
+        /// Toroidal dock-zone check for <paramref name="ship"/> (physics triggers miss across map wraps).
+        /// Uses gameplay moon position and both ship transform + rigidbody XZ (owner sim can split them).
+        /// </summary>
+        public bool IsShipInMoonDockZoneToroidal(Starship ship, float radiusMultiplier = 1f)
+        {
+            if (ship == null) return false;
+
+            Vector3 moonPos = GetGameplayWorldPosition();
+            moonPos.y = 0f;
+            float zoneRadius = GetMoonDockSnapRadiusWorld() * Mathf.Max(0.0001f, radiusMultiplier);
+            if (zoneRadius <= 0.0001f) return false;
+
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
+            float threshold = zoneRadius + shipRadius;
+
+            Vector3 tPos = ship.transform.position;
+            tPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            Vector3 rPos = shipRb != null ? shipRb.position : tPos;
+            rPos.y = 0f;
+
+            return ToroidalMap.ToroidalDistance(tPos, moonPos) <= threshold
+                || ToroidalMap.ToroidalDistance(rPos, moonPos) <= threshold;
+        }
+
         /// <summary>World-space radius of the docking trigger; snap only applies while within this distance of the moon.</summary>
         public float GetMoonDockSnapRadiusWorld()
         {
             float r = GetMoonDockSnapRadiusLocal();
             Vector3 lossy = transform.lossyScale;
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
+        }
+
+        /// <summary>World-space radius used for bullet / toroidal hit tests (shield shell when up, body when down).</summary>
+        public float GetMoonBulletHitRadiusWorld()
+        {
+            if (GetShieldPointsForDisplay() > 0.001f)
+                return GetMoonShieldOuterRadiusWorld();
+            return GetMoonBodyRadiusWorld();
+        }
+
+        /// <summary>Checks every active moon and repels <paramref name="ship"/> when inside an enemy shield (owner client).</summary>
+        public static void TickShieldRepelForAllMoons(Starship ship)
+        {
+            if (ship == null || ship.IsDead) return;
+            for (int i = 0; i < ActiveMoons.Count; i++)
+            {
+                PlanetGemMoon moon = ActiveMoons[i];
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+                moon.TryRepelEnemyShipWithShield(ship);
+            }
         }
 
         /// <summary>World-space radius of the outer shield barrier (may be larger than the dock trigger).</summary>
@@ -915,13 +1218,22 @@ namespace TitanOrbit.Entities
             if (ship == null) return transform.position;
             if (planet == null) return transform.position;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
 
-            float radius = GetMoonBodyRadiusWorld();
             // Closest surface point from current ship approach direction.
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
+
+            float radius = GetMoonBodyRadiusWorld();
             Vector3 dir = ToroidalMap.ToroidalDirection(moonPos, shipPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f)
@@ -957,8 +1269,16 @@ namespace TitanOrbit.Entities
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (planet == null) return;
 
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
+
+            ProcessShipGemMoonDocking(ship, overlapsDockTrigger: true);
+        }
+
+        private void ProcessShipGemMoonDocking(Starship ship, bool overlapsDockTrigger)
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
+            if (planet == null || ship == null || ship.IsDead) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
             if (ship.GemMoonDockIgnoreUntilServerTime > now)
@@ -977,12 +1297,16 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
-            if (!IsShipReadyToLandInMoonZone(ship))
+            // Latched dock: stay docked until trigger exit / explicit undock — do not re-run landing gates every frame.
+            if (ship.GemMoonDocked)
             {
-                ship.ServerSetGemMoonDocked(false, null);
+                ship.ServerSetGemMoonDocked(true, planet);
                 return;
             }
+
+            // Moon orbit-zone behavior: once inside moon zone and mostly idle, start landing sequence.
+            if (!IsShipReadyToLandInMoonZone(ship, overlapsDockTrigger))
+                return;
 
             ship.ServerSetGemMoonDocked(true, planet);
         }
@@ -992,7 +1316,7 @@ namespace TitanOrbit.Entities
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (planet == null) return;
 
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null || ship.IsDead) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
@@ -1006,7 +1330,7 @@ namespace TitanOrbit.Entities
         private void OnTriggerExit(Collider other)
         {
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
-            var ship = other.GetComponent<Starship>();
+            var ship = other.GetComponentInParent<Starship>();
             if (ship == null) return;
 
             float now = (float)NetworkManager.Singleton.ServerTime.Time;
@@ -1027,16 +1351,11 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
-            Vector3 shipPos = ship.transform.position;
-            shipPos.y = 0f;
 
-            float xzDist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float keepDockRadiusWorld = GetMoonDockSnapRadiusWorld() * 1.05f;
-            bool shouldStayDocked = keepDockRadiusWorld > 0.0001f && xzDist <= keepDockRadiusWorld;
-
-            ship.ServerSetGemMoonDocked(shouldStayDocked, shouldStayDocked ? planet : null);
+            bool remainDocked = ShouldShipRemainGemMoonDocked(ship);
+            ship.ServerSetGemMoonDocked(remainDocked, remainDocked ? planet : null);
         }
 
         /// <summary>True when <paramref name="team"/> owns this moon's planet (same rule as shield barrier friendlies).</summary>
@@ -1061,21 +1380,28 @@ namespace TitanOrbit.Entities
         private bool TryRepelEnemyShipWithShield(Starship ship)
         {
             if (ship == null) return false;
-            if (shieldPoints <= 0.001f) return false;
+            if (GetShieldPointsForDisplay() <= 0.001f) return false;
             if (IsShipFriendlyToThisMoon(ship)) return false;
-
-            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
-            if (shipRb == null) return false;
 
             float shieldRadiusWorld = GetMoonShieldOuterRadiusWorld();
             if (shieldRadiusWorld <= 0.0001f) return false;
 
-            Vector3 moonPos = transform.position;
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
+            Rigidbody shipRb = ship.GetComponent<Rigidbody>();
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
 
             float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
+            if (dist > shieldRadiusWorld) return false;
+
             Vector3 dir = ToroidalMap.ToroidalDirection(moonPos, shipPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
@@ -1088,11 +1414,12 @@ namespace TitanOrbit.Entities
             Vector3 outwardVel = dir * repelSpeed;
             outwardVel.y = 0f;
 
-            // Prevent accidental dock state while shield is active for non-friendly ships.
-            ship.ServerSetGemMoonDocked(false, null);
+            bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+                ship.ServerNotifyGemMoonShieldRepel(outwardVel);
+            else if (ship.IsOwner && !isAi)
+                ship.ApplyGemMoonShieldRepelLocal(outwardVel);
 
-            shipRb.linearVelocity = outwardVel;
-            shipRb.angularVelocity = Vector3.zero;
             return true;
         }
 
@@ -1104,18 +1431,24 @@ namespace TitanOrbit.Entities
             if (planet == null || ship == null) return false;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
-            Vector3 center = planet.transform.position;
-            center.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipPos, center);
-            float inner = planet.PlanetSize * 0.5f;
-            float outer = planet.PlanetSize * planet.GetOrbitZoneOuterRadiusLocal();
-            return dist >= inner && dist <= outer;
+            return planet.IsWorldPositionInOrbitRing(shipPos);
         }
 
-        private bool IsShipReadyToLandInMoonZone(Starship ship)
+        /// <summary>
+        /// XZ proximity check used when the dock trigger exits (Y-snap / NT lag) so docked ships are not flickered off.
+        /// </summary>
+        private bool ShouldShipRemainGemMoonDocked(Starship ship)
+        {
+            if (ship == null || !ship.GemMoonDocked) return false;
+
+            return IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1.25f);
+        }
+
+        private bool IsShipReadyToLandInMoonZone(Starship ship, bool overlapsDockTrigger = false)
         {
             if (ship == null) return false;
             if (planet == null) return false;
+            if (ship.GemMoonDocked) return true;
 
             // Players (and AI) can only dock/land on planets that are owned by their own team.
             TeamManager.Team planetTeam = planet.TeamOwnership;
@@ -1125,25 +1458,80 @@ namespace TitanOrbit.Entities
             if (shipTeam == TeamManager.Team.None) return false;
             if (shipTeam != planetTeam) return false;
 
-            Vector3 moonPos = transform.position;
+            // Players must release forward thrust and stop firing before landing — defensive orbit allows move + shoot.
+            if (ship.IsMoveForwardPressedForGemMoonLanding)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            if (ship.IsShootPressedForGemMoonLanding)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
             Vector3 shipPos = ship.transform.position;
             shipPos.y = 0f;
-
-            float dist = ToroidalMap.ToroidalDistance(shipPos, moonPos);
-            float zoneRadius = GetMoonDockSnapRadiusWorld();
-            if (zoneRadius <= 0.0001f) return false;
-            if (dist > zoneRadius) return false;
-
             Rigidbody shipRb = ship.GetComponent<Rigidbody>();
-            if (shipRb == null) return false;
+            if (shipRb != null)
+            {
+                Vector3 rbPos = shipRb.position;
+                rbPos.y = 0f;
+                if (ToroidalMap.ToroidalDistance(rbPos, moonPos) < ToroidalMap.ToroidalDistance(shipPos, moonPos))
+                    shipPos = rbPos;
+            }
 
-            Vector3 vel = shipRb.linearVelocity;
-            vel.y = 0f;
+            float zoneRadius = GetMoonDockSnapRadiusWorld();
+            float shipRadius = ship.GetShipMoonDockRadiusXZ();
+            if (zoneRadius <= 0.0001f) return false;
+            // Toroidal geometry check (trigger overlap flag from TickGemMoonDockingServer or OnTriggerStay).
+            if (!overlapsDockTrigger && !IsShipInMoonDockZoneToroidal(ship, radiusMultiplier: 1f)) return false;
+
+            Vector3 vel = ship.GetPlanarVelocityForServerGameplayChecks();
             float speed = vel.magnitude;
 
-            // Mostly stationary — allow light drift so docking is easier to trigger.
-            return speed <= 1.85f;
+            // Slightly looser caps when the dock trigger already overlaps — upgraded hulls coast faster leaving planet orbit.
+            float maxLandingSpeed = overlapsDockTrigger ? 2.15f : 1.85f;
+            const float flyThroughMaxSpeed = 2.35f;
+            float flyThroughCap = overlapsDockTrigger ? 2.65f : flyThroughMaxSpeed;
+
+            if (speed > flyThroughCap)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            // Arcing through the shell at meaningful speed is pass-through, not landing intent.
+            // Inside the dock trigger without thrust = intentional landing; skip tangential rejection (orbit coast is mostly tangential).
+            bool coastingToLand = overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding;
+            if (!coastingToLand && speed > 0.25f)
+            {
+                Vector3 awayFromMoon = ToroidalMap.ToroidalDirection(moonPos, shipPos);
+                awayFromMoon.y = 0f;
+                if (awayFromMoon.sqrMagnitude > 0.0001f)
+                {
+                    awayFromMoon.Normalize();
+                    float radialSpeed = Mathf.Abs(Vector3.Dot(vel, awayFromMoon));
+                    float tangentialSpeedSq = Mathf.Max(0f, speed * speed - radialSpeed * radialSpeed);
+                    if (speed >= 1.4f && tangentialSpeedSq > speed * speed * 0.36f)
+                    {
+                        ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                        return false;
+                    }
+                }
+            }
+
+            if (speed > maxLandingSpeed)
+            {
+                ship.ServerTickGemMoonLandingDwell(false, Time.fixedDeltaTime);
+                return false;
+            }
+
+            ship.ServerTickGemMoonLandingDwell(true, Time.fixedDeltaTime);
+            return ship.ServerGemMoonLandingDwellMet;
         }
     }
 }

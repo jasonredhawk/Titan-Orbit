@@ -7,7 +7,7 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Handles Home Planet store: purchase validation (contributed gems), spawning drones, adding rockets/mines to ship.
+    /// Handles Home Planet store: purchase validation (contributed gems), equipping drones/rockets/mines into ship equipment slots.
     /// </summary>
     public class HomePlanetStoreSystem : NetworkBehaviour
     {
@@ -17,6 +17,13 @@ namespace TitanOrbit.Systems
         [SerializeField] private GameObject fighterDronePrefab;
         [SerializeField] private GameObject shieldDronePrefab;
         [SerializeField] private GameObject miningDronePrefab;
+        [Tooltip("Network prefab for drones dropped on ship death (LootableDrone + NetworkObject).")]
+        [SerializeField] private GameObject lootableDroneNetworkPrefab;
+
+        public GameObject FighterDronePrefab => fighterDronePrefab;
+        public GameObject ShieldDronePrefab => shieldDronePrefab;
+        public GameObject MiningDronePrefab => miningDronePrefab;
+        public GameObject LootableDroneNetworkPrefab => lootableDroneNetworkPrefab;
 
         private void Awake()
         {
@@ -50,7 +57,7 @@ namespace TitanOrbit.Systems
             TitanOrbit.UI.OrbitStationUI.OnContributedGemsReceived(gems);
         }
 
-        /// <summary>Server: purchase item. Deducts from contributed gems and grants item to the player's ship.</summary>
+        /// <summary>Server: purchase item. Deducts from contributed gems and adds item to an equipment slot on the player's ship.</summary>
         [ServerRpc(RequireOwnership = false)]
         public void PurchaseItemServerRpc(ulong homePlanetNetworkId, ulong shipNetworkId, StoreItemType itemType, ServerRpcParams rpcParams = default)
         {
@@ -60,39 +67,63 @@ namespace TitanOrbit.Systems
             if (home == null || home.AssignedTeam == TeamManager.Team.None) return;
             if (TeamManager.Instance == null || TeamManager.Instance.GetPlayerTeam(clientId) != home.AssignedTeam) return;
 
+            NetworkObject shipNet = GetNetworkObject(shipNetworkId);
+            Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
+            if (ship == null || ship.OwnerClientId != clientId) return;
+            if (!ship.HasEmptyEquipmentSlot) return;
+            if (StoreItemData.IsShipComponent(itemType)) return;
+
             float cost = StoreItemData.GetPrice(itemType);
             if (!home.TrySpendContributedGems(clientId, cost)) return;
+
+            if (!ship.AddEquipmentFromServer(itemType))
+            {
+                home.RefundContributedGems(clientId, cost);
+                return;
+            }
+
+            NotifyPurchaseClientRpc(clientId, itemType, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
+        }
+
+        /// <summary>Server: purchase a ship-family component into an equipment slot.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        public void PurchaseComponentServerRpc(ulong homePlanetNetworkId, ulong shipNetworkId, string componentId, ServerRpcParams rpcParams = default)
+        {
+            if (string.IsNullOrWhiteSpace(componentId)) return;
+            ulong clientId = rpcParams.Receive.SenderClientId;
+            NetworkObject homeNet = GetNetworkObject(homePlanetNetworkId);
+            HomePlanet home = homeNet != null ? homeNet.GetComponent<HomePlanet>() : null;
+            if (home == null || home.AssignedTeam == TeamManager.Team.None) return;
+            if (TeamManager.Instance == null || TeamManager.Instance.GetPlayerTeam(clientId) != home.AssignedTeam) return;
 
             NetworkObject shipNet = GetNetworkObject(shipNetworkId);
             Starship ship = shipNet != null ? shipNet.GetComponent<Starship>() : null;
             if (ship == null || ship.OwnerClientId != clientId) return;
+            if (!ship.HasEmptyEquipmentSlot) return;
+            if (ship.HasComponentEquipped(componentId)) return;
 
-            switch (itemType)
+            ShipFamilyDefinition family = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(ship)
+                : null;
+            if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry componentEntry) || componentEntry == null)
+                return;
+
+            float cost = ShipComponentStoreData.GetComponentGemPrice(componentEntry, ship.ShipLevel);
+            if (!home.TrySpendContributedGems(clientId, cost)) return;
+
+            if (!ship.AddComponentEquipmentFromServer(componentId))
             {
-                case StoreItemType.FighterDrone:
-                    SpawnDroneForShip(ship, fighterDronePrefab, DroneType.Fighter);
-                    break;
-                case StoreItemType.ShieldDrone:
-                    SpawnDroneForShip(ship, shieldDronePrefab, DroneType.Shield);
-                    break;
-                case StoreItemType.MiningDrone:
-                    SpawnDroneForShip(ship, miningDronePrefab, DroneType.Mining);
-                    break;
-                case StoreItemType.SmallRockets:
-                    ship.AddSmallRocketsServerRpc(StoreItemData.GetPackSize(itemType));
-                    break;
-                case StoreItemType.LargeRockets:
-                    ship.AddLargeRocketsServerRpc(StoreItemData.GetPackSize(itemType));
-                    break;
-                case StoreItemType.SmallMines:
-                    ship.AddSmallMinesServerRpc(StoreItemData.GetPackSize(itemType));
-                    break;
-                case StoreItemType.LargeMines:
-                    ship.AddLargeMinesServerRpc(StoreItemData.GetPackSize(itemType));
-                    break;
+                home.RefundContributedGems(clientId, cost);
+                return;
             }
 
-            NotifyPurchaseClientRpc(clientId, itemType, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
+            NotifyComponentPurchaseClientRpc(clientId, componentId, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new ulong[] { clientId } } });
+        }
+
+        /// <summary>Legacy hook after snapshot restore; swarm visuals rebuild from equipment list automatically.</summary>
+        public void RespawnEquipmentDronesForShip(Starship ship)
+        {
+            ship?.DroneSwarm?.OnStarshipNetworkSpawn();
         }
 
         [ClientRpc]
@@ -101,19 +132,12 @@ namespace TitanOrbit.Systems
             // Optional: play sound / UI feedback
         }
 
-        public enum DroneType { Fighter, Shield, Mining }
-
-        private void SpawnDroneForShip(Starship ship, GameObject prefab, DroneType droneType)
+        [ClientRpc]
+        private void NotifyComponentPurchaseClientRpc(ulong clientId, string componentId, ClientRpcParams rpcParams = default)
         {
-            if (prefab == null || ship == null) return;
-            Vector3 pos = ship.transform.position + ship.transform.forward * 2f;
-            GameObject go = Instantiate(prefab, pos, Quaternion.identity);
-            var drone = go.GetComponent<DroneBase>();
-            if (drone != null)
-                drone.SetOwnerShip(ship);
-            var no = go.GetComponent<NetworkObject>();
-            if (no != null) no.Spawn();
         }
+
+        public enum DroneType { Fighter, Shield, Mining }
 
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {

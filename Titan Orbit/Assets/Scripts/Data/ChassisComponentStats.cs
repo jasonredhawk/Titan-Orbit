@@ -81,6 +81,35 @@ namespace TitanOrbit.Data
             return stats;
         }
 
+        /// <summary>
+        /// Chassis component mass from summed part scales — matches <c>Starship</c> <c>componentMass</c>
+        /// (direct-child engine/thruster/wing/cockpit/part/tail/fin scales plus recursive weapon scales).
+        /// </summary>
+        public float ComputeComponentMass()
+        {
+            float weaponScaleTotal = 0f;
+            for (int w = 0; w < weaponScales.Count; w++)
+                weaponScaleTotal += weaponScales[w];
+
+            float mass = engineScaleTotal +
+                         thrusterScaleTotal +
+                         wingScaleTotal +
+                         cockpitScaleTotal +
+                         partScaleTotal +
+                         tailScaleTotal +
+                         finScaleTotal +
+                         weaponScaleTotal;
+            return Mathf.Max(0.5f, mass);
+        }
+
+        /// <summary>Builds chassis stats from <paramref name="prefabRoot"/> and returns component mass.</summary>
+        public static float ComputeComponentMassFromTransform(Transform prefabRoot, string familyPrefix = "AstroEagle")
+        {
+            if (prefabRoot == null)
+                return 0f;
+            return FromTransform(prefabRoot, familyPrefix).ComputeComponentMass();
+        }
+
         /// <summary>Direct children only. Updates scale totals and counts (used for physics). Also adds to transform lists.</summary>
         private static void CollectComponentTransformsDirectOnly(Transform root, ChassisComponentStats stats, string familyPrefix)
         {

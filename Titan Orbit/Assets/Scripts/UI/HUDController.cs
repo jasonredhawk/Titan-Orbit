@@ -45,7 +45,7 @@ namespace TitanOrbit.UI
         private float nextLeaderboardRefreshTime;
         private float lastPlayerShipLookupTime = -999f;
         private const float PlayerShipLookupInterval = 0.3f;
-        /// <summary>When true, ship stats and leaderboard stay hidden (e.g. gem moon fullscreen ship upgrade tree).</summary>
+        /// <summary>When true, ship stats, leaderboard, attribute upgrade bar, and world moon chips stay hidden (gem moon dock menu).</summary>
         private static bool s_shipUpgradeTreeObscuresHud;
 
         public static void SetShipUpgradeTreeObscuresHud(bool obscures)
@@ -167,13 +167,12 @@ namespace TitanOrbit.UI
 
         private void UpdateHUD()
         {
-            float startTime = Time.realtimeSinceStartup;
-
+            float displayHealth = playerShip.GetHealthForDisplay();
             if (healthBar != null)
-                healthBar.value = playerShip.CurrentHealth / playerShip.MaxHealth;
+                healthBar.value = playerShip.MaxHealth > 0 ? displayHealth / playerShip.MaxHealth : 0f;
 
             if (healthText != null)
-                healthText.text = $"{playerShip.CurrentHealth:F0}/{playerShip.MaxHealth:F0}";
+                healthText.text = $"{displayHealth:F0}/{playerShip.MaxHealth:F0}";
 
             if (gemBar != null)
                 gemBar.value = playerShip.GemCapacity > 0 ? playerShip.CurrentGems / playerShip.GemCapacity : 0f;
@@ -197,22 +196,6 @@ namespace TitanOrbit.UI
                 teamIndicator.color = GetTeamColor(playerShip.ShipTeam);
 
             UpdateLeaderboardPanel();
-
-            // #region agent log
-            if (Time.frameCount % 180 == 0)
-            {
-                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                int rows = leaderboardRows != null ? leaderboardRows.Count : 0;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "HUDController.UpdateHUD",
-                    "hud and leaderboard",
-                    "{\"rows\":" + rows +
-                    ",\"showInGamePanels\":" + (playerShip != null && playerShip.ShipTeam != TeamManager.Team.None ? "true" : "false") +
-                    ",\"durationMs\":" + durMs +
-                    "}",
-                    "H");
-            }
-            // #endregion
         }
 
         private void UpdateLeaderboardPanel()

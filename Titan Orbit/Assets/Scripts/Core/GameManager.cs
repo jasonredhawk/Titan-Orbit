@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
-using TitanOrbit.Systems;
 using TitanOrbit.Entities;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.Core
 {
@@ -15,6 +15,8 @@ namespace TitanOrbit.Core
         [Header("Debug")]
         [Tooltip("When enabled: one-shot asteroids, fast economy/combat tuning, instant gem deposit and people load/unload, and unload counts as 100x people impact. Toggle off for normal play.")]
         [SerializeField] private bool debugMode = true;
+        [Tooltip("Every ship in the gem-moon upgrade tree is clickable, shows Free, and costs no gems (ignores planet/home level gates).")]
+        [SerializeField] private bool debugFreeShipUpgradeTree = true;
 
         [Header("Game Settings")]
         [SerializeField] private int maxPlayersPerTeam = 20;
@@ -22,6 +24,7 @@ namespace TitanOrbit.Core
         [SerializeField] private float attributeScaleExaggeration = 0.15f;
 
         public bool DebugMode => debugMode;
+        public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
         /// <summary>Attribute scale exaggeration for ship components (15% default). Ships use this when > 0, else their own value.</summary>
         public float AttributeScaleExaggeration => attributeScaleExaggeration;
         [SerializeField] private int numberOfTeams = 3;
@@ -29,10 +32,6 @@ namespace TitanOrbit.Core
 
         private NetworkVariable<GameState> currentGameState = new NetworkVariable<GameState>(GameState.Lobby);
         private NetworkVariable<float> matchTimer = new NetworkVariable<float>(0f);
-        // #region agent log
-        private static float s_lastPerfLogTime = -999f;
-        private static int s_lastFrameLog = -999;
-        // #endregion
 
         public enum GameState
         {
@@ -55,24 +54,41 @@ namespace TitanOrbit.Core
             {
                 Instance = this;
                 DontDestroyOnLoad(gameObject);
-
-                BootTrace.Mark("GameManager.Awake - creating PlanetConnectionSystems");
-                var systemsGo = new GameObject("PlanetConnectionSystems");
-                DontDestroyOnLoad(systemsGo);
-                systemsGo.AddComponent<PlanetConnectionSystem>();
-                systemsGo.AddComponent<AsteroidTerritoryHighlighter>();
-                systemsGo.AddComponent<PlanetConnectionShapesVisual>();
-                BootTrace.Mark("GameManager.Awake - PlanetConnectionSystems created");
             }
             else
             {
                 BootTrace.Mark("GameManager.Awake - duplicate instance, destroying");
                 Destroy(gameObject);
+                return;
             }
+
+            EnsureWorldShapeVisuals();
+        }
+
+        /// <summary>Creates shared world-space Shapes drawers (idempotent; safe if Awake order varies).</summary>
+        public static void EnsureWorldShapeVisuals()
+        {
+            var systemsGo = GameObject.Find("PlanetConnectionSystems");
+            if (systemsGo == null)
+            {
+                systemsGo = new GameObject("PlanetConnectionSystems");
+                DontDestroyOnLoad(systemsGo);
+            }
+
+            if (systemsGo.GetComponent<PlanetConnectionSystem>() == null)
+                systemsGo.AddComponent<PlanetConnectionSystem>();
+            if (systemsGo.GetComponent<AsteroidTerritoryHighlighter>() == null)
+                systemsGo.AddComponent<AsteroidTerritoryHighlighter>();
+            if (systemsGo.GetComponent<PlanetConnectionShapesVisual>() == null)
+                systemsGo.AddComponent<PlanetConnectionShapesVisual>();
+            if (systemsGo.GetComponent<GemTractorBeamVisual>() == null)
+                systemsGo.AddComponent<GemTractorBeamVisual>();
         }
 
         public override void OnNetworkSpawn()
         {
+            EnsureWorldShapeVisuals();
+
             if (IsServer)
             {
                 currentGameState.Value = GameState.Lobby;
@@ -98,23 +114,6 @@ namespace TitanOrbit.Core
 
         private void Update()
         {
-            // #region agent log
-            int frame = Time.frameCount;
-            if (frame % 60 == 0)
-            {
-                float t = Time.realtimeSinceStartup;
-                float dt = Time.deltaTime;
-                float fps = dt > 0f ? (1f / dt) : 0f;
-                DebugSessionLog.Write(
-                    "GameManager.Update",
-                    "frame timing",
-                    "{\"frame\":" + frame + ",\"realtime\":" + t + ",\"deltaTime\":" + dt + ",\"fps\":" + fps + "}",
-                    "C");
-                s_lastFrameLog = frame;
-            }
-            // Disable periodic FindObjectsByType-based object count logging to avoid long-frame spikes
-            // that worsen over time during idle gameplay. Frame timing logging above remains enabled.
-            // #endregion
             if (IsServer && currentGameState.Value == GameState.InProgress)
             {
                 matchTimer.Value += Time.deltaTime;

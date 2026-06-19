@@ -24,16 +24,32 @@ namespace TitanOrbit.Entities
         [SerializeField] private float pickupRadius = 2f;
         [SerializeField] private float stopSpeedThreshold = 0.05f;
         [SerializeField] private float slowdownDrag = 0.5f;
-        [SerializeField] private float baseScale = 0.48f; // Used on non-asteroid gem paths; scales with linear value mapping
-        [SerializeField] private float visualScaleMultiplier = 2.2f; // Global scale so value-1 gems are visible; value-70 is larger volume
+        [Header("Visual scale")]
+        [Tooltip("Game value mapped to the smallest visual size. Matches Asteroid.MAX_GEM_VALUE lower bound.")]
+        [SerializeField] private float minGemValue = 1f;
+        [Tooltip("Game value mapped to the largest visual size. Matches Asteroid.MAX_GEM_VALUE upper bound.")]
+        [SerializeField] private float maxGemValue = 100f;
+        [Tooltip("World localScale used when value <= minGemValue.")]
+        [SerializeField] private float scaleAtMinValue = 1f;
+        [Tooltip("World localScale used when value >= maxGemValue.")]
+        [SerializeField] private float scaleAtMaxValue = 3.5f;
+        [Tooltip("Pickup radius multiplier at minGemValue.")]
+        [SerializeField] private float pickupRadiusMinMul = 1f;
+        [Tooltip("Pickup radius multiplier at maxGemValue.")]
+        [SerializeField] private float pickupRadiusMaxMul = 2f;
         [SerializeField] private float lifetimeSeconds = 20f; // Time before gem expires and disappears
         [SerializeField] private float shrinkDuration = 3f; // Shrink from full to zero over this many seconds at end of life
         [SerializeField] private float magnetSpeed = 8f; // Speed when moving toward ship
         [SerializeField] private float collectRadius = 0.6f; // Collect when gem is this close to ship
+        [Tooltip("After tractor pickup credits gems, the gem glides to the collecting wing and despawn when within this distance.")]
+        [SerializeField] private float tractorAbsorbCompleteRadius = 0.12f;
         [Tooltip("Minimum ship hull radius used by center-distance pickup checks when collider bounds are unavailable.")]
         [SerializeField] private float shipProximitySlop = 0.35f;
         [Tooltip("Scales ship collider radius contribution for proximity collection (lower = tighter pickup).")]
         [SerializeField] private float shipProximityRadiusMultiplier = 0.45f;
+        [Header("Pickup priority")]
+        [Tooltip("Asteroid gems: non-top-damager ships must wait this long before pickup (top damager is immediate).")]
+        [SerializeField] private float asteroidNonPriorityPickupDelaySeconds = 1f;
         [Header("Ship-expelled pickup")]
         [Tooltip("Seconds before the ship that dropped these gems (e.g. hull breakup) can collect them again. Other ships are unaffected.")]
         [SerializeField] private float selfPickupDelaySeconds = 2f;
@@ -53,6 +69,9 @@ namespace TitanOrbit.Entities
         /// <summary>Server-only pickup gate: used only for hull-expelled gems so the victim ship cannot instantly re-collect.</summary>
         private ulong serverNoImmediatePickupShipId;
         private float serverNoImmediatePickupUntilTime;
+        /// <summary>Server-only: gems credited; gem keeps gliding to the collecting wing before despawn (tractor beam pickup).</summary>
+        private ulong serverAbsorbTargetShipId;
+        private int serverAbsorbTargetWingIndex = -1;
         private bool serverInitializedBeforeSpawn;
         private Rigidbody rb;
         private NetworkTransform networkTransform;
@@ -67,6 +86,7 @@ namespace TitanOrbit.Entities
         public float GemSize => gemSize.Value;
         public bool IsInPool => isInPool.Value;
         public bool IsDepositGem => depositTargetPlanetId.Value != 0;
+        public bool IsBonusGem => isBonusGem.Value;
         // Initialize(...) can run before NetworkObject.Spawn(); in that window IsServer may still be false.
         private bool HasServerAuthority => IsServer || (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer);
 
@@ -195,41 +215,36 @@ namespace TitanOrbit.Entities
                 if (elapsedTime >= lifetimeSeconds - shrinkDuration)
                     lifetimeRemaining = Mathf.Clamp01((lifetimeSeconds - elapsedTime) / shrinkDuration);
             }
-            
-            // Visual size is linear in gem value (1–70). Cube-root was legacy “volume ∝ value” and made sizes too subtle.
-            float valueClamped = Mathf.Max(1f, value.Value);
-            float tValue = Mathf.InverseLerp(1f, 70f, Mathf.Min(valueClamped, 70f));
-            float gemSizeMult = gemSize.Value > 0.001f ? gemSize.Value : 1f;
 
-            float scale;
-            if (asteroidPhysicalSize.Value > 0.01f)
-            {
-                // Slightly above 0.85× mesh so gems read clearly; still bounded by asteroid scale.
-                float maxScale = asteroidPhysicalSize.Value * 1.05f;
-                float minScale = maxScale * 0.52f;
-                scale = Mathf.Lerp(minScale, maxScale, tValue);
-                scale *= Mathf.Lerp(0.96f, 1.04f, Mathf.InverseLerp(0.25f, 2.2f, gemSizeMult));
-                scale = Mathf.Min(scale, maxScale);
-                scale *= lifetimeRemaining;
-            }
-            else
-            {
-                float baseLinear = Mathf.Lerp(0.74f, 2.2f, tValue);
-                scale = baseScale * baseLinear * gemSizeMult * lifetimeRemaining * visualScaleMultiplier;
-            }
+            float tValue = ComputeValueT(value.Value);
+            float scale = Mathf.Lerp(scaleAtMinValue, scaleAtMaxValue, tValue) * lifetimeRemaining;
 
             transform.localScale = Vector3.one * scale;
 
-            effectivePickupRadius = pickupRadius * Mathf.Lerp(1f, 1.5f, tValue) * lifetimeRemaining;
+            effectivePickupRadius = pickupRadius * Mathf.Lerp(pickupRadiusMinMul, pickupRadiusMaxMul, tValue) * lifetimeRemaining;
         }
+
+        /// <summary>Linear 0..1 ramp from <see cref="minGemValue"/> to <see cref="maxGemValue"/>; clamps outside the range so deposits >100 still hit max.</summary>
+        private float ComputeValueT(float gemValue)
+        {
+            float lo = Mathf.Min(minGemValue, maxGemValue);
+            float hi = Mathf.Max(minGemValue, maxGemValue);
+            if (hi - lo <= 0.0001f) return 0f;
+            return Mathf.InverseLerp(lo, hi, Mathf.Clamp(gemValue, lo, hi));
+        }
+
+        /// <summary>0 = smallest value gem, 1 = largest value gem (matches visual scale). Used by tractor beam pull speed.</summary>
+        public float GetValueSizeT() => ComputeValueT(value.Value);
 
         public void Initialize(float gemValue, float sizeMultiplier = 1f, float asteroidScale = 0.5f, ulong priorityShipNetworkId = 0, bool bonusGem = false)
         {
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = asteroidScale;
+                // sizeMultiplier / asteroidScale are kept for API compatibility but no longer drive visual scale;
+                // value alone maps to size via ComputeValueT. Neutral values keep replicated state clean.
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = gemValue;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = 0;
@@ -242,14 +257,14 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem expelled from a ship. Victim (expelledByShipNetworkId) cannot collect until <see cref="selfPickupDelaySeconds"/> elapses; enemies can collect immediately.</summary>
+        /// <summary>Initialize gem expelled from a ship. Victim cannot collect until <see cref="selfPickupDelaySeconds"/>; other ships may collect immediately.</summary>
         public void InitializeFromShip(float gemValue, float sizeMultiplier, ulong expelledByShipNetworkId)
         {
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = 0.5f; // Default for ship gems
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = gemValue;
                 expelledByShipId.Value = expelledByShipNetworkId;
                 depositTargetPlanetId.Value = 0;
@@ -267,14 +282,14 @@ namespace TitanOrbit.Entities
             UpdateVisualScale();
         }
 
-        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. sizeMultiplier scales with ship level.</summary>
+        /// <summary>Initialize gem for deposit: expelled from ship toward planet, absorbed on contact. Visual size derives from <paramref name="amount"/>.</summary>
         public void InitializeForDeposit(float amount, float sizeMultiplier, ulong targetPlanetNetworkObjectId, TeamManager.Team team, ulong clientId)
         {
             if (HasServerAuthority)
             {
                 serverInitializedBeforeSpawn = true;
-                gemSize.Value = sizeMultiplier;
-                asteroidPhysicalSize.Value = 0.85f * sizeMultiplier; // Scale with ship level
+                gemSize.Value = 1f;
+                asteroidPhysicalSize.Value = 0f;
                 value.Value = amount;
                 expelledByShipId.Value = 0;
                 depositTargetPlanetId.Value = targetPlanetNetworkObjectId;
@@ -286,6 +301,20 @@ namespace TitanOrbit.Entities
                 if (rb != null) rb.linearDamping = 0f; // No slowdown - fly straight to planet
             }
             UpdateVisualScale();
+        }
+
+        /// <summary>Server: impulse from bullet concussive / gravity effects (gems are always pushed, not team-filtered).</summary>
+        public void ApplyBulletKnockbackOnServer(Vector3 impactWorldPos, float force, bool pull)
+        {
+            if (!HasServerAuthority || IsInPool || rb == null || force <= 0f) return;
+            Vector3 dir = rb.position - impactWorldPos;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.forward;
+            dir.Normalize();
+            if (!pull)
+                dir = -dir;
+            rb.AddForce(dir * force, ForceMode.Impulse);
         }
 
         /// <summary>Server only. Puts gem back in pool (recycled); no Despawn. Call from pool or when gem is collected/expired.</summary>
@@ -388,6 +417,140 @@ namespace TitanOrbit.Entities
         {
             serverNoImmediatePickupShipId = 0;
             serverNoImmediatePickupUntilTime = 0f;
+            ClearServerAbsorbState();
+        }
+
+        private void ClearServerAbsorbState()
+        {
+            serverAbsorbTargetShipId = 0;
+            serverAbsorbTargetWingIndex = -1;
+        }
+
+        private static Starship FindShipByNetworkObjectId(ulong networkObjectId)
+        {
+            if (networkObjectId == 0) return null;
+            foreach (var ship in Starship.AllStarships)
+            {
+                if (ship == null) continue;
+                var shipNo = ship.NetworkObject;
+                if (shipNo != null && shipNo.NetworkObjectId == networkObjectId)
+                    return ship;
+            }
+            return null;
+        }
+
+        private void DespawnCollectedGem()
+        {
+            value.Value = 0f;
+            ClearServerAbsorbState();
+            if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+                return;
+            var no = GetComponent<NetworkObject>();
+            if (no != null) no.Despawn();
+        }
+
+        /// <summary>Server: after tractor pickup credits gems, glide toward the collecting wing then despawn.</summary>
+        private void ServerTickTractorAbsorbGlide()
+        {
+            Starship ship = FindShipByNetworkObjectId(serverAbsorbTargetShipId);
+            if (ship == null || !ship.IsSpawned || ship.IsDead)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            Vector3 gemPos = rb != null ? rb.position : transform.position;
+            gemPos.y = 0f;
+            Vector3 targetPos = GetAbsorbTargetWorldPosition(ship);
+
+            float dist = ToroidalMap.ToroidalDistance(gemPos, targetPos);
+            if (dist <= tractorAbsorbCompleteRadius)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            if (rb == null)
+                return;
+
+            Vector3 toTarget = ToroidalMap.ToroidalDirection(gemPos, targetPos);
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < 0.0001f)
+            {
+                DespawnCollectedGem();
+                return;
+            }
+
+            float pullSpeed = GemTractorBeamSettings.GetGameplayPullSpeed(ship, this);
+            rb.linearVelocity = toTarget.normalized * pullSpeed;
+            rb.linearDamping = 0f;
+        }
+
+        private Vector3 GetAbsorbTargetWorldPosition(Starship ship)
+        {
+            if (serverAbsorbTargetWingIndex >= 0)
+                return GemTractorBeamSettings.GetWingBeamOrigin(ship, serverAbsorbTargetWingIndex);
+
+            var shipRb = ship.GetComponent<Rigidbody>();
+            Vector3 shipPos = shipRb != null ? shipRb.position : ship.transform.position;
+            shipPos.y = 0f;
+            return shipPos;
+        }
+
+        private float GetServerTime()
+        {
+            return NetworkManager.Singleton != null
+                ? (float)NetworkManager.Singleton.ServerTime.Time
+                : Time.time;
+        }
+
+        private ulong GetShipNetworkObjectId(Starship ship)
+        {
+            var shipNo = ship != null ? ship.NetworkObject : null;
+            return shipNo != null ? shipNo.NetworkObjectId : 0ul;
+        }
+
+        /// <summary>Server: asteroid gems grant immediate pickup to top damager; other ships wait <see cref="asteroidNonPriorityPickupDelaySeconds"/>.</summary>
+        private bool IsShipBlockedByAsteroidPriority(Starship ship)
+        {
+            if (depositTargetPlanetId.Value != 0) return false;
+            if (expelledByShipId.Value != 0) return false;
+            ulong priorityId = magnetPriorityShipId.Value;
+            if (priorityId == 0) return false;
+
+            ulong shipId = GetShipNetworkObjectId(ship);
+            if (shipId == 0 || shipId == priorityId) return false;
+
+            float elapsed = GetServerTime() - spawnTime.Value;
+            return elapsed < Mathf.Max(0f, asteroidNonPriorityPickupDelaySeconds);
+        }
+
+        /// <summary>Whether this ship may collect or magnet this gem (all peers for visuals; server uses extra gates).</summary>
+        public bool IsCollectibleByShip(Starship ship)
+        {
+            if (ship == null) return false;
+            if (IsShipBlockedBySelfExpulsion(ship)) return false;
+            if (IsShipBlockedByAsteroidPriority(ship)) return false;
+            return true;
+        }
+
+        /// <summary>Server: whether this ship may collect or magnet this gem right now.</summary>
+        public bool CanShipCollect(Starship ship)
+        {
+            if (!IsServer || ship == null) return false;
+            if (serverAbsorbTargetShipId != 0) return false;
+            if (IsShipTemporarilyBlockedFromPickup(ship)) return false;
+            return IsCollectibleByShip(ship);
+        }
+
+        private bool IsShipBlockedBySelfExpulsion(Starship ship)
+        {
+            ulong expelled = expelledByShipId.Value;
+            if (expelled == 0) return false;
+            ulong shipId = GetShipNetworkObjectId(ship);
+            if (shipId == 0 || shipId != expelled) return false;
+            float elapsed = GetServerTime() - spawnTime.Value;
+            return elapsed < Mathf.Max(0f, selfPickupDelaySeconds);
         }
 
         private void OnTriggerEnter(Collider other) => TryHandlePickupTrigger(other);
@@ -451,10 +614,11 @@ namespace TitanOrbit.Entities
             Starship ship = other.GetComponent<Starship>();
             if (ship == null) return;
 
-            if (IsShipTemporarilyBlockedFromPickup(ship))
+            if (!CanShipCollect(ship))
                 return;
 
-            CollectToShip(ship);
+            int wingIndex = GemTractorBeamSettings.GetPullWingIndex(ship, this);
+            CollectToShip(ship, wingIndex);
         }
 
         /// <summary>Server: blocks only the victim ship for hull-expelled gem cooldown (authoritative fields, not NetworkVariables).</summary>
@@ -481,6 +645,12 @@ namespace TitanOrbit.Entities
             {
                 if (ship == null || ship.IsDead) continue;
                 if (ship.IsGemCollectionSuppressed) continue;
+                if (!CanShipCollect(ship))
+                    continue;
+
+                if (TryCollectToShipFromWingProximity(ship, gemPos))
+                    return;
+
                 Vector3 shipPos = ship.transform.position;
                 var srb = ship.GetComponent<Rigidbody>();
                 if (srb != null) shipPos = srb.position;
@@ -490,12 +660,40 @@ namespace TitanOrbit.Entities
                 if (ToroidalMap.ToroidalDistance(gemPos, shipPos) > maxDist)
                     continue;
 
-                if (IsShipTemporarilyBlockedFromPickup(ship))
-                    continue;
-
-                CollectToShip(ship);
+                CollectToShip(ship, -1);
                 return;
             }
+        }
+
+        /// <summary>Collect when the gem is near any wing tractor anchor (ships with wing beams).</summary>
+        private bool TryCollectToShipFromWingProximity(Starship ship, Vector3 gemPos)
+        {
+            var wings = ship.WingTractorBeams;
+            if (wings == null || wings.Count == 0)
+                return false;
+
+            float maxDist = collectRadius + shipProximitySlop;
+            int bestWing = -1;
+            float bestDist = float.MaxValue;
+
+            for (int wi = 0; wi < wings.Count; wi++)
+            {
+                if (wings[wi].wingTransform == null)
+                    continue;
+
+                float dist = ToroidalMap.ToroidalDistance(gemPos, wings[wi].GetWorldPosition());
+                if (dist > maxDist || dist >= bestDist)
+                    continue;
+
+                bestDist = dist;
+                bestWing = wi;
+            }
+
+            if (bestWing < 0)
+                return false;
+
+            CollectToShip(ship, bestWing);
+            return true;
         }
 
         /// <summary>
@@ -517,10 +715,11 @@ namespace TitanOrbit.Entities
             return collectRadius + hullRadius;
         }
 
-        private void CollectToShip(Starship ship)
+        private void CollectToShip(Starship ship, int collectingWingIndex)
         {
             if (!IsServer || ship == null) return;
             if (value.Value <= 0f) return;
+            if (!CanShipCollect(ship)) return;
             if (ship.IsDead || ship.IsGemCollectionSuppressed || ship.CurrentGems >= ship.GemCapacity) return;
 
             Vector3 gemPos = rb != null ? rb.position : transform.position;
@@ -533,19 +732,26 @@ namespace TitanOrbit.Entities
             if (toAdd <= 0f)
                 return;
 
-            ship.AddGemsServerRpc(toAdd, true);
+            ship.AddGemsFromPickupServer(toAdd, true);
 
             if (ScoreSystem.Instance != null)
                 ScoreSystem.Instance.AwardMining(ship, toAdd);
 
             if (VisualEffectsManager.Instance != null)
-                VisualEffectsManager.Instance.SpawnGemPickupTextServerRpc(gemPos, toAdd, ship.ShipTeam);
+                VisualEffectsManager.Instance.SpawnFloatingCountFromServerAuthority(
+                    gemPos, FloatingCountChannel.GemPickup, toAdd, ship.ShipTeam);
 
-            value.Value = 0f;
-            if (GemPool.Instance != null && GemPool.Instance.ReturnToPool(this))
+            // Tractor-pulled gems credit immediately but keep gliding to the collecting wing before despawn.
+            if (GemTractorBeamSettings.IsPulledByAnyShip(this))
+            {
+                serverAbsorbTargetShipId = GetShipNetworkObjectId(ship);
+                if (collectingWingIndex < 0)
+                    collectingWingIndex = GemTractorBeamSettings.GetPullWingIndex(ship, this);
+                serverAbsorbTargetWingIndex = collectingWingIndex;
                 return;
-            var no = GetComponent<NetworkObject>();
-            if (no != null) no.Despawn();
+            }
+
+            DespawnCollectedGem();
         }
 
         private static HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
@@ -567,6 +773,41 @@ namespace TitanOrbit.Entities
             return null;
         }
 
+        /// <summary>Server: stop coasting toward ships that moved out of magnetic pull range.</summary>
+        private void ServerClipMagneticVelocityTowardOutOfRangeShips()
+        {
+            if (rb == null || depositTargetPlanetId.Value != 0)
+                return;
+
+            Vector3 gemPos = rb.position;
+            gemPos.y = 0f;
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+
+            var ships = Starship.AllStarships;
+            if (ships == null)
+                return;
+
+            for (int i = 0; i < ships.Count; i++)
+            {
+                Starship ship = ships[i];
+                if (ship == null || !ship.IsSpawned || ship.IsDead)
+                    continue;
+                if (GemTractorBeamSettings.IsWithinMagneticPullRange(ship, this))
+                    continue;
+                if (!GemTractorBeamSettings.HasTractorInvolvement(ship, this))
+                    continue;
+                if (!GemTractorBeamSettings.TryGetPullTowardDirection(ship, this, out Vector3 pullDir))
+                    continue;
+
+                float toward = Vector3.Dot(vel, pullDir);
+                if (toward > 0f)
+                    vel -= pullDir * toward;
+            }
+
+            rb.linearVelocity = new Vector3(vel.x, rb.linearVelocity.y, vel.z);
+        }
+
         private void FixedUpdate()
         {
             // Throttle visual scale updates: every 5th FixedUpdate (staggered by instance) to cut cost when many gems exist
@@ -580,6 +821,20 @@ namespace TitanOrbit.Entities
             // displays at the copy closest to the local player's camera for a seamless view.
 
             if (!IsServer) return;
+
+            if (serverAbsorbTargetShipId != 0)
+            {
+                float absorbElapsed = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
+                if (absorbElapsed >= lifetimeSeconds)
+                {
+                    DespawnCollectedGem();
+                    return;
+                }
+
+                ServerTickTractorAbsorbGlide();
+                return;
+            }
+
             if (value.Value <= 0) return;
 
             float elapsedTime = (float)NetworkManager.Singleton.ServerTime.Time - spawnTime.Value;
@@ -607,6 +862,15 @@ namespace TitanOrbit.Entities
                 return;
             }
             
+            // While magnetically pulled, the attracting ship drives velocity — skip idle slowdown drag.
+            if (GemTractorBeamSettings.IsPulledByAnyShip(this))
+            {
+                TryProximityCollectShip();
+                return;
+            }
+
+            ServerClipMagneticVelocityTowardOutOfRangeShips();
+
             // No automatic ship attraction: just apply drag so gems slow down and stop.
             if (rb != null)
             {

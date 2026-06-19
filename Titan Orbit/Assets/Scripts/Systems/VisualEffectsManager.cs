@@ -78,12 +78,17 @@ namespace TitanOrbit.Systems
         [SerializeField] private int floatingCountSpiralPeriod = 40;
         [Tooltip("Perpendicular drift speed on the play plane so popups fan out instead of stacking in one line.")]
         [SerializeField] private float floatingCountLateralDriftMax = 0.55f;
+        [Header("Floating Count Stack")]
+        [Tooltip("Line spacing multiplier for multi-line stacked popups (asteroid hit groups).")]
+        [SerializeField] private float floatingCountStackLineSpacing = 0.82f;
 
         [SerializeField] private Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] private Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
         [SerializeField] private Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
         private int floatingPopupSequence;
+
+        public FloatingCountChannelVisibility FloatingCountVisibility => floatingCountVisibility;
 
         public float CollisionVfxShipMinRelativeSpeed => Mathf.Max(0f, collisionVfxShipMinRelativeSpeed);
         public float CollisionVfxShipMaxRelativeSpeed => Mathf.Max(CollisionVfxShipMinRelativeSpeed + 0.01f, collisionVfxShipMaxRelativeSpeed);
@@ -94,6 +99,9 @@ namespace TitanOrbit.Systems
 
         private void Awake()
         {
+            if (floatingCountVisibility == null)
+                floatingCountVisibility = new FloatingCountChannelVisibility();
+
             if (Instance == null)
             {
                 Instance = this;
@@ -102,6 +110,102 @@ namespace TitanOrbit.Systems
             {
                 Destroy(gameObject);
             }
+        }
+
+        private bool IsFloatingCountChannelVisible(FloatingCountChannel channel)
+        {
+            return floatingCountVisibility == null || floatingCountVisibility.IsEnabled(channel);
+        }
+
+        /// <summary>Client-local floating count (no RPC). Used for bullet impact popups synced to explosion VFX.</summary>
+        public void SpawnFloatingCountLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
+        {
+            SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
+        }
+
+        /// <summary>Client-local stacked asteroid feedback (damage, HP, gems, impact force).</summary>
+        public void SpawnAsteroidFeedbackLocal(Vector3 position, AsteroidFloatingFeedback feedback)
+        {
+            SpawnAsteroidFeedbackPopupLocal(position, feedback);
+        }
+
+        /// <summary>
+        /// Spawns stacked asteroid feedback on every client. Use from server code directly, or from the
+        /// owning client after ram/grind (physics runs on owner; dedicated server is not IsServer on ship).
+        /// </summary>
+        public void SpawnAsteroidFeedback(Vector3 position, AsteroidFloatingFeedback feedback)
+        {
+            if (IsServer)
+                SpawnAsteroidFeedbackFromServerAuthority(position, feedback);
+            else
+                SpawnAsteroidFeedbackServerRpc(
+                    position,
+                    feedback.Damage ?? -1f,
+                    feedback.RemainingHealth ?? -1f,
+                    feedback.RemainingGems ?? -1f,
+                    feedback.ImpactForceNewtons ?? -1f,
+                    (int)feedback.Team);
+        }
+
+        public void SpawnAsteroidFeedbackFromServerAuthority(Vector3 position, AsteroidFloatingFeedback feedback)
+        {
+            if (!IsServer) return;
+            if (IsClient)
+                SpawnAsteroidFeedbackPopupLocal(position, feedback);
+
+            SpawnAsteroidFeedbackClientRpc(
+                position,
+                feedback.Damage ?? -1f,
+                feedback.RemainingHealth ?? -1f,
+                feedback.RemainingGems ?? -1f,
+                feedback.ImpactForceNewtons ?? -1f,
+                (int)feedback.Team);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SpawnAsteroidFeedbackServerRpc(
+            Vector3 position,
+            float damage,
+            float remainingHealth,
+            float remainingGems,
+            float impactForceNewtons,
+            int teamInt)
+        {
+            SpawnAsteroidFeedbackFromServerAuthority(
+                position,
+                DecodeAsteroidFeedback(damage, remainingHealth, remainingGems, impactForceNewtons, teamInt));
+        }
+
+        [ClientRpc]
+        private void SpawnAsteroidFeedbackClientRpc(
+            Vector3 position,
+            float damage,
+            float remainingHealth,
+            float remainingGems,
+            float impactForceNewtons,
+            int teamInt)
+        {
+            if (IsServer)
+                return;
+
+            SpawnAsteroidFeedbackPopupLocal(position, DecodeAsteroidFeedback(damage, remainingHealth, remainingGems, impactForceNewtons, teamInt));
+        }
+
+        private static AsteroidFloatingFeedback DecodeAsteroidFeedback(
+            float damage,
+            float remainingHealth,
+            float remainingGems,
+            float impactForceNewtons,
+            int teamInt)
+        {
+            return new AsteroidFloatingFeedback
+            {
+                Team = (TeamManager.Team)teamInt,
+                Damage = damage >= 0f ? damage : null,
+                RemainingHealth = remainingHealth >= 0f ? remainingHealth : null,
+                RemainingGems = remainingGems >= 0f ? remainingGems : null,
+                ImpactForceNewtons = impactForceNewtons >= 0f ? impactForceNewtons : null,
+            };
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -157,39 +261,43 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemPickupTextServerRpc(Vector3 position, float amount, TeamManager.Team team)
         {
-            SpawnGemPickupTextClientRpc(position, amount, (int)team);
-        }
-
-        [ClientRpc]
-        private void SpawnGemPickupTextClientRpc(Vector3 position, float amount, int teamInt)
-        {
-            TeamManager.Team team = (TeamManager.Team)teamInt;
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.GemPickup))
-                return;
-
-            // Prefer the new icon+TMP popup; falls back to legacy GemPickupText only if
-            // there is no usable TMP font (assigned or default).
-            if (floatingCountFont != null || TMP_Settings.defaultFontAsset != null)
-            {
-                SpawnFloatingCountPopupLocal(position, FloatingCountChannel.GemPickup, amount, team);
-                return;
-            }
-
-            if (gemPickupTextPrefab == null) return;
-            GameObject go = Instantiate(gemPickupTextPrefab, position, Quaternion.identity);
-            var text = go.GetComponent<GemPickupText>() ?? go.AddComponent<GemPickupText>();
-            text?.Initialize(Mathf.RoundToInt(amount), team, gemPickupTextDuration);
+            SpawnFloatingCountFromServerAuthority(position, (int)FloatingCountChannel.GemPickup, amount, (int)team);
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void SpawnFloatingCountServerRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
+            SpawnFloatingCountFromServerAuthority(position, channelId, signedAmount, teamInt);
+        }
+
+        /// <summary>Server path without queuing a ServerRpc (collision/grind on host).</summary>
+        public void SpawnFloatingCountFromServerAuthority(Vector3 position, int channelId, float signedAmount, int teamInt)
+        {
+            if (!IsServer) return;
+
+            var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
+            var team = (TeamManager.Team)teamInt;
+
+            // Host is server+client: ClientRpc alone can miss local delivery on in-scene managers in some NGO setups.
+            if (IsClient)
+                SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
+
             SpawnFloatingCountClientRpc(position, channelId, signedAmount, teamInt);
+        }
+
+        /// <summary>Server-only convenience wrapper for gameplay code already running on the server.</summary>
+        public void SpawnFloatingCountFromServerAuthority(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
+        {
+            SpawnFloatingCountFromServerAuthority(position, (int)channel, signedAmount, (int)team);
         }
 
         [ClientRpc]
         private void SpawnFloatingCountClientRpc(Vector3 position, int channelId, float signedAmount, int teamInt)
         {
+            // Host already spawned in ServerRpc; remote clients only here.
+            if (IsServer)
+                return;
+
             var channel = (FloatingCountChannel)Mathf.Clamp(channelId, 0, FloatingCountFeedbackSettings.MaxChannelIndex);
             TeamManager.Team team = (TeamManager.Team)teamInt;
             SpawnFloatingCountPopupLocal(position, channel, signedAmount, team);
@@ -198,48 +306,44 @@ namespace TitanOrbit.Systems
         [ServerRpc(RequireOwnership = false)]
         public void SpawnAsteroidStatsFloatingTextServerRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
-            SpawnAsteroidStatsFloatingTextClientRpc(position, remainingHealth, remainingGems, teamInt);
+            SpawnAsteroidFeedbackFromServerAuthority(position, new AsteroidFloatingFeedback
+            {
+                Team = (TeamManager.Team)teamInt,
+                RemainingHealth = remainingHealth,
+                RemainingGems = remainingGems,
+            });
         }
 
-        [ClientRpc]
-        private void SpawnAsteroidStatsFloatingTextClientRpc(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
+        public void SpawnAsteroidStatsFloatingTextFromServerAuthority(Vector3 position, float remainingHealth, float remainingGems, int teamInt)
         {
-            TeamManager.Team team = (TeamManager.Team)teamInt;
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
-                return;
-
-            Color hpColor = floatingCountHealthPositiveColor;
-            Color gemsColor = team != TeamManager.Team.None ? TeamManager.GetTeamColor(team) : new Color(0.85f, 0.95f, 1f, 1f);
-            string hpMessage = $"HP Left: {Mathf.Max(0, Mathf.RoundToInt(remainingHealth))}";
-            string gemsMessage = $"Gems: {Mathf.Max(0, Mathf.RoundToInt(remainingGems))}";
-
-            SpawnCustomFloatingCountPopupLocal(position, hpMessage, floatingCountHealthIcon, hpColor);
-            SpawnCustomFloatingCountPopupLocal(position, gemsMessage, floatingCountGemIcon, gemsColor);
+            SpawnAsteroidFeedbackFromServerAuthority(position, new AsteroidFloatingFeedback
+            {
+                Team = (TeamManager.Team)teamInt,
+                RemainingHealth = remainingHealth,
+                RemainingGems = remainingGems,
+            });
         }
 
         [ServerRpc(RequireOwnership = false)]
         public void SpawnImpactForceFloatingTextServerRpc(Vector3 position, float impactForceNewtons)
         {
-            SpawnImpactForceFloatingTextClientRpc(position, impactForceNewtons);
+            SpawnAsteroidFeedbackFromServerAuthority(position, new AsteroidFloatingFeedback
+            {
+                ImpactForceNewtons = impactForceNewtons,
+            });
         }
 
-        [ClientRpc]
-        private void SpawnImpactForceFloatingTextClientRpc(Vector3 position, float impactForceNewtons)
+        public void SpawnImpactForceFloatingTextFromServerAuthority(Vector3 position, float impactForceNewtons)
         {
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(FloatingCountChannel.DamageAsteroid))
-                return;
-
-            float clampedForce = Mathf.Max(0f, impactForceNewtons);
-            if (clampedForce < 1f)
-                return;
-
-            string message = $"{Mathf.RoundToInt(clampedForce):N0}";
-            SpawnCustomFloatingCountPopupLocal(position, message, floatingCountDamageIcon, floatingCountImpactForceColor);
+            SpawnAsteroidFeedbackFromServerAuthority(position, new AsteroidFloatingFeedback
+            {
+                ImpactForceNewtons = impactForceNewtons,
+            });
         }
 
         private void SpawnFloatingCountPopupLocal(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamManager.Team team)
         {
-            if (floatingCountVisibility != null && !floatingCountVisibility.IsEnabled(channel))
+            if (!IsFloatingCountChannelVisible(channel))
                 return;
 
             TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
@@ -250,10 +354,14 @@ namespace TitanOrbit.Systems
             }
 
             float abs = Mathf.Abs(signedAmount);
+            if (abs < 0.01f)
+                return;
             int amountInt = Mathf.RoundToInt(abs);
-            if (amountInt <= 0) return;
+            if (amountInt <= 0)
+                amountInt = 1;
 
             char sign = signedAmount >= 0f ? '+' : '-';
+            bool compactGemLabel = channel == FloatingCountChannel.GemPickup || channel == FloatingCountChannel.GemDeposit;
             string label = channel switch
             {
                 FloatingCountChannel.GemPickup => "Gems",
@@ -271,7 +379,7 @@ namespace TitanOrbit.Systems
                 _ => "Value"
             };
 
-            string message = $"{sign}{amountInt} {label}";
+            string message = compactGemLabel ? $"{sign}{amountInt}" : $"{sign}{amountInt} {label}";
 
             Sprite icon = null;
             Color color = Color.white;
@@ -331,6 +439,89 @@ namespace TitanOrbit.Systems
                 return;
 
             SpawnPopup(message, icon, color, "FloatingCountPopup_AsteroidStats", position, fontToUse);
+        }
+
+        private void SpawnAsteroidFeedbackPopupLocal(Vector3 position, AsteroidFloatingFeedback feedback)
+        {
+            FloatingCountStackLine[] lines = BuildAsteroidFeedbackLines(feedback);
+            if (lines == null || lines.Length == 0)
+                return;
+
+            TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
+            if (fontToUse == null)
+                return;
+
+            Vector3 spawnPos = GetStackSpawnPosition(position);
+            GameObject go = new GameObject("FloatingCountStack_AsteroidHit");
+            go.transform.position = spawnPos;
+
+            var popup = go.AddComponent<FloatingCountStackPopup>();
+            popup.Initialize(
+                lines,
+                fontToUse,
+                floatingCountFontSize,
+                floatingCountStackLineSpacing,
+                floatingCountDuration,
+                floatingCountRiseSpeed,
+                Mathf.Max(0f, floatingCountLateralDriftMax)
+            );
+        }
+
+        private FloatingCountStackLine[] BuildAsteroidFeedbackLines(AsteroidFloatingFeedback feedback)
+        {
+            if (floatingCountVisibility == null)
+                return System.Array.Empty<FloatingCountStackLine>();
+
+            var lines = new System.Collections.Generic.List<FloatingCountStackLine>(4);
+            TeamManager.Team team = feedback.Team;
+
+            if (floatingCountVisibility.IsAsteroidDamageEnabled()
+                && feedback.Damage.HasValue
+                && feedback.Damage.Value > 0.0001f)
+            {
+                int damageInt = Mathf.Max(1, Mathf.RoundToInt(feedback.Damage.Value));
+                Color damageColor = team != TeamManager.Team.None
+                    ? TeamManager.GetTeamColor(team)
+                    : floatingCountDamageFallbackColor;
+                lines.Add(new FloatingCountStackLine($"+{damageInt} Damage", damageColor));
+            }
+
+            if (floatingCountVisibility.IsAsteroidHealthRemainingEnabled()
+                && feedback.RemainingHealth.HasValue)
+            {
+                int hp = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingHealth.Value));
+                lines.Add(new FloatingCountStackLine($"HP Left: {hp}", floatingCountHealthPositiveColor));
+            }
+
+            if (floatingCountVisibility.IsAsteroidGemsRemainingEnabled()
+                && feedback.RemainingGems.HasValue)
+            {
+                int gems = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingGems.Value));
+                Color gemsColor = team != TeamManager.Team.None
+                    ? TeamManager.GetTeamColor(team)
+                    : new Color(0.85f, 0.95f, 1f, 1f);
+                lines.Add(new FloatingCountStackLine($"Gems: {gems}", gemsColor));
+            }
+
+            if (floatingCountVisibility.IsAsteroidImpactForceEnabled()
+                && feedback.ImpactForceNewtons.HasValue
+                && feedback.ImpactForceNewtons.Value >= 1f)
+            {
+                int force = Mathf.RoundToInt(feedback.ImpactForceNewtons.Value);
+                lines.Add(new FloatingCountStackLine($"{force:N0} Force", floatingCountImpactForceColor));
+            }
+
+            return lines.Count == 0 ? System.Array.Empty<FloatingCountStackLine>() : lines.ToArray();
+        }
+
+        /// <summary>Single anchor for stacked groups — no spiral spread so lines stay together.</summary>
+        private Vector3 GetStackSpawnPosition(Vector3 position)
+        {
+            Vector3 spawnPos = position;
+            spawnPos.y = floatingCountVerticalOffset;
+            if (spawnPos.y < 4f)
+                spawnPos.y = 4f;
+            return spawnPos;
         }
 
         /// <summary>
@@ -438,7 +629,7 @@ namespace TitanOrbit.Systems
             GameObject go = Instantiate(prefab, position, rot);
             float mul = Mathf.Max(0.12f, scaleMultiplier);
             float finalScale = weaponCollisionImpactBaseScale * mul;
-            ApplyCollisionImpactVisualScale(go, finalScale);
+            VfxUrpCompat.ApplyImpactVisualScale(go, finalScale);
             FixAllIn1VfxForUrp(go);
             SetAudioPitchInHierarchy(go, audioPitch);
             Destroy(go, weaponCollisionImpactDuration);
@@ -453,50 +644,6 @@ namespace TitanOrbit.Systems
             {
                 if (sources[i] != null)
                     sources[i].pitch = pitch;
-            }
-        }
-
-        /// <summary>
-        /// Uniformly scales impact VFX so collisions visibly differ at low/high severity.
-        /// Some particle prefabs use world space or constant modules and ignore transform scale alone.
-        /// </summary>
-        private static void ApplyCollisionImpactVisualScale(GameObject root, float scale)
-        {
-            if (root == null) return;
-            float s = Mathf.Max(0.05f, scale);
-            root.transform.localScale = Vector3.one * s;
-
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
-            {
-                ParticleSystem ps = systems[i];
-                if (ps == null) continue;
-
-                var main = ps.main;
-                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-                main.startSizeMultiplier *= s;
-                main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-                main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-
-                var shape = ps.shape;
-                if (shape.enabled)
-                {
-                    shape.radius *= s;
-                    shape.scale *= s;
-                }
-
-                var sizeOverLifetime = ps.sizeOverLifetime;
-                if (sizeOverLifetime.enabled)
-                    sizeOverLifetime.sizeMultiplier *= s;
-
-            }
-
-            Light[] lights = root.GetComponentsInChildren<Light>(true);
-            for (int i = 0; i < lights.Length; i++)
-            {
-                if (lights[i] == null) continue;
-                lights[i].range *= s;
-                lights[i].intensity *= Mathf.Lerp(0.7f, 1.35f, Mathf.InverseLerp(0.2f, 2.2f, s));
             }
         }
 

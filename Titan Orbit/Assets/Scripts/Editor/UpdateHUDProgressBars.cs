@@ -97,7 +97,9 @@ namespace TitanOrbit.Editor
                 Debug.LogError("ShipStatsPanel not found. Open a scene that has the HUD.");
                 return;
             }
-            const float barRight = 40f;
+            const float valueColumnWidth = 120f;
+            const float barValueGap = 12f;
+            const float barRight = valueColumnWidth + 8f + barValueGap;
             int fixedCount = 0;
             for (int r = 0; r <= 3; r++)
             {
@@ -112,6 +114,26 @@ namespace TitanOrbit.Editor
                     barRect.offsetMax = new Vector2(-barRight, barRect.offsetMax.y);
                     fixedCount++;
                     EditorUtility.SetDirty(barRect);
+                }
+
+                Transform value = row.Find("Value");
+                if (value != null)
+                {
+                    var valueRect = value.GetComponent<RectTransform>();
+                    var tmp = value.GetComponent<TextMeshProUGUI>();
+                    if (valueRect != null && valueRect.sizeDelta.x < valueColumnWidth - 1f)
+                    {
+                        valueRect.sizeDelta = new Vector2(valueColumnWidth, valueRect.sizeDelta.y);
+                        fixedCount++;
+                        EditorUtility.SetDirty(valueRect);
+                    }
+                    if (tmp != null)
+                    {
+                        tmp.enableWordWrapping = false;
+                        tmp.overflowMode = TextOverflowModes.Overflow;
+                        tmp.alignment = TextAlignmentOptions.MidlineLeft;
+                        EditorUtility.SetDirty(tmp);
+                    }
                 }
             }
             if (fixedCount > 0)

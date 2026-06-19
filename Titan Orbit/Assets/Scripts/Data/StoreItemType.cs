@@ -11,6 +11,8 @@ namespace TitanOrbit.Data
         SmallRockets,   // Pack of 4
         LargeRockets,   // Pack of 2
         SmallMines,     // Pack of 4
-        LargeMines      // Pack of 2
+        LargeMines,     // Pack of 2
+        /// <summary>Authored ship-family component; see <see cref="Entities.EquippedEquipmentEntry.componentId"/>.</summary>
+        ShipComponent
     }
 }

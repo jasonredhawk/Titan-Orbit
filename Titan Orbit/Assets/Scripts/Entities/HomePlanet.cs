@@ -19,8 +19,6 @@ namespace TitanOrbit.Entities
         /// <summary>All active HomePlanet instances. Updated on network spawn/despawn.</summary>
         public static readonly List<HomePlanet> AllHomePlanets = new List<HomePlanet>();
         [Header("Home Planet Settings")]
-        [Tooltip("Max gems capacity per level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, 4=8×, 5=16×, 6=32×. Scale base to tune difficulty.")]
-        [SerializeField] private float baseMaxGemsLevel1 = 200f;
         [Tooltip("Max starship level allowed at each home planet level. Ship cannot exceed planet level. Level 7 (MEGA) requires planet 6 + full gems.")]
         [SerializeField] private int[] maxShipLevelPerPlanetLevel = { 0, 1, 2, 3, 4, 5, 6 }; // Planet level N → max ship level N (ship 7 is special)
 
@@ -59,9 +57,7 @@ namespace TitanOrbit.Entities
                 AllHomePlanets.Add(this);
             EnsureSolidColliderAndOrbitZone();
             if (IsServer)
-            {
-                SetGrowthRate(GetGrowthRatePerSecond()); // 1 per 5 sec at level 1, doubles per level
-            }
+                SetGrowthRate(GetGrowthRatePerSecond());
             baseLocalScale = transform.localScale;
             RemoveOldCylinderRings();
             EnsureShapesRingsDrawer();
@@ -97,46 +93,41 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Gem moon on home worlds is 1.5× the inverse-scaled size used for regular planets at the same PlanetSize.</summary>
-        protected override float GetGemMoonHomeVisualScaleMultiplier() => 1.5f;
+        protected override float GetGemMoonHomeVisualScaleMultiplier() => MapGemMoonScaleMultiplier;
+
+        /// <summary>Scale multiplier passed to <see cref="Planet.ComputeMapPlacementInfluenceRadiusWorld"/> for home-world ring spacing.</summary>
+        public const float MapGemMoonScaleMultiplier = 1.5f;
+
+        /// <summary>Starting level at spawn; used by map generation for ring clearance.</summary>
+        public const int InitialSpawnLevel = 3;
 
         /// <summary>Initial planet level. Home planets start at 3.</summary>
-        protected override int GetInitialPlanetLevel() => 3;
+        protected override int GetInitialPlanetLevel() => InitialSpawnLevel;
 
         /// <summary>Max level for home planets is 6.</summary>
         protected override int GetMaxLevel() => 6;
 
-        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=200, 2=400, 3=800, 4=1600, 5=3200, 6=6400 (when base=200).</summary>
-        protected override float GetMaxGemsForLevel(int level)
-        {
-            if (level < 1) return 0f;
-            return baseMaxGemsLevel1 * Mathf.Pow(2f, level - 1);
-        }
-
-        /// <summary>Home planets: 1 person per 5 seconds at level 1, doubles each level (2 at 2, 4 at 3, 8 at 4, … per 5 sec).</summary>
-        protected override float GetGrowthRatePerSecond()
-        {
-            int level = PlanetLevel;
-            int exponent = Mathf.Max(0, level - 1); // Level 1 -> 1 per 5s, 2 -> 2, 3 -> 4, 4 -> 8 per 5s
-            float peoplePer5Sec = Mathf.Pow(2f, exponent);
-            return peoplePer5Sec / 5f;
-        }
-
         /// <summary>Updates the orbit zone SphereCollider radius when level or setup changes. Home planets may use HomePlanetOrbitZone.</summary>
         protected override void RefreshOrbitZoneRadius()
         {
-            var homeOz = GetComponentInChildren<HomePlanetOrbitZone>();
+            var homeOz = GetComponentInChildren<HomePlanetOrbitZone>(true);
             if (homeOz != null)
             {
-                var col = homeOz.GetComponent<SphereCollider>();
-                if (col != null)
-                    col.radius = GetOrbitZoneOuterRadiusLocal();
+                foreach (var col in homeOz.GetComponents<SphereCollider>())
+                {
+                    if (col.isTrigger)
+                    {
+                        col.radius = GetOrbitRingOuterRadiusLocal();
+                        break;
+                    }
+                }
             }
 
             base.RefreshOrbitZoneRadius();
         }
 
         /// <summary>
-        /// Ensures body collider = planet sphere (radius 0.5), orbit zone = 0.5 to outer (level-scaled). Base Planet may already create zone; we fix sizes.
+        /// Ensures body collider = planet sphere (radius 0.5). Orbit trigger + <see cref="PlanetOrbitZone"/> are created on the planet root by <see cref="Planet.EnsureOrbitZoneExists"/> from <see cref="Planet.OnNetworkSpawn"/>.
         /// </summary>
         private void EnsureSolidColliderAndOrbitZone()
         {
@@ -146,21 +137,6 @@ namespace TitanOrbit.Entities
                 bodyCollider.isTrigger = false;
                 bodyCollider.radius = 0.5f; // Match Unity primitive sphere (diameter 1)
             }
-            PlanetOrbitZone existing = GetComponentInChildren<PlanetOrbitZone>();
-            if (existing != null)
-            {
-                RefreshOrbitZoneRadius();
-                return;
-            }
-            GameObject orbitZoneObj = new GameObject("OrbitZone");
-            orbitZoneObj.transform.SetParent(transform);
-            orbitZoneObj.transform.localPosition = Vector3.zero;
-            orbitZoneObj.transform.localScale = Vector3.one;
-            SphereCollider orbitCol = orbitZoneObj.AddComponent<SphereCollider>();
-            orbitCol.isTrigger = true;
-            orbitCol.radius = GetOrbitZoneOuterRadiusLocal();
-            PlanetOrbitZone zone = orbitZoneObj.AddComponent<PlanetOrbitZone>();
-            zone.SetPlanet(this);
         }
 
         /// <summary>Server-only: apply gem deposit. Call this directly from server code instead of RPC when already on server.</summary>
@@ -216,6 +192,17 @@ namespace TitanOrbit.Entities
                 return false;
             contributedGemsByClientId[clientId] = current - cost;
             return true;
+        }
+
+        /// <summary>Server: refund contributed gems when a purchase could not be completed.</summary>
+        public void RefundContributedGems(ulong clientId, float amount)
+        {
+            if (!IsServer || amount <= 0f) return;
+            if (contributedGemsByClientId == null)
+                contributedGemsByClientId = new Dictionary<ulong, float>();
+            if (!contributedGemsByClientId.ContainsKey(clientId))
+                contributedGemsByClientId[clientId] = 0f;
+            contributedGemsByClientId[clientId] += amount;
         }
 
         /// <summary>Override to add scale pulse effect and auto-level ships when home planet levels up.</summary>
@@ -275,8 +262,27 @@ namespace TitanOrbit.Entities
         /// <summary>Ensure a child with HomePlanetRingsDrawer exists so Saturn-style rings are drawn each frame.</summary>
         private void EnsureShapesRingsDrawer()
         {
-            var drawer = GetComponentInChildren<HomePlanetRingsDrawer>(true);
-            if (drawer != null) return;
+            var allDrawers = GetComponentsInChildren<HomePlanetRingsDrawer>(true);
+            HomePlanetRingsDrawer keep = null;
+            foreach (var d in allDrawers)
+            {
+                if (d != null && d.transform.name == "HomePlanetRings")
+                {
+                    keep = d;
+                    break;
+                }
+            }
+            if (keep == null && allDrawers.Length > 0)
+                keep = allDrawers[0];
+            foreach (var d in allDrawers)
+            {
+                if (d == null || d == keep)
+                    continue;
+                Object.Destroy(d.gameObject);
+            }
+
+            if (keep != null)
+                return;
             GameObject ringsObj = new GameObject("HomePlanetRings");
             ringsObj.transform.SetParent(transform);
             ringsObj.transform.localPosition = Vector3.zero;
@@ -358,17 +364,9 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = false)]
         private void EliminateTeamServerRpc(TeamManager.Team eliminatedTeam)
         {
-            // Notify all clients that a team was eliminated
-            EliminateTeamClientRpc(eliminatedTeam);
-            
-            // Check win conditions
+            if (TeamManager.Instance != null)
+                TeamManager.Instance.EliminateTeamOnServer(eliminatedTeam);
             CheckWinConditions();
-        }
-
-        [ClientRpc]
-        private void EliminateTeamClientRpc(TeamManager.Team eliminatedTeam)
-        {
-            Debug.Log($"Team {eliminatedTeam} has been eliminated!");
         }
 
         private void CheckWinConditions()

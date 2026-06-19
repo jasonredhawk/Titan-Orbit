@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, asteroids.
+    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, gem moons, asteroids.
     /// Each team has its own color.
     /// </summary>
     public class MinimapController : MonoBehaviour
@@ -25,7 +25,10 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
+        [SerializeField] private float playerBlipSize = 10f; // Cross blip for local player (other ships use 12f)
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
+        [SerializeField] private float moonBlipScaleFactor = 0.85f;
+        [SerializeField] private float moonBlipMinSize = 5f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
         [SerializeField] private float edgeMarkerMaxSize = 48f; // Maximum size for closest planets
@@ -33,7 +36,8 @@ namespace TitanOrbit.UI
         
         [Header("Expand Settings")]
         [SerializeField] private float expandedSizePercent = 0.85f; // Percentage of screen to fill (85%)
-        [Tooltip("World radius for expanded minimap when ToroidalMap size is not set yet. When the map has loaded, expanded zoom uses half the map diagonal from ToroidalMap instead.")]
+        [SerializeField] private float expandedBackgroundAlpha = 0.9f;
+        [Tooltip("World-space radius visible around the player when expanded. Smaller = zoomed in, larger = zoomed out. Set to 0 or less to auto-fit the full toroidal map.")]
         [SerializeField] private float fullMapRadius = 212f;
         [SerializeField] private float markerHeight = 1f; // Height above ground for markers
 
@@ -89,6 +93,7 @@ namespace TitanOrbit.UI
         [SerializeField] private Color planetColor = new Color(0.6f, 0.6f, 0.6f);
         [SerializeField] private Color homePlanetColor = new Color(1f, 0.9f, 0.2f);
         [SerializeField] private Color asteroidColor = new Color(0.8f, 0.8f, 0.8f); // Light grey for better visibility
+        [SerializeField] private Color moonColor = new Color(0.55f, 0.88f, 1f); // Neutral gem-moon tint when planet is uncaptured
 
         private Starship playerShip;
         private Transform playerTransform;
@@ -175,9 +180,12 @@ namespace TitanOrbit.UI
             dz -= mapH * Mathf.Round(dz / mapH);
         }
 
-        /// <summary>World-space radius that fits the full toroidal map in the expanded minimap (center to corner).</summary>
+        /// <summary>World-space radius used for expanded minimap zoom (player-centered).</summary>
         private float GetExpandedWorldRadius()
         {
+            if (fullMapRadius > 0f)
+                return fullMapRadius;
+
             float w = ToroidalMap.GetMapWidth();
             float h = ToroidalMap.GetMapHeight();
             if (w > 1f && h > 1f)
@@ -186,7 +194,15 @@ namespace TitanOrbit.UI
                 float hh = h * 0.5f;
                 return Mathf.Sqrt(hw * hw + hh * hh);
             }
-            return fullMapRadius;
+
+            return 212f;
+        }
+
+        private void OnValidate()
+        {
+            if (!Application.isPlaying || !isExpanded)
+                return;
+            minimapRadius = GetExpandedWorldRadius();
         }
 
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
@@ -601,15 +617,15 @@ namespace TitanOrbit.UI
 
         private void SetupExpandButton()
         {
-            // Create expand button in bottom-right corner of minimap
+            // Top-left of minimap (easier thumb reach on phones than bottom-right screen corner)
             GameObject buttonObj = new GameObject("ExpandButton");
             buttonObj.transform.SetParent(minimapRect, false);
             
             RectTransform buttonRect = buttonObj.AddComponent<RectTransform>();
-            buttonRect.anchorMin = new Vector2(1, 0);
-            buttonRect.anchorMax = new Vector2(1, 0);
-            buttonRect.pivot = new Vector2(1, 0);
-            buttonRect.anchoredPosition = new Vector2(-8, 8);
+            buttonRect.anchorMin = new Vector2(0, 1);
+            buttonRect.anchorMax = new Vector2(0, 1);
+            buttonRect.pivot = new Vector2(0, 1);
+            buttonRect.anchoredPosition = new Vector2(8, -8);
             buttonRect.sizeDelta = new Vector2(46f, 20f);
             
             Image buttonImage = buttonObj.AddComponent<Image>();
@@ -721,7 +737,7 @@ namespace TitanOrbit.UI
                     if (expandButtonLabel != null)
                     {
                         expandButtonLabel.text = "\u00d7";
-                        expandButtonLabel.fontSize = 18f;
+                        expandButtonLabel.fontSize = 12f;
                     }
                 }
                 
@@ -865,16 +881,16 @@ namespace TitanOrbit.UI
             SetupMask();
             SetupCircularBorder();
             
-            // Update button icon back to expand icon and reposition to bottom-right
+            // Update button icon back to expand icon and reposition to top-left of minimap
             if (expandButton != null)
             {
                 RectTransform buttonRect = expandButton.GetComponent<RectTransform>();
                 if (buttonRect != null)
                 {
-                    buttonRect.anchorMin = new Vector2(1, 0);
-                    buttonRect.anchorMax = new Vector2(1, 0);
-                    buttonRect.pivot = new Vector2(1, 0);
-                    buttonRect.anchoredPosition = new Vector2(-8, 8);
+                    buttonRect.anchorMin = new Vector2(0, 1);
+                    buttonRect.anchorMax = new Vector2(0, 1);
+                    buttonRect.pivot = new Vector2(0, 1);
+                    buttonRect.anchoredPosition = new Vector2(8, -8);
                     buttonRect.sizeDelta = new Vector2(46f, 20f);
                 }
 
@@ -989,11 +1005,14 @@ namespace TitanOrbit.UI
             }
             
             // Set the background to use a circular sprite
-            bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize);
+            float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.4f;
+            bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha);
             bgImage.type = Image.Type.Simple;
+            // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
+            bgImage.color = Color.white;
         }
         
-        private Sprite CreateCircularBackgroundSprite(int size)
+        private Sprite CreateCircularBackgroundSprite(int size, float alpha)
         {
             int textureSize = size;
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
@@ -1005,7 +1024,7 @@ namespace TitanOrbit.UI
             float radius = textureSize / 2f;
             
             // Create circular background with semi-transparent black
-            Color bgColor = new Color(0, 0, 0, 0.4f); // Semi-transparent black
+            Color bgColor = new Color(0, 0, 0, alpha);
             
             for (int y = 0; y < textureSize; y++)
             {
@@ -1465,7 +1484,6 @@ namespace TitanOrbit.UI
         {
             if (playerTransform == null || playerShip == null || !playerShip)
                 return;
-            float startTime = Time.realtimeSinceStartup;
             // Normal 6s full refresh. Do NOT force full FindObjects every tick while ghosts exist — that was a major hitch.
             RefreshEntityCache(false);
             if (deadAsteroidGhosts.Count > 0 && Time.time >= nextGhostAsteroidRescanTime)
@@ -1473,25 +1491,6 @@ namespace TitanOrbit.UI
                 nextGhostAsteroidRescanTime = Time.time + GhostAsteroidRescanInterval;
                 cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
             }
-            // #region agent log
-            if (Time.frameCount % 120 == 0)
-            {
-                float durMs = (Time.realtimeSinceStartup - startTime) * 1000f;
-                TitanOrbit.Core.DebugSessionLog.Write(
-                    "MinimapController.UpdateBlips",
-                    "blip and cache counts",
-                    "{\"blips\":" + blips.Count +
-                    ",\"edgeMarkers\":" + edgeMarkers.Count +
-                    ",\"markerEdgeMarkers\":" + markerEdgeMarkers.Count +
-                    ",\"cachedShips\":" + (cachedShips?.Length ?? 0) +
-                    ",\"cachedPlanets\":" + (cachedPlanets?.Length ?? 0) +
-                    ",\"cachedAsteroids\":" + (cachedAsteroids?.Length ?? 0) +
-                    ",\"cachedMarkers\":" + (cachedMarkers?.Length ?? 0) +
-                    ",\"durationMs\":" + durMs +
-                    "}",
-                    "B");
-            }
-            // #endregion
             Vector3 playerPos = playerTransform.position;
             // 1 world unit → minimap pixels (used for blip sizing and asteroid scale updates every frame)
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);
@@ -1588,15 +1587,14 @@ namespace TitanOrbit.UI
             }
 
             // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, 18f, BlipType.Cross), true);
+            EnsureBlip(playerTransform, () => CreateBlip(Color.white, playerBlipSize, BlipType.Cross), true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
 
                 TeamManager.Team playerTeam = playerShip.ShipTeam;
                 Color playerColor = playerTeam == TeamManager.Team.None ? Color.white : GetTeamColor(playerTeam);
-                float currentSize = playerRt.sizeDelta.x;
-                UpdateBlip(playerTransform, playerColor, currentSize);
+                UpdateBlip(playerTransform, playerColor, playerBlipSize);
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
@@ -1743,6 +1741,8 @@ namespace TitanOrbit.UI
                     }
                 }
             }
+
+            UpdateGemMoonBlips(playerPos, worldToMinimapScale);
  
             // Update minimap markers
             var allMarkers = cachedMarkers;
@@ -2183,6 +2183,64 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Ensure asteroid blips exist. Size is updated every frame in the main blip loop when scale changes (respawn, etc.).
         /// </summary>
+        private void UpdateGemMoonBlips(Vector3 playerPos, float worldToMinimapScale)
+        {
+            foreach (var p in cachedPlanets)
+            {
+                if (p == null) continue;
+                PlanetGemMoon moon = p.GemMoon;
+                if (moon == null || !moon.isActiveAndEnabled) continue;
+
+                Transform moonTransform = moon.transform;
+                Vector3 worldPos = moonTransform.position;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
+
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                bool isOutsideVisibleArea = dist > minimapRadius;
+                bool isHome = p is HomePlanet;
+                TeamManager.Team team = p.TeamOwnership;
+
+                Color moonBlipColor = team == TeamManager.Team.None
+                    ? (isHome ? Color.Lerp(moonColor, homePlanetColor, 0.35f) : moonColor)
+                    : GetTeamColor(team);
+                float moonBlipSize = GetGemMoonBlipSize(moon, worldToMinimapScale);
+
+                if (isOutsideVisibleArea)
+                {
+                    if (blips.ContainsKey(moonTransform))
+                        blips[moonTransform].gameObject.SetActive(false);
+                    RemoveShipEdgeMarker(moonTransform);
+                }
+                else
+                {
+                    if (blips.ContainsKey(moonTransform))
+                    {
+                        blips[moonTransform].gameObject.SetActive(true);
+                        UpdateBlip(moonTransform, moonBlipColor, moonBlipSize);
+                    }
+                    else
+                    {
+                        EnsureBlip(moonTransform, () => CreateBlip(moonBlipColor, moonBlipSize, BlipType.Circle));
+                    }
+                }
+            }
+        }
+
+        private float GetGemMoonBlipSize(PlanetGemMoon moon, float worldToMinimapScale)
+        {
+            float physicalSize = 1f;
+            Transform vis = moon.transform.Find("GemMoonVisual");
+            if (vis != null)
+            {
+                Vector3 worldScale = vis.lossyScale;
+                physicalSize = (worldScale.x + worldScale.y + worldScale.z) / 3f;
+            }
+
+            return Mathf.Max(
+                moonBlipMinSize,
+                physicalSize * worldToMinimapScale * sizeScaleFactor * moonBlipScaleFactor);
+        }
+
         private void EnsureAsteroidBlips(float worldToMinimapScale)
         {
             if (cachedAsteroids == null || cachedAsteroids.Length == 0)

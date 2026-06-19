@@ -13,7 +13,7 @@ REM   upload_webgl_to_gcs.bat "C:\path\to\TitanOrbitWebGL" your-gcp-project-id
 REM Defaults (edit if your bucket name is taken or you use another build folder)
 set "BUCKET=titan-orbit-webgl"
 set "PROJECT_ID=titan-orbit"
-set "SOURCE_DIR=C:\Users\jason\Documents\Titan Orbit\Downloads\TitanOrbitWeb1"
+set "SOURCE_DIR=C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit\BuildOutput\WebGL\production\TitanOrbitWebGL"
 
 if not "%~1"=="" for %%I in ("%~1") do set "SOURCE_DIR=%%~fI"
 if not "%~2"=="" set "PROJECT_ID=%~2"

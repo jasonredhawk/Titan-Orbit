@@ -5,6 +5,7 @@ using TMPro;
 using Unity.Netcode;
 using TitanOrbit.Networking;
 using TitanOrbit.Services;
+using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
@@ -21,9 +22,13 @@ namespace TitanOrbit.UI
         [SerializeField] private GameObject mainMenuPanel;
         [SerializeField] private GameObject lobbyPanel;
         [SerializeField] private GameObject teamSelectionPanel;
+        [SerializeField] private RescueOldShipUI rescueOldShipUI;
+        [SerializeField] private InstructionScreenUI instructionScreenUI;
         [SerializeField] private LoadingScreenController loadingScreenController;
+        [Tooltip("Optional how-to-play screenshots (Objective, Transport, Mining, Upgrades, Planet Ships).")]
+        [SerializeField] private Sprite[] instructionStepScreenshots;
         [SerializeField] private Button playButton;
-        [SerializeField] private Button hostOnlineButton;
+        [SerializeField] private Button hostOnlineButton; // wired as dedicated quick join (Relay client only)
         [SerializeField] private Button joinOnlineButton;
         [SerializeField] private Button teamAButton;
         [SerializeField] private Button teamBButton;
@@ -45,14 +50,21 @@ namespace TitanOrbit.UI
         [SerializeField] private Button browseLobbiesButton;
         [SerializeField] private Button refreshLobbiesButton;
         [SerializeField] private Button joinSelectedLobbyButton;
+        [SerializeField] private Button requestDedicatedMatchButton;
         [SerializeField] private Transform lobbyListContainer;
         [SerializeField] private GameObject lobbyListRowPrefab;
         [SerializeField] private TextMeshProUGUI lobbyBrowserStatusText;
-        [SerializeField] private bool latestOnlyFilter = false;
+        [SerializeField] private bool latestOnlyFilter = true;
 
         private readonly List<NetworkGameManager.LobbySummary> cachedLobbySummaries = new List<NetworkGameManager.LobbySummary>();
         private readonly List<Button> lobbyRowButtons = new List<Button>();
         private readonly List<Image> lobbyRowBackgrounds = new List<Image>();
+        private readonly List<TextMeshProUGUI> lobbyRowDurationLabels = new List<TextMeshProUGUI>();
+        private float lobbyDurationRefreshTimer;
+        private float lobbyListAutoRefreshTimer;
+        private bool _lobbyListRefreshInProgress;
+        private bool _dedicatedMatchRequestInProgress;
+        private float _lastSuccessfulLobbyFetchRealtime = -1f;
         private string selectedLobbyId;
         private int selectedLobbyRowIndex = -1;
         private GameObject lobbyBrowserRoot;
@@ -66,8 +78,20 @@ namespace TitanOrbit.UI
         private Button storeRestorePurchasesButton;
         private Vector2 _lastMainMenuPanelSize = Vector2.negativeInfinity;
         private string pendingTeamJoinError;
+        /// <summary>Runtime-created control; hosts a Relay+Lobby match in the browser (not on GCE).</summary>
+        private Button _webGlBrowserHostButton;
         /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
         private bool deferTeamPanelUntilNetworkReady;
+        private float _dbgLastLobbyRefreshRealtime = -1f;
+        private int _dbgLobbyRefreshCount;
+        private Coroutine returningShipQueryRoutine;
+        private bool teamJoinFlowReadyPending;
+
+        private const float LobbyScreenContentWidth = 540f;
+        /// <summary>How often to re-query UGS while the open-matches screen is visible (server heartbeats every 15s).</summary>
+        private const float LobbyListAutoRefreshIntervalSeconds = 20f;
+        /// <summary>Keep showing the last good lobby list for this long when a refresh temporarily returns zero rows.</summary>
+        private const float LobbyListCacheGraceSeconds = 180f;
 
         private RectTransform _authMainCardRt;
         private Image _authMainCardBg;
@@ -91,7 +115,7 @@ namespace TitanOrbit.UI
             EnsureStoreScreenUi();
 
             if (hostOnlineButton != null)
-                hostOnlineButton.onClick.AddListener(OnHostOnlineClicked);
+                hostOnlineButton.onClick.AddListener(OnQuickJoinDedicatedClicked);
 
             if (joinOnlineButton != null)
             {
@@ -102,6 +126,8 @@ namespace TitanOrbit.UI
 
             NetworkGameManager.OnTeamChosen += OnTeamChosen;
             NetworkGameManager.OnTeamChoiceFailed += OnTeamChoiceFailed;
+            NetworkGameManager.OnReturningShipQueryResult += OnReturningShipQueryResult;
+            NetworkGameManager.OnPlayerTeamScuttled += OnPlayerTeamScuttled;
 
             if (teamAButton != null) teamAButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamA));
             if (teamBButton != null) teamBButton.onClick.AddListener(() => OnTeamClicked(Core.TeamManager.Team.TeamB));
@@ -147,6 +173,8 @@ namespace TitanOrbit.UI
             UnityGameServicesBootstrap.AuthStateChanged -= OnUnityAuthStateChanged;
             NetworkGameManager.OnTeamChosen -= OnTeamChosen;
             NetworkGameManager.OnTeamChoiceFailed -= OnTeamChoiceFailed;
+            NetworkGameManager.OnReturningShipQueryResult -= OnReturningShipQueryResult;
+            NetworkGameManager.OnPlayerTeamScuttled -= OnPlayerTeamScuttled;
         }
 
         private void OnUnityAuthStateChanged()
@@ -573,6 +601,9 @@ namespace TitanOrbit.UI
         {
             pendingTeamJoinError = message ?? "";
             Debug.LogWarning("[MainMenu] " + message);
+            if (lobbyPanel != null && !lobbyPanel.activeSelf)
+                lobbyPanel.SetActive(true);
+            ShowTeamSelectionAfterRescueChoice();
         }
 
         private void OnTeamChosen(Core.TeamManager.Team team)
@@ -581,6 +612,41 @@ namespace TitanOrbit.UI
             deferTeamPanelUntilNetworkReady = false;
             if (lobbyPanel != null) lobbyPanel.SetActive(false);
             if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
+            if (rescueOldShipUI != null) rescueOldShipUI.Hide();
+        }
+
+        private void OnReturningShipQueryResult(NetworkGameManager.ReturningShipInfo info)
+        {
+            if (info.HasRescuableShip && info.Team != Core.TeamManager.Team.None)
+            {
+                EnsureRescueOldShipUi();
+                if (teamSelectionPanel != null)
+                    teamSelectionPanel.SetActive(false);
+                rescueOldShipUI.Show(info);
+                return;
+            }
+
+            ShowTeamSelectionAfterRescueChoice();
+        }
+
+        private void OnPlayerTeamScuttled()
+        {
+            pendingTeamJoinError = "Your team's home world was lost. Your ship was scuttled — choose a new team.";
+            if (lobbyPanel != null)
+                lobbyPanel.SetActive(true);
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+            ShowTeamSelectionAfterRescueChoice();
+        }
+
+        /// <summary>Show team selection (after loading or after declining / lacking a rescuable ship).</summary>
+        public void ShowTeamSelectionAfterRescueChoice()
+        {
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+            if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(true);
+            UpdateLobbyInfo();
         }
 
         private void LateUpdate()
@@ -600,6 +666,26 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            if (lobbyScreenRoot != null && lobbyScreenRoot.activeSelf)
+            {
+                if (cachedLobbySummaries.Count > 0)
+                {
+                    lobbyDurationRefreshTimer += Time.unscaledDeltaTime;
+                    if (lobbyDurationRefreshTimer >= 1f)
+                    {
+                        lobbyDurationRefreshTimer = 0f;
+                        RefreshLobbyRowDurations();
+                    }
+                }
+
+                lobbyListAutoRefreshTimer += Time.unscaledDeltaTime;
+                if (lobbyListAutoRefreshTimer >= LobbyListAutoRefreshIntervalSeconds)
+                {
+                    lobbyListAutoRefreshTimer = 0f;
+                    TryAutoRefreshLobbyList();
+                }
+            }
+
             if (lobbyPanel != null && lobbyPanel.activeSelf)
             {
                 if (deferTeamPanelUntilNetworkReady && teamSelectionPanel != null)
@@ -607,8 +693,9 @@ namespace TitanOrbit.UI
                     var nm = NetworkManager.Singleton;
                     if (nm != null && (nm.IsClient || nm.IsServer))
                     {
-                        teamSelectionPanel.SetActive(true);
                         deferTeamPanelUntilNetworkReady = false;
+                        if (returningShipQueryRoutine == null)
+                            returningShipQueryRoutine = StartCoroutine(CoQueryReturningShipWhenReady());
                     }
                 }
                 UpdateLobbyInfo();
@@ -667,15 +754,13 @@ namespace TitanOrbit.UI
             NetworkGameManager.RequestTeamFromLocalPlayer(team);
         }
 
-        private async void OnHostOnlineClicked()
+        private async void OnQuickJoinDedicatedClicked()
         {
             if (NetworkGameManager.Instance == null) return;
             if (hostOnlineButton != null) hostOnlineButton.interactable = false;
             try
             {
                 string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
-                string lobbyName = string.IsNullOrEmpty(pname) ? null : pname + "'s game";
-                // Must run before StartHost — PlayerDisplayNames reads LocalPlayerDisplayName on network spawn (same frame as StartHost).
                 if (!string.IsNullOrEmpty(pname))
                 {
                     PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
@@ -685,28 +770,77 @@ namespace TitanOrbit.UI
                     ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                     : pname;
 
-                string joinCode = await NetworkGameManager.Instance.StartHostWithRelayAsync(lobbyName);
-                if (!string.IsNullOrEmpty(joinCode))
+                bool ok = await NetworkGameManager.Instance.PlayWebGLJoinAsync();
+                if (ok)
                 {
                     if (joinCodeDisplayText != null)
                     {
                         joinCodeDisplayText.gameObject.SetActive(true);
-                        joinCodeDisplayText.text = "Your match appears in Open matches below.\nRelay code: " + joinCode;
-                    }
-                    else
-                    {
-                        Debug.Log("Host started. Listed in lobby browser. Relay code: " + joinCode);
+                        joinCodeDisplayText.text = "Joined a dedicated match.\nPick a team when the match screen appears.";
                     }
                     ShowLobby();
                 }
                 else
                 {
-                    Debug.LogError("Failed to start host with Relay. Check console and Unity Services setup.");
+                    if (joinCodeDisplayText != null)
+                    {
+                        joinCodeDisplayText.gameObject.SetActive(true);
+                        joinCodeDisplayText.text = "No open dedicated lobby found. Ensure the headless server is running on Google Cloud, then refresh Open matches.";
+                    }
+                    Debug.LogError(
+                        "Quick join failed: no matching lobby or Relay join failed. " +
+                        "Confirm the Linux headless service is running and Player.log shows a lobby created; " +
+                        "use \"Host match (browser)\" for a temporary player-hosted room, or pick a row under Open matches.");
                 }
             }
             finally
             {
                 if (hostOnlineButton != null) hostOnlineButton.interactable = true;
+            }
+        }
+
+        private async void OnWebGlBrowserHostRelayClicked()
+        {
+            if (NetworkGameManager.Instance == null)
+                return;
+            if (_webGlBrowserHostButton != null)
+                _webGlBrowserHostButton.interactable = false;
+            try
+            {
+                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
+                if (!string.IsNullOrEmpty(pname))
+                {
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
+                    PlayerPrefs.Save();
+                }
+
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : pname;
+
+                bool ok = await NetworkGameManager.Instance.PlayWebGLHostRelayMatchAsync();
+                if (ok)
+                {
+                    if (joinCodeDisplayText != null)
+                    {
+                        joinCodeDisplayText.gameObject.SetActive(true);
+                        joinCodeDisplayText.text =
+                            "Hosting from this browser (Relay). Other players can Quick join or pick this room under Open matches.\n" +
+                            "This does not run on your Google Cloud VM.";
+                    }
+
+                    ShowLobby();
+                }
+                else
+                {
+                    Debug.LogError(
+                        "Browser host failed. Check Unity Services (same project as the build) and the Unity console for Relay/Lobby errors.");
+                }
+            }
+            finally
+            {
+                if (_webGlBrowserHostButton != null)
+                    _webGlBrowserHostButton.interactable = true;
             }
         }
 
@@ -736,7 +870,64 @@ namespace TitanOrbit.UI
 
         private async void OnRefreshLobbiesClicked()
         {
-            await RefreshLobbyListAsync();
+            lobbyListAutoRefreshTimer = 0f;
+            await RefreshLobbyListAsync(preserveSelection: false, silent: false);
+        }
+
+        private void TryAutoRefreshLobbyList()
+        {
+            if (_lobbyListRefreshInProgress || _dedicatedMatchRequestInProgress)
+                return;
+            if (NetworkGameManager.Instance == null)
+                return;
+            if (NetworkGameManager.LobbyRateLimitRemainingSeconds > 0f)
+                return;
+
+            _ = RefreshLobbyListAsync(preserveSelection: true, silent: true);
+        }
+
+        private async void OnRequestDedicatedMatchClicked()
+        {
+            if (NetworkGameManager.Instance == null || _dedicatedMatchRequestInProgress)
+                return;
+
+            _dedicatedMatchRequestInProgress = true;
+            lobbyListAutoRefreshTimer = 0f;
+            UpdateDedicatedMatchRequestButtonState();
+
+            try
+            {
+                SetLobbyBrowserStatus("Requesting a new dedicated match on the server…");
+                bool requested = await NetworkGameManager.Instance.RequestDedicatedMatchCreationAsync();
+                if (!requested)
+                {
+                    SetLobbyBrowserStatus("Could not request a dedicated match. Check your connection and try again.");
+                    return;
+                }
+
+                SetLobbyBrowserStatus("Dedicated match requested. Waiting for the server to publish a new lobby…");
+                for (int attempt = 0; attempt < 18; attempt++)
+                {
+                    await Task.Delay(5000);
+                    if (lobbyScreenRoot == null || !lobbyScreenRoot.activeSelf)
+                        return;
+
+                    await RefreshLobbyListAsync(preserveSelection: false, silent: true);
+                    if (cachedLobbySummaries.Count > 0)
+                    {
+                        SetLobbyBrowserStatus("A dedicated match is ready. Select it and tap Join.");
+                        return;
+                    }
+                }
+
+                SetLobbyBrowserStatus(
+                    "Still waiting for a dedicated match. The headless server may be offline — keep this screen open or tap Refresh.");
+            }
+            finally
+            {
+                _dedicatedMatchRequestInProgress = false;
+                UpdateDedicatedMatchRequestButtonState();
+            }
         }
 
         private async void OnJoinSelectedLobbyClicked()
@@ -755,6 +946,16 @@ namespace TitanOrbit.UI
             try
             {
                 SetLobbyBrowserStatus("Joining selected lobby...");
+                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
+                if (!string.IsNullOrEmpty(pname))
+                {
+                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
+                    PlayerPrefs.Save();
+                }
+                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
+                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
+                    : pname;
+
                 bool ok = await NetworkGameManager.Instance.JoinLobbyByIdAsync(selectedLobbyId);
                 if (ok)
                 {
@@ -763,7 +964,10 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    SetLobbyBrowserStatus("Join failed. Try refreshing the list.");
+                    SetLobbyBrowserStatus("Join failed — that match may have ended. Refreshing the list…");
+                    selectedLobbyId = null;
+                    selectedLobbyRowIndex = -1;
+                    await RefreshLobbyListAsync();
                 }
             }
             finally
@@ -773,30 +977,177 @@ namespace TitanOrbit.UI
             }
         }
 
-        private async Task RefreshLobbyListAsync()
+        private async Task RefreshLobbyListAsync(bool preserveSelection = false, bool silent = false)
         {
             if (NetworkGameManager.Instance == null)
+            {
+                SetLobbyBrowserStatus("Network not ready yet. Open this screen again or tap Refresh.");
+                return;
+            }
+
+            if (_lobbyListRefreshInProgress)
                 return;
 
-            SetLobbyBrowserStatus("Loading lobbies...");
-            if (refreshLobbiesButton != null)
+            _lobbyListRefreshInProgress = true;
+            string previousSelection = preserveSelection ? selectedLobbyId : null;
+
+            _dbgLobbyRefreshCount++;
+            float now = Time.realtimeSinceStartup;
+            float delta = _dbgLastLobbyRefreshRealtime < 0f ? -1f : (now - _dbgLastLobbyRefreshRealtime) * 1000f;
+            _dbgLastLobbyRefreshRealtime = now;
+
+            if (!silent)
+                SetLobbyBrowserStatus("Loading lobbies...");
+            if (!silent && refreshLobbiesButton != null)
                 refreshLobbiesButton.interactable = false;
-            if (joinSelectedLobbyButton != null)
+            if (!silent && joinSelectedLobbyButton != null)
                 joinSelectedLobbyButton.interactable = false;
 
             try
             {
-                selectedLobbyId = null;
-                selectedLobbyRowIndex = -1;
-                cachedLobbySummaries.Clear();
-                cachedLobbySummaries.AddRange(await NetworkGameManager.Instance.QueryOpenLobbiesAsync(latestOnlyFilter, 40));
-                RenderLobbyList();
+                var fetched = await NetworkGameManager.Instance.QueryJoinableDedicatedLobbiesAsync(
+                    40,
+                    skipEmptyStabilization: silent);
+                var kind = NetworkGameManager.LastOpenLobbyQueryKind;
+
+                if (fetched.Count > 0)
+                {
+                    _lastSuccessfulLobbyFetchRealtime = Time.realtimeSinceStartup;
+                    ApplyFetchedLobbySummaries(fetched, previousSelection, silent);
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.RateLimitBackoff)
+                {
+                    int waitSec = Mathf.Max(1, Mathf.CeilToInt(NetworkGameManager.LobbyRateLimitRemainingSeconds));
+                    if (!silent)
+                    {
+                        SetLobbyBrowserStatus(
+                            "Lobby list is temporarily rate-limited by Unity. " +
+                            (cachedLobbySummaries.Count > 0
+                                ? $"Showing the previous list. Retry in about {waitSec}s."
+                                : $"Wait about {waitSec}s, then tap Refresh."));
+                    }
+                    if (cachedLobbySummaries.Count > 0)
+                        RenderLobbyList();
+                    else
+                        ClearLobbyListRows();
+                    UpdateDedicatedMatchRequestButtonState();
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.UnityServicesNotReady)
+                {
+                    if (!silent)
+                        SetLobbyBrowserStatus("Connecting to multiplayer services… try Refresh in a few seconds.");
+                    if (cachedLobbySummaries.Count > 0)
+                        RenderLobbyList();
+                    else
+                        ClearLobbyListRows();
+                    UpdateDedicatedMatchRequestButtonState();
+                    return;
+                }
+
+                if (kind == NetworkGameManager.OpenLobbyQueryResultKind.Error)
+                {
+                    if (cachedLobbySummaries.Count > 0)
+                    {
+                        if (!silent)
+                            SetLobbyBrowserStatus("Lobby refresh failed. Showing previous list.");
+                        RenderLobbyList();
+                        UpdateDedicatedMatchRequestButtonState();
+                        return;
+                    }
+
+                    selectedLobbyId = null;
+                    selectedLobbyRowIndex = -1;
+                    cachedLobbySummaries.Clear();
+                    ClearLobbyListRows();
+                    if (!silent)
+                    {
+                        if (!string.IsNullOrEmpty(NetworkGameManager.LastOpenLobbyQueryErrorDetail))
+                        {
+                            string detail = NetworkGameManager.LastOpenLobbyQueryErrorDetail;
+                            if (detail.Length > 96)
+                                detail = detail.Substring(0, 93) + "…";
+                            SetLobbyBrowserStatus("Could not load lobbies: " + detail);
+                        }
+                        else
+                            SetLobbyBrowserStatus("Could not load lobbies. Check your connection and tap Refresh.");
+                    }
+                    UpdateDedicatedMatchRequestButtonState();
+                    return;
+                }
+
+                if (ShouldKeepCachedLobbyList())
+                {
+                    RenderLobbyList();
+                    if (!silent)
+                    {
+                        SetLobbyBrowserStatus(
+                            "Searching for dedicated matches… showing the previous list until a fresh lobby appears.");
+                    }
+                    UpdateDedicatedMatchRequestButtonState();
+                    return;
+                }
+
+                ApplyFetchedLobbySummaries(fetched, previousSelection, silent);
             }
             finally
             {
+                _lobbyListRefreshInProgress = false;
                 if (refreshLobbiesButton != null)
                     refreshLobbiesButton.interactable = true;
             }
+        }
+
+        private void ApplyFetchedLobbySummaries(
+            List<NetworkGameManager.LobbySummary> fetched,
+            string previousSelection,
+            bool silent)
+        {
+            cachedLobbySummaries.Clear();
+            cachedLobbySummaries.AddRange(fetched);
+            RenderLobbyList();
+
+            if (!string.IsNullOrWhiteSpace(previousSelection))
+            {
+                for (int i = 0; i < cachedLobbySummaries.Count; i++)
+                {
+                    if (cachedLobbySummaries[i].LobbyId == previousSelection)
+                    {
+                        OnLobbyRowSelected(i);
+                        return;
+                    }
+                }
+            }
+
+            selectedLobbyId = null;
+            selectedLobbyRowIndex = -1;
+            if (joinSelectedLobbyButton != null)
+                joinSelectedLobbyButton.interactable = false;
+            if (!silent)
+                SetLobbyBrowserStatus(cachedLobbySummaries.Count == 0
+                    ? "No dedicated matches listed."
+                    : "Select a lobby to join.");
+            UpdateDedicatedMatchRequestButtonState();
+        }
+
+        private bool ShouldKeepCachedLobbyList()
+        {
+            if (cachedLobbySummaries.Count == 0 || _lastSuccessfulLobbyFetchRealtime < 0f)
+                return false;
+            return Time.realtimeSinceStartup - _lastSuccessfulLobbyFetchRealtime <= LobbyListCacheGraceSeconds;
+        }
+
+        private void UpdateDedicatedMatchRequestButtonState()
+        {
+            if (requestDedicatedMatchButton == null)
+                return;
+
+            bool show = cachedLobbySummaries.Count == 0;
+            requestDedicatedMatchButton.gameObject.SetActive(show);
+            requestDedicatedMatchButton.interactable = show && !_dedicatedMatchRequestInProgress && !_lobbyListRefreshInProgress;
         }
 
         private void RenderLobbyList()
@@ -805,9 +1156,12 @@ namespace TitanOrbit.UI
 
             if (cachedLobbySummaries.Count == 0)
             {
-                SetLobbyBrowserStatus("No open lobbies found.");
+                SetLobbyBrowserStatus("No dedicated matches listed. Create one on the headless server or tap Refresh.");
+                UpdateDedicatedMatchRequestButtonState();
                 return;
             }
+
+            UpdateDedicatedMatchRequestButtonState();
 
             for (int i = 0; i < cachedLobbySummaries.Count; i++)
             {
@@ -818,12 +1172,31 @@ namespace TitanOrbit.UI
                 GameObject row = Instantiate(lobbyListRowPrefab, lobbyListContainer);
                 row.SetActive(true);
                 var button = row.GetComponent<Button>();
-                var label = row.GetComponentInChildren<TextMeshProUGUI>();
-                if (label != null)
+                var nameLabel = row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
+                var durationLabel = row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
+                var playersLabel = row.transform.Find("LobbyRowPlayers")?.GetComponent<TextMeshProUGUI>();
+                if (nameLabel != null || durationLabel != null || playersLabel != null)
                 {
                     string latestTag = summary.IsLatest ? "  ·  Latest" : "";
-                    label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                    if (nameLabel != null)
+                        nameLabel.text = $"<b>{summary.Name}</b>{latestTag}";
+                    if (durationLabel != null)
+                        durationLabel.text = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
+                    if (playersLabel != null)
+                        playersLabel.text = $"{summary.CurrentPlayers}/{summary.MaxPlayers}";
                 }
+                else
+                {
+                    var label = row.GetComponentInChildren<TextMeshProUGUI>();
+                    if (label != null)
+                    {
+                        string latestTag = summary.IsLatest ? "  ·  Latest" : "";
+                        string activeFor = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
+                        label.text = $"<b>{summary.Name}</b>{latestTag}\n<size=85%><color=#9ec4e8>{activeFor}  ·  {summary.CurrentPlayers} / {summary.MaxPlayers} players</color></size>";
+                    }
+                }
+                if (durationLabel != null)
+                    lobbyRowDurationLabels.Add(durationLabel);
                 if (button != null)
                 {
                     int capturedIndex = i;
@@ -834,6 +1207,7 @@ namespace TitanOrbit.UI
             }
 
             SetLobbyBrowserStatus("Select a lobby to join.");
+            UpdateDedicatedMatchRequestButtonState();
         }
 
         private void OnLobbyRowSelected(int index)
@@ -860,10 +1234,47 @@ namespace TitanOrbit.UI
             }
         }
 
+        private void RefreshLobbyRowDurations()
+        {
+            int count = Mathf.Min(lobbyRowDurationLabels.Count, cachedLobbySummaries.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (lobbyRowDurationLabels[i] == null)
+                    continue;
+                lobbyRowDurationLabels[i].text = FormatLobbyActiveDuration(cachedLobbySummaries[i].CreatedAtEpochSeconds);
+            }
+        }
+
+        private static string FormatLobbyActiveDuration(long createdAtEpochSeconds)
+        {
+            if (createdAtEpochSeconds <= 0)
+                return "—";
+
+            long elapsed = Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - createdAtEpochSeconds);
+            if (elapsed < 60)
+                return elapsed <= 1 ? "Just started" : $"{elapsed}s";
+
+            if (elapsed < 3600)
+                return $"{elapsed / 60}m";
+
+            if (elapsed < 86400)
+            {
+                long hours = elapsed / 3600;
+                long minutes = (elapsed % 3600) / 60;
+                return minutes > 0 ? $"{hours}h {minutes}m" : $"{hours}h";
+            }
+
+            long days = elapsed / 86400;
+            long dayHours = (elapsed % 86400) / 3600;
+            return dayHours > 0 ? $"{days}d {dayHours}h" : $"{days}d";
+        }
+
         private void ClearLobbyListRows()
         {
             lobbyRowButtons.Clear();
             lobbyRowBackgrounds.Clear();
+            lobbyRowDurationLabels.Clear();
+            lobbyDurationRefreshTimer = 0f;
             if (lobbyListContainer == null)
                 return;
             for (int i = lobbyListContainer.childCount - 1; i >= 0; i--)
@@ -961,31 +1372,55 @@ namespace TitanOrbit.UI
             lobbyScreenBackButton = CreateMenuButton("LobbyBackButton", "Back", Vector2.zero, new Vector2(120f, 44f), topBar.GetComponent<RectTransform>(), isPrimary: false);
             lobbyScreenBackButton.onClick.AddListener(HideLobbyScreen);
 
-            var titleGo = CreateLabel("LobbyScreenTitle", "Online", Vector2.zero, 26f, topBar.transform, raycastTarget: false);
-            var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.flexibleWidth = 1f;
-            titleLe.minWidth = 80f;
-
             var body = new GameObject("LobbyBody", typeof(RectTransform), typeof(VerticalLayoutGroup));
             body.transform.SetParent(lobbyScreenRoot.transform, false);
-            lobbyScreenBodyRect = body.GetComponent<RectTransform>();
-            lobbyScreenBodyRect.anchorMin = Vector2.zero;
-            lobbyScreenBodyRect.anchorMax = Vector2.one;
-            lobbyScreenBodyRect.offsetMin = new Vector2(24f, 24f);
-            lobbyScreenBodyRect.offsetMax = new Vector2(-24f, -64f);
+            var bodyRect = body.GetComponent<RectTransform>();
+            bodyRect.anchorMin = Vector2.zero;
+            bodyRect.anchorMax = Vector2.one;
+            bodyRect.offsetMin = new Vector2(24f, 24f);
+            bodyRect.offsetMax = new Vector2(-24f, -64f);
             var bodyV = body.GetComponent<VerticalLayoutGroup>();
             bodyV.spacing = 14f;
             bodyV.padding = new RectOffset(0, 0, 8, 8);
             bodyV.childAlignment = TextAnchor.UpperCenter;
             bodyV.childControlWidth = true;
             bodyV.childControlHeight = true;
-            bodyV.childForceExpandWidth = true;
+            bodyV.childForceExpandWidth = false;
             bodyV.childForceExpandHeight = false;
 
+            var contentColumn = new GameObject("LobbyContentColumn", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            contentColumn.transform.SetParent(body.transform, false);
+            lobbyScreenBodyRect = contentColumn.GetComponent<RectTransform>();
+            ApplyLobbyContentColumnLayout(contentColumn.GetComponent<LayoutElement>());
+            var columnV = contentColumn.GetComponent<VerticalLayoutGroup>();
+            columnV.spacing = 12f;
+            columnV.padding = new RectOffset(0, 0, 0, 0);
+            columnV.childAlignment = TextAnchor.UpperCenter;
+            columnV.childControlWidth = true;
+            columnV.childControlHeight = true;
+            columnV.childForceExpandWidth = false;
+            columnV.childForceExpandHeight = false;
+
             if (hostOnlineButton == null)
-                hostOnlineButton = CreateMenuButton("CreateMatchButton", "Create match", Vector2.zero, new Vector2(360f, 48f), lobbyScreenBodyRect, isPrimary: true);
+                hostOnlineButton = CreateMenuButton("QuickJoinDedicatedButton", "Quick join", Vector2.zero, new Vector2(LobbyScreenContentWidth, 48f), lobbyScreenBodyRect, isPrimary: true);
             else
                 hostOnlineButton.transform.SetParent(lobbyScreenBodyRect, false);
+
+            if (_webGlBrowserHostButton == null)
+            {
+                _webGlBrowserHostButton = CreateMenuButton(
+                    "WebGlBrowserHostButton",
+                    "Host match (browser)",
+                    Vector2.zero,
+                    new Vector2(LobbyScreenContentWidth, 48f),
+                    lobbyScreenBodyRect,
+                    isPrimary: false);
+                _webGlBrowserHostButton.onClick.AddListener(OnWebGlBrowserHostRelayClicked);
+            }
+            else
+            {
+                _webGlBrowserHostButton.transform.SetParent(lobbyScreenBodyRect, false);
+            }
 
             var joinRow = new GameObject("JoinRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             joinRow.transform.SetParent(lobbyScreenBodyRect, false);
@@ -996,11 +1431,12 @@ namespace TitanOrbit.UI
             joinH.childAlignment = TextAnchor.MiddleCenter;
             joinH.childControlWidth = true;
             joinH.childControlHeight = true;
-            joinH.childForceExpandWidth = true;
+            joinH.childForceExpandWidth = false;
             joinH.childForceExpandHeight = false;
             var joinRowLe = joinRow.AddComponent<LayoutElement>();
             joinRowLe.minHeight = 52f;
             joinRowLe.preferredHeight = 56f;
+            ApplyLobbyContentColumnLayout(joinRowLe);
 
             if (joinCodeInputField != null)
             {
@@ -1047,12 +1483,17 @@ namespace TitanOrbit.UI
         public void ShowLobbyScreen()
         {
             EnsureLobbyScreenUi();
+            if (lobbyPanel != null)
+                lobbyPanel.SetActive(false);
+            if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(false);
             if (lobbyScreenRoot != null)
                 lobbyScreenRoot.SetActive(true);
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(false);
             if (storeScreenRoot != null)
                 storeScreenRoot.SetActive(false);
+            lobbyListAutoRefreshTimer = 0f;
             _ = RefreshLobbyListAsync();
         }
 
@@ -1060,6 +1501,7 @@ namespace TitanOrbit.UI
         {
             if (lobbyScreenRoot != null)
                 lobbyScreenRoot.SetActive(false);
+            lobbyListAutoRefreshTimer = 0f;
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(true);
             LayoutMainMenuActionStack();
@@ -1364,68 +1806,89 @@ namespace TitanOrbit.UI
                 joinSelectedLobbyButton.onClick.RemoveListener(OnJoinSelectedLobbyClicked);
                 joinSelectedLobbyButton.onClick.AddListener(OnJoinSelectedLobbyClicked);
             }
+            if (requestDedicatedMatchButton != null)
+            {
+                requestDedicatedMatchButton.onClick.RemoveListener(OnRequestDedicatedMatchClicked);
+                requestDedicatedMatchButton.onClick.AddListener(OnRequestDedicatedMatchClicked);
+            }
+        }
+
+        private static void ApplyLobbyContentColumnLayout(LayoutElement layoutElement)
+        {
+            if (layoutElement == null)
+                return;
+            layoutElement.preferredWidth = LobbyScreenContentWidth;
+            layoutElement.minWidth = Mathf.Min(300f, LobbyScreenContentWidth);
+            layoutElement.flexibleWidth = 0f;
         }
 
         private void BuildLobbyBrowserPanel(RectTransform parent)
         {
-            lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image));
+            lobbyBrowserRoot = new GameObject("LobbyBrowserRoot", typeof(RectTransform), typeof(Image), typeof(Outline));
             lobbyBrowserRoot.transform.SetParent(parent, false);
             var rootRect = lobbyBrowserRoot.GetComponent<RectTransform>();
             rootRect.anchorMin = new Vector2(0f, 1f);
             rootRect.anchorMax = new Vector2(1f, 1f);
             rootRect.pivot = new Vector2(0.5f, 1f);
-            rootRect.sizeDelta = new Vector2(0f, 420f);
+            rootRect.sizeDelta = new Vector2(LobbyScreenContentWidth, 380f);
             rootRect.anchoredPosition = Vector2.zero;
 
             var rootImage = lobbyBrowserRoot.GetComponent<Image>();
-            rootImage.color = new Color(0.035f, 0.065f, 0.11f, 0.98f);
+            rootImage.color = new Color(0.05f, 0.08f, 0.13f, 0.98f);
             rootImage.raycastTarget = false;
+            var rootOutline = lobbyBrowserRoot.GetComponent<Outline>();
+            rootOutline.effectColor = new Color(0.28f, 0.48f, 0.72f, 0.45f);
+            rootOutline.effectDistance = new Vector2(1.5f, -1.5f);
 
             var rootVlg = lobbyBrowserRoot.AddComponent<VerticalLayoutGroup>();
-            rootVlg.spacing = 12f;
-            rootVlg.padding = new RectOffset(16, 16, 14, 16);
-            rootVlg.childAlignment = TextAnchor.UpperCenter;
+            rootVlg.spacing = 10f;
+            rootVlg.padding = new RectOffset(14, 14, 12, 12);
+            rootVlg.childAlignment = TextAnchor.UpperLeft;
             rootVlg.childControlWidth = true;
             rootVlg.childControlHeight = true;
-            rootVlg.childForceExpandWidth = true;
+            rootVlg.childForceExpandWidth = false;
             rootVlg.childForceExpandHeight = false;
 
             var rootLe = lobbyBrowserRoot.AddComponent<LayoutElement>();
+            ApplyLobbyContentColumnLayout(rootLe);
             rootLe.minHeight = 220f;
-            rootLe.preferredHeight = 360f;
+            rootLe.preferredHeight = 340f;
             rootLe.flexibleHeight = 1f;
 
-            var titleObj = CreateLabel("LobbyBrowserTitle", "Open matches", Vector2.zero, 32f, lobbyBrowserRoot.transform, raycastTarget: false);
+            var titleObj = CreateLabel("LobbyBrowserTitle", "Open matches", Vector2.zero, 22f, lobbyBrowserRoot.transform, raycastTarget: false);
             var titleRect = titleObj.GetComponent<RectTransform>();
             titleRect.anchorMin = new Vector2(0f, 1f);
             titleRect.anchorMax = new Vector2(1f, 1f);
-            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0f, 1f);
             titleRect.sizeDelta = Vector2.zero;
             titleRect.anchoredPosition = Vector2.zero;
             var titleTmp = titleObj.GetComponent<TextMeshProUGUI>();
             titleTmp.enableWordWrapping = false;
+            titleTmp.alignment = TextAlignmentOptions.Left;
             titleTmp.fontStyle = FontStyles.Bold;
-            titleTmp.color = new Color(0.95f, 0.97f, 1f, 1f);
-            titleTmp.outlineWidth = 0.15f;
-            titleTmp.outlineColor = new Color32(20, 40, 70, 200);
+            titleTmp.color = new Color(0.92f, 0.95f, 1f, 1f);
             var titleLe = titleObj.AddComponent<LayoutElement>();
-            titleLe.minHeight = 36f;
-            titleLe.preferredHeight = 40f;
+            titleLe.minHeight = 28f;
+            titleLe.preferredHeight = 30f;
+            ApplyLobbyContentColumnLayout(titleLe);
 
             var statusObj = CreateLabel("LobbyBrowserStatusText", "Select a lobby to join.", Vector2.zero, 20f, lobbyBrowserRoot.transform, raycastTarget: false);
             var statusRect = statusObj.GetComponent<RectTransform>();
             statusRect.anchorMin = new Vector2(0f, 1f);
             statusRect.anchorMax = new Vector2(1f, 1f);
-            statusRect.pivot = new Vector2(0.5f, 1f);
+            statusRect.pivot = new Vector2(0f, 1f);
             statusRect.sizeDelta = Vector2.zero;
             statusRect.anchoredPosition = Vector2.zero;
             lobbyBrowserStatusText = statusObj.GetComponent<TextMeshProUGUI>();
             lobbyBrowserStatusText.enableWordWrapping = true;
-            lobbyBrowserStatusText.color = new Color(0.75f, 0.86f, 0.98f, 0.95f);
+            lobbyBrowserStatusText.alignment = TextAlignmentOptions.Left;
+            lobbyBrowserStatusText.fontSize = 17f;
+            lobbyBrowserStatusText.color = new Color(0.68f, 0.78f, 0.9f, 0.92f);
             lobbyBrowserStatusText.overflowMode = TextOverflowModes.Ellipsis;
             var statusLe = statusObj.AddComponent<LayoutElement>();
-            statusLe.minHeight = 32f;
-            statusLe.preferredHeight = 40f;
+            statusLe.minHeight = 24f;
+            statusLe.preferredHeight = 30f;
+            ApplyLobbyContentColumnLayout(statusLe);
 
             var scrollRootObj = new GameObject("LobbyListScrollRect", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
             scrollRootObj.transform.SetParent(lobbyBrowserRoot.transform, false);
@@ -1441,8 +1904,10 @@ namespace TitanOrbit.UI
             scrollLe.flexibleHeight = 1f;
 
             var scrollBg = scrollRootObj.GetComponent<Image>();
-            scrollBg.color = new Color(0.055f, 0.09f, 0.145f, 0.98f);
+            scrollBg.color = new Color(0.04f, 0.065f, 0.1f, 0.98f);
             scrollBg.raycastTarget = true;
+            var scrollLeWidth = scrollLe;
+            ApplyLobbyContentColumnLayout(scrollLeWidth);
 
             var viewportObj = new GameObject("LobbyListViewport", typeof(RectTransform), typeof(Image), typeof(Mask));
             viewportObj.transform.SetParent(scrollRootObj.transform, false);
@@ -1469,13 +1934,13 @@ namespace TitanOrbit.UI
             lobbyListContainer = contentObj.transform;
 
             var vlg = contentObj.GetComponent<VerticalLayoutGroup>();
-            vlg.spacing = 14f;
-            vlg.padding = new RectOffset(16, 16, 16, 16);
+            vlg.spacing = 8f;
+            vlg.padding = new RectOffset(8, 8, 8, 8);
             vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlHeight = true;
             vlg.childControlWidth = true;
             vlg.childForceExpandHeight = false;
-            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandWidth = false;
 
             var fitter = contentObj.GetComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -1504,16 +1969,25 @@ namespace TitanOrbit.UI
             footerLe.preferredHeight = 56f;
 
             var hlg = footerObj.GetComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 16f;
-            hlg.padding = new RectOffset(8, 8, 6, 8);
+            hlg.spacing = 12f;
+            hlg.padding = new RectOffset(0, 0, 4, 0);
             hlg.childAlignment = TextAnchor.MiddleCenter;
             hlg.childControlHeight = true;
             hlg.childControlWidth = true;
             hlg.childForceExpandHeight = false;
-            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandWidth = false;
+            ApplyLobbyContentColumnLayout(footerLe);
 
-            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh list", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: false);
-            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join selected", Vector2.zero, new Vector2(360f, 48f), footerRect, isPrimary: true);
+            refreshLobbiesButton = CreateMenuButton("RefreshLobbiesButton", "Refresh", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: false);
+            requestDedicatedMatchButton = CreateMenuButton(
+                "RequestDedicatedMatchButton",
+                "Create dedicated match",
+                Vector2.zero,
+                new Vector2(250f, 44f),
+                footerRect,
+                isPrimary: true);
+            joinSelectedLobbyButton = CreateMenuButton("JoinSelectedLobbyButton", "Join", Vector2.zero, new Vector2(250f, 44f), footerRect, isPrimary: true);
+            requestDedicatedMatchButton.gameObject.SetActive(false);
 
             lobbyListRowPrefab = CreateLobbyRowPrefab();
             if (lobbyListRowPrefab != null)
@@ -1603,45 +2077,96 @@ namespace TitanOrbit.UI
             if (lobbyBrowserRoot == null)
                 return null;
 
-            var rowObj = new GameObject("LobbyListRowPrefab", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            var rowObj = new GameObject("LobbyListRowPrefab", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement), typeof(HorizontalLayoutGroup));
             rowObj.transform.SetParent(lobbyBrowserRoot.transform, false);
 
             var rect = rowObj.GetComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(860f, 72f);
+            rect.sizeDelta = new Vector2(LobbyScreenContentWidth - 32f, 60f);
 
             var image = rowObj.GetComponent<Image>();
-            image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+            image.color = new Color(0.1f, 0.15f, 0.24f, 0.98f);
             image.raycastTarget = true;
 
             var btn = rowObj.GetComponent<Button>();
             var colors = btn.colors;
             colors.normalColor = image.color;
-            colors.highlightedColor = new Color(0.16f, 0.26f, 0.42f, 1f);
-            colors.pressedColor = new Color(0.09f, 0.14f, 0.24f, 1f);
+            colors.highlightedColor = new Color(0.15f, 0.24f, 0.38f, 1f);
+            colors.pressedColor = new Color(0.08f, 0.12f, 0.2f, 1f);
             colors.selectedColor = new Color(0.18f, 0.38f, 0.62f, 0.98f);
             colors.disabledColor = new Color(0.12f, 0.2f, 0.32f, 0.95f);
             btn.colors = colors;
             btn.transition = Selectable.Transition.ColorTint;
 
-            var layoutElement = rowObj.GetComponent<LayoutElement>();
-            layoutElement.minHeight = 72f;
-            layoutElement.preferredHeight = 72f;
+            var rowHlg = rowObj.GetComponent<HorizontalLayoutGroup>();
+            rowHlg.padding = new RectOffset(14, 14, 8, 8);
+            rowHlg.spacing = 12f;
+            rowHlg.childAlignment = TextAnchor.MiddleLeft;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = false;
+            rowHlg.childForceExpandHeight = false;
 
-            var textObj = CreateLabel("LobbyRowLabel", "Lobby", Vector2.zero, 30f, rowObj.transform, raycastTarget: false);
-            if (textObj != null)
+            var layoutElement = rowObj.GetComponent<LayoutElement>();
+            layoutElement.minHeight = 56f;
+            layoutElement.preferredHeight = 60f;
+            layoutElement.preferredWidth = LobbyScreenContentWidth - 32f;
+            layoutElement.flexibleWidth = 0f;
+
+            var nameObj = CreateLabel("LobbyRowName", "Lobby", Vector2.zero, 20f, rowObj.transform, raycastTarget: false);
+            if (nameObj != null)
             {
-                var textRect = textObj.GetComponent<RectTransform>();
-                textRect.anchorMin = Vector2.zero;
-                textRect.anchorMax = Vector2.one;
-                textRect.offsetMin = new Vector2(20f, 10f);
-                textRect.offsetMax = new Vector2(-20f, -10f);
-                var tmp = textObj.GetComponent<TextMeshProUGUI>();
-                if (tmp != null)
-                {
-                    tmp.alignment = TextAlignmentOptions.MidlineLeft;
-                    tmp.enableWordWrapping = true;
-                    tmp.richText = true;
-                }
+                var nameRect = nameObj.GetComponent<RectTransform>();
+                nameRect.anchorMin = Vector2.zero;
+                nameRect.anchorMax = Vector2.one;
+                nameRect.offsetMin = Vector2.zero;
+                nameRect.offsetMax = Vector2.zero;
+                var nameTmp = nameObj.GetComponent<TextMeshProUGUI>();
+                nameTmp.alignment = TextAlignmentOptions.MidlineLeft;
+                nameTmp.enableWordWrapping = false;
+                nameTmp.richText = true;
+                nameTmp.overflowMode = TextOverflowModes.Ellipsis;
+                var nameLe = nameObj.AddComponent<LayoutElement>();
+                nameLe.flexibleWidth = 1f;
+                nameLe.minWidth = 120f;
+                nameLe.preferredHeight = 44f;
+            }
+
+            var durationObj = CreateLabel("LobbyRowDuration", "—", Vector2.zero, 16f, rowObj.transform, raycastTarget: false);
+            if (durationObj != null)
+            {
+                var durationRect = durationObj.GetComponent<RectTransform>();
+                durationRect.anchorMin = Vector2.zero;
+                durationRect.anchorMax = Vector2.one;
+                durationRect.offsetMin = Vector2.zero;
+                durationRect.offsetMax = Vector2.zero;
+                var durationTmp = durationObj.GetComponent<TextMeshProUGUI>();
+                durationTmp.alignment = TextAlignmentOptions.MidlineRight;
+                durationTmp.enableWordWrapping = false;
+                durationTmp.color = new Color(0.62f, 0.74f, 0.86f, 0.88f);
+                var durationLe = durationObj.AddComponent<LayoutElement>();
+                durationLe.preferredWidth = 72f;
+                durationLe.minWidth = 56f;
+                durationLe.flexibleWidth = 0f;
+                durationLe.preferredHeight = 44f;
+            }
+
+            var playersObj = CreateLabel("LobbyRowPlayers", "0/0", Vector2.zero, 18f, rowObj.transform, raycastTarget: false);
+            if (playersObj != null)
+            {
+                var playersRect = playersObj.GetComponent<RectTransform>();
+                playersRect.anchorMin = Vector2.zero;
+                playersRect.anchorMax = Vector2.one;
+                playersRect.offsetMin = Vector2.zero;
+                playersRect.offsetMax = Vector2.zero;
+                var playersTmp = playersObj.GetComponent<TextMeshProUGUI>();
+                playersTmp.alignment = TextAlignmentOptions.MidlineRight;
+                playersTmp.enableWordWrapping = false;
+                playersTmp.color = new Color(0.72f, 0.84f, 0.96f, 0.95f);
+                var playersLe = playersObj.AddComponent<LayoutElement>();
+                playersLe.preferredWidth = 72f;
+                playersLe.minWidth = 56f;
+                playersLe.flexibleWidth = 0f;
+                playersLe.preferredHeight = 44f;
             }
 
             return rowObj;
@@ -1678,6 +2203,14 @@ namespace TitanOrbit.UI
                     lobbyPanel.SetActive(false);
                 if (teamSelectionPanel != null)
                     teamSelectionPanel.SetActive(false);
+
+                EnsureInstructionScreenUi();
+                if (instructionScreenUI != null)
+                {
+                    teamJoinFlowReadyPending = false;
+                    instructionScreenUI.Show(OnInstructionDismissed);
+                }
+
                 loadingScreenController.ShowLoading();
                 return;
             }
@@ -1690,8 +2223,25 @@ namespace TitanOrbit.UI
                 teamSelectionPanel.SetActive(false);
         }
 
-        /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
-        public void ShowLobbyAndTeamSelection()
+        /// <summary>Player tapped Continue on the how-to-play screen, or loading finished while it was still open.</summary>
+        private void OnInstructionDismissed()
+        {
+            if (teamJoinFlowReadyPending)
+            {
+                teamJoinFlowReadyPending = false;
+                ShowPostLoadingJoinFlow();
+            }
+        }
+
+        /// <summary>Called when the player dismisses the how-to-play screen early (loading may still be running).</summary>
+        public void BeginLoadingAfterInstructions()
+        {
+            instructionScreenUI?.Hide();
+            OnInstructionDismissed();
+        }
+
+        /// <summary>Called by LoadingScreenController when loading is complete. Queries for a returning ship, then team or rescue UI.</summary>
+        public void ShowPostLoadingJoinFlow()
         {
             deferTeamPanelUntilNetworkReady = false;
             if (mainMenuPanel != null)
@@ -1707,15 +2257,95 @@ namespace TitanOrbit.UI
                 ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
                 : playerName;
 
+            NetworkGameManager.PendingRestoreChoice = NetworkGameManager.ShipRestoreChoice.Unset;
+
             if (lobbyPanel != null)
-            {
                 lobbyPanel.SetActive(true);
-            }
 
             if (teamSelectionPanel != null)
+                teamSelectionPanel.SetActive(false);
+
+            if (rescueOldShipUI != null)
+                rescueOldShipUI.Hide();
+
+            if (returningShipQueryRoutine != null)
+                StopCoroutine(returningShipQueryRoutine);
+            returningShipQueryRoutine = StartCoroutine(CoQueryReturningShipWhenReady());
+        }
+
+        private System.Collections.IEnumerator CoQueryReturningShipWhenReady()
+        {
+            const float timeoutSeconds = 20f;
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+            while (Time.realtimeSinceStartup < deadline)
             {
-                teamSelectionPanel.SetActive(true);
+                var ngm = NetworkGameManager.Instance;
+                if (ngm != null && ngm.IsSpawned)
+                {
+                    NetworkGameManager.QueryReturningShipFromLocalPlayer();
+                    returningShipQueryRoutine = null;
+                    yield break;
+                }
+                yield return null;
             }
+
+            returningShipQueryRoutine = null;
+            OnReturningShipQueryResult(default);
+        }
+
+        /// <summary>Called by LoadingScreenController when loading is complete. Shows lobby and team selection (hides loading).</summary>
+        public void ShowLobbyAndTeamSelection()
+        {
+            if (instructionScreenUI != null && instructionScreenUI.IsVisible)
+            {
+                teamJoinFlowReadyPending = true;
+                instructionScreenUI.Hide();
+                OnInstructionDismissed();
+                return;
+            }
+
+            ShowPostLoadingJoinFlow();
+        }
+
+        private void EnsureRescueOldShipUi()
+        {
+            if (rescueOldShipUI != null)
+                return;
+
+            Transform parent = lobbyPanel != null ? lobbyPanel.transform : transform;
+            var go = new GameObject("RescueOldShipUI");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+            rescueOldShipUI = go.AddComponent<RescueOldShipUI>();
+        }
+
+        private void EnsureInstructionScreenUi()
+        {
+            if (instructionScreenUI != null)
+            {
+                if (instructionStepScreenshots != null && instructionStepScreenshots.Length > 0)
+                    instructionScreenUI.SetStepScreenshots(instructionStepScreenshots);
+                return;
+            }
+
+            var canvas = GetComponentInParent<Canvas>();
+            Transform parent = canvas != null ? canvas.transform : transform;
+
+            var go = new GameObject("InstructionScreenUI");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            go.transform.SetAsLastSibling();
+
+            instructionScreenUI = go.AddComponent<InstructionScreenUI>();
+            if (instructionStepScreenshots != null && instructionStepScreenshots.Length > 0)
+                instructionScreenUI.SetStepScreenshots(instructionStepScreenshots);
         }
 
         private void UpdateLobbyInfo()

@@ -96,10 +96,10 @@ namespace TitanOrbit.Entities
                         );
                 }
 
-                DroneBase drone = c.GetComponent<DroneBase>();
+                DroneBody drone = c.GetComponent<DroneBody>();
                 if (drone != null && !drone.IsDestroyed && drone.IsEnemyTeam(ownerTeam))
                 {
-                    drone.TakeDamageServerRpc(dmg, ownerTeam, ownerShipNetworkId);
+                    drone.Swarm?.ApplyDamageFromBullet(drone.EquipmentSlotIndex, dmg, ownerTeam, ownerShipNetworkId, hitPoint);
                     if (VisualEffectsManager.Instance != null)
                         VisualEffectsManager.Instance.SpawnFloatingCountServerRpc(
                             hitPoint,

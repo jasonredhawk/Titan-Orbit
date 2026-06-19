@@ -1,6 +1,9 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
+using TitanOrbit.Core;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -37,15 +40,49 @@ namespace TitanOrbit.Systems
                 GemPool.Instance.SetPrefab(GetGemPrefab());
         }
 
+        /// <summary>GemPool should use the same resolved prefab as spawning (registered with <see cref="NetworkManager"/>).</summary>
+        internal GameObject GetRuntimeGemPrefabForPool() => GetGemPrefab();
+
         private GameObject GetGemPrefab()
         {
-            if (gemPrefab != null) return gemPrefab;
+            GameObject raw = gemPrefab;
 #if UNITY_EDITOR
-            gemPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Gem.prefab");
-            return gemPrefab;
-#else
-            return null;
+            if (raw == null)
+                raw = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Gem.prefab");
 #endif
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Gem");
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Prefabs/Gem");
+
+            GameObject resolved = ResolveRegisteredGemPrefab(raw);
+            if (gemPrefab == null && resolved != null)
+                gemPrefab = resolved;
+            return resolved;
+        }
+
+        /// <summary>
+        /// Resources or copied prefabs can differ from the asset registered in NetworkPrefabs; clients then cannot spawn the replicated hash.
+        /// Map any Gem prefab instance to the first registered prefab that has a <see cref="Gem"/> component.
+        /// </summary>
+        private static GameObject ResolveRegisteredGemPrefab(GameObject candidate)
+        {
+            if (candidate == null) return null;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || nm.NetworkConfig?.Prefabs == null)
+                return candidate;
+            if (nm.NetworkConfig.Prefabs.Contains(candidate))
+                return candidate;
+
+            IReadOnlyList<NetworkPrefab> list = nm.NetworkConfig.Prefabs.Prefabs;
+            for (int i = 0; i < list.Count; i++)
+            {
+                GameObject reg = list[i].Prefab;
+                if (reg == null || reg.GetComponent<Gem>() == null) continue;
+                return reg;
+            }
+
+            return candidate;
         }
 
         /// <summary>
@@ -63,45 +100,94 @@ namespace TitanOrbit.Systems
 
         private GameObject GetPeopleTransportPrefab()
         {
-            if (peopleTransportPrefab != null) return peopleTransportPrefab;
+            GameObject raw = peopleTransportPrefab;
 #if UNITY_EDITOR
-            peopleTransportPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
-            return peopleTransportPrefab;
-#else
-            return null;
+            if (raw == null)
+                raw = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
 #endif
+            if (raw == null)
+                raw = Resources.Load<GameObject>("PeopleTransport");
+            if (raw == null)
+                raw = Resources.Load<GameObject>("Prefabs/PeopleTransport");
+
+            GameObject resolved = ResolveRegisteredPeopleTransportPrefab(raw);
+            if (peopleTransportPrefab == null && resolved != null)
+                peopleTransportPrefab = resolved;
+            return resolved;
         }
 
-        /// <summary>Spawns people beaming from planet to ship (load).</summary>
+        private static GameObject ResolveRegisteredPeopleTransportPrefab(GameObject candidate)
+        {
+            if (candidate == null) return null;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening || nm.NetworkConfig?.Prefabs == null)
+                return candidate;
+            if (nm.NetworkConfig.Prefabs.Contains(candidate))
+                return candidate;
+
+            IReadOnlyList<NetworkPrefab> list = nm.NetworkConfig.Prefabs.Prefabs;
+            for (int i = 0; i < list.Count; i++)
+            {
+                GameObject reg = list[i].Prefab;
+                if (reg == null || reg.GetComponent<PeopleTransportProjectile>() == null) continue;
+                return reg;
+            }
+
+            return candidate;
+        }
+
+        /// <summary>Spawns people beaming from planet surface to ship (load).</summary>
         public void SpawnPeopleLoad(Vector3 planetPosition, Vector3 shipPosition, float amount, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team)
         {
-            SpawnPeopleTransport(planetPosition, shipPosition, amount, shipNetworkObjectId, true, team, 0, sourcePlanetNetworkObjectId);
+            Vector3 spawnPos = ResolvePlanetSurfaceSpawn(sourcePlanetNetworkObjectId, planetPosition, shipPosition);
+            SpawnPeopleTransport(spawnPos, shipPosition, amount, shipNetworkObjectId, true, team, 0, sourcePlanetNetworkObjectId);
         }
 
-        /// <summary>Spawns people beaming from ship to planet (unload).</summary>
+        /// <summary>Spawns people beaming from ship to planet surface (unload).</summary>
         public void SpawnPeopleUnload(Vector3 shipPosition, Vector3 planetPosition, float amount, ulong planetNetworkObjectId, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId)
         {
-            SpawnPeopleTransport(shipPosition, planetPosition, amount, planetNetworkObjectId, false, team, shipNetworkObjectId, 0);
+            Vector3 planetSurface = ResolvePlanetSurfaceSpawn(planetNetworkObjectId, planetPosition, shipPosition);
+            Vector3 spawnPos = shipPosition;
+            if (PeopleTransportProjectile.TryResolveShip(shipNetworkObjectId, out Starship ship))
+                spawnPos = PeopleTransportProjectile.GetShipUnloadSpawnPointToward(ship, planetSurface);
+            SpawnPeopleTransport(spawnPos, planetSurface, amount, planetNetworkObjectId, false, team, shipNetworkObjectId, 0);
+        }
+
+        private static Vector3 ResolvePlanetSurfaceSpawn(ulong planetNetworkObjectId, Vector3 planetCenterFallback, Vector3 towardWorldPos)
+        {
+            if (PeopleTransportProjectile.TryResolvePlanet(planetNetworkObjectId, out Planet planet))
+                return PeopleTransportProjectile.GetSurfaceSpawnPointToward(planet, towardWorldPos);
+            return planetCenterFallback;
         }
 
         private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId)
         {
+            if (!IsServer) return;
             GameObject prefab = GetPeopleTransportPrefab();
-            if (prefab == null || amount <= 0f) return;
+            if (prefab == null || amount <= 0f)
+                return;
 
-            Vector3 dir = (toPos - fromPos);
+            Vector3 dir = ToroidalMap.ToroidalDirection(fromPos, toPos);
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
             else dir.Normalize();
-
+            // Nudge spawns slightly off the hull so the sphere is visible immediately.
             Vector3 pos = fromPos;
-            float speed = 6f;
+            if (isLoad)
+                pos += dir * Mathf.Max(0.2f, PeopleTransportProjectile.SurfaceSpawnOutwardNudge * 0.35f);
+
+            float travelDist = ToroidalMap.ToroidalDistance(fromPos, toPos);
+            float cruiseSpeed = Mathf.Max(0.08f, travelDist / PeopleTransportProjectile.EffectiveVisualTravelSeconds);
+            if (isLoad)
+                cruiseSpeed *= PeopleTransportProjectile.LoadMagnetSpeedMultiplier;
+            float initialSpeed = cruiseSpeed * (isLoad ? 0.55f : 0.3f);
 
             GameObject obj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody rb = obj.GetComponent<Rigidbody>();
             if (rb != null)
             {
-                rb.linearVelocity = dir * speed;
+                rb.position = pos;
+                rb.linearVelocity = dir * initialSpeed;
                 rb.linearDamping = 0f;
             }
 
@@ -114,6 +200,19 @@ namespace TitanOrbit.Systems
             }
         }
 
+        /// <summary>Server-only burst from asteroid death (same logic as RPC; avoids invoking a ServerRpc from server destroy path).</summary>
+        public void SpawnGemsFromAsteroidDestroyOnServer(
+            Vector3 asteroidCenter,
+            float regularValue,
+            float bonusValue,
+            float asteroidSize = 1f,
+            float asteroidPhysicalSize = 0.5f,
+            ulong primaryDamagerShipId = 0)
+        {
+            if (!IsServer) return;
+            SpawnGemsAsteroidBurstImpl(asteroidCenter, regularValue, bonusValue, asteroidSize, asteroidPhysicalSize, primaryDamagerShipId);
+        }
+
         [ServerRpc(RequireOwnership = false)]
         public void SpawnGemsServerRpc(
             Vector3 asteroidCenter,
@@ -123,11 +222,28 @@ namespace TitanOrbit.Systems
             float asteroidPhysicalSize = 0.5f,
             ulong primaryDamagerShipId = 0)
         {
+            SpawnGemsAsteroidBurstImpl(asteroidCenter, regularValue, bonusValue, asteroidSize, asteroidPhysicalSize, primaryDamagerShipId);
+        }
+
+        private void SpawnGemsAsteroidBurstImpl(
+            Vector3 asteroidCenter,
+            float regularValue,
+            float bonusValue,
+            float asteroidSize,
+            float asteroidPhysicalSize,
+            ulong primaryDamagerShipId)
+        {
             GameObject prefab = GetGemPrefab();
-            if (prefab == null) return;
+            if (prefab == null)
+            {
+                return;
+            }
             regularValue = Mathf.Max(0f, regularValue);
             bonusValue = Mathf.Max(0f, bonusValue);
-            if (regularValue <= 0f && bonusValue <= 0f) return;
+            if (regularValue <= 0f && bonusValue <= 0f)
+            {
+                return;
+            }
 
             // 1–3 red gems whose values sum exactly to regularValue (asteroid's remaining gem worth).
             // Cannot split into more physical gems than floor(value) when value < 3 (each gem keeps positive share).
@@ -152,38 +268,127 @@ namespace TitanOrbit.Systems
                     bonusGemCount = 1;
             }
 
-            // Visual size comes from Gem (linear in value); tiny jitter only.
+            // Visual size is fully derived from gem value inside Gem.UpdateVisualScale; spawner only forwards value.
             for (int i = 0; i < redGemCount; i++)
-            {
-                float sizeMultiplier = Random.Range(0.96f, 1.04f);
-                SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, false);
-            }
+                SpawnGem(prefab, asteroidCenter, gemWorth, 1f, asteroidPhysicalSize, primaryDamagerShipId, false);
 
             for (int i = 0; i < bonusGemCount; i++)
-            {
-                float sizeMultiplier = Random.Range(0.96f, 1.04f);
-                SpawnGem(prefab, asteroidCenter, gemWorth, sizeMultiplier, asteroidPhysicalSize, primaryDamagerShipId, true);
-            }
+                SpawnGem(prefab, asteroidCenter, gemWorth, 1f, asteroidPhysicalSize, primaryDamagerShipId, true);
         }
         
+        /// <summary>Launch speed and spawn offset scale with ship level so larger ships expel gems farther.</summary>
+        public static float GetShipExpulsionLevelSpeedMultiplier(int shipLevel)
+        {
+            int level = Mathf.Max(1, shipLevel);
+            return 1f + (level - 1) * 0.12f;
+        }
+
+        /// <summary>Server-only gem expulsion (hull breakup, ramming self-damage, etc.). Avoids nested ServerRpc when invoked from server damage/collision paths.</summary>
+        /// <param name="expulsionIntensity">Scales launch speed (0 = softer eject, 1 = harder impact).</param>
+        public void SpawnGemsFromShipOnServer(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f, int shipLevel = 1)
+        {
+            if (!IsServer) return;
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity, shipLevel);
+        }
+
         /// <summary>Spawns gems expelled from a ship when bullets hit after health is zero. Victim ship cannot re-collect for a short cooldown.</summary>
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId)
+        public void SpawnGemsFromShipServerRpc(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity = 0.5f, int shipLevel = 1)
+        {
+            SpawnGemsFromShipImpl(shipPosition, totalValue, expelledByShipId, expulsionIntensity, shipLevel);
+        }
+
+        private void SpawnGemsFromShipImpl(Vector3 shipPosition, float totalValue, ulong expelledByShipId, float expulsionIntensity, int shipLevel)
         {
             GameObject prefab = GetGemPrefab();
             if (prefab == null || totalValue <= 0f) return;
 
-            // Spawn as one or a few gems (simpler than asteroid distribution)
-            float remaining = totalValue;
-            int maxGems = Mathf.Min(5, Mathf.CeilToInt(totalValue / 2f));
-            if (maxGems < 1) maxGems = 1;
-            for (int i = 0; i < maxGems && remaining > 0.1f; i++)
+            float intensity = Mathf.Clamp01(expulsionIntensity);
+            float levelSpeedMul = GetShipExpulsionLevelSpeedMultiplier(shipLevel);
+            float launchSpeedMul = Mathf.Lerp(0.7f, 1.25f, intensity) * levelSpeedMul;
+
+            List<float> chunks = SplitExpulsionValueIntoRandomGemChunks(totalValue);
+            for (int i = 0; i < chunks.Count; i++)
             {
-                float gemValue = (i == maxGems - 1) ? remaining : Mathf.Min(remaining, Random.Range(2f, Mathf.Min(remaining, 25f)));
-                gemValue = Mathf.Clamp(gemValue, 1f, 50f);
-                float sizeMult = Mathf.Lerp(0.58f, 1.2f, Mathf.Clamp01(gemValue / 25f));
-                SpawnGemFromShip(prefab, shipPosition, gemValue, sizeMult, expelledByShipId);
-                remaining -= gemValue;
+                float gemValue = chunks[i];
+                if (gemValue <= 0.001f) continue;
+                SpawnGemFromShip(prefab, shipPosition, gemValue, 1f, expelledByShipId, launchSpeedMul, levelSpeedMul);
+            }
+        }
+
+        /// <summary>Randomly splits expelled value into 1–3 positive chunks that sum to <paramref name="totalValue"/> exactly.</summary>
+        private static List<float> SplitExpulsionValueIntoRandomGemChunks(float totalValue)
+        {
+            var chunks = new List<float>(3);
+            if (totalValue <= 0.001f) return chunks;
+
+            int gemCount = Random.Range(1, 4);
+            if (gemCount <= 1)
+            {
+                chunks.Add(totalValue);
+                return chunks;
+            }
+
+            float[] cutPoints = new float[gemCount - 1];
+            for (int i = 0; i < cutPoints.Length; i++)
+                cutPoints[i] = Random.Range(0f, totalValue);
+            System.Array.Sort(cutPoints);
+
+            float previous = 0f;
+            for (int i = 0; i < cutPoints.Length; i++)
+            {
+                chunks.Add(cutPoints[i] - previous);
+                previous = cutPoints[i];
+            }
+            chunks.Add(totalValue - previous);
+            return chunks;
+        }
+
+        /// <summary>Server: player voluntarily expels gems forward from the ship (V key, 2 shots/sec). Each shot splits into 1–3 gems totaling the shot value.</summary>
+        public void SpawnVoluntaryGemFromShipOnServer(
+            Vector3 shipPosition,
+            Vector3 forwardDir,
+            float gemValue,
+            int shipLevel,
+            ulong expelledByShipId,
+            Vector3 shipVelocity,
+            int shotIndex)
+        {
+            if (!IsServer || gemValue <= 0.001f) return;
+
+            GameObject prefab = GetGemPrefab();
+            if (prefab == null) return;
+
+            forwardDir.y = 0f;
+            if (forwardDir.sqrMagnitude < 0.01f)
+                forwardDir = Vector3.forward;
+            else
+                forwardDir.Normalize();
+
+            Vector3 lateral = Vector3.Cross(Vector3.up, forwardDir);
+            float levelSpeedMul = GetShipExpulsionLevelSpeedMultiplier(shipLevel);
+            float launchSpeed = explosionSpeed * 2f * levelSpeedMul;
+
+            List<float> chunks = SplitExpulsionValueIntoRandomGemChunks(gemValue);
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                float chunkValue = chunks[i];
+                if (chunkValue <= 0.001f) continue;
+                float lateralOffset = chunks.Count > 1
+                    ? Mathf.Lerp(-0.35f, 0.35f, i / (float)(chunks.Count - 1))
+                    : 0f;
+                SpawnGemFromShipDirectional(
+                    prefab,
+                    shipPosition,
+                    forwardDir,
+                    lateral,
+                    lateralOffset,
+                    chunkValue,
+                    expelledByShipId,
+                    launchSpeed,
+                    shipVelocity,
+                    shotIndex + i,
+                    levelSpeedMul);
             }
         }
 
@@ -200,7 +405,8 @@ namespace TitanOrbit.Systems
 
             Vector3 pos = shipPosition;
             float depositSpeed = 8f;
-            float sizeMult = Mathf.Clamp(amount / 10f, 0.5f, 3f);
+            // Visual size is derived from `amount` inside Gem.UpdateVisualScale; spawner forwards a neutral multiplier.
+            float sizeMult = 1f;
             Vector3 vel = dir * depositSpeed;
             Vector3 angVel = new Vector3(Random.Range(-2f, 2f), Random.Range(-2f, 2f), Random.Range(-2f, 2f));
 
@@ -228,17 +434,51 @@ namespace TitanOrbit.Systems
             }
         }
 
-        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId)
+        private void SpawnGemFromShip(GameObject prefab, Vector3 shipCenter, float gemValue, float sizeMultiplier, ulong expelledByShipId, float launchSpeedMultiplier = 1f, float spawnRadiusMultiplier = 1f)
         {
             Vector2 dir2 = Random.insideUnitCircle.normalized;
             if (dir2.sqrMagnitude < 0.01f) dir2 = Vector2.up;
             Vector3 dir = new Vector3(dir2.x, 0f, dir2.y);
-            Vector3 pos = shipCenter + dir * explosionRadius * Random.Range(0.3f, 1f);
-            Vector3 vel = dir * explosionSpeed * Random.Range(0.8f, 1.2f);
+            float radiusMul = Mathf.Max(0.1f, spawnRadiusMultiplier);
+            Vector3 pos = shipCenter + dir * explosionRadius * radiusMul * Random.Range(0.3f, 1f);
+            Vector3 vel = dir * explosionSpeed * Mathf.Max(0.1f, launchSpeedMultiplier) * Random.Range(0.8f, 1.2f);
             Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
+            SpawnGemFromShipObject(prefab, pos, vel, angVel, gemValue, sizeMultiplier, expelledByShipId);
+        }
 
+        private void SpawnGemFromShipDirectional(
+            GameObject prefab,
+            Vector3 shipCenter,
+            Vector3 forwardDir,
+            Vector3 lateralDir,
+            float lateralOffset,
+            float gemValue,
+            ulong expelledByShipId,
+            float launchSpeed,
+            Vector3 shipVelocity,
+            int indexInVolley,
+            float spawnRadiusMultiplier = 1f)
+        {
+            float radiusMul = Mathf.Max(0.1f, spawnRadiusMultiplier);
+            float forwardOffset = explosionRadius * radiusMul * (0.55f + indexInVolley * 0.12f);
+            Vector3 pos = shipCenter + forwardDir * forwardOffset + lateralDir * lateralOffset;
+            pos.y = 0f;
+            Vector3 vel = forwardDir * launchSpeed * Random.Range(0.95f, 1.05f) + shipVelocity;
+            vel.y = 0f;
+            Vector3 angVel = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f), Random.Range(-1.5f, 1.5f));
+            SpawnGemFromShipObject(prefab, pos, vel, angVel, gemValue, 1f, expelledByShipId);
+        }
+
+        private void SpawnGemFromShipObject(
+            GameObject prefab,
+            Vector3 pos,
+            Vector3 vel,
+            Vector3 angVel,
+            float gemValue,
+            float sizeMultiplier,
+            ulong expelledByShipId)
+        {
             // Do not use GemPool here: recycling + NetworkTransform/physics ordering was leaving hull-expelled gems at zero velocity.
-            // New instance matches original pre-pool behavior (explosionSpeed / explosionRadius apply to a fresh spawned gem).
             GameObject gemObj = Instantiate(prefab, pos, Quaternion.identity);
             Rigidbody r = gemObj.GetComponent<Rigidbody>();
 
