@@ -319,8 +319,17 @@ namespace TitanOrbit.Entities
             if (pathLen < 0.001f)
                 return false;
 
-            // Asteroids: toroidal segment in logical space (matches server). Pure clients cannot use
-            // SphereCast here because asteroid colliders are display-shifted while the tracer is logical.
+            var nm = NetworkManager.Singleton;
+            bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
+
+            // Pass 1: physics spherecast (matches server StepBullet). Host colliders are logical; pure clients skip asteroid colliders here.
+            if (TryOwnerPredictedSpherecastHit(from, to, pathLen, pureClient, out Vector3 sphereImpact, out BulletHitResolver.BulletHitPopupInfo spherePopup, out Starship burnAttachShip))
+            {
+                PlayOwnerPredictedImpact(sphereImpact, spherePopup, burnAttachShip);
+                return true;
+            }
+
+            // Pass 2: toroidal asteroids when display-shifted colliders miss (pure client) or as server fallback.
             if (BulletHitResolver.TryToroidalAsteroidSegmentCosmeticOnly(
                     from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
             {
@@ -335,6 +344,35 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
+            if (BulletHitResolver.TryToroidalGemMoonSegmentCosmeticOnly(
+                    from, to, OwnerPredictedBulletRadius, ownerTeam, out Vector3 moonImpact))
+            {
+                moonImpact.y = 0f;
+                PlayOwnerPredictedImpact(
+                    moonImpact,
+                    new BulletHitResolver.BulletHitPopupInfo(
+                        true,
+                        FloatingCountChannel.DamageMoon,
+                        damageForImpactPitch));
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryOwnerPredictedSpherecastHit(
+            Vector3 from,
+            Vector3 to,
+            float pathLen,
+            bool pureClient,
+            out Vector3 impactPos,
+            out BulletHitResolver.BulletHitPopupInfo popupInfo,
+            out Starship burnAttachShip)
+        {
+            impactPos = to;
+            popupInfo = default;
+            burnAttachShip = null;
+
             Vector3 rayDir = (to - from) / pathLen;
             int hitCount = Physics.SphereCastNonAlloc(
                 from,
@@ -348,9 +386,6 @@ namespace TitanOrbit.Entities
             if (hitCount > 1)
                 SortOwnerPredictedHitsByDistance(hitCount);
 
-            var nm = NetworkManager.Singleton;
-            bool pureClient = nm != null && nm.IsClient && !nm.IsServer;
-
             for (int i = 0; i < hitCount; i++)
             {
                 RaycastHit hit = s_ownerPredictedHits[i];
@@ -363,10 +398,9 @@ namespace TitanOrbit.Entities
                 if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam, visualPrefabBankIndex))
                 {
                     bool isAsteroid = hit.collider.GetComponentInParent<Asteroid>() != null;
-                    BulletHitResolver.BulletHitPopupInfo popup;
                     if (isAsteroid)
                     {
-                        popup = new BulletHitResolver.BulletHitPopupInfo(
+                        popupInfo = new BulletHitResolver.BulletHitPopupInfo(
                             true,
                             FloatingCountChannel.DamageAsteroid,
                             damageForImpactPitch,
@@ -380,20 +414,21 @@ namespace TitanOrbit.Entities
                             && profile != null
                             && profile.HasAbility(BulletBankAbilityType.HealFriendly))
                         {
-                            popup = new BulletHitResolver.BulletHitPopupInfo(
+                            popupInfo = new BulletHitResolver.BulletHitPopupInfo(
                                 true, FloatingCountChannel.Healing, damageForImpactPitch);
                         }
                         else
                         {
                             FloatingCountChannel channel = FloatingCountChannel.DamageShipOrDrone;
                             BulletHitResolver.TryGetBulletDamageChannel(hit.collider, ownerTeam, out channel);
-                            popup = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
+                            popupInfo = new BulletHitResolver.BulletHitPopupInfo(true, channel, damageForImpactPitch);
                         }
                     }
-                    Starship burnAttachShip = hit.collider.GetComponentInParent<Starship>();
+
+                    burnAttachShip = hit.collider.GetComponentInParent<Starship>();
                     if (burnAttachShip != null && (burnAttachShip.IsDead || burnAttachShip.ShipTeam == ownerTeam))
                         burnAttachShip = null;
-                    PlayOwnerPredictedImpact(hit.point, popup, burnAttachShip);
+                    impactPos = hit.point;
                     return true;
                 }
 
@@ -401,22 +436,9 @@ namespace TitanOrbit.Entities
                 float travelled = ToroidalMap.ToroidalDistance(along, logicalSpawn);
                 if (travelled >= OwnerPredictedMinTravelBeforeGenericHit)
                 {
-                    PlayOwnerPredictedImpact(hit.point);
+                    impactPos = hit.point;
                     return true;
                 }
-            }
-
-            if (BulletHitResolver.TryToroidalGemMoonSegmentCosmeticOnly(
-                    from, to, OwnerPredictedBulletRadius, ownerTeam, out Vector3 moonImpact))
-            {
-                moonImpact.y = 0f;
-                PlayOwnerPredictedImpact(
-                    moonImpact,
-                    new BulletHitResolver.BulletHitPopupInfo(
-                        true,
-                        FloatingCountChannel.DamageMoon,
-                        damageForImpactPitch));
-                return true;
             }
 
             return false;

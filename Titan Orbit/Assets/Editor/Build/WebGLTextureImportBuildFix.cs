@@ -280,6 +280,30 @@ namespace TitanOrbit.Editor.Build
         }
 
         /// <summary>
+        /// SGT height/displacement maps and cookie offsets store height in texture alpha; WebGL R8 keeps only red
+        /// so mesh displacement, bump detail, and water (heightMap.a) flatten on planets/asteroids/moons.
+        /// </summary>
+        internal static bool NeedsAlphaPreservingWebGlImport(TextureImporter importer, string path)
+        {
+            if (importer == null)
+                return false;
+
+            if (!string.IsNullOrEmpty(path) &&
+                path.IndexOf("_Height.", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(path) &&
+                path.EndsWith("PlanetWaterOffset.png", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return importer.textureType == TextureImporterType.Cookie;
+        }
+
+        /// <summary>
         /// Applies WebGL uncompressed import overrides. Returns true when importer settings were changed.
         /// </summary>
         internal static bool ApplyWebGlSettingsToImporter(TextureImporter importer, string path)
@@ -292,9 +316,23 @@ namespace TitanOrbit.Editor.Build
             if (webgl == null || string.IsNullOrEmpty(webgl.name))
                 webgl = new TextureImporterPlatformSettings { name = "WebGL" };
 
-            TextureImporterFormat targetFormat = GetWebGlUncompressedFormat(importer);
+            bool preserveAlpha = NeedsAlphaPreservingWebGlImport(importer, path);
+            TextureImporterFormat targetFormat = GetWebGlUncompressedFormat(importer, path);
 
             bool changed = false;
+            if (preserveAlpha && importer.textureType == TextureImporterType.Cookie)
+            {
+                importer.textureType = TextureImporterType.Default;
+                changed = true;
+            }
+
+            if (preserveAlpha &&
+                path.IndexOf("_Height.", System.StringComparison.OrdinalIgnoreCase) >= 0 &&
+                !importer.isReadable)
+            {
+                importer.isReadable = true;
+                changed = true;
+            }
             if (!webgl.overridden)
             {
                 webgl.overridden = true;
@@ -336,12 +374,15 @@ namespace TitanOrbit.Editor.Build
         /// <summary>
         /// WebGL uncompressed format depends on <see cref="TextureImporter.textureType"/> (RGBA32 is invalid for SingleChannel).
         /// </summary>
-        internal static TextureImporterFormat GetWebGlUncompressedFormat(TextureImporter importer)
+        internal static TextureImporterFormat GetWebGlUncompressedFormat(TextureImporter importer, string path = null)
         {
+            if (NeedsAlphaPreservingWebGlImport(importer, path))
+                return TextureImporterFormat.RGBA32;
+
             switch (importer.textureType)
             {
                 case TextureImporterType.SingleChannel:
-                // SGT planet height/displacement maps import as Cookie (grayscale); RGBA32 is rejected.
+                    return TextureImporterFormat.R8;
                 case TextureImporterType.Cookie:
                     return TextureImporterFormat.R8;
                 case TextureImporterType.NormalMap:
@@ -356,7 +397,7 @@ namespace TitanOrbit.Editor.Build
             }
         }
 
-        static bool HasValidWebGlUncompressedSettings(TextureImporter importer)
+        static bool HasValidWebGlUncompressedSettings(TextureImporter importer, string path)
         {
             TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
             if (webgl == null || !webgl.overridden || webgl.crunchedCompression)
@@ -365,7 +406,13 @@ namespace TitanOrbit.Editor.Build
             if (webgl.textureCompression != TextureImporterCompression.Uncompressed)
                 return false;
 
-            return webgl.format == GetWebGlUncompressedFormat(importer);
+            if (NeedsAlphaPreservingWebGlImport(importer, path) &&
+                importer.textureType == TextureImporterType.Cookie)
+            {
+                return false;
+            }
+
+            return webgl.format == GetWebGlUncompressedFormat(importer, path);
         }
 
         static HashSet<string> CollectGameplayTexturePaths()
@@ -468,7 +515,7 @@ namespace TitanOrbit.Editor.Build
                     continue;
 
                 TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
-                if (!HasValidWebGlUncompressedSettings(importer))
+                if (!HasValidWebGlUncompressedSettings(importer, path))
                 {
                     invalid.Add(path);
                 }

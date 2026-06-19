@@ -86,11 +86,6 @@ namespace TitanOrbit.UI
         private const float ShipCardWidth = 140f;
         private const float ShipCardHeight = 88f;
         private const float ShipRowSpacing = 8f;
-        private const int ShipPreviewRenderSize = 128;
-        private Transform shipPreviewsRoot;
-        private string _currentShipPreviewCacheKey = "";
-        private Sprite _currentShipPreviewSprite;
-        private Texture2D _currentShipPreviewTexture;
         private Transform shipsRowsContainer;
         private Starship currentShip;
         private Planet currentPlanet;
@@ -365,7 +360,6 @@ namespace TitanOrbit.UI
         {
             CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
-            ReleaseCurrentShipPreviewResources();
         }
 
         private void OnClientSpinOfferReceived()
@@ -722,7 +716,6 @@ namespace TitanOrbit.UI
             shipTreeCenterRow = null;
             shipTreeCanvas = null;
             shipsRowsContainer = null;
-            shipPreviewsRoot = null;
 
             Canvas canvas = GetComponentInParent<Canvas>(true);
             if (canvas == null) canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
@@ -1059,11 +1052,6 @@ namespace TitanOrbit.UI
             EnsureShipUpgradeTreeInstance(shipsTabContent.transform);
 
             shipsRowsContainer = null;
-            shipPreviewsRoot = new GameObject("ShipPreviewsRoot").transform;
-            shipPreviewsRoot.SetParent(transform, false);
-            shipPreviewsRoot.localPosition = Vector3.zero;
-            shipPreviewsRoot.localRotation = Quaternion.identity;
-            shipPreviewsRoot.localScale = Vector3.one;
 
             float shipsContentHeight = Mathf.Max(820f, MaxShipCards * 40f + 60f);
             _shipsContentHeight = shipsContentHeight;
@@ -1133,8 +1121,6 @@ namespace TitanOrbit.UI
                 _lastActiveStoreTab = activeStoreTab;
                 cardsTabContent.SetActive(activeStoreTab == 0);
                 shipsTabContent.SetActive(activeStoreTab == 1);
-                if (shipPreviewsRoot != null)
-                    shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
                 if (activeStoreTab == 1)
                     EnsureShipsTabPopulated();
                 return;
@@ -1145,8 +1131,6 @@ namespace TitanOrbit.UI
 
             cardsTabContent.SetActive(activeStoreTab == 0);
             shipsTabContent.SetActive(activeStoreTab == 1);
-            if (shipPreviewsRoot != null)
-                shipPreviewsRoot.gameObject.SetActive(activeStoreTab == 1);
 
             if (activeStoreTab == 1)
                 EnsureShipsTabPopulated();
@@ -1595,96 +1579,7 @@ namespace TitanOrbit.UI
         private Sprite ResolveCurrentShipPreviewSprite()
         {
             if (currentShip == null || CardShopSystem.Instance == null) return null;
-            return ResolveCurrentShipDynamicPreviewSprite()
-                ?? CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, currentShip.ShipTeam);
-        }
-
-        private Sprite ResolveCurrentShipDynamicPreviewSprite()
-        {
-            if (currentShip == null || CardShopSystem.Instance == null)
-                return null;
-
-            ShipFamilyDefinition family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
-            if (family == null)
-                return null;
-
-            string cacheKey = BuildCurrentShipPreviewCacheKey(currentShip);
-            if (string.Equals(cacheKey, _currentShipPreviewCacheKey, StringComparison.Ordinal)
-                && _currentShipPreviewSprite != null)
-            {
-                return _currentShipPreviewSprite;
-            }
-
-            Sprite previousSprite = _currentShipPreviewSprite;
-            Texture2D previousTexture = _currentShipPreviewTexture;
-            _currentShipPreviewSprite = null;
-            _currentShipPreviewTexture = null;
-            _currentShipPreviewCacheKey = "";
-
-            if (!ShipFamilyTheatricalPreviewRenderer.TryRenderCurrentShipPreview(currentShip, family, out Sprite rendered)
-                || rendered == null)
-            {
-                _currentShipPreviewSprite = previousSprite;
-                _currentShipPreviewTexture = previousTexture;
-                _currentShipPreviewCacheKey = previousSprite != null ? cacheKey : "";
-                return previousSprite;
-            }
-
-            if (previousSprite != null)
-                Destroy(previousSprite);
-            if (previousTexture != null && previousTexture != rendered.texture)
-                Destroy(previousTexture);
-
-            _currentShipPreviewCacheKey = cacheKey;
-            _currentShipPreviewSprite = rendered;
-            _currentShipPreviewTexture = rendered.texture;
-            return _currentShipPreviewSprite;
-        }
-
-        private static string BuildCurrentShipPreviewCacheKey(Starship ship)
-        {
-            if (ship == null)
-                return string.Empty;
-
-            var sb = new StringBuilder(256);
-            sb.Append(ship.CurrentChassisId).Append('|').Append((int)ship.ShipTeam).Append('|');
-            IReadOnlyList<EquippedEquipmentEntry> equipment = ship.EquippedEquipment;
-            if (equipment == null || equipment.Count == 0)
-                return sb.ToString();
-
-            for (int i = 0; i < equipment.Count; i++)
-            {
-                EquippedEquipmentEntry entry = equipment[i];
-                sb.Append(i).Append(':')
-                    .Append(entry.itemType).Append(':')
-                    .Append(entry.remainingCharges).Append(':')
-                    .Append(entry.componentId).Append(':')
-                    .Append(entry.localPosX).Append(',')
-                    .Append(entry.localPosY).Append(',')
-                    .Append(entry.localPosZ).Append(':')
-                    .Append(entry.localRotX).Append(',')
-                    .Append(entry.localRotY).Append(',')
-                    .Append(entry.localRotZ).Append(';');
-            }
-
-            return sb.ToString();
-        }
-
-        private void ReleaseCurrentShipPreviewResources()
-        {
-            if (_currentShipPreviewSprite != null)
-            {
-                Destroy(_currentShipPreviewSprite);
-                _currentShipPreviewSprite = null;
-            }
-
-            if (_currentShipPreviewTexture != null)
-            {
-                Destroy(_currentShipPreviewTexture);
-                _currentShipPreviewTexture = null;
-            }
-
-            _currentShipPreviewCacheKey = "";
+            return CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(currentShip.CurrentChassisId, currentShip.ShipTeam);
         }
 
         private string GetCurrentShipDisplayName()
@@ -4314,10 +4209,10 @@ namespace TitanOrbit.UI
 
         private void BuildShipsTabByLevel(List<ShipUnlockEntry> unlocked, float contributedGems)
         {
-            if (shipsRowsContainer == null || shipPreviewsRoot == null)
+            if (shipsRowsContainer == null)
             {
                 EnsurePanelExists();
-                if (shipsRowsContainer == null || shipPreviewsRoot == null) return;
+                if (shipsRowsContainer == null) return;
             }
             for (int i = 0; i < chassisButtons.Length; i++)
             {
@@ -4330,20 +4225,6 @@ namespace TitanOrbit.UI
                 var child = shipsRowsContainer.GetChild(c);
                 if (child != null && child.gameObject != null) Destroy(child.gameObject);
             }
-            for (int c = shipPreviewsRoot.childCount - 1; c >= 0; c--)
-            {
-                Transform t = shipPreviewsRoot.GetChild(c);
-                if (t == null || !t) continue;
-                GameObject go = t.gameObject;
-                var cam = go.GetComponentInChildren<UnityEngine.Camera>();
-                if (cam != null && cam.targetTexture != null)
-                {
-                    cam.targetTexture.Release();
-                    cam.targetTexture = null;
-                }
-                Destroy(go);
-            }
-
             if (unlocked == null || unlocked.Count == 0)
             {
                 AddNoShipsPlaceholderRow();
@@ -4470,8 +4351,18 @@ namespace TitanOrbit.UI
             var previewLE = previewGo.AddComponent<LayoutElement>();
             previewLE.preferredWidth = ShipCardPreviewSize;
             previewLE.preferredHeight = ShipCardPreviewSize;
-            var rawImg = previewGo.AddComponent<RawImage>();
-            rawImg.color = new Color(0.08f, 0.1f, 0.18f, 0.95f);
+            var previewImg = previewGo.AddComponent<Image>();
+            previewImg.color = new Color(0.08f, 0.1f, 0.18f, 0.95f);
+            if (CardShopSystem.Instance != null)
+            {
+                TeamManager.Team team = currentShip != null ? currentShip.ShipTeam : TeamManager.Team.None;
+                Sprite previewSprite = CardShopSystem.Instance.GetMenuPreviewSpriteForChassisId(chassis.chassisId, team);
+                if (previewSprite != null)
+                {
+                    previewImg.sprite = previewSprite;
+                    previewImg.preserveAspect = true;
+                }
+            }
 
             var contentGo = new GameObject("Content");
             contentGo.transform.SetParent(cardGo.transform, false);
@@ -4529,61 +4420,6 @@ namespace TitanOrbit.UI
             int idx = index;
             cardBtn.onClick.AddListener(() => OnBuyChassis(idx));
             buyBtn.onClick.AddListener(() => OnBuyChassis(idx));
-
-            GameObject prefab = CardShopSystem.Instance != null ? CardShopSystem.Instance.GetShipPrefabForChassisId(chassis.chassisId) : null;
-            if (prefab != null)
-                SetupShipPreview(prefab, rawImg, previewRect);
-        }
-
-        private void SetupShipPreview(GameObject shipPrefab, RawImage targetImage, RectTransform previewRect)
-        {
-            if (shipPreviewsRoot == null || targetImage == null) return;
-            RenderTexture rt = new RenderTexture(ShipPreviewRenderSize, ShipPreviewRenderSize, 16);
-            rt.name = "ShipPreviewRT";
-            targetImage.texture = rt;
-
-            GameObject previewRootGo = new GameObject("ShipPreview");
-            previewRootGo.transform.SetParent(shipPreviewsRoot, false);
-            previewRootGo.transform.localPosition = Vector3.zero;
-            previewRootGo.transform.localRotation = Quaternion.identity;
-            previewRootGo.transform.localScale = Vector3.one;
-
-            var camGo = new GameObject("PreviewCamera");
-            camGo.transform.SetParent(previewRootGo.transform, false);
-            camGo.transform.localPosition = new Vector3(0f, 8f, 0f);
-            camGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            var cam = camGo.AddComponent<UnityEngine.Camera>();
-            cam.orthographic = true;
-            cam.orthographicSize = 4f;
-            cam.targetTexture = rt;
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.08f, 0.1f, 0.18f, 1f);
-            cam.cullingMask = 1 << 0;
-            cam.enabled = true;
-
-            GameObject instance = Instantiate(shipPrefab);
-            instance.transform.SetParent(previewRootGo.transform, false);
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localRotation = Quaternion.identity;
-            instance.transform.localScale = Vector3.one * 0.35f;
-            var no = instance.GetComponent<Unity.Netcode.NetworkObject>();
-            if (no != null) no.enabled = false;
-            var ship = instance.GetComponent<TitanOrbit.Entities.Starship>();
-            if (ship != null) ship.enabled = false;
-            foreach (var rb in instance.GetComponentsInChildren<Rigidbody>(true))
-                rb.isKinematic = true;
-
-            var lightGo = new GameObject("PreviewLight");
-            lightGo.transform.SetParent(previewRootGo.transform, false);
-            lightGo.transform.localPosition = new Vector3(2f, 6f, 2f);
-            lightGo.transform.LookAt(previewRootGo.transform.position);
-            var lightComp = lightGo.AddComponent<Light>();
-            lightComp.type = LightType.Directional;
-            lightComp.intensity = 0.9f;
-            lightComp.cullingMask = 1 << 0;
-
-            var rotator = previewRootGo.AddComponent<ShipPreviewRotateToMouse>();
-            rotator.SetPreviewRect(previewRect);
         }
 
         private void EnsureCardRemoveConfirmModal()

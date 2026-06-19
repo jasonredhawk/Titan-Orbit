@@ -346,7 +346,22 @@ namespace TitanOrbit.Systems
             float bulletRadius,
             out Vector3 impactPos)
         {
-            impactPos = to;
+            return TryFindEarliestToroidalAsteroidHit(from, to, bulletRadius, out _, out impactPos);
+        }
+
+        /// <summary>
+        /// Picks the asteroid struck first along the segment (earliest entry <c>t</c>), not the one whose
+        /// center is closest to the line. Prevents near-miss impacts on neighbors beside the intended target.
+        /// </summary>
+        private static bool TryFindEarliestToroidalAsteroidHit(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            out Asteroid hitAsteroid,
+            out Vector3 impactWorldPos)
+        {
+            hitAsteroid = null;
+            impactWorldPos = to;
             if (Asteroid.AllAsteroids == null || Asteroid.AllAsteroids.Count == 0)
                 return false;
 
@@ -354,8 +369,7 @@ namespace TitanOrbit.Systems
             float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
             float halfW = mapW * 0.5f;
             float halfH = mapH * 0.5f;
-            float bestDistSq = float.MaxValue;
-            Asteroid bestAsteroid = null;
+            float bestEnterT = float.MaxValue;
             Vector3 bestImpact = to;
 
             float radiusPad = Mathf.Max(0.01f, bulletRadius);
@@ -381,22 +395,75 @@ namespace TitanOrbit.Systems
                 else if (seg.z < -halfH) seg.z += mapH;
                 Vector3 toLocalUnwrapped = fromLocal + seg;
 
-                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
-                float distSq = closest.sqrMagnitude;
-                if (distSq > combinedRadius * combinedRadius) continue;
+                if (!TryGetEarliestSegmentSphereEnterT(fromLocal, toLocalUnwrapped, Vector3.zero, combinedRadius, out float enterT))
+                    continue;
 
-                if (distSq < bestDistSq)
+                if (enterT < bestEnterT)
                 {
-                    bestDistSq = distSq;
-                    bestAsteroid = asteroid;
-                    bestImpact = new Vector3(center.x + closest.x, FixedY, center.z + closest.z);
+                    bestEnterT = enterT;
+                    hitAsteroid = asteroid;
+                    Vector3 localImpact = Vector3.Lerp(fromLocal, toLocalUnwrapped, enterT);
+                    if (localImpact.sqrMagnitude > 1e-6f)
+                        localImpact = localImpact.normalized * combinedRadius;
+                    bestImpact = new Vector3(center.x + localImpact.x, FixedY, center.z + localImpact.z);
                 }
             }
 
-            if (bestAsteroid == null) return false;
+            if (hitAsteroid == null) return false;
 
-            impactPos = bestImpact;
+            impactWorldPos = bestImpact;
             return true;
+        }
+
+        /// <summary>Earliest <c>t</c> in [0,1] where the segment enters the sphere (center + radius).</summary>
+        private static bool TryGetEarliestSegmentSphereEnterT(
+            Vector3 segA,
+            Vector3 segB,
+            Vector3 sphereCenter,
+            float radius,
+            out float tEnter)
+        {
+            tEnter = float.MaxValue;
+            Vector3 a = segA - sphereCenter;
+            Vector3 d = segB - segA;
+            float r2 = radius * radius;
+
+            float aDot = Vector3.Dot(a, a);
+            if (aDot <= r2)
+            {
+                tEnter = 0f;
+                return true;
+            }
+
+            float A = Vector3.Dot(d, d);
+            if (A < 1e-8f)
+                return false;
+
+            float B = 2f * Vector3.Dot(a, d);
+            float C = aDot - r2;
+            float discriminant = B * B - 4f * A * C;
+            if (discriminant < 0f)
+                return false;
+
+            float sqrtDisc = Mathf.Sqrt(discriminant);
+            float inv2A = 0.5f / A;
+            float t0 = (-B - sqrtDisc) * inv2A;
+            float t1 = (-B + sqrtDisc) * inv2A;
+
+            bool found = false;
+            if (t0 >= 0f && t0 <= 1f)
+            {
+                tEnter = t0;
+                found = true;
+            }
+
+            if (t1 >= 0f && t1 <= 1f && t1 < tEnter)
+            {
+                tEnter = t1;
+                found = true;
+            }
+
+            return found;
         }
 
         /// <summary>Client-only toroidal moon impact test (no damage).</summary>
@@ -491,7 +558,7 @@ namespace TitanOrbit.Systems
         /// Sweeps a bullet segment through toroidal space against every active asteroid. World-space
         /// physics queries miss when the bullet and asteroid sit in different toroidal tiles
         /// (ships fly arbitrarily far across the wrap), so we evaluate distance between the unwrapped
-        /// segment and each asteroid center. Returns true and applies damage on the closest hit.
+        /// segment and each asteroid center. Returns true and applies damage on the first hit along the segment.
         /// </summary>
         public static bool TryToroidalAsteroidSegmentHit(
             Vector3 from,
@@ -506,53 +573,8 @@ namespace TitanOrbit.Systems
         {
             popupInfo = BulletHitPopupInfo.None;
             impactPos = to;
-            if (Asteroid.AllAsteroids == null || Asteroid.AllAsteroids.Count == 0)
+            if (!TryFindEarliestToroidalAsteroidHit(from, to, bulletRadius, out Asteroid bestAsteroid, out Vector3 bestImpact))
                 return false;
-
-            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
-            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
-            float halfW = mapW * 0.5f;
-            float halfH = mapH * 0.5f;
-            float bestDistSq = float.MaxValue;
-            Asteroid bestAsteroid = null;
-            Vector3 bestImpact = to;
-
-            float radiusPad = Mathf.Max(0.01f, bulletRadius);
-
-            for (int i = 0; i < Asteroid.AllAsteroids.Count; i++)
-            {
-                Asteroid asteroid = Asteroid.AllAsteroids[i];
-                if (asteroid == null || asteroid.IsDestroyed) continue;
-
-                Vector3 center = GetAsteroidLogicalCenter(asteroid);
-                if (!NeedsToroidalAsteroidSweep(from, to, center))
-                    continue;
-
-                float combinedRadius = asteroid.GetBulletHitRadiusWorld() + radiusPad;
-
-                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
-                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
-
-                Vector3 seg = toLocal - fromLocal;
-                if (seg.x > halfW) seg.x -= mapW;
-                else if (seg.x < -halfW) seg.x += mapW;
-                if (seg.z > halfH) seg.z -= mapH;
-                else if (seg.z < -halfH) seg.z += mapH;
-                Vector3 toLocalUnwrapped = fromLocal + seg;
-
-                Vector3 closest = ClosestPointOnSegment(fromLocal, toLocalUnwrapped, Vector3.zero);
-                float distSq = closest.sqrMagnitude;
-                if (distSq > combinedRadius * combinedRadius) continue;
-
-                if (distSq < bestDistSq)
-                {
-                    bestDistSq = distSq;
-                    bestAsteroid = asteroid;
-                    bestImpact = new Vector3(center.x + closest.x, FixedY, center.z + closest.z);
-                }
-            }
-
-            if (bestAsteroid == null) return false;
 
             float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
                 damage, bulletBankIndex, BulletBankDamageTarget.Asteroid);

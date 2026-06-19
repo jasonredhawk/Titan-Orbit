@@ -1792,13 +1792,19 @@ namespace TitanOrbit.Entities
                 peopleInTransit = Mathf.Max(0f, peopleInTransit - amount);
         }
 
-        /// <summary>Server: people moved per orbit load/unload projectile — capped by both ship and planet level.</summary>
+        /// <summary>Server: people moved per planet→ship load projectile — capped by both ship and planet level.</summary>
         public float GetPeopleTransferChunkSize(Planet planet)
         {
             float shipChunk = Mathf.Max(1f, ShipLevel);
             if (planet == null)
                 return shipChunk;
             return Mathf.Max(1f, Mathf.Min(shipChunk, planet.PlanetLevel));
+        }
+
+        /// <summary>Server: people per ship→neutral/enemy unload projectile — capped by ship level only.</summary>
+        public float GetPeopleUnloadChunkSize()
+        {
+            return Mathf.Max(1f, ShipLevel);
         }
 
         /// <summary>Server: remaining crew capacity accounting for in-flight load projectiles.</summary>
@@ -5720,6 +5726,11 @@ namespace TitanOrbit.Entities
                     return;
                 }
 
+                float hostileUnloadChunk = GetPeopleUnloadChunkSize();
+                float hostileUnloadAccumStep = hostileUnloadChunk * Time.fixedDeltaTime * GetCardPeopleTransferSpeedMultiplier();
+                if (debugModeEnabled)
+                    hostileUnloadAccumStep *= 100f;
+
                 if (debugModeEnabled)
                 {
                     float instantUnloadPeople = currentPeople.Value;
@@ -5736,16 +5747,16 @@ namespace TitanOrbit.Entities
                 }
 
                 if (currentPeople.Value > 0.0001f)
-                    peopleUnloadAccumulator += unloadAccumStep;
+                    peopleUnloadAccumulator += hostileUnloadAccumStep;
 
-                if (peopleUnloadAccumulator >= peopleDropValue
-                    && currentPeople.Value >= peopleDropValue)
+                if (peopleUnloadAccumulator >= hostileUnloadChunk
+                    && currentPeople.Value >= hostileUnloadChunk)
                 {
-                    ApplyHostileOrbitPeopleUnload(peopleDropValue);
-                    peopleUnloadAccumulator -= peopleDropValue;
+                    ApplyHostileOrbitPeopleUnload(hostileUnloadChunk);
+                    peopleUnloadAccumulator -= hostileUnloadChunk;
                 }
                 else if (currentPeople.Value > 0f
-                    && currentPeople.Value < peopleDropValue
+                    && currentPeople.Value < hostileUnloadChunk
                     && peopleUnloadAccumulator >= currentPeople.Value - 0.0001f)
                 {
                     float remainder = currentPeople.Value;

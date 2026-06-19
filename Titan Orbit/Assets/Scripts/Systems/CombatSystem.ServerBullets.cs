@@ -479,6 +479,11 @@ namespace TitanOrbit.Systems
         private void CheckImmediateOverlap(int slot)
         {
             ref ServerBullet b = ref serverBullets[slot];
+            Vector3 aim = b.Velocity;
+            aim.y = 0f;
+            bool hasAim = aim.sqrMagnitude > 0.01f;
+            if (hasAim) aim.Normalize();
+
             float radius = BulletRadius + BulletOverlapPadding;
             int m = Physics.OverlapSphereNonAlloc(b.Position, radius, s_overlapHits, ~0, QueryTriggerInteraction.Ignore);
             if (m == 0) return;
@@ -492,13 +497,41 @@ namespace TitanOrbit.Systems
                 if (c == null) continue;
                 if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(c, b.OwnerShipNetworkId)) continue;
                 if (!BulletHitResolver.TryGetBulletDamageChannel(c, b.OwnerTeam, out _)) continue;
-                Vector3 impact = c.ClosestPoint(b.Position);
-                float dSq = (impact - b.Position).sqrMagnitude;
-                if (dSq < bestDistSq)
+
+                Asteroid asteroid = c.GetComponentInParent<Asteroid>();
+                if (asteroid != null)
                 {
-                    bestDistSq = dSq;
+                    // Wide overlap padding catches neighbors beside the aim line; require forward alignment.
+                    if (hasAim)
+                    {
+                        Vector3 toTarget = c.ClosestPoint(b.Position) - b.Position;
+                        toTarget.y = 0f;
+                        if (toTarget.sqrMagnitude > 1e-6f && Vector3.Dot(aim, toTarget.normalized) < 0.5f)
+                            continue;
+                    }
+
+                    float maxDist = asteroid.GetBulletHitRadiusWorld() + BulletRadius;
+                    Vector3 impact = c.ClosestPoint(b.Position);
+                    float dSq = (impact - b.Position).sqrMagnitude;
+                    if (dSq > maxDist * maxDist)
+                        continue;
+
+                    if (dSq < bestDistSq)
+                    {
+                        bestDistSq = dSq;
+                        bestCollider = c;
+                        bestImpact = impact;
+                    }
+                    continue;
+                }
+
+                Vector3 broadImpact = c.ClosestPoint(b.Position);
+                float broadDistSq = (broadImpact - b.Position).sqrMagnitude;
+                if (broadDistSq < bestDistSq)
+                {
+                    bestDistSq = broadDistSq;
                     bestCollider = c;
-                    bestImpact = impact;
+                    bestImpact = broadImpact;
                 }
             }
 

@@ -29,7 +29,9 @@ namespace TitanOrbit.Entities
         [SerializeField] private float planetSize = 1f;
         [SerializeField] private float captureRadius = 5f;
 
-        [Header("Regular Planet Level Settings")]
+        [Header("Planet Level Settings")]
+        [Tooltip("Max gems capacity at level 1. Formula: baseMaxGemsLevel1 * 2^(level-1). Level 1=base, 2=2×, 3=4×, etc. Applies to regular and home planets.")]
+        [SerializeField] private float baseMaxGemsLevel1 = 100f;
         [Tooltip("Minimum starting level for neutral regular planets (inclusive).")]
         [SerializeField] private int minStartingLevel = 1;
         [Tooltip("Maximum starting level for neutral regular planets (inclusive). Regular planets can still level up to the global max level.")]
@@ -443,7 +445,7 @@ namespace TitanOrbit.Entities
         public float PlanetSize => planetSize;
         public float CaptureRadius => captureRadius;
         public float CurrentGems => currentGems.Value;
-        /// <summary>Max gems at current level. Override GetMaxGemsForLevel in HomePlanet for different thresholds.</summary>
+        /// <summary>Max gems at current level (baseMaxGemsLevel1 * 2^(level-1)).</summary>
         public float MaxGems => GetMaxGemsForLevel(planetLevel.Value);
 
         private const float FIXED_Y_POSITION = 0f;
@@ -1188,12 +1190,11 @@ namespace TitanOrbit.Entities
             return Mathf.Max(1, Mathf.Min(rolledLevel, maxLevel));
         }
 
-        /// <summary>Max gems capacity for a given level. Override in HomePlanet for different thresholds. Regular planets: 200 * 2^(level-1).</summary>
+        /// <summary>Max gems capacity for a given level. Formula: baseMaxGemsLevel1 * 2^(level-1).</summary>
         protected virtual float GetMaxGemsForLevel(int level)
         {
-            // Regular planets: Level 1 = 200, Level 2 = 400, Level 3 = 800, etc.
             if (level < 1) return 0f;
-            return 200f * Mathf.Pow(2f, level - 1);
+            return baseMaxGemsLevel1 * Mathf.Pow(2f, level - 1);
         }
 
         /// <summary>
