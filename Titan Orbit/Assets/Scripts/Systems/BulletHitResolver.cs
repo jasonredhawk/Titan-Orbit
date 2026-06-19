@@ -195,6 +195,9 @@ namespace TitanOrbit.Systems
             Starship ship = other.GetComponentInParent<Starship>();
             if (ship != null && !ship.IsDead)
             {
+                if (ship.GemMoonDocked && ship.IsGemMoonSurfaceLandingComplete())
+                    return false;
+
                 if (ship.ShipTeam == ownerTeam)
                 {
                     if (BulletBankProfileUtility.TryHealFriendlyShip(ship, bulletBankIndex, damage, ownerTeam, out float heal))
@@ -539,7 +542,185 @@ namespace TitanOrbit.Systems
 
         public static void ApplyShipHit(Starship ship, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)
         {
-            ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+            if (ship == null) return;
+            if (ship.IsServer)
+                ship.ApplyDamageFromBulletServer(damage, ownerTeam, ownerShipNetworkId);
+            else
+                ship.TakeDamageServerRpc(damage, ownerTeam, ownerShipNetworkId);
+        }
+
+        private static Vector3 GetShipLogicalCenter(Starship ship)
+        {
+            if (ship == null) return Vector3.zero;
+            Rigidbody rb = ship.GetComponent<Rigidbody>();
+            Vector3 pos = rb != null ? rb.position : ship.transform.position;
+            pos.y = FixedY;
+            return pos;
+        }
+
+        private static bool TryFindEarliestToroidalShipHit(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            out Starship hitShip,
+            out Vector3 impactWorldPos)
+        {
+            hitShip = null;
+            impactWorldPos = to;
+            if (Starship.AllStarships == null || Starship.AllStarships.Count == 0)
+                return false;
+
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+            float bestEnterT = float.MaxValue;
+            Vector3 bestImpact = to;
+            float radiusPad = Mathf.Max(0.01f, bulletRadius);
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || ship.IsDead) continue;
+                if (ship.GemMoonDocked && ship.IsGemMoonSurfaceLandingComplete()) continue;
+                if (ship.ShipTeam == ownerTeam) continue;
+
+                NetworkObject shipNo = ship.GetComponent<NetworkObject>();
+                if (shipNo != null && ownerShipNetworkId != 0 && shipNo.NetworkObjectId == ownerShipNetworkId)
+                    continue;
+
+                Vector3 center = GetShipLogicalCenter(ship);
+                float combinedRadius = ship.GetShipCollisionRadiusXZ() + radiusPad;
+
+                Vector3 fromLocal = ToroidalMap.ShortestWorldOffsetXZ(center, from);
+                Vector3 toLocal = ToroidalMap.ShortestWorldOffsetXZ(center, to);
+
+                Vector3 seg = toLocal - fromLocal;
+                if (seg.x > halfW) seg.x -= mapW;
+                else if (seg.x < -halfW) seg.x += mapW;
+                if (seg.z > halfH) seg.z -= mapH;
+                else if (seg.z < -halfH) seg.z += mapH;
+                Vector3 toLocalUnwrapped = fromLocal + seg;
+
+                if (!TryGetEarliestSegmentSphereEnterT(fromLocal, toLocalUnwrapped, Vector3.zero, combinedRadius, out float enterT))
+                    continue;
+
+                if (enterT < bestEnterT)
+                {
+                    bestEnterT = enterT;
+                    hitShip = ship;
+                    Vector3 localImpact = Vector3.Lerp(fromLocal, toLocalUnwrapped, enterT);
+                    if (localImpact.sqrMagnitude > 1e-6f)
+                        localImpact = localImpact.normalized * combinedRadius;
+                    bestImpact = new Vector3(center.x + localImpact.x, FixedY, center.z + localImpact.z);
+                }
+            }
+
+            if (hitShip == null) return false;
+
+            impactWorldPos = bestImpact;
+            return true;
+        }
+
+        /// <summary>Toroidal overlap at bullet tip when physics colliders miss across map tiles.</summary>
+        public static bool TryToroidalShipOverlapHit(
+            Vector3 position,
+            float bulletRadius,
+            float damage,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            out Vector3 impactPos,
+            out BulletHitPopupInfo popupInfo,
+            int bulletBankIndex = -1)
+        {
+            popupInfo = BulletHitPopupInfo.None;
+            impactPos = position;
+            if (Starship.AllStarships == null || Starship.AllStarships.Count == 0)
+                return false;
+
+            float radiusPad = Mathf.Max(0.01f, bulletRadius);
+            float bestDistSq = float.MaxValue;
+            Starship bestShip = null;
+            Vector3 bestImpact = position;
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
+            {
+                Starship ship = Starship.AllStarships[i];
+                if (ship == null || ship.IsDead) continue;
+                if (ship.GemMoonDocked && ship.IsGemMoonSurfaceLandingComplete()) continue;
+                if (ship.ShipTeam == ownerTeam) continue;
+
+                NetworkObject shipNo = ship.GetComponent<NetworkObject>();
+                if (shipNo != null && ownerShipNetworkId != 0 && shipNo.NetworkObjectId == ownerShipNetworkId)
+                    continue;
+
+                Vector3 center = GetShipLogicalCenter(ship);
+                float combinedRadius = ship.GetShipCollisionRadiusXZ() + radiusPad;
+                Vector3 offset = ToroidalMap.ShortestWorldOffsetXZ(center, position);
+                offset.y = 0f;
+                float distSq = offset.sqrMagnitude;
+                if (distSq > combinedRadius * combinedRadius || distSq >= bestDistSq)
+                    continue;
+
+                bestDistSq = distSq;
+                bestShip = ship;
+                if (distSq > 1e-6f)
+                    bestImpact = new Vector3(center.x + offset.normalized.x * combinedRadius, FixedY, center.z + offset.normalized.z * combinedRadius);
+                else
+                    bestImpact = new Vector3(center.x, FixedY, center.z);
+            }
+
+            if (bestShip == null) return false;
+
+            float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
+                damage, bulletBankIndex, BulletBankDamageTarget.ShipOrDrone);
+            ApplyShipHit(bestShip, resolved, ownerTeam, ownerShipNetworkId, bestImpact);
+            float applied = GetAppliedBulletDamage(resolved);
+            popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageShipOrDrone, applied);
+            impactPos = bestImpact;
+            return true;
+        }
+
+        /// <summary>Client-only toroidal ship impact test (no damage).</summary>
+        public static bool TryToroidalShipSegmentCosmeticOnly(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            out Vector3 impactPos)
+        {
+            return TryFindEarliestToroidalShipHit(from, to, bulletRadius, ownerTeam, ownerShipNetworkId, out _, out impactPos);
+        }
+
+        /// <summary>
+        /// Toroidal ship segment test — world physics misses when shooter and target sit in different map tiles.
+        /// </summary>
+        public static bool TryToroidalShipSegmentHit(
+            Vector3 from,
+            Vector3 to,
+            float bulletRadius,
+            float damage,
+            TeamManager.Team ownerTeam,
+            ulong ownerShipNetworkId,
+            out Vector3 impactPos,
+            out BulletHitPopupInfo popupInfo,
+            int bulletBankIndex = -1)
+        {
+            popupInfo = BulletHitPopupInfo.None;
+            impactPos = to;
+            if (!TryFindEarliestToroidalShipHit(from, to, bulletRadius, ownerTeam, ownerShipNetworkId, out Starship bestShip, out Vector3 bestImpact))
+                return false;
+
+            float resolved = BulletBankProfileUtility.ResolveDamageForTarget(
+                damage, bulletBankIndex, BulletBankDamageTarget.ShipOrDrone);
+            ApplyShipHit(bestShip, resolved, ownerTeam, ownerShipNetworkId, bestImpact);
+            float applied = GetAppliedBulletDamage(resolved);
+            popupInfo = new BulletHitPopupInfo(true, FloatingCountChannel.DamageShipOrDrone, applied);
+            impactPos = bestImpact;
+            return true;
         }
 
         public static void ApplyDroneHit(DroneBody drone, float damage, TeamManager.Team ownerTeam, ulong ownerShipNetworkId, Vector3 impactWorldPos)

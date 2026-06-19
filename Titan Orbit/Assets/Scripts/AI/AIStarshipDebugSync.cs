@@ -1,25 +1,24 @@
 using UnityEngine;
-using Unity.Netcode;
 
 namespace TitanOrbit.AI
 {
     /// <summary>
-    /// Syncs AI debug data (target position, state enum) from server to client for debug visualization.
-    /// Only populated when DebugMode. Add to AI ships in AIStarshipManager.
+    /// Server-side AI debug state for visualization. Must NOT be a NetworkBehaviour — adding
+    /// NetworkBehaviours at spawn time breaks NGO prefab sync and can crash the editor/client.
     /// </summary>
-    public class AIStarshipDebugSync : NetworkBehaviour
+    public class AIStarshipDebugSync : MonoBehaviour
     {
-        private NetworkVariable<Vector3> targetPosition = new NetworkVariable<Vector3>(Vector3.zero);
-        private NetworkVariable<int> stateEnum = new NetworkVariable<int>(0);
+        private Vector3 targetPosition;
+        private int stateEnum;
 
-        public Vector3 TargetPosition => targetPosition.Value;
-        public int StateEnum => stateEnum.Value;
+        public Vector3 TargetPosition => targetPosition;
+        public int StateEnum => stateEnum;
 
+        /// <summary>Server only (called from <see cref="AIStarshipController"/>).</summary>
         public void SetDebug(Vector3 target, int state)
         {
-            if (!IsServer) return;
-            targetPosition.Value = target;
-            stateEnum.Value = state;
+            targetPosition = target;
+            stateEnum = state;
         }
 
         public static string StateNameFromEnum(int s)

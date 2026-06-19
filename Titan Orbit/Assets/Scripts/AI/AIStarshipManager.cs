@@ -4,8 +4,10 @@ using TitanOrbit.Core;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.Input;
+using System.Collections;
 using System.Collections.Generic;
 using TitanOrbit.Data;
+using TitanOrbit.Systems;
 
 namespace TitanOrbit.AI
 {
@@ -28,14 +30,79 @@ namespace TitanOrbit.AI
         [Tooltip("Ship data for AI ships (same model and weapon as your ship). Assign the same ShipData asset your player uses (e.g. Starter). If unset, uses first player ship's data when available.")]
         [SerializeField] private ShipData aiShipData;
         [Tooltip("Minimum number of AI ships per team")]
-        [SerializeField] private int minAIShipsPerTeam = 10;
+        [SerializeField] private int minAIShipsPerTeam = 2;
         [Tooltip("Maximum number of AI ships per team (uses TeamManager.MaxPlayersPerTeam if 0)")]
-        [SerializeField] private int maxAIShipsPerTeam = 0;
+        [SerializeField] private int maxAIShipsPerTeam = 4;
         [Tooltip("Percentage of ships that are miners (rest are transporters)")]
         [SerializeField] private float minerPercentage = 0.6f;
+        [Tooltip("Spawn at most this many AI ships per frame (avoids editor OOM / hard crashes).")]
+        [SerializeField] private int shipsPerSpawnFrame = 2;
+        [Tooltip("Hard cap on total AI ships for the whole match.")]
+        [SerializeField] private int maxTotalAiShips = 20;
 
         private Dictionary<TeamManager.Team, List<Starship>> aiShipsByTeam = new Dictionary<TeamManager.Team, List<Starship>>();
         private bool hasSpawnedAI = false;
+        private float serverListenStartTime = -1f;
+        private float lastSpawnBlockedLogTime = -999f;
+        private Coroutine spawnRoutine;
+        [Tooltip("Max seconds to keep retrying AI spawn after the server starts listening.")]
+        [SerializeField] private float spawnRetryTimeoutSeconds = 120f;
+        [Tooltip("Minimum home planets required before spawning AI.")]
+        [SerializeField] private int minHomePlanetsForSpawn = 2;
+
+        /// <summary>Server: clear spawned AI and allow a fresh spawn after map / Netcode session reset.</summary>
+        public void ResetForNewMatchSession()
+        {
+            if (!IsServer) return;
+
+            foreach (var kvp in aiShipsByTeam)
+            {
+                if (kvp.Value == null) continue;
+                for (int i = kvp.Value.Count - 1; i >= 0; i--)
+                {
+                    Starship ship = kvp.Value[i];
+                    if (ship == null) continue;
+                    NetworkObject netObj = ship.NetworkObject;
+                    if (netObj != null && netObj.IsSpawned)
+                        netObj.Despawn(true);
+                    else
+                        Destroy(ship.gameObject);
+                }
+                kvp.Value.Clear();
+            }
+
+            hasSpawnedAI = false;
+            serverListenStartTime = Time.time;
+            lastSpawnBlockedLogTime = -999f;
+            if (spawnRoutine != null)
+            {
+                StopCoroutine(spawnRoutine);
+                spawnRoutine = null;
+            }
+        }
+
+        public override void OnDestroy()
+        {
+            if (spawnRoutine != null)
+                StopCoroutine(spawnRoutine);
+            if (Instance == this)
+                Instance = null;
+            base.OnDestroy();
+        }
+
+        private readonly struct PendingAiSpawn
+        {
+            public readonly TeamManager.Team Team;
+            public readonly HomePlanet Home;
+            public readonly AIStarshipController.AIBehaviorType Behavior;
+
+            public PendingAiSpawn(TeamManager.Team team, HomePlanet home, AIStarshipController.AIBehaviorType behavior)
+            {
+                Team = team;
+                Home = home;
+                Behavior = behavior;
+            }
+        }
 
         private void Awake()
         {
@@ -73,11 +140,13 @@ namespace TitanOrbit.AI
         {
             if (!IsServer) return;
             if (hasSpawnedAI) return;
-            // Wait until server is fully listening (avoids NotListeningException if host init fails or is delayed)
+
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
                 return;
 
-            // Skip spawning if player disabled AI ships (main menu checkbox)
+            if (serverListenStartTime < 0f)
+                serverListenStartTime = Time.time;
+
             if (!AIShipsEnabled)
             {
                 BootTrace.Mark("AIStarshipManager.Update - AIShipsDisabled, skipping spawn");
@@ -85,67 +154,182 @@ namespace TitanOrbit.AI
                 return;
             }
 
-            // Wait a bit for the scene to fully initialize
-            if (Time.time < 2f) return;
-
-            BootTrace.Mark("AIStarshipManager.Update - spawning AI ships for all teams");
-            // Spawn AI ships for each team
-            SpawnAIShipsForAllTeams();
-            hasSpawnedAI = true;
-            BootTrace.Mark("AIStarshipManager.Update - finished spawning AI ships");
+            if (spawnRoutine == null)
+                spawnRoutine = StartCoroutine(SpawnAIShipsWhenReadyRoutine());
         }
 
-        private void SpawnAIShipsForAllTeams()
+        private IEnumerator SpawnAIShipsWhenReadyRoutine()
         {
-            if (TeamManager.Instance == null) return;
+            int perFrame = Mathf.Max(1, shipsPerSpawnFrame);
+            float deadline = serverListenStartTime + Mathf.Max(5f, spawnRetryTimeoutSeconds);
 
+            while (Time.time < deadline)
+            {
+                if (TryGetSpawnBlockReason(out string blockReason))
+                {
+                    if (Time.time - lastSpawnBlockedLogTime >= 10f)
+                    {
+                        lastSpawnBlockedLogTime = Time.time;
+                        Debug.Log("[AIStarshipManager] Waiting to spawn AI ships: " + blockReason);
+                    }
+                    yield return null;
+                    continue;
+                }
+
+                List<PendingAiSpawn> queue = BuildSpawnQueue();
+                if (queue.Count == 0)
+                {
+                    Debug.LogError("[AIStarshipManager] World ready but spawn queue is empty (check team/home planet mapping).");
+                    break;
+                }
+
+                GameObject prefab = ResolveStarshipPrefab();
+                ShipData sharedShipData = ResolveSharedShipData();
+                int spawned = 0;
+
+                for (int i = 0; i < queue.Count; i++)
+                {
+                    PendingAiSpawn entry = queue[i];
+                    if (SpawnAIShip(entry.Team, entry.Home, entry.Behavior, prefab, sharedShipData))
+                        spawned++;
+
+                    if ((i + 1) % perFrame == 0)
+                        yield return null;
+                }
+
+                hasSpawnedAI = true;
+                Debug.Log($"[AIStarshipManager] Spawned {spawned} AI ships over {(spawned + perFrame - 1) / perFrame} frame(s).");
+                BootTrace.Mark("AIStarshipManager - finished spawning AI ships count=" + spawned);
+                spawnRoutine = null;
+                yield break;
+            }
+
+            Debug.LogError("[AIStarshipManager] Timed out waiting to spawn AI ships.");
+            hasSpawnedAI = true;
+            spawnRoutine = null;
+        }
+
+        private List<PendingAiSpawn> BuildSpawnQueue()
+        {
+            var queue = new List<PendingAiSpawn>(16);
+            if (TeamManager.Instance == null)
+                return queue;
+
+            int remaining = Mathf.Max(0, maxTotalAiShips);
             foreach (TeamManager.Team team in System.Enum.GetValues(typeof(TeamManager.Team)))
             {
-                if (team == TeamManager.Team.None) continue;
+                if (team == TeamManager.Team.None || remaining <= 0) continue;
 
-                // Find home planet for this team
                 HomePlanet homePlanet = FindHomePlanetForTeam(team);
                 if (homePlanet == null) continue;
 
-                // Random number of ships for this team (up to max players per team)
-                int maxPerTeam = maxAIShipsPerTeam > 0 ? maxAIShipsPerTeam : (TeamManager.Instance?.MaxPlayersPerTeam ?? 20);
-                int numShips = Random.Range(minAIShipsPerTeam, Mathf.Max(minAIShipsPerTeam, maxPerTeam) + 1);
-                
-                // Spawn ships
+                int maxPerTeam = maxAIShipsPerTeam > 0 ? maxAIShipsPerTeam : (TeamManager.Instance?.MaxPlayersPerTeam ?? 4);
+                int minPerTeam = Mathf.Min(minAIShipsPerTeam, maxPerTeam);
+                int numShips = Random.Range(minPerTeam, maxPerTeam + 1);
+                numShips = Mathf.Min(numShips, remaining);
+                remaining -= numShips;
+
                 for (int i = 0; i < numShips; i++)
                 {
-                    // Determine behavior type
-                    AIStarshipController.AIBehaviorType behaviorType = 
-                        Random.value < minerPercentage 
-                            ? AIStarshipController.AIBehaviorType.Mining 
+                    AIStarshipController.AIBehaviorType behaviorType =
+                        Random.value < minerPercentage
+                            ? AIStarshipController.AIBehaviorType.Mining
                             : AIStarshipController.AIBehaviorType.Transport;
-
-                    SpawnAIShip(team, homePlanet, behaviorType);
+                    queue.Add(new PendingAiSpawn(team, homePlanet, behaviorType));
                 }
-
-                Debug.Log($"Spawned {numShips} AI ships for team {team}");
             }
+
+            return queue;
         }
 
-        private void SpawnAIShip(TeamManager.Team team, HomePlanet homePlanet, AIStarshipController.AIBehaviorType behaviorType)
+        private ShipData ResolveSharedShipData()
         {
-            if (starshipPrefab == null)
+            if (aiShipData != null)
+                return aiShipData;
+
+            for (int i = 0; i < Starship.AllStarships.Count; i++)
             {
-                // Try to load prefab from path
-                starshipPrefab = Resources.Load<GameObject>("Prefabs/Starship");
-                if (starshipPrefab == null)
-                {
-                    #if UNITY_EDITOR
-                    starshipPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
-                    #endif
-                }
+                Starship s = Starship.AllStarships[i];
+                if (s == null || !s.IsSpawned) continue;
+                if (s.GetComponent<AIShipMarker>() != null) continue;
+                if (s.CurrentShipData != null)
+                    return s.CurrentShipData;
             }
 
-            if (starshipPrefab == null)
+            return null;
+        }
+
+        private bool TryGetSpawnBlockReason(out string reason)
+        {
+            reason = null;
+            if (TeamManager.Instance == null)
             {
-                Debug.LogError("AIStarshipManager: Starship prefab not found!");
-                return;
+                reason = "TeamManager not ready";
+                return true;
             }
+
+            int homeCount = HomePlanet.AllHomePlanets != null ? HomePlanet.AllHomePlanets.Count : 0;
+            if (homeCount < minHomePlanetsForSpawn)
+            {
+                reason = "home planets not ready (have " + homeCount + ", need " + minHomePlanetsForSpawn + ")";
+                return true;
+            }
+
+            bool anyAssignedHome = false;
+            foreach (var hp in HomePlanet.AllHomePlanets)
+            {
+                if (hp != null && hp.AssignedTeam != TeamManager.Team.None)
+                {
+                    anyAssignedHome = true;
+                    break;
+                }
+            }
+            if (!anyAssignedHome)
+            {
+                reason = "no home planets assigned to teams yet";
+                return true;
+            }
+
+            if (ResolveStarshipPrefab() == null)
+            {
+                reason = "Starship prefab not found (assign on AIStarshipManager or NetworkManager PlayerPrefab)";
+                return true;
+            }
+
+            return false;
+        }
+
+        private GameObject ResolveStarshipPrefab()
+        {
+            if (starshipPrefab != null)
+                return starshipPrefab;
+
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.NetworkConfig != null && nm.NetworkConfig.PlayerPrefab != null)
+            {
+                starshipPrefab = nm.NetworkConfig.PlayerPrefab;
+                return starshipPrefab;
+            }
+
+            starshipPrefab = Resources.Load<GameObject>("Prefabs/Starship");
+            if (starshipPrefab != null)
+                return starshipPrefab;
+
+#if UNITY_EDITOR
+            starshipPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Starship.prefab");
+#endif
+            return starshipPrefab;
+        }
+
+        private bool SpawnAIShip(
+            TeamManager.Team team,
+            HomePlanet homePlanet,
+            AIStarshipController.AIBehaviorType behaviorType,
+            GameObject prefab,
+            ShipData dataToApply)
+        {
+            if (prefab == null)
+                return false;
 
             // Spawn OUTSIDE orbit zone (0.5–0.85 planet size) so AI doesn't start orbiting home
             float orbitRadius = homePlanet.PlanetSize * (1.2f + Random.Range(0f, 0.3f)); // 1.2–1.5 of planet size
@@ -160,13 +344,14 @@ namespace TitanOrbit.AI
             Quaternion spawnRotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
 
             // Instantiate starship (don't call AssignTeamAndStartInOrbit - it overwrites position)
-            GameObject shipObj = Instantiate(starshipPrefab, spawnPosition, spawnRotation);
-            if (shipObj == null) return;
+            GameObject shipObj = Instantiate(prefab, spawnPosition, spawnRotation);
+            if (shipObj == null) return false;
 
             // Add marker before Spawn so Starship.OnNetworkSpawn / StartInOrbitAroundHomePlanet skips repositioning
             shipObj.AddComponent<AIShipMarker>();
-            // Add debug sync for visualization (line + text) - only visible when DebugMode is enabled
-            shipObj.AddComponent<AIStarshipDebugSync>();
+            // Debug sync is server-only MonoBehaviour (never add NetworkBehaviours here — breaks NGO spawn sync).
+            if (GameManager.Instance != null && GameManager.Instance.DebugMode)
+                shipObj.AddComponent<AIStarshipDebugSync>();
 
             // Get NetworkObject and spawn
             NetworkObject netObj = shipObj.GetComponent<NetworkObject>();
@@ -174,7 +359,7 @@ namespace TitanOrbit.AI
             {
                 Debug.LogError("AIStarshipManager: Starship prefab missing NetworkObject component!");
                 Destroy(shipObj);
-                return;
+                return false;
             }
 
             // Spawn on network
@@ -185,7 +370,7 @@ namespace TitanOrbit.AI
             if (starship == null)
             {
                 Debug.LogError("AIStarshipManager: Starship prefab missing Starship component!");
-                return;
+                return false;
             }
 
             // Disable PlayerInputHandler for AI ships (they don't need player input)
@@ -195,25 +380,13 @@ namespace TitanOrbit.AI
                 inputHandler.enabled = false;
             }
 
-            // Use same ship model and weapon as player: apply ShipData (from field or first player ship)
-            ShipData dataToApply = aiShipData;
-            if (dataToApply == null)
-            {
-                foreach (Starship s in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
-                {
-                    if (s != null && s.IsSpawned && s.GetComponent<AIShipMarker>() == null && s.CurrentShipData != null)
-                    {
-                        dataToApply = s.CurrentShipData;
-                        break;
-                    }
-                }
-            }
+            // Use same ship model and weapon as player when a shared ShipData was resolved once for the batch.
             if (dataToApply != null)
                 starship.SetShipData(dataToApply);
-            starship.EnsureSyncedChassisForAiVisual();
 
             // Assign team only
             starship.AssignTeamOnly(team);
+            ApplyTeamStarterChassisForAi(starship, homePlanet);
 
             // Ensure Rigidbody is at our spawn position (Spawn/OnNetworkSpawn might not preserve it)
             Rigidbody shipRb = shipObj.GetComponent<Rigidbody>();
@@ -244,7 +417,7 @@ namespace TitanOrbit.AI
             }
             aiShipsByTeam[team].Add(starship);
 
-            Debug.Log($"Spawned AI {behaviorType} ship for team {team} at {spawnPosition}");
+            return true;
         }
 
         private HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
@@ -257,6 +430,26 @@ namespace TitanOrbit.AI
                 }
             }
             return null;
+        }
+
+        /// <summary>Apply the home planet's level-1 hull from the ship-family upgrade ladder (matches player store ships).</summary>
+        private static void ApplyTeamStarterChassisForAi(Starship starship, HomePlanet homePlanet)
+        {
+            if (starship == null || homePlanet == null || CardShopSystem.Instance == null) return;
+
+            string chassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                starship, homePlanet.PlanetId, 1, 0);
+            if (string.IsNullOrEmpty(chassisId))
+            {
+                starship.EnsureSyncedChassisForAiVisual();
+                return;
+            }
+
+            GameObject prefab = CardShopSystem.Instance.GetShipPrefabForChassisId(chassisId);
+            if (prefab != null)
+                starship.ApplyShipVisualFromPrefab(prefab);
+            starship.SetCurrentChassisId(chassisId);
+            starship.SetCurrentChassisIndex(0);
         }
 
         public List<Starship> GetAIShipsForTeam(TeamManager.Team team)

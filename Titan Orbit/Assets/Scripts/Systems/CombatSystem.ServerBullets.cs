@@ -398,6 +398,12 @@ namespace TitanOrbit.Systems
                 return;
             }
 
+            if (BulletHitResolver.TryToroidalShipSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 shipImpact, out BulletHitResolver.BulletHitPopupInfo shipPopup, b.VisualPrefabBankIndex))
+            {
+                DespawnWithImpact(slot, shipImpact, shipPopup);
+                return;
+            }
+
             // Toroidal sweeps before geometry despawn: world physics can miss tiled asteroids/moons
             // while still hitting a nearer planet shell on the same cast.
             if (BulletHitResolver.TryToroidalAsteroidSegmentHit(from, to, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 toroidalImpact, out BulletHitResolver.BulletHitPopupInfo asteroidPopup, b.VisualPrefabBankIndex))
@@ -466,6 +472,12 @@ namespace TitanOrbit.Systems
                 && BulletHitResolver.TryHitDroneSphere(droneBody, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, droneImpact, out BulletHitResolver.BulletHitPopupInfo dronePopup, b.VisualPrefabBankIndex))
             {
                 DespawnWithImpact(slot, droneImpact, dronePopup);
+                return true;
+            }
+
+            if (BulletHitResolver.TryToroidalShipOverlapHit(b.Position, BulletRadius, b.Damage, b.OwnerTeam, b.OwnerShipNetworkId, out Vector3 shipOverlapImpact, out BulletHitResolver.BulletHitPopupInfo shipOverlapPopup, b.VisualPrefabBankIndex))
+            {
+                DespawnWithImpact(slot, shipOverlapImpact, shipOverlapPopup);
                 return true;
             }
 

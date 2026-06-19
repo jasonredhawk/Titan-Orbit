@@ -357,6 +357,19 @@ namespace TitanOrbit.Entities
                 return true;
             }
 
+            if (BulletHitResolver.TryToroidalShipSegmentCosmeticOnly(
+                    from, to, OwnerPredictedBulletRadius, ownerTeam, ownerShipNetworkId, out Vector3 shipImpact))
+            {
+                shipImpact.y = 0f;
+                PlayOwnerPredictedImpact(
+                    shipImpact,
+                    new BulletHitResolver.BulletHitPopupInfo(
+                        true,
+                        FloatingCountChannel.DamageShipOrDrone,
+                        damageForImpactPitch));
+                return true;
+            }
+
             return false;
         }
 

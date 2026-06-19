@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Shapes;
 using TitanOrbit.Entities;
@@ -7,9 +8,8 @@ namespace TitanOrbit.AI
 {
     /// <summary>
     /// Debug visualization for AI ships: line from ship to target, text above ship showing type and state.
-    /// Only visible when GameManager.DebugMode is true. Add to a persistent GameObject (e.g. Systems).
+    /// Only visible when GameManager.DebugMode is true during play. Add to a persistent GameObject (e.g. Systems).
     /// </summary>
-    [ExecuteAlways]
     public class AIStarshipDebugVisualizer : ImmediateModeShapeDrawer
     {
         [Header("Debug Visual Settings")]
@@ -20,11 +20,14 @@ namespace TitanOrbit.AI
 
         public override void DrawShapes(UnityEngine.Camera cam)
         {
+            if (!Application.isPlaying) return;
             if (cam == null) return;
             if (GameManager.Instance == null || !GameManager.Instance.DebugMode) return;
 
-            foreach (var ship in Object.FindObjectsOfType<Starship>())
+            IReadOnlyList<Starship> ships = Starship.AllStarships;
+            for (int i = 0; i < ships.Count; i++)
             {
+                Starship ship = ships[i];
                 if (ship == null || ship.IsDead) continue;
                 var ai = ship.GetComponent<AIStarshipController>();
                 if (ai == null) continue;

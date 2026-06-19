@@ -1506,7 +1506,9 @@ namespace TitanOrbit.Entities
 
             // Arcing through the shell at meaningful speed is pass-through, not landing intent.
             // Inside the dock trigger without thrust = intentional landing; skip tangential rejection (orbit coast is mostly tangential).
-            bool coastingToLand = overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding;
+            // AI depositing gems approaches the moon directly — treat like coasting to land.
+            bool isAiDepositing = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null && ship.WantToDepositGems;
+            bool coastingToLand = (overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding) || isAiDepositing;
             if (!coastingToLand && speed > 0.25f)
             {
                 Vector3 awayFromMoon = ToroidalMap.ToroidalDirection(moonPos, shipPos);

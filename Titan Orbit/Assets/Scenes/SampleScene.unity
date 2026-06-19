@@ -8345,11 +8345,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
   ShowTopMostFoldoutHeaderGroup: 1
   aiShipsEnabled: 0
-  starshipPrefab: {fileID: 0}
+  starshipPrefab: {fileID: 2318939736728639728, guid: f8f437d64df2d404e943db3fca861a92, type: 3}
   aiShipData: {fileID: 0}
-  minAIShipsPerTeam: 5
-  maxAIShipsPerTeam: 5
+  minAIShipsPerTeam: 2
+  maxAIShipsPerTeam: 3
   minerPercentage: 0.6
+  shipsPerSpawnFrame: 2
+  maxTotalAiShips: 15
+  spawnRetryTimeoutSeconds: 120
+  minHomePlanetsForSpawn: 2
 --- !u!114 &1207700302
 MonoBehaviour:
   m_ObjectHideFlags: 0

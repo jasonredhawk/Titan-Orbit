@@ -336,6 +336,8 @@ namespace TitanOrbit.Entities
         private float asteroidRammingRestitutionReferenceExcess = 14f;
         [Tooltip("Hull mass ratio (vs empty level-1 reference) above 1.0 that pulls restitution halfway to min. Lower = heavy ships stop bouncing sooner.")]
         [SerializeField, Min(0.01f)] private float asteroidRammingRestitutionReferenceMassRatioExcess = 0.4f;
+        [Tooltip("Coefficient of restitution for ship-vs-ship collisions (friendly or enemy). Heavier ships move less via mass-weighted impulse.")]
+        [SerializeField, Range(0f, 1f)] private float shipShipRestitution = 0.42f;
         [Tooltip("Continuous push into an asteroid: asteroid DPS per Newton of thrust along the inward normal. Scaled with ship collision damage (same proportion).")]
         [SerializeField, Min(0f)] private float asteroidGrindPushToAsteroidDpsScale = 0.003f;
         [Tooltip("Ignore grind below this push (N) to avoid jitter when nearly parallel to the surface.")]
@@ -379,6 +381,13 @@ namespace TitanOrbit.Entities
         private Vector3 _lastFixedPlayPlaneVelocity;
         /// <summary>Cooldown for ship–ship scrape sounds from toroidal overlap (pair key → last Time.time).</summary>
         private readonly Dictionary<ulong, float> _toroidalShipPairLastSoundTime = new Dictionary<ulong, float>();
+        /// <summary>Cooldown for ship–ship impulse so resting overlap does not re-fire every FixedUpdate.</summary>
+        private readonly Dictionary<ulong, float> _toroidalShipPairLastImpulseTime = new Dictionary<ulong, float>();
+        private bool _hasPendingShipShipBounce;
+        private Vector3 _pendingShipShipBounceVelocity;
+        private Vector3 _collisionVelEstPrevPos;
+        private bool _collisionVelEstHasPrev;
+        private Vector3 _collisionPlanarVelocityEstimate;
         /// <summary>Per-asteroid instance: next Time.time allowed for grind VFX/sound/floating damage.</summary>
         private readonly Dictionary<int, float> _asteroidGrindFeedbackNextTimeByInstance = new Dictionary<int, float>();
         /// <summary>Asteroids the ship is currently colliding with (ram contact).</summary>
@@ -1609,6 +1618,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>Effective maximum movement speed cap (same units as <see cref="CurrentHorizontalSpeed"/>).</summary>
         public float MaxMoveSpeed => EffectiveMaxSpeed;
+        /// <summary>Effective yaw turn rate in degrees per second (chassis, cards, attributes).</summary>
+        public float MaxTurnSpeed => EffectiveRotationSpeed;
         /// <summary>Current rigidbody mass used by movement, momentum, and collisions.</summary>
         public float CurrentMass => rb != null ? rb.mass : EffectiveMass;
 
@@ -3620,6 +3631,7 @@ namespace TitanOrbit.Entities
                 TickBulletStatusEffectsServer(Time.fixedDeltaTime);
 
             ServerTickEstimatedPlanarVelocity(Time.fixedDeltaTime);
+            TickShipCollisionVelocityEstimate(Time.fixedDeltaTime);
 
             // Toroidal orbit band (physics triggers fail across map wraps; owner + server need geometry, not OnTriggerEnter).
             if (IsServer || IsLocalPlayerShip())
@@ -3636,6 +3648,18 @@ namespace TitanOrbit.Entities
                     currentVelocity = rb.linearVelocity;
                 }
                 _hasPendingAsteroidBounce = false;
+            }
+
+            if (_hasPendingShipShipBounce)
+            {
+                bool shipBounceAuth = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+                if (shipBounceAuth)
+                {
+                    Vector3 sv = _pendingShipShipBounceVelocity;
+                    rb.linearVelocity = new Vector3(sv.x, 0f, sv.z);
+                    currentVelocity = rb.linearVelocity;
+                }
+                _hasPendingShipShipBounce = false;
             }
 
             if (_hasPendingGemMoonShieldRepel)
@@ -3748,7 +3772,10 @@ namespace TitanOrbit.Entities
             if (gemMoonDocked.Value)
             {
                 // Keep approach progress while docked even if boundary flickers (large hull / toroidal edge).
-                if (withinGemMoonBoundary)
+                bool inMoonZone = withinGemMoonBoundary;
+                if (!inMoonZone && _isAIControlled && IsServer && moon != null)
+                    inMoonZone = moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier: 1.05f);
+                if (inMoonZone)
                     gemMoonDockApproachElapsed += Time.fixedDeltaTime;
             }
             else
@@ -3810,7 +3837,8 @@ namespace TitanOrbit.Entities
             // Keep NetworkObject root at base scale; dock shrink is applied with chassis scale on Prefab in LateUpdate.
             transform.localScale = baseLocalScale;
 
-            if (!isDead.Value && gemMoonDocked.Value && moon != null && IsOwner && withinGemMoonBoundary)
+            bool canSnapToGemMoonSurface = IsOwner || (IsServer && _isAIControlled);
+            if (!isDead.Value && gemMoonDocked.Value && moon != null && canSnapToGemMoonSurface && withinGemMoonBoundary)
             {
                 ulong currentPlanetId = gemMoonPlanetNetworkObjectId.Value;
 
@@ -5405,6 +5433,18 @@ namespace TitanOrbit.Entities
             ApplyDamageOnServer(damage, attackerTeam, attackerShipNetworkId, gemExpulsionIntensity, gemExpulsionPerHullDamage);
         }
 
+        /// <summary>Server-only bullet damage (avoids ServerRpc when invoked from authoritative bullet sim).</summary>
+        public void ApplyDamageFromBulletServer(
+            float damage,
+            TeamManager.Team attackerTeam,
+            ulong attackerShipNetworkId = 0,
+            float gemExpulsionIntensity = 0.5f,
+            float gemExpulsionPerHullDamage = 0f)
+        {
+            if (!IsServer) return;
+            ApplyDamageOnServer(damage, attackerTeam, attackerShipNetworkId, gemExpulsionIntensity, gemExpulsionPerHullDamage);
+        }
+
         /// <summary>Server: apply hull damage and gem expulsion. Bullets use legacy 50% rules after hull is 0.
         /// Ram/grind pass <paramref name="gemExpulsionPerHullDamage"/> for 1:1 gem value on excess/post-zero damage only.</summary>
         private void ApplyDamageOnServer(
@@ -5418,7 +5458,8 @@ namespace TitanOrbit.Entities
             // Block friendly fire only when both have valid teams and they match
             if (attackerTeam != TeamManager.Team.None && attackerTeam == shipTeam.Value) return;
             if (isDead.Value) return;
-            if (gemMoonDocked.Value) return;
+            // Only immune once fully landed on the moon surface (not while approaching the dock zone).
+            if (gemMoonDocked.Value && IsGemMoonSurfaceLandingComplete()) return;
 
             // Legacy bullet tuning: ~50% of damage as gems after hull is 0, with per-hit caps.
             const float LegacyGemExpulsionPerDamage = 0.5f;
@@ -5788,7 +5829,7 @@ namespace TitanOrbit.Entities
         {
             if (!IsServer || depositPlanet == null || amount <= 0.0001f) return;
             var team = shipTeam.Value;
-            ulong clientId = OwnerClientId;
+            ulong clientId = GetContributedGemsClientId();
             Vector3 depositPopupPos = depositPlanet.GetGemMoonWorldPosition();
             depositPopupPos.y = 0f;
 
@@ -6391,12 +6432,26 @@ namespace TitanOrbit.Entities
                 otherShip = collision.gameObject.GetComponentInParent<Starship>();
             if (otherShip != null && otherShip != this)
             {
+                ContactPoint cp = collision.GetContact(0);
+                Vector3 shipNormal = cp.normal;
+                shipNormal.y = 0f;
+                if (shipNormal.sqrMagnitude < 1e-6f)
+                {
+                    Rigidbody otherRb = otherShip.GetComponent<Rigidbody>();
+                    if (otherRb != null)
+                        shipNormal = ToroidalMap.ShortestWorldOffsetXZ(rb.position, otherRb.position);
+                }
+                if (shipNormal.sqrMagnitude > 1e-6f)
+                {
+                    shipNormal.Normalize();
+                    TryApplyShipShipCollisionResponse(otherShip, shipNormal);
+                }
+
                 if (AudioManager.Instance != null)
                     AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
                 float shipVfxMinSpeed = GetCollisionVfxShipMinRelativeSpeed();
                 if (relativeSpeed >= shipVfxMinSpeed)
                 {
-                    ContactPoint cp = collision.GetContact(0);
                     Vector3 impactPos = cp.point;
                     Vector3 outward = impactPos - transform.position;
                     outward.y = 0f;
@@ -6826,6 +6881,86 @@ namespace TitanOrbit.Entities
                 impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value);
         }
 
+        private float GetShipShipRestitution() => Mathf.Clamp01(shipShipRestitution);
+
+        /// <summary>Planar velocity for ship–ship impulse (owner/AI sim uses rb; remotes use toroidal pose delta).</summary>
+        public Vector3 GetPlanarVelocityForShipCollision()
+        {
+            if (rb == null) return Vector3.zero;
+            bool authoritativeSim = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+            if (authoritativeSim)
+            {
+                Vector3 v = rb.linearVelocity;
+                v.y = 0f;
+                return v;
+            }
+            if (IsServer && !_isAIControlled)
+                return _serverEstimatedPlanarVelocity;
+            return _collisionPlanarVelocityEstimate;
+        }
+
+        private void TickShipCollisionVelocityEstimate(float deltaTime)
+        {
+            if (rb == null) return;
+            Vector3 pos = rb.position;
+            pos.y = 0f;
+            if (_collisionVelEstHasPrev)
+            {
+                Vector3 delta = ToroidalMap.ShortestWorldOffsetXZ(_collisionVelEstPrevPos, pos);
+                _collisionPlanarVelocityEstimate = delta / Mathf.Max(0.0001f, deltaTime);
+            }
+            _collisionVelEstPrevPos = pos;
+            _collisionVelEstHasPrev = true;
+        }
+
+        /// <summary>
+        /// Mass-weighted elastic impulse along <paramref name="separationNormalFromOtherToMe"/> (XZ).
+        /// Each authoritative ship queues its own velocity delta (owner sim + server AI).
+        /// </summary>
+        private bool TryApplyShipShipCollisionResponse(
+            Starship other,
+            Vector3 separationNormalFromOtherToMe,
+            float minClosingSpeed = 0.35f)
+        {
+            if (other == null || rb == null) return false;
+            bool canApply = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
+            if (!canApply) return false;
+
+            Rigidbody otherRb = other.GetComponent<Rigidbody>();
+            if (otherRb == null) return false;
+
+            Vector3 n = separationNormalFromOtherToMe;
+            n.y = 0f;
+            if (n.sqrMagnitude < 1e-8f) return false;
+            n.Normalize();
+
+            Vector3 vMe = GetPlanarVelocityForShipCollision();
+            Vector3 vOther = other.GetPlanarVelocityForShipCollision();
+            float vRelN = Vector3.Dot(vMe - vOther, n);
+            // Negative = closing along separation normal (approaching each other).
+            if (vRelN >= -minClosingSpeed) return false;
+
+            ulong pairKey = ToroidalShipPairKey(GetInstanceID(), other.GetInstanceID());
+            float now = Time.time;
+            if (_toroidalShipPairLastImpulseTime.TryGetValue(pairKey, out float lastImpulse) && now - lastImpulse < 0.1f)
+                return false;
+            _toroidalShipPairLastImpulseTime[pairKey] = now;
+
+            float mMe = Mathf.Max(0.5f, rb.mass);
+            float mOther = Mathf.Max(0.5f, otherRb.mass);
+            float e = GetShipShipRestitution();
+            float invMassSum = 1f / mMe + 1f / mOther;
+            float j = -(1f + e) * vRelN / invMassSum;
+            Vector3 newVel = vMe + n * (j / mMe);
+            newVel.y = 0f;
+
+            _pendingShipShipBounceVelocity = newVel;
+            _hasPendingShipShipBounce = true;
+            rb.linearVelocity = newVel;
+            currentVelocity = newVel;
+            return true;
+        }
+
         /// <summary>
         /// Ships keep unwrapped world positions; Unity colliders only see raw separation, so hulls can overlap
         /// on the torus without <see cref="OnCollisionEnter"/>. Resolve overlap using shortest toroidal offset
@@ -6839,6 +6974,7 @@ namespace TitanOrbit.Entities
             Vector3 myPos = rb.position;
             myPos.y = 0f;
             float myR = GetShipCollisionRadiusXZ();
+            float mMe = Mathf.Max(0.5f, rb.mass);
 
             for (int i = 0; i < AllStarships.Count; i++)
             {
@@ -6866,16 +7002,19 @@ namespace TitanOrbit.Entities
                     toOther.y = 0f;
                 }
                 Vector3 n = toOther.normalized;
+                Vector3 separationNormal = -n;
 
                 float penetration = combined - Mathf.Max(dist, 0.0001f);
-                float half = penetration * 0.5f;
-                Vector3 newPos = rb.position + (-n) * half;
+                float mOther = Mathf.Max(0.5f, otherRb.mass);
+                float totalMass = mMe + mOther;
+                float mySepShare = totalMass > 0.001f ? mOther / totalMass : 0.5f;
+                Vector3 newPos = rb.position + separationNormal * (penetration * mySepShare);
                 rb.MovePosition(newPos);
 
-                Vector3 vMe = rb.linearVelocity;
-                vMe.y = 0f;
-                Vector3 vO = otherRb.linearVelocity;
-                vO.y = 0f;
+                TryApplyShipShipCollisionResponse(other, separationNormal);
+
+                Vector3 vMe = GetPlanarVelocityForShipCollision();
+                Vector3 vO = other.GetPlanarVelocityForShipCollision();
                 float relSpeed = (vMe - vO).magnitude;
                 bool playSound = relSpeed >= 2f && AudioManager.Instance != null;
                 bool playVfx = relSpeed >= GetCollisionVfxShipMinRelativeSpeed() && VisualEffectsManager.Instance != null;
@@ -7326,6 +7465,21 @@ namespace TitanOrbit.Entities
             if (!IsServer) return;
             wantToUnloadPeople.Value = value;
             if (value) wantToLoadPeople.Value = false;
+        }
+
+        /// <summary>
+        /// Client id used for contributed-gem store credit. AI ships use their <see cref="NetworkObject.NetworkObjectId"/>
+        /// so each bot has its own pool (server-owned ships would otherwise all share client 0).
+        /// </summary>
+        public ulong GetContributedGemsClientId()
+        {
+            if (_isAIControlled)
+            {
+                var netObj = GetComponent<NetworkObject>();
+                if (netObj != null && netObj.IsSpawned)
+                    return netObj.NetworkObjectId;
+            }
+            return OwnerClientId;
         }
 
         /// <summary>Server-only: set wantToDepositGems (for AI ships; bypasses RPC ownership).</summary>

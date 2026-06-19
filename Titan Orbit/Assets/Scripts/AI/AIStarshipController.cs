@@ -74,6 +74,7 @@ namespace TitanOrbit.AI
         private Starship targetEnemyShip;  // Enemy ship we're attacking
         private AIState previousState;  // Store previous state to return to after combat
         private float lastUpdateTime;
+        private Vector3 steerDirection = Vector3.zero;
         private Vector3 moveDirection = Vector3.zero;
         
         // Combat movement randomization
@@ -113,7 +114,8 @@ namespace TitanOrbit.AI
         internal Vector3 GetDriveAccelerationXZ()
         {
             if (moveDirection.magnitude <= 0.1f) return Vector3.zero;
-            Vector3 a = moveDirection * aiAcceleration;
+            float accel = starship != null ? starship.MaxHorizontalAcceleration : aiAcceleration;
+            Vector3 a = moveDirection * accel;
             a.y = 0f;
             return a;
         }
@@ -219,6 +221,7 @@ namespace TitanOrbit.AI
             previousState = AIState.Idle;
             currentState = AIState.Idle;
             moveDirection = Vector3.zero;
+            steerDirection = Vector3.zero;
             if (starship != null)
             {
                 AiSetWantLoadPeople(false);
@@ -235,6 +238,7 @@ namespace TitanOrbit.AI
             targetGem = null;
             currentState = AIState.Idle;
             moveDirection = Vector3.zero;
+            steerDirection = Vector3.zero;
             if (starship != null)
             {
                 AiSetWantLoadPeople(false);
@@ -268,6 +272,37 @@ namespace TitanOrbit.AI
             starship.SetWantToUnloadPeopleFromServer(value);
         }
 
+        /// <summary>AI only deposits when the gem hold is effectively full.</summary>
+        private bool IsGemHoldFullForDeposit()
+        {
+            if (starship == null || starship.GemCapacity <= 0.001f) return false;
+            return starship.CurrentGems >= starship.GemCapacity - 0.05f;
+        }
+
+        /// <summary>Undock, clear deposit intent, and head back to the nearest mineable asteroid.</summary>
+        private void FinishDepositAndResumeMining()
+        {
+            AiSetWantDepositGems(false);
+            if (starship != null && starship.GemMoonDocked && IsServerAuthority)
+                starship.ServerSetGemMoonDocked(false, null);
+            ExitOrbitIfInOrbit();
+            targetAsteroid = null;
+            targetGem = null;
+
+            Asteroid nearestAsteroid = FindNearestMineableAsteroid();
+            if (nearestAsteroid != null)
+            {
+                targetAsteroid = nearestAsteroid;
+                Vector3 dirToShip = ToroidalMap.ToroidalDirection(nearestAsteroid.transform.position, rb.position);
+                targetPosition = nearestAsteroid.transform.position + dirToShip * (nearestAsteroid.AsteroidSize * 0.5f + miningRange * 0.9f);
+                currentState = AIState.MovingToTarget;
+            }
+            else
+            {
+                currentState = AIState.Idle;
+            }
+        }
+
         private void UpdateAI()
         {
             if (homePlanet == null)
@@ -282,7 +317,7 @@ namespace TitanOrbit.AI
                 return;
             }
 
-            // --- PRIMARY BEHAVIOR FIRST ---
+            // Priority: (1) ship hull upgrades via mine→deposit→purchase, (2) primary role when maxed, (3) combat when enemies in range
             if (levelUpAndBuyUpgrades && CanLevelUpPotential())
             {
                 UpdateLevelingBehavior();
@@ -293,7 +328,7 @@ namespace TitanOrbit.AI
             }
             else if (IsFullyMaxedOut())
             {
-                if (currentState == AIState.ReturningToHome && targetAsteroid == null && targetGem == null)
+                if (currentState == AIState.ReturningToHome && !starship.WantToDepositGems)
                 {
                     currentState = AIState.Idle;
                     targetAsteroid = null;
@@ -368,12 +403,18 @@ namespace TitanOrbit.AI
 
         private void UpdateMiningBehavior()
         {
+            if (starship.WantToDepositGems && starship.CurrentGems < 0.1f)
+            {
+                FinishDepositAndResumeMining();
+                return;
+            }
+
             switch (currentState)
             {
                 case AIState.Idle:
                 case AIState.MovingToTarget:
                     // If gems = max gems, find nearest planet to deposit (home or captured)
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         // Check if home planet is fully maxed (level 6 is max for home planets)
                         bool homePlanetMaxed = homePlanet.PlanetLevel >= 6;
@@ -408,9 +449,9 @@ namespace TitanOrbit.AI
                         
                         if (currentDepositPlanet != null)
                         {
-                            // Already at a friendly planet - deposit gems
+                            SetTargetAtGemMoon(currentDepositPlanet, ref targetPosition);
                             AiSetWantDepositGems(true);
-                            currentState = AIState.Idle; // Will check again next update
+                            currentState = AIState.ReturningToHome;
                         }
                         else
                         {
@@ -488,7 +529,7 @@ namespace TitanOrbit.AI
                     }
                     // Shooting happens in FixedUpdate via HandleShootingAsteroid
                     // If ship is full, return to nearest friendly planet to deposit
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         currentState = AIState.ReturningToHome;
                         targetAsteroid = null;
@@ -498,7 +539,7 @@ namespace TitanOrbit.AI
 
                 case AIState.CollectingGems:
                     // Ship full? Return to nearest friendly planet to deposit
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         currentState = AIState.ReturningToHome;
                         targetGem = null;
@@ -520,6 +561,13 @@ namespace TitanOrbit.AI
                     break;
 
                 case AIState.ReturningToHome:
+                    if (!IsGemHoldFullForDeposit())
+                    {
+                        AiSetWantDepositGems(false);
+                        currentState = AIState.Idle;
+                        break;
+                    }
+
                     // Target orbit zone at deposit planet (home or captured) - determine which one we're going to
                     bool homePlanetMaxedMining = homePlanet.PlanetLevel >= 6; // Max level for home planets is 6
                     Planet depositTarget = homePlanet;
@@ -550,19 +598,10 @@ namespace TitanOrbit.AI
                     }
                     
                     SetTargetAtGemMoon(depositTarget, ref targetPosition);
-                    float distToDepositTarget = ToroidalMap.ToroidalDistance(rb.position, depositTarget.transform.position);
-                    float depositOrbitRadius = depositTarget.PlanetSize * depositTarget.GetOrbitRingCenterRadiusLocal();
-                    
-                    if (distToDepositTarget <= depositOrbitRadius)
-                    {
-                        AiSetWantDepositGems(true);
-                        // After depositing, transition to Idle so ship can continue mining
-                        // The Idle state will check if gems are full and either return home again or go mine
-                        currentState = AIState.Idle;
-                        // Clear any stale targets
-                        targetAsteroid = null;
-                        targetGem = null;
-                    }
+                    AiSetWantDepositGems(true);
+
+                    if (starship.GemMoonDocked && starship.CurrentGems < 0.1f)
+                        FinishDepositAndResumeMining();
                     break;
             }
         }
@@ -702,25 +741,116 @@ namespace TitanOrbit.AI
 
         [Header("Movement Parameters")]
         [SerializeField] private float aiAcceleration = 20f;
-        [SerializeField] private float aiMaxSpeed = 10f;
         [SerializeField] private float aiDeceleration = 8f;
         [SerializeField] private float aiRotationSpeed = 180f;
+        [Tooltip("Dot product threshold before AI applies forward thrust (must be roughly facing target).")]
+        [SerializeField] private float forwardThrustAlignDot = 0.82f;
+        [Tooltip("Max speed when approaching a gem moon to land.")]
+        [SerializeField] private float gemMoonApproachMaxSpeed = 1.6f;
+
+        private float GetAiMaxSpeed()
+        {
+            if (starship == null) return aiAcceleration * 0.5f;
+            float cap = starship.MaxMoveSpeed;
+            if (starship.WantToDepositGems || currentState == AIState.ReturningToHome)
+            {
+                cap = Mathf.Min(cap, gemMoonApproachMaxSpeed);
+                Vector3 pos = rb != null ? rb.position : transform.position;
+                pos.y = 0f;
+                float distToMoon = ToroidalMap.ToroidalDistance(pos, targetPosition);
+                if (distToMoon < 10f)
+                    cap = Mathf.Min(cap, Mathf.Lerp(0.75f, gemMoonApproachMaxSpeed, distToMoon / 10f));
+            }
+            return cap;
+        }
+
+        private float GetAiAcceleration() => starship != null ? starship.MaxHorizontalAcceleration : aiAcceleration;
+        private float GetAiTurnSpeed() => starship != null ? starship.MaxTurnSpeed : aiRotationSpeed;
+        private float GetAiBrakeDecel() => starship != null ? starship.MaxBrakingDeceleration : aiDeceleration;
+
+        /// <summary>Rotate toward steerDirection, thrust only along ship forward (like player RMB thrust).</summary>
+        private void ApplyForwardOnlyMovement(Vector3 desiredSteerDir)
+        {
+            if (rb == null) return;
+
+            desiredSteerDir.y = 0f;
+            bool wantsSteer = desiredSteerDir.sqrMagnitude > 0.01f;
+            if (wantsSteer)
+                desiredSteerDir.Normalize();
+
+            if (wantsSteer)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(desiredSteerDir);
+                float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : GetAiTurnSpeed();
+                rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
+            }
+
+            Vector3 forward = transform.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude > 0.01f) forward.Normalize();
+
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+            float maxSpeed = GetAiMaxSpeed();
+            float accel = GetAiAcceleration();
+            float brake = GetAiBrakeDecel();
+
+            float alignDot = wantsSteer ? Vector3.Dot(forward, desiredSteerDir) : 0f;
+            bool canThrust = wantsSteer && alignDot >= forwardThrustAlignDot;
+
+            if (canThrust)
+            {
+                moveDirection = forward;
+                float speed = vel.magnitude;
+                if (speed < maxSpeed)
+                {
+                    vel += forward * accel * Time.fixedDeltaTime;
+                }
+                else if (speed > 0.001f)
+                {
+                    Vector3 velNorm = vel.normalized;
+                    Vector3 thrustVec = forward * accel;
+                    float alongVel = Vector3.Dot(thrustVec, velNorm);
+                    Vector3 steerForce = thrustVec - velNorm * Mathf.Max(0f, alongVel);
+                    vel += steerForce * Time.fixedDeltaTime;
+                }
+            }
+            else
+            {
+                moveDirection = Vector3.zero;
+                if (!wantsSteer)
+                    vel = Vector3.MoveTowards(vel, Vector3.zero, brake * Time.fixedDeltaTime);
+                else if (vel.sqrMagnitude > 0.001f)
+                    vel = Vector3.MoveTowards(vel, Vector3.zero, brake * 0.35f * Time.fixedDeltaTime);
+            }
+
+            if (vel.magnitude > maxSpeed && maxSpeed > 0.001f)
+                vel = vel.normalized * maxSpeed;
+
+            vel.y = 0f;
+            rb.linearVelocity = vel;
+        }
 
         private void HandleAIMovement()
         {
             if (rb == null || starship == null) return;
 
-            if (starship.WantToDepositGems && starship.CurrentOrbitPlanet != null)
-                targetPosition = starship.CurrentOrbitPlanet.GetGemMoonWorldPosition();
+            if (starship.WantToDepositGems)
+            {
+                Planet depositPlanet = starship.CurrentOrbitPlanet != null ? starship.CurrentOrbitPlanet : homePlanet;
+                if (depositPlanet != null)
+                    targetPosition = depositPlanet.GetGemMoonWorldPosition();
+            }
             
             // Dead ships cannot move - stop all movement
             if (starship.IsDead)
             {
                 Vector3 vel = rb.linearVelocity;
                 vel.y = 0f;
-                vel = Vector3.MoveTowards(vel, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                vel = Vector3.MoveTowards(vel, Vector3.zero, GetAiBrakeDecel() * Time.fixedDeltaTime);
                 rb.linearVelocity = vel;
                 moveDirection = Vector3.zero;
+                steerDirection = Vector3.zero;
                 return;
             }
 
@@ -730,9 +860,10 @@ namespace TitanOrbit.AI
             if (starship.IsBulletElectricShockDisabled)
             {
                 moveDirection = Vector3.zero;
+                steerDirection = Vector3.zero;
                 Vector3 shockVel = rb.linearVelocity;
                 shockVel.y = 0f;
-                shockVel = Vector3.MoveTowards(shockVel, Vector3.zero, aiDeceleration * 2.5f * Time.fixedDeltaTime);
+                shockVel = Vector3.MoveTowards(shockVel, Vector3.zero, GetAiBrakeDecel() * 2.5f * Time.fixedDeltaTime);
                 rb.linearVelocity = shockVel;
                 return;
             }
@@ -740,9 +871,10 @@ namespace TitanOrbit.AI
             if (!HasAnyAiCapabilityEnabled())
             {
                 moveDirection = Vector3.zero;
+                steerDirection = Vector3.zero;
                 Vector3 vStop = rb.linearVelocity;
                 vStop.y = 0f;
-                vStop = Vector3.MoveTowards(vStop, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                vStop = Vector3.MoveTowards(vStop, Vector3.zero, GetAiBrakeDecel() * Time.fixedDeltaTime);
                 rb.linearVelocity = vStop;
                 return;
             }
@@ -762,11 +894,12 @@ namespace TitanOrbit.AI
                 }
             }
 
-            // Skip normal movement logic when attacking - HandleAttackingEnemy sets moveDirection
+            Vector3 desiredSteer = Vector3.zero;
+
+            // Skip normal movement logic when attacking - HandleAttackingEnemy sets steerDirection
             if (currentState == AIState.AttackingEnemy)
             {
-                // Movement direction is set by HandleAttackingEnemy, just apply it
-                // (Don't check arrival or set direction here)
+                desiredSteer = steerDirection;
             }
             else
             {
@@ -799,10 +932,11 @@ namespace TitanOrbit.AI
                         {
                             AiSetWantLoadPeople(true);
                             currentState = AIState.LoadingPeople;
+                            steerDirection = Vector3.zero;
                             moveDirection = Vector3.zero;
                             Vector3 vel = rb.linearVelocity;
                             vel.y = 0f;
-                            vel = Vector3.MoveTowards(vel, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                            vel = Vector3.MoveTowards(vel, Vector3.zero, GetAiBrakeDecel() * Time.fixedDeltaTime);
                             rb.linearVelocity = vel;
                             return;
                         }
@@ -815,10 +949,11 @@ namespace TitanOrbit.AI
                         {
                             AiSetWantUnloadPeople(true);
                             currentState = AIState.UnloadingPeople;
+                            steerDirection = Vector3.zero;
                             moveDirection = Vector3.zero;
                             Vector3 vel = rb.linearVelocity;
                             vel.y = 0f;
-                            vel = Vector3.MoveTowards(vel, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                            vel = Vector3.MoveTowards(vel, Vector3.zero, GetAiBrakeDecel() * Time.fixedDeltaTime);
                             rb.linearVelocity = vel;
                             return;
                         }
@@ -833,62 +968,21 @@ namespace TitanOrbit.AI
                         (behaviorType == AIBehaviorType.Mining || isLevelingUp))
                         currentState = AIState.ShootingAsteroid;
 
+                    steerDirection = Vector3.zero;
                     moveDirection = Vector3.zero;
                     Vector3 vel = rb.linearVelocity;
                     vel.y = 0f;
-                    vel = Vector3.MoveTowards(vel, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
+                    vel = Vector3.MoveTowards(vel, Vector3.zero, GetAiBrakeDecel() * Time.fixedDeltaTime);
                     rb.linearVelocity = vel;
                     return;
                 }
 
-                // Use toroidal direction (already normalized)
                 if (distanceToTarget > 0.01f)
-                {
-                    moveDirection = toTarget;
-                }
-                else
-                {
-                    moveDirection = Vector3.zero;
-                }
+                    desiredSteer = toTarget;
             }
 
-            // Apply movement
-            Vector3 currentVelocity = rb.linearVelocity;
-            currentVelocity.y = 0f;
-
-            if (moveDirection.magnitude > 0.1f)
-            {
-                currentVelocity += moveDirection * aiAcceleration * Time.fixedDeltaTime;
-                
-                if (currentVelocity.magnitude > aiMaxSpeed)
-                    currentVelocity = currentVelocity.normalized * aiMaxSpeed;
-            }
-            else
-            {
-                currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, aiDeceleration * Time.fixedDeltaTime);
-            }
-
-            // Rotate towards movement direction
-            if (moveDirection.magnitude > 0.1f)
-            {
-                Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-                float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
-                rb.MoveRotation(Quaternion.RotateTowards(
-                    rb.rotation,
-                    targetRotation,
-                    turnSpeed * Time.fixedDeltaTime
-                ));
-            }
-
-            // Apply velocity
-            currentVelocity.y = 0f;
-            rb.linearVelocity = currentVelocity;
-
-            // Update position (no wrapping - ship stays in world space; ToroidalRenderer repositions display)
-            Vector3 newPosition = rb.position + currentVelocity * Time.fixedDeltaTime;
-            newPosition.y = 0f;
-            rb.MovePosition(newPosition);
-            transform.position = newPosition;
+            steerDirection = desiredSteer;
+            ApplyForwardOnlyMovement(desiredSteer);
         }
 
         private bool ShouldOrbit()
@@ -970,7 +1064,7 @@ namespace TitanOrbit.AI
 
             // Rotate toward asteroid
             Quaternion targetRotation = Quaternion.LookRotation(dirToAsteroid);
-            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : GetAiTurnSpeed();
             rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot (FireAtTarget respects fire rate and energy)
@@ -994,6 +1088,7 @@ namespace TitanOrbit.AI
             // Don't chase - if enemy left range, stop moving and shooting (UpdateAI will exit combat)
             if (distanceToEnemy > attackRange)
             {
+                steerDirection = Vector3.zero;
                 moveDirection = Vector3.zero;
                 return;
             }
@@ -1026,7 +1121,7 @@ namespace TitanOrbit.AI
             }
             
             Quaternion targetRotation = Quaternion.LookRotation(aimDirection);
-            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : aiRotationSpeed;
+            float turnSpeed = starship != null && starship.IsBulletElectricShockDisabled ? 0f : GetAiTurnSpeed();
             rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, turnSpeed * Time.fixedDeltaTime));
 
             // Shoot at enemy (FireAtTarget respects fire rate and energy)
@@ -1110,7 +1205,7 @@ namespace TitanOrbit.AI
                 0f,
                 Random.Range(-jitterAmount, jitterAmount)
             );
-            moveDirection = (movementDir + jitter).normalized;
+            steerDirection = (movementDir + jitter).normalized;
         }
 
         /// <summary>Refresh cached object lists periodically to avoid expensive FindObjectsOfType calls.</summary>
@@ -1266,11 +1361,11 @@ namespace TitanOrbit.AI
             // Filter cached planets for HomePlanets
             foreach (var planet in cachedPlanets)
             {
-                if (planet is HomePlanet homePlanet)
+                if (planet is HomePlanet candidate)
                 {
-                    if (homePlanet.AssignedTeam == assignedTeam)
+                    if (candidate.AssignedTeam == assignedTeam)
                     {
-                        homePlanet = homePlanet;
+                        homePlanet = candidate;
                         return;
                     }
                 }
@@ -1295,40 +1390,35 @@ namespace TitanOrbit.AI
             return starship.ShipLevel >= 7;
         }
 
-        /// <summary>Check if ship can level up RIGHT NOW (has full gems and meets requirements).</summary>
+        /// <summary>Check if ship can level up RIGHT NOW (has contributed gems and meets requirements).</summary>
         private bool CanLevelUp()
         {
             if (starship == null || homePlanet == null) return false;
-            if (Systems.UpgradeSystem.Instance == null) return false;
-            
-            return Systems.UpgradeSystem.Instance.CanUpgradeStarshipLevel(starship);
+            if (Systems.CardShopSystem.Instance == null) return false;
+            return Systems.CardShopSystem.Instance.CanAiAffordShipLevelUpgrade(starship, homePlanet, out _);
         }
 
-        /// <summary>Check if ship CAN level up (has potential - planet level allows it, just needs gems).</summary>
+        /// <summary>Check if ship CAN level up (has potential - planet level allows it, just needs gems deposited).</summary>
         private bool CanLevelUpPotential()
         {
             if (starship == null || homePlanet == null) return false;
-            if (Systems.UpgradeSystem.Instance == null) return false;
-            if (starship.ShipLevel >= 7) return false; // Already max level
+            if (Systems.CardShopSystem.Instance == null) return false;
+            if (starship.ShipLevel >= 7) return false;
             
             int nextLevel = starship.ShipLevel + 1;
             int planetLevel = homePlanet.HomePlanetLevel;
             
-            // Check if planet level allows this ship level
             if (nextLevel == 7)
             {
-                // Level 7 requires planet level 6 + full gems on planet
                 if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
             }
             else if (nextLevel > planetLevel)
             {
-                return false; // Planet level too low
+                return false;
             }
             
-            // Check if upgrade tree has available upgrades
-            var upgradeTree = Systems.UpgradeSystem.Instance.UpgradeTree;
-            if (upgradeTree == null) return false;
-            return upgradeTree.GetAvailableUpgrades(starship.ShipLevel, starship.BranchIndex).Count > 0;
+            return Systems.CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(
+                starship, homePlanet, out _, out _, out _);
         }
 
         /// <summary>Legacy attribute upgrades are disabled; always returns false.</summary>
@@ -1346,113 +1436,75 @@ namespace TitanOrbit.AI
         /// <summary>Legacy attribute upgrades are disabled; no-op.</summary>
         private void UpgradeNextAttribute()
         {
-            // Intentionally left blank while moving AI to card-based upgrades.
         }
 
-        /// <summary>Attempt to level up the ship if possible.</summary>
+        /// <summary>Attempt to purchase the next hull tier using contributed gems at home.</summary>
         private void TryLevelUp()
         {
             if (starship == null || homePlanet == null) return;
-            if (Systems.UpgradeSystem.Instance == null) return;
+            if (Systems.CardShopSystem.Instance == null) return;
             if (!IsServerAuthority) return;
-            
             if (!CanLevelUp()) return;
-            
-            // Get available upgrades for current level
-            var upgradeTree = Systems.UpgradeSystem.Instance.UpgradeTree;
-            if (upgradeTree == null) return;
-            
-            var availableUpgrades = upgradeTree.GetAvailableUpgrades(starship.ShipLevel, starship.BranchIndex);
-            if (availableUpgrades.Count == 0) return;
-            
-            // Choose first available upgrade (or could randomize)
-            int nextLevel = starship.ShipLevel + 1;
-            int shipIndex = 0; // Choose first available ship variant
-            
-            var shipNetObj = starship.GetComponent<NetworkObject>();
-            if (shipNetObj != null)
-            {
-                Systems.UpgradeSystem.Instance.UpgradeShipServerRpc(
-                    shipNetObj.NetworkObjectId,
-                    nextLevel,
-                    starship.FocusType, // Keep same focus type
-                    shipIndex
-                );
-            }
+
+            Systems.CardShopSystem.Instance.TryPurchaseShipLevelUpgradeForAi(starship, homePlanet);
         }
 
-        /// <summary>Update behavior when ship is leveling up - mine asteroids and use gems to upgrade (don't deposit).</summary>
+        /// <summary>Update behavior when ship is leveling up - mine asteroids, deposit at home gem moon, buy hull upgrades.</summary>
         private void UpdateLevelingBehavior()
         {
             if (starship == null || homePlanet == null) return;
+
+            if (starship.WantToDepositGems && starship.CurrentGems < 0.1f)
+            {
+                FinishDepositAndResumeMining();
+                return;
+            }
+
+            if (CanLevelUp())
+                TryLevelUp();
             
             // Don't update state if already shooting asteroid - let it finish
             if (currentState == AIState.ShootingAsteroid && targetAsteroid != null && !targetAsteroid.IsDestroyed)
             {
-                // Check if ship is full - if so, return to home after asteroid is destroyed
-                if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                if (IsGemHoldFullForDeposit())
                 {
-                    // Will transition to ReturningToHome when asteroid is destroyed (handled below)
+                    // Will transition to ReturningToHome when asteroid is destroyed
                 }
                 return;
             }
             
-            // Check if we're at home planet
             float distanceToHome = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
             float homeOrbitRadius = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
             bool atHome = distanceToHome <= homeOrbitRadius;
             
             if (atHome)
             {
-                // Priority 1: Try to level up ship (requires full gems)
                 if (CanLevelUp())
                 {
                     TryLevelUp();
-                    // After leveling up, gems will be consumed
-                    // Check if we can level up again or upgrade attributes - if so, continue leveling behavior
-                    // Otherwise, will fall through to check if we need more gems
                     currentState = AIState.Idle;
                     targetAsteroid = null;
                     targetGem = null;
-                    // Don't return - check if we can upgrade more or need more gems
                 }
-                
-                // Priority 2: Try to upgrade attributes if we have enough gems
-                if (CanUpgradeAnyAttribute())
-                {
-                    UpgradeNextAttribute();
-                    // Stay at home to continue upgrading next update (might have more gems)
-                    currentState = AIState.Idle;
+
+                if (!CanLevelUpPotential())
                     return;
-                }
-                
-                // Check if we need more gems
-                bool needsFullGems = CanLevelUpPotential(); // Level up requires full gems
-                bool needsSomeGems = CanUpgradeAnyAttributePotential(); // Attribute upgrade needs less
-                bool needsMoreGems = false;
-                
-                if (needsFullGems && starship.CurrentGems < starship.GemCapacity * 0.95f)
+
+                bool needsMoreGems = !CanLevelUp() && !IsGemHoldFullForDeposit();
+
+                if (!needsMoreGems)
                 {
-                    needsMoreGems = true; // Need full gems for level up
-                }
-                else if (needsSomeGems && !needsFullGems)
-                {
-                    // Legacy attribute upgrades removed; we no longer distinguish between
-                    // "some gems" and "full gems" for leveling behavior.
-                }
-                
-                if (needsMoreGems)
-                {
-                    // Need more gems - leave home and go mine (fall through to mining logic)
-                    currentState = AIState.Idle;
-                    targetAsteroid = null;
-                    targetGem = null;
-                    // Continue to mining logic below
-                }
-                else
-                {
-                    // Full gems but can't upgrade (might need planet level up first) - wait at home
-                    currentState = AIState.Idle;
+                    if (IsGemHoldFullForDeposit())
+                    {
+                        SetTargetAtGemMoon(homePlanet, ref targetPosition);
+                        AiSetWantDepositGems(true);
+                        currentState = AIState.ReturningToHome;
+                        ExitOrbitIfInOrbit();
+                    }
+                    else
+                    {
+                        currentState = AIState.Idle;
+                    }
                     return;
                 }
             }
@@ -1470,11 +1522,12 @@ namespace TitanOrbit.AI
                     }
                     
                     // If gems = max gems, go to home planet to upgrade
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         SetTargetAtGemMoon(homePlanet, ref targetPosition);
+                        AiSetWantDepositGems(true);
                         currentState = AIState.ReturningToHome;
-                        targetAsteroid = null; // Clear asteroid target when returning home
+                        targetAsteroid = null;
                         ExitOrbitIfInOrbit();
                         break;
                     }
@@ -1524,7 +1577,7 @@ namespace TitanOrbit.AI
                     }
                     // Shooting happens in FixedUpdate via HandleShootingAsteroid
                     // If ship is full, return to home to upgrade
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         currentState = AIState.ReturningToHome;
                         targetAsteroid = null;
@@ -1533,7 +1586,7 @@ namespace TitanOrbit.AI
 
                 case AIState.CollectingGems:
                     // Ship full? Return to home to upgrade
-                    if (starship.CurrentGems >= starship.GemCapacity * 0.95f)
+                    if (IsGemHoldFullForDeposit())
                     {
                         currentState = AIState.ReturningToHome;
                         targetGem = null;
@@ -1553,19 +1606,18 @@ namespace TitanOrbit.AI
                     break;
 
                 case AIState.ReturningToHome:
-                    SetTargetAtGemMoon(homePlanet, ref targetPosition);
-                    float distToHomeReturn = ToroidalMap.ToroidalDistance(rb.position, homePlanet.transform.position);
-                    float homeOrbitRadiusReturn = homePlanet.PlanetSize * homePlanet.GetOrbitRingCenterRadiusLocal();
-                    
-                    if (distToHomeReturn <= homeOrbitRadiusReturn)
+                    if (!IsGemHoldFullForDeposit())
                     {
-                        // Arrived at home - check for upgrades (will be handled in atHome check next update)
-                        // Reset state to Idle so the atHome check can process upgrades
+                        AiSetWantDepositGems(false);
                         currentState = AIState.Idle;
-                        targetAsteroid = null;
-                        targetGem = null;
-                        // Next update will check atHome and handle upgrades
+                        break;
                     }
+
+                    SetTargetAtGemMoon(homePlanet, ref targetPosition);
+                    AiSetWantDepositGems(true);
+
+                    if (starship.GemMoonDocked && starship.CurrentGems < 0.1f)
+                        FinishDepositAndResumeMining();
                     break;
             }
         }
