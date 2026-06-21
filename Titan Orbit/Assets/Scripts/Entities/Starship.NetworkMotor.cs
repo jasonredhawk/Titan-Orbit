@@ -575,7 +575,14 @@ namespace TitanOrbit.Entities
                 LastAppliedInputSequence = appliedSeq,
                 MotorPublishTick = _serverMotorPublishTick,
                 SimMass = rb.mass,
-                ServerTime = NetworkManager.Singleton != null ? NetworkManager.Singleton.ServerTime.Time : 0.0,
+                // Stamp with the PHYSICS clock, not NGO's ServerTime. rb.position is sampled here in FixedUpdate,
+                // so the timestamp must come from the same clock that defines when that position existed. NGO's
+                // ServerTime advances on a separate (frame/tick) cadence, so sampling it in FixedUpdate labels
+                // 50 Hz-sampled positions with mismatched times: the position deltas and time deltas between
+                // streamed snapshots disagree, and the client interpolator renders that as the "move / slowdown /
+                // move" speed ripple. Time.fixedTimeAsDouble advances exactly fixedDeltaTime per physics step, so
+                // every position carries a time label consistent with its true motion and playback is constant-rate.
+                ServerTime = Time.fixedTimeAsDouble,
                 Thrust = _motorInput.Thrust && !IsBulletElectricShockDisabled,
             };
             lastProcessedInputSequence.Value = appliedSeq;

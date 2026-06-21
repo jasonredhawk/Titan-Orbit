@@ -14,8 +14,9 @@ namespace TitanOrbit.Networking
     /// accelerate and decelerate (the "move / slowdown / move" stutter). Instead we:
     ///   1. advance the playhead at real (unscaled) wall-clock rate, and
     ///   2. gently slew it toward <c>(latest received snapshot server-time) - delay</c>.
-    /// Snapshots are interpolated on their server timestamps, which the server stamps at an even tick
-    /// cadence, so playback speed is constant regardless of network arrival jitter.
+    /// Snapshots are interpolated on their server timestamps, which the server stamps from its physics clock
+    /// (Time.fixedTimeAsDouble) at the instant the pose is sampled, so each position carries a time label
+    /// consistent with its true motion and playback speed is constant regardless of network arrival jitter.
     /// </summary>
     [DefaultExecutionOrder(30000)]
     public sealed class ClientRenderTimeline : MonoBehaviour
