@@ -55,6 +55,8 @@ namespace TitanOrbit.Networking
         public uint MotorPublishTick;
         public float SimMass;
         public double ServerTime;
+        /// <summary>Owner's forward-thrust intent at this pose. Lets observers light engine/thruster VFX in lockstep with the interpolated motion.</summary>
+        public bool Thrust;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -65,6 +67,7 @@ namespace TitanOrbit.Networking
             serializer.SerializeValue(ref MotorPublishTick);
             serializer.SerializeValue(ref SimMass);
             serializer.SerializeValue(ref ServerTime);
+            serializer.SerializeValue(ref Thrust);
         }
     }
 }

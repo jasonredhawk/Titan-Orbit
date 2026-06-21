@@ -22,11 +22,18 @@ namespace TitanOrbit.Networking
     {
         public static ClientRenderTimeline Instance { get; private set; }
 
-        // Render remote ships ~100 ms in the past (≈3 snapshots at the 30 Hz unreliable motion stream rate).
-        // Large enough to absorb send jitter and ride out single dropped packets while staying in the
-        // interpolation regime instead of the extrapolation tail. The server stays authoritative for hits,
-        // so this "render others slightly in the past" trade-off does not affect aiming.
-        [SerializeField, Range(0.05f, 0.25f)] private float interpolationDelaySeconds = 0.10f;
+        // How far in the past remote ships are rendered. Rather than a fixed value, the delay ADAPTS to the
+        // measured connection jitter: just enough buffer to stay smooth, and no more. On a clean link it sits
+        // near the floor (tight, responsive aiming); on a jittery link it grows automatically so smoothness
+        // never breaks. The server stays authoritative for hits, so this only affects where you must aim.
+        // Floor must hold ~2-3 packets of the 30 Hz motor stream (~33 ms spacing). 0.05 s (~1.5 packets) left no
+        // slack for arrival jitter, so the playhead kept overrunning the newest sample into extrapolation — the
+        // micro-stutter that came back. 0.08 s (~2.4 packets) tolerates a late/lost packet and stays smooth while
+        // still being tighter than the old fixed 0.10 s.
+        [SerializeField, Range(0.03f, 0.12f)] private float minInterpolationDelaySeconds = 0.08f;
+        [SerializeField, Range(0.08f, 0.30f)] private float maxInterpolationDelaySeconds = 0.18f;
+        // Effective delay = min + jitterSafetyMultiplier * measuredJitter (clamped to max). Higher = safer but laggier.
+        [SerializeField, Range(1f, 4f)] private float jitterSafetyMultiplier = 2.5f;
         // Proportional gain used only to correct slow client/server clock drift, never to chase the
         // per-packet stepping of `target`.
         [SerializeField, Range(0.5f, 8f)] private float clockSlewRate = 3f;
@@ -44,8 +51,19 @@ namespace TitanOrbit.Networking
         private bool initialized;
         private readonly HashSet<ClientRenderTimelineSource> sources = new HashSet<ClientRenderTimelineSource>(64);
 
+        // Adaptive-delay state. We estimate network jitter from the spread of (localReceiveTime - serverSendTime)
+        // across arriving snapshots. The absolute offset is meaningless (different clock origins) but its
+        // VARIANCE is exactly the transit jitter, which is what the buffer must cover.
+        private double transitOffsetMean;
+        private double transitOffsetJitter;
+        private bool transitInitialized;
+        private double effectiveInterpolationDelay = 0.10; // safe starting value until jitter is measured
+        // EMA blend factors per snapshot (~30 Hz): mean tracks slow clock drift, jitter reacts a bit faster.
+        private const double TransitMeanBlend = 0.05;
+        private const double TransitJitterBlend = 0.10;
+
         public double RenderServerTime => playheadServerTime;
-        public float InterpolationDelaySeconds => interpolationDelaySeconds;
+        public float InterpolationDelaySeconds => (float)effectiveInterpolationDelay;
 
         private void Awake()
         {
@@ -91,6 +109,30 @@ namespace TitanOrbit.Networking
                 latestSnapshotServerTime = serverTime;
                 hasLatestSnapshot = true;
             }
+
+            // Update the transit-jitter estimate used to size the interpolation buffer. Only fresh (newer)
+            // snapshots are measured so reordered/duplicate packets do not inflate the jitter.
+            double transit = Time.unscaledTimeAsDouble - serverTime;
+            if (!transitInitialized)
+            {
+                transitOffsetMean = transit;
+                transitOffsetJitter = 0.0;
+                transitInitialized = true;
+            }
+            else
+            {
+                double deviation = Math.Abs(transit - transitOffsetMean);
+                transitOffsetMean += (transit - transitOffsetMean) * TransitMeanBlend;
+                transitOffsetJitter += (deviation - transitOffsetJitter) * TransitJitterBlend;
+            }
+        }
+
+        private double ComputeTargetInterpolationDelay()
+        {
+            double target = minInterpolationDelaySeconds + jitterSafetyMultiplier * transitOffsetJitter;
+            if (target < minInterpolationDelaySeconds) target = minInterpolationDelaySeconds;
+            if (target > maxInterpolationDelaySeconds) target = maxInterpolationDelaySeconds;
+            return target;
         }
 
         private void LateUpdate()
@@ -98,7 +140,14 @@ namespace TitanOrbit.Networking
             if (!hasLatestSnapshot)
                 return;
 
-            double target = latestSnapshotServerTime - interpolationDelaySeconds;
+            double dtForDelay = Time.unscaledDeltaTime;
+            // Ease the effective delay toward the jitter-derived target slowly so the buffer never jumps
+            // (a sudden change would move `target` and force the clock to resync). ~0.5/s convergence.
+            double delayTarget = ComputeTargetInterpolationDelay();
+            effectiveInterpolationDelay += (delayTarget - effectiveInterpolationDelay)
+                * (1.0 - Math.Exp(-0.5 * dtForDelay));
+
+            double target = latestSnapshotServerTime - effectiveInterpolationDelay;
 
             if (!initialized)
             {
@@ -132,7 +181,7 @@ namespace TitanOrbit.Networking
                 }
             }
 
-            double trimBefore = playheadServerTime - interpolationDelaySeconds * 3.0;
+            double trimBefore = playheadServerTime - maxInterpolationDelaySeconds * 3.0;
             foreach (ClientRenderTimelineSource source in sources)
                 source.TrimSamplesOlderThan(trimBefore);
         }
@@ -148,6 +197,7 @@ namespace TitanOrbit.Networking
             public Quaternion Rotation;
             public Vector3 Velocity;
             public uint LastProcessedInputSeq;
+            public bool Thrust;
         }
 
         private readonly List<TimelineSample> samples = new List<TimelineSample>(32);
@@ -164,7 +214,7 @@ namespace TitanOrbit.Networking
                 ClientRenderTimeline.Instance.UnregisterSource(this);
         }
 
-        public void PushSnapshot(double serverTime, Vector3 position, Quaternion rotation, Vector3 velocity, uint lastProcessedInputSeq)
+        public void PushSnapshot(double serverTime, Vector3 position, Quaternion rotation, Vector3 velocity, uint lastProcessedInputSeq, bool thrust)
         {
             position.y = 0f;
             velocity.y = 0f;
@@ -193,6 +243,7 @@ namespace TitanOrbit.Networking
                 Rotation = rotation,
                 Velocity = velocity,
                 LastProcessedInputSeq = lastProcessedInputSeq,
+                Thrust = thrust,
             });
 
             while (samples.Count > MaxSamples)
@@ -213,17 +264,19 @@ namespace TitanOrbit.Networking
         // bounded so a dropped sender does not drift forever and a recovered packet never snaps backward.
         private const double MaxExtrapolationSeconds = 0.10;
 
-        public bool TrySampleAt(double renderServerTime, out Vector3 position, out Quaternion rotation, out Vector3 velocity)
+        public bool TrySampleAt(double renderServerTime, out Vector3 position, out Quaternion rotation, out Vector3 velocity, out bool thrust)
         {
             position = Vector3.zero;
             rotation = Quaternion.identity;
             velocity = Vector3.zero;
+            thrust = false;
             if (samples.Count == 0) return false;
             if (samples.Count == 1)
             {
                 position = samples[0].Position;
                 rotation = samples[0].Rotation;
                 velocity = samples[0].Velocity;
+                thrust = samples[0].Thrust;
                 return true;
             }
 
@@ -240,6 +293,9 @@ namespace TitanOrbit.Networking
                 position = a.Position + segmentOffset * t;
                 rotation = Quaternion.Slerp(a.Rotation, b.Rotation, t);
                 velocity = Vector3.Lerp(a.Velocity, b.Velocity, t);
+                // Thrust is a discrete intent: hold the flame lit across the whole segment if either end is
+                // thrusting so it doesn't flicker at packet boundaries.
+                thrust = a.Thrust || b.Thrust;
                 return true;
             }
 
@@ -251,6 +307,7 @@ namespace TitanOrbit.Networking
             position = tail.Position + tail.Velocity * (float)ahead;
             rotation = tail.Rotation;
             velocity = tail.Velocity;
+            thrust = tail.Thrust;
             return true;
         }
 

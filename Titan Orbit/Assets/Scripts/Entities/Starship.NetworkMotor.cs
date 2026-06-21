@@ -576,6 +576,7 @@ namespace TitanOrbit.Entities
                 MotorPublishTick = _serverMotorPublishTick,
                 SimMass = rb.mass,
                 ServerTime = NetworkManager.Singleton != null ? NetworkManager.Singleton.ServerTime.Time : 0.0,
+                Thrust = _motorInput.Thrust && !IsBulletElectricShockDisabled,
             };
             lastProcessedInputSequence.Value = appliedSeq;
 

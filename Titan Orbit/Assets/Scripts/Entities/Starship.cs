@@ -3298,6 +3298,11 @@ namespace TitanOrbit.Entities
 
         private static readonly float ENGINE_VFX_SPEED_THRESHOLD = 0.5f;
         private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_RAD = 0.15f;
+        // Same turn-rate gate as above, expressed in deg/s for the remote-proxy path (which samples banking
+        // turn-rate in deg/s rather than reading rb.angularVelocity).
+        private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_DEG = THRUSTER_VFX_ANGULAR_THRESHOLD_RAD * Mathf.Rad2Deg;
+        private TitanOrbit.Networking.ShipVisualInterpolator _vfxVisualInterpolator;
+        private bool _vfxVisualInterpolatorResolved;
         private static readonly float ENGINE_VFX_EMISSION_RATE = 18f;
         private static readonly float THRUSTER_VFX_EMISSION_RATE = 15f;
         private static readonly string[] VfxColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "Yellow" };
@@ -3308,15 +3313,35 @@ namespace TitanOrbit.Entities
         private void UpdateEngineAndThrusterVFX()
         {
             if (rb == null) return;
-            if (!IsOwner) return;
+            // Drive VFX for the local owner ship AND for remote human proxies. Remote proxies have no local
+            // motor sim (rb velocity stays ~0), so their motion + thrust intent are read from the interpolated
+            // network stream instead, keeping engine glow and thruster flames in lockstep with the rendered pose.
+            bool remoteProxy = UsesInterpolatedRemoteVisual;
+            if (!IsOwner && !remoteProxy) return;
             if (engineVfxInstances.Count == 0 && thrusterVfxInstances.Count == 0) return;
-            Vector3 vel = rb.linearVelocity;
-            vel.y = 0f;
-            float speed = vel.magnitude;
-            float angularRad = rb.angularVelocity.magnitude;
+
+            float speed;
+            bool turning;
+            bool accelerating;
+            if (remoteProxy)
+            {
+                var interp = ResolveVfxVisualInterpolator();
+                speed = interp != null ? interp.DisplaySpeed : 0f;
+                // Thrust intent rides the same delayed stream as the pose, so the flame lights up exactly when the
+                // visibly-interpolated ship begins to accelerate (no early/late mismatch).
+                accelerating = interp != null && interp.DisplayThrusting;
+                turning = Mathf.Abs(_cachedBankAngularVelDegPerSec) >= THRUSTER_VFX_ANGULAR_THRESHOLD_DEG;
+            }
+            else
+            {
+                Vector3 vel = rb.linearVelocity;
+                vel.y = 0f;
+                speed = vel.magnitude;
+                float angularRad = rb.angularVelocity.magnitude;
+                turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD;
+                accelerating = (speed >= ENGINE_VFX_SPEED_THRESHOLD) && IsActivelyAccelerating();
+            }
             bool moving = speed >= ENGINE_VFX_SPEED_THRESHOLD;
-            bool turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD;
-            bool accelerating = moving && IsActivelyAccelerating();
             bool showThrusters = useThrusterVfxForAcceleration ? accelerating : turning;
             float targetThrusterBlend = showThrusters ? 1f : 0f;
             float transitionSpeed = Mathf.Max(0.01f, thrusterVfxTransitionSpeed);
@@ -3384,6 +3409,16 @@ namespace TitanOrbit.Entities
                 return false;
 
             return inputHandler.MoveForwardPressed;
+        }
+
+        private TitanOrbit.Networking.ShipVisualInterpolator ResolveVfxVisualInterpolator()
+        {
+            if (!_vfxVisualInterpolatorResolved)
+            {
+                _vfxVisualInterpolator = GetComponent<TitanOrbit.Networking.ShipVisualInterpolator>();
+                _vfxVisualInterpolatorResolved = true;
+            }
+            return _vfxVisualInterpolator;
         }
 
         private GameObject ResolveThrusterVfxPrefabForTransform(Transform thrusterTransform)
