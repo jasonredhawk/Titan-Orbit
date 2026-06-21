@@ -20,7 +20,8 @@ namespace TitanOrbit.Entities
     public sealed class ClientBulletTracer : MonoBehaviour
     {
         private const float OwnerPredictedBulletRadius = 0.3f;
-        private const float OwnerPredictedMinTravelBeforeGenericHit = 0.5f;
+        private const float OwnerPredictedMinTravelBeforeGenericHit = 1.25f;
+        private const float OwnerPredictedMinTravelBeforeSelfCheck = 0.12f;
 
         private static Transform s_pool;
         private static UnityEngine.Camera s_cachedMainCamera;
@@ -29,7 +30,9 @@ namespace TitanOrbit.Entities
         private static readonly Dictionary<uint, ClientBulletTracer> s_bySequence = new Dictionary<uint, ClientBulletTracer>(256);
         private static readonly List<ClientBulletTracer> s_ownerPredicted = new List<ClientBulletTracer>(32);
         private static readonly HashSet<uint> s_ownerImpactVfxAlreadyShown = new HashSet<uint>(64);
+        private static readonly Dictionary<int, float> s_ownerRecentPredictedFireByCannon = new Dictionary<int, float>(8);
         private static readonly RaycastHit[] s_ownerPredictedHits = new RaycastHit[32];
+        private const float OwnerRecentPredictedFireWindow = 0.2f;
 
         private Vector3 logicalSpawn;
         private Vector3 velocity;
@@ -55,9 +58,9 @@ namespace TitanOrbit.Entities
         /// Called when the server spawn batch arrives so owner-predicted tracers can link to their
         /// authoritative sequence (used to avoid duplicate impact VFX).
         /// </summary>
-        public static void AssociateOwnerPredictedWithServerSequence(uint sequence)
+        public static bool TryAssociateOwnerPredictedWithServerSequence(uint sequence)
         {
-            if (sequence == 0) return;
+            if (sequence == 0) return false;
             for (int i = 0; i < s_ownerPredicted.Count; i++)
             {
                 ClientBulletTracer tracer = s_ownerPredicted[i];
@@ -68,8 +71,37 @@ namespace TitanOrbit.Entities
                 s_bySequence[sequence] = tracer;
                 if (tracer.pendingImpactVfxShown || tracer.impactVfxShown)
                     s_ownerImpactVfxAlreadyShown.Add(sequence);
-                return;
+                return true;
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Owner ship: link batch bullet to an existing predicted tracer, or spawn a local-pose tracer
+        /// (never a server-stale <see cref="Spawn"/> at the batch origin).
+        /// </summary>
+        public static void HandleOwnerServerBulletSpawn(BulletSpawnPayload payload)
+        {
+            if (TryAssociateOwnerPredictedWithServerSequence(payload.Sequence))
+                return;
+
+            SpawnOwnerPredictedFromServerBatch(payload);
+        }
+
+        public static GameObject SpawnOwnerPredictedFromServerBatch(BulletSpawnPayload payload)
+        {
+            Starship localShip = GetLocalOwnedStarship();
+            if (localShip != null)
+                payload = localShip.AdjustBulletSpawnPayloadForLocalPose(payload);
+            return SpawnOwnerPredicted(payload);
+        }
+
+        private static Starship GetLocalOwnedStarship()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsClient || nm.LocalClient?.PlayerObject == null)
+                return null;
+            return nm.LocalClient.PlayerObject.GetComponent<Starship>();
         }
 
         /// <summary>
@@ -80,12 +112,9 @@ namespace TitanOrbit.Entities
             if (sequence != 0 && s_ownerImpactVfxAlreadyShown.Remove(sequence))
                 return true;
 
-            for (int i = 0; i < s_ownerPredicted.Count; i++)
-            {
-                ClientBulletTracer tracer = s_ownerPredicted[i];
-                if (tracer != null && tracer.pendingImpactVfxShown)
-                    return true;
-            }
+            if (sequence != 0 && s_bySequence.TryGetValue(sequence, out ClientBulletTracer tracer)
+                && tracer != null && tracer.impactVfxShown)
+                return true;
 
             return false;
         }
@@ -126,6 +155,8 @@ namespace TitanOrbit.Entities
             var tracer = go.AddComponent<ClientBulletTracer>();
             tracer.logicalSpawn = spawn;
             tracer.velocity = vel;
+            // Local time so the tracer appears at the muzzle immediately; server-time advance
+            // races ahead of the spawn batch and can skip the visible flight path.
             tracer.serverSpawnTime = 0f;
             tracer.localSpawnTimeFallback = Time.time;
             tracer.maxDistance = Mathf.Max(0.5f, payload.MaxDistance);
@@ -152,6 +183,20 @@ namespace TitanOrbit.Entities
                 payload.NoTrailFlag != 0);
 
             return go;
+        }
+
+        public static void MarkOwnerPredictedFireForCannon(int cannonIndex)
+        {
+            if (cannonIndex < 0) return;
+            s_ownerRecentPredictedFireByCannon[cannonIndex] = Time.time;
+        }
+
+        public static bool WasOwnerPredictedRecentlyForCannon(int cannonIndex, float windowSeconds = OwnerRecentPredictedFireWindow)
+        {
+            if (cannonIndex < 0) return false;
+            if (!s_ownerRecentPredictedFireByCannon.TryGetValue(cannonIndex, out float t))
+                return false;
+            return Time.time - t <= windowSeconds;
         }
 
         public static GameObject Spawn(BulletSpawnPayload payload)
@@ -222,6 +267,8 @@ namespace TitanOrbit.Entities
         {
             if (sequence != 0)
                 s_bySequence.Remove(sequence);
+            if (assignedServerSequence != 0)
+                s_ownerImpactVfxAlreadyShown.Remove(assignedServerSequence);
             if (ownerPredictedVisual)
                 s_ownerPredicted.Remove(this);
         }
@@ -334,6 +381,8 @@ namespace TitanOrbit.Entities
                     from, to, OwnerPredictedBulletRadius, out Vector3 toroidalImpact))
             {
                 toroidalImpact.y = 0f;
+                if (ToroidalMap.ToroidalDistance(toroidalImpact, logicalSpawn) < OwnerPredictedMinTravelBeforeGenericHit)
+                    return false;
                 PlayOwnerPredictedImpact(
                     toroidalImpact,
                     new BulletHitResolver.BulletHitPopupInfo(
@@ -348,6 +397,8 @@ namespace TitanOrbit.Entities
                     from, to, OwnerPredictedBulletRadius, ownerTeam, out Vector3 moonImpact))
             {
                 moonImpact.y = 0f;
+                if (ToroidalMap.ToroidalDistance(moonImpact, logicalSpawn) < OwnerPredictedMinTravelBeforeGenericHit)
+                    return false;
                 PlayOwnerPredictedImpact(
                     moonImpact,
                     new BulletHitResolver.BulletHitPopupInfo(
@@ -361,6 +412,8 @@ namespace TitanOrbit.Entities
                     from, to, OwnerPredictedBulletRadius, ownerTeam, ownerShipNetworkId, out Vector3 shipImpact))
             {
                 shipImpact.y = 0f;
+                if (ToroidalMap.ToroidalDistance(shipImpact, logicalSpawn) < OwnerPredictedMinTravelBeforeGenericHit)
+                    return false;
                 PlayOwnerPredictedImpact(
                     shipImpact,
                     new BulletHitResolver.BulletHitPopupInfo(
@@ -403,9 +456,14 @@ namespace TitanOrbit.Entities
             {
                 RaycastHit hit = s_ownerPredictedHits[i];
                 if (hit.collider == null) continue;
-                if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(hit.collider, ownerShipNetworkId))
+                if (IsOwnerShipCollider(hit.collider))
                     continue;
                 if (pureClient && hit.collider.GetComponentInParent<Asteroid>() != null)
+                    continue;
+
+                Vector3 along = from + rayDir * hit.distance;
+                float travelled = ToroidalMap.ToroidalDistance(along, logicalSpawn);
+                if (travelled < OwnerPredictedMinTravelBeforeSelfCheck)
                     continue;
 
                 if (BulletHitResolver.IsCosmeticBulletImpactTarget(hit.collider, ownerTeam, visualPrefabBankIndex))
@@ -444,17 +502,20 @@ namespace TitanOrbit.Entities
                     impactPos = hit.point;
                     return true;
                 }
-
-                Vector3 along = from + rayDir * hit.distance;
-                float travelled = ToroidalMap.ToroidalDistance(along, logicalSpawn);
-                if (travelled >= OwnerPredictedMinTravelBeforeGenericHit)
-                {
-                    impactPos = hit.point;
-                    return true;
-                }
             }
 
             return false;
+        }
+
+        private bool IsOwnerShipCollider(Collider col)
+        {
+            if (col == null || ownerShipNetworkId == 0) return false;
+            if (BulletHitResolver.IsColliderOnFiringShipNetworkObject(col, ownerShipNetworkId))
+                return true;
+            Starship ship = col.GetComponentInParent<Starship>();
+            if (ship == null) return false;
+            NetworkObject shipNo = ship.NetworkObject;
+            return shipNo != null && shipNo.NetworkObjectId == ownerShipNetworkId;
         }
 
         private static void SortOwnerPredictedHitsByDistance(int n)
@@ -534,6 +595,8 @@ namespace TitanOrbit.Entities
         /// </summary>
         private float GetElapsedSinceServerSpawn()
         {
+            if (ownerPredictedVisual && serverSpawnTime > 0f)
+                return Mathf.Max(0f, GetServerTimeNow() - serverSpawnTime);
             if (ownerPredictedVisual)
                 return Mathf.Max(0f, Time.time - localSpawnTimeFallback);
 
@@ -541,6 +604,14 @@ namespace TitanOrbit.Entities
             if (nm != null && nm.IsListening)
                 return Mathf.Max(0f, (float)nm.ServerTime.Time - serverSpawnTime);
             return Time.time - localSpawnTimeFallback;
+        }
+
+        private static float GetServerTimeNow()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening)
+                return (float)nm.ServerTime.Time;
+            return Time.time;
         }
 
         private static UnityEngine.Camera ResolveCamera()

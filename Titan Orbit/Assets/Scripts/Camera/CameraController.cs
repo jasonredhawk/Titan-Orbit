@@ -117,6 +117,12 @@ namespace TitanOrbit.Camera
         [Tooltip("FOV zoom smoothing while orbiting (higher = slower).")]
         [Min(0.05f)]
         [SerializeField] private float theatricalFovSmoothTime = 4f;
+        [Tooltip("Ship follow smoothing during theatrical orbit (reduces FixedUpdate stepping).")]
+        [Min(0.05f)]
+        [SerializeField] private float theatricalFollowSmoothTime = 0.55f;
+        [Tooltip("Orbit focus point smoothing during theatrical orbit.")]
+        [Min(0.05f)]
+        [SerializeField] private float theatricalFocusSmoothTime = 0.65f;
         [Tooltip("Random points on each closed spline loop (plus the live camera anchor).")]
         [Range(4, 14)]
         [SerializeField] private int theatricalWaypointCount = 8;
@@ -183,6 +189,10 @@ namespace TitanOrbit.Camera
         private Quaternion theatricalBlendStartRotation = Quaternion.identity;
         private Quaternion theatricalSmoothedRotation = Quaternion.identity;
         private bool hasTheatricalSmoothedRotation;
+        private Vector3 theatricalSmoothedFocusWorld;
+        private Vector3 theatricalFocusVelocity;
+        private bool hasTheatricalSmoothedFocusWorld;
+        private float theatricalIdleSpeedSmooth;
         private bool wasTargetShipDead;
         private CameraClearFlags gameplayClearFlags = CameraClearFlags.SolidColor;
 
@@ -348,8 +358,9 @@ namespace TitanOrbit.Camera
             Vector3 followXZ = new Vector3(followWorld.x, 0f, followWorld.z);
             bool useGemMoonOrbitSmoothing = gemMoonOrbitFollowSmoothTime > 0.0001f
                 && UpdateGemMoonOrbitSmoothingActive();
+            bool useTheatricalFollowSmoothing = theatricalModeActive && theatricalFollowSmoothTime > 0.0001f;
 
-            if (!useGemMoonOrbitSmoothing)
+            if (!useGemMoonOrbitSmoothing && !useTheatricalFollowSmoothing)
             {
                 smoothedFollowXZ = followXZ;
                 hasSmoothedFollowXZ = true;
@@ -362,11 +373,14 @@ namespace TitanOrbit.Camera
             }
             else
             {
+                float smoothTime = useGemMoonOrbitSmoothing
+                    ? gemMoonOrbitFollowSmoothTime
+                    : theatricalFollowSmoothTime;
                 smoothedFollowXZ = Vector3.SmoothDamp(
                     smoothedFollowXZ,
                     followXZ,
                     ref followVelocity,
-                    gemMoonOrbitFollowSmoothTime,
+                    smoothTime,
                     Mathf.Infinity,
                     Time.deltaTime);
             }
@@ -464,10 +478,23 @@ namespace TitanOrbit.Camera
                 || targetShip.IsShootPressedForGemMoonLanding)
                 return true;
 
-            if (targetShip.GetPlanarSpeedWorld() > theatricalIdleMaxPlanarSpeed)
+            if (IsPlayerPlanarSpeedAboveTheatricalIdleThreshold())
                 return true;
 
             return targetShip.IsRotatingTowardMousePointer();
+        }
+
+        private bool IsPlayerPlanarSpeedAboveTheatricalIdleThreshold()
+        {
+            if (targetShip == null)
+                return false;
+
+            float rawSpeed = targetShip.GetPlanarSpeedWorld();
+            theatricalIdleSpeedSmooth = Mathf.Lerp(
+                theatricalIdleSpeedSmooth,
+                rawSpeed,
+                Time.deltaTime * 4f);
+            return theatricalIdleSpeedSmooth > theatricalIdleMaxPlanarSpeed;
         }
 
         private void UpdateTheatricalModeState(bool playerActivelyPlaying)
@@ -525,6 +552,9 @@ namespace TitanOrbit.Camera
             hasTheatricalSmoothedLookTarget = false;
             hasTheatricalSmoothedFov = false;
             hasTheatricalSmoothedRotation = false;
+            hasTheatricalSmoothedFocusWorld = false;
+            theatricalFocusVelocity = Vector3.zero;
+            theatricalIdleSpeedSmooth = 0f;
             theatricalBlendStartRotation = Quaternion.Euler(90f, 0f, 0f);
             theatricalFrozenShipRotation = target.rotation;
 
@@ -566,6 +596,9 @@ namespace TitanOrbit.Camera
             hasTheatricalSmoothedLookTarget = false;
             hasTheatricalSmoothedFov = false;
             hasTheatricalSmoothedRotation = false;
+            hasTheatricalSmoothedFocusWorld = false;
+            theatricalFocusVelocity = Vector3.zero;
+            theatricalIdleSpeedSmooth = 0f;
         }
 
         private void ApplyTheatricalCamera(
@@ -581,8 +614,24 @@ namespace TitanOrbit.Camera
             finalFov = gameplayFieldOfView;
 
             TryGetShipVisualFocus(target, out Vector3 boundsFocus, out float radius);
-            float focusYOffset = boundsFocus.y - target.position.y;
-            Vector3 focus = new Vector3(followWorld.x, followWorld.y + focusYOffset, followWorld.z);
+            float focusYOffset = boundsFocus.y - followWorld.y;
+            Vector3 rawFocus = new Vector3(followWorld.x, followWorld.y + focusYOffset, followWorld.z);
+
+            if (!hasTheatricalSmoothedFocusWorld)
+            {
+                theatricalSmoothedFocusWorld = rawFocus;
+                hasTheatricalSmoothedFocusWorld = true;
+            }
+
+            theatricalSmoothedFocusWorld = Vector3.SmoothDamp(
+                theatricalSmoothedFocusWorld,
+                rawFocus,
+                ref theatricalFocusVelocity,
+                theatricalFocusSmoothTime,
+                Mathf.Infinity,
+                Time.deltaTime);
+
+            Vector3 focus = theatricalSmoothedFocusWorld;
             theatricalOrbit.SetCharacteristicRadius(radius);
 
             if (!theatricalOrbitInitialized)

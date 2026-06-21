@@ -29,7 +29,6 @@ namespace TitanOrbit.UI
         [SerializeField] private Sprite[] instructionStepScreenshots;
         [SerializeField] private Button playButton;
         [SerializeField] private Button hostOnlineButton; // wired as dedicated quick join (Relay client only)
-        [SerializeField] private Button joinOnlineButton;
         [SerializeField] private Button teamAButton;
         [SerializeField] private Button teamBButton;
         [SerializeField] private Button teamCButton;
@@ -40,9 +39,7 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI teamCLabel;
         [SerializeField] private TextMeshProUGUI teamDLabel;
         [SerializeField] private TextMeshProUGUI teamELabel;
-        [SerializeField] private TMP_InputField joinCodeInputField;
         [SerializeField] private TextMeshProUGUI joinCodeDisplayText;
-        [SerializeField] private TMP_InputField serverAddressInput;
         [SerializeField] private TextMeshProUGUI playerCountText;
         [SerializeField] private TextMeshProUGUI teamStatusText;
         [SerializeField] private TextMeshProUGUI roomNameText;
@@ -78,8 +75,6 @@ namespace TitanOrbit.UI
         private Button storeRestorePurchasesButton;
         private Vector2 _lastMainMenuPanelSize = Vector2.negativeInfinity;
         private string pendingTeamJoinError;
-        /// <summary>Runtime-created control; hosts a Relay+Lobby match in the browser (not on GCE).</summary>
-        private Button _webGlBrowserHostButton;
         /// <summary>When <see cref="ShowLobby"/> runs without a loading screen, team panel is shown only after Netcode is in a client/host session.</summary>
         private bool deferTeamPanelUntilNetworkReady;
         private float _dbgLastLobbyRefreshRealtime = -1f;
@@ -116,11 +111,6 @@ namespace TitanOrbit.UI
 
             if (hostOnlineButton != null)
                 hostOnlineButton.onClick.AddListener(OnQuickJoinDedicatedClicked);
-
-            if (joinOnlineButton != null)
-            {
-                joinOnlineButton.onClick.AddListener(OnJoinOnlineClicked);
-            }
 
             WireLobbyBrowserListeners();
 
@@ -790,81 +780,12 @@ namespace TitanOrbit.UI
                     Debug.LogError(
                         "Quick join failed: no matching lobby or Relay join failed. " +
                         "Confirm the Linux headless service is running and Player.log shows a lobby created; " +
-                        "use \"Host match (browser)\" for a temporary player-hosted room, or pick a row under Open matches.");
+                        "use \"Create dedicated match\" to request one, or pick a row under Open matches.");
                 }
             }
             finally
             {
                 if (hostOnlineButton != null) hostOnlineButton.interactable = true;
-            }
-        }
-
-        private async void OnWebGlBrowserHostRelayClicked()
-        {
-            if (NetworkGameManager.Instance == null)
-                return;
-            if (_webGlBrowserHostButton != null)
-                _webGlBrowserHostButton.interactable = false;
-            try
-            {
-                string pname = playerNameInputField != null ? (playerNameInputField.text ?? "").Trim() : "";
-                if (!string.IsNullOrEmpty(pname))
-                {
-                    PlayerPrefs.SetString("TitanOrbit_PlayerName", pname);
-                    PlayerPrefs.Save();
-                }
-
-                NetworkGameManager.LocalPlayerDisplayName = string.IsNullOrEmpty(pname)
-                    ? TitanOrbit.Data.GameNames.GetRandomPlayerName()
-                    : pname;
-
-                bool ok = await NetworkGameManager.Instance.PlayWebGLHostRelayMatchAsync();
-                if (ok)
-                {
-                    if (joinCodeDisplayText != null)
-                    {
-                        joinCodeDisplayText.gameObject.SetActive(true);
-                        joinCodeDisplayText.text =
-                            "Hosting from this browser (Relay). Other players can Quick join or pick this room under Open matches.\n" +
-                            "This does not run on your Google Cloud VM.";
-                    }
-
-                    ShowLobby();
-                }
-                else
-                {
-                    Debug.LogError(
-                        "Browser host failed. Check Unity Services (same project as the build) and the Unity console for Relay/Lobby errors.");
-                }
-            }
-            finally
-            {
-                if (_webGlBrowserHostButton != null)
-                    _webGlBrowserHostButton.interactable = true;
-            }
-        }
-
-        private async void OnJoinOnlineClicked()
-        {
-            if (NetworkGameManager.Instance == null) return;
-            string code = joinCodeInputField != null ? joinCodeInputField.text : (serverAddressInput != null ? serverAddressInput.text : null);
-            if (string.IsNullOrWhiteSpace(code))
-            {
-                Debug.LogWarning("Enter a join code first (or use the server address field).");
-                return;
-            }
-            if (joinOnlineButton != null) joinOnlineButton.interactable = false;
-            try
-            {
-                bool ok = await NetworkGameManager.Instance.StartClientWithRelayAsync(code);
-                if (ok)
-                    ShowLobby();
-                else
-                    Debug.LogError("Failed to join with Relay. Check the join code and connection.");
-            }
-            finally
-            {
-                if (joinOnlineButton != null) joinOnlineButton.interactable = true;
             }
         }
 
@@ -1405,52 +1326,6 @@ namespace TitanOrbit.UI
                 hostOnlineButton = CreateMenuButton("QuickJoinDedicatedButton", "Quick join", Vector2.zero, new Vector2(LobbyScreenContentWidth, 48f), lobbyScreenBodyRect, isPrimary: true);
             else
                 hostOnlineButton.transform.SetParent(lobbyScreenBodyRect, false);
-
-            if (_webGlBrowserHostButton == null)
-            {
-                _webGlBrowserHostButton = CreateMenuButton(
-                    "WebGlBrowserHostButton",
-                    "Host match (browser)",
-                    Vector2.zero,
-                    new Vector2(LobbyScreenContentWidth, 48f),
-                    lobbyScreenBodyRect,
-                    isPrimary: false);
-                _webGlBrowserHostButton.onClick.AddListener(OnWebGlBrowserHostRelayClicked);
-            }
-            else
-            {
-                _webGlBrowserHostButton.transform.SetParent(lobbyScreenBodyRect, false);
-            }
-
-            var joinRow = new GameObject("JoinRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            joinRow.transform.SetParent(lobbyScreenBodyRect, false);
-            var joinRowRt = joinRow.GetComponent<RectTransform>();
-            var joinH = joinRow.GetComponent<HorizontalLayoutGroup>();
-            joinH.spacing = 12f;
-            joinH.padding = new RectOffset(0, 0, 0, 0);
-            joinH.childAlignment = TextAnchor.MiddleCenter;
-            joinH.childControlWidth = true;
-            joinH.childControlHeight = true;
-            joinH.childForceExpandWidth = false;
-            joinH.childForceExpandHeight = false;
-            var joinRowLe = joinRow.AddComponent<LayoutElement>();
-            joinRowLe.minHeight = 52f;
-            joinRowLe.preferredHeight = 56f;
-            ApplyLobbyContentColumnLayout(joinRowLe);
-
-            if (joinCodeInputField != null)
-            {
-                joinCodeInputField.transform.SetParent(joinRow.transform, false);
-                var inputLe = joinCodeInputField.GetComponent<LayoutElement>() ?? joinCodeInputField.gameObject.AddComponent<LayoutElement>();
-                inputLe.flexibleWidth = 1f;
-                inputLe.minWidth = 200f;
-                inputLe.preferredHeight = 48f;
-            }
-
-            if (joinOnlineButton == null)
-                joinOnlineButton = CreateMenuButton("JoinOnlineButton", "Join with code", Vector2.zero, new Vector2(200f, 48f), joinRow.GetComponent<RectTransform>(), isPrimary: false);
-            else
-                joinOnlineButton.transform.SetParent(joinRow.transform, false);
 
             if (joinCodeDisplayText != null)
             {

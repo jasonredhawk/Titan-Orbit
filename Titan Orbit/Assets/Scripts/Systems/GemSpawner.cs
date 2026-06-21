@@ -162,42 +162,11 @@ namespace TitanOrbit.Systems
 
         private void SpawnPeopleTransport(Vector3 fromPos, Vector3 toPos, float amount, ulong targetNetworkObjectId, bool isLoad, TitanOrbit.Core.TeamManager.Team team, ulong shipNetworkObjectId, ulong sourcePlanetNetworkObjectId)
         {
-            if (!IsServer) return;
-            GameObject prefab = GetPeopleTransportPrefab();
-            if (prefab == null || amount <= 0f)
-                return;
-
-            Vector3 dir = ToroidalMap.ToroidalDirection(fromPos, toPos);
-            dir.y = 0f;
-            if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
-            else dir.Normalize();
-            // Nudge spawns slightly off the hull so the sphere is visible immediately.
-            Vector3 pos = fromPos;
-            if (isLoad)
-                pos += dir * Mathf.Max(0.2f, PeopleTransportProjectile.SurfaceSpawnOutwardNudge * 0.35f);
-
-            float travelDist = ToroidalMap.ToroidalDistance(fromPos, toPos);
-            float cruiseSpeed = Mathf.Max(0.08f, travelDist / PeopleTransportProjectile.EffectiveVisualTravelSeconds);
-            if (isLoad)
-                cruiseSpeed *= PeopleTransportProjectile.LoadMagnetSpeedMultiplier;
-            float initialSpeed = cruiseSpeed * (isLoad ? 0.55f : 0.3f);
-
-            GameObject obj = Instantiate(prefab, pos, Quaternion.identity);
-            Rigidbody rb = obj.GetComponent<Rigidbody>();
-            if (rb != null)
-            {
-                rb.position = pos;
-                rb.linearVelocity = dir * initialSpeed;
-                rb.linearDamping = 0f;
-            }
-
-            NetworkObject netObj = obj.GetComponent<NetworkObject>();
-            if (netObj != null)
-            {
-                netObj.Spawn();
-                var p = obj.GetComponent<PeopleTransportProjectile>();
-                if (p != null) p.Initialize(amount, targetNetworkObjectId, isLoad, team, shipNetworkObjectId, sourcePlanetNetworkObjectId);
-            }
+            if (!IsServer || amount <= 0f) return;
+            if (CombatSystem.Instance == null) return;
+            CombatSystem.Instance.TrySpawnServerPeopleTransport(
+                fromPos, toPos, amount, targetNetworkObjectId, isLoad, team,
+                shipNetworkObjectId, sourcePlanetNetworkObjectId);
         }
 
         /// <summary>Server-only burst from asteroid death (same logic as RPC; avoids invoking a ServerRpc from server destroy path).</summary>

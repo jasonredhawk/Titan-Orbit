@@ -159,6 +159,34 @@ namespace TitanOrbit.Systems
             serverBullets = new ServerBullet[capacity];
         }
 
+        private static float GetServerTimeNowSeconds()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening)
+                return (float)nm.ServerTime.Time;
+            return Time.time;
+        }
+
+        /// <summary>
+        /// Player/ship shots spawn at the weapon muzzle; firing ship colliders are ignored server-side.
+        /// Drone shots keep a small forward offset so muzzle-in-hull overlap is avoided.
+        /// </summary>
+        private Vector3 ResolveBulletSpawnPosition(Vector3 muzzlePosition, Vector3 normalizedDirection, bool isDroneShot)
+        {
+            Vector3 spawnPos = muzzlePosition;
+            if (isDroneShot)
+            {
+                Vector3 dir = normalizedDirection;
+                dir.y = 0f;
+                if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward;
+                else dir.Normalize();
+                spawnPos = muzzlePosition + dir * spawnOffset;
+            }
+
+            spawnPos.y = 0f;
+            return spawnPos;
+        }
+
         /// <summary>
         /// Server-authoritative bullet spawn. Pushes a struct into the pool and queues a batched
         /// spawn payload for clients. Returns false when the bullet cap is reached or required
@@ -191,8 +219,7 @@ namespace TitanOrbit.Systems
 
             float finalSpeed = Mathf.Max(0.01f, speed * bulletSpeedMultiplier);
             bool isDroneShot = (spawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0;
-            Vector3 spawnPos = isDroneShot ? position : position + dir * spawnOffset;
-            spawnPos.y = 0f;
+            Vector3 spawnPos = ResolveBulletSpawnPosition(position, dir, isDroneShot);
 
             Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
             Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
@@ -215,7 +242,7 @@ namespace TitanOrbit.Systems
             b.Position = spawnPos;
             b.Velocity = totalVelocity;
             b.Damage = damage;
-            b.SpawnTime = Time.time;
+            b.SpawnTime = GetServerTimeNowSeconds();
             b.MaxDistance = DefaultMaxDistance;
             b.Lifetime = DefaultLifetime;
             BulletBankProfileUtility.ApplyBulletFlightModifiers(requestedBankIndex, ref b.Lifetime, ref b.MaxDistance);
@@ -280,8 +307,7 @@ namespace TitanOrbit.Systems
             else dir.Normalize();
 
             float finalSpeed = Mathf.Max(0.01f, speed * bulletSpeedMultiplier);
-            Vector3 spawnPos = position + dir * spawnOffset;
-            spawnPos.y = 0f;
+            Vector3 spawnPos = ResolveBulletSpawnPosition(position, dir, isDroneShot: false);
 
             Vector3 flatShipVel = new Vector3(shipVelocity.x, 0f, shipVelocity.z);
             Vector3 totalVelocity = dir * finalSpeed + flatShipVel;
@@ -296,6 +322,8 @@ namespace TitanOrbit.Systems
             float previewMaxDistance = DefaultMaxDistance;
             BulletBankProfileUtility.ApplyBulletFlightModifiers(requestedBankIndex, ref previewLifetime, ref previewMaxDistance);
 
+            float previewServerTime = GetServerTimeNowSeconds();
+
             return new BulletSpawnPayload
             {
                 SpawnPosition = spawnPos,
@@ -306,7 +334,7 @@ namespace TitanOrbit.Systems
                 Damage = damage,
                 VisualPrefabBankIndex = requestedBankIndex,
                 Sequence = 0,
-                ServerSpawnTime = 0f,
+                ServerSpawnTime = previewServerTime,
                 OwnerTeamByte = (byte)ownerTeam,
                 ShapeIndex = bulletShapeIndex,
                 NoTrailFlag = 0,
@@ -331,21 +359,6 @@ namespace TitanOrbit.Systems
             if (!serverBullets[slot].Active) return;
             serverBullets[slot].Active = false;
             activeServerBulletCount = Mathf.Max(0, activeServerBulletCount - 1);
-        }
-
-        private void FixedUpdate()
-        {
-            if (!IsServer) return;
-            TickBulletGravityWells();
-            if (serverBullets == null || activeServerBulletCount == 0) return;
-
-            float dt = Time.fixedDeltaTime;
-            float now = Time.time;
-            for (int i = 0; i < serverBullets.Length; i++)
-            {
-                if (!serverBullets[i].Active) continue;
-                StepBullet(i, dt, now);
-            }
         }
 
         private void StepBullet(int slot, float dt, float now)
@@ -609,16 +622,6 @@ namespace TitanOrbit.Systems
             ReleaseSlot(slot);
         }
 
-        private void LateUpdate()
-        {
-            if (!IsServer) return;
-            // Spawns must reach clients before any same-frame impact RPC, otherwise the client's
-            // sequence-keyed despawn lookup misses the freshly-spawned tracer (it would then fly
-            // past its target until natural lifetime expiry).
-            FlushPendingSpawnBatch();
-            FlushPendingImpacts();
-        }
-
         private void FlushPendingSpawnBatch()
         {
             if (pendingSpawnBatch.Count == 0) return;
@@ -673,7 +676,7 @@ namespace TitanOrbit.Systems
                 bool isDroneShot = (p.SpawnFlags & BulletSpawnPayload.BulletSpawnFlagDrone) != 0;
                 if (!isDroneShot && localShipId != 0 && p.OwnerShipNetworkId == localShipId)
                 {
-                    ClientBulletTracer.AssociateOwnerPredictedWithServerSequence(p.Sequence);
+                    ClientBulletTracer.HandleOwnerServerBulletSpawn(p);
                     continue;
                 }
                 ClientBulletTracer.Spawn(p);

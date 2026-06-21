@@ -11,11 +11,11 @@ namespace TitanOrbit.Entities
     public static class GemTractorBeamDeployTracker
     {
         /// <summary>How fast the thin beam line travels along the path (m/s).</summary>
-        public const float ExtendLineSpeed = 16f;
+        public const float ExtendLineSpeed = 28f;
 
-        public const float MinExtendDuration = 0.07f;
-        public const float MaxExtendDuration = 0.32f;
-        public const float WidthExpandDuration = 0.05f;
+        public const float MinExtendDuration = 0.035f;
+        public const float MaxExtendDuration = 0.14f;
+        public const float WidthExpandDuration = 0.025f;
 
         public const float ExtendLineThickness = 0.065f;
 

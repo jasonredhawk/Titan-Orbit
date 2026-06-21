@@ -167,9 +167,12 @@ namespace TitanOrbit.Entities
             spawnTime.OnValueChanged += OnSpawnTimeChanged;
             isInPool.OnValueChanged += OnIsInPoolChanged;
             isBonusGem.OnValueChanged += OnIsBonusGemChanged;
+            expelledByShipId.OnValueChanged += OnExpelledByShipIdChanged;
             UpdateVisualScale();
             // Ensure correct tint even if value replicated after OnNetworkSpawn.
             if (gemRenderer != null) ApplyGemVisualTint(gemRenderer);
+            if (!IsServer)
+                TryRepositionOwnerExpelledGem();
         }
 
         public override void OnNetworkDespawn()
@@ -181,12 +184,47 @@ namespace TitanOrbit.Entities
             spawnTime.OnValueChanged -= OnSpawnTimeChanged;
             isInPool.OnValueChanged -= OnIsInPoolChanged;
             isBonusGem.OnValueChanged -= OnIsBonusGemChanged;
+            expelledByShipId.OnValueChanged -= OnExpelledByShipIdChanged;
             base.OnNetworkDespawn();
         }
 
         private void OnIsInPoolChanged(bool previous, bool current)
         {
             gameObject.SetActive(!current);
+        }
+
+        /// <summary>
+        /// Owner client: gems expelled from the local ship spawn at server pose; nudge to predicted ship center
+        /// while preserving scatter direction so ram/grind expulsion stays visually on the hull.
+        /// </summary>
+        private void OnExpelledByShipIdChanged(ulong previous, ulong current)
+        {
+            TryRepositionOwnerExpelledGem();
+        }
+
+        private void TryRepositionOwnerExpelledGem()
+        {
+            if (IsServer || expelledByShipId.Value == 0) return;
+
+            ulong localShipId = ClientBulletTracer.GetLocalPlayerOwnedShipNetworkObjectId();
+            if (expelledByShipId.Value != localShipId) return;
+
+            NetworkObject localPlayer = NetworkManager.Singleton?.LocalClient?.PlayerObject;
+            if (localPlayer == null) return;
+            Starship ship = localPlayer.GetComponent<Starship>();
+            if (ship == null) return;
+
+            Vector3 shipCenter = ship.GetGameplayShipCenterWorld();
+            Vector3 toGem = transform.position - shipCenter;
+            toGem.y = 0f;
+            float dist = toGem.magnitude;
+            const float maxRepositionRadius = 4f;
+            if (dist > maxRepositionRadius) return;
+
+            Vector3 newPos = dist > 0.001f ? shipCenter + toGem : shipCenter;
+            transform.position = newPos;
+            if (rb != null)
+                rb.position = newPos;
         }
 
         private void OnGemSizeChanged(float previousSize, float newSize)

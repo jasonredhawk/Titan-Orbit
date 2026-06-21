@@ -37,6 +37,8 @@ namespace TitanOrbit.Networking
             public bool IsOpen;
             public bool IsLatest;
             public long CreatedAtEpochSeconds;
+            /// <summary>True only when the lobby advertises a dedicated headless server (ServerListenAddress key present).</summary>
+            public bool IsDedicatedServer;
             /// <summary>UTC unix-seconds from dedicated server heartbeat; 0 if not published yet.</summary>
             public long ServerAliveAtEpochSeconds;
             /// <summary>Live Netcode player count from dedicated server heartbeat; -1 if not published yet.</summary>
@@ -117,9 +119,6 @@ namespace TitanOrbit.Networking
 
         [Header("Network Settings")]
         [SerializeField] private int maxPlayers = 60;
-        [SerializeField] private bool autoStartServer = false;
-        [Tooltip("UDP port for host/server. Change to e.g. 7778 if 7777 is already in use (e.g. previous play session).")]
-        [SerializeField] private ushort serverPort = 7777;
 
         private const string LobbyRelayCodeKey = "RelayJoinCode";
         private const string LobbyGameNameKey = "GameName";
@@ -133,7 +132,6 @@ namespace TitanOrbit.Networking
         private const string LobbyServerListenAddressKey = "ServerListenAddress";
         private const string LobbyActivePlayersKey = DedicatedMatchServerBootstrap.LobbyActivePlayersKey;
         private Lobby currentLobby;
-        private float nextLobbyHeartbeatTime;
         private Coroutine pendingTeamRequestCoroutine;
         private bool _leaveLobbyInProgress;
         private static DateTime _dbgNextLobbyQueryAllowedUtc = DateTime.MinValue;
@@ -173,11 +171,6 @@ namespace TitanOrbit.Networking
         private void Start()
         {
             RegisterLocalClientLobbyCleanupHandlers();
-            if (autoStartServer && Application.isEditor)
-            {
-                // Auto-start server in editor for testing
-                StartServer();
-            }
         }
 
         private void RegisterLocalClientLobbyCleanupHandlers()
@@ -220,20 +213,6 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Applies the configured server port to UnityTransport so it's used when starting a listen server.
-        /// Call this before StartServer (or LAN StartClient address) so "port already in use" can be avoided by changing serverPort in the inspector.
-        /// </summary>
-        private void ApplyServerPort()
-        {
-            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-            if (transport != null)
-            {
-                transport.SetConnectionData(transport.ConnectionData.Address, serverPort, transport.ConnectionData.ServerListenAddress);
-                Debug.Log($"Network port set to {serverPort}. If you get 'address already in use', try another port (e.g. 7778) in NetworkGameManager.");
-            }
-        }
-
-        /// <summary>
         /// If PlayerPrefab is not set, tries to assign from Resources/Prefabs/Starship so Play doesn't fail.
         /// Call before joining or starting a listen server. Use menu Titan Orbit > Fix Player Prefab & Materials to assign in editor.
         /// </summary>
@@ -249,7 +228,7 @@ namespace TitanOrbit.Networking
             }
         }
 
-        /// <summary>Call before StartServer/StartClient/StartHost so players are not spawned until they join a team.</summary>
+        /// <summary>Call before StartClient so players are not spawned until they join a team.</summary>
         private static void PrepareNetworkManagerForSessionStart()
         {
             EnsurePlayerPrefabSet();
@@ -258,8 +237,8 @@ namespace TitanOrbit.Networking
         }
 
         /// <summary>
-        /// Netcode refuses <see cref="NetworkManager.StartClient"/> / <see cref="NetworkManager.StartHost"/> if already
-        /// listening (e.g. Editor <see cref="autoStartServer"/> runs <see cref="StartServer"/> on Play).
+        /// Netcode refuses <see cref="NetworkManager.StartClient"/> if already listening
+        /// (e.g. a previous client session that did not fully shut down).
         /// </summary>
         private static async Task EnsureShutdownIfNetcodeRunningAsync()
         {
@@ -275,21 +254,6 @@ namespace TitanOrbit.Networking
             Debug.Log("[NetworkGameManager] Shutting down existing network session before starting a new one.");
             nm.Shutdown();
             await Task.Delay(150);
-        }
-
-        public void StartServer()
-        {
-            PrepareNetworkManagerForSessionStart();
-            ApplyServerPort();
-            NetworkManager.Singleton.StartServer();
-            Debug.Log($"Server started on port {serverPort}");
-        }
-
-        public void StartClient()
-        {
-            PrepareNetworkManagerForSessionStart();
-            NetworkManager.Singleton.StartClient();
-            Debug.Log("Client started");
         }
 
         /// <summary>
@@ -644,7 +608,7 @@ namespace TitanOrbit.Networking
                     }
 
                     Debug.LogWarning(
-                        "[NetworkGameManager] No open dedicated lobby to join. Start the headless server (or use Host match (browser) for a player-hosted test room).");
+                        "[NetworkGameManager] No open dedicated lobby to join. Start the headless server, or use 'Create dedicated match' to request one.");
                     return false;
                 }
                 finally
@@ -678,100 +642,6 @@ namespace TitanOrbit.Networking
         public async Task<bool> PlayWebGLJoinAsync()
         {
             return await TryQuickJoinOpenLobbyAsClientAsync();
-        }
-
-        /// <summary>
-        /// Creates a Relay allocation + UGS lobby (same indexed lobby data as <see cref="DedicatedMatchServerBootstrap"/>), then starts Netcode as host.
-        /// Runs in the browser/editor — it does not start a process on a GCE VM. Use for testing when no headless lobby exists, or for temporary player-hosted rooms.
-        /// </summary>
-        public async Task<bool> PlayWebGLHostRelayMatchAsync()
-        {
-            EnsurePlayerPrefabSet();
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-            {
-                Debug.LogError("Player Prefab not set on NetworkManager.");
-                return false;
-            }
-
-            try
-            {
-                if (!await EnsureUnityServicesInitializedAsync())
-                    return false;
-
-                await EnsureShutdownIfNetcodeRunningAsync();
-
-                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-                if (transport == null)
-                {
-                    Debug.LogError("UnityTransport not found on NetworkManager.");
-                    return false;
-                }
-
-                ApplyServerPort();
-                int cap = Mathf.Max(2, maxPlayers);
-                int relayMaxConnections = Mathf.Max(1, cap - 1);
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(relayMaxConnections);
-                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-                ConfigureUnityTransportRelay(transport, allocation, null);
-
-                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                const bool isLatest = true;
-                await AcquireLobbyApiGateAsync();
-                Lobby createdLobby;
-                try
-                {
-                    createdLobby = await WithLobbyApiTimeoutAsync(
-                        LobbyService.Instance.CreateLobbyAsync(
-                            GameNames.GetRandomRoomName(),
-                            cap,
-                            new CreateLobbyOptions
-                            {
-                                IsPrivate = false,
-                                Data = new Dictionary<string, DataObject>
-                                {
-                                    { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
-                                    { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
-                                    { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
-                                    { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
-                                    {
-                                        LobbyCreatedAtEpochKey,
-                                        new DataObject(
-                                            DataObject.VisibilityOptions.Public,
-                                            createdAtEpochSeconds.ToString(CultureInfo.InvariantCulture),
-                                            DataObject.IndexOptions.N3
-                                        )
-                                    },
-                                    {
-                                        LobbyRelayProtocolKey,
-                                        new DataObject(DataObject.VisibilityOptions.Public, RelayConnectionTypeForCurrentPlatform())
-                                    },
-                                },
-                            }),
-                        TimeSpan.FromSeconds(45),
-                        "LobbyService.CreateLobbyAsync");
-                }
-                finally
-                {
-                    LobbyApiGate.Release();
-                }
-
-                PrepareNetworkManagerForSessionStart();
-                bool started = NetworkManager.Singleton.StartHost();
-                if (!started)
-                {
-                    Debug.LogError("[NetworkGameManager] StartHost failed for Relay browser host.");
-                    return false;
-                }
-
-                currentLobby = createdLobby;
-                Debug.Log("[NetworkGameManager] Relay host started; lobby id=" + createdLobby.Id);
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning("[NetworkGameManager] PlayWebGLHostRelayMatchAsync failed. " + e.Message);
-                return false;
-            }
         }
 
         /// <summary>
@@ -983,7 +853,7 @@ namespace TitanOrbit.Networking
             for (int i = 0; i < lobbies.Count; i++)
             {
                 LobbySummary l = lobbies[i];
-                if (l == null || !l.IsOpen || !l.IsLatest || IsDedicatedLobbySummaryStale(l))
+                if (l == null || !l.IsDedicatedServer || !l.IsOpen || !l.IsLatest || IsDedicatedLobbySummaryStale(l))
                     continue;
                 joinable.Add(l);
             }
@@ -1011,11 +881,19 @@ namespace TitanOrbit.Networking
         {
             rejectReason = null;
             if (lobby?.Data == null)
-                return true;
+            {
+                rejectReason = "lobby has no data (cannot confirm a dedicated server)";
+                return false;
+            }
 
+            // Dedicated-only: a joinable match must be hosted by a headless server, which advertises
+            // its listen address. Browser/player-hosted leftovers never set this key and are rejected.
             bool isDedicated = lobby.Data.ContainsKey(LobbyServerListenAddressKey);
             if (!isDedicated)
-                return true;
+            {
+                rejectReason = "not a dedicated server lobby";
+                return false;
+            }
 
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject io) && io != null &&
                 !string.Equals(io.Value, "1", StringComparison.Ordinal))
@@ -1367,6 +1245,7 @@ namespace TitanOrbit.Networking
                 MaxPlayers = maxPlayerCapacity,
                 IsOpen = true,
                 IsLatest = false,
+                IsDedicatedServer = isDedicatedServerLobby,
                 CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 ActivePlayers = activePlayersFromServer
             };
@@ -1485,15 +1364,6 @@ namespace TitanOrbit.Networking
             {
                 Debug.LogWarning("[NetworkGameManager] QueryWebGLOpenLobbiesAsync failed: " + e.Message);
                 return new System.Collections.Generic.List<Lobby>();
-            }
-        }
-
-        private void Update()
-        {
-            if (currentLobby != null && IsHost && Time.realtimeSinceStartup >= nextLobbyHeartbeatTime)
-            {
-                nextLobbyHeartbeatTime = Time.realtimeSinceStartup + 15f;
-                _ = LobbyService.Instance.SendHeartbeatPingAsync(currentLobby.Id);
             }
         }
 
@@ -1700,7 +1570,7 @@ namespace TitanOrbit.Networking
             if (nm0 == null || !IsNetcodeTransportReadyForGameplay(nm0))
             {
                 pendingTeamRequestCoroutine = null;
-                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, create or join a match from the list, or join with a relay code, then enter the match again.");
+                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, then create or join a match from the list and enter the match again.");
                 yield break;
             }
             while (Time.realtimeSinceStartup < deadline)
@@ -1737,7 +1607,7 @@ namespace TitanOrbit.Networking
             }
             if (!IsNetcodeTransportReadyForGameplay(nm))
             {
-                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, create or join a match from the list, or join with a relay code, then enter the match again.");
+                OnTeamChoiceFailed?.Invoke("Multiplayer is not running. Return to the main menu, then create or join a match from the list and enter the match again.");
                 return;
             }
             var ship = TryGetLocalStarship();
@@ -1764,46 +1634,6 @@ namespace TitanOrbit.Networking
 
             Debug.LogError("[NetworkGameManager] Cannot request team: TeamManager not ready.");
             OnTeamChoiceFailed?.Invoke("Cannot join a team yet — connection still loading. Try again.");
-        }
-
-        /// <summary>Same-machine / LAN test without Relay: listen server on <see cref="serverPort"/> (default 7777). Use <see cref="StartLocalClientForLanTest"/> from a second instance.</summary>
-        public bool StartLocalHostForLanTest()
-        {
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-                return false;
-            PrepareNetworkManagerForSessionStart();
-            ApplyServerPort();
-            if (!NetworkManager.Singleton.StartServer())
-                return false;
-            Debug.Log($"[NetworkGameManager] LAN listen server started on port {serverPort}.");
-            return true;
-        }
-
-        /// <summary>Join a host on the LAN using direct UDP (no Relay). Use 127.0.0.1 for two instances on one PC.</summary>
-        public bool StartLocalClientForLanTest(string address = "127.0.0.1")
-        {
-#if UNITY_WEBGL && !UNITY_EDITOR
-            Debug.LogWarning("[NetworkGameManager] LAN client test is not supported in WebGL; use Relay or test from desktop/Editor.");
-            return false;
-#endif
-            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
-                return false;
-            EnsurePlayerPrefabSet();
-            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-            if (transport == null)
-            {
-                Debug.LogError("[NetworkGameManager] UnityTransport missing.");
-                return false;
-            }
-#if !UNITY_WEBGL
-            transport.UseWebSockets = false;
-#endif
-            transport.SetConnectionData(address, serverPort);
-            PrepareNetworkManagerForSessionStart();
-            bool ok = NetworkManager.Singleton.StartClient();
-            if (ok)
-                Debug.Log($"[NetworkGameManager] LAN client connecting to {address}:{serverPort}");
-            return ok;
         }
 
         /// <summary>Server-only: called from <see cref="TeamManager.ApplyTeamChoiceFromServer"/> so the team result is delivered via this NetworkObject’s ClientRpc (reliable path for UI).</summary>
@@ -1956,7 +1786,6 @@ namespace TitanOrbit.Networking
 
         public bool IsServer => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
         public bool IsClient => NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
-        public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
 
         private void StartDebugJoinMonitor(string source, string lobbyIdOrTag)
         {
@@ -2009,20 +1838,5 @@ namespace TitanOrbit.Networking
                 + " tag=" + lobbyIdOrTag
                 + " waitedSeconds=" + elapsed.ToString("F2", CultureInfo.InvariantCulture));
         }
-
-#if UNITY_EDITOR
-        [ContextMenu("Debug/Start LAN listen server (no Relay)")]
-        private void Editor_StartLanHost()
-        {
-            if (StartLocalHostForLanTest())
-                Debug.Log($"[NetworkGameManager] LAN listen server on port {serverPort}. Run a second instance and use Debug/Start LAN Client, or call StartLocalClientForLanTest.");
-        }
-
-        [ContextMenu("Debug/Start LAN Client → 127.0.0.1")]
-        private void Editor_StartLanClient()
-        {
-            StartLocalClientForLanTest("127.0.0.1");
-        }
-#endif
     }
 }

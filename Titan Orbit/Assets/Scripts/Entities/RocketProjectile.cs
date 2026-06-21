@@ -7,8 +7,8 @@ using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Rocket projectile - like Bullet but with configurable speed/damage for small vs large rockets.
-    /// Hits ships, drones, asteroids. No friendly fire (same team).
+    /// LEGACY: NetworkObject rocket — replaced by struct sim in CombatSystem.ServerRockets.cs.
+    /// Kept for prefab/tooling compatibility only; runtime spawns use TrySpawnServerRocket.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class RocketProjectile : NetworkBehaviour

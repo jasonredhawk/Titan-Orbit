@@ -9,8 +9,8 @@ using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Projectile that beams people between planet and ship. Load: planet->ship. Unload: ship->planet.
-    /// Absorbs on contact with target.
+    /// LEGACY: NetworkObject people transport — replaced by struct sim in CombatSystem.ServerPeopleTransport.cs.
+    /// Static helpers remain for spawn-point math used by the server sim.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class PeopleTransportProjectile : NetworkBehaviour
@@ -384,7 +384,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>Approach point on the ship hull facing the projectile (not the ship center).</summary>
-        private static Vector3 GetShipMagnetTarget(Starship ship, Vector3 fromWorldPos)
+        public static Vector3 GetShipMagnetTarget(Starship ship, Vector3 fromWorldPos)
         {
             if (ship == null)
                 return fromWorldPos;
@@ -578,6 +578,150 @@ namespace TitanOrbit.Entities
             return GetCruiseSpeed() * MagnetCloseRangeSpeedRatio;
         }
 
+        public static float ComputeCruiseSpeed(Vector3 fromPos, Vector3 toPos, bool isLoad)
+        {
+            float travelDist = ToroidalMap.ToroidalDistance(fromPos, toPos);
+            float cruiseSpeed = Mathf.Max(0.08f, travelDist / EffectiveVisualTravelSeconds);
+            if (isLoad) cruiseSpeed *= LoadMagnetSpeedMultiplier;
+            return cruiseSpeed;
+        }
+
+        public static float GetMagnetCloseRangeSpeed(float cruiseSpeed) => cruiseSpeed * MagnetCloseRangeSpeedRatio;
+
+        public static Vector3 SteerMagnetVelocity(
+            Vector3 myPos,
+            Vector3 targetPos,
+            Vector3 currentVel,
+            float dt,
+            float cruiseSpeed)
+        {
+            return ComputeMagnetVelocity(
+                myPos,
+                targetPos,
+                currentVel,
+                dt,
+                cruiseSpeed,
+                GetMagnetCloseRangeSpeed(cruiseSpeed));
+        }
+
+        public static float GetVisualScaleMultiplier(float peopleAmount)
+        {
+            float clampedAmount = Mathf.Clamp(Mathf.Max(0.001f, peopleAmount), PeopleAmountScaleMin, PeopleAmountScaleMax);
+            float normalized = Mathf.InverseLerp(PeopleAmountScaleMin, PeopleAmountScaleMax, clampedAmount);
+            return Mathf.Lerp(VisualScaleMinMultiplier, VisualScaleMaxMultiplier, normalized);
+        }
+
+        public static bool TryResolveMagnetTarget(
+            bool isLoad,
+            ulong targetNetworkObjectId,
+            ulong sourcePlanetNetworkObjectId,
+            Vector3 fromWorldPos,
+            out Vector3 targetPos)
+        {
+            targetPos = Vector3.zero;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject targetObj))
+                return false;
+
+            if (isLoad)
+            {
+                Starship ship = targetObj.GetComponent<Starship>();
+                if (ship == null) return false;
+                if (ship.IsDead)
+                {
+                    if (TryResolvePlanet(sourcePlanetNetworkObjectId, out Planet deadPlanet))
+                    {
+                        targetPos = GetSurfacePointToward(deadPlanet, fromWorldPos);
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (!IsShipEligibleForLoadFromSourcePlanet(ship, sourcePlanetNetworkObjectId)
+                    && TryResolvePlanet(sourcePlanetNetworkObjectId, out Planet sourcePlanet))
+                {
+                    targetPos = GetSurfacePointToward(sourcePlanet, fromWorldPos);
+                    return true;
+                }
+
+                targetPos = GetShipMagnetTarget(ship, fromWorldPos);
+                return true;
+            }
+
+            Planet planet = targetObj.GetComponent<Planet>();
+            if (planet == null) return false;
+            targetPos = GetSurfacePointToward(planet, fromWorldPos);
+            return true;
+        }
+
+        public static bool IsShipEligibleForLoadFromSourcePlanet(Starship ship, ulong sourcePlanetNetworkObjectId)
+        {
+            if (ship == null || sourcePlanetNetworkObjectId == 0) return false;
+            if (ship.IsInGemMoonOrbitBlockingPeopleLoadToShip()) return false;
+            if (!TryResolvePlanet(sourcePlanetNetworkObjectId, out Planet sourcePlanet)) return false;
+
+            Vector3 rbPos = GetShipWorldPosition(ship);
+            Vector3 transformPos = ship.transform.position;
+            transformPos.y = 0f;
+            return sourcePlanet.IsWorldPositionInOrbitRingRelaxed(rbPos, 0.12f)
+                || sourcePlanet.IsWorldPositionInOrbitRingRelaxed(transformPos, 0.12f);
+        }
+
+        public static bool CanDeliverLoadToShip(Vector3 projectilePos, Starship ship, float transportRadius = 0.25f)
+        {
+            if (ship == null) return false;
+            Vector3 hullPoint = GetShipMagnetTarget(ship, projectilePos);
+            float collectDist = Mathf.Max(ShipLoadCollectMinDistance, transportRadius + ShipLoadCollectPadding);
+            return ToroidalMap.ToroidalDistance(projectilePos, hullPoint) <= collectDist;
+        }
+
+        public static bool HasBriefTravelBeforeLoad(Vector3 projectilePos, Vector3 spawnPosition, float serverTime, float spawnTime)
+        {
+            if (serverTime - spawnTime < LoadDeliveryMinSeconds) return false;
+            return ToroidalMap.ToroidalDistance(projectilePos, spawnPosition) >= LoadDeliveryMinSpawnDistance;
+        }
+
+        public static bool CanCompleteReturnToSourcePlanet(
+            Vector3 projectilePos,
+            Vector3 spawnPosition,
+            Planet sourcePlanet,
+            float serverTime,
+            float spawnTime)
+        {
+            if (sourcePlanet == null) return false;
+            if (serverTime - spawnTime < EffectiveVisualTravelSeconds) return false;
+            if (ToroidalMap.ToroidalDistance(projectilePos, spawnPosition) < MinVisualTravelDistance) return false;
+            return IsWithinPlanetSurfaceReach(sourcePlanet, projectilePos);
+        }
+
+        public static bool CanCompleteUnloadDelivery(
+            Vector3 projectilePos,
+            Vector3 spawnPosition,
+            Planet planet,
+            float serverTime,
+            float spawnTime)
+        {
+            if (planet == null) return false;
+            if (serverTime - spawnTime < UnloadDeliveryMinSeconds) return false;
+            if (ToroidalMap.ToroidalDistance(projectilePos, spawnPosition) < UnloadDeliveryMinTravelDistance) return false;
+            return IsWithinPlanetSurfaceReach(planet, projectilePos);
+        }
+
+        public static bool ShouldDestroyOnForeignPlanetSurface(
+            Vector3 projectilePos,
+            float serverTime,
+            float spawnTime)
+        {
+            return serverTime - spawnTime >= ForeignPlanetImpactMinSeconds;
+        }
+
+        public static bool HitsForeignPlanetSurface(Vector3 projectilePos, Planet planet, float serverTime, float spawnTime)
+        {
+            if (planet == null) return false;
+            if (!ShouldDestroyOnForeignPlanetSurface(projectilePos, serverTime, spawnTime)) return false;
+            return IsWithinPlanetSurfaceReach(planet, projectilePos);
+        }
+
         private static Vector3 ComputeMagnetVelocity(
             Vector3 myPos,
             Vector3 targetPos,
@@ -718,18 +862,10 @@ namespace TitanOrbit.Entities
         /// <summary>Geometry-based: ship must sit in the source planet orbit ring (not only cached <see cref="Starship.CurrentOrbitPlanet"/>).</summary>
         private bool IsShipEligibleForLoadFromSourcePlanet(Starship ship)
         {
-            if (ship == null || sourcePlanetId.Value == 0) return false;
-            if (ship.IsInGemMoonOrbitBlockingPeopleLoadToShip()) return false;
-            if (!TryGetSourcePlanet(out Planet sourcePlanet)) return false;
-
-            Vector3 rbPos = GetShipWorldPosition(ship);
-            Vector3 transformPos = ship.transform.position;
-            transformPos.y = 0f;
-            return sourcePlanet.IsWorldPositionInOrbitRingRelaxed(rbPos, 0.12f)
-                || sourcePlanet.IsWorldPositionInOrbitRingRelaxed(transformPos, 0.12f);
+            return IsShipEligibleForLoadFromSourcePlanet(ship, sourcePlanetId.Value);
         }
 
-        private static bool IsWithinPlanetSurfaceReach(Planet planet, Vector3 worldPos)
+        public static bool IsWithinPlanetSurfaceReach(Planet planet, Vector3 worldPos)
         {
             if (planet == null) return false;
             worldPos.y = 0f;

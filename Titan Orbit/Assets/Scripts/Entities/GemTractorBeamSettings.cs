@@ -1072,10 +1072,9 @@ namespace TitanOrbit.Entities
 
         private static Vector3 GetShipPosition(Starship ship)
         {
-            var shipRb = ship.GetComponent<Rigidbody>();
-            Vector3 pos = shipRb != null ? shipRb.position : ship.transform.position;
-            pos.y = 0f;
-            return pos;
+            if (ship == null)
+                return Vector3.zero;
+            return ship.GetGameplayShipCenterWorld();
         }
 
         private static Vector3 GetGemPosition(Gem gem)

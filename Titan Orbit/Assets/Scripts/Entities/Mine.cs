@@ -7,8 +7,7 @@ using TitanOrbit.Systems;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Placeable explosive mine. When an enemy ship enters trigger radius, explodes (damage + radius).
-    /// Small vs large: different damage and radius.
+    /// LEGACY: NetworkObject mine — replaced by struct sim in CombatSystem.ServerMines.cs.
     /// </summary>
     [RequireComponent(typeof(SphereCollider))]
     public class Mine : NetworkBehaviour

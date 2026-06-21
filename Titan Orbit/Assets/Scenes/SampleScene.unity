@@ -4179,13 +4179,15 @@ MonoBehaviour:
   mouseWheelZoomSensitivity: 0.12
   ignoreMouseZoomOverUi: 1
   theatricalModeEnabled: 1
-  theatricalIdleDurationSeconds: 3
+  theatricalIdleDurationSeconds: 20
   theatricalIdleMaxPlanarSpeed: 0.35
   theatricalPathDurationMinSeconds: 110
   theatricalPathDurationMaxSeconds: 190
   theatricalLookSmoothTime: 1.1
   theatricalRotationSmoothTime: 1.3
   theatricalFovSmoothTime: 2.4
+  theatricalFollowSmoothTime: 0.55
+  theatricalFocusSmoothTime: 0.65
   theatricalWaypointCount: 8
   theatricalMinElevationDeg: -32
   theatricalMaxElevationDeg: 52
