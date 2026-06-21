@@ -586,7 +586,10 @@ namespace TitanOrbit.Entities
             _motorStreamSendAccumulator += dt;
             if (_motorStreamSendAccumulator >= MotorStreamSendInterval || forceKeyframe)
             {
-                _motorStreamSendAccumulator = 0f;
+                // Subtract (don't zero) so the long-run cadence stays ~30 Hz instead of drifting to 25 Hz.
+                _motorStreamSendAccumulator -= MotorStreamSendInterval;
+                if (_motorStreamSendAccumulator < 0f || forceKeyframe)
+                    _motorStreamSendAccumulator = 0f;
                 _lastStreamedMotorSnapshot = snapshot;
                 _hasStreamedMotorSnapshot = true;
                 BroadcastMotorStateUnreliableClientRpc(snapshot);

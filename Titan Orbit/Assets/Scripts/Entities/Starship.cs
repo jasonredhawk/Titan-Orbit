@@ -3048,6 +3048,10 @@ namespace TitanOrbit.Entities
             if (!enableVisualBankingPitch) return;
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             if (gemMoonDocked.Value) return;
+            // Remote proxy ships: rb.rotation was just set by ShipVisualInterpolator (exec order 31000) this frame.
+            // Sampling the turn-rate here, at the render rate, makes banking track the interpolated facing smoothly.
+            if (UsesInterpolatedRemoteVisual)
+                CacheVisualAngularVelForBanking(Time.deltaTime);
             ApplyVisualBanking(Time.deltaTime);
         }
 
@@ -3496,8 +3500,20 @@ namespace TitanOrbit.Entities
             targetCollisionPitchAngle = Mathf.Clamp(combined, -pitchClamp, pitchClamp);
         }
 
-        /// <summary>Called from FixedUpdate finally so every ship (owner, proxy, AI) gets consistent yaw rate for banking.</summary>
-        private void CacheVisualAngularVelForBanking()
+        /// <summary>
+        /// True when this ship's visible pose is driven by <see cref="TitanOrbit.Networking.ShipVisualInterpolator"/>
+        /// (a remote human proxy on a client). Such ships only update <c>rb.rotation</c> in LateUpdate, so their
+        /// banking turn-rate must be sampled there too — sampling in FixedUpdate aliases against the render rate.
+        /// </summary>
+        private bool UsesInterpolatedRemoteVisual =>
+            !_isAIControlled && IsSpawned && IsClient && !IsServer && !IsOwner;
+
+        /// <summary>
+        /// Caches the planar yaw rate used to drive visual banking. Banking is a purely local, cosmetic effect
+        /// (never networked): we infer "how fast is this ship turning" from its facing change over <paramref name="dt"/>.
+        /// Owner/server/AI ships call this from FixedUpdate; interpolated remote ships call it from LateUpdate.
+        /// </summary>
+        private void CacheVisualAngularVelForBanking(float dt)
         {
             if (rb == null || isDead.Value)
             {
@@ -3516,7 +3532,7 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            float dt = Mathf.Max(1e-5f, Time.fixedDeltaTime);
+            dt = Mathf.Max(1e-5f, dt);
             float instantAngularVel = Mathf.DeltaAngle(_prevBankYawDeg, yawDeg) / dt;
             _prevBankYawDeg = yawDeg;
 
@@ -3990,7 +4006,10 @@ namespace TitanOrbit.Entities
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
                 CacheVisualForwardAccelForPitch();
-                CacheVisualAngularVelForBanking();
+                // Interpolated remote proxies sample their turn-rate in LateUpdate (where rb.rotation is updated),
+                // so skip the FixedUpdate sampling for them to avoid render-rate aliasing / banking flutter.
+                if (!UsesInterpolatedRemoteVisual)
+                    CacheVisualAngularVelForBanking(Time.fixedDeltaTime);
             }
         }
 

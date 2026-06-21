@@ -27,8 +27,14 @@ namespace TitanOrbit.Networking
         // interpolation regime instead of the extrapolation tail. The server stays authoritative for hits,
         // so this "render others slightly in the past" trade-off does not affect aiming.
         [SerializeField, Range(0.05f, 0.25f)] private float interpolationDelaySeconds = 0.10f;
-        // Fraction of clock error corrected per second (gentle slew). Higher converges faster but jitters.
+        // Proportional gain used only to correct slow client/server clock drift, never to chase the
+        // per-packet stepping of `target`.
         [SerializeField, Range(0.5f, 8f)] private float clockSlewRate = 3f;
+        // Hard cap on how far the playhead may deviate from a true 1:1 real-time rate while correcting drift,
+        // expressed as a fraction of real time (0.04 = at most ±4% faster/slower). This is the key to smoothness:
+        // it keeps the playhead from accelerating/decelerating with each arriving snapshot. The natural
+        // real-time advance already tracks the average data rate, so only a tiny correction budget is needed.
+        [SerializeField, Range(0.01f, 0.25f)] private float maxClockCorrectionRate = 0.04f;
         // Drift beyond this (first packet, big hitch, pause, teleport) hard-resyncs the playhead.
         [SerializeField, Range(0.2f, 2f)] private float hardResyncThreshold = 0.4f;
 
@@ -101,19 +107,28 @@ namespace TitanOrbit.Networking
             }
             else
             {
-                // Constant real-time advance keeps playback speed steady (independent of NGO ServerTime rate).
-                playheadServerTime += Time.unscaledDeltaTime;
+                double dt = Time.unscaledDeltaTime;
+
+                // 1:1 real-time advance. Because the server streams at a fixed cadence, this alone tracks the
+                // average data rate, so the playhead never has to speed up or slow down to keep pace.
+                playheadServerTime += dt;
 
                 double error = target - playheadServerTime;
                 if (Math.Abs(error) > hardResyncThreshold)
                 {
+                    // First packet, large hitch, alt-tab, or teleport: jump rather than crawl.
                     playheadServerTime = target;
                 }
                 else
                 {
-                    // Exponential slew: frame-rate independent, never overshoots.
-                    double blend = 1.0 - Math.Exp(-clockSlewRate * Time.unscaledDeltaTime);
-                    playheadServerTime += error * blend;
+                    // Correct only slow drift, and clamp the correction to a tiny fraction of real time so the
+                    // ~33 ms stepping of `target` (one step per arriving snapshot) is ignored. Chasing that step
+                    // is exactly what made remote ships speed up/slow down with every packet.
+                    double desired = error * clockSlewRate * dt;
+                    double maxStep = maxClockCorrectionRate * dt;
+                    if (desired > maxStep) desired = maxStep;
+                    else if (desired < -maxStep) desired = -maxStep;
+                    playheadServerTime += desired;
                 }
             }
 
