@@ -32,9 +32,12 @@ namespace TitanOrbit.Networking
         // micro-stutter that came back. 0.08 s (~2.4 packets) tolerates a late/lost packet and stays smooth while
         // still being tighter than the old fixed 0.10 s.
         [SerializeField, Range(0.03f, 0.12f)] private float minInterpolationDelaySeconds = 0.08f;
-        [SerializeField, Range(0.08f, 0.30f)] private float maxInterpolationDelaySeconds = 0.18f;
-        // Effective delay = min + jitterSafetyMultiplier * measuredJitter (clamped to max). Higher = safer but laggier.
-        [SerializeField, Range(1f, 4f)] private float jitterSafetyMultiplier = 2.5f;
+        // Cloud play (real internet jitter + loss) needs more headroom than a clean LAN, so the ceiling is
+        // generous; the buffer only grows this far when the link actually demands it.
+        [SerializeField, Range(0.08f, 0.35f)] private float maxInterpolationDelaySeconds = 0.24f;
+        // Effective delay = min + jitterSafetyMultiplier * measuredJitter (clamped to max). The jitter estimate is a
+        // peak-tracking envelope (below), so a multiplier near 1.5 already covers the worst recent arrival spread.
+        [SerializeField, Range(1f, 4f)] private float jitterSafetyMultiplier = 1.5f;
         // Proportional gain used only to correct slow client/server clock drift, never to chase the
         // per-packet stepping of `target`.
         [SerializeField, Range(0.5f, 8f)] private float clockSlewRate = 3f;
@@ -42,7 +45,7 @@ namespace TitanOrbit.Networking
         // expressed as a fraction of real time (0.04 = at most ±4% faster/slower). This is the key to smoothness:
         // it keeps the playhead from accelerating/decelerating with each arriving snapshot. The natural
         // real-time advance already tracks the average data rate, so only a tiny correction budget is needed.
-        [SerializeField, Range(0.01f, 0.25f)] private float maxClockCorrectionRate = 0.04f;
+        [SerializeField, Range(0.01f, 0.25f)] private float maxClockCorrectionRate = 0.12f;
         // Drift beyond this (first packet, big hitch, pause, teleport) hard-resyncs the playhead.
         [SerializeField, Range(0.2f, 2f)] private float hardResyncThreshold = 0.4f;
 
@@ -58,10 +61,17 @@ namespace TitanOrbit.Networking
         private double transitOffsetMean;
         private double transitOffsetJitter;
         private bool transitInitialized;
-        private double effectiveInterpolationDelay = 0.10; // safe starting value until jitter is measured
-        // EMA blend factors per snapshot (~30 Hz): mean tracks slow clock drift, jitter reacts a bit faster.
+        private double effectiveInterpolationDelay = 0.12; // safe starting value until jitter is measured
+        // Mean tracks slow clock drift. The jitter estimate is a PEAK-TRACKING envelope: it jumps up instantly to a
+        // fresh deviation (fast attack, so the buffer can deepen the moment a spike is seen) and decays slowly when
+        // the link calms (slow release, so it doesn't tighten back into a new spike). This asymmetry is what keeps a
+        // cloud link smooth through bursty jitter instead of stuttering for a couple seconds while a symmetric EMA
+        // catches up.
         private const double TransitMeanBlend = 0.05;
-        private const double TransitJitterBlend = 0.10;
+        private const double TransitJitterReleasePerSnapshot = 0.02; // ~1.5 s release time-constant at 30 Hz
+        // Asymmetric convergence of the effective buffer depth: ~0.4 s to grow, several seconds to shrink.
+        private const double DelayAttackRate = 6.0;
+        private const double DelayReleaseRate = 0.25;
 
         public double RenderServerTime => playheadServerTime;
         public float InterpolationDelaySeconds => (float)effectiveInterpolationDelay;
@@ -124,7 +134,11 @@ namespace TitanOrbit.Networking
             {
                 double deviation = Math.Abs(transit - transitOffsetMean);
                 transitOffsetMean += (transit - transitOffsetMean) * TransitMeanBlend;
-                transitOffsetJitter += (deviation - transitOffsetJitter) * TransitJitterBlend;
+                // Fast attack, slow release: snap up to a fresh spike immediately; bleed down gently afterwards.
+                if (deviation > transitOffsetJitter)
+                    transitOffsetJitter = deviation;
+                else
+                    transitOffsetJitter += (deviation - transitOffsetJitter) * TransitJitterReleasePerSnapshot;
             }
         }
 
@@ -142,11 +156,14 @@ namespace TitanOrbit.Networking
                 return;
 
             double dtForDelay = Time.unscaledDeltaTime;
-            // Ease the effective delay toward the jitter-derived target slowly so the buffer never jumps
-            // (a sudden change would move `target` and force the clock to resync). ~0.5/s convergence.
+            // Grow the buffer FAST toward a higher target (a jitter spike must be covered before it underruns) but
+            // shrink SLOWLY back toward a lower target (don't tighten straight into the next spike). The render-side
+            // projective smoothing absorbs the small playback-rate change a growing buffer implies, so a quick grow
+            // no longer pops the ship.
             double delayTarget = ComputeTargetInterpolationDelay();
+            double delayRate = delayTarget > effectiveInterpolationDelay ? DelayAttackRate : DelayReleaseRate;
             effectiveInterpolationDelay += (delayTarget - effectiveInterpolationDelay)
-                * (1.0 - Math.Exp(-0.5 * dtForDelay));
+                * (1.0 - Math.Exp(-delayRate * dtForDelay));
 
             double target = latestSnapshotServerTime - effectiveInterpolationDelay;
 

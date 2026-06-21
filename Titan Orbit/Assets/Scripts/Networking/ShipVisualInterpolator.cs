@@ -1,18 +1,33 @@
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 
 namespace TitanOrbit.Networking
 {
     /// <summary>
-    /// Remote ship display: interpolates pose on the shared server-time playhead and applies to BankPivot
-    /// for smooth toroidal rendering.
+    /// Remote ship display: interpolates pose on the shared server-time playhead, then applies a
+    /// snap-free smoothing pass before publishing the pose to BankPivot for toroidal rendering.
+    ///
+    /// Raw snapshot interpolation jumps whenever the buffer underruns (late/lost packet) or the render
+    /// clock corrects — that jump is the "ship catching up after lag" jerk. We hide it with
+    /// <b>projective velocity blending</b>: each frame the displayed pose is pushed forward along the last
+    /// known velocity (so constant-speed motion has zero added lag) and any residual error against the freshly
+    /// sampled target is decayed exponentially. Discontinuities become a smooth glide instead of a pop.
     /// </summary>
     [DefaultExecutionOrder(31000)]
     public sealed class ShipVisualInterpolator : ClientRenderTimelineSource
     {
+        // Time constants for how fast the displayed pose closes residual error onto the network-sampled pose.
+        // Small = snappier but lets micro-jitter through; large = glassier but laggier on direction changes.
+        [SerializeField, Range(0.02f, 0.25f)] private float positionSmoothTime = 0.08f;
+        [SerializeField, Range(0.02f, 0.25f)] private float rotationSmoothTime = 0.06f;
+        // Error larger than this (toroidal wrap, respawn, teleport) is snapped instead of glided.
+        [SerializeField] private float snapErrorDistance = 30f;
+
         private Starship starship;
         private Rigidbody rb;
+
         private Vector3 displayPosition;
         private Quaternion displayRotation;
         private Vector3 displayVelocity;
@@ -61,15 +76,45 @@ namespace TitanOrbit.Networking
             var timeline = ClientRenderTimeline.Instance ?? ClientRenderTimeline.EnsureExists();
             double renderTime = timeline.RenderServerTime;
 
-            if (!TrySampleAt(renderTime, out displayPosition, out displayRotation, out displayVelocity, out displayThrusting))
+            if (!TrySampleAt(renderTime, out Vector3 targetPosition, out Quaternion targetRotation, out displayVelocity, out displayThrusting))
             {
-                hasDisplayPose = false;
+                // No data yet: hold whatever we last displayed rather than freezing at origin.
                 return;
+            }
+
+            targetPosition.y = 0f;
+            displayVelocity.y = 0f;
+
+            float dt = Time.unscaledDeltaTime;
+            if (!hasDisplayPose)
+            {
+                displayPosition = targetPosition;
+                displayRotation = targetRotation;
+            }
+            else
+            {
+                // Projective velocity blending: carry the displayed pose forward along the known velocity so
+                // steady motion tracks with no added lag, then decay the residual error toward the freshly
+                // sampled target. A late packet's "catch up" becomes a smooth glide instead of a snap.
+                Vector3 predicted = displayPosition + displayVelocity * dt;
+                Vector3 error = ToroidalMap.ShortestWorldOffsetXZ(predicted, targetPosition);
+
+                if (error.magnitude > snapErrorDistance)
+                {
+                    displayPosition = targetPosition;
+                }
+                else
+                {
+                    float posK = 1f - Mathf.Exp(-dt / Mathf.Max(0.001f, positionSmoothTime));
+                    displayPosition = predicted + error * posK;
+                }
+
+                float rotK = 1f - Mathf.Exp(-dt / Mathf.Max(0.001f, rotationSmoothTime));
+                displayRotation = Quaternion.Slerp(displayRotation, targetRotation, rotK);
             }
 
             hasDisplayPose = true;
             displayPosition.y = 0f;
-            displayVelocity.y = 0f;
 
             if (rb != null)
             {

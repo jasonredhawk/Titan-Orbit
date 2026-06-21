@@ -200,5 +200,5 @@ else {
 }
 
 Write-Host ""
-Write-Host "=== Pipeline finished OK ==="
+Write-Host "=== Pipeline finished OK === $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
 exit 0
