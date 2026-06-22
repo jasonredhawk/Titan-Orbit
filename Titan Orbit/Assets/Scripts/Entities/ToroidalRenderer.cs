@@ -188,6 +188,8 @@ namespace TitanOrbit.Entities
 
             if (_isShip && _starship != null)
             {
+                // Local player and gem-moon docked ships stay at their snapped world pose (display space on clients).
+                // Toroidal offset would double-wrap docked ships that already track the rendered moon.
                 if (_starship.IsLocalPlayerShip() || _starship.GemMoonDocked)
                     return;
                 Transform bankPivot = _starship.BankPivotTransform;

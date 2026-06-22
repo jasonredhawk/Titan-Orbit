@@ -1184,6 +1184,19 @@ namespace TitanOrbit.Entities
             return r * Mathf.Max(lossy.x, Mathf.Max(lossy.y, lossy.z));
         }
 
+        /// <summary>World-space radius of the rendered GemMoonVisual sphere (may differ slightly from the body collider during setup).</summary>
+        public float GetMoonVisualRadiusWorld()
+        {
+            if (_visualTransform == null)
+                _visualTransform = transform.Find("GemMoonVisual");
+            if (_visualTransform != null)
+            {
+                Vector3 s = _visualTransform.lossyScale;
+                return 0.5f * Mathf.Max(s.x, Mathf.Max(s.y, s.z));
+            }
+            return GetMoonBodyRadiusWorld();
+        }
+
         public float GetMoonShieldOuterRadiusMultiplierFromDockRadius()
         {
             return Mathf.Max(0.0001f, matrixShieldOrbitZoneEdgeExpandMultiplier) * Mathf.Max(0.0001f, matrixShieldScaleMultiplier);

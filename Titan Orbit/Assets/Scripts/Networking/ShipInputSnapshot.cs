@@ -15,9 +15,10 @@ namespace TitanOrbit.Networking
         public bool Thrust;
         public bool Fire;
         public bool SpaceBrakes;
-        /// <summary>Owner client predicted pose — server uses for wing tractor targets (not motor authority).</summary>
+        /// <summary>Owner client predicted pose — server adopts this for human ships (collisions + broadcast).</summary>
         public Vector3 PredictedPosition;
         public Quaternion PredictedRotation;
+        public Vector3 PredictedVelocity;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -29,6 +30,7 @@ namespace TitanOrbit.Networking
             serializer.SerializeValue(ref SpaceBrakes);
             serializer.SerializeValue(ref PredictedPosition);
             serializer.SerializeValue(ref PredictedRotation);
+            serializer.SerializeValue(ref PredictedVelocity);
         }
 
         public static ShipInputSnapshot Default => new ShipInputSnapshot
@@ -43,8 +45,8 @@ namespace TitanOrbit.Networking
     }
 
     /// <summary>
-    /// Server-authoritative motor pose published after each physics tick. Owner client reconciles
-    /// against this instead of NetworkTransform (which would fight local prediction).
+    /// Motor pose published after each physics tick. For human ships on a dedicated server the pose comes from
+    /// the owner's client prediction; remote clients interpolate it. AI ships are fully server-simulated.
     /// </summary>
     public struct ShipMotorStateSnapshot : INetworkSerializable
     {

@@ -20,12 +20,9 @@ namespace TitanOrbit.Entities
         private const float MotorKeyframeInterval = 1f / 3f;       // ~3 Hz reliable baseline (spawn / late-join)
         private const float MotorKeyframeForcePositionDelta = 5f;  // teleport / large move forces a keyframe now
 
-        // Owner free-flight reconciliation tuning. The owner predicts locally for responsiveness but must
-        // converge to the server's authoritative pose (which every other client renders) or ships desync.
-        private const float OwnerReconcileHardSnapDistance = 40f;       // gross desync / teleport: snap outright
-        private const float OwnerReconcileDeadZone = 0.05f;             // ignore sub-5cm error (avoid micro jitter)
-        private const float OwnerReconcilePositionRate = 10f;           // higher = snappier convergence
-        private const float OwnerReconcileMaxExtrapolationSeconds = 0.15f; // cap latency compensation
+        // Max planar step the server will accept from a client pose report per physics tick (anti-cheat).
+        private const float ServerClientPoseMaxSpeedMultiplier = 2.5f;
+        private const float ServerClientPoseMinMaxStep = 3f;
 
         private ShipInputSnapshot _serverLatestInput = ShipInputSnapshot.Default;
         private ShipInputSnapshot _motorInput = ShipInputSnapshot.Default;
@@ -485,6 +482,9 @@ namespace TitanOrbit.Entities
                 && bulletConfig.cannons != null
                 && bulletConfig.cannons.Count > 0;
 
+            Vector3 vel = rb != null ? rb.linearVelocity : Vector3.zero;
+            vel.y = 0f;
+
             return new ShipInputSnapshot
             {
                 AimWorldXZ = aimXZ,
@@ -493,6 +493,7 @@ namespace TitanOrbit.Entities
                 SpaceBrakes = (inputHandler as PlayerInputHandler)?.SpaceBrakesEnabled ?? true,
                 PredictedPosition = GetPredictedPositionForTractorReport(),
                 PredictedRotation = rb != null ? rb.rotation : transform.rotation,
+                PredictedVelocity = vel,
             };
         }
 
@@ -503,6 +504,41 @@ namespace TitanOrbit.Entities
             Vector3 pos = rb.position;
             pos.y = FIXED_Y_POSITION;
             return pos;
+        }
+
+        /// <summary>
+        /// Dedicated server: human ships are client-authoritative for pose. The owner simulates locally and
+        /// streams predicted position/rotation/velocity; the server adopts that pose for asteroid collisions and
+        /// for broadcasting to other clients. This prevents phantom hits when server-only simulation diverged
+        /// from what the owner was actually flying through.
+        /// </summary>
+        private void ServerSyncHumanShipPoseFromClientReport()
+        {
+            if (!IsServer || _isAIControlled || rb == null || gemMoonDocked.Value) return;
+            if (_serverLatestInput.Sequence == 0) return;
+
+            Vector3 pos = _serverLatestInput.PredictedPosition;
+            pos.y = FIXED_Y_POSITION;
+            Quaternion rot = _serverLatestInput.PredictedRotation;
+            Vector3 vel = _serverLatestInput.PredictedVelocity;
+            vel.y = 0f;
+
+            Vector3 offset = TitanOrbit.Generation.ToroidalMap.ShortestWorldOffsetXZ(rb.position, pos);
+            float maxStep = Mathf.Max(
+                EffectiveMaxSpeed * Time.fixedDeltaTime * ServerClientPoseMaxSpeedMultiplier,
+                ServerClientPoseMinMaxStep);
+            if (offset.sqrMagnitude > maxStep * maxStep)
+                pos = rb.position + offset.normalized * maxStep;
+
+            float maxSpeed = EffectiveMaxSpeed;
+            if (maxSpeed > 0.001f && vel.sqrMagnitude > maxSpeed * maxSpeed * 2.25f)
+                vel = vel.normalized * maxSpeed;
+
+            rb.position = pos;
+            rb.rotation = rot;
+            rb.linearVelocity = vel;
+            currentVelocity = vel;
+            SyncMotorRigidbodyToTransform();
         }
 
         private void SyncFireIntentFromInput(ShipInputSnapshot snap)
@@ -564,6 +600,16 @@ namespace TitanOrbit.Entities
 
             Vector3 vel = rb.linearVelocity;
             vel.y = 0f;
+            if (gemMoonDocked.Value)
+            {
+                Planet dockPlanet = ResolveGemMoonDockPlanet();
+                PlanetGemMoon dockMoon = dockPlanet != null ? dockPlanet.GemMoon : null;
+                if (dockMoon != null)
+                {
+                    vel = dockMoon.WorldOrbitVelocity;
+                    vel.y = 0f;
+                }
+            }
             uint appliedSeq = _motorInput.Sequence;
 
             _serverMotorPublishTick++;
@@ -775,8 +821,8 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Owner free flight: sync gem mass + input acks only (Starblast-style — local ship owns display).
-        /// Pose snap only while gem-moon docked.
+        /// Owner: sync gem mass + input acks only. Local prediction owns pose/velocity; the server adopts the
+        /// owner's reported pose for collisions and for what other players see — never the reverse.
         /// </summary>
         private void TryApplyOwnerMotorReconciliation(ShipMotorStateSnapshot serverState)
         {
@@ -805,69 +851,6 @@ namespace TitanOrbit.Entities
                 PruneAckedInputs(serverSeq);
                 _lastReconciledInputSequence = serverSeq;
             }
-
-            if (gemMoonDocked.Value)
-            {
-                // Docked: pose is fully server-driven (no free-flight prediction).
-                SnapOwnerRbToServerMotorState(serverState);
-                return;
-            }
-
-            ReconcileOwnerFreeFlightToServer(serverState);
-        }
-
-        /// <summary>
-        /// Converge the locally-predicted owner ship toward the server's authoritative pose so the owner's
-        /// view matches what every other client renders from the same authoritative state. The server pose is
-        /// ~RTT old, so it is extrapolated forward by half the round-trip along the server velocity to avoid
-        /// pulling the ship backwards (rubber-banding). Small errors ease out smoothly; gross desyncs snap.
-        /// </summary>
-        private void ReconcileOwnerFreeFlightToServer(ShipMotorStateSnapshot serverState)
-        {
-            if (rb == null) return;
-
-            Vector3 serverPos = serverState.Position;
-            serverPos.y = FIXED_Y_POSITION;
-            Vector3 serverVel = serverState.Velocity;
-            serverVel.y = 0f;
-
-            float halfRtt = GetHalfRoundTripSeconds();
-            Vector3 estimatedServerPos = serverPos + serverVel * halfRtt;
-
-            // Toroidal-aware error: ship world coords can sit many map tiles apart.
-            Vector3 toServer = TitanOrbit.Generation.ToroidalMap.ShortestWorldOffsetXZ(rb.position, estimatedServerPos);
-            toServer.y = 0f;
-            float errorDist = toServer.magnitude;
-
-            if (errorDist > OwnerReconcileHardSnapDistance)
-            {
-                SnapOwnerRbToServerMotorState(serverState);
-                return;
-            }
-
-            if (errorDist > OwnerReconcileDeadZone)
-            {
-                float blend = 1f - Mathf.Exp(-OwnerReconcilePositionRate * Time.fixedDeltaTime);
-                Vector3 newPos = rb.position + toServer * blend;
-                newPos.y = FIXED_Y_POSITION;
-                rb.position = newPos;
-
-                Vector3 newVel = Vector3.Lerp(rb.linearVelocity, serverVel, blend);
-                newVel.y = 0f;
-                rb.linearVelocity = newVel;
-                currentVelocity = newVel;
-                SyncMotorRigidbodyToTransform();
-            }
-        }
-
-        private float GetHalfRoundTripSeconds()
-        {
-            var nm = NetworkManager.Singleton;
-            var transport = nm?.NetworkConfig?.NetworkTransport;
-            if (transport == null) return 0f;
-            ulong ms = transport.GetCurrentRtt(NetworkManager.ServerClientId);
-            if (ms == 0) return 0f;
-            return Mathf.Min(ms * 0.001f * 0.5f, OwnerReconcileMaxExtrapolationSeconds);
         }
 
         private void SnapOwnerRbToServerMotorState(ShipMotorStateSnapshot serverState)

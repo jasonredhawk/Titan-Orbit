@@ -144,7 +144,10 @@ namespace TitanOrbit.Entities
         [SerializeField] private float gemMoonOrbitZoneScaleTransitionSeconds = 0.35f;
         [Tooltip("Scale when fully blended to the moon surface (blend 1). Set to 1 for no shrink. Overall ship size also uses Ship Visual Scale Multiplier on this component.")]
         [SerializeField, Range(0.05f, 1.5f), FormerlySerializedAs("gemMoonLandingVisualScale")]
-        private float gemMoonDockScaleAtSurface = 0.24f;
+        private float gemMoonDockScaleAtSurface = 0.55f;
+        [Tooltip("Extra clearance beyond moon visual radius + scaled hull so the ship sits on top of the moon mesh (fraction of moon radius).")]
+        [SerializeField, Range(0f, 0.25f)]
+        private float gemMoonSurfaceStandoffOverMoonRadius = 0.08f;
         [Tooltip("If docked, ships only shrink/land when within moon trigger distance = dockSnapRadiusWorld × this multiplier.")]
         [SerializeField] private float gemMoonLandingRangeMultiplier = 1.0f;
         [Tooltip("Seconds for ease-in-out dock (in band) and undock (scale + orbit handoff). Shared timeline for scale, position, and rotation.")]
@@ -2091,7 +2094,123 @@ namespace TitanOrbit.Entities
         }
 
         private bool ShouldUseGemMoonDisplayDockSpace() =>
-            IsOwner && !_isAIControlled && NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
+            NetworkManager.Singleton != null && NetworkManager.Singleton.IsClient;
+
+        /// <summary>
+        /// Distance from moon center to ship root while docked: visual moon radius + scaled hull extent + surface standoff.
+        /// </summary>
+        private float ComputeGemMoonDockContactRadiusWorld(PlanetGemMoon moon)
+        {
+            if (moon == null) return 0.0001f;
+            float moonRadius = Mathf.Max(moon.GetMoonVisualRadiusWorld(), moon.GetMoonBodyRadiusWorld());
+            float hullScale = Mathf.Max(0.05f, gemMoonVisualScaleMultiplier);
+            float shipHull = GetShipMoonDockRadiusXZ() * hullScale;
+            float standoff = moonRadius * gemMoonSurfaceStandoffOverMoonRadius;
+            return moonRadius + shipHull + standoff;
+        }
+
+        /// <summary>
+        /// Snaps the ship onto the gem-moon surface and advances the landing offset with moon spin.
+        /// Server uses canonical gameplay space; clients use display space (after the moon's orbit LateUpdate).
+        /// </summary>
+        /// <param name="advanceSpin">When false, repositions from the current offset without rotating it (host client visual pass).</param>
+        private bool ApplyGemMoonDockSurfaceSnap(bool useDisplaySpace, bool advanceSpin = true)
+        {
+            if (isDead.Value || !gemMoonDocked.Value || rb == null) return false;
+
+            Planet dockPlanet = ResolveGemMoonDockPlanet();
+            PlanetGemMoon moon = dockPlanet != null ? dockPlanet.GemMoon : null;
+            if (moon == null) return false;
+
+            Vector3 moonPos = moon.GetDockTrackingWorldPosition(useDisplaySpace);
+            moonPos.y = FIXED_Y_POSITION;
+
+            float moonDockOuterRadius = moon.GetMoonDockSnapRadiusWorld() * gemMoonLandingRangeMultiplier;
+            float shipRadius = GetShipMoonDockRadiusXZ();
+
+            Vector3 shipPosTransform = transform.position;
+            shipPosTransform.y = FIXED_Y_POSITION;
+            Vector3 shipPosRigidbody = rb.position;
+            shipPosRigidbody.y = FIXED_Y_POSITION;
+            float distToMoon = Mathf.Min(
+                ToroidalMap.ToroidalDistance(shipPosTransform, moonPos),
+                ToroidalMap.ToroidalDistance(shipPosRigidbody, moonPos));
+
+            bool withinGemMoonBoundary = moonDockOuterRadius > 0.0001f
+                && distToMoon <= moonDockOuterRadius + shipRadius;
+            bool inMoonDockZone = withinGemMoonBoundary
+                || moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier: 1.05f);
+            if (!inMoonDockZone) return false;
+
+            float dockDuration = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
+            float moonDockLinearT = Mathf.Clamp01(gemMoonDockApproachElapsed / dockDuration);
+            float moonDockEaseInOut = GemMoonDockEaseInOut(moonDockLinearT);
+
+            ulong currentPlanetId = gemMoonPlanetNetworkObjectId.Value;
+            float contactRadius = Mathf.Max(0.0001f, ComputeGemMoonDockContactRadiusWorld(moon));
+            Vector3 moonSpinAxis = moon.SpinAxisWorld.normalized;
+
+            bool landingPlanetChanged = gemMoonLandingPlanetIdCache != currentPlanetId;
+            if (landingPlanetChanged || gemMoonLandingOffset.sqrMagnitude < 0.0001f)
+            {
+                Vector3 initialDir = ToroidalMap.ToroidalDirection(moonPos, rb.position);
+                initialDir = Vector3.ProjectOnPlane(initialDir, moonSpinAxis);
+                if (initialDir.sqrMagnitude < 0.0001f)
+                {
+                    Vector3 fallback = Vector3.Cross(moonSpinAxis, Vector3.forward);
+                    if (fallback.sqrMagnitude < 0.0001f) fallback = Vector3.Cross(moonSpinAxis, Vector3.right);
+                    initialDir = fallback;
+                }
+                initialDir.Normalize();
+                gemMoonLandingOffset = initialDir * contactRadius;
+                gemMoonLandingPlanetIdCache = currentPlanetId;
+                if (landingPlanetChanged)
+                    gemMoonDockApproachElapsed = 0f;
+                if (visualRoot != null && visualRoot != transform)
+                    gemMoonDockVisualStartRotation = visualRoot.rotation;
+            }
+
+            float spinStepDeg = moon.SpinDegreesPerSecond
+                * (useDisplaySpace ? Time.deltaTime : Time.fixedDeltaTime)
+                * moonDockEaseInOut;
+
+            if (advanceSpin && Mathf.Abs(spinStepDeg) > 0.0001f)
+                gemMoonLandingOffset = Quaternion.AngleAxis(spinStepDeg, moon.SpinAxisWorld) * gemMoonLandingOffset;
+            Vector3 radial = gemMoonLandingOffset;
+            if (radial.sqrMagnitude < 0.0001f) radial = Vector3.forward;
+            radial = radial.normalized * contactRadius;
+            gemMoonLandingOffset = radial;
+
+            Vector3 orbitDir = radial.sqrMagnitude > 0.0001f ? radial.normalized : Vector3.forward;
+
+            if (!wasGemMoonDocked || moonDockLinearT <= 0.03f || landingPlanetChanged)
+                gemMoonDockApproachStartWorldPos = rb.position;
+
+            Vector3 targetSurfacePos = moonPos + orbitDir * contactRadius;
+            Vector3 targetPos = Vector3.Lerp(gemMoonDockApproachStartWorldPos, targetSurfacePos, moonDockEaseInOut);
+            rb.MovePosition(targetPos);
+            SetRootColliderDocked(true);
+
+            if (visualRoot != null && visualRoot != transform)
+            {
+                if (!wasGemMoonDocked || moonDockLinearT <= 0.03f || landingPlanetChanged)
+                    gemMoonDockVisualStartRotation = visualRoot.rotation;
+                Vector3 surfaceNormal = radial.normalized;
+                Vector3 tangent = Vector3.Cross(moon.SpinAxisWorld, surfaceNormal);
+                if (tangent.sqrMagnitude < 0.0001f)
+                    tangent = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
+                if (tangent.sqrMagnitude < 0.0001f)
+                    tangent = Vector3.forward;
+                tangent.Normalize();
+                Quaternion targetRot = Quaternion.LookRotation(tangent, surfaceNormal);
+                visualRoot.rotation = Quaternion.Slerp(gemMoonDockVisualStartRotation, targetRot, moonDockEaseInOut);
+            }
+
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            currentVelocity = rb.linearVelocity;
+            return true;
+        }
 
         /// <summary>True when this ship is gem-moon docked and the dock target is <paramref name="planet"/>.</summary>
         public bool IsGemMoonDockedAtPlanet(Planet planet)
@@ -3011,6 +3130,18 @@ namespace TitanOrbit.Entities
         private void LateUpdate()
         {
             RefreshCardStatsCache();
+
+            // After PlanetGemMoon orbit LateUpdate (32100): every client re-snaps docked ships to the rendered moon
+            // so they ride planetary orbit + moon spin. Server motor snapshots stay in gameplay space; display snap
+            // must not run on the dedicated server process (headless has no display tile).
+            if (ShouldUseGemMoonDisplayDockSpace() && gemMoonDocked.Value)
+            {
+                // Host: server FixedUpdate already advanced spin; only reproject to display tile here.
+                bool advanceSpin = !IsServer;
+                if (ApplyGemMoonDockSurfaceSnap(useDisplaySpace: true, advanceSpin: advanceSpin))
+                    SyncMotorRigidbodyToTransform();
+            }
+
             if (IsServer && IsSpawned && (Time.frameCount & 31) == 0)
             {
                 float gemCap = ComputeGemCapacityLocal();
@@ -3796,7 +3927,6 @@ namespace TitanOrbit.Entities
             PlanetGemMoon moon = null;
             bool withinGemMoonBoundary = false;
             float moonDockOuterRadius = 0f;
-            float moonDockSurfaceRadius = 0f;
 
             if (!isDead.Value && gemMoonDocked.Value)
             {
@@ -3815,9 +3945,7 @@ namespace TitanOrbit.Entities
                         ToroidalMap.ToroidalDistance(shipPosTransform, moonPosForBoundary),
                         ToroidalMap.ToroidalDistance(shipPosRigidbody, moonPosForBoundary));
                     moonDockOuterRadius = moon.GetMoonDockSnapRadiusWorld() * gemMoonLandingRangeMultiplier;
-                    float bodyRadiusWorld = moon.GetMoonBodyRadiusWorld();
                     float shipRadius = GetShipMoonDockRadiusXZ();
-                    moonDockSurfaceRadius = bodyRadiusWorld + shipRadius;
 
                     withinGemMoonBoundary = moonDockOuterRadius > 0.0001f
                         && distToMoon <= moonDockOuterRadius + shipRadius;
@@ -3843,7 +3971,7 @@ namespace TitanOrbit.Entities
             {
                 // Keep approach progress while docked even if boundary flickers (large hull / toroidal edge).
                 bool inMoonZone = withinGemMoonBoundary;
-                if (!inMoonZone && _isAIControlled && IsServer && moon != null)
+                if (!inMoonZone && moon != null)
                     inMoonZone = moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier: 1.05f);
                 if (inMoonZone)
                     gemMoonDockApproachElapsed += Time.fixedDeltaTime;
@@ -3854,7 +3982,13 @@ namespace TitanOrbit.Entities
             float dockDuration = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
             float moonDockEaseInOut = 0f;
             float moonDockLinearT = 0f;
-            if (gemMoonDocked.Value && withinGemMoonBoundary)
+            bool inMoonDockZoneForVisuals = withinGemMoonBoundary;
+            if (gemMoonDocked.Value && moon != null
+                && !inMoonDockZoneForVisuals)
+            {
+                inMoonDockZoneForVisuals = moon.IsShipInMoonDockZoneToroidal(this, radiusMultiplier: 1.05f);
+            }
+            if (gemMoonDocked.Value && inMoonDockZoneForVisuals)
             {
                 moonDockLinearT = Mathf.Clamp01(gemMoonDockApproachElapsed / dockDuration);
                 moonDockEaseInOut = GemMoonDockEaseInOut(moonDockLinearT);
@@ -3863,7 +3997,7 @@ namespace TitanOrbit.Entities
             if (IsServer)
                 ServerTryTriggerGalacticZoomOnMoonSurfaceLanding();
 
-            if (gemMoonDocked.Value && withinGemMoonBoundary)
+            if (gemMoonDocked.Value && inMoonDockZoneForVisuals)
             {
                 // Start from *current* pose when the 1s transition begins (avoid snapping to orbit-edge values).
                 if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
@@ -3907,73 +4041,12 @@ namespace TitanOrbit.Entities
             // Keep NetworkObject root at base scale; dock shrink is applied with chassis scale on Prefab in LateUpdate.
             transform.localScale = baseLocalScale;
 
-            bool canSnapToGemMoonSurface = IsDedicatedOwnerClient || IsServer;
-            if (!isDead.Value && gemMoonDocked.Value && moon != null && canSnapToGemMoonSurface && withinGemMoonBoundary)
+            // Server: authoritative gameplay-space dock pose for motor replication.
+            if (IsServer)
+                ApplyGemMoonDockSurfaceSnap(useDisplaySpace: false, advanceSpin: true);
+            else if (!isDead.Value && gemMoonDocked.Value && moon != null && withinGemMoonBoundary)
             {
-                ulong currentPlanetId = gemMoonPlanetNetworkObjectId.Value;
-
-                bool useDisplayMoonSpace = ShouldUseGemMoonDisplayDockSpace();
-                Vector3 moonPos = moon.GetDockTrackingWorldPosition(useDisplayMoonSpace);
-                float contactRadius = Mathf.Max(0.0001f, moonDockSurfaceRadius);
-                Vector3 moonSpinAxis = moon.SpinAxisWorld.normalized;
-
-                // Cache surface contact offset relative to moon center from initial collision direction.
-                if (!wasGemMoonDocked || gemMoonLandingPlanetIdCache != currentPlanetId)
-                {
-                    Vector3 initialDir = ToroidalMap.ToroidalDirection(moonPos, rb.position);
-                    initialDir = Vector3.ProjectOnPlane(initialDir, moonSpinAxis);
-                    if (initialDir.sqrMagnitude < 0.0001f)
-                    {
-                        Vector3 fallback = Vector3.Cross(moonSpinAxis, Vector3.forward);
-                        if (fallback.sqrMagnitude < 0.0001f) fallback = Vector3.Cross(moonSpinAxis, Vector3.right);
-                        initialDir = fallback;
-                    }
-                    initialDir.Normalize();
-                    gemMoonLandingOffset = initialDir * contactRadius;
-                    gemMoonLandingPlanetIdCache = currentPlanetId;
-                    gemMoonDockApproachElapsed = 0f;
-                    if (visualRoot != null && visualRoot != transform)
-                        gemMoonDockVisualStartRotation = visualRoot.rotation;
-                }
-
-                // Rotate contact offset with moon axial spin so ship appears static on surface.
-                // Ease the moon spin influence during the 1s dock transition to avoid a visible sideways "jump".
-                float spinStepDeg = moon.SpinDegreesPerSecond * Time.fixedDeltaTime * moonDockEaseInOut;
-                if (Mathf.Abs(spinStepDeg) > 0.0001f)
-                    gemMoonLandingOffset = Quaternion.AngleAxis(spinStepDeg, moon.SpinAxisWorld) * gemMoonLandingOffset;
-                Vector3 radial = gemMoonLandingOffset;
-                if (radial.sqrMagnitude < 0.0001f) radial = Vector3.forward;
-                radial = radial.normalized * contactRadius;
-                gemMoonLandingOffset = radial;
-
-                Vector3 orbitDir = radial.sqrMagnitude > 0.0001f ? radial.normalized : Vector3.forward;
-
-                if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
-                    gemMoonDockApproachStartWorldPos = rb.position;
-
-                Vector3 targetSurfacePos = moonPos + orbitDir * contactRadius;
-                Vector3 targetPos = Vector3.Lerp(gemMoonDockApproachStartWorldPos, targetSurfacePos, moonDockEaseInOut);
-                rb.MovePosition(targetPos);
                 SetRootColliderDocked(true);
-
-                if (visualRoot != null && visualRoot != transform)
-                {
-                    if (!wasGemMoonDocked || moonDockLinearT <= 0.03f)
-                        gemMoonDockVisualStartRotation = visualRoot.rotation;
-                    Vector3 surfaceNormal = radial.normalized;
-                    Vector3 tangent = Vector3.Cross(moon.SpinAxisWorld, surfaceNormal);
-                    if (tangent.sqrMagnitude < 0.0001f)
-                        tangent = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
-                    if (tangent.sqrMagnitude < 0.0001f)
-                        tangent = Vector3.forward;
-                    tangent.Normalize();
-                    Quaternion targetRot = Quaternion.LookRotation(tangent, surfaceNormal);
-                    visualRoot.rotation = Quaternion.Slerp(gemMoonDockVisualStartRotation, targetRot, moonDockEaseInOut);
-                }
-
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-                currentVelocity = rb.linearVelocity;
             }
             else if (!gemMoonDocked.Value && wasGemMoonDocked)
             {
@@ -4010,7 +4083,10 @@ namespace TitanOrbit.Entities
             if (ShouldRunMotorOnServer)
             {
                 ServerConsumeInputForMotorTick();
-                RunPlayerMotorSimulationTick();
+                if (_isAIControlled || gemMoonDocked.Value)
+                    RunPlayerMotorSimulationTick();
+                else
+                    ServerSyncHumanShipPoseFromClientReport();
                 ServerPublishAuthoritativeMotorState();
                 SyncMotorRigidbodyToTransform();
             }

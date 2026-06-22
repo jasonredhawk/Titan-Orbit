@@ -69,6 +69,7 @@ namespace TitanOrbit.Networking
         private void LateUpdate()
         {
             if (starship == null || starship.IsLocalPlayerShip()) return;
+            if (starship.GemMoonDocked) return;
 
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.IsClient || nm.IsServer) return;
