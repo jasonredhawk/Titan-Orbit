@@ -6,14 +6,8 @@ using TitanOrbit.Generation;
 namespace TitanOrbit.Networking
 {
     /// <summary>
-    /// Remote ship display: interpolates pose on the shared server-time playhead, then applies a
-    /// snap-free smoothing pass before publishing the pose to BankPivot for toroidal rendering.
-    ///
-    /// Raw snapshot interpolation jumps whenever the buffer underruns (late/lost packet) or the render
-    /// clock corrects — that jump is the "ship catching up after lag" jerk. We hide it with
-    /// <b>projective velocity blending</b>: each frame the displayed pose is pushed forward along the last
-    /// known velocity (so constant-speed motion has zero added lag) and any residual error against the freshly
-    /// sampled target is decayed exponentially. Discontinuities become a smooth glide instead of a pop.
+    /// Remote ship display: interpolates pose on the shared server-time playhead, then applies a light
+    /// projective smoothing pass before publishing to BankPivot for toroidal rendering.
     /// </summary>
     [DefaultExecutionOrder(31000)]
     public sealed class ShipVisualInterpolator : ClientRenderTimelineSource

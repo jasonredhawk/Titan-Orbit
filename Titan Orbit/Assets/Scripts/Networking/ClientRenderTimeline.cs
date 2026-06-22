@@ -310,21 +310,38 @@ namespace TitanOrbit.Networking
                 Vector3 segmentOffset = ToroidalMap.ShortestWorldOffsetXZ(a.Position, b.Position);
                 position = a.Position + segmentOffset * t;
                 rotation = Quaternion.Slerp(a.Rotation, b.Rotation, t);
-                velocity = Vector3.Lerp(a.Velocity, b.Velocity, t);
+                // Segment-derived velocity matches the position path (avoids Hermite-style overshoot when
+                // snapshot velocity disagrees with position deltas on client-reported poses).
+                if (span > 0.0001)
+                    velocity = segmentOffset / (float)span;
+                else
+                    velocity = Vector3.Lerp(a.Velocity, b.Velocity, t);
+                velocity.y = 0f;
                 // Thrust is a discrete intent: hold the flame lit across the whole segment if either end is
                 // thrusting so it doesn't flicker at packet boundaries.
                 thrust = a.Thrust || b.Thrust;
                 return true;
             }
 
-            // Buffer underrun: playhead is past the newest snapshot. Dead-reckon along last known velocity.
+            // Buffer underrun: playhead is past the newest snapshot. Dead-reckon along the velocity implied by
+            // the last two real samples (not the reported snapshot velocity, which can disagree with the actual
+            // path — e.g. a parked ship still reporting a residual speed would otherwise drift forward).
             TimelineSample tail = samples[samples.Count - 1];
+            Vector3 tailVelocity = tail.Velocity;
+            if (samples.Count >= 2)
+            {
+                TimelineSample prev = samples[samples.Count - 2];
+                double sp = tail.ServerTime - prev.ServerTime;
+                if (sp > 0.0001)
+                    tailVelocity = ToroidalMap.ShortestWorldOffsetXZ(prev.Position, tail.Position) / (float)sp;
+            }
+            tailVelocity.y = 0f;
             double ahead = renderServerTime - tail.ServerTime;
             if (ahead < 0.0) ahead = 0.0;
             if (ahead > MaxExtrapolationSeconds) ahead = MaxExtrapolationSeconds;
-            position = tail.Position + tail.Velocity * (float)ahead;
+            position = tail.Position + tailVelocity * (float)ahead;
             rotation = tail.Rotation;
-            velocity = tail.Velocity;
+            velocity = tailVelocity;
             thrust = tail.Thrust;
             return true;
         }

@@ -517,6 +517,10 @@ namespace TitanOrbit.Entities
             if (!IsServer || _isAIControlled || rb == null || gemMoonDocked.Value) return;
             if (_serverLatestInput.Sequence == 0) return;
 
+            // Simplest correct model: the server holds exactly the client's most recently reported pose.
+            // It never invents motion between reports (that produced a drift-then-snap sawtooth that fought
+            // the authoritative pose). The broadcast stream below only emits when this pose actually changes,
+            // so a parked ship stays put and a moving ship streams its real, distinct poses.
             Vector3 pos = _serverLatestInput.PredictedPosition;
             pos.y = FIXED_Y_POSITION;
             Quaternion rot = _serverLatestInput.PredictedRotation;
@@ -621,14 +625,7 @@ namespace TitanOrbit.Entities
                 LastAppliedInputSequence = appliedSeq,
                 MotorPublishTick = _serverMotorPublishTick,
                 SimMass = rb.mass,
-                // Stamp with the PHYSICS clock, not NGO's ServerTime. rb.position is sampled here in FixedUpdate,
-                // so the timestamp must come from the same clock that defines when that position existed. NGO's
-                // ServerTime advances on a separate (frame/tick) cadence, so sampling it in FixedUpdate labels
-                // 50 Hz-sampled positions with mismatched times: the position deltas and time deltas between
-                // streamed snapshots disagree, and the client interpolator renders that as the "move / slowdown /
-                // move" speed ripple. Time.fixedTimeAsDouble advances exactly fixedDeltaTime per physics step, so
-                // every position carries a time label consistent with its true motion and playback is constant-rate.
-                ServerTime = Time.fixedTimeAsDouble,
+                ServerTime = ComputeMotorStreamTimestampForBroadcast(),
                 Thrust = _motorInput.Thrust && !IsBulletElectricShockDisabled,
             };
             lastProcessedInputSequence.Value = appliedSeq;
@@ -658,6 +655,41 @@ namespace TitanOrbit.Entities
                 _motorKeyframeAccumulator = 0f;
                 authoritativeMotorState.Value = snapshot;
             }
+        }
+
+        // Per-ship render clock for the broadcast pose stream, anchored to server time but ADVANCED BY THE
+        // CLIENT'S OWN POSE-SAMPLE CADENCE.
+        //
+        // The position in a human ship's snapshot is the owner's client-reported pose; it existed at the
+        // client's ClientSendTime, not at the server's publish tick. Stamping it with the server physics clock
+        // (Time.fixedTimeAsDouble) decouples the time label from the motion: report jitter makes the published
+        // time gaps (0.02–0.10 s) disagree with the distance actually travelled, so the interpolator stretches
+        // then compresses playback — the "move / slowdown / move" choppiness. By advancing this clock by the
+        // delta between consecutive reports' ClientSendTime, each pose carries a time consistent with its true
+        // motion and duplicate reports (no new ClientSendTime) reuse the same stamp so the client dedups them.
+        // AI ships are server-simulated every tick, so their physics clock already matches their motion.
+        private double _poseStreamClock;
+        private float _lastPoseStreamClientSendTime;
+        private bool _poseStreamClockInitialized;
+
+        private double ComputeMotorStreamTimestampForBroadcast()
+        {
+            if (_isAIControlled)
+                return Time.fixedTimeAsDouble;
+
+            float clientSend = _serverLatestInput.ClientSendTime;
+            if (!_poseStreamClockInitialized)
+            {
+                _poseStreamClock = Time.fixedTimeAsDouble;
+                _lastPoseStreamClientSendTime = clientSend;
+                _poseStreamClockInitialized = true;
+            }
+            else if (clientSend > _lastPoseStreamClientSendTime)
+            {
+                _poseStreamClock += clientSend - _lastPoseStreamClientSendTime;
+                _lastPoseStreamClientSendTime = clientSend;
+            }
+            return _poseStreamClock;
         }
 
         /// <summary>Teleport / respawn / gross pose change should not wait for the next periodic keyframe.</summary>
