@@ -1,7 +1,9 @@
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
+using TitanOrbit.Networking;
 using TMPro;
 
 namespace TitanOrbit.Systems
@@ -602,13 +604,30 @@ namespace TitanOrbit.Systems
         /// scaled by collision severity. Falls back to <see cref="asteroidCollisionEffect"/> when the bank has no impact VFX.
         /// </summary>
         [ServerRpc(RequireOwnership = false)]
-        public void SpawnWeaponCollisionImpactServerRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
+        public void SpawnWeaponCollisionImpactServerRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt, ulong causerShipNetworkId = 0)
         {
-            SpawnWeaponCollisionImpactClientRpc(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
+            SpawnWeaponCollisionImpactClientRpc(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt, causerShipNetworkId);
         }
 
         [ClientRpc]
-        private void SpawnWeaponCollisionImpactClientRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
+        private void SpawnWeaponCollisionImpactClientRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt, ulong causerShipNetworkId)
+        {
+            // The impacting ship is rendered ~interpolation delay in the past (unless it's the local player),
+            // so hold the impact spark back by the same amount to keep it pinned to the visible collision.
+            float delay = ClientRenderTimeline.ResolveRemoteEventVisualDelay(causerShipNetworkId);
+            if (delay > 0.0001f)
+                StartCoroutine(SpawnWeaponCollisionImpactDeferred(delay, position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt));
+            else
+                SpawnWeaponCollisionImpactNow(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
+        }
+
+        private IEnumerator SpawnWeaponCollisionImpactDeferred(float delay, Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
+        {
+            yield return new WaitForSeconds(delay);
+            SpawnWeaponCollisionImpactNow(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
+        }
+
+        private void SpawnWeaponCollisionImpactNow(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
         {
             TeamManager.Team team = (TeamManager.Team)teamInt;
             GameObject prefab = null;

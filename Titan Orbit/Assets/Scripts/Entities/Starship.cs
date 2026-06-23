@@ -7012,7 +7012,8 @@ namespace TitanOrbit.Entities
                 * Mathf.Max(0.05f, vfxScaleFactor);
             int bank = GetCollisionImpactBulletBankIndex();
             VisualEffectsManager.Instance.SpawnWeaponCollisionImpactServerRpc(
-                impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value);
+                impactWorldPos, n, scaleMul, audioPitch, bank, (int)shipTeam.Value,
+                NetworkObject != null ? NetworkObjectId : 0ul);
         }
 
         private float GetShipShipRestitution() => Mathf.Clamp01(shipShipRestitution);

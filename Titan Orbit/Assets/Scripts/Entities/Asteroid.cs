@@ -176,6 +176,16 @@ namespace TitanOrbit.Entities
         {
             if (!AllAsteroids.Contains(this))
                 AllAsteroids.Add(this);
+
+            // Undo any destroy-time visual/collision hiding in case this NetworkObject instance is pooled/reused.
+            if (col != null) col.enabled = true;
+            Renderer[] rends = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < rends.Length; i++)
+            {
+                if (rends[i] != null)
+                    rends[i].enabled = true;
+            }
+
             territoryTeamInt.OnValueChanged += OnTerritoryTeamChanged;
             OnTerritoryTeamChanged((int)TeamManager.Team.None, territoryTeamInt.Value);
 
@@ -575,12 +585,63 @@ namespace TitanOrbit.Entities
                 Debug.LogWarning("[Asteroid] GemSpawner.Instance is null — no gems spawned. Ensure a GemSpawner is in the gameplay scene with gem prefab assigned, or ship Gem under Assets/Resources/Gem.prefab for headless builds.");
             }
 
-            // Schedule respawn and despawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).
+            // Stop the destroyed rock from colliding right away, but keep the NetworkObject alive briefly so
+            // observers can defer its on-screen disappearance to line up with the (interpolated) ship that
+            // destroyed it. Gameplay (gems, scoring, respawn) is already fully resolved above and unaffected.
+            if (col != null) col.enabled = false;
+
+            // Schedule respawn - fresh instance avoids state corruption (same delay as release; debug does not shorten it).
             if (AsteroidRespawnManager.Instance != null)
                 AsteroidRespawnManager.Instance.ScheduleRespawn(pos, scale, respawnTime);
 
+            AsteroidDestroyedVisualClientRpc(pos, topDamagerShipId);
+            StartCoroutine(DespawnAfterDestroyVisualBuffer());
+        }
+
+        // Kept slightly longer than the maximum client interpolation delay so observers always still have the
+        // object to hide when their deferred-disappearance timer fires.
+        private const float DestroyVisualDespawnBuffer = 0.35f;
+
+        private IEnumerator DespawnAfterDestroyVisualBuffer()
+        {
+            yield return new WaitForSeconds(DestroyVisualDespawnBuffer);
             var no = GetComponent<NetworkObject>();
             if (no != null && no.IsSpawned) no.Despawn();
+        }
+
+        /// <summary>
+        /// Observers render the ship that destroyed this asteroid ~interpolation delay in the past, so hold the
+        /// asteroid's on-screen disappearance back by the same amount (0 when the local player did it). Collision
+        /// is disabled immediately regardless; only the visual is deferred.
+        /// </summary>
+        [ClientRpc]
+        private void AsteroidDestroyedVisualClientRpc(Vector3 pos, ulong causerShipNetworkId)
+        {
+            if (IsServer) return;
+
+            if (col != null) col.enabled = false;
+
+            float delay = TitanOrbit.Networking.ClientRenderTimeline.ResolveRemoteEventVisualDelay(causerShipNetworkId);
+            if (delay > 0.0001f)
+                StartCoroutine(HideAsteroidVisualAfter(delay));
+            else
+                HideAsteroidVisualNow();
+        }
+
+        private IEnumerator HideAsteroidVisualAfter(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            HideAsteroidVisualNow();
+        }
+
+        private void HideAsteroidVisualNow()
+        {
+            Renderer[] rends = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < rends.Length; i++)
+            {
+                if (rends[i] != null)
+                    rends[i].enabled = false;
+            }
         }
     }
 }

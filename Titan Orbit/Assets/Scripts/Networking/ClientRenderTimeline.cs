@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Netcode;
 using TitanOrbit.Generation;
 
 namespace TitanOrbit.Networking
@@ -75,6 +76,28 @@ namespace TitanOrbit.Networking
 
         public double RenderServerTime => playheadServerTime;
         public float InterpolationDelaySeconds => (float)effectiveInterpolationDelay;
+
+        /// <summary>
+        /// Visual delay to apply to a server-driven world event (asteroid impact / destruction) so it lines up
+        /// with the ON-SCREEN position of the ship that caused it. Remote ships are rendered
+        /// ~<see cref="InterpolationDelaySeconds"/> in the past, so their world events must be held back by the
+        /// same amount. Events caused by the local player's own ship (rendered in real time) — and anything
+        /// evaluated on the server — are shown immediately (delay 0).
+        /// </summary>
+        public static float ResolveRemoteEventVisualDelay(ulong causerShipNetworkId)
+        {
+            NetworkManager nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsClient || nm.IsServer)
+                return 0f;
+
+            // Caused by the local player's own ship → it is drawn in real time, so show the event now.
+            if (causerShipNetworkId != 0 && nm.SpawnManager != null
+                && nm.SpawnManager.SpawnedObjects.TryGetValue(causerShipNetworkId, out NetworkObject causer)
+                && causer != null && causer.IsOwner)
+                return 0f;
+
+            return Instance != null ? Instance.InterpolationDelaySeconds : 0f;
+        }
 
         private void Awake()
         {
