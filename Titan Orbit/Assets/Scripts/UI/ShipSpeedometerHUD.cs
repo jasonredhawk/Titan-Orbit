@@ -412,11 +412,11 @@ namespace TitanOrbit.UI
             float maxBrake = Mathf.Max(0.01f, ship.MaxBrakingDeceleration);
             float mass = ship.CurrentMass;
 
-            float dt = Mathf.Max(Time.deltaTime, 1e-5f);
-            float rawAccel = hasLastHorizontalSpeed ? (cur - lastHorizontalSpeed) / dt : 0f;
+            float sampleDt = TitanOrbit.Networking.ServerSimClock.SimFixedDeltaTime;
+            float rawAccel = hasLastHorizontalSpeed ? (cur - lastHorizontalSpeed) / sampleDt : 0f;
             lastHorizontalSpeed = cur;
             hasLastHorizontalSpeed = true;
-            float k = Mathf.Clamp01(dt * accelerationBarSmoothing);
+            float k = ship.IsOwner ? 0.12f : Mathf.Clamp01(sampleDt * accelerationBarSmoothing);
             smoothedHorizontalAccel = Mathf.Lerp(smoothedHorizontalAccel, rawAccel, k);
 
             float scale = Mathf.Max(maxFwd, maxBrake, Mathf.Abs(smoothedHorizontalAccel), 0.01f);

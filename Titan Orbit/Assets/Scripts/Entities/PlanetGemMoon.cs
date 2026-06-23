@@ -1303,13 +1303,6 @@ namespace TitanOrbit.Entities
             if (TryRepelEnemyShipWithShield(ship))
                 return;
 
-            bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
-            if (isAi && (!ship.WantToDepositGems || ship.CurrentGems < 0.01f))
-            {
-                ship.ServerSetGemMoonDocked(false, null);
-                return;
-            }
-
             // Latched dock: stay docked until trigger exit / explicit undock — do not re-run landing gates every frame.
             if (ship.GemMoonDocked)
             {
@@ -1357,12 +1350,6 @@ namespace TitanOrbit.Entities
             // The ship intentionally lifts in Y when it snaps on top of the moon surface.
             // That can momentarily leave the spherical trigger volume, so we keep docked
             // based on XZ proximity to the moon body instead of relying purely on trigger overlap.
-            bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
-            if (isAi && (!ship.WantToDepositGems || ship.CurrentGems < 0.01f))
-            {
-                ship.ServerSetGemMoonDocked(false, null);
-                return;
-            }
 
             Vector3 moonPos = GetGameplayWorldPosition();
             moonPos.y = 0f;
@@ -1427,10 +1414,9 @@ namespace TitanOrbit.Entities
             Vector3 outwardVel = dir * repelSpeed;
             outwardVel.y = 0f;
 
-            bool isAi = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
                 ship.ServerNotifyGemMoonShieldRepel(outwardVel);
-            else if (ship.IsOwner && !isAi)
+            else if (ship.IsOwner)
                 ship.ApplyGemMoonShieldRepelLocal(outwardVel);
 
             return true;
@@ -1520,8 +1506,7 @@ namespace TitanOrbit.Entities
             // Arcing through the shell at meaningful speed is pass-through, not landing intent.
             // Inside the dock trigger without thrust = intentional landing; skip tangential rejection (orbit coast is mostly tangential).
             // AI depositing gems approaches the moon directly — treat like coasting to land.
-            bool isAiDepositing = ship.GetComponent<TitanOrbit.AI.AIStarshipController>() != null && ship.WantToDepositGems;
-            bool coastingToLand = (overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding) || isAiDepositing;
+            bool coastingToLand = overlapsDockTrigger && !ship.IsMoveForwardPressedForGemMoonLanding;
             if (!coastingToLand && speed > 0.25f)
             {
                 Vector3 awayFromMoon = ToroidalMap.ToroidalDirection(moonPos, shipPos);

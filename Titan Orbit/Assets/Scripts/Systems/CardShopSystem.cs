@@ -1076,53 +1076,6 @@ namespace TitanOrbit.Systems
             return homePlanet.GetContributedGems(gemClientId) + 0.001f >= cost;
         }
 
-        /// <summary>Server: AI ships purchase hull upgrades from contributed gems (same economy as players).</summary>
-        public bool TryPurchaseShipLevelUpgradeForAi(Starship ship, Planet storePlanet)
-        {
-            if (!IsServer || ship == null || storePlanet == null) return false;
-            if (ship.GetComponent<TitanOrbit.AI.AIShipMarker>() == null) return false;
-
-            if (!CanPurchaseShipLevelUpgrade(ship, storePlanet, out int nextLevel, out float cost, out _))
-                return false;
-
-            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-            if (homePlanet == null) return false;
-            if (nextLevel == 7 && (homePlanet.HomePlanetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()))
-                return false;
-
-            ulong gemClientId = ship.GetContributedGemsClientId();
-            if (!homePlanet.TrySpendContributedGems(gemClientId, cost))
-                return false;
-
-            int targetBranchIndex = ResolveAiUpgradeBranchIndex(ship, storePlanet.PlanetId, nextLevel);
-            if (!TryApplyShipToUpgradeTreeSlot(ship, storePlanet, nextLevel, targetBranchIndex, out _))
-            {
-                homePlanet.RefundContributedGems(gemClientId, cost);
-                return false;
-            }
-
-            ship.RefillCombatVitalsToMaxFromServer();
-            return true;
-        }
-
-        private int ResolveAiUpgradeBranchIndex(Starship ship, int storePlanetId, int nextLevel)
-        {
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            if (tree != null)
-            {
-                var targets = new List<int>(4);
-                UpgradeTree.GetNextLevelBranchTargets(ship.ShipLevel, ship.BranchIndex, targets);
-                for (int t = 0; t < targets.Count; t++)
-                {
-                    int branch = targets[t];
-                    string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, nextLevel, branch);
-                    if (!string.IsNullOrEmpty(cid))
-                        return branch;
-                }
-            }
-            return ship.BranchIndex;
-        }
-
         private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
         {
             if (team == TeamManager.Team.None) return null;

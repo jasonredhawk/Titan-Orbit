@@ -195,10 +195,7 @@ namespace TitanOrbit.Entities
                 Transform bankPivot = _starship.BankPivotTransform;
                 if (bankPivot == null || bankPivot == transform)
                     return;
-                Vector3 logical = rb != null ? rb.position : transform.position;
-                var shipInterpolator = _starship.GetComponent<TitanOrbit.Networking.ShipVisualInterpolator>();
-                if (shipInterpolator != null && shipInterpolator.TryGetDisplayPosition(out Vector3 interpPos))
-                    logical = interpPos;
+                Vector3 logical = _starship.GetDisplayWorldPosition();
                 Vector3 display = ToroidalMap.GetDisplayPositionWithHysteresis(
                     logical, toroidalReference, ref displayTileK, ref displayTileM);
                 bankPivot.position = display;

@@ -226,9 +226,7 @@ namespace TitanOrbit.UI
             _cachedShipNameLookup.Clear();
             foreach (var ship in _cachedAllShips)
             {
-                string baseName = ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null
-                    ? $"AI-{ship.NetworkObjectId % 1000}"
-                    : PlayerDisplayNames.GetDisplayName(ship.OwnerClientId, false);
+                string baseName = PlayerDisplayNames.GetDisplayName(ship.OwnerClientId, false);
                 _cachedShipNameLookup[ship.NetworkObjectId] = baseName;
             }
             if (_cachedAllShips.Count == 0)
@@ -292,7 +290,7 @@ namespace TitanOrbit.UI
                         DepositedGems = 0f,
                         HealedPeople = 0f,
                         TransportedPeople = 0f,
-                        IsAI = ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null
+                        IsAI = false
                     });
                 }
             }

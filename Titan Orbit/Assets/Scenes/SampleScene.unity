@@ -1615,6 +1615,7 @@ MonoBehaviour:
     NetworkTopology: 0
     UseCMBService: 0
     AutoSpawnPlayerPrefabClientSide: 1
+    NetworkMessageMetrics: 1
     NetworkProfilingMetrics: 1
     OldPrefabList: []
   RunInBackground: 1
@@ -4178,7 +4179,7 @@ MonoBehaviour:
   maxManualZoomOutDistance: 80
   mouseWheelZoomSensitivity: 0.12
   ignoreMouseZoomOverUi: 1
-  theatricalModeEnabled: 1
+  theatricalModeEnabled: 0
   theatricalIdleDurationSeconds: 20
   theatricalIdleMaxPlanarSpeed: 0.35
   theatricalPathDurationMinSeconds: 110
@@ -8330,7 +8331,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipDebugVisualizer
   useCullingMasks: 0
   lineThickness: 0.15
-  lineColor: {r: 1, g: 0.5, b: 0, a: 0.8}
+  lineColor:
+    r: 1
+    g: 0.5
+    b: 0
+    a: 0.8
   textHeightAboveShip: 2
   textSize: 8
 --- !u!114 &1207700301
@@ -8346,6 +8351,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.AI.AIStarshipManager
   ShowTopMostFoldoutHeaderGroup: 1
+  m_NetworkManager: {fileID: 0}
+  <IsLocalPlayer>k__BackingField: 0
+  <IsOwner>k__BackingField: 0
+  <IsServer>k__BackingField: 0
+  <HasAuthority>k__BackingField: 0
+  <IsSessionOwner>k__BackingField: 0
+  <ServerIsHost>k__BackingField: 0
+  <IsClient>k__BackingField: 0
+  <IsHost>k__BackingField: 0
+  <IsOwnedByServer>k__BackingField: 0
+  <IsSpawned>k__BackingField: 0
+  m_NetworkObject: {fileID: 0}
+  <NetworkObjectId>k__BackingField: 0
+  <NetworkBehaviourId>k__BackingField: 0
+  <OwnerClientId>k__BackingField: 0
+  <IsDestroying>k__BackingField: 0
+  m_VarInit: 0
+  <m_TargetIdBeingSynchronized>k__BackingField: 0
   aiShipsEnabled: 0
   starshipPrefab: {fileID: 2318939736728639728, guid: f8f437d64df2d404e943db3fca861a92, type: 3}
   aiShipData: {fileID: 0}
@@ -8354,6 +8377,9 @@ MonoBehaviour:
   minerPercentage: 0.6
   shipsPerSpawnFrame: 2
   maxTotalAiShips: 15
+  hasSpawnedAI: 0
+  serverListenStartTime: -1
+  lastSpawnBlockedLogTime: -999
   spawnRetryTimeoutSeconds: 120
   minHomePlanetsForSpawn: 2
 --- !u!114 &1207700302
@@ -9481,8 +9507,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Networking.NetworkGameManager
   ShowTopMostFoldoutHeaderGroup: 1
   maxPlayers: 60
-  autoStartServer: 0
-  serverPort: 7777
 --- !u!1 &1345699743
 GameObject:
   m_ObjectHideFlags: 0
@@ -10289,7 +10313,6 @@ MonoBehaviour:
   instructionStepScreenshots: []
   playButton: {fileID: 0}
   hostOnlineButton: {fileID: 0}
-  joinOnlineButton: {fileID: 0}
   teamAButton: {fileID: 0}
   teamBButton: {fileID: 0}
   teamCButton: {fileID: 0}
@@ -10300,9 +10323,7 @@ MonoBehaviour:
   teamCLabel: {fileID: 0}
   teamDLabel: {fileID: 0}
   teamELabel: {fileID: 0}
-  joinCodeInputField: {fileID: 0}
   joinCodeDisplayText: {fileID: 0}
-  serverAddressInput: {fileID: 0}
   playerCountText: {fileID: 636049756}
   teamStatusText: {fileID: 1772480339}
   roomNameText: {fileID: 1904284693}

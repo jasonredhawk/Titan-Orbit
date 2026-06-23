@@ -4,8 +4,6 @@ using Unity.Netcode;
 using UnityEngine;
 using TitanOrbit.Core;
 using TitanOrbit.Entities;
-using TitanOrbit.AI;
-
 namespace TitanOrbit.Systems
 {
     public struct ScoreEntry : INetworkSerializable, IEquatable<ScoreEntry>
@@ -223,8 +221,6 @@ namespace TitanOrbit.Systems
                 bool changed = false;
                 if (existing.Team != ship.ShipTeam) { existing.Team = ship.ShipTeam; changed = true; }
                 if (existing.OwnerClientId != ship.OwnerClientId) { existing.OwnerClientId = ship.OwnerClientId; changed = true; }
-                bool isAi = ship.GetComponent<AIShipMarker>() != null;
-                if (existing.IsAI != isAi) { existing.IsAI = isAi; changed = true; }
                 if (changed) scoreEntries[i] = existing;
                 return i;
             }
@@ -240,7 +236,7 @@ namespace TitanOrbit.Systems
                 DepositedGems = 0f,
                 HealedPeople = 0f,
                 TransportedPeople = 0f,
-                IsAI = ship.GetComponent<AIShipMarker>() != null
+                IsAI = false
             };
             scoreEntries.Add(newEntry);
             return scoreEntries.Count - 1;

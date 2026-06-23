@@ -67,7 +67,6 @@ namespace TitanOrbit.Entities
             foreach (var r in GetComponentsInChildren<Renderer>())
             {
                 if (r == null) continue;
-                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
                 string n = r.gameObject.name;
                 if (n == "Cockpit" || n.StartsWith("Engine") || n.StartsWith("Wing"))
                     list.Add(r);
@@ -84,7 +83,6 @@ namespace TitanOrbit.Entities
             {
                 Renderer r = all[i];
                 if (r == null) continue;
-                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
                 filtered.Add(r);
             }
             cachedRenderers = filtered.ToArray();

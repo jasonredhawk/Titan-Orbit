@@ -6,6 +6,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Networking;
 
 namespace TitanOrbit.Systems
 {
@@ -31,6 +32,7 @@ namespace TitanOrbit.Systems
         /// firing ship's RTT-stale origin (which made shots look like they fired behind the ship).
         /// </summary>
         public float ServerSpawnTime;
+        public uint ServerSimTick;
         public byte OwnerTeamByte;
         public byte ShapeIndex;
         public byte NoTrailFlag;
@@ -51,6 +53,7 @@ namespace TitanOrbit.Systems
             serializer.SerializeValue(ref VisualPrefabBankIndex);
             serializer.SerializeValue(ref Sequence);
             serializer.SerializeValue(ref ServerSpawnTime);
+            serializer.SerializeValue(ref ServerSimTick);
             serializer.SerializeValue(ref OwnerTeamByte);
             serializer.SerializeValue(ref ShapeIndex);
             serializer.SerializeValue(ref NoTrailFlag);
@@ -261,6 +264,7 @@ namespace TitanOrbit.Systems
             float serverSpawnTime = NetworkManager.Singleton != null
                 ? (float)NetworkManager.Singleton.ServerTime.Time
                 : 0f;
+            uint serverSimTick = ServerSimClock.Instance != null ? ServerSimClock.Instance.ServerTick : 0u;
 
             pendingSpawnBatch.Add(new BulletSpawnPayload
             {
@@ -273,6 +277,7 @@ namespace TitanOrbit.Systems
                 VisualPrefabBankIndex = requestedBankIndex,
                 Sequence = sequence,
                 ServerSpawnTime = serverSpawnTime,
+                ServerSimTick = serverSimTick,
                 OwnerTeamByte = (byte)ownerTeam,
                 ShapeIndex = bulletShapeIndex,
                 NoTrailFlag = 0,
@@ -323,6 +328,7 @@ namespace TitanOrbit.Systems
             BulletBankProfileUtility.ApplyBulletFlightModifiers(requestedBankIndex, ref previewLifetime, ref previewMaxDistance);
 
             float previewServerTime = GetServerTimeNowSeconds();
+            uint previewSimTick = ServerSimClock.Instance != null ? ServerSimClock.Instance.SimulationTick : 0u;
 
             return new BulletSpawnPayload
             {
@@ -335,6 +341,7 @@ namespace TitanOrbit.Systems
                 VisualPrefabBankIndex = requestedBankIndex,
                 Sequence = 0,
                 ServerSpawnTime = previewServerTime,
+                ServerSimTick = previewSimTick,
                 OwnerTeamByte = (byte)ownerTeam,
                 ShapeIndex = bulletShapeIndex,
                 NoTrailFlag = 0,

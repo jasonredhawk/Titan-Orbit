@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
-using TitanOrbit.AI;
 using Shapes;
 
 namespace TitanOrbit.UI
@@ -1160,11 +1159,6 @@ namespace TitanOrbit.UI
                 var pno = playerShip.GetComponent<NetworkObject>();
                 needResolvePlayer = pno == null || pno != localPlayerObject;
             }
-            else if (!needResolvePlayer && localPlayerObject == null && playerShip != null && playerShip.GetComponent<AIShipMarker>() != null)
-            {
-                needResolvePlayer = true;
-            }
-
             if (needResolvePlayer)
             {
                 RefreshEntityCache();
@@ -1189,7 +1183,6 @@ namespace TitanOrbit.UI
                     foreach (var ship in cachedShips)
                     {
                         if (ship == null || !ship) continue;
-                        if (ship.GetComponent<AIShipMarker>() != null) continue;
                         if (ship.IsOwner)
                         {
                             playerShip = ship;

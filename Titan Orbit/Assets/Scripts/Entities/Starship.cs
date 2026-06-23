@@ -14,8 +14,8 @@ using TitanOrbit.Generation;
 using TitanOrbit.Systems;
 using TitanOrbit.Services;
 using TitanOrbit.Networking;
-using TitanOrbit.AI;
 using TitanOrbit.Audio;
+using TitanOrbit.Simulation;
 using SciFiArsenal;
 
 namespace TitanOrbit.Entities
@@ -167,6 +167,7 @@ namespace TitanOrbit.Entities
         [SerializeField, Range(0.05f, 1f)]
         private float gemMoonUndockOrbitCaptureEase = 0.22f;
         private float gemMoonUndockOrbitGraceUntilTime = -1f;
+        private uint gemMoonUndockGraceEndSimTick;
         private Vector3 gemMoonUndockCachedMoonPos;
         /// <summary>Server: time spent nearly stationary inside a friendly gem-moon zone before auto-dock is allowed.</summary>
         private float _serverGemMoonLandingDwellSeconds;
@@ -803,11 +804,11 @@ namespace TitanOrbit.Entities
         private NetworkVariable<float> networkEnergyCapacity = new NetworkVariable<float>(50f);
         private NetworkVariable<TeamManager.Team> shipTeam = new NetworkVariable<TeamManager.Team>(TeamManager.Team.None);
         /// <summary>Human player has no team yet (brief replication window; player ships are spawned only after team join).</summary>
-        private bool IsAwaitingTeamSelection => !_isAIControlled && shipTeam.Value == TeamManager.Team.None;
+        private bool IsAwaitingTeamSelection => shipTeam.Value == TeamManager.Team.None;
 
         private void SyncInputHandlerForTeamSelectionState()
         {
-            if (_isAIControlled || inputHandler == null || !IsOwner) return;
+            if (inputHandler == null || !IsOwner) return;
             inputHandler.enabled = !IsAwaitingTeamSelection;
         }
 
@@ -924,7 +925,9 @@ namespace TitanOrbit.Entities
             get
             {
                 if (PlanetConnectionSystem.Instance == null || shipTeam.Value == TeamManager.Team.None) return 1f;
-                Vector3 pos = ToroidalMap.WrapPosition(transform.position);
+                Vector3 pos = UsesInputSyncedMotor
+                    ? ToroidalMap.WrapPosition(GetSimPosition())
+                    : ToroidalMap.WrapPosition(transform.position);
                 TeamManager.Team teamAtPos = PlanetConnectionSystem.Instance.GetTeamAtPosition(pos);
                 if (teamAtPos != shipTeam.Value) return 1f;
                 int homeLevel = PlanetConnectionSystem.GetHomePlanetLevelForTeam(shipTeam.Value);
@@ -1487,10 +1490,10 @@ namespace TitanOrbit.Entities
         /// <summary>Strict visual orbit ring (matches <see cref="Planet.IsWorldPositionInOrbitRing"/>).</summary>
         private bool IsShipInPlanetOrbitRing(Planet planet)
         {
-            if (planet == null || rb == null) return false;
-            Vector3 rbPos = rb.position;
-            rbPos.y = 0f;
-            if (planet.IsWorldPositionInOrbitRing(rbPos)) return true;
+            if (planet == null) return false;
+            Vector3 pos = UsesInputSyncedMotor ? GetSimPosition() : (rb != null ? rb.position : transform.position);
+            pos.y = 0f;
+            if (planet.IsWorldPositionInOrbitRing(pos)) return true;
             Vector3 tPos = transform.position;
             tPos.y = 0f;
             return planet.IsWorldPositionInOrbitRing(tPos);
@@ -1602,8 +1605,7 @@ namespace TitanOrbit.Entities
         {
             get
             {
-                if (rb == null) return 0f;
-                Vector3 v = rb.linearVelocity;
+                Vector3 v = GetSimVelocity();
                 v.y = 0f;
                 return v.magnitude;
             }
@@ -1671,13 +1673,6 @@ namespace TitanOrbit.Entities
         private Vector3 GetDrivePushForceXZ()
         {
             if (rb == null) return Vector3.zero;
-            var ai = GetComponent<AIStarshipController>();
-            if (ai != null)
-            {
-                Vector3 a = ai.GetDriveAccelerationXZ();
-                float m = Mathf.Max(0.5f, rb.mass);
-                return a * m;
-            }
             if (moveDirection.magnitude > 0.1f)
                 return moveDirection * EffectiveEngineThrust;
             return Vector3.zero;
@@ -1994,11 +1989,9 @@ namespace TitanOrbit.Entities
         public bool WantToDepositGems => wantToDepositGems.Value;
         public bool WantToExpelGems => wantToExpelGems.Value;
         /// <summary>Server: owner-synced thrust (right mouse). AI ships always read false.</summary>
-        public bool IsMoveForwardPressedForGemMoonLanding =>
-            !_isAIControlled && moveForwardPressedNet.Value;
-        /// <summary>Server: owner-synced fire held. AI ships always read false.</summary>
-        public bool IsShootPressedForGemMoonLanding =>
-            !_isAIControlled && shootPressedNet.Value;
+        public bool IsMoveForwardPressedForGemMoonLanding => moveForwardPressedNet.Value;
+        /// <summary>Server: owner-synced fire held.</summary>
+        public bool IsShootPressedForGemMoonLanding => shootPressedNet.Value;
         /// <summary>True when docked at the planet's gem moon (synced from server).</summary>
         public bool GemMoonDocked => gemMoonDocked.Value;
 
@@ -2015,8 +2008,7 @@ namespace TitanOrbit.Entities
         /// <summary>Planar speed in world XZ (m/s) for camera / UI.</summary>
         public float GetPlanarSpeedWorld()
         {
-            if (rb == null) return 0f;
-            Vector3 v = rb.linearVelocity;
+            Vector3 v = GetSimVelocity();
             v.y = 0f;
             return v.magnitude;
         }
@@ -2080,9 +2072,8 @@ namespace TitanOrbit.Entities
         /// </summary>
         public Vector3 GetCameraFollowWorldPosition()
         {
-            // Dedicated owner: rb.interpolation drives transform between FixedUpdate steps — use transform for smooth camera.
-            Vector3 shipPos = IsDedicatedOwnerClient
-                ? transform.position
+            Vector3 shipPos = UsesInputSyncedMotor && !gemMoonDocked.Value
+                ? GetDisplayMotorWorldPosition()
                 : (rb != null ? rb.position : transform.position);
             shipPos.y = FIXED_Y_POSITION;
             if (ShouldUseGemMoonDisplayDockSpace() && TryGetFriendlyGemMoonInZone(out PlanetGemMoon moon))
@@ -2316,8 +2307,6 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Cached so we don't call GetComponent every frame in Update.</summary>
-        private bool _isAIControlled;
         /// <summary>Base visual scale (from ShipData/chassis).</summary>
         private float visualBaseScale = 1f;
         /// <summary>Prefab root localScale from the loaded model (for re-applying with level scale in LateUpdate).</summary>
@@ -2327,16 +2316,12 @@ namespace TitanOrbit.Entities
 
         private void Awake()
         {
-            _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
             // Run before OnNetworkSpawn/SetShipData so the BankPivot + Prefab structure exists.
             EnsureVisualRootForBanking();
 
             droneSwarm = GetComponent<DroneSwarmController>();
             if (droneSwarm == null)
                 droneSwarm = gameObject.AddComponent<DroneSwarmController>();
-
-            if (_isAIControlled)
-                EnemyShipWorldStatsPanel.CreateAsStarshipChild(this);
 
             baseLocalScale = transform.localScale;
 
@@ -2356,8 +2341,6 @@ namespace TitanOrbit.Entities
                 //rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
                 rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Prevent tunnelling through planets/asteroids
                 rb.linearDamping = 0f; // Frictionless: velocity only changes from our code (thrust/brakes/recoil)
-                if (!_isAIControlled)
-                    rb.interpolation = RigidbodyInterpolation.Interpolate;
             }
 
             // Toroidal display: ship is shown at the toroidal copy closest to the local camera (so AI ships appear correctly when player has flown far).
@@ -2507,7 +2490,6 @@ namespace TitanOrbit.Entities
                 Renderer r = renderers[i];
                 if (r == null) continue;
                 if (r is ParticleSystemRenderer) continue; // Never recolor VFX/jet flames via ship team materials.
-                if (r.GetComponentInParent<EnemyShipWorldStatsPanel>() != null) continue;
 
                 Material[] current = r.sharedMaterials;
                 if (current == null || current.Length == 0)
@@ -2568,18 +2550,10 @@ namespace TitanOrbit.Entities
             pos.y = FIXED_Y_POSITION;
             transform.position = pos;
 
-            if (IsServer && !_isAIControlled)
-            {
-                // Defer starter ship / vitals until map-instance restore is attempted (owner sends auth id via ServerRpc).
-                if (IsOwner)
-                    TryRestoreOrApplyDefaultSpawnSetup(UnityGameServicesBootstrap.PlayerId, NetworkGameManager.PendingRestoreChoice);
-            }
-            else if (IsServer && _isAIControlled)
-            {
-                ApplyDefaultPlayerSpawnSetup();
-            }
+            if (IsServer && IsOwner)
+                TryRestoreOrApplyDefaultSpawnSetup(UnityGameServicesBootstrap.PlayerId, NetworkGameManager.PendingRestoreChoice);
 
-            if (IsClient && IsOwner && !_isAIControlled)
+            if (IsClient && IsOwner)
                 RegisterMapInstanceProgressServerRpc(
                     UnityGameServicesBootstrap.PlayerId ?? string.Empty,
                     (int)NetworkGameManager.PendingRestoreChoice);
@@ -2600,42 +2574,7 @@ namespace TitanOrbit.Entities
 
             SyncInputHandlerForTeamSelectionState();
 
-            if (IsClient && !_isAIControlled)
-            {
-                ClientRenderTimeline.EnsureExists();
-                if (GetComponent<ShipVisualInterpolator>() == null)
-                    gameObject.AddComponent<ShipVisualInterpolator>();
-
-                if (!IsOwner && !IsServer)
-                {
-                    SubscribeRemotePredictionInterpolation();
-
-                    var nt = GetComponent<NetworkTransform>();
-                    if (nt != null)
-                    {
-                        nt.enabled = false;
-                    }
-
-                    var nrb = GetComponent<NetworkRigidbody>();
-                    if (nrb != null)
-                    {
-                        nrb.enabled = false;
-                    }
-
-                    if (rb != null)
-                    {
-                        rb.isKinematic = true;
-                        rb.interpolation = RigidbodyInterpolation.None;
-                    }
-                }
-            }
-
-            // Dedicated owner client: predict locally; disable NT/NRB so server snapshots do not fight rb.
-            if (IsOwner && !IsServer && !_isAIControlled)
-            {
-                ConfigureOwnerClientPredictionNetworking();
-                SubscribeOwnerPredictionReconciliation();
-            }
+            InitializeMotorSimOnSpawn();
 
             droneSwarm?.OnStarshipNetworkSpawn();
 
@@ -2654,15 +2593,11 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             droneSwarm?.OnStarshipNetworkDespawn();
+            UnsubscribeMotorNetworkCallbacks();
             currentEnergy.OnValueChanged -= OnCurrentEnergyDisplaySync;
             currentHealth.OnValueChanged -= OnCurrentHealthDisplaySync;
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
-            UnsubscribeOwnerPredictionReconciliation();
-            if (!IsOwner && !IsServer && !_isAIControlled)
-            {
-                UnsubscribeRemotePredictionInterpolation();
-            }
-            if (IsServer && !_isAIControlled
+            if (IsServer
                 && (TeamManager.Instance == null || !TeamManager.Instance.IsTeamEliminated(shipTeam.Value)))
             {
                 MapInstanceShipProgressStore.SaveSnapshot(
@@ -2675,7 +2610,7 @@ namespace TitanOrbit.Entities
         [ServerRpc(RequireOwnership = true)]
         private void RegisterMapInstanceProgressServerRpc(string authPlayerId, int restoreChoiceInt, ServerRpcParams rpcParams = default)
         {
-            if (!IsServer || _isAIControlled) return;
+            if (!IsServer) return;
             if (rpcParams.Receive.SenderClientId != OwnerClientId) return;
             MapInstanceShipProgressStore.RegisterClientAuthId(
                 OwnerClientId,
@@ -2685,7 +2620,7 @@ namespace TitanOrbit.Entities
 
         private void TryRestoreOrApplyDefaultSpawnSetup(string authPlayerId, NetworkGameManager.ShipRestoreChoice restoreChoice)
         {
-            if (!IsServer || _isAIControlled || _playerSpawnSetupComplete) return;
+            if (!IsServer || _playerSpawnSetupComplete) return;
 
             string key = MapInstanceShipProgressStore.NormalizeAuthPlayerId(authPlayerId, OwnerClientId);
             MapInstanceShipProgressStore.RegisterClientAuthId(OwnerClientId, key);
@@ -2723,7 +2658,7 @@ namespace TitanOrbit.Entities
             if (!IsServer || _playerSpawnSetupComplete) return;
             _playerSpawnSetupComplete = true;
 
-            if (!_isAIControlled && currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
+            if (currentChassisIndex.Value == -1 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
                 GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId)
@@ -2817,7 +2752,7 @@ namespace TitanOrbit.Entities
         /// <summary>Server: restore loadout saved for this map instance.</summary>
         private void ApplyMapInstanceProgress(in PlayerShipProgressSnapshot snapshot, bool useRescueVitals = false)
         {
-            if (!IsServer || _isAIControlled) return;
+            if (!IsServer) return;
             _playerSpawnSetupComplete = true;
 
             shipLevel = Mathf.Max(1, snapshot.ShipLevel);
@@ -2957,7 +2892,6 @@ namespace TitanOrbit.Entities
             linearVelocity = default;
             rotation = default;
             if (planet == null || rb == null) return false;
-            if (GetComponent<TitanOrbit.AI.AIShipMarker>() != null) return false;
 
             float orbitRadius = planet.PlanetSize * planet.GetOrbitRingCenterRadiusLocal();
             Vector3 planetPos = planet.transform.position;
@@ -2990,26 +2924,17 @@ namespace TitanOrbit.Entities
             if (nt != null)
                 nt.SetState(orbitPos, rot, transform.localScale, teleportDisabled: false);
 
-            if (UsesServerAuthoritativeMotor && !_isAIControlled)
-            {
-                ServerPublishAuthoritativeMotorState();
-                SnapOwnerMotorPoseClientRpc(orbitPos, vel, rot, OwnerOnlyClientRpcParams);
-            }
+            float mass = rb != null ? rb.mass : EffectiveMass;
+            SnapMotorSimAfterSpawn(orbitPos, rot, vel, mass);
+            BroadcastSnapMotorSimClientRpc(orbitPos, vel, rot, mass);
         }
 
-        /// <summary>Dedicated owner: snap predicted rb to server orbit/respawn pose (NT disabled on owner).</summary>
+        /// <summary>Dedicated owner: snap sim state to server orbit/respawn pose.</summary>
         [ClientRpc]
         private void SnapOwnerMotorPoseClientRpc(Vector3 orbitPos, Vector3 vel, Quaternion rot, ClientRpcParams rpcParams = default)
         {
-            if (!IsDedicatedOwnerClient || rb == null) return;
-
-            SnapOwnerRbToServerMotorState(new ShipMotorStateSnapshot
-            {
-                Position = orbitPos,
-                Rotation = rot,
-                Velocity = vel,
-                ServerTime = NetworkManager.Singleton != null ? NetworkManager.Singleton.ServerTime.Time : 0.0,
-            });
+            if (!IsOwner || IsServer) return;
+            SnapClientMotorPose(orbitPos, rot, vel);
         }
 
         private void Update()
@@ -3026,7 +2951,7 @@ namespace TitanOrbit.Entities
             }
 
             // Server: ensure first ship (no chassis yet) gets starter visual (AstroEagle_01 or first family's ship 1)
-            if (IsServer && !_isAIControlled && !_playerSpawnSetupComplete && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
+            if (IsServer && !_playerSpawnSetupComplete && currentChassisIndex.Value == -1 && _lastAppliedChassisIndex == -2 && CardShopSystem.Instance != null)
             {
                 string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
                 GameObject prefab = !string.IsNullOrEmpty(starterChassisId) ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId) : null;
@@ -3051,16 +2976,12 @@ namespace TitanOrbit.Entities
 
             if (!IsOwner) return;
 
-            // AI ships have their own controller; skip player input and orbit UI logic
-            if (_isAIControlled) return;
-
             if (IsAwaitingTeamSelection)
             {
                 return;
             }
 
             HandleInput();
-            TickNetworkInputSender();
 
             bool movePressed = inputHandler != null && inputHandler.MoveForwardPressed;
             if (movePressed && !wasMovePressedLastFrame && gemMoonDocked.Value)
@@ -3131,6 +3052,8 @@ namespace TitanOrbit.Entities
         {
             RefreshCardStatsCache();
 
+            ClientApplyMotorPoseSmoothing();
+
             // After PlanetGemMoon orbit LateUpdate (32100): every client re-snaps docked ships to the rendered moon
             // so they ride planetary orbit + moon spin. Server motor snapshots stay in gameplay space; display snap
             // must not run on the dedicated server process (headless has no display tile).
@@ -3179,10 +3102,6 @@ namespace TitanOrbit.Entities
             if (!enableVisualBankingPitch) return;
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             if (gemMoonDocked.Value) return;
-            // Remote proxy ships: rb.rotation was just set by ShipVisualInterpolator (exec order 31000) this frame.
-            // Sampling the turn-rate here, at the render rate, makes banking track the interpolated facing smoothly.
-            if (UsesInterpolatedRemoteVisual)
-                CacheVisualAngularVelForBanking(Time.deltaTime);
             ApplyVisualBanking(Time.deltaTime);
         }
 
@@ -3429,11 +3348,7 @@ namespace TitanOrbit.Entities
 
         private static readonly float ENGINE_VFX_SPEED_THRESHOLD = 0.5f;
         private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_RAD = 0.15f;
-        // Same turn-rate gate as above, expressed in deg/s for the remote-proxy path (which samples banking
-        // turn-rate in deg/s rather than reading rb.angularVelocity).
         private static readonly float THRUSTER_VFX_ANGULAR_THRESHOLD_DEG = THRUSTER_VFX_ANGULAR_THRESHOLD_RAD * Mathf.Rad2Deg;
-        private TitanOrbit.Networking.ShipVisualInterpolator _vfxVisualInterpolator;
-        private bool _vfxVisualInterpolatorResolved;
         private static readonly float ENGINE_VFX_EMISSION_RATE = 18f;
         private static readonly float THRUSTER_VFX_EMISSION_RATE = 15f;
         private static readonly string[] VfxColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "Yellow" };
@@ -3444,34 +3359,17 @@ namespace TitanOrbit.Entities
         private void UpdateEngineAndThrusterVFX()
         {
             if (rb == null) return;
-            // Drive VFX for the local owner ship AND for remote human proxies. Remote proxies have no local
-            // motor sim (rb velocity stays ~0), so their motion + thrust intent are read from the interpolated
-            // network stream instead, keeping engine glow and thruster flames in lockstep with the rendered pose.
-            bool remoteProxy = UsesInterpolatedRemoteVisual;
-            if (!IsOwner && !remoteProxy) return;
+            // Local owner + all client observers (human ships sim locally).
+            if (IsServer) return;
             if (engineVfxInstances.Count == 0 && thrusterVfxInstances.Count == 0) return;
 
-            float speed;
-            bool turning;
-            bool accelerating;
-            if (remoteProxy)
-            {
-                var interp = ResolveVfxVisualInterpolator();
-                speed = interp != null ? interp.DisplaySpeed : 0f;
-                // Thrust intent rides the same delayed stream as the pose, so the flame lights up exactly when the
-                // visibly-interpolated ship begins to accelerate (no early/late mismatch).
-                accelerating = interp != null && interp.DisplayThrusting;
-                turning = Mathf.Abs(_cachedBankAngularVelDegPerSec) >= THRUSTER_VFX_ANGULAR_THRESHOLD_DEG;
-            }
-            else
-            {
-                Vector3 vel = rb.linearVelocity;
-                vel.y = 0f;
-                speed = vel.magnitude;
-                float angularRad = rb.angularVelocity.magnitude;
-                turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD;
-                accelerating = (speed >= ENGINE_VFX_SPEED_THRESHOLD) && IsActivelyAccelerating();
-            }
+            Vector3 vel = GetSimVelocity();
+            vel.y = 0f;
+            float speed = vel.magnitude;
+            float angularRad = rb.angularVelocity.magnitude;
+            bool turning = angularRad >= THRUSTER_VFX_ANGULAR_THRESHOLD_RAD
+                || Mathf.Abs(_cachedBankAngularVelDegPerSec) >= THRUSTER_VFX_ANGULAR_THRESHOLD_DEG;
+            bool accelerating = (speed >= ENGINE_VFX_SPEED_THRESHOLD) && IsActivelyAccelerating();
             bool moving = speed >= ENGINE_VFX_SPEED_THRESHOLD;
             bool showThrusters = useThrusterVfxForAcceleration ? accelerating : turning;
             float targetThrusterBlend = showThrusters ? 1f : 0f;
@@ -3522,35 +3420,11 @@ namespace TitanOrbit.Entities
 
         private bool IsActivelyAccelerating()
         {
-            if (_isAIControlled)
-            {
-                if (rb == null) return false;
-                Vector3 v = rb.linearVelocity;
-                v.y = 0f;
-                if (v.sqrMagnitude < 0.01f) return false;
-                v.Normalize();
-                Vector3 fwd = transform.forward;
-                fwd.y = 0f;
-                if (fwd.sqrMagnitude < 0.01f) return false;
-                fwd.Normalize();
-                return Vector3.Dot(v, fwd) > 0.1f;
-            }
-
-            if (inputHandler == null)
-                return false;
-
-            return inputHandler.MoveForwardPressed;
+            if (IsOwner && inputHandler != null)
+                return inputHandler.MoveForwardPressed;
+            return moveForwardPressedNet.Value;
         }
 
-        private TitanOrbit.Networking.ShipVisualInterpolator ResolveVfxVisualInterpolator()
-        {
-            if (!_vfxVisualInterpolatorResolved)
-            {
-                _vfxVisualInterpolator = GetComponent<TitanOrbit.Networking.ShipVisualInterpolator>();
-                _vfxVisualInterpolatorResolved = true;
-            }
-            return _vfxVisualInterpolator;
-        }
 
         private GameObject ResolveThrusterVfxPrefabForTransform(Transform thrusterTransform)
         {
@@ -3640,7 +3514,7 @@ namespace TitanOrbit.Entities
 
             // Local human: input-driven pitch. When NGO is listening and spawned, require owner/local player; otherwise allow input (offline / not yet spawned).
             bool nmOk = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
-            bool useInputPitch = !_isAIControlled && inputHandler != null;
+            bool useInputPitch = inputHandler != null;
             if (useInputPitch && nmOk && IsSpawned)
                 useInputPitch = IsOwner || IsLocalPlayerShip();
             if (useInputPitch)
@@ -3667,18 +3541,7 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// True when this ship's visible pose is driven by <see cref="TitanOrbit.Networking.ShipVisualInterpolator"/>
-        /// (a remote human proxy on a client). Such ships only update <c>rb.rotation</c> in LateUpdate, so their
-        /// banking turn-rate must be sampled there too — sampling in FixedUpdate aliases against the render rate.
-        /// </summary>
-        private bool UsesInterpolatedRemoteVisual =>
-            !_isAIControlled && IsSpawned && IsClient && !IsServer && !IsOwner;
-
-        /// <summary>
-        /// Caches the planar yaw rate used to drive visual banking. Banking is a purely local, cosmetic effect
-        /// (never networked): we infer "how fast is this ship turning" from its facing change over <paramref name="dt"/>.
-        /// Owner/server/AI ships call this from FixedUpdate; interpolated remote ships call it from LateUpdate.
-        /// </summary>
+        /// Caches the planar yaw rate used to drive visual banking.
         private void CacheVisualAngularVelForBanking(float dt)
         {
             if (rb == null || isDead.Value)
@@ -3727,9 +3590,9 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 v = rb.linearVelocity;
+            Vector3 v = UsesInputSyncedMotor ? GetSimVelocity() : rb.linearVelocity;
             v.y = 0f;
-            Vector3 ff = rb.rotation * Vector3.forward;
+            Vector3 ff = UsesInputSyncedMotor ? GetSimRotation() * Vector3.forward : rb.rotation * Vector3.forward;
             ff.y = 0f;
             if (ff.sqrMagnitude < 1e-8f)
             {
@@ -3830,7 +3693,6 @@ namespace TitanOrbit.Entities
 
             try
             {
-            EnsureOwnerClientPredictionReady();
             if (CanApplyLocalRamCameraShake())
                 FinalizeAsteroidRamContactsFromLastPhysicsStep();
 
@@ -3839,32 +3701,9 @@ namespace TitanOrbit.Entities
 
             TickShipCollisionVelocityEstimate(Time.fixedDeltaTime);
 
-            // Toroidal orbit band (physics triggers fail across map wraps; server + predicting client need geometry).
-            if (IsServer || ShouldRunMotorPrediction)
+            // Toroidal orbit band (physics triggers fail across map wraps; server + all sim clients need geometry).
+            if (IsServer || (IsClient && IsOwner && !IsServer))
                 RefreshOrbitPlanetFromPosition();
-
-            // Apply asteroid bounce before movement forces so thrust does not overwrite the rebound.
-            if (_hasPendingAsteroidBounce)
-            {
-                if (IsServer || IsDedicatedOwnerClient)
-                {
-                    Vector3 bv = _pendingAsteroidBounceVelocity;
-                    rb.linearVelocity = new Vector3(bv.x, 0f, bv.z);
-                    currentVelocity = rb.linearVelocity;
-                }
-                _hasPendingAsteroidBounce = false;
-            }
-
-            if (_hasPendingShipShipBounce)
-            {
-                if (IsServer)
-                {
-                    Vector3 sv = _pendingShipShipBounceVelocity;
-                    rb.linearVelocity = new Vector3(sv.x, 0f, sv.z);
-                    currentVelocity = rb.linearVelocity;
-                }
-                _hasPendingShipShipBounce = false;
-            }
 
             if (_hasPendingGemMoonShieldRepel)
             {
@@ -3878,20 +3717,15 @@ namespace TitanOrbit.Entities
                 _hasPendingGemMoonShieldRepel = false;
             }
 
-            // Gem load increases mass: ship feels heavier and has more momentum (slower to accelerate/brake)
-            ApplyMotorPhysicsMass();
-
-            if (IsDedicatedOwnerClient)
-                ApplyPendingOwnerMotorReconciliation();
-
-            if (ShouldRunMotorPrediction)
-                TickOwnerPredictionCollisionIgnores();
+            SyncSimMassFromShip();
 
             if (gemMoonDocked.Value)
                 gemMoonUndockOrbitGraceUntilTime = -1f;
+            if (gemMoonDocked.Value)
+                gemMoonUndockGraceEndSimTick = 0;
 
-            // Lock Y to play plane when not gem-moon docked, but ease down from moon height instead of snapping.
-            if (!gemMoonDocked.Value)
+            // Y locked to play plane by motor sim; avoid writing rb.position before the sim step.
+            if (!gemMoonDocked.Value && !UsesInputSyncedMotor)
             {
                 Vector3 pos = rb.position;
                 if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
@@ -3903,8 +3737,8 @@ namespace TitanOrbit.Entities
             
             // Never wrap ship position: ship stays in world space (e.g. 100, 310). All other
             // entities are repositioned around the player via ToroidalRenderer (display copy closest to camera).
-            // Keep Y velocity constrained unless docked on moon tilted-axis track.
-            if (!gemMoonDocked.Value && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
+            // Velocity Y clamp handled by motor sim for input-synced ships.
+            if (!gemMoonDocked.Value && !UsesInputSyncedMotor && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
             {
                 Vector3 vel = rb.linearVelocity;
                 vel.y = 0f;
@@ -4053,6 +3887,8 @@ namespace TitanOrbit.Entities
                 gemMoonLandingOffset = Vector3.zero;
                 SetRootColliderDocked(false);
                 gemMoonUndockOrbitGraceUntilTime = Time.time + Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
+                if (IsServer)
+                    ServerAssignGemMoonUndockGraceSimTick();
             }
 
             wasGemMoonDocked = gemMoonDocked.Value;
@@ -4072,38 +3908,17 @@ namespace TitanOrbit.Entities
                 return;
             }
 
+            if (IsOwner && !isDead.Value && !gemMoonDocked.Value)
+                TickNetworkInputSender();
+
+            if (IsClient && IsOwner && !IsServer && !isDead.Value && !gemMoonDocked.Value)
+                ClientPredictMotorFixedStep();
+
             if (!isDead.Value && !gemMoonDocked.Value && IsServer)
-                TickToroidalShipVsShipCollision();
-
-            // AI-controlled ships have their own movement; don't apply player/orbit movement
-            if (GetComponent<TitanOrbit.AI.AIStarshipController>() != null) return;
-
-            withinGemMoonBoundaryForMotor = withinGemMoonBoundary;
-
-            if (ShouldRunMotorOnServer)
             {
-                ServerConsumeInputForMotorTick();
-                if (_isAIControlled || gemMoonDocked.Value)
-                    RunPlayerMotorSimulationTick();
-                else
-                    ServerSyncHumanShipPoseFromClientReport();
-                ServerPublishAuthoritativeMotorState();
-                SyncMotorRigidbodyToTransform();
-            }
-            else if (ShouldRunMotorPrediction)
-            {
-                ClientApplyPredictionInput();
-                RunPlayerMotorSimulationTick();
-                SyncMotorRigidbodyToTransform();
-            }
-
-            if (IsServer)
-                TickPlayerHoldWeaponFiring(authoritative: true);
-
-            if (IsOwner && ownerFiringSessionActive && !IsServer)
-            {
-                SyncMotorRigidbodyToTransform();
-                TickPlayerHoldWeaponFiring(authoritative: false);
+                var clock = ServerSimClock.Instance;
+                if (clock != null)
+                    ServerTickAllShipMotors(clock.SimulationTick);
             }
 
             if (IsServer)
@@ -4117,10 +3932,7 @@ namespace TitanOrbit.Entities
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
                 CacheVisualForwardAccelForPitch();
-                // Interpolated remote proxies sample their turn-rate in LateUpdate (where rb.rotation is updated),
-                // so skip the FixedUpdate sampling for them to avoid render-rate aliasing / banking flutter.
-                if (!UsesInterpolatedRemoteVisual)
-                    CacheVisualAngularVelForBanking(Time.fixedDeltaTime);
+                CacheVisualAngularVelForBanking(Time.fixedDeltaTime);
             }
         }
 
@@ -4186,21 +3998,7 @@ namespace TitanOrbit.Entities
             if (TitanOrbit.Entities.Gem.AllGems == null || TitanOrbit.Entities.Gem.AllGems.Count == 0)
                 return;
 
-            Vector3 savedPos = default;
-            Quaternion savedRot = default;
-            Vector3 savedVel = default;
-            bool tractorPoseOverride = rb != null && TryApplyClientTractorPoseOverride();
-            if (tractorPoseOverride)
-            {
-                savedPos = rb.position;
-                savedRot = rb.rotation;
-                savedVel = rb.linearVelocity;
-            }
-
             TickNearbyGemAttractionImpl();
-
-            if (tractorPoseOverride)
-                RestoreMotorPoseAfterTractorOverride(savedPos, savedRot, savedVel);
         }
 
         private void TickNearbyGemAttractionImpl()
@@ -4677,7 +4475,7 @@ namespace TitanOrbit.Entities
         /// <summary>True when the ship is not actively thrusting (player RMB). Orbit transfer requires coasting in captured orbit.</summary>
         private bool IsShipIdleForPeopleTransfer()
         {
-            return _isAIControlled || !IsMoveForwardPressedForGemMoonLanding;
+            return !IsMoveForwardPressedForGemMoonLanding;
         }
 
         /// <summary>
@@ -4693,11 +4491,11 @@ namespace TitanOrbit.Entities
             return IsShipIdleForPeopleTransfer();
         }
 
-        /// <summary>AI transporters only load when their controller sets wantToLoad; players load surplus automatically.</summary>
+        /// <summary>Players load surplus people automatically while coasting in the planet orbit ring.</summary>
         private bool ShouldLoadPeopleFromOrbitPlanet()
         {
             if (!CanLoadPeopleFromPlanetOrbitRing()) return false;
-            return !_isAIControlled || wantToLoadPeople.Value;
+            return true;
         }
 
         /// <summary>People load onto the ship only in the planet orbit ring — not while in the gem moon dock/orbit shell.</summary>
@@ -4712,11 +4510,8 @@ namespace TitanOrbit.Entities
 
         private bool CanLoadPeopleFromPlanetOrbitRing() => !IsInGemMoonOrbitBlockingPeopleLoadToShip();
 
-        /// <summary>AI transporters only invade when wantToUnload is set; players unload automatically in hostile/neutral orbit.</summary>
-        private bool ShouldUnloadPeopleToNeutralOrEnemyPlanet()
-        {
-            return !_isAIControlled || wantToUnloadPeople.Value;
-        }
+        /// <summary>Players unload people automatically in hostile/neutral orbit while coasting.</summary>
+        private bool ShouldUnloadPeopleToNeutralOrEnemyPlanet() => true;
 
         private void ClearPeopleTransferIntentIfComplete(Planet orbitPlanet, bool friendly, bool planetWantsReinforce)
         {
@@ -4938,7 +4733,6 @@ namespace TitanOrbit.Entities
         /// </summary>
         private void TickPlayerHoldWeaponFiring(bool authoritative)
         {
-            if (_isAIControlled) return;
             if (authoritative)
             {
                 if (!IsServer || !wantToFire.Value) return;
@@ -4956,7 +4750,7 @@ namespace TitanOrbit.Entities
             }
             if (bulletConfig == null || bulletConfig.cannons == null || bulletConfig.cannons.Count == 0) return;
 
-            Vector3 shipPos = rb != null ? rb.position : transform.position;
+            Vector3 shipPos = GetSimPosition();
             if (IsWeaponFiringBlockedByWorldRules(shipPos))
             {
                 if (authoritative && wantToFire.Value)
@@ -4964,15 +4758,12 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            if (IsDedicatedOwnerClient)
-                SyncMotorRigidbodyToTransform();
-
-            Vector3 shipFwd = rb != null ? rb.rotation * Vector3.forward : transform.forward;
+            Vector3 shipFwd = GetSimRotation() * Vector3.forward;
             shipFwd.y = 0f;
             if (shipFwd.sqrMagnitude < 0.01f) shipFwd = Vector3.forward;
             else shipFwd.Normalize();
 
-            Vector3 shipVel = rb != null ? rb.linearVelocity : Vector3.zero;
+            Vector3 shipVel = GetSimVelocity();
             shipVel.y = 0f;
 
             Vector3[] aimOrigins = null;
@@ -5071,7 +4862,7 @@ namespace TitanOrbit.Entities
                         if (rb != null)
                         {
                             float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                            rb.AddForce(-dir * recoilImpulse, ForceMode.Impulse);
+                            ShipMotorSimulator.ApplyVelocityImpulse(ref _motorState, -dir * (recoilImpulse / Mathf.Max(0.5f, _motorState.Mass)));
                         }
                     }
                     else
@@ -5193,14 +4984,12 @@ namespace TitanOrbit.Entities
             if (!IsValidWeaponFirePointIndex(index))
                 return false;
 
-            if (IsServer || IsDedicatedOwnerClient)
-                SyncMotorRigidbodyToTransform();
+            SyncTransformForGameplayQuery();
 
             Transform firePt = bulletFirePoints[index];
             fireOrigin = firePt.position;
 
-            // Visual banking/pitch tilts firePt.forward; gameplay direction uses hull aim + barrel offset only.
-            Quaternion hullRot = rb != null ? rb.rotation : transform.rotation;
+            Quaternion hullRot = GetSimRotation();
             Vector3 localBarrel = Quaternion.Inverse(hullRot) * firePt.forward;
             localBarrel.y = 0f;
             if (localBarrel.sqrMagnitude < 0.0001f)
@@ -5685,13 +5474,13 @@ namespace TitanOrbit.Entities
         /// <summary>Pick the orbit planet whose shell contains this ship (closest toroidal match). Used on server and local owner — physics triggers miss wrapped tiles.</summary>
         private void RefreshOrbitPlanetFromPosition()
         {
-            if (rb == null)
+            if (!UsesInputSyncedMotor && rb == null)
                 return;
             if (!IsServer && !IsLocalPlayerShip())
                 return;
 
-            Vector3 p0 = rb.position;
-            Vector3 p1 = transform.position;
+            Vector3 p0 = UsesInputSyncedMotor ? GetSimPosition() : rb.position;
+            Vector3 p1 = UsesInputSyncedMotor ? GetSimPosition() : transform.position;
             Planet best = null;
             float bestDist = float.MaxValue;
 
@@ -6108,8 +5897,7 @@ namespace TitanOrbit.Entities
             gemMoonDocked.Value = false;
             gemMoonPlanetNetworkObjectId.Value = 0ul;
 
-            if (!_isAIControlled)
-                ClearRammingShakeDriveClientRpc(OwnerOnlyClientRpcParams);
+            ClearRammingShakeDriveClientRpc(OwnerOnlyClientRpcParams);
 
             // Stop all movement immediately when dead
             if (rb != null)
@@ -6488,8 +6276,7 @@ namespace TitanOrbit.Entities
             return true;
         }
 
-        private bool CanApplyLocalRamCameraShake() =>
-            !_isAIControlled && IsOwner;
+        private bool CanApplyLocalRamCameraShake() => IsOwner;
 
         private void EnsureCachedCameraControllerForShake()
         {
@@ -6547,157 +6334,8 @@ namespace TitanOrbit.Entities
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (rb == null || collision.contactCount == 0) return;
-
-            bool isAuthoritativeCollision = IsServer;
-            bool isPredictingOwnerCollision = IsDedicatedOwnerClient;
-            if (!isAuthoritativeCollision && !isPredictingOwnerCollision) return;
-
-            float relativeSpeed = collision.relativeVelocity.magnitude;
-            float collisionSoundPitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relativeSpeed));
-
-            Starship otherShip = collision.gameObject.GetComponent<Starship>();
-            if (otherShip == null)
-                otherShip = collision.gameObject.GetComponentInParent<Starship>();
-            if (otherShip != null && otherShip != this)
-            {
-                if (!isAuthoritativeCollision) return;
-
-                ContactPoint cp = collision.GetContact(0);
-                Vector3 shipNormal = cp.normal;
-                shipNormal.y = 0f;
-                if (shipNormal.sqrMagnitude < 1e-6f)
-                {
-                    Rigidbody otherRb = otherShip.GetComponent<Rigidbody>();
-                    if (otherRb != null)
-                        shipNormal = ToroidalMap.ShortestWorldOffsetXZ(rb.position, otherRb.position);
-                }
-                if (shipNormal.sqrMagnitude > 1e-6f)
-                {
-                    shipNormal.Normalize();
-                    TryApplyShipShipCollisionResponse(otherShip, shipNormal);
-                }
-
-                if (AudioManager.Instance != null)
-                    AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
-                float shipVfxMinSpeed = GetCollisionVfxShipMinRelativeSpeed();
-                if (relativeSpeed >= shipVfxMinSpeed)
-                {
-                    Vector3 impactPos = cp.point;
-                    Vector3 outward = impactPos - transform.position;
-                    outward.y = 0f;
-                    if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
-                    outward.Normalize();
-                    float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(relativeSpeed);
-                    TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, collisionSoundPitch);
-                }
-                return;
-            }
-
-            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
-            if (asteroid == null)
-                asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
-            if (asteroid == null || asteroid.IsDestroyed) return;
-
-            MarkAsteroidRamContact(asteroid);
-
-            ContactPoint contact = collision.GetContact(0);
-
-            // Outward unit normal in XZ: asteroid center → impact point (impact angle vs movement uses this plane).
-            Vector3 asteroidCenter = asteroid.transform.position;
-            Vector3 n = contact.point - asteroidCenter;
-            n.y = 0f;
-            if (n.sqrMagnitude < 0.0001f) return;
-            n.Normalize();
-
-            // Pre-impact velocity: relativeVelocity is the reliable signal; rb here is often already post-solver.
-            Vector3 vInc = collision.relativeVelocity;
-            vInc.y = 0f;
-            float vn = Vector3.Dot(vInc, n);
-            if (vn >= 0f)
-            {
-                vInc = -collision.relativeVelocity;
-                vInc.y = 0f;
-                vn = Vector3.Dot(vInc, n);
-            }
-            if (vn >= 0f)
-            {
-                vInc = _lastFixedPlayPlaneVelocity;
-                vn = Vector3.Dot(vInc, n);
-            }
-            if (vn >= 0f)
-            {
-                if (relativeSpeed < 2.5f) return;
-                vn = -Mathf.Max(1f, relativeSpeed * 0.22f);
-                vInc = n * vn;
-            }
-
-            float e = GetEffectiveAsteroidRestitution();
-            Vector3 vOut = vInc - (1f + e) * vn * n;
-
-            // Normal impulse approximation from the scripted bounce response:
-            // Jn = m * (1 + e) * |vn|, force ~= Jn / dt.
-            float deltaNormalSpeed = (1f + e) * Mathf.Abs(vn);
-            float impactImpulse = GetRammingImpactMass() * deltaNormalSpeed;
-            float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
-
-            float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
-            if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
-
-            if (impactForceNewtons >= GetCollisionVfxAsteroidMinImpactForce())
-            {
-                float sev = ComputeCollisionVfxSeverityFromImpactForce(impactForceNewtons);
-                TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch, RamGrindImpactVfxScaleFactor);
-            }
-
-            // Visual nose-up kick (local X on visual root); stronger on harder hits.
-            {
-                float t = Mathf.Clamp01(Mathf.InverseLerp(35f, 900f, impactForceNewtons));
-                asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
-            }
-
-            float inboundSpeed = deltaNormalSpeed / Mathf.Max(0.01f, 1f + e);
-            ComputeRamImpactDamage(inboundSpeed, out float asteroidCollisionDamage, out float shipCollisionDamage);
-
-            if (isAuthoritativeCollision)
-            {
-                if (shipCollisionDamage > 0.0001f)
-                {
-                    // Self-inflicted collision damage: Team.None bypasses friendly-fire checks. Gems after hull is 0, 1:1 with damage.
-                    float expulsionIntensity = ComputeRamImpactGemExpulsionIntensity(impactForceNewtons, shipCollisionDamage);
-                    ApplyShipRamDamage(
-                        shipCollisionDamage,
-                        expulsionIntensity,
-                        gemExpulsionPerHullDamage: 1f);
-                }
-
-                if (asteroidCollisionDamage > 0.0001f)
-                {
-                    ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
-                    ApplyAsteroidRamDamage(asteroid, asteroidCollisionDamage, attackerShipId);
-                    SpawnAsteroidCollisionFeedback(
-                        contact.point,
-                        asteroid,
-                        asteroidCollisionDamage,
-                        impactForceNewtons >= asteroidImpactForcePopupMin ? impactForceNewtons : (float?)null);
-                }
-                else if (impactForceNewtons >= asteroidImpactForcePopupMin)
-                {
-                    SpawnAsteroidCollisionFeedback(contact.point, asteroid, null, impactForceNewtons);
-                }
-
-                if (asteroid.IsDestroyed)
-                    TryApplyAsteroidRamDestroyCameraShake(asteroid);
-            }
-
-            _pendingAsteroidBounceVelocity = vOut;
-            _hasPendingAsteroidBounce = true;
-
-            rb.linearVelocity = new Vector3(vOut.x, 0f, vOut.z);
-            currentVelocity = rb.linearVelocity;
+            // Deterministic motor sim handles asteroid and ship collisions on all peers.
         }
-
         private void OnCollisionExit(Collision collision)
         {
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
@@ -6723,8 +6361,7 @@ namespace TitanOrbit.Entities
         {
             if (rb == null || collision.contactCount == 0 || isDead.Value) return;
 
-            bool canRam = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
-            if (!canRam) return;
+            if (!IsOwner) return;
 
             Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
             if (asteroid == null)
@@ -7055,8 +6692,7 @@ namespace TitanOrbit.Entities
             float minClosingSpeed = 0.35f)
         {
             if (other == null || rb == null) return false;
-            bool canApply = (_isAIControlled && IsServer) || (!_isAIControlled && IsOwner);
-            if (!canApply) return false;
+            if (!IsServer) return false;
 
             Rigidbody otherRb = other.GetComponent<Rigidbody>();
             if (otherRb == null) return false;
@@ -7423,17 +7059,6 @@ namespace TitanOrbit.Entities
             outwardVelocityWorld.y = 0f;
             ServerSetGemMoonDocked(false, null);
 
-            bool isAi = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
-            if (isAi)
-            {
-                if (rb != null)
-                {
-                    rb.linearVelocity = outwardVelocityWorld;
-                    rb.angularVelocity = Vector3.zero;
-                }
-                return;
-            }
-
             ApplyGemMoonShieldRepelClientRpc(outwardVelocityWorld, OwnerOnlyClientRpcParams);
         }
 
@@ -7603,65 +7228,13 @@ namespace TitanOrbit.Entities
         /// Client id used for contributed-gem store credit. AI ships use their <see cref="NetworkObject.NetworkObjectId"/>
         /// so each bot has its own pool (server-owned ships would otherwise all share client 0).
         /// </summary>
-        public ulong GetContributedGemsClientId()
-        {
-            if (_isAIControlled)
-            {
-                var netObj = GetComponent<NetworkObject>();
-                if (netObj != null && netObj.IsSpawned)
-                    return netObj.NetworkObjectId;
-            }
-            return OwnerClientId;
-        }
+        public ulong GetContributedGemsClientId() => OwnerClientId;
 
-        /// <summary>Server-only: set wantToDepositGems (for AI ships; bypasses RPC ownership).</summary>
+        /// <summary>Server-only: set wantToDepositGems (bypasses RPC ownership).</summary>
         public void SetWantToDepositGemsFromServer(bool value)
         {
             if (!IsServer) return;
             wantToDepositGems.Value = value;
-        }
-
-        /// <summary>
-        /// Server: for AI ships, ensure networked chassis index/id are set and the matching prefab is applied so all clients see the correct hull.
-        /// Call after <see cref="SetShipData"/> when spawning AI (player starter logic in <see cref="OnNetworkSpawn"/> does not run for AI).
-        /// </summary>
-        public void EnsureSyncedChassisForAiVisual()
-        {
-            if (!IsServer || CardShopSystem.Instance == null) return;
-
-            if (currentChassisIndex.Value < 0)
-            {
-                string starterChassisId = CardShopSystem.Instance.GetStarterChassisId();
-                GameObject starterPrefab = !string.IsNullOrEmpty(starterChassisId)
-                    ? CardShopSystem.Instance.GetShipPrefabForChassisId(starterChassisId)
-                    : null;
-                if (starterPrefab == null)
-                    starterPrefab = CardShopSystem.Instance.GetShipPrefabForChassisIndex(0);
-                if (starterPrefab != null)
-                {
-                    ApplyShipVisualFromPrefab(starterPrefab);
-                    SetCurrentChassisIndex(0);
-                    if (!string.IsNullOrEmpty(starterChassisId))
-                        SetCurrentChassisId(starterChassisId);
-                    _lastAppliedChassisIndex = 0;
-                    _lastAppliedShipLevel = ShipLevel;
-                }
-            }
-            else
-            {
-                TryApplyChassisVisualFromNetworkState();
-            }
-        }
-
-        /// <summary>
-        /// Re-cache AI control after <see cref="TitanOrbit.AI.AIStarshipController"/> is added at runtime, and ensure the enemy world stats panel exists.
-        /// </summary>
-        public void RefreshAIControlledFlag()
-        {
-            _isAIControlled = GetComponent<TitanOrbit.AI.AIStarshipController>() != null;
-            if (!_isAIControlled) return;
-            if (transform.Find(EnemyShipWorldStatsPanel.ChildObjectName) != null) return;
-            EnemyShipWorldStatsPanel.CreateAsStarshipChild(this);
         }
 
         /// <summary>Server-only: detect if ship is inside a planet's orbit zone (e.g. after spawning there). OnTriggerEnter doesn't fire for objects that start inside.</summary>

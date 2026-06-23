@@ -10,7 +10,7 @@ namespace TitanOrbit.Camera
     /// Camera controller that follows the player ship with smooth movement.
     /// Camera distance (zoom) and height scale with ship level: level 1 = closer, higher levels = further (more view).
     /// </summary>
-    [DefaultExecutionOrder(32500)] // After ToroidalRenderer (32000) and PlanetGemMoon (32100)
+    [DefaultExecutionOrder(65000)] // After Starship motor visuals + banking (60000) so follow uses final pose
     public class CameraController : MonoBehaviour
     {
         [Header("Camera Settings")]

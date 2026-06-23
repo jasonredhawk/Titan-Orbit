@@ -620,17 +620,6 @@ namespace TitanOrbit.Entities
             if (IsServer) return;
 
             if (col != null) col.enabled = false;
-
-            float delay = TitanOrbit.Networking.ClientRenderTimeline.ResolveRemoteEventVisualDelay(causerShipNetworkId);
-            if (delay > 0.0001f)
-                StartCoroutine(HideAsteroidVisualAfter(delay));
-            else
-                HideAsteroidVisualNow();
-        }
-
-        private IEnumerator HideAsteroidVisualAfter(float delay)
-        {
-            yield return new WaitForSeconds(delay);
             HideAsteroidVisualNow();
         }
 

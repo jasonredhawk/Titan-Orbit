@@ -261,7 +261,7 @@ namespace TitanOrbit.Core
             if (playerObj != null)
             {
                 Starship s = TryStarshipFromNetworkObject(playerObj);
-                if (s != null && s.GetComponent<TitanOrbit.AI.AIShipMarker>() == null)
+                if (s != null)
                     return s;
             }
 
@@ -271,7 +271,6 @@ namespace TitanOrbit.Core
                 if (no == null || no.OwnerClientId != clientId) continue;
                 Starship ship = TryStarshipFromNetworkObject(no);
                 if (ship == null) continue;
-                if (ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null) continue;
                 return ship;
             }
 

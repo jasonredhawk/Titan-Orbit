@@ -612,18 +612,6 @@ namespace TitanOrbit.Systems
         [ClientRpc]
         private void SpawnWeaponCollisionImpactClientRpc(Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt, ulong causerShipNetworkId)
         {
-            // The impacting ship is rendered ~interpolation delay in the past (unless it's the local player),
-            // so hold the impact spark back by the same amount to keep it pinned to the visible collision.
-            float delay = ClientRenderTimeline.ResolveRemoteEventVisualDelay(causerShipNetworkId);
-            if (delay > 0.0001f)
-                StartCoroutine(SpawnWeaponCollisionImpactDeferred(delay, position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt));
-            else
-                SpawnWeaponCollisionImpactNow(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
-        }
-
-        private IEnumerator SpawnWeaponCollisionImpactDeferred(float delay, Vector3 position, Vector3 normal, float scaleMultiplier, float audioPitch, int impactPrefabBankIndex, int teamInt)
-        {
-            yield return new WaitForSeconds(delay);
             SpawnWeaponCollisionImpactNow(position, normal, scaleMultiplier, audioPitch, impactPrefabBankIndex, teamInt);
         }
 

@@ -18,8 +18,6 @@ using TitanOrbit.Data;
 using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Systems;
-using TitanOrbit.AI;
-
 namespace TitanOrbit.Networking
 {
     /// <summary>
@@ -1315,21 +1313,11 @@ namespace TitanOrbit.Networking
             }
         }
 
-        private static void ResetAiShipsForNewMatchSession()
-        {
-            AIStarshipManager mgr = AIStarshipManager.Instance;
-            if (mgr == null)
-                mgr = UnityEngine.Object.FindFirstObjectByType<AIStarshipManager>();
-            if (mgr != null)
-                mgr.ResetForNewMatchSession();
-        }
-
         private static void ResetServerMapBeforeNetcodeRestart(string reason)
         {
             MapGenerator mapGen = UnityEngine.Object.FindFirstObjectByType<MapGenerator>();
             if (mapGen != null)
                 mapGen.ResetForNewMatchSession();
-            ResetAiShipsForNewMatchSession();
             DedicatedServerFileLog.Append("map", "Reset map before Netcode restart (" + reason + ").");
         }
 
@@ -1349,7 +1337,6 @@ namespace TitanOrbit.Networking
             if (!mapGen.IsServerMapSessionHealthy())
             {
                 mapGen.ResetForNewMatchSession();
-                ResetAiShipsForNewMatchSession();
                 mapGen.EnsureMapGenerated();
             }
 
@@ -1394,7 +1381,6 @@ namespace TitanOrbit.Networking
                         "[DedicatedMatchServerBootstrap] Stale map session detected (no players). Regenerating map.");
                     DedicatedServerFileLog.Append("map", "Stale map session; attempting in-process regeneration.");
                     mapGen.ResetForNewMatchSession();
-                    ResetAiShipsForNewMatchSession();
                     mapGen.EnsureMapGenerated();
 
                     if (mapGen.IsServerMapSessionHealthy())

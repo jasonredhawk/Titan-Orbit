@@ -1370,6 +1370,7 @@ namespace TitanOrbit.Networking
         public override void OnNetworkSpawn()
         {
             BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - enter (IsServer=" + IsServer + ")");
+            EnsureServerSimClockExists();
             if (IsServer)
             {
                 BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - EnsureScoreSystemExists");
@@ -1379,6 +1380,7 @@ namespace TitanOrbit.Networking
                 BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - subscribing client callbacks");
                 NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
+                SendSimClockHeartbeat(0, NetworkManager.Singleton.ServerTime.Time);
             }
         }
 
@@ -1418,6 +1420,30 @@ namespace TitanOrbit.Networking
             if (existingNo == null)
                 existing.gameObject.AddComponent<NetworkObject>();
             // Do not spawn: scene-placed ScoreSystem is spawned by ServerSpawnSceneObjectsOnStartSweep; spawning here causes "Object is already spawned".
+        }
+
+        private void EnsureServerSimClockExists()
+        {
+            ServerSimClock clock = GetComponent<ServerSimClock>();
+            if (clock == null)
+                clock = gameObject.AddComponent<ServerSimClock>();
+            if (IsServer)
+                clock.ResetForNetworkSession();
+            Starship.ResetSessionStaticState();
+        }
+
+        /// <summary>Server: broadcast sim tick heartbeat to all clients.</summary>
+        public void SendSimClockHeartbeat(uint serverTick, double serverTime)
+        {
+            if (!IsServer) return;
+            SendSimClockHeartbeatClientRpc(serverTick, serverTime);
+        }
+
+        [ClientRpc]
+        private void SendSimClockHeartbeatClientRpc(uint serverTick, double serverTime)
+        {
+            if (IsServer) return;
+            ServerSimClock.Instance?.ApplyHeartbeat(serverTick, serverTime);
         }
 
         public override void OnNetworkDespawn()
@@ -1460,7 +1486,7 @@ namespace TitanOrbit.Networking
                 return;
 
             Starship ship = TeamManager.GetPlayerStarshipForClient(clientId);
-            if (ship == null || ship.GetComponent<TitanOrbit.AI.AIShipMarker>() != null)
+            if (ship == null)
                 return;
 
             string authPlayerId = TitanOrbit.Systems.MapInstanceShipProgressStore.ResolveAuthPlayerId(clientId);
