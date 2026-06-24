@@ -16,6 +16,7 @@ namespace TitanOrbit.Entities
     public partial class Starship
     {
         private const int MaxPendingInputCommands = 64;
+        private const int MaxReplayStepsPerReconcile = 4;
         private const float MaxRemoteExtrapolationSeconds = 0.1f;
 
         private struct MotorRenderSample
@@ -57,6 +58,7 @@ namespace TitanOrbit.Entities
         private uint _pendingOwnerReconcileTick;
         private uint _lastOwnerReconcileTick;
         private uint _lastReconciledAckSeq;
+        private bool _ownerClockSynced;
 
         private NetworkVariable<Vector3> netMotorPosition = new NetworkVariable<Vector3>(
             default,
@@ -145,12 +147,7 @@ namespace TitanOrbit.Entities
         {
             uint latest = _remoteSnapshotBuffer.LatestTick;
             if (latest == 0)
-            {
-                ServerSimClock clock = ServerSimClock.Instance;
-                return clock != null && clock.IsClockReady
-                    ? clock.SimulationTick - 1f + GetRenderAlpha()
-                    : 0f;
-            }
+                return 0f;
 
             if (_remoteSnapshotBuffer.Count < 2)
                 return latest;
@@ -161,6 +158,15 @@ namespace TitanOrbit.Entities
         private Vector3 SampleRenderPose(out Quaternion rotation, out Vector3 velocity)
         {
             float t = GetRenderAlpha();
+            float renderSpan = Vector3.Distance(_renderPrev.Position, _renderNext.Position);
+            if (renderSpan < 0.01f && _renderNext.Velocity.sqrMagnitude > 0.25f)
+            {
+                float sinceFixed = Mathf.Max(0f, Time.time - Time.fixedTime);
+                rotation = _renderNext.Rotation;
+                velocity = _renderNext.Velocity;
+                return _renderNext.Position + _renderNext.Velocity * sinceFixed;
+            }
+
             rotation = Quaternion.Slerp(_renderPrev.Rotation, _renderNext.Rotation, t);
             velocity = Vector3.Lerp(_renderPrev.Velocity, _renderNext.Velocity, t);
             return Vector3.Lerp(_renderPrev.Position, _renderNext.Position, t);
@@ -262,8 +268,32 @@ namespace TitanOrbit.Entities
                 return;
             _lastBufferedSnapshotTick = current;
 
-            if (!IsOwner)
+            if (IsOwner)
+                SyncOwnerClockFromServerMotorTick(current);
+            else
                 BufferRemoteSnapshot(current);
+        }
+
+        private void SyncOwnerClockFromServerMotorTick(uint serverMotorTick)
+        {
+            if (serverMotorTick == 0)
+                return;
+
+            ServerSimClock clock = ServerSimClock.Instance;
+            if (!_ownerClockSynced)
+            {
+                clock?.RebaseFromAuthoritativeMotorTick(serverMotorTick);
+                if (_currentSimTick == 0)
+                {
+                    _currentSimTick = serverMotorTick;
+                    SyncRenderSamplesFromMotorState();
+                }
+                _ownerClockSynced = true;
+            }
+            else if (clock != null && clock.SimulationTick > serverMotorTick + (uint)clock.InputBufferTicks + 12)
+            {
+                clock.RebaseFromAuthoritativeMotorTick(serverMotorTick);
+            }
         }
 
         private void TryProcessPendingOwnerReconcile()
@@ -314,7 +344,28 @@ namespace TitanOrbit.Entities
                 new Vector3(serverPos.x, 0f, serverPos.z),
                 new Vector3(prePos.x, 0f, prePos.z));
             int replayCount = 0;
+            int tickLead = (int)_currentSimTick - (int)serverTick;
+            ServerSimClock leadClock = ServerSimClock.Instance;
+            int leadBudget = (leadClock != null ? leadClock.InputBufferTicks : 3) + 2;
+            float speed = Mathf.Max(_motorState.Velocity.magnitude, netMotorVelocity.Value.magnitude);
+            float expectedLeadErr = tickLead > 0
+                ? speed * ServerSimClock.SimFixedDeltaTime * tickLead
+                : 0f;
+            const float reconcileErrMargin = 0.35f;
+            bool withinExpectedLead = tickLead > 0 && tickLead <= leadBudget
+                && preSnapErr <= expectedLeadErr + reconcileErrMargin;
             // #endregion
+
+            if (preSnapErr < 0.2f || withinExpectedLead)
+            {
+                _lastReconciledAckSeq = ackSeq;
+
+                // #region agent log
+                MotorDebugLog.Write("H1", "Starship.NetworkMotor:ReconcileOwnerFromServer", "owner_reconcile_skip",
+                    $"{{\"preSnapErr\":{preSnapErr:F4},\"preTick\":{preTick},\"serverTick\":{serverTick},\"ackSeq\":{ackSeq},\"tickLead\":{tickLead},\"leadBudget\":{leadBudget},\"expectedLeadErr\":{expectedLeadErr:F4}}}", "post-fix12");
+                // #endregion
+                return true;
+            }
 
             ShipMotorSimulator.SnapState(
                 ref _motorState,
@@ -329,6 +380,8 @@ namespace TitanOrbit.Entities
             {
                 if (input.Sequence <= ackSeq)
                     continue;
+                if (replayCount >= MaxReplayStepsPerReconcile)
+                    break;
                 replayTick++;
                 replayCount++;
                 StepMotorWithInput(input, replayTick, fireWeapons: false);
@@ -337,12 +390,27 @@ namespace TitanOrbit.Entities
             _lastReconciledAckSeq = ackSeq;
             SyncRenderSamplesFromMotorState();
 
+            ServerSimClock clock = ServerSimClock.Instance;
+            if (clock != null && serverTick > 0 && clock.SimulationTick > serverTick + (uint)clock.InputBufferTicks + 12)
+                clock.RebaseFromAuthoritativeMotorTick(serverTick);
+
             // #region agent log
-            ServerSimClock dbgClock = ServerSimClock.Instance;
             MotorDebugLog.Write("H1", "Starship.NetworkMotor:ReconcileOwnerFromServer", "owner_reconcile",
-                $"{{\"preSnapErr\":{preSnapErr:F4},\"replayCount\":{replayCount},\"preTick\":{preTick},\"postTick\":{_currentSimTick},\"serverTick\":{serverTick},\"ackSeq\":{ackSeq},\"simTick\":{(dbgClock != null ? dbgClock.SimulationTick : 0)}}}", "post-fix7");
+                    $"{{\"preSnapErr\":{preSnapErr:F4},\"replayCount\":{replayCount},\"preTick\":{preTick},\"postTick\":{_currentSimTick},\"serverTick\":{serverTick},\"ackSeq\":{ackSeq},\"simTick\":{(clock != null ? clock.SimulationTick : 0)},\"tickLead\":{tickLead},\"expectedLeadErr\":{expectedLeadErr:F4}}}", "post-fix12");
             // #endregion
             return true;
+        }
+
+        private int CountUnackedInputs()
+        {
+            uint ack = lastProcessedInputSequence.Value;
+            int count = 0;
+            foreach (ShipInputCommand input in _ownerInputHistory)
+            {
+                if (input.Sequence > ack)
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>Server-only: assign inputs, step motor, replicate state.</summary>
@@ -394,8 +462,23 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Owner client: predict motor immediately from local input (no RTT wait).</summary>
-        internal void ClientPredictMotorFixedStep()
+        private bool TryGetOwnerMotorStepBudget(out uint maxPredictTick)
+        {
+            maxPredictTick = 0;
+            uint serverMotor = netMotorSimTick.Value;
+            if (_currentSimTick == 0 && serverMotor == 0)
+                return false;
+
+            ServerSimClock clock = ServerSimClock.Instance;
+            int leadBudget = (clock != null ? clock.InputBufferTicks : 3) + 2;
+            maxPredictTick = serverMotor > 0
+                ? serverMotor + (uint)leadBudget
+                : (clock != null && clock.IsClockReady ? clock.SimulationTick : 0u);
+            return maxPredictTick > 0 && _currentSimTick < maxPredictTick;
+        }
+
+        /// <summary>Owner client: send one input and predict one motor step (1:1 lockstep).</summary>
+        internal void OwnerClientMotorFixedStep()
         {
             if (!IsClient || IsServer || !IsOwner || isDead.Value || gemMoonDocked.Value)
                 return;
@@ -404,23 +487,28 @@ namespace TitanOrbit.Entities
             TryProcessPendingOwnerReconcile();
             SyncSimMassFromShip();
 
-            ShipInputCommand input = _lastSentInput;
-            if (input.Sequence == 0)
-            {
-                input = BuildInputCommandFromLocalControls();
-                input.Sequence = 1;
-                input.SpaceBrakes = (inputHandler as PlayerInputHandler)?.SpaceBrakesEnabled ?? true;
-            }
+            if (!TryGetOwnerMotorStepBudget(out uint maxPredictTick))
+                return;
+
+            if (inputHandler == null)
+                return;
+
+            ServerSimClock clock = ServerSimClock.Instance;
+            ShipInputCommand input = BuildInputCommandFromLocalControls();
+            input.Sequence = _nextInputSequence++;
+            if (_nextInputSequence == 0) _nextInputSequence = 1;
+            input.ClientTick = clock != null ? clock.ServerTick : 0;
+            _lastSentInput = input;
             _ownerPredictInput = input;
 
-            uint nextTick = _currentSimTick + 1;
-            if (_currentSimTick == 0)
-            {
-                ServerSimClock clock = ServerSimClock.Instance;
-                if (clock != null && clock.IsClockReady && clock.SimulationTick > 0)
-                    nextTick = clock.SimulationTick;
-            }
+            _ownerInputHistory.Enqueue(input);
+            while (_ownerInputHistory.Count > MaxPendingInputCommands)
+                _ownerInputHistory.Dequeue();
 
+            SubmitShipInputServerRpc(input);
+            SyncFireIntentFromInput(input);
+
+            uint nextTick = _currentSimTick + 1;
             StepMotorWithInput(input, nextTick, fireWeapons: false);
             CaptureRenderSampleFromMotorState();
 
@@ -428,9 +516,9 @@ namespace TitanOrbit.Entities
             _dbgFixedLogCounter++;
             if (_dbgFixedLogCounter % 25 == 0)
             {
-                ServerSimClock dbgClock = ServerSimClock.Instance;
-                MotorDebugLog.Write("H2", "Starship.NetworkMotor:ClientPredictMotorFixedStep", "owner_predict",
-                    $"{{\"tick\":{_currentSimTick},\"simTick\":{(dbgClock != null ? dbgClock.SimulationTick : 0)},\"serverClock\":{(dbgClock != null ? dbgClock.ServerTick : 0)},\"tickLead\":{(dbgClock != null ? (int)_currentSimTick - (int)dbgClock.SimulationTick : 0)},\"speed\":{_motorState.Velocity.magnitude:F3},\"thrust\":{(input.Thrust ? 1 : 0)}}}", "post-fix7");
+                uint serverMotor = netMotorSimTick.Value;
+                MotorDebugLog.Write("H2", "Starship.NetworkMotor:OwnerClientMotorFixedStep", "owner_predict",
+                    $"{{\"tick\":{_currentSimTick},\"serverMotor\":{serverMotor},\"simTick\":{(clock != null ? clock.SimulationTick : 0)},\"maxPredict\":{maxPredictTick},\"tickLead\":{(int)_currentSimTick - (int)serverMotor},\"unacked\":{CountUnackedInputs()},\"speed\":{_motorState.Velocity.magnitude:F3}}}", "post-fix12");
             }
             // #endregion
         }
@@ -590,7 +678,7 @@ namespace TitanOrbit.Entities
                 _dbgLastDisplayPos = displayPos;
                 _dbgHasLastDisplayPos = true;
                 MotorDebugLog.Write("H5", "Starship.NetworkMotor:ApplyOwnerPredictedMotorVisuals", "owner_display",
-                    $"{{\"alpha\":{alpha:F3},\"renderSpan\":{renderSpan:F4},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix7");
+                    $"{{\"alpha\":{alpha:F3},\"renderSpan\":{renderSpan:F4},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix12");
             }
             // #endregion
         }
@@ -634,7 +722,7 @@ namespace TitanOrbit.Entities
                     _dbgLastDisplayPos = pos;
                     _dbgHasLastDisplayPos = true;
                     MotorDebugLog.Write("H3", "Starship.NetworkMotor:ApplyRemoteMotorSnapshotVisuals", "remote_display",
-                        $"{{\"renderTickF\":{renderTickF:F3},\"latestTick\":{latestTick},\"simTick\":{(dbgClock != null ? dbgClock.SimulationTick : 0)},\"bufCount\":{_remoteSnapshotBuffer.Count},\"extrapolating\":{(extrapolating ? 1 : 0)},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix7");
+                        $"{{\"renderTickF\":{renderTickF:F3},\"latestTick\":{latestTick},\"simTick\":{(dbgClock != null ? dbgClock.SimulationTick : 0)},\"bufCount\":{_remoteSnapshotBuffer.Count},\"extrapolating\":{(extrapolating ? 1 : 0)},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix12");
                 }
                 // #endregion
                 return;
@@ -732,10 +820,10 @@ namespace TitanOrbit.Entities
             if (!IsOwner || IsAwaitingTeamSelection || isDead.Value) return;
             if (inputHandler == null) return;
 
+            ServerSimClock clock = ServerSimClock.Instance;
             ShipInputCommand cmd = BuildInputCommandFromLocalControls();
             cmd.Sequence = _nextInputSequence++;
             if (_nextInputSequence == 0) _nextInputSequence = 1;
-            ServerSimClock clock = ServerSimClock.Instance;
             cmd.ClientTick = clock != null ? clock.ServerTick : 0;
             _lastSentInput = cmd;
 
@@ -850,8 +938,9 @@ namespace TitanOrbit.Entities
         {
             ShipMotorSimulator.SnapState(ref _motorState, position, rotation, velocity, FIXED_Y_POSITION);
             _motorState.Mass = Mathf.Max(0.5f, mass);
-            ServerSimClock clock = ServerSimClock.Instance;
-            _currentSimTick = clock != null ? clock.SimulationTick : 0;
+            _currentSimTick = 0;
+            _ownerClockSynced = false;
+
             _serverLatestInput = ShipInputCommand.Default;
             _serverInputQueue.Clear();
             _ownerInputHistory.Clear();
@@ -894,6 +983,7 @@ namespace TitanOrbit.Entities
             _pendingOwnerReconcileTick = 0;
             _lastOwnerReconcileTick = 0;
             _lastReconciledAckSeq = 0;
+            _ownerClockSynced = false;
             _renderPrev = _renderNext = new MotorRenderSample
             {
                 Position = pos,

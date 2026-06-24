@@ -116,6 +116,17 @@ namespace TitanOrbit.Networking
             }
         }
 
+        public void RebaseFromAuthoritativeMotorTick(uint motorSimTick)
+        {
+            NetworkManager nm = NetworkManager.Singleton;
+            if (nm == null || nm.IsServer || motorSimTick == 0)
+                return;
+
+            _authServerTick = motorSimTick + (uint)_inputBufferTicks;
+            _authLocalUnscaledTime = Time.unscaledTimeAsDouble;
+            _clockInitialized = true;
+        }
+
         public void ApplyHeartbeat(uint serverTick, double serverTime)
         {
             NetworkManager nm = NetworkManager.Singleton;
@@ -156,7 +167,7 @@ namespace TitanOrbit.Networking
             if (error != 0)
             {
                 TitanOrbit.Diagnostics.MotorDebugLog.Write("H4", "ServerSimClock:ApplyHeartbeat", "clock_auth",
-                    $"{{\"error\":{error},\"prevEst\":{prevEst},\"authTick\":{serverTick},\"inputBuffer\":{_inputBufferTicks}}}", "post-fix7");
+                    $"{{\"error\":{error},\"prevEst\":{prevEst},\"authTick\":{serverTick},\"inputBuffer\":{_inputBufferTicks}}}", "post-fix12");
             }
             // #endregion
         }

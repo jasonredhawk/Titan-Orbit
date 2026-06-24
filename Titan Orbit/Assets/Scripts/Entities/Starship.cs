@@ -3909,10 +3909,12 @@ namespace TitanOrbit.Entities
             }
 
             if (IsOwner && !isDead.Value && !gemMoonDocked.Value)
-                TickNetworkInputSender();
-
-            if (IsClient && IsOwner && !IsServer && !isDead.Value && !gemMoonDocked.Value)
-                ClientPredictMotorFixedStep();
+            {
+                if (IsClient && !IsServer)
+                    OwnerClientMotorFixedStep();
+                else
+                    TickNetworkInputSender();
+            }
 
             if (!isDead.Value && !gemMoonDocked.Value && IsServer)
             {
