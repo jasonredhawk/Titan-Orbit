@@ -1,839 +1,223 @@
-using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using TitanOrbit.Input;
 using TitanOrbit.Networking;
-using TitanOrbit.Simulation;
-using TitanOrbit.Audio;
 using TitanOrbit.Diagnostics;
 
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Dedicated-server authoritative motor with client-side prediction (local owner) and
-    /// snapshot interpolation (remote ships) — standard arcade multiplayer (Starblast / Agar.io style).
+    /// Minimal NGO movement: owner sends input via ServerRpc, server simulates with Rigidbody forces,
+    /// NetworkTransform + NetworkRigidbody replicate to all clients.
     /// </summary>
     public partial class Starship
     {
-        private const int MaxPendingInputCommands = 64;
-        private const int MaxReplayStepsPerReconcile = 4;
-        private const float MaxRemoteExtrapolationSeconds = 0.1f;
+        private ShipInputCommand _serverInput = ShipInputCommand.Default;
+        private bool _movementNetworkInitialized;
+        private int _motionDbgFixedCounter;
+        private float _motionDbgPrePhysicsSpeed;
+        private Vector3 _motionDbgPrePhysicsRbPos;
+        private Vector3 _motionDbgPrePhysicsTrPos;
 
-        private struct MotorRenderSample
-        {
-            public Vector3 Position;
-            public Quaternion Rotation;
-            public Vector3 Velocity;
-        }
+        public bool IsThrustingForDisplay => moveForwardPressedNet.Value;
 
-        private ShipMotorState _motorState;
-        private uint _currentSimTick;
-        private uint _nextInputSequence = 1;
-        private ShipInputCommand _lastSentInput = ShipInputCommand.Default;
-        private ShipInputCommand _ownerPredictInput = ShipInputCommand.Default;
-
-        private ShipInputCommand _serverLatestInput = ShipInputCommand.Default;
-        private readonly Queue<ShipInputCommand> _serverInputQueue = new Queue<ShipInputCommand>(MaxPendingInputCommands);
-        private readonly Queue<ShipInputCommand> _ownerInputHistory = new Queue<ShipInputCommand>(MaxPendingInputCommands);
-        private bool _motorSimInitialized;
-
-        private MotorRenderSample _renderPrev;
-        private MotorRenderSample _renderNext;
-        private bool _renderSamplesValid;
-
-        private Vector3 _remoteDisplayVelocity;
-        private bool _remoteDisplayValid;
-        private bool _clientPoseInitialized;
-        private uint _lastBufferedSnapshotTick;
-
-        private readonly ShipMotorSnapshotBuffer _remoteSnapshotBuffer = new ShipMotorSnapshotBuffer();
-
-        // #region agent log
-        private Vector3 _dbgLastDisplayPos;
-        private bool _dbgHasLastDisplayPos;
-        private int _dbgFixedLogCounter;
-        private int _dbgLateLogCounter;
-        // #endregion
-
-        private uint _pendingOwnerReconcileTick;
-        private uint _lastOwnerReconcileTick;
-        private uint _lastReconciledAckSeq;
-        private bool _ownerClockSynced;
-
-        private NetworkVariable<Vector3> netMotorPosition = new NetworkVariable<Vector3>(
-            default,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private NetworkVariable<Quaternion> netMotorRotation = new NetworkVariable<Quaternion>(
-            Quaternion.identity,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private NetworkVariable<Vector3> netMotorVelocity = new NetworkVariable<Vector3>(
-            default,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private NetworkVariable<uint> netMotorSimTick = new NetworkVariable<uint>(
-            0,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private NetworkVariable<Vector2> netAimWorldXZ = new NetworkVariable<Vector2>(
-            default,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private NetworkVariable<uint> lastProcessedInputSequence = new NetworkVariable<uint>(
-            0,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
-
-        private static uint s_lastServerMotorPhysicsStep;
-        private static readonly List<Starship> s_motorScratch = new List<Starship>(64);
-
-        public uint LastProcessedInputSequence => lastProcessedInputSequence.Value;
-        public uint CurrentSimTick => _currentSimTick;
-        public bool IsThrustingForDisplay => IsOwner && !IsServer
-            ? _ownerPredictInput.Thrust
-            : moveForwardPressedNet.Value;
-
-        public Vector3 GetSimPosition()
-        {
-            if (IsServer)
-                return _motorState.Position;
-            if (IsOwner && _renderSamplesValid)
-                return SampleRenderPose(out _, out _);
-            if (!IsOwner && _remoteDisplayValid)
-                return transform.position;
-            return netMotorPosition.Value;
-        }
+        public Vector3 GetSimPosition() => rb != null ? rb.position : transform.position;
 
         public Vector3 GetSimVelocity()
         {
-            if (IsServer)
-                return _motorState.Velocity;
-            if (IsOwner && _renderSamplesValid)
-                return Vector3.Lerp(_renderPrev.Velocity, _renderNext.Velocity, GetRenderAlpha());
-            if (!IsOwner && _remoteDisplayValid)
-                return _remoteDisplayVelocity;
-            return netMotorVelocity.Value;
+            if (rb == null) return Vector3.zero;
+            if (!IsServer && rb.isKinematic)
+                return _collisionPlanarVelocityEstimate;
+            return rb.linearVelocity;
         }
 
-        public Quaternion GetSimRotation()
+        public Quaternion GetSimRotation() => rb != null ? rb.rotation : transform.rotation;
+
+        public float GetSimMass() => rb != null ? rb.mass : EffectiveMass;
+
+        private void EnsureBasicNetworkMovement()
         {
-            if (IsServer)
-                return _motorState.Rotation;
-            if (IsOwner && _renderSamplesValid)
-                return Quaternion.Slerp(_renderPrev.Rotation, _renderNext.Rotation, GetRenderAlpha());
-            if (!IsOwner && _remoteDisplayValid)
-                return transform.rotation;
-            return netMotorRotation.Value;
-        }
+            if (_movementNetworkInitialized) return;
+            _movementNetworkInitialized = true;
 
-        public float GetSimMass() => _motorState.Mass > 0f ? _motorState.Mass : EffectiveMass;
-
-        private bool UsesInputSyncedMotor => true;
-
-        private static float GetRenderAlpha()
-        {
-            float dt = Mathf.Max(Time.fixedDeltaTime, 0.001f);
-            return Mathf.Clamp01((Time.time - Time.fixedTime) / dt);
-        }
-
-        /// <summary>Fractional sim tick for remote snapshot interpolation — keyed to buffered snapshots, not client clock.</summary>
-        private float GetRemoteRenderTickF()
-        {
-            uint latest = _remoteSnapshotBuffer.LatestTick;
-            if (latest == 0)
-                return 0f;
-
-            if (_remoteSnapshotBuffer.Count < 2)
-                return latest;
-
-            return latest - 1f + GetRenderAlpha();
-        }
-
-        private Vector3 SampleRenderPose(out Quaternion rotation, out Vector3 velocity)
-        {
-            float t = GetRenderAlpha();
-            float renderSpan = Vector3.Distance(_renderPrev.Position, _renderNext.Position);
-            if (renderSpan < 0.01f && _renderNext.Velocity.sqrMagnitude > 0.25f)
-            {
-                float sinceFixed = Mathf.Max(0f, Time.time - Time.fixedTime);
-                rotation = _renderNext.Rotation;
-                velocity = _renderNext.Velocity;
-                return _renderNext.Position + _renderNext.Velocity * sinceFixed;
-            }
-
-            rotation = Quaternion.Slerp(_renderPrev.Rotation, _renderNext.Rotation, t);
-            velocity = Vector3.Lerp(_renderPrev.Velocity, _renderNext.Velocity, t);
-            return Vector3.Lerp(_renderPrev.Position, _renderNext.Position, t);
-        }
-
-        private void CaptureRenderSampleFromMotorState()
-        {
-            _renderPrev = _renderNext;
-            _renderNext = new MotorRenderSample
-            {
-                Position = _motorState.Position,
-                Rotation = _motorState.Rotation,
-                Velocity = _motorState.Velocity,
-            };
-            _renderSamplesValid = true;
-        }
-
-        private void SyncRenderSamplesFromMotorState()
-        {
-            var sample = new MotorRenderSample
-            {
-                Position = _motorState.Position,
-                Rotation = _motorState.Rotation,
-                Velocity = _motorState.Velocity,
-            };
-            _renderPrev = sample;
-            _renderNext = sample;
-            _renderSamplesValid = true;
-        }
-
-        private void InitializeMotorSimOnSpawn()
-        {
-            if (_motorSimInitialized) return;
-
-            Vector3 pos = rb != null ? rb.position : transform.position;
-            Quaternion rot = rb != null ? rb.rotation : transform.rotation;
-            float mass = rb != null ? rb.mass : EffectiveMass;
-            _motorState.ResetAt(pos, rot, mass);
-            _currentSimTick = 0;
-            _motorSimInitialized = true;
-            ConfigureServerAuthoritativeNetworking();
-
-            _renderPrev = _renderNext = new MotorRenderSample
-            {
-                Position = pos,
-                Rotation = rot,
-                Velocity = Vector3.zero,
-            };
-            _renderSamplesValid = true;
-
-            if (IsClient && !IsServer)
-            {
-                netMotorSimTick.OnValueChanged += OnReplicatedMotorSimTickChanged;
-                lastProcessedInputSequence.OnValueChanged += OnReplicatedInputAckChanged;
-                ResetClientPoseFromNetwork();
-            }
-        }
-
-        private void UnsubscribeMotorNetworkCallbacks()
-        {
-            if (!IsClient || IsServer) return;
-            netMotorSimTick.OnValueChanged -= OnReplicatedMotorSimTickChanged;
-            lastProcessedInputSequence.OnValueChanged -= OnReplicatedInputAckChanged;
-        }
-
-        private void OnReplicatedInputAckChanged(uint previous, uint current)
-        {
-            if (IsServer || !IsSpawned || !IsOwner || isDead.Value || gemMoonDocked.Value || current == 0)
-                return;
-            if (current <= _lastReconciledAckSeq)
-                return;
-            uint tick = netMotorSimTick.Value;
-            if (tick > _pendingOwnerReconcileTick)
-                _pendingOwnerReconcileTick = tick;
-        }
-
-        private void ConfigureServerAuthoritativeNetworking()
-        {
-            var networkRigidbody = GetComponent<Unity.Netcode.Components.NetworkRigidbody>();
-            if (networkRigidbody != null)
-                networkRigidbody.enabled = false;
-
-            var networkTransform = GetComponent<Unity.Netcode.Components.NetworkTransform>();
+            var networkTransform = GetComponent<NetworkTransform>();
             if (networkTransform != null)
-                networkTransform.enabled = false;
-
-            if (rb != null)
             {
-                rb.isKinematic = true;
-                rb.interpolation = RigidbodyInterpolation.None;
+                networkTransform.enabled = true;
+                networkTransform.Interpolate = true;
             }
-        }
 
-        private void OnReplicatedMotorSimTickChanged(uint previous, uint current)
-        {
-            if (IsServer || !IsSpawned || isDead.Value || gemMoonDocked.Value || current == 0)
-                return;
-            if (current == _lastBufferedSnapshotTick)
-                return;
-            _lastBufferedSnapshotTick = current;
+            var networkRigidbody = GetComponent<NetworkRigidbody>();
+            if (networkRigidbody != null)
+                networkRigidbody.enabled = true;
 
+            // #region agent log
             if (IsOwner)
-                SyncOwnerClockFromServerMotorTick(current);
-            else
-                BufferRemoteSnapshot(current);
-        }
-
-        private void SyncOwnerClockFromServerMotorTick(uint serverMotorTick)
-        {
-            if (serverMotorTick == 0)
-                return;
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            if (!_ownerClockSynced)
             {
-                clock?.RebaseFromAuthoritativeMotorTick(serverMotorTick);
-                if (_currentSimTick == 0)
-                {
-                    _currentSimTick = serverMotorTick;
-                    SyncRenderSamplesFromMotorState();
-                }
-                _ownerClockSynced = true;
-            }
-            else if (clock != null && clock.SimulationTick > serverMotorTick + (uint)clock.InputBufferTicks + 12)
-            {
-                clock.RebaseFromAuthoritativeMotorTick(serverMotorTick);
-            }
-        }
-
-        private void TryProcessPendingOwnerReconcile()
-        {
-            if (_pendingOwnerReconcileTick == 0)
-                return;
-            if (_pendingOwnerReconcileTick <= _lastOwnerReconcileTick)
-            {
-                _pendingOwnerReconcileTick = 0;
-                return;
-            }
-
-            uint tick = _pendingOwnerReconcileTick;
-            _pendingOwnerReconcileTick = 0;
-            if (ReconcileOwnerFromServer(tick))
-                _lastOwnerReconcileTick = tick;
-        }
-
-        private void BufferRemoteSnapshot(uint tick)
-        {
-            _remoteSnapshotBuffer.Push(new ShipMotorSnapshot
-            {
-                Tick = tick,
-                Position = netMotorPosition.Value,
-                Rotation = netMotorRotation.Value,
-                Velocity = netMotorVelocity.Value,
-                Thrust = moveForwardPressedNet.Value,
-                AimWorldXZ = netAimWorldXZ.Value,
-            });
-        }
-
-        private bool ReconcileOwnerFromServer(uint serverTick)
-        {
-            Vector3 serverPos = netMotorPosition.Value;
-            serverPos.y = FIXED_Y_POSITION;
-            uint ackSeq = lastProcessedInputSequence.Value;
-
-            if (ackSeq <= _lastReconciledAckSeq)
-                return false;
-
-            while (_ownerInputHistory.Count > 0 && _ownerInputHistory.Peek().Sequence <= ackSeq)
-                _ownerInputHistory.Dequeue();
-
-            // #region agent log
-            Vector3 prePos = _motorState.Position;
-            uint preTick = _currentSimTick;
-            float preSnapErr = Vector3.Distance(
-                new Vector3(serverPos.x, 0f, serverPos.z),
-                new Vector3(prePos.x, 0f, prePos.z));
-            int replayCount = 0;
-            int tickLead = (int)_currentSimTick - (int)serverTick;
-            ServerSimClock leadClock = ServerSimClock.Instance;
-            int leadBudget = (leadClock != null ? leadClock.InputBufferTicks : 3) + 2;
-            float speed = Mathf.Max(_motorState.Velocity.magnitude, netMotorVelocity.Value.magnitude);
-            float expectedLeadErr = tickLead > 0
-                ? speed * ServerSimClock.SimFixedDeltaTime * tickLead
-                : 0f;
-            const float reconcileErrMargin = 0.35f;
-            bool withinExpectedLead = tickLead > 0 && tickLead <= leadBudget
-                && preSnapErr <= expectedLeadErr + reconcileErrMargin;
-            // #endregion
-
-            if (preSnapErr < 0.2f || withinExpectedLead)
-            {
-                _lastReconciledAckSeq = ackSeq;
-
-                // #region agent log
-                MotorDebugLog.Write("H1", "Starship.NetworkMotor:ReconcileOwnerFromServer", "owner_reconcile_skip",
-                    $"{{\"preSnapErr\":{preSnapErr:F4},\"preTick\":{preTick},\"serverTick\":{serverTick},\"ackSeq\":{ackSeq},\"tickLead\":{tickLead},\"leadBudget\":{leadBudget},\"expectedLeadErr\":{expectedLeadErr:F4}}}", "post-fix12");
-                // #endregion
-                return true;
-            }
-
-            ShipMotorSimulator.SnapState(
-                ref _motorState,
-                serverPos,
-                netMotorRotation.Value,
-                netMotorVelocity.Value,
-                FIXED_Y_POSITION);
-            _currentSimTick = serverTick;
-
-            uint replayTick = serverTick;
-            foreach (ShipInputCommand input in _ownerInputHistory)
-            {
-                if (input.Sequence <= ackSeq)
-                    continue;
-                if (replayCount >= MaxReplayStepsPerReconcile)
-                    break;
-                replayTick++;
-                replayCount++;
-                StepMotorWithInput(input, replayTick, fireWeapons: false);
-            }
-
-            _lastReconciledAckSeq = ackSeq;
-            SyncRenderSamplesFromMotorState();
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            if (clock != null && serverTick > 0 && clock.SimulationTick > serverTick + (uint)clock.InputBufferTicks + 12)
-                clock.RebaseFromAuthoritativeMotorTick(serverTick);
-
-            // #region agent log
-            MotorDebugLog.Write("H1", "Starship.NetworkMotor:ReconcileOwnerFromServer", "owner_reconcile",
-                    $"{{\"preSnapErr\":{preSnapErr:F4},\"replayCount\":{replayCount},\"preTick\":{preTick},\"postTick\":{_currentSimTick},\"serverTick\":{serverTick},\"ackSeq\":{ackSeq},\"simTick\":{(clock != null ? clock.SimulationTick : 0)},\"tickLead\":{tickLead},\"expectedLeadErr\":{expectedLeadErr:F4}}}", "post-fix12");
-            // #endregion
-            return true;
-        }
-
-        private int CountUnackedInputs()
-        {
-            uint ack = lastProcessedInputSequence.Value;
-            int count = 0;
-            foreach (ShipInputCommand input in _ownerInputHistory)
-            {
-                if (input.Sequence > ack)
-                    count++;
-            }
-            return count;
-        }
-
-        /// <summary>Server-only: assign inputs, step motor, replicate state.</summary>
-        public static void ServerTickAllShipMotors(uint serverTick)
-        {
-            NetworkManager nm = NetworkManager.Singleton;
-            if (nm == null || !nm.IsServer) return;
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            if (clock == null) return;
-            uint step = clock.PhysicsStepId;
-            if (step == s_lastServerMotorPhysicsStep) return;
-            s_lastServerMotorPhysicsStep = step;
-
-            s_motorScratch.Clear();
-            for (int i = 0; i < AllStarships.Count; i++)
-            {
-                Starship ship = AllStarships[i];
-                if (ship == null || !ship.IsSpawned || ship.isDead.Value || ship.gemMoonDocked.Value)
-                    continue;
-                ship.InitializeMotorSimOnSpawn();
-                s_motorScratch.Add(ship);
-            }
-
-            if (s_motorScratch.Count == 0) return;
-
-            s_motorScratch.Sort((a, b) => a.GetInstanceID().CompareTo(b.GetInstanceID()));
-
-            for (int i = 0; i < s_motorScratch.Count; i++)
-                s_motorScratch[i].ServerAssignInputForTick(serverTick);
-
-            for (int i = 0; i < s_motorScratch.Count; i++)
-                s_motorScratch[i].StepMotorWithInput(s_motorScratch[i]._serverLatestInput, serverTick, fireWeapons: true);
-
-            for (int i = 0; i < s_motorScratch.Count; i++)
-            {
-                Starship ship = s_motorScratch[i];
-                if (ship._currentSimTick == 0) continue;
-                ship.ResolveSimCollisionsForTick(ship._currentSimTick);
-            }
-
-            for (int i = 0; i < s_motorScratch.Count; i++)
-            {
-                Starship ship = s_motorScratch[i];
-                ship.PublishMotorStateToNetwork();
-                ship.ApplyMotorSimStateToRigidbody();
-                if (ship.IsClient)
-                    ship.CaptureRenderSampleFromMotorState();
-            }
-        }
-
-        private bool TryGetOwnerMotorStepBudget(out uint maxPredictTick)
-        {
-            maxPredictTick = 0;
-            uint serverMotor = netMotorSimTick.Value;
-            if (_currentSimTick == 0 && serverMotor == 0)
-                return false;
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            int leadBudget = (clock != null ? clock.InputBufferTicks : 3) + 2;
-            maxPredictTick = serverMotor > 0
-                ? serverMotor + (uint)leadBudget
-                : (clock != null && clock.IsClockReady ? clock.SimulationTick : 0u);
-            return maxPredictTick > 0 && _currentSimTick < maxPredictTick;
-        }
-
-        /// <summary>Owner client: send one input and predict one motor step (1:1 lockstep).</summary>
-        internal void OwnerClientMotorFixedStep()
-        {
-            if (!IsClient || IsServer || !IsOwner || isDead.Value || gemMoonDocked.Value)
-                return;
-
-            InitializeMotorSimOnSpawn();
-            TryProcessPendingOwnerReconcile();
-            SyncSimMassFromShip();
-
-            if (!TryGetOwnerMotorStepBudget(out uint maxPredictTick))
-                return;
-
-            if (inputHandler == null)
-                return;
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            ShipInputCommand input = BuildInputCommandFromLocalControls();
-            input.Sequence = _nextInputSequence++;
-            if (_nextInputSequence == 0) _nextInputSequence = 1;
-            input.ClientTick = clock != null ? clock.ServerTick : 0;
-            _lastSentInput = input;
-            _ownerPredictInput = input;
-
-            _ownerInputHistory.Enqueue(input);
-            while (_ownerInputHistory.Count > MaxPendingInputCommands)
-                _ownerInputHistory.Dequeue();
-
-            SubmitShipInputServerRpc(input);
-            SyncFireIntentFromInput(input);
-
-            uint nextTick = _currentSimTick + 1;
-            StepMotorWithInput(input, nextTick, fireWeapons: false);
-            CaptureRenderSampleFromMotorState();
-
-            // #region agent log
-            _dbgFixedLogCounter++;
-            if (_dbgFixedLogCounter % 25 == 0)
-            {
-                uint serverMotor = netMotorSimTick.Value;
-                MotorDebugLog.Write("H2", "Starship.NetworkMotor:OwnerClientMotorFixedStep", "owner_predict",
-                    $"{{\"tick\":{_currentSimTick},\"serverMotor\":{serverMotor},\"simTick\":{(clock != null ? clock.SimulationTick : 0)},\"maxPredict\":{maxPredictTick},\"tickLead\":{(int)_currentSimTick - (int)serverMotor},\"unacked\":{CountUnackedInputs()},\"speed\":{_motorState.Velocity.magnitude:F3}}}", "post-fix12");
+                var nt = GetComponent<NetworkTransform>();
+                MotorDebugLog.Write("C", "Starship.NetworkMotor.EnsureBasicNetworkMovement",
+                    "owner network movement init",
+                    $"{{\"isServer\":{IsServer.ToString().ToLower()},\"isClient\":{IsClient.ToString().ToLower()},\"isHost\":{(IsServer && IsClient).ToString().ToLower()},\"ntInterpolate\":{(nt != null && nt.Interpolate).ToString().ToLower()},\"nrEnabled\":{(networkRigidbody != null && networkRigidbody.enabled).ToString().ToLower()},\"rbKinematic\":{(rb != null && rb.isKinematic).ToString().ToLower()},\"rbInterpolation\":{(rb != null ? (int)rb.interpolation : -1)}}}",
+                    "post-fix");
             }
             // #endregion
-        }
 
-        private void StepMotorWithInput(ShipInputCommand input, uint simTick, bool fireWeapons)
-        {
-            if (input.Sequence == 0)
-            {
-                input = ShipInputCommand.Default;
-                input.Sequence = 1;
-                input.SpaceBrakes = true;
-            }
-
-            Vector3 preVel = _motorState.Velocity;
-            ShipMotorTickParams p = BuildMotorTickParams(input, simTick);
-            ShipMotorSimulator.Step(
-                ref _motorState,
-                in p,
-                input.AimWorldXZ,
-                input.Thrust,
-                input.SpaceBrakes);
-
-            _lastFixedPlayPlaneVelocity = preVel;
-            _currentSimTick = simTick;
-            _motorState.LastSimTick = simTick;
-
-            if (fireWeapons && input.Fire)
-                ProcessSimTickWeaponFire(simTick);
-        }
-
-        private void PublishMotorStateToNetwork()
-        {
-            Vector3 pos = _motorState.Position;
-            pos.y = FIXED_Y_POSITION;
-            netMotorSimTick.Value = _currentSimTick;
-            netMotorPosition.Value = pos;
-            netMotorRotation.Value = _motorState.Rotation;
-            netMotorVelocity.Value = _motorState.Velocity;
-            netAimWorldXZ.Value = _serverLatestInput.AimWorldXZ;
-        }
-
-        private void ResolveSimCollisionsForTick(uint tick)
-        {
-            if (IsAwaitingTeamSelection) return;
-
-            Vector3 preVel = _lastFixedPlayPlaneVelocity;
-            float shipR = GetShipCollisionRadiusXZ();
-            float restitution = GetEffectiveAsteroidRestitution();
-
-            if (ShipCollisionSimulator.TryResolveAsteroidCollision(
-                    ref _motorState,
-                    shipR,
-                    restitution,
-                    GetRammingImpactMass(),
-                    ServerSimClock.SimFixedDeltaTime,
-                    preVel,
-                    out ShipCollisionResult asteroidHit))
-            {
-                HandleAsteroidSimCollision(asteroidHit, tick);
-            }
-
-            if (ShipCollisionSimulator.TryResolveShipShipCollision(
-                    ref _motorState,
-                    this,
-                    shipR,
-                    GetShipShipRestitution(),
-                    ServerSimClock.SimFixedDeltaTime,
-                    out ShipCollisionResult shipHit))
-            {
-                HandleShipSimCollision(shipHit, tick);
-            }
-        }
-
-        /// <summary>Writes authoritative sim state to rb (dedicated server only).</summary>
-        private void ApplyMotorSimStateToRigidbody()
-        {
-            if (rb == null || IsClient) return;
-            Vector3 pos = _motorState.Position;
-            pos.y = FIXED_Y_POSITION;
-            rb.MovePosition(pos);
-            rb.MoveRotation(_motorState.Rotation);
-            rb.linearVelocity = _motorState.Velocity;
-            currentVelocity = _motorState.Velocity;
-            transform.SetPositionAndRotation(pos, _motorState.Rotation);
-        }
-
-        private void ApplyClientMotorDisplayPose(Vector3 pos, Quaternion rot, Vector3 vel)
-        {
-            pos.y = FIXED_Y_POSITION;
-            transform.SetPositionAndRotation(pos, rot);
             if (rb == null) return;
-            rb.MovePosition(pos);
-            rb.MoveRotation(rot);
-            rb.linearVelocity = vel;
-            currentVelocity = vel;
+
+            rb.useGravity = false;
+            rb.linearDamping = 0f;
+            rb.angularDamping = 0f;
+            rb.constraints = RigidbodyConstraints.FreezePositionY
+                | RigidbodyConstraints.FreezeRotationX
+                | RigidbodyConstraints.FreezeRotationZ;
+
+            if (IsServer)
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         }
 
-        /// <summary>Aligns weapon/collision transforms with current sim or display pose before gameplay queries.</summary>
-        internal void SyncTransformForGameplayQuery()
+        internal void TickNetworkInputSender()
         {
-            if (IsClient)
+            if (!IsOwner || IsAwaitingTeamSelection || isDead.Value || gemMoonDocked.Value) return;
+            if (inputHandler == null) return;
+
+            ShipInputCommand cmd = BuildInputCommandFromLocalControls();
+            SubmitShipInputServerRpc(cmd);
+            SyncFireIntentFromInput(cmd);
+        }
+
+        internal void ServerApplyBasicMovement()
+        {
+            if (!IsServer || rb == null || isDead.Value || gemMoonDocked.Value) return;
+
+            EnsureBasicNetworkMovement();
+            EnforcePlanarMaxSpeedCap();
+            ApplyServerMovement(_serverInput);
+        }
+
+        internal void ServerClampPlanarSpeedAfterPhysics()
+        {
+            if (!IsServer || rb == null || isDead.Value || gemMoonDocked.Value) return;
+            EnforcePlanarMaxSpeedCap();
+        }
+
+        private void ApplyServerMovement(ShipInputCommand input)
+        {
+            float dt = Time.fixedDeltaTime;
+
+            ApplyRotationTowardAim(input, dt);
+            ApplyThrustAndBrakes(input);
+
+            if (input.Fire)
+                TickPlayerHoldWeaponFiring(authoritative: true);
+
+            EnforcePlanarMaxSpeedCap();
+
+            Vector3 vel = rb.linearVelocity;
+            currentVelocity = new Vector3(vel.x, 0f, vel.z);
+
+            // #region agent log
+            if (IsServer && input.Thrust && IsOwner && (_motionDbgFixedCounter++ % 4 == 0))
             {
-                if (IsOwner && _renderSamplesValid)
+                Vector3 trPos = transform.position;
+                Vector3 rbPos = rb.position;
+                float maxSpd = EffectiveMaxSpeed;
+                float spd = currentVelocity.magnitude;
+                float trRbDelta = Vector3.Distance(
+                    new Vector3(trPos.x, 0f, trPos.z),
+                    new Vector3(rbPos.x, 0f, trPos.z));
+                float alongVel = 0f;
+                if (spd >= maxSpd - 0.01f && moveDirection.sqrMagnitude > 0.01f)
                 {
-                    Vector3 pos = SampleRenderPose(out Quaternion rot, out Vector3 vel);
-                    ApplyClientMotorDisplayPose(pos, rot, vel);
+                    alongVel = Vector3.Dot(moveDirection * EffectiveEngineThrust, currentVelocity.normalized);
+                }
+                _motionDbgPrePhysicsSpeed = spd;
+                _motionDbgPrePhysicsRbPos = rbPos;
+                _motionDbgPrePhysicsTrPos = trPos;
+                MotorDebugLog.Write("B", "Starship.NetworkMotor.ApplyServerMovement",
+                    "post-cap movement sample",
+                    $"{{\"speed\":{spd:F4},\"maxSpeed\":{maxSpd:F4},\"overMax\":{(spd > maxSpd + 0.05f).ToString().ToLower()},\"trRbDelta\":{trRbDelta:F5},\"alongThrustOnVel\":{alongVel:F3}}}",
+                    "speed-cap");
+            }
+            // #endregion
+        }
+
+        /// <summary>
+        /// Server hard cap on planar speed. Lateral thrust while turning and weapon recoil can otherwise push past max indefinitely.
+        /// </summary>
+        private void EnforcePlanarMaxSpeedCap()
+        {
+            float max = EffectiveMaxSpeed;
+            if (max <= 0.001f) return;
+
+            Vector3 vel = rb.linearVelocity;
+            Vector3 planar = new Vector3(vel.x, 0f, vel.z);
+            float s = planar.magnitude;
+            if (s <= max) return;
+
+            Vector3 capped = planar * (max / s);
+            rb.linearVelocity = new Vector3(capped.x, 0f, capped.z);
+        }
+
+        private void ApplyRotationTowardAim(ShipInputCommand input, float dt)
+        {
+            if (IsBulletElectricShockDisabled)
+                return;
+
+            Vector3 pos = rb.position;
+            pos.y = FIXED_Y_POSITION;
+            Vector3 aimPoint = new Vector3(input.AimWorldXZ.x, pos.y, input.AimWorldXZ.y);
+            Vector3 toAim = aimPoint - pos;
+            toAim.y = 0f;
+            if (toAim.sqrMagnitude <= 0.001f)
+                return;
+
+            Quaternion targetRot = Quaternion.LookRotation(toAim.normalized, Vector3.up);
+            Quaternion newRot = Quaternion.RotateTowards(rb.rotation, targetRot, EffectiveRotationSpeed * dt);
+            rb.MoveRotation(newRot);
+            rb.angularVelocity = Vector3.zero;
+        }
+
+        private void ApplyThrustAndBrakes(ShipInputCommand input)
+        {
+            Vector3 vel = rb.linearVelocity;
+            vel.y = 0f;
+
+            Vector3 fwd = rb.rotation * Vector3.forward;
+            fwd.y = 0f;
+            moveDirection = input.Thrust && fwd.sqrMagnitude > 0.01f ? fwd.normalized : Vector3.zero;
+
+            if (input.Thrust && moveDirection.sqrMagnitude > 0.01f)
+            {
+                float maxSpeed = EffectiveMaxSpeed;
+                float speed = vel.magnitude;
+                if (speed < maxSpeed)
+                {
+                    rb.AddForce(moveDirection * EffectiveEngineThrust, ForceMode.Force);
                 }
                 else
                 {
-                    Vector3 pos = _motorState.Position;
-                    pos.y = FIXED_Y_POSITION;
-                    ApplyClientMotorDisplayPose(pos, _motorState.Rotation, _motorState.Velocity);
-                }
-                return;
-            }
-
-            ApplyMotorSimStateToRigidbody();
-        }
-
-        internal void ClientApplyMotorPoseSmoothing()
-        {
-            if (!IsClient || rb == null || isDead.Value || gemMoonDocked.Value)
-                return;
-
-            if (IsOwner)
-            {
-                ApplyOwnerPredictedMotorVisuals();
-                return;
-            }
-
-            ApplyRemoteMotorSnapshotVisuals();
-        }
-
-        private void ApplyOwnerPredictedMotorVisuals()
-        {
-            if (!_renderSamplesValid)
-            {
-                Vector3 pos = _motorState.Position;
-                pos.y = FIXED_Y_POSITION;
-                ApplyClientMotorDisplayPose(pos, _motorState.Rotation, _motorState.Velocity);
-                return;
-            }
-
-            ApplyClientMotorDisplayPose(
-                SampleRenderPose(out Quaternion rot, out Vector3 vel),
-                rot,
-                vel);
-
-            // #region agent log
-            _dbgLateLogCounter++;
-            if (_dbgLateLogCounter % 12 == 0)
-            {
-                Vector3 displayPos = transform.position;
-                float alpha = GetRenderAlpha();
-                float renderSpan = Vector3.Distance(_renderPrev.Position, _renderNext.Position);
-                float frameDelta = _dbgHasLastDisplayPos ? Vector3.Distance(displayPos, _dbgLastDisplayPos) : 0f;
-                _dbgLastDisplayPos = displayPos;
-                _dbgHasLastDisplayPos = true;
-                MotorDebugLog.Write("H5", "Starship.NetworkMotor:ApplyOwnerPredictedMotorVisuals", "owner_display",
-                    $"{{\"alpha\":{alpha:F3},\"renderSpan\":{renderSpan:F4},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix12");
-            }
-            // #endregion
-        }
-
-        private void ApplyRemoteMotorSnapshotVisuals()
-        {
-            if (_remoteSnapshotBuffer.Count == 0)
-            {
-                ServerSimClock clock = ServerSimClock.Instance;
-                if (clock == null || !clock.IsClockReady)
-                {
-                    if (!_clientPoseInitialized)
-                        ResetClientPoseFromNetwork();
-                    return;
+                    Vector3 velNorm = vel.normalized;
+                    Vector3 thrustVec = moveDirection * EffectiveEngineThrust;
+                    float alongVel = Vector3.Dot(thrustVec, velNorm);
+                    if (alongVel < 0f)
+                        rb.AddForce(thrustVec, ForceMode.Force);
+                    else
+                        rb.AddForce(thrustVec - velNorm * alongVel, ForceMode.Force);
                 }
             }
-
-            float renderTickF = GetRemoteRenderTickF();
-            uint latestTick = _remoteSnapshotBuffer.LatestTick;
-            bool extrapolating = latestTick > 0 && renderTickF > latestTick;
-            ServerSimClock dbgClock = ServerSimClock.Instance;
-
-            if (_remoteSnapshotBuffer.TrySample(
-                    renderTickF,
-                    ServerSimClock.SimFixedDeltaTime,
-                    MaxRemoteExtrapolationSeconds,
-                    out Vector3 pos,
-                    out Quaternion rot,
-                    out Vector3 vel))
+            else if (input.SpaceBrakes && vel.sqrMagnitude > 0.001f)
             {
-                ApplyClientMotorDisplayPose(pos, rot, vel);
-                _remoteDisplayVelocity = vel;
-                _remoteDisplayValid = true;
-                _clientPoseInitialized = true;
-
-                // #region agent log
-                _dbgLateLogCounter++;
-                if (_dbgLateLogCounter % 12 == 0)
-                {
-                    float frameDelta = _dbgHasLastDisplayPos ? Vector3.Distance(pos, _dbgLastDisplayPos) : 0f;
-                    _dbgLastDisplayPos = pos;
-                    _dbgHasLastDisplayPos = true;
-                    MotorDebugLog.Write("H3", "Starship.NetworkMotor:ApplyRemoteMotorSnapshotVisuals", "remote_display",
-                        $"{{\"renderTickF\":{renderTickF:F3},\"latestTick\":{latestTick},\"simTick\":{(dbgClock != null ? dbgClock.SimulationTick : 0)},\"bufCount\":{_remoteSnapshotBuffer.Count},\"extrapolating\":{(extrapolating ? 1 : 0)},\"frameDelta\":{frameDelta:F4},\"speed\":{vel.magnitude:F3}}}", "post-fix12");
-                }
-                // #endregion
-                return;
+                float mass = Mathf.Max(0.5f, rb.mass);
+                rb.AddForce(-vel.normalized * brakeDeceleration * mass, ForceMode.Force);
             }
-
-            if (!_clientPoseInitialized)
-                ResetClientPoseFromNetwork();
         }
 
-        private void ResetClientPoseFromNetwork()
-        {
-            Vector3 pos = netMotorPosition.Value;
-            if (pos.sqrMagnitude < 0.01f)
-                pos = transform.position;
-            pos.y = FIXED_Y_POSITION;
-            Quaternion rot = netMotorRotation.Value;
-            Vector3 vel = netMotorVelocity.Value;
-            transform.SetPositionAndRotation(pos, rot);
-            _clientPoseInitialized = true;
-            _remoteDisplayValid = true;
-            _remoteDisplayVelocity = vel;
-            if (rb != null)
-            {
-                rb.MovePosition(pos);
-                rb.MoveRotation(rot);
-                rb.linearVelocity = vel;
-            }
-            currentVelocity = vel;
-
-            if (!IsOwner && netMotorSimTick.Value > 0)
-                BufferRemoteSnapshot(netMotorSimTick.Value);
-        }
+        internal void SyncTransformForGameplayQuery() { }
 
         public Vector3 GetGameplayShipCenterWorld() => GetSimPosition();
 
         public Vector3 GetDisplayWorldPosition() => transform.position;
-
-        /// <summary>
-        /// Interpolated display position for camera/toroidal reference — matches rendered ship, not stale FixedUpdate snap.
-        /// </summary>
-        public Vector3 GetDisplayMotorWorldPosition()
-        {
-            if (gemMoonDocked.Value)
-                return transform.position;
-
-            if (IsServer && !IsClient)
-                return _motorState.Position;
-
-            if (IsClient && IsOwner && _renderSamplesValid)
-            {
-                Vector3 pos = SampleRenderPose(out _, out _);
-                pos.y = FIXED_Y_POSITION;
-                return pos;
-            }
-
-            if (IsClient && !IsOwner)
-            {
-                if (_remoteSnapshotBuffer.Count > 0
-                    && _remoteSnapshotBuffer.TrySample(
-                        GetRemoteRenderTickF(),
-                        ServerSimClock.SimFixedDeltaTime,
-                        MaxRemoteExtrapolationSeconds,
-                        out Vector3 pos,
-                        out _,
-                        out _))
-                {
-                    pos.y = FIXED_Y_POSITION;
-                    return pos;
-                }
-            }
-
-            return transform.position;
-        }
-
-        private void SyncMotorRigidbodyToTransform()
-        {
-            if (IsServer && !IsClient)
-                ApplyMotorSimStateToRigidbody();
-            else if (IsClient)
-                ClientApplyMotorPoseSmoothing();
-            else
-                ResetClientPoseFromNetwork();
-        }
-
-        private void SyncSimMassFromShip()
-        {
-            float mass = Mathf.Max(0.5f, EffectiveMass);
-            _motorState.Mass = mass;
-            if (rb != null)
-                rb.mass = mass;
-        }
-
-        private void TickNetworkInputSender()
-        {
-            if (!IsOwner || IsAwaitingTeamSelection || isDead.Value) return;
-            if (inputHandler == null) return;
-
-            ServerSimClock clock = ServerSimClock.Instance;
-            ShipInputCommand cmd = BuildInputCommandFromLocalControls();
-            cmd.Sequence = _nextInputSequence++;
-            if (_nextInputSequence == 0) _nextInputSequence = 1;
-            cmd.ClientTick = clock != null ? clock.ServerTick : 0;
-            _lastSentInput = cmd;
-
-            _ownerInputHistory.Enqueue(cmd);
-            while (_ownerInputHistory.Count > MaxPendingInputCommands)
-                _ownerInputHistory.Dequeue();
-
-            SubmitShipInputServerRpc(cmd);
-            SyncFireIntentFromInput(cmd);
-        }
 
         private ShipInputCommand BuildInputCommandFromLocalControls()
         {
@@ -846,11 +230,11 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                Vector3 fwd = GetSimRotation() * Vector3.forward;
+                Vector3 fwd = transform.forward;
                 fwd.y = 0f;
                 if (fwd.sqrMagnitude > 0.01f)
                 {
-                    Vector3 pt = GetSimPosition() + fwd.normalized * 10f;
+                    Vector3 pt = transform.position + fwd.normalized * 10f;
                     aimXZ = new Vector2(pt.x, pt.z);
                 }
             }
@@ -877,43 +261,21 @@ namespace TitanOrbit.Entities
             };
         }
 
-        [ServerRpc]
-        private void SubmitShipInputServerRpc(ShipInputCommand input)
+        [ServerRpc(RequireOwnership = true)]
+        private void SubmitShipInputServerRpc(ShipInputCommand input, ServerRpcParams rpcParams = default)
         {
-            _serverInputQueue.Enqueue(input);
-            while (_serverInputQueue.Count > MaxPendingInputCommands)
-                _serverInputQueue.Dequeue();
-
-            if (input.Sequence >= _serverLatestInput.Sequence)
-                _serverLatestInput = input;
-
+            // #region agent log
+            if (IsOwner && input.Thrust != _serverInput.Thrust)
+            {
+                MotorDebugLog.Write("D", "Starship.NetworkMotor.SubmitShipInputServerRpc",
+                    "thrust input changed",
+                    $"{{\"thrust\":{input.Thrust.ToString().ToLower()},\"frame\":{Time.frameCount}}}");
+            }
+            // #endregion
+            _serverInput = input;
             moveForwardPressedNet.Value = input.Thrust;
             shootPressedNet.Value = input.Fire;
             wantToFire.Value = input.Fire;
-            netAimWorldXZ.Value = input.AimWorldXZ;
-        }
-
-        private void ServerAssignInputForTick(uint serverTick)
-        {
-            if (!IsServer) return;
-
-            // One input per sim tick — matches client replay semantics (one command per tick).
-            if (_serverInputQueue.Count > 0)
-                _serverLatestInput = _serverInputQueue.Dequeue();
-
-            ShipInputCommand latest = _serverLatestInput;
-            if (latest.Sequence == 0)
-            {
-                latest = ShipInputCommand.Default;
-                latest.Sequence = 1;
-                latest.SpaceBrakes = true;
-                _serverLatestInput = latest;
-            }
-
-            latest.ServerTick = serverTick;
-            lastProcessedInputSequence.Value = latest.Sequence;
-            moveForwardPressedNet.Value = latest.Thrust;
-            netAimWorldXZ.Value = latest.AimWorldXZ;
         }
 
         private void SyncFireIntentFromInput(ShipInputCommand cmd)
@@ -934,252 +296,61 @@ namespace TitanOrbit.Entities
             }
         }
 
-        private void SnapMotorSimAfterSpawn(Vector3 position, Quaternion rotation, Vector3 velocity, float mass)
+        private void SnapBasicMovementPose(Vector3 position, Quaternion rotation, Vector3 velocity)
         {
-            ShipMotorSimulator.SnapState(ref _motorState, position, rotation, velocity, FIXED_Y_POSITION);
-            _motorState.Mass = Mathf.Max(0.5f, mass);
-            _currentSimTick = 0;
-            _ownerClockSynced = false;
-
-            _serverLatestInput = ShipInputCommand.Default;
-            _serverInputQueue.Clear();
-            _ownerInputHistory.Clear();
-            _pendingOwnerReconcileTick = 0;
-            _lastOwnerReconcileTick = 0;
-            _lastReconciledAckSeq = 0;
-            _lastSentInput = ShipInputCommand.Default;
-            _nextInputSequence = 1;
-            _remoteSnapshotBuffer.Clear();
-            _lastBufferedSnapshotTick = 0;
-
-            _renderPrev = _renderNext = new MotorRenderSample
+            Vector3 pos = position;
+            pos.y = FIXED_Y_POSITION;
+            velocity.y = 0f;
+            transform.SetPositionAndRotation(pos, rotation);
+            if (rb != null)
             {
-                Position = position,
-                Rotation = rotation,
-                Velocity = velocity,
-            };
-            _renderSamplesValid = true;
-
+                if (IsServer)
+                    rb.isKinematic = false;
+                rb.position = pos;
+                rb.rotation = rotation;
+                rb.linearVelocity = velocity;
+                rb.angularVelocity = Vector3.zero;
+                if (IsServer)
+                    rb.WakeUp();
+            }
+            currentVelocity = velocity;
             if (IsServer)
             {
-                PublishMotorStateToNetwork();
-                ApplyMotorSimStateToRigidbody();
+                var nt = GetComponent<NetworkTransform>();
+                if (nt != null)
+                    nt.SetState(pos, rotation, transform.localScale, teleportDisabled: false);
             }
+        }
+
+        private void SnapMotorSimAfterSpawn(Vector3 position, Quaternion rotation, Vector3 velocity, float mass)
+        {
+            if (rb != null)
+                rb.mass = Mathf.Max(0.5f, mass);
+            _serverInput = ShipInputCommand.Default;
+            SnapBasicMovementPose(position, rotation, velocity);
         }
 
         [ClientRpc]
         private void BroadcastSnapMotorSimClientRpc(Vector3 position, Vector3 velocity, Quaternion rotation, float mass)
         {
             if (IsServer) return;
-            SnapClientMotorPose(position, rotation, velocity);
+            if (rb != null)
+                rb.mass = Mathf.Max(0.5f, mass);
+            SnapBasicMovementPose(position, rotation, velocity);
         }
 
         private void SnapClientMotorPose(Vector3 position, Quaternion rotation, Vector3 velocity)
         {
-            Vector3 pos = position;
-            pos.y = FIXED_Y_POSITION;
-            ShipMotorSimulator.SnapState(ref _motorState, pos, rotation, velocity, FIXED_Y_POSITION);
-            _ownerInputHistory.Clear();
-            _pendingOwnerReconcileTick = 0;
-            _lastOwnerReconcileTick = 0;
-            _lastReconciledAckSeq = 0;
-            _ownerClockSynced = false;
-            _renderPrev = _renderNext = new MotorRenderSample
-            {
-                Position = pos,
-                Rotation = rotation,
-                Velocity = velocity,
-            };
-            _renderSamplesValid = true;
-            transform.SetPositionAndRotation(pos, rotation);
-            _clientPoseInitialized = true;
-            _remoteDisplayValid = true;
-            _remoteDisplayVelocity = velocity;
-            if (rb != null)
-            {
-                rb.MovePosition(pos);
-                rb.MoveRotation(rotation);
-                rb.linearVelocity = velocity;
-            }
-            currentVelocity = velocity;
+            SnapBasicMovementPose(position, rotation, velocity);
         }
 
-        private void ServerAssignGemMoonUndockGraceSimTick()
+        private void SyncMotorRigidbodyToTransform()
         {
-            ServerSimClock clock = ServerSimClock.Instance;
-            if (clock == null || !clock.IsClockReady) return;
-            float graceSeconds = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
-            gemMoonUndockGraceEndSimTick = clock.ServerTick + ServerSimClock.SecondsToTick(graceSeconds);
-            SyncGemMoonUndockGraceEndSimTickClientRpc(gemMoonUndockGraceEndSimTick);
+            if (rb == null || !gemMoonDocked.Value) return;
+            rb.MovePosition(transform.position);
+            rb.MoveRotation(transform.rotation);
         }
 
-        [ClientRpc]
-        private void SyncGemMoonUndockGraceEndSimTickClientRpc(uint endSimTick)
-        {
-            if (IsServer) return;
-            gemMoonUndockGraceEndSimTick = endSimTick;
-        }
-
-        private ShipMotorTickParams BuildMotorTickParams(ShipInputCommand input, uint simTick)
-        {
-            ApplyMotorInputToMoveDirectionFromCommand(input);
-
-            bool inOrbitRing = currentOrbitPlanet != null && IsShipInPlanetOrbitRing(currentOrbitPlanet);
-            bool useOrbit = inOrbitRing && !input.Thrust && !IsInsideFriendlyGemMoonOrbitZone();
-
-            var p = new ShipMotorTickParams
-            {
-                FixedDeltaTime = ServerSimClock.SimFixedDeltaTime,
-                EngineThrust = EffectiveEngineThrust,
-                MaxSpeed = EffectiveMaxSpeed,
-                RotationSpeedDegPerSec = EffectiveRotationSpeed,
-                BrakeDeceleration = brakeDeceleration,
-                RecoilDecayPerSecond = recoilDecayPerSecond,
-                ElectricShockDisabled = IsBulletElectricShockDisabled,
-                TheatricalRotationLocked = false,
-                UseOrbit = useOrbit,
-                FixedY = FIXED_Y_POSITION,
-            };
-
-            if (useOrbit)
-                BuildOrbitMotorParams(ref p, simTick);
-
-            return p;
-        }
-
-        private void BuildOrbitMotorParams(ref ShipMotorTickParams p, uint simTick)
-        {
-            if (currentOrbitPlanet == null) return;
-
-            Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
-            Vector3 shipPos = _motorState.Position;
-            shipPos.y = 0f;
-            float dist = TitanOrbit.Generation.ToroidalMap.ToroidalDistance(shipPos, planetPos);
-            if (dist < 0.01f) return;
-
-            Vector3 toShip = TitanOrbit.Generation.ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipPos);
-            float innerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingInnerRadiusLocal();
-            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingOuterRadiusLocal();
-            bool inOrbitRing = dist >= innerWorld && dist <= outerWorld;
-
-            bool inUndockGrace = !gemMoonDocked.Value && gemMoonUndockGraceEndSimTick > 0 && simTick < gemMoonUndockGraceEndSimTick;
-            float graceRemaining = inUndockGrace
-                ? (gemMoonUndockGraceEndSimTick - simTick) * ServerSimClock.SimFixedDeltaTime
-                : 0f;
-            if (!inOrbitRing && !inUndockGrace) return;
-
-            float centerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingCenterRadiusLocal();
-            Vector3 radial = toShip / dist;
-            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, centerWorld, innerWorld, outerWorld);
-            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
-
-            Vector3 radialCorrection = Vector3.zero;
-            if (!inUndockGrace && inOrbitRing)
-            {
-                float radiusError = dist - centerWorld;
-                if (Mathf.Abs(radiusError) > 0.02f)
-                    radialCorrection -= radial * radiusError * orbitRadiusPullStrength;
-            }
-
-            Vector3 orbitTangentVelocity = tangent * targetSpeed + radialCorrection;
-            Vector3 desiredOrbitVelocity;
-            float transitionDur = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
-            if (inUndockGrace && transitionDur > 0.001f)
-            {
-                float w = Mathf.Clamp01(graceRemaining / transitionDur);
-                Vector3 flat = TitanOrbit.Generation.ToroidalMap.ShortestWorldOffsetXZ(gemMoonUndockCachedMoonPos, _motorState.Position);
-                Vector3 outwardDir = flat.sqrMagnitude > 0.0001f ? flat.normalized : tangent;
-                Vector3 outwardVel = outwardDir * (gemMoonUndockOutwardSpeed * w);
-                float handoff = 1f - w;
-                desiredOrbitVelocity = Vector3.Lerp(outwardVel, orbitTangentVelocity, Mathf.SmoothStep(0f, 1f, handoff));
-            }
-            else
-                desiredOrbitVelocity = orbitTangentVelocity;
-
-            float mass = Mathf.Max(0.5f, _motorState.Mass);
-            float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
-            float massFactor = Mathf.Sqrt(mass);
-            float alignRate = (orbitCaptureResponsiveness * gravityFactor) / massFactor;
-            if (inUndockGrace && transitionDur > 0.001f)
-            {
-                float fade = Mathf.Clamp01(graceRemaining / transitionDur);
-                float ease = Mathf.Lerp(gemMoonUndockOrbitCaptureEase, 1f, 1f - fade);
-                alignRate *= ease;
-            }
-
-            p.OrbitDesiredVelocity = desiredOrbitVelocity;
-            p.OrbitAlignRate = alignRate;
-        }
-
-        private void ApplyMotorInputToMoveDirectionFromCommand(ShipInputCommand input)
-        {
-            if (IsBulletElectricShockDisabled || !input.Thrust)
-            {
-                moveDirection = Vector3.zero;
-                return;
-            }
-
-            Vector3 fwd = _motorState.Rotation * Vector3.forward;
-            fwd.y = 0f;
-            moveDirection = fwd.sqrMagnitude > 0.01f ? fwd.normalized : Vector3.zero;
-        }
-
-        private void HandleAsteroidSimCollision(ShipCollisionResult hit, uint tick)
-        {
-            float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, hit.ImpactForceNewtons));
-            if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
-
-            if (hit.ImpactForceNewtons >= GetCollisionVfxAsteroidMinImpactForce())
-            {
-                float sev = ComputeCollisionVfxSeverityFromImpactForce(hit.ImpactForceNewtons);
-                TrySpawnWeaponCollisionImpactVfx(hit.ImpactPoint, hit.SurfaceNormal, sev, asteroidCollisionPitch, RamGrindImpactVfxScaleFactor);
-            }
-
-            if (hit.Asteroid != null)
-                MarkAsteroidRamContact(hit.Asteroid);
-
-            if (!IsServer) return;
-
-            float inboundSpeed = hit.RelativeSpeed;
-            ComputeRamImpactDamage(inboundSpeed, out float asteroidCollisionDamage, out float shipCollisionDamage);
-
-            if (shipCollisionDamage > 0.0001f)
-            {
-                float expulsionIntensity = ComputeRamImpactGemExpulsionIntensity(hit.ImpactForceNewtons, shipCollisionDamage);
-                ApplyShipRamDamage(shipCollisionDamage, expulsionIntensity, gemExpulsionPerHullDamage: 1f);
-            }
-
-            if (hit.Asteroid != null && asteroidCollisionDamage > 0.0001f)
-            {
-                ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
-                ApplyAsteroidRamDamage(hit.Asteroid, asteroidCollisionDamage, attackerShipId);
-                SpawnAsteroidCollisionFeedback(hit.ImpactPoint, hit.Asteroid, asteroidCollisionDamage,
-                    hit.ImpactForceNewtons >= asteroidImpactForcePopupMin ? hit.ImpactForceNewtons : (float?)null);
-            }
-        }
-
-        private void HandleShipSimCollision(ShipCollisionResult hit, uint tick)
-        {
-            if (hit.RelativeSpeed >= 2f && AudioManager.Instance != null)
-                AudioManager.Instance.PlayShipCollisionSound(Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, hit.RelativeSpeed)));
-
-            if (hit.RelativeSpeed >= GetCollisionVfxShipMinRelativeSpeed())
-            {
-                float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(hit.RelativeSpeed);
-                TrySpawnWeaponCollisionImpactVfx(hit.ImpactPoint, hit.SurfaceNormal, sev, 1f);
-            }
-        }
-
-        private void ProcessSimTickWeaponFire(uint tick)
-        {
-            if (IsServer)
-                TickPlayerHoldWeaponFiring(authoritative: true);
-        }
-
-        internal static void ResetSessionStaticState()
-        {
-            s_lastServerMotorPhysicsStep = 0;
-        }
+        internal static void ResetSessionStaticState() { }
     }
 }

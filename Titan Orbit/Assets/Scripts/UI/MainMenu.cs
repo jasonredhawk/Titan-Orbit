@@ -82,6 +82,12 @@ namespace TitanOrbit.UI
         private Coroutine returningShipQueryRoutine;
         private bool teamJoinFlowReadyPending;
 
+#if UNITY_EDITOR
+        private Button _devLanHostButton;
+        private Button _devLanClientButton;
+        private Button _devRelayHostButton;
+#endif
+
         private const float LobbyScreenContentWidth = 540f;
         /// <summary>How often to re-query UGS while the open-matches screen is visible (server heartbeats every 15s).</summary>
         private const float LobbyListAutoRefreshIntervalSeconds = 20f;
@@ -1254,7 +1260,60 @@ namespace TitanOrbit.UI
                 mainMenuStoreButton.onClick.RemoveListener(ShowStoreScreen);
                 mainMenuStoreButton.onClick.AddListener(ShowStoreScreen);
             }
+
+#if UNITY_EDITOR
+            EnsureDevNetworkTestButtons(mainRect);
+#endif
         }
+
+#if UNITY_EDITOR
+        private void EnsureDevNetworkTestButtons(RectTransform mainRect)
+        {
+            if (_devLanHostButton == null)
+            {
+                _devLanHostButton = CreateMenuButton(
+                    "DevLanHostButton", "Dev: LAN Host", new Vector2(0f, -168f), new Vector2(320f, 40f), mainRect, isPrimary: false);
+                _devLanHostButton.onClick.AddListener(OnDevLanHostClicked);
+            }
+            if (_devLanClientButton == null)
+            {
+                _devLanClientButton = CreateMenuButton(
+                    "DevLanClientButton", "Dev: LAN Client", new Vector2(0f, -216f), new Vector2(320f, 40f), mainRect, isPrimary: false);
+                _devLanClientButton.onClick.AddListener(OnDevLanClientClicked);
+            }
+            if (_devRelayHostButton == null)
+            {
+                _devRelayHostButton = CreateMenuButton(
+                    "DevRelayHostButton", "Dev: Relay Host", new Vector2(0f, -264f), new Vector2(320f, 40f), mainRect, isPrimary: false);
+                _devRelayHostButton.onClick.AddListener(OnDevRelayHostClicked);
+            }
+
+            _devLanHostButton.transform.SetParent(mainMenuPanel.transform, false);
+            _devLanClientButton.transform.SetParent(mainMenuPanel.transform, false);
+            _devRelayHostButton.transform.SetParent(mainMenuPanel.transform, false);
+        }
+
+        private void OnDevLanHostClicked()
+        {
+            if (NetworkGameManager.Instance == null) return;
+            if (NetworkGameManager.Instance.StartLanHostForLocalTest())
+                ShowLobby();
+        }
+
+        private void OnDevLanClientClicked()
+        {
+            if (NetworkGameManager.Instance == null) return;
+            if (NetworkGameManager.Instance.StartLocalClientForLanTest("127.0.0.1"))
+                ShowLobby();
+        }
+
+        private async void OnDevRelayHostClicked()
+        {
+            if (NetworkGameManager.Instance == null) return;
+            if (await NetworkGameManager.Instance.PlayRelayHostMatchAsync())
+                ShowLobby();
+        }
+#endif
 
         private void EnsureLobbyScreenUi()
         {

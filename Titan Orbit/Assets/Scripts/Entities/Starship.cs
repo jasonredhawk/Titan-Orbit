@@ -16,6 +16,7 @@ using TitanOrbit.Services;
 using TitanOrbit.Networking;
 using TitanOrbit.Audio;
 using TitanOrbit.Simulation;
+using TitanOrbit.Diagnostics;
 using SciFiArsenal;
 
 namespace TitanOrbit.Entities
@@ -167,7 +168,6 @@ namespace TitanOrbit.Entities
         [SerializeField, Range(0.05f, 1f)]
         private float gemMoonUndockOrbitCaptureEase = 0.22f;
         private float gemMoonUndockOrbitGraceUntilTime = -1f;
-        private uint gemMoonUndockGraceEndSimTick;
         private Vector3 gemMoonUndockCachedMoonPos;
         /// <summary>Server: time spent nearly stationary inside a friendly gem-moon zone before auto-dock is allowed.</summary>
         private float _serverGemMoonLandingDwellSeconds;
@@ -383,6 +383,8 @@ namespace TitanOrbit.Entities
         private Vector3 _pendingGemMoonShieldRepelVelocity;
         /// <summary>XZ velocity at end of last FixedUpdate (pre-collision reference when relativeVelocity is ambiguous).</summary>
         private Vector3 _lastFixedPlayPlaneVelocity;
+        private float _hudPlanarSpeed;
+        private int _motionDbgLateCounter;
         /// <summary>Cooldown for ship–ship scrape sounds from toroidal overlap (pair key → last Time.time).</summary>
         private readonly Dictionary<ulong, float> _toroidalShipPairLastSoundTime = new Dictionary<ulong, float>();
         /// <summary>Cooldown for ship–ship impulse so resting overlap does not re-fire every FixedUpdate.</summary>
@@ -808,8 +810,8 @@ namespace TitanOrbit.Entities
 
         private void SyncInputHandlerForTeamSelectionState()
         {
-            if (inputHandler == null || !IsOwner) return;
-            inputHandler.enabled = !IsAwaitingTeamSelection;
+            if (inputHandler == null) return;
+            inputHandler.enabled = IsOwner && !IsAwaitingTeamSelection;
         }
 
         private NetworkVariable<bool> wantToLoadPeople = new NetworkVariable<bool>(false);
@@ -925,9 +927,7 @@ namespace TitanOrbit.Entities
             get
             {
                 if (PlanetConnectionSystem.Instance == null || shipTeam.Value == TeamManager.Team.None) return 1f;
-                Vector3 pos = UsesInputSyncedMotor
-                    ? ToroidalMap.WrapPosition(GetSimPosition())
-                    : ToroidalMap.WrapPosition(transform.position);
+                Vector3 pos = ToroidalMap.WrapPosition(GetSimPosition());
                 TeamManager.Team teamAtPos = PlanetConnectionSystem.Instance.GetTeamAtPosition(pos);
                 if (teamAtPos != shipTeam.Value) return 1f;
                 int homeLevel = PlanetConnectionSystem.GetHomePlanetLevelForTeam(shipTeam.Value);
@@ -1491,7 +1491,7 @@ namespace TitanOrbit.Entities
         private bool IsShipInPlanetOrbitRing(Planet planet)
         {
             if (planet == null) return false;
-            Vector3 pos = UsesInputSyncedMotor ? GetSimPosition() : (rb != null ? rb.position : transform.position);
+            Vector3 pos = GetSimPosition();
             pos.y = 0f;
             if (planet.IsWorldPositionInOrbitRing(pos)) return true;
             Vector3 tPos = transform.position;
@@ -1600,16 +1600,8 @@ namespace TitanOrbit.Entities
         /// <summary>One gem tractor beam per wing; reach and pull strength come from each wing's Max Gems Capacity stats.</summary>
         public IReadOnlyList<WingTractorBeamSlot> WingTractorBeams => wingTractorBeams;
 
-        /// <summary>Horizontal speed in the play plane (XZ), units/sec. Matches movement clamp / HUD speedometer.</summary>
-        public float CurrentHorizontalSpeed
-        {
-            get
-            {
-                Vector3 v = GetSimVelocity();
-                v.y = 0f;
-                return v.magnitude;
-            }
-        }
+        /// <summary>Horizontal speed in the play plane (XZ), units/sec.</summary>
+        public float CurrentHorizontalSpeed => _hudPlanarSpeed;
 
         /// <summary>Effective maximum movement speed cap (same units as <see cref="CurrentHorizontalSpeed"/>).</summary>
         public float MaxMoveSpeed => EffectiveMaxSpeed;
@@ -2072,9 +2064,8 @@ namespace TitanOrbit.Entities
         /// </summary>
         public Vector3 GetCameraFollowWorldPosition()
         {
-            Vector3 shipPos = UsesInputSyncedMotor && !gemMoonDocked.Value
-                ? GetDisplayMotorWorldPosition()
-                : (rb != null ? rb.position : transform.position);
+            // transform.position is the rendered/interpolated pose; rb.position is the raw physics step (choppy on owner).
+            Vector3 shipPos = transform.position;
             shipPos.y = FIXED_Y_POSITION;
             if (ShouldUseGemMoonDisplayDockSpace() && TryGetFriendlyGemMoonInZone(out PlanetGemMoon moon))
             {
@@ -2574,7 +2565,7 @@ namespace TitanOrbit.Entities
 
             SyncInputHandlerForTeamSelectionState();
 
-            InitializeMotorSimOnSpawn();
+            EnsureBasicNetworkMovement();
 
             droneSwarm?.OnStarshipNetworkSpawn();
 
@@ -2593,7 +2584,6 @@ namespace TitanOrbit.Entities
         public override void OnNetworkDespawn()
         {
             droneSwarm?.OnStarshipNetworkDespawn();
-            UnsubscribeMotorNetworkCallbacks();
             currentEnergy.OnValueChanged -= OnCurrentEnergyDisplaySync;
             currentHealth.OnValueChanged -= OnCurrentHealthDisplaySync;
             shipTeam.OnValueChanged -= OnShipTeamValueChanged;
@@ -3052,8 +3042,6 @@ namespace TitanOrbit.Entities
         {
             RefreshCardStatsCache();
 
-            ClientApplyMotorPoseSmoothing();
-
             // After PlanetGemMoon orbit LateUpdate (32100): every client re-snaps docked ships to the rendered moon
             // so they ride planetary orbit + moon spin. Server motor snapshots stay in gameplay space; display snap
             // must not run on the dedicated server process (headless has no display tile).
@@ -3103,6 +3091,24 @@ namespace TitanOrbit.Entities
             if (visualRoot == null || visualRoot == transform || isDead.Value || rb == null) return;
             if (gemMoonDocked.Value) return;
             ApplyVisualBanking(Time.deltaTime);
+
+            ServerClampPlanarSpeedAfterPhysics();
+            UpdateHudPlanarSpeed();
+
+            // #region agent log
+            if (IsOwner && rb != null && !isDead.Value && (_motionDbgLateCounter++ % 8 == 0))
+            {
+                Vector3 trPos = transform.position;
+                Vector3 rbPos = rb.position;
+                float trRbDelta = Vector3.Distance(
+                    new Vector3(trPos.x, 0f, trPos.z),
+                    new Vector3(rbPos.x, 0f, rbPos.z));
+                MotorDebugLog.Write("F", "Starship.LateUpdate",
+                    "post-physics owner sample",
+                    $"{{\"hudPlanarSpeed\":{_hudPlanarSpeed:F4},\"estimateSpeed\":{_collisionPlanarVelocityEstimate.magnitude:F4},\"trRbDelta\":{trRbDelta:F5},\"isServer\":{IsServer.ToString().ToLower()},\"rbKinematic\":{rb.isKinematic.ToString().ToLower()}}}",
+                    "post-fix");
+            }
+            // #endregion
         }
 
         /// <summary>Effective exaggeration. Uses GameManager when set; else per-ship value (legacy 0.5 treated as 0.15).</summary>
@@ -3590,9 +3596,9 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            Vector3 v = UsesInputSyncedMotor ? GetSimVelocity() : rb.linearVelocity;
+            Vector3 v = GetSimVelocity();
             v.y = 0f;
-            Vector3 ff = UsesInputSyncedMotor ? GetSimRotation() * Vector3.forward : rb.rotation * Vector3.forward;
+            Vector3 ff = GetSimRotation() * Vector3.forward;
             ff.y = 0f;
             if (ff.sqrMagnitude < 1e-8f)
             {
@@ -3701,8 +3707,7 @@ namespace TitanOrbit.Entities
 
             TickShipCollisionVelocityEstimate(Time.fixedDeltaTime);
 
-            // Toroidal orbit band (physics triggers fail across map wraps; server + all sim clients need geometry).
-            if (IsServer || (IsClient && IsOwner && !IsServer))
+            if (IsServer)
                 RefreshOrbitPlanetFromPosition();
 
             if (_hasPendingGemMoonShieldRepel)
@@ -3710,41 +3715,17 @@ namespace TitanOrbit.Entities
                 if (IsServer)
                 {
                     Vector3 rv = _pendingGemMoonShieldRepelVelocity;
-                    rb.linearVelocity = new Vector3(rv.x, 0f, rv.z);
-                    rb.angularVelocity = Vector3.zero;
-                    currentVelocity = rb.linearVelocity;
+                    rv.y = 0f;
+                    Vector3 delta = rv - new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+                    if (delta.sqrMagnitude > 0.0001f)
+                        rb.AddForce(delta * Mathf.Max(0.5f, rb.mass), ForceMode.Impulse);
                 }
                 _hasPendingGemMoonShieldRepel = false;
             }
 
-            SyncSimMassFromShip();
-
             if (gemMoonDocked.Value)
                 gemMoonUndockOrbitGraceUntilTime = -1f;
-            if (gemMoonDocked.Value)
-                gemMoonUndockGraceEndSimTick = 0;
 
-            // Y locked to play plane by motor sim; avoid writing rb.position before the sim step.
-            if (!gemMoonDocked.Value && !UsesInputSyncedMotor)
-            {
-                Vector3 pos = rb.position;
-                if (Mathf.Abs(pos.y - FIXED_Y_POSITION) > 0.01f)
-                {
-                    pos.y = Mathf.MoveTowards(pos.y, FIXED_Y_POSITION, Mathf.Max(0.01f, orbitExitYRecoverySpeed) * Time.fixedDeltaTime);
-                    rb.position = pos;
-                }
-            }
-            
-            // Never wrap ship position: ship stays in world space (e.g. 100, 310). All other
-            // entities are repositioned around the player via ToroidalRenderer (display copy closest to camera).
-            // Velocity Y clamp handled by motor sim for input-synced ships.
-            if (!gemMoonDocked.Value && !UsesInputSyncedMotor && Mathf.Abs(rb.linearVelocity.y) > 0.01f)
-            {
-                Vector3 vel = rb.linearVelocity;
-                vel.y = 0f;
-                rb.linearVelocity = vel;
-            }
-            
             if (IsServer)
             {
                 HandleDeath();
@@ -3887,8 +3868,6 @@ namespace TitanOrbit.Entities
                 gemMoonLandingOffset = Vector3.zero;
                 SetRootColliderDocked(false);
                 gemMoonUndockOrbitGraceUntilTime = Time.time + Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
-                if (IsServer)
-                    ServerAssignGemMoonUndockGraceSimTick();
             }
 
             wasGemMoonDocked = gemMoonDocked.Value;
@@ -3897,31 +3876,24 @@ namespace TitanOrbit.Entities
             if (isDead.Value)
             {
                 SetRootColliderDocked(false);
-                // Stop all movement when dead
-                if (rb != null)
+                if (IsServer && rb != null)
                 {
                     Vector3 vel = rb.linearVelocity;
                     vel.y = 0f;
-                    vel = Vector3.MoveTowards(vel, Vector3.zero, brakeDeceleration * Time.fixedDeltaTime);
-                    rb.linearVelocity = vel;
+                    if (vel.sqrMagnitude > 0.001f)
+                    {
+                        float mass = Mathf.Max(0.5f, rb.mass);
+                        rb.AddForce(-vel.normalized * brakeDeceleration * mass, ForceMode.Force);
+                    }
                 }
                 return;
             }
 
             if (IsOwner && !isDead.Value && !gemMoonDocked.Value)
-            {
-                if (IsClient && !IsServer)
-                    OwnerClientMotorFixedStep();
-                else
-                    TickNetworkInputSender();
-            }
+                TickNetworkInputSender();
 
             if (!isDead.Value && !gemMoonDocked.Value && IsServer)
-            {
-                var clock = ServerSimClock.Instance;
-                if (clock != null)
-                    ServerTickAllShipMotors(clock.SimulationTick);
-            }
+                ServerApplyBasicMovement();
 
             if (IsServer)
                 TickNearbyGemAttraction();
@@ -3933,6 +3905,19 @@ namespace TitanOrbit.Entities
                     Vector3 lv = rb.linearVelocity;
                     _lastFixedPlayPlaneVelocity = new Vector3(lv.x, 0f, lv.z);
                 }
+
+                // #region agent log
+                if (IsOwner && IsServer && moveForwardPressedNet.Value && (Time.fixedTime % 0.2f) < Time.fixedDeltaTime)
+                {
+                    Vector3 velNow = rb.linearVelocity;
+                    float fixedVelSpeed = new Vector3(velNow.x, 0f, velNow.z).magnitude;
+                    MotorDebugLog.Write("B", "Starship.FixedUpdate.finally",
+                        "fixed finally velocity sample",
+                        $"{{\"fixedVelSpeed\":{fixedVelSpeed:F4},\"currentVelocity\":{currentVelocity.magnitude:F4}}}",
+                        "post-fix");
+                }
+                // #endregion
+
                 CacheVisualForwardAccelForPitch();
                 CacheVisualAngularVelForBanking(Time.fixedDeltaTime);
             }
@@ -4169,163 +4154,6 @@ namespace TitanOrbit.Entities
 
         private static List<RaycastResult> s_raycastResults;
 
-        private void HandleMovement()
-        {
-            // Sync from rigidbody so recoil (AddForce) is included in our velocity
-            currentVelocity = rb.linearVelocity;
-            currentVelocity.y = 0f;
-
-            if (IsBulletElectricShockDisabled)
-            {
-                TickElectricShockBraking();
-                return;
-            }
-
-            float mass = Mathf.Max(0.5f, rb.mass);
-            float maxSpeed = EffectiveMaxSpeed;
-
-            if (moveDirection.magnitude > 0.1f)
-            {
-                float speed = currentVelocity.magnitude;
-                if (speed < maxSpeed)
-                {
-                    rb.AddForce(moveDirection * EffectiveEngineThrust, ForceMode.Force);
-                }
-                else
-                {
-                    // At max speed: drop only thrust that would add more speed along current velocity (so we don't overshoot max).
-                    // If thrust opposes velocity (quick 180°), alongVel is negative — do not cancel that; full thrust slows/reverses.
-                    Vector3 velNorm = currentVelocity.normalized;
-                    Vector3 thrustVec = moveDirection * EffectiveEngineThrust;
-                    float alongVel = Vector3.Dot(thrustVec, velNorm);
-                    Vector3 steerForce = thrustVec - velNorm * Mathf.Max(0f, alongVel);
-                    rb.AddForce(steerForce, ForceMode.Force);
-                }
-            }
-            else
-            {
-                // Braking when not thrusting (respects SpaceBrakes toggle)
-                bool brakesOn = (inputHandler as TitanOrbit.Input.PlayerInputHandler)?.SpaceBrakesEnabled ?? true;
-                if (brakesOn && currentVelocity.sqrMagnitude > 0.001f)
-                {
-                    float brakeForce = brakeDeceleration * mass;
-                    rb.AddForce(-currentVelocity.normalized * brakeForce, ForceMode.Force);
-                }
-            }
-
-            // Ensure velocity has no Y component
-            Vector3 vel = rb.linearVelocity;
-            if (Mathf.Abs(vel.y) > 0.01f)
-            {
-                vel.y = 0f;
-                rb.linearVelocity = vel;
-            }
-
-            // Recoil decay: if over max speed (e.g. from shooting), decay back toward max
-            float mag = rb.linearVelocity.magnitude;
-            if (mag > maxSpeed && maxSpeed > 0.001f)
-            {
-                float effectiveRecoilDecay = recoilDecayPerSecond / mass;
-                float targetMag = Mathf.MoveTowards(mag, maxSpeed, effectiveRecoilDecay * Time.fixedDeltaTime);
-                vel = rb.linearVelocity;
-                vel.y = 0f;
-                rb.linearVelocity = vel.normalized * targetMag;
-            }
-
-            currentVelocity = rb.linearVelocity;
-        }
-
-        private void HandleOrbitMovement()
-        {
-            if (currentOrbitPlanet == null || rb == null) return;
-            if (IsBulletElectricShockDisabled)
-            {
-                TickElectricShockBraking();
-                return;
-            }
-
-            Vector3 planetPos = currentOrbitPlanet.GetOrbitGameplayCenterWorld();
-            Vector3 shipPos = rb.position;
-            shipPos.y = 0f;
-            float dist = ToroidalMap.ToroidalDistance(shipPos, planetPos);
-            if (dist < 0.01f) return;
-
-            Vector3 toShip = ToroidalMap.ShortestWorldOffsetXZ(planetPos, shipPos);
-
-            // Orbit ring: steer toward band center; lock center radius after stable orbit.
-            float innerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingInnerRadiusLocal();
-            float outerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingOuterRadiusLocal();
-            bool inOrbitRing = dist >= innerWorld && dist <= outerWorld;
-
-            float graceRemaining = gemMoonUndockOrbitGraceUntilTime - Time.time;
-            bool inUndockGrace = !gemMoonDocked.Value && graceRemaining > 0f;
-
-            if (!inOrbitRing && !inUndockGrace)
-            {
-                if (HasLockedOrbitRadius(currentOrbitPlanet))
-                    ClearLockedOrbitRadius();
-                return;
-            }
-
-            float centerWorld = currentOrbitPlanet.PlanetSize * currentOrbitPlanet.GetOrbitRingCenterRadiusLocal();
-            float guidanceRadius = centerWorld;
-            Vector3 radial = toShip / dist;
-
-            float targetSpeed = GetOrbitTargetSpeed(currentOrbitPlanet, guidanceRadius, innerWorld, outerWorld);
-            Vector3 tangent = new Vector3(radial.z, 0f, -radial.x);
-
-            Vector3 radialCorrection = Vector3.zero;
-            if (!inUndockGrace && inOrbitRing)
-            {
-                float radiusError = dist - guidanceRadius;
-                if (Mathf.Abs(radiusError) > 0.02f)
-                    radialCorrection -= radial * radiusError * orbitRadiusPullStrength;
-            }
-
-            float graceRemainingForBlend = graceRemaining;
-            bool inUndockGraceForBlend = inUndockGrace;
-
-            Vector3 orbitTangentVelocity = tangent * targetSpeed + radialCorrection;
-
-            // Do not stack full orbit speed + extra outward (felt like a huge launch). Blend from radial exit off the moon into orbit tangent.
-            Vector3 desiredOrbitVelocity;
-            float transitionDur = Mathf.Max(0.05f, gemMoonTransitionDurationSeconds);
-            if (inUndockGraceForBlend && transitionDur > 0.001f)
-            {
-                float w = Mathf.Clamp01(graceRemainingForBlend / transitionDur); // 1 = start of grace, 0 = end
-                Vector3 flat = ToroidalMap.ShortestWorldOffsetXZ(gemMoonUndockCachedMoonPos, rb.position);
-                Vector3 outwardDir = flat.sqrMagnitude > 0.0001f ? flat.normalized : tangent;
-                Vector3 outwardVel = outwardDir * (gemMoonUndockOutwardSpeed * w);
-                float handoff = 1f - w;
-                desiredOrbitVelocity = Vector3.Lerp(outwardVel, orbitTangentVelocity, Mathf.SmoothStep(0f, 1f, handoff));
-            }
-            else
-                desiredOrbitVelocity = orbitTangentVelocity;
-
-            Vector3 currentVel = rb.linearVelocity;
-            currentVel.y = 0f;
-
-            float mass = Mathf.Max(0.5f, rb.mass);
-            float gravityFactor = GetOrbitGravityFactor(currentOrbitPlanet, dist, innerWorld, outerWorld);
-            float massFactor = Mathf.Sqrt(mass);
-            float alignRate = (orbitCaptureResponsiveness * gravityFactor) / massFactor;
-            if (inUndockGraceForBlend && transitionDur > 0.001f)
-            {
-                float fade = Mathf.Clamp01(graceRemainingForBlend / transitionDur);
-                float ease = Mathf.Lerp(gemMoonUndockOrbitCaptureEase, 1f, 1f - fade);
-                alignRate *= ease;
-            }
-            float t = Mathf.Clamp01(alignRate * Time.fixedDeltaTime);
-
-            Vector3 blendedVelocity = Vector3.Lerp(currentVel, desiredOrbitVelocity, t);
-            blendedVelocity.y = 0f;
-
-            currentVelocity = blendedVelocity;
-            rb.linearVelocity = blendedVelocity;
-
-            TryLockOrbitRadiusWhenStable();
-        }
-
         /// <summary>
         /// Computes the ideal orbit linear speed for a given planet and radius.
         /// Closer orbits and larger planets yield faster orbital speeds.
@@ -4527,32 +4355,6 @@ namespace TitanOrbit.Entities
                 float surplus = Mathf.Max(0f, orbitPlanet.CurrentPopulation - 0.5f * orbitPlanet.MaxPopulation);
                 if (wantToLoadPeople.Value && surplus < 0.0001f && peopleInTransit < 0.0001f)
                     wantToLoadPeople.Value = false;
-            }
-        }
-
-        private void HandleRotation()
-        {
-            if (IsBulletElectricShockDisabled)
-                return;
-
-            EnsureCachedCameraControllerForShake();
-            if (s_cachedCameraController != null && s_cachedCameraController.IsTheatricalShipRotationLocked)
-            {
-                if (rb != null)
-                    rb.angularVelocity = Vector3.zero;
-                return;
-            }
-
-            // EffectiveRotationSpeed is °/s (family definition units are converted there via ShipTurnDefinitionToDegreesPerSecond).
-            // Always rotate toward mouse cursor - works in place, no movement required
-            if (TryGetMouseAimRotation(out Quaternion targetRotation))
-            {
-                Quaternion newRotation = Quaternion.RotateTowards(
-                    rb.rotation,
-                    targetRotation,
-                    EffectiveRotationSpeed * Time.fixedDeltaTime
-                );
-                rb.MoveRotation(newRotation);
             }
         }
 
@@ -4864,7 +4666,9 @@ namespace TitanOrbit.Entities
                         if (rb != null)
                         {
                             float recoilImpulse = recoilStrength * scale * (0.08f + damage / 400f);
-                            ShipMotorSimulator.ApplyVelocityImpulse(ref _motorState, -dir * (recoilImpulse / Mathf.Max(0.5f, _motorState.Mass)));
+                            Vector3 impulse = -dir * recoilImpulse;
+                            impulse.y = 0f;
+                            rb.AddForce(impulse, ForceMode.Impulse);
                         }
                     }
                     else
@@ -5476,13 +5280,11 @@ namespace TitanOrbit.Entities
         /// <summary>Pick the orbit planet whose shell contains this ship (closest toroidal match). Used on server and local owner — physics triggers miss wrapped tiles.</summary>
         private void RefreshOrbitPlanetFromPosition()
         {
-            if (!UsesInputSyncedMotor && rb == null)
-                return;
             if (!IsServer && !IsLocalPlayerShip())
                 return;
 
-            Vector3 p0 = UsesInputSyncedMotor ? GetSimPosition() : rb.position;
-            Vector3 p1 = UsesInputSyncedMotor ? GetSimPosition() : transform.position;
+            Vector3 p0 = GetSimPosition();
+            Vector3 p1 = GetSimPosition();
             Planet best = null;
             float bestDist = float.MaxValue;
 
@@ -6336,7 +6138,113 @@ namespace TitanOrbit.Entities
 
         private void OnCollisionEnter(Collision collision)
         {
-            // Deterministic motor sim handles asteroid and ship collisions on all peers.
+            if (rb == null || collision.contactCount == 0 || isDead.Value) return;
+            if (!IsServer) return;
+
+            float relativeSpeed = collision.relativeVelocity.magnitude;
+            float collisionSoundPitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relativeSpeed));
+
+            Starship otherShip = collision.gameObject.GetComponent<Starship>();
+            if (otherShip == null)
+                otherShip = collision.gameObject.GetComponentInParent<Starship>();
+            if (otherShip != null && otherShip != this)
+            {
+                ContactPoint cp = collision.GetContact(0);
+
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlayShipCollisionSound(collisionSoundPitch);
+                float shipVfxMinSpeed = GetCollisionVfxShipMinRelativeSpeed();
+                if (relativeSpeed >= shipVfxMinSpeed)
+                {
+                    Vector3 impactPos = cp.point;
+                    Vector3 outward = impactPos - transform.position;
+                    outward.y = 0f;
+                    if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
+                    outward.Normalize();
+                    float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(relativeSpeed);
+                    TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, collisionSoundPitch);
+                }
+                return;
+            }
+
+            Asteroid asteroid = collision.gameObject.GetComponent<Asteroid>();
+            if (asteroid == null)
+                asteroid = collision.gameObject.GetComponentInParent<Asteroid>();
+            if (asteroid == null || asteroid.IsDestroyed) return;
+
+            MarkAsteroidRamContact(asteroid);
+
+            ContactPoint contact = collision.GetContact(0);
+
+            Vector3 asteroidCenter = asteroid.transform.position;
+            Vector3 n = contact.point - asteroidCenter;
+            n.y = 0f;
+            if (n.sqrMagnitude < 0.0001f) return;
+            n.Normalize();
+
+            Vector3 vInc = collision.relativeVelocity;
+            vInc.y = 0f;
+            float vn = Vector3.Dot(vInc, n);
+            if (vn >= 0f)
+            {
+                vInc = -collision.relativeVelocity;
+                vInc.y = 0f;
+                vn = Vector3.Dot(vInc, n);
+            }
+            if (vn >= 0f)
+            {
+                vInc = _lastFixedPlayPlaneVelocity;
+                vn = Vector3.Dot(vInc, n);
+            }
+            if (vn >= 0f)
+            {
+                if (relativeSpeed < 2.5f) return;
+                vn = -Mathf.Max(1f, relativeSpeed * 0.22f);
+                vInc = n * vn;
+            }
+
+            float e = GetEffectiveAsteroidRestitution();
+            float deltaNormalSpeed = (1f + e) * Mathf.Abs(vn);
+            float impactImpulse = GetRammingImpactMass() * deltaNormalSpeed;
+            float impactForceNewtons = impactImpulse / Mathf.Max(0.0001f, Time.fixedDeltaTime);
+
+            float asteroidCollisionPitch = Mathf.Lerp(0.7f, 1.25f, Mathf.InverseLerp(25f, 1200f, impactForceNewtons));
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayAsteroidCollisionSound(asteroidCollisionPitch);
+
+            if (impactForceNewtons >= GetCollisionVfxAsteroidMinImpactForce())
+            {
+                float sev = ComputeCollisionVfxSeverityFromImpactForce(impactForceNewtons);
+                TrySpawnWeaponCollisionImpactVfx(contact.point, n, sev, asteroidCollisionPitch, RamGrindImpactVfxScaleFactor);
+            }
+
+            {
+                float t = Mathf.Clamp01(Mathf.InverseLerp(35f, 900f, impactForceNewtons));
+                asteroidVisualPitchImpulse = Mathf.Lerp(-maxCollisionPitchAngle * 0.3f, -maxCollisionPitchAngle * 0.92f, t);
+            }
+
+            float inboundSpeed = deltaNormalSpeed / Mathf.Max(0.01f, 1f + e);
+            ComputeRamImpactDamage(inboundSpeed, out float asteroidCollisionDamage, out float shipCollisionDamage);
+
+            if (shipCollisionDamage > 0.0001f)
+            {
+                float expulsionIntensity = ComputeRamImpactGemExpulsionIntensity(impactForceNewtons, shipCollisionDamage);
+                ApplyShipRamDamage(
+                    shipCollisionDamage,
+                    expulsionIntensity,
+                    gemExpulsionPerHullDamage: 1f);
+            }
+
+            if (asteroidCollisionDamage > 0.0001f)
+            {
+                ulong attackerShipId = NetworkObject != null ? NetworkObjectId : 0ul;
+                ApplyAsteroidRamDamage(asteroid, asteroidCollisionDamage, attackerShipId);
+                SpawnAsteroidCollisionFeedback(
+                    contact.point,
+                    asteroid,
+                    asteroidCollisionDamage,
+                    impactForceNewtons >= asteroidImpactForcePopupMin ? impactForceNewtons : (float?)null);
+            }
         }
         private void OnCollisionExit(Collision collision)
         {
@@ -6673,7 +6581,8 @@ namespace TitanOrbit.Entities
         private void TickShipCollisionVelocityEstimate(float deltaTime)
         {
             if (rb == null) return;
-            Vector3 pos = rb.position;
+            // Kinematic clients: NetworkTransform drives transform; rb.position can be stale or spike.
+            Vector3 pos = !IsServer && rb.isKinematic ? transform.position : rb.position;
             pos.y = 0f;
             if (_collisionVelEstHasPrev)
             {
@@ -6682,6 +6591,25 @@ namespace TitanOrbit.Entities
             }
             _collisionVelEstPrevPos = pos;
             _collisionVelEstHasPrev = true;
+        }
+
+        private void UpdateHudPlanarSpeed()
+        {
+            if (rb == null)
+            {
+                _hudPlanarSpeed = 0f;
+                return;
+            }
+
+            if (IsServer)
+            {
+                Vector3 v = rb.linearVelocity;
+                _hudPlanarSpeed = new Vector3(v.x, 0f, v.z).magnitude;
+            }
+            else
+            {
+                _hudPlanarSpeed = _collisionPlanarVelocityEstimate.magnitude;
+            }
         }
 
         /// <summary>
@@ -6729,89 +6657,6 @@ namespace TitanOrbit.Entities
             rb.linearVelocity = newVel;
             currentVelocity = newVel;
             return true;
-        }
-
-        /// <summary>
-        /// Ships keep unwrapped world positions; Unity colliders only see raw separation, so hulls can overlap
-        /// on the torus without <see cref="OnCollisionEnter"/>. Resolve overlap using shortest toroidal offset
-        /// (each authoritative body corrects itself, matching owner physics + server AI).
-        /// </summary>
-        private void TickToroidalShipVsShipCollision()
-        {
-            bool auth = IsServer;
-            if (!auth || rb == null) return;
-
-            Vector3 myPos = rb.position;
-            myPos.y = 0f;
-            float myR = GetShipCollisionRadiusXZ();
-            float mMe = Mathf.Max(0.5f, rb.mass);
-
-            for (int i = 0; i < AllStarships.Count; i++)
-            {
-                Starship other = AllStarships[i];
-                if (other == null || other == this) continue;
-                if (other.IsDead || other.GemMoonDocked) continue;
-
-                Rigidbody otherRb = other.GetComponent<Rigidbody>();
-                if (otherRb == null) continue;
-
-                Vector3 otherPos = otherRb.position;
-                otherPos.y = 0f;
-
-                float dist = ToroidalMap.ToroidalDistance(myPos, otherPos);
-                float otherR = other.GetShipCollisionRadiusXZ();
-                float combined = myR + otherR;
-                if (dist >= combined - 0.0001f) continue;
-
-                Vector3 toOther = ToroidalMap.ShortestWorldOffsetXZ(myPos, otherPos);
-                if (toOther.sqrMagnitude < 1e-10f)
-                {
-                    toOther = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-                    if (toOther.sqrMagnitude < 1e-10f)
-                        toOther = transform.forward;
-                    toOther.y = 0f;
-                }
-                Vector3 n = toOther.normalized;
-                Vector3 separationNormal = -n;
-
-                float penetration = combined - Mathf.Max(dist, 0.0001f);
-                float mOther = Mathf.Max(0.5f, otherRb.mass);
-                float totalMass = mMe + mOther;
-                float mySepShare = totalMass > 0.001f ? mOther / totalMass : 0.5f;
-                Vector3 newPos = rb.position + separationNormal * (penetration * mySepShare);
-                rb.MovePosition(newPos);
-
-                TryApplyShipShipCollisionResponse(other, separationNormal);
-
-                Vector3 vMe = GetPlanarVelocityForShipCollision();
-                Vector3 vO = other.GetPlanarVelocityForShipCollision();
-                float relSpeed = (vMe - vO).magnitude;
-                bool playSound = relSpeed >= 2f && AudioManager.Instance != null;
-                bool playVfx = relSpeed >= GetCollisionVfxShipMinRelativeSpeed() && VisualEffectsManager.Instance != null;
-                if (playSound || playVfx)
-                {
-                    ulong pairKey = ToroidalShipPairKey(GetInstanceID(), other.GetInstanceID());
-                    float now = Time.time;
-                    if (!_toroidalShipPairLastSoundTime.TryGetValue(pairKey, out float last) || now - last >= 0.22f)
-                    {
-                        _toroidalShipPairLastSoundTime[pairKey] = now;
-                        float pitch = Mathf.Lerp(0.8f, 1.35f, Mathf.InverseLerp(2f, 35f, relSpeed));
-                        if (playSound)
-                            AudioManager.Instance.PlayShipCollisionSound(pitch);
-                        if (playVfx)
-                        {
-                            Vector3 impactPos = myPos + (-n) * myR;
-                            impactPos.y = 0f;
-                            Vector3 outward = -n;
-                            outward.y = 0f;
-                            if (outward.sqrMagnitude < 1e-6f) outward = transform.forward;
-                            outward.Normalize();
-                            float sev = ComputeCollisionVfxSeverityFromRelativeSpeed(relSpeed);
-                            TrySpawnWeaponCollisionImpactVfx(impactPos, outward, sev, pitch);
-                        }
-                    }
-                }
-            }
         }
 
         /// <summary>Server-only gem credit from pickups (same as <see cref="AddGemsServerRpc"/>; avoids invoking a ServerRpc from another NetworkBehaviour on the server).</summary>
@@ -7042,9 +6887,12 @@ namespace TitanOrbit.Entities
             outwardVelocityWorld.y = 0f;
             _pendingGemMoonShieldRepelVelocity = outwardVelocityWorld;
             _hasPendingGemMoonShieldRepel = true;
-            rb.linearVelocity = outwardVelocityWorld;
-            rb.angularVelocity = Vector3.zero;
-            currentVelocity = rb.linearVelocity;
+            if (IsServer)
+            {
+                Vector3 delta = outwardVelocityWorld - new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+                if (delta.sqrMagnitude > 0.0001f)
+                    rb.AddForce(delta * Mathf.Max(0.5f, rb.mass), ForceMode.Impulse);
+            }
         }
 
         [ClientRpc]

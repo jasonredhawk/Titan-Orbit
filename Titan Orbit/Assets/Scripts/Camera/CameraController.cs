@@ -3,6 +3,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
 using TitanOrbit.Entities;
+using TitanOrbit.Diagnostics;
 
 namespace TitanOrbit.Camera
 {
@@ -436,6 +437,27 @@ namespace TitanOrbit.Camera
 
             transform.rotation = finalRotation;
             transform.position = targetPosition;
+
+            // #region agent log
+            if (targetShip != null && targetShip.IsOwner && (_motionDbgCamCounter++ % 8 == 0))
+            {
+                Vector3 rbPos = targetShip.GetSimPosition();
+                Vector3 trPos = targetShip.transform.position;
+                float trRbDelta = Vector3.Distance(
+                    new Vector3(trPos.x, 0f, trPos.z),
+                    new Vector3(rbPos.x, 0f, rbPos.z));
+                float followJitter = _motionDbgHasPrevFollow
+                    ? Vector3.Distance(smoothedFollowXZ, _motionDbgPrevFollowXZ)
+                    : 0f;
+                _motionDbgPrevFollowXZ = smoothedFollowXZ;
+                _motionDbgHasPrevFollow = true;
+                MotorDebugLog.Write("A", "CameraController.LateUpdate",
+                    "camera follow sample",
+                    $"{{\"followJitter\":{followJitter:F5},\"trRbDelta\":{trRbDelta:F5},\"rawFollowX\":{followXZ.x:F2},\"rawFollowZ\":{followXZ.z:F2},\"smoothedFollowX\":{smoothedFollowXZ.x:F2},\"smoothedFollowZ\":{smoothedFollowXZ.z:F2}}}",
+                    "post-fix");
+            }
+            // #endregion
+
             if (cam != null && !cam.orthographic)
                 cam.fieldOfView = finalFov;
 
@@ -831,6 +853,9 @@ namespace TitanOrbit.Camera
         }
 
         private bool hasEverSetFollowTarget;
+        private Vector3 _motionDbgPrevFollowXZ;
+        private bool _motionDbgHasPrevFollow;
+        private int _motionDbgCamCounter;
 
         public void SetTarget(Transform newTarget)
         {

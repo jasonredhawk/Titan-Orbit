@@ -4,13 +4,13 @@ using UnityEngine;
 
 namespace TitanOrbit.Diagnostics
 {
-    /// <summary>NDJSON debug logger for ship motor investigation (session 3f83e2).</summary>
+    /// <summary>NDJSON debug logger for ship motor investigation.</summary>
     internal static class MotorDebugLog
     {
-        private const string SessionId = "3f83e2";
+        private const string SessionId = "5484ca";
 
         private static string LogPath =>
-            Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "debug-3f83e2.log"));
+            Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "debug-5484ca.log"));
 
         public static void Write(string hypothesisId, string location, string message, string dataJson, string runId = "pre-fix")
         {

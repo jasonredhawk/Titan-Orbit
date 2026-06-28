@@ -42,7 +42,6 @@ namespace TitanOrbit.Entities
         private float maxDistance;
         private float lifetime;
         private uint sequence;
-        private uint serverSimTick;
         private bool ownerPredictedVisual;
 
         private Vector3 lastLogicalWorld;
@@ -213,7 +212,6 @@ namespace TitanOrbit.Entities
             tracer.logicalSpawn = spawn;
             tracer.velocity = vel;
             tracer.serverSpawnTime = payload.ServerSpawnTime;
-            tracer.serverSimTick = payload.ServerSimTick;
             tracer.localSpawnTimeFallback = Time.time;
             tracer.maxDistance = Mathf.Max(0.5f, payload.MaxDistance);
             tracer.lifetime = Mathf.Max(0.1f, payload.Lifetime);
@@ -224,7 +222,7 @@ namespace TitanOrbit.Entities
             tracer.visualPrefabBankIndex = payload.VisualPrefabBankIndex;
             tracer.ownerTeam = (TeamManager.Team)payload.OwnerTeamByte;
 
-            // Position tracer from sim-tick elapsed (aligned with locally simulated ships).
+            // Position tracer from server spawn time elapsed.
             float elapsed = tracer.GetElapsedSinceServerSpawn();
             Vector3 logical = spawn + vel * elapsed;
             logical.y = 0f;
@@ -597,18 +595,6 @@ namespace TitanOrbit.Entities
                 return Mathf.Max(0f, GetServerTimeNow() - serverSpawnTime);
             if (ownerPredictedVisual)
                 return Mathf.Max(0f, Time.time - localSpawnTimeFallback);
-
-            if (serverSimTick > 0)
-            {
-                ServerSimClock clock = ServerSimClock.Instance;
-                if (clock != null && clock.IsClockReady)
-                {
-                    uint renderTick = clock.SimulationTick;
-                    if (renderTick > serverSimTick)
-                        return (renderTick - serverSimTick) * ServerSimClock.SimFixedDeltaTime;
-                    return 0f;
-                }
-            }
 
             var nm = NetworkManager.Singleton;
             if (nm != null && nm.IsListening)

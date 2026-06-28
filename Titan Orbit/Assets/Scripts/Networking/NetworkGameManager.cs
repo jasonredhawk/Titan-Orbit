@@ -119,6 +119,12 @@ namespace TitanOrbit.Networking
 
         [Header("Network Settings")]
         [SerializeField] private int maxPlayers = 60;
+        [Tooltip("Editor: auto-start a local LAN host on Play (no Relay, no dedicated server build).")]
+        [SerializeField] private bool autoStartLanHostInEditor = false;
+        [Tooltip("Editor: auto-start headless listen-server on Play (use a second instance as LAN client).")]
+        [SerializeField] private bool autoStartServer = false;
+        [Tooltip("UDP port for LAN host/server. Change to e.g. 7778 if 7777 is already in use.")]
+        [SerializeField] private ushort serverPort = 7777;
 
         private const string LobbyRelayCodeKey = "RelayJoinCode";
         private const string LobbyGameNameKey = "GameName";
@@ -171,6 +177,18 @@ namespace TitanOrbit.Networking
         private void Start()
         {
             RegisterLocalClientLobbyCleanupHandlers();
+#if UNITY_EDITOR
+            if (autoStartLanHostInEditor)
+            {
+                if (StartLanHostForLocalTest())
+                    Debug.Log("[NetworkGameManager] Auto-started LAN host (StartHost) for editor testing.");
+            }
+            else if (autoStartServer)
+            {
+                StartServer();
+                Debug.Log("[NetworkGameManager] Auto-started LAN listen server (StartServer) for editor testing.");
+            }
+#endif
         }
 
         private void RegisterLocalClientLobbyCleanupHandlers()
@@ -235,6 +253,180 @@ namespace TitanOrbit.Networking
             if (NetworkManager.Singleton != null)
                 DeferredPlayerShipSpawn.Configure(NetworkManager.Singleton);
         }
+
+        private void ApplyServerPort()
+        {
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport != null)
+            {
+                transport.SetConnectionData(
+                    transport.ConnectionData.Address,
+                    serverPort,
+                    transport.ConnectionData.ServerListenAddress);
+                Debug.Log($"[NetworkGameManager] Network port set to {serverPort}.");
+            }
+        }
+
+        /// <summary>LAN dev: host + local player in one process (best for movement debugging in Editor).</summary>
+        public bool StartLanHostForLocalTest()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                return false;
+            PrepareNetworkManagerForSessionStart();
+            ApplyServerPort();
+#if !UNITY_WEBGL
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport != null)
+                transport.UseWebSockets = false;
+#endif
+            if (!NetworkManager.Singleton.StartHost())
+                return false;
+            Debug.Log($"[NetworkGameManager] LAN host started on port {serverPort} (StartHost).");
+            return true;
+        }
+
+        public void StartServer()
+        {
+            PrepareNetworkManagerForSessionStart();
+            ApplyServerPort();
+            NetworkManager.Singleton.StartServer();
+            Debug.Log($"[NetworkGameManager] Server started on port {serverPort}");
+        }
+
+        /// <summary>LAN dev: listen server without local player. Pair with <see cref="StartLocalClientForLanTest"/>.</summary>
+        public bool StartLocalServerForLanTest()
+        {
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                return false;
+            PrepareNetworkManagerForSessionStart();
+            ApplyServerPort();
+#if !UNITY_WEBGL
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport != null)
+                transport.UseWebSockets = false;
+#endif
+            if (!NetworkManager.Singleton.StartServer())
+                return false;
+            Debug.Log($"[NetworkGameManager] LAN listen server started on port {serverPort}.");
+            return true;
+        }
+
+        /// <summary>LAN dev: join a host on the LAN. Use 127.0.0.1 for two Editor instances on one PC.</summary>
+        public bool StartLocalClientForLanTest(string address = "127.0.0.1")
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.LogWarning("[NetworkGameManager] LAN client test is not supported in WebGL.");
+            return false;
+#endif
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+                return false;
+            EnsurePlayerPrefabSet();
+            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            if (transport == null)
+            {
+                Debug.LogError("[NetworkGameManager] UnityTransport missing.");
+                return false;
+            }
+#if !UNITY_WEBGL
+            transport.UseWebSockets = false;
+#endif
+            transport.SetConnectionData(address, serverPort);
+            PrepareNetworkManagerForSessionStart();
+            bool ok = NetworkManager.Singleton.StartClient();
+            if (ok)
+                Debug.Log($"[NetworkGameManager] LAN client connecting to {address}:{serverPort}");
+            return ok;
+        }
+
+        /// <summary>Relay + UGS lobby host from Editor/desktop (no GCE dedicated server).</summary>
+        public async Task<bool> PlayRelayHostMatchAsync()
+        {
+            EnsurePlayerPrefabSet();
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.NetworkConfig.PlayerPrefab == null)
+            {
+                Debug.LogError("Player Prefab not set on NetworkManager.");
+                return false;
+            }
+
+            try
+            {
+                if (!await EnsureUnityServicesInitializedAsync())
+                    return false;
+
+                await EnsureShutdownIfNetcodeRunningAsync();
+
+                var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+                if (transport == null)
+                {
+                    Debug.LogError("UnityTransport not found on NetworkManager.");
+                    return false;
+                }
+
+                ApplyServerPort();
+                int cap = Mathf.Max(2, maxPlayers);
+                int relayMaxConnections = Mathf.Max(1, cap - 1);
+                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(relayMaxConnections);
+                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+                ConfigureUnityTransportRelay(transport, allocation, null);
+
+                long createdAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                await AcquireLobbyApiGateAsync();
+                Lobby createdLobby;
+                try
+                {
+                    createdLobby = await WithLobbyApiTimeoutAsync(
+                        LobbyService.Instance.CreateLobbyAsync(
+                            GameNames.GetRandomRoomName(),
+                            cap,
+                            new CreateLobbyOptions
+                            {
+                                IsPrivate = false,
+                                Data = new Dictionary<string, DataObject>
+                                {
+                                    { LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
+                                    { LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, LobbyGameNameValue, DataObject.IndexOptions.S1) },
+                                    { LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
+                                    { LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N2) },
+                                    {
+                                        LobbyCreatedAtEpochKey,
+                                        new DataObject(
+                                            DataObject.VisibilityOptions.Public,
+                                            createdAtEpochSeconds.ToString(CultureInfo.InvariantCulture),
+                                            DataObject.IndexOptions.N3)
+                                    },
+                                    {
+                                        LobbyRelayProtocolKey,
+                                        new DataObject(DataObject.VisibilityOptions.Public, RelayConnectionTypeForCurrentPlatform())
+                                    },
+                                },
+                            }),
+                        TimeSpan.FromSeconds(45),
+                        "LobbyService.CreateLobbyAsync");
+                }
+                finally
+                {
+                    LobbyApiGate.Release();
+                }
+
+                PrepareNetworkManagerForSessionStart();
+                if (!NetworkManager.Singleton.StartHost())
+                {
+                    Debug.LogError("[NetworkGameManager] StartHost failed for Relay host.");
+                    return false;
+                }
+
+                currentLobby = createdLobby;
+                Debug.Log("[NetworkGameManager] Relay host started; lobby id=" + createdLobby.Id);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[NetworkGameManager] PlayRelayHostMatchAsync failed. " + e.Message);
+                return false;
+            }
+        }
+
+        public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
 
         /// <summary>
         /// Netcode refuses <see cref="NetworkManager.StartClient"/> if already listening
@@ -1370,7 +1562,7 @@ namespace TitanOrbit.Networking
         public override void OnNetworkSpawn()
         {
             BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - enter (IsServer=" + IsServer + ")");
-            EnsureServerSimClockExists();
+            Starship.ResetSessionStaticState();
             if (IsServer)
             {
                 BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - EnsureScoreSystemExists");
@@ -1380,7 +1572,6 @@ namespace TitanOrbit.Networking
                 BootTrace.Mark("NetworkGameManager.OnNetworkSpawn - subscribing client callbacks");
                 NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
-                SendSimClockHeartbeat(0, NetworkManager.Singleton.ServerTime.Time);
             }
         }
 
@@ -1420,30 +1611,6 @@ namespace TitanOrbit.Networking
             if (existingNo == null)
                 existing.gameObject.AddComponent<NetworkObject>();
             // Do not spawn: scene-placed ScoreSystem is spawned by ServerSpawnSceneObjectsOnStartSweep; spawning here causes "Object is already spawned".
-        }
-
-        private void EnsureServerSimClockExists()
-        {
-            ServerSimClock clock = GetComponent<ServerSimClock>();
-            if (clock == null)
-                clock = gameObject.AddComponent<ServerSimClock>();
-            if (IsServer)
-                clock.ResetForNetworkSession();
-            Starship.ResetSessionStaticState();
-        }
-
-        /// <summary>Server: broadcast sim tick heartbeat to all clients.</summary>
-        public void SendSimClockHeartbeat(uint serverTick, double serverTime)
-        {
-            if (!IsServer) return;
-            SendSimClockHeartbeatClientRpc(serverTick, serverTime);
-        }
-
-        [ClientRpc]
-        private void SendSimClockHeartbeatClientRpc(uint serverTick, double serverTime)
-        {
-            if (IsServer) return;
-            ServerSimClock.Instance?.ApplyHeartbeat(serverTick, serverTime);
         }
 
         public override void OnNetworkDespawn()
@@ -1864,5 +2031,27 @@ namespace TitanOrbit.Networking
                 + " tag=" + lobbyIdOrTag
                 + " waitedSeconds=" + elapsed.ToString("F2", CultureInfo.InvariantCulture));
         }
+
+#if UNITY_EDITOR
+        [ContextMenu("Debug/Start LAN Host (StartHost)")]
+        private void Editor_StartLanHost()
+        {
+            if (StartLanHostForLocalTest())
+                Debug.Log($"[NetworkGameManager] LAN host on port {serverPort}. Physics runs locally (IsServer+IsClient).");
+        }
+
+        [ContextMenu("Debug/Start LAN Listen Server (no local player)")]
+        private void Editor_StartLanServer()
+        {
+            if (StartLocalServerForLanTest())
+                Debug.Log($"[NetworkGameManager] LAN listen server on port {serverPort}. Use a second instance: Debug/Start LAN Client.");
+        }
+
+        [ContextMenu("Debug/Start LAN Client → 127.0.0.1")]
+        private void Editor_StartLanClient()
+        {
+            StartLocalClientForLanTest("127.0.0.1");
+        }
+#endif
     }
 }
