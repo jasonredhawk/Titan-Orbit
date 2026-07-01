@@ -20,6 +20,10 @@ namespace TitanOrbit.Game
             "HomePlanet",
             "PlanetOrbitZone",
             "PlanetGemMoon",
+            "PlanetRingsDrawer",
+            "HomePlanetRingsDrawer",
+            "PlanetOrbitZone",
+            "OrbitZoneVisual",
             "Asteroid",
         };
 
@@ -48,12 +52,43 @@ namespace TitanOrbit.Game
             ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId);
             instance.transform.localScale = Vector3.one * Mathf.Max(0.25f, worldScale);
 
+            var stats = instance.GetComponent<PlanetWorldStatsLabel>();
+            if (stats == null)
+                stats = instance.AddComponent<PlanetWorldStatsLabel>();
+            stats.Configure(planetId);
+
             var moon = instance.GetComponent<PlanetGemMoonVisualProxy>();
             if (moon == null)
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
             Material moonMaterial = CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId);
             moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial);
+            EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
             return true;
+        }
+
+        static void EnsureOrbitRingVisual(
+            GameObject planetRoot,
+            float planetSize,
+            int planetLevel,
+            TeamId team,
+            bool isHome,
+            int planetId)
+        {
+            if (planetRoot == null)
+                return;
+
+            Transform ringsRoot = planetRoot.transform.Find("PlanetRings");
+            if (ringsRoot == null)
+            {
+                var ringsGo = new GameObject("PlanetRings");
+                ringsGo.transform.SetParent(planetRoot.transform, false);
+                ringsRoot = ringsGo.transform;
+            }
+
+            var ringVisual = ringsRoot.GetComponent<PlanetOrbitRingVisual>();
+            if (ringVisual == null)
+                ringVisual = ringsRoot.gameObject.AddComponent<PlanetOrbitRingVisual>();
+            ringVisual.Configure(planetRoot.transform, planetSize, planetLevel, team, isHome, planetId);
         }
 
         public static Material CreateGemMoonMaterial(
@@ -255,7 +290,9 @@ namespace TitanOrbit.Game
             for (int i = root.transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = root.transform.GetChild(i);
-                if (child.name.Contains("PopulationText") || child.GetComponent<Canvas>() != null)
+                if (child.name.Contains("PopulationText"))
+                    continue;
+                if (child.GetComponent<Canvas>() != null)
                     Object.Destroy(child.gameObject);
             }
         }

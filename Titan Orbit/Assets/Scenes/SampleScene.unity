@@ -1183,6 +1183,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e32e60398d7d59b4a93251137092dcaa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipStatsFpsStyleHUD
+  valueColumnWidth: 120
+  valueColumnInset: 8
+  barValueGap: 12
+  barHealth: {fileID: 0}
+  barEnergy: {fileID: 0}
+  barGems: {fileID: 0}
+  barPeople: {fileID: 0}
+  valueHealth: {fileID: 0}
+  valueEnergy: {fileID: 0}
+  valueGems: {fileID: 0}
+  valuePeople: {fileID: 0}
 --- !u!114 &235025762
 MonoBehaviour:
   m_ObjectHideFlags: 0

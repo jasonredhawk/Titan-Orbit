@@ -35,6 +35,9 @@ namespace TitanOrbit.ECS.Authoring
                     MaxHealth = 100f,
                     ShipLevel = 1,
                     GemCapacity = 50f,
+                    CurrentEnergy = 50f,
+                    MaxEnergy = 50f,
+                    PeopleCapacity = 10,
                     AwaitingTeamSelection = true,
                 });
                 AddComponent(entity, new ShipMotorConfig
@@ -57,6 +60,7 @@ namespace TitanOrbit.ECS.Authoring
                 });
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());
+                AddComponent(entity, new ShipMoonDockState());
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);

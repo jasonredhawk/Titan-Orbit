@@ -301,7 +301,9 @@ namespace TitanOrbit.Game
 #if UNITY_SERVER
             return;
 #endif
-            if (!Application.isEditor || !autoPickTeamAInEditor || _autoPickSent)
+            if (!Application.isEditor || _autoPickSent)
+                return;
+            if (!autoPickTeamAInEditor && !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return;
             if (!IsInGameFlow() || !EcsGameBridge.IsMapLoadingComplete())
                 return;
@@ -315,7 +317,10 @@ namespace TitanOrbit.Game
                 return;
 
             _autoPickSent = true;
-            PickTeam(TeamId.TeamA);
+            var team = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
+                ? TitanOrbitPlayModeUtility.GetSuggestedTeamForMppmPlayer()
+                : TeamId.TeamA;
+            PickTeam(team);
         }
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();

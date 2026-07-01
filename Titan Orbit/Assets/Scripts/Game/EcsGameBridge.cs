@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -252,6 +253,41 @@ namespace TitanOrbit.Game
             if (query.TryGetSingleton<TeamStateSingleton>(out var team))
                 return team;
             return default;
+        }
+
+        public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)
+        {
+            state = default;
+            if (planetId == 0)
+                return false;
+
+            if (TryFindPlanetState(ClientWorld, planetId, out state))
+                return true;
+
+            if (IsLocalHost() && TryFindPlanetState(ServerWorld, planetId, out state))
+                return true;
+
+            return false;
+        }
+
+        static bool TryFindPlanetState(World world, int planetId, out PlanetState state)
+        {
+            state = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                state = states[i];
+                return true;
+            }
+
+            return false;
         }
     }
 }

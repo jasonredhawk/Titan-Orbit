@@ -51,25 +51,36 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Configure Multiplayer For Local Play")]
         public static void ConfigureMultiplayerForLocalPlay()
         {
-            MultiplayerPlayModePreferences.RequestedPlayType = ClientServerBootstrap.PlayType.ClientAndServer;
-            MultiplayerPlayModePreferences.SimulateDedicatedServer = false;
-            MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
-            MultiplayerPlayModePreferences.SimulatorEnabled = false;
+            ApplyLocalPlayNetCodePrefs();
 
             EditorUtility.DisplayDialog(
                 "Titan Orbit — local play setup",
                 "PlayMode Tools (NetCode) updated:\n\n" +
                 "• PlayMode Type → Client & Server\n" +
-                "• Server Emulation → Client Hosted Server\n" +
-                "• Num Thin Clients → 0\n" +
-                "• Client Network Emulation → off\n\n" +
-                "Important — also check Unity's Play Mode dropdown:\n" +
-                "Click the ▾ arrow next to the Play button (top centre). " +
-                "Choose Default, or any scenario where the Main Editor is Client + Server (not Server-only).\n\n" +
-                "Then press Play and use the main Editor Game tab.",
+                "• Auto-connect → 127.0.0.1:7777\n" +
+                "• Num Thin Clients → 0\n\n" +
+                "Use the main Editor Game tab and press Play on the main menu.\n\n" +
+                "For a second human player, run Titan Orbit > Configure Multiplayer For MPPM (2 Players).",
                 "OK");
 
             Debug.Log("[NetCodeGameSetup] Local multiplayer prefs applied. Open Window > Multiplayer > PlayMode Tools to verify.");
+        }
+
+        [MenuItem("Titan Orbit/Configure Multiplayer For MPPM (2 Players)")]
+        public static void ConfigureMultiplayerForMppmTwoPlayers()
+        {
+            ApplyLocalPlayNetCodePrefs();
+            MppmBuildProfileSetup.CreateMppmClientBuildProfile();
+        }
+
+        static void ApplyLocalPlayNetCodePrefs()
+        {
+            MultiplayerPlayModePreferences.RequestedPlayType = ClientServerBootstrap.PlayType.ClientAndServer;
+            MultiplayerPlayModePreferences.SimulateDedicatedServer = false;
+            MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
+            MultiplayerPlayModePreferences.SimulatorEnabled = false;
+            MultiplayerPlayModePreferences.AutoConnectionAddress = "127.0.0.1";
+            MultiplayerPlayModePreferences.AutoConnectionPort = 7777;
         }
 
         static void EnsureGhostPrefabs()

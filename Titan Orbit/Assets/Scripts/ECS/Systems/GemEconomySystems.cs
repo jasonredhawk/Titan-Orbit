@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -14,8 +15,13 @@ namespace TitanOrbit.ECS
         public const float MiningRate = 5f;
         public const float GemPickupRange = 2.5f;
         public const float PlanetInteractionRange = 20f;
+        public const float MoonDockRangeMultiplier = 2.2f;
+        public const float MoonLandingCompleteThreshold = 0.999f;
         public const float DepositRatePerShipLevel = 2f;
         public const float MinGemSpawnValue = 0.25f;
+        public const float AsteroidExplosionSpeed = 2.2f;
+        public const float AsteroidExplosionRadius = 1.4f;
+        public const float GemDragPerSecond = 1.25f;
         public const float AsteroidHitRadiusScale = 0.85f;
         public const float MinAsteroidHitRadius = 2.5f;
     }
@@ -71,12 +77,39 @@ namespace TitanOrbit.ECS
                     }
 
                     asteroidState.ValueRW = a;
-                    GemSpawning.Spawn(ecb, prefabs.Gem, asteroidTransform.ValueRO.Position, mined, (uint)asteroidEntity.Index);
+                    GemSpawning.Spawn(ecb, prefabs.Gem, asteroidTransform.ValueRO.Position, mined, (uint)asteroidEntity.Index, burst: false);
                 }
             }
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+        }
+    }
+
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(MiningSystem))]
+    public partial struct GemMotionSystem : ISystem
+    {
+        public void OnUpdate(ref SystemState state)
+        {
+            float dt = SystemAPI.Time.DeltaTime;
+            float drag = math.saturate(GemEconomyConstants.GemDragPerSecond * dt);
+
+            foreach (var (kinematics, transform) in SystemAPI
+                         .Query<RefRW<GemKinematics>, RefRW<LocalTransform>>()
+                         .WithAll<GemTag>())
+            {
+                var vel = kinematics.ValueRO.Velocity;
+                vel *= 1f - drag;
+                if (math.lengthsq(vel) < 0.0004f)
+                    vel = float3.zero;
+
+                var lt = transform.ValueRO;
+                lt.Position += vel * dt;
+                transform.ValueRW = lt;
+                kinematics.ValueRW = new GemKinematics { Velocity = vel };
+            }
         }
     }
 
@@ -156,8 +189,8 @@ namespace TitanOrbit.ECS
         {
             float dt = SystemAPI.Time.DeltaTime;
 
-            foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
-                         .Query<RefRO<LocalTransform>, RefRW<ShipState>>()
+            foreach (var (shipState, shipInput, moonDock, shipEntity) in SystemAPI
+                         .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipMoonDockState>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -173,8 +206,10 @@ namespace TitanOrbit.ECS
                     if (planetState.ValueRO.Ownership != shipState.ValueRO.Team)
                         continue;
 
-                    if (math.distance(shipTransform.ValueRO.Position, planetTransform.ValueRO.Position) >
-                        GemEconomyConstants.PlanetInteractionRange)
+                    if (!CanDepositAtPlanet(
+                            shipInput.ValueRO,
+                            moonDock.ValueRO,
+                            planetState.ValueRO))
                         continue;
 
                     float gemValue = math.max(1f, shipState.ValueRO.ShipLevel);
@@ -188,10 +223,28 @@ namespace TitanOrbit.ECS
                     shipState.ValueRW = ship;
 
                     var planet = planetState.ValueRO;
-                    planet.CurrentGems += amount;
+                    int level = planet.PlanetLevel;
+                    float gems = planet.CurrentGems;
+                    PlanetEconomyMath.DepositGems(ref level, ref gems, amount);
+                    planet.PlanetLevel = level;
+                    planet.CurrentGems = gems;
                     planetState.ValueRW = planet;
                 }
             }
+        }
+
+        static bool CanDepositAtPlanet(
+            in ShipInput input,
+            in ShipMoonDockState moonDock,
+            in PlanetState planet)
+        {
+            if (input.Thrust)
+                return false;
+
+            if (moonDock.MoonPlanetId != planet.PlanetId || moonDock.MoonPlanetId == 0)
+                return false;
+
+            return moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
         }
     }
 
@@ -229,7 +282,7 @@ namespace TitanOrbit.ECS
                     while (remaining >= GemEconomyConstants.MinGemSpawnValue)
                     {
                         float chunk = math.min(remaining, rng.NextFloat(6f, 14f));
-                        GemSpawning.Spawn(ecb, prefabs.Gem, pos, chunk, (uint)entity.Index + (uint)(chunk * 100f));
+                        GemSpawning.Spawn(ecb, prefabs.Gem, pos, chunk, (uint)entity.Index + (uint)(chunk * 100f), burst: true);
                         remaining -= chunk;
                     }
                 }
@@ -244,13 +297,18 @@ namespace TitanOrbit.ECS
 
     static class GemSpawning
     {
-        public static void Spawn(EntityCommandBuffer ecb, Entity gemPrefab, float3 position, float value, uint salt)
+        public static void Spawn(EntityCommandBuffer ecb, Entity gemPrefab, float3 position, float value, uint salt, bool burst)
         {
             if (value <= 0f)
                 return;
 
             var rng = Random.CreateFromIndex(math.hash(position) + salt + 17u);
-            float3 offset = new float3(rng.NextFloat(-0.8f, 0.8f), 0f, rng.NextFloat(-0.8f, 0.8f));
+            float3 spawnDir = math.normalize(new float3(rng.NextFloat(-1f, 1f), 0f, rng.NextFloat(-1f, 1f)));
+            if (math.lengthsq(spawnDir) < 0.01f)
+                spawnDir = new float3(0f, 0f, 1f);
+
+            float radius = burst ? GemEconomyConstants.AsteroidExplosionRadius : 0.8f;
+            float3 offset = spawnDir * radius * rng.NextFloat(0.3f, 1f);
             float scale = math.clamp(math.sqrt(value) * 0.2f, 0.2f, 0.5f);
 
             Entity gem = ecb.Instantiate(gemPrefab);
@@ -261,6 +319,12 @@ namespace TitanOrbit.ECS
                 Size = scale,
                 DepositTeam = TeamId.None,
             });
+
+            if (burst)
+            {
+                float speed = GemEconomyConstants.AsteroidExplosionSpeed * rng.NextFloat(0.45f, 1f);
+                ecb.SetComponent(gem, new GemKinematics { Velocity = spawnDir * speed });
+            }
         }
     }
 }

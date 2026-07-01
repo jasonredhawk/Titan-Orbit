@@ -63,6 +63,18 @@ namespace TitanOrbit.Simulation
             return (seed % 6283u) * 0.001f;
         }
 
+        public static float3 GetMoonWorldPosition(
+            float3 planetPosition,
+            float planetSize,
+            int planetLevel,
+            int planetId,
+            double elapsedSeconds,
+            bool isHomePlanet = false)
+        {
+            float phase = GetShipOrbitPhaseOffset(planetId);
+            return planetPosition + GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
+        }
+
         public static float GetGravityFactor(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
         {
             float clampedRadius = math.clamp(radius, innerWorld, outerWorld);

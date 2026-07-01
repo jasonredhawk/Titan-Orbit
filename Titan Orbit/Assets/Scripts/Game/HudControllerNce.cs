@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -22,7 +23,14 @@ namespace TitanOrbit.Game
                 {
                     string gems = $"Gems {ship.CurrentGems:0}/{ship.GemCapacity:0}";
                     if (EcsGameBridge.TryGetLocalShipOrbitState(out var orbit) && orbit.UsingOrbitMotor)
+                    {
                         gems += "  •  Orbiting";
+                        if (EcsGameBridge.TryGetPlanetStateByPlanetId(orbit.OrbitPlanetId, out var planet))
+                        {
+                            float max = PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
+                            gems += $"  •  Planet L{planet.PlanetLevel} {planet.CurrentGems:0}/{max:0}";
+                        }
+                    }
                     gemsText.text = gems;
                 }
             }

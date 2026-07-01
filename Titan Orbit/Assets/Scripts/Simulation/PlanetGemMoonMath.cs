@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Simulation
@@ -49,6 +50,41 @@ namespace TitanOrbit.Simulation
             float ringsOuter = planetSize * GetRingsOuterEdgeRadiusLocal(level);
             float rClear = ringsOuter + moonDock + clearanceMarginWorld;
             return Mathf.Max(rNominal, rClear);
+        }
+
+        public static float GetMoonDockRadiusWorld(float planetSize, bool isHomePlanet)
+        {
+            float homeMul = isHomePlanet ? 1.5f : 1f;
+            float uniform = ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
+            float bodyLocalRadius = 0.5f * uniform;
+            float dockLocalRadius = bodyLocalRadius * GemMoonDockOrbitZoneRadiusOverBody;
+            return dockLocalRadius * Mathf.Max(0.01f, planetSize);
+        }
+
+        public static float GetMoonBodyRadiusWorld(float planetSize, bool isHomePlanet)
+        {
+            float homeMul = isHomePlanet ? 1.5f : 1f;
+            float uniform = ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
+            return 0.5f * uniform * Mathf.Max(0.01f, planetSize);
+        }
+
+        public static float GetMoonSurfaceLandingRangeWorld(float planetSize, bool isHomePlanet, float shipRadiusEstimate = 0.8f)
+        {
+            float moonRadius = GetMoonBodyRadiusWorld(planetSize, isHomePlanet);
+            const float surfaceStandoffOverMoonRadius = 0.08f;
+            return moonRadius + shipRadiusEstimate + moonRadius * surfaceStandoffOverMoonRadius;
+        }
+
+        /// <summary>World-space offset for the gem moon on the planet orbit ring (same radius as people-transfer ring).</summary>
+        public static float3 GetMoonOrbitOffset(
+            float planetSize,
+            int planetLevel,
+            bool isHomePlanet,
+            int planetId,
+            double elapsedSeconds)
+        {
+            float phase = PlanetOrbitMath.GetShipOrbitPhaseOffset(planetId);
+            return PlanetOrbitMath.GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
         }
     }
 }

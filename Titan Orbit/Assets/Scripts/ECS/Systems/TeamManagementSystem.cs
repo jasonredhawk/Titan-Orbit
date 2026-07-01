@@ -151,6 +151,9 @@ namespace TitanOrbit.ECS
                 Team = team,
                 ShipLevel = 1,
                 GemCapacity = 50f,
+                CurrentEnergy = 50f,
+                MaxEnergy = 50f,
+                PeopleCapacity = 10,
                 AwaitingTeamSelection = false,
             });
             ecb.SetComponent(ship, LocalTransform.FromPosition(spawnPos));

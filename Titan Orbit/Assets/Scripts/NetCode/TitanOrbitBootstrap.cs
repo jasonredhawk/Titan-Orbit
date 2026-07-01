@@ -12,15 +12,28 @@ namespace TitanOrbit.NetCode
             AutoConnectPort = 7777;
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
 
-            // In the Editor, always use in-proc Client+Server unless explicitly testing dedicated server.
-            // This avoids MPPM / Play Mode server-only instances that have no ClientWorld or UI wiring.
 #if UNITY_EDITOR
-            if (!HasExplicitDedicatedServerArg())
+            if (HasExplicitDedicatedServerArg())
             {
-                CreateDefaultClientServerWorlds();
-                Debug.Log("[TitanOrbitBootstrap] Editor local play: Client+Server worlds created.");
+                CreateServerWorld("ServerWorld");
+                Debug.Log("[TitanOrbitBootstrap] Editor dedicated-server world created.");
                 return true;
             }
+
+            // MPPM additional editors share the host's port — client-only, connect to main editor.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                TitanOrbitPlayModeUtility.WarnIfMppmServerBuildClone();
+                CreateClientWorld("ClientWorld");
+                Debug.Log("[TitanOrbitBootstrap] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                          ": ClientWorld only (buildSubTarget=" + TitanOrbitPlayModeUtility.GetMppmBuildSubtarget() +
+                          ", connect to host on port " + AutoConnectPort + ").");
+                return true;
+            }
+
+            CreateDefaultClientServerWorlds();
+            Debug.Log("[TitanOrbitBootstrap] Editor play: " + RequestedPlayType + " worlds created.");
+            return true;
 #endif
 
             if (ShouldRunDedicatedServer())

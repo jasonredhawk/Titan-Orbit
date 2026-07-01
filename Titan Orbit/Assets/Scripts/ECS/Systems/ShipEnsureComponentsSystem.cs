@@ -1,4 +1,3 @@
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -7,16 +6,15 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>Ensures runtime-spawned ship ghosts have kinematics even if the subscene bake is stale.</summary>
-    [BurstCompile]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(ShipMovementSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipEnsureComponentsSystem : ISystem
     {
-        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipKinematics>()
                          .WithEntityAccess())
@@ -46,8 +44,8 @@ namespace TitanOrbit.ECS
             {
                 if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
                 {
-                    var buffer = ecb.AddBuffer<ShipWeaponMountElement>(entity);
-                    buffer.Add(new ShipWeaponMountElement
+                    ecb.AddBuffer<ShipWeaponMountElement>(entity);
+                    ecb.AppendToBuffer(entity, new ShipWeaponMountElement
                     {
                         LocalPosition = new float3(0f, 0f, 2f),
                         LocalRotation = quaternion.identity,
@@ -61,6 +59,11 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipOrbitState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipOrbitState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipMoonDockState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipMoonDockState());
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();

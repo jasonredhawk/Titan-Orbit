@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -86,6 +87,7 @@ namespace TitanOrbit.ECS
             Generation.ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             int teamCount = 3;
+            int nextNeutralPlanetId = 100;
             float radius = math.min(mapW, mapH) * 0.35f;
             var homePositions = new NativeArray<float3>(teamCount, Allocator.Temp);
             for (int i = 0; i < teamCount; i++)
@@ -98,17 +100,17 @@ namespace TitanOrbit.ECS
                     EntityKind = 1,
                     Position = pos,
                     Team = (TeamId)(i + 1),
-                    PlanetId = i,
+                    PlanetId = (int)(TeamId)(i + 1),
                     Scale = 15f,
                 });
-                SpawnPlanet(ref state, pos, (TeamId)(i + 1), true);
+                SpawnPlanet(ref state, pos, (TeamId)(i + 1), true, ref nextNeutralPlanetId);
             }
 
             for (int i = 0; i < 12; i++)
             {
                 float3 pos = new float3(rng.NextFloat(-mapW * 0.4f, mapW * 0.4f), 0f, rng.NextFloat(-mapH * 0.4f, mapH * 0.4f));
                 layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 2, Position = pos, Scale = 8f });
-                SpawnPlanet(ref state, pos, TeamId.None, false);
+                SpawnPlanet(ref state, pos, TeamId.None, false, ref nextNeutralPlanetId);
             }
 
             const int asteroidsPerHome = 6;
@@ -153,19 +155,23 @@ namespace TitanOrbit.ECS
             em.SetComponentData(mapEntity, mapState);
         }
 
-        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome)
+        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, ref int nextNeutralPlanetId)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Planet == Entity.Null)
                 return;
             var em = state.EntityManager;
             var e = em.Instantiate(prefabs.Planet);
-            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, isHome ? 15f : 8f));
+            float scale = isHome ? 15f : 8f;
+            int level = isHome ? 3 : 1;
+            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, scale));
+            int planetId = isHome ? (int)team : nextNeutralPlanetId++;
+            int maxPopulation = PlanetPopulationMath.GetMaxPopulation(scale, level);
             SetOrAddComponent(em, e, new PlanetState
             {
                 Ownership = team,
-                Population = isHome ? 50 : 0,
-                PlanetLevel = isHome ? 3 : 1,
-                PlanetId = (int)team,
+                Population = maxPopulation,
+                PlanetLevel = level,
+                PlanetId = planetId,
                 IsHomePlanet = isHome,
             });
             if (!em.HasComponent<PlanetTag>(e))

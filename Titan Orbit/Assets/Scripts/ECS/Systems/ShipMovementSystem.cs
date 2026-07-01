@@ -42,6 +42,8 @@ namespace TitanOrbit.ECS
 
                 if (!EntityManager.HasComponent<ShipOrbitState>(entity))
                     EntityManager.AddComponentData(entity, new ShipOrbitState());
+                if (!EntityManager.HasComponent<ShipMoonDockState>(entity))
+                    EntityManager.AddComponentData(entity, new ShipMoonDockState());
 
                 var cfg = motor.ValueRO;
                 var inp = input.ValueRO;

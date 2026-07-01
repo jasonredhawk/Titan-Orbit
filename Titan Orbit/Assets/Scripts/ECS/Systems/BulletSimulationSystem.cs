@@ -23,7 +23,13 @@ namespace TitanOrbit.ECS
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var bulletEntity = SystemAPI.GetSingletonEntity<ActiveBulletsTag>();
+            if (!SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity))
+                return;
+
+            if (!state.EntityManager.HasBuffer<BulletElement>(bulletEntity) ||
+                !state.EntityManager.HasBuffer<BulletSpawnEventElement>(bulletEntity))
+                return;
+
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             float dt = SystemAPI.Time.DeltaTime;

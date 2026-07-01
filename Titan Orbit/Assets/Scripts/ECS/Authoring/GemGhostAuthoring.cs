@@ -13,6 +13,7 @@ namespace TitanOrbit.ECS.Authoring
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent(entity, new GemTag());
                 AddComponent(entity, new GemState { Value = 1f, Size = 1f });
+                AddComponent(entity, new GemKinematics());
             }
         }
     }

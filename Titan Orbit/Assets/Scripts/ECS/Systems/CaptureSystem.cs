@@ -1,11 +1,11 @@
-using TitanOrbit.Core;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.NetCode;
-using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Planet capture resolves when hostile people unload drives population to zero (legacy Planet.AddPopulationFromServer).
+    /// Proximity auto-capture is intentionally disabled until people transport is ported to ECS.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GemDepositSystem))]
@@ -13,23 +13,6 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
-            foreach (var (planet, planetTransform) in SystemAPI.Query<RefRW<PlanetState>, RefRO<LocalTransform>>().WithAll<PlanetTag>())
-            {
-                if (planet.ValueRO.Ownership != TeamId.None)
-                    continue;
-
-                foreach (var (shipState, shipTransform) in SystemAPI.Query<RefRO<ShipState>, RefRO<LocalTransform>>().WithAll<ShipTag>())
-                {
-                    if (shipState.ValueRO.Team == TeamId.None)
-                        continue;
-                    if (math.distance(planetTransform.ValueRO.Position, shipTransform.ValueRO.Position) >
-                        GemEconomyConstants.PlanetInteractionRange)
-                        continue;
-
-                    planet.ValueRW.Ownership = shipState.ValueRO.Team;
-                    planet.ValueRW.Population += 1;
-                }
-            }
         }
     }
 }

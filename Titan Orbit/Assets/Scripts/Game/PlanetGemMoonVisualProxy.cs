@@ -10,63 +10,115 @@ namespace TitanOrbit.Game
     {
         const float SpinSpeed = 9f;
         const float HomeScaleMultiplier = 1.5f;
+        const string MoonRootName = "GemMoonVisual";
+        const string MoonSpinMeshName = "GemMoonSpinMesh";
 
-        Transform _moonVisual;
+        Transform _moonRoot;
+        Transform _moonSpinVisual;
         float _planetSize;
         int _planetLevel;
-        float _phaseOffset;
+        int _planetId;
         bool _isHome;
         Material _moonMaterial;
+        GemMoonWorldStatsLabel _statsLabel;
 
         public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial)
         {
             _planetSize = Mathf.Max(0.01f, planetSize);
             _planetLevel = Mathf.Max(1, planetLevel);
+            _planetId = planetId;
             _isHome = isHome;
-            _phaseOffset = PlanetOrbitMath.GetShipOrbitPhaseOffset(planetId);
             _moonMaterial = moonMaterial;
             EnsureMoonVisual();
             ApplyMoonScale();
             ApplyMoonMaterial();
+            EnsureStatsLabel();
         }
 
         void EnsureMoonVisual()
         {
-            if (_moonVisual != null)
+            if (_moonRoot != null && _moonSpinVisual != null)
                 return;
 
-            var existing = transform.Find("GemMoonVisual");
+            Transform existing = transform.Find(MoonRootName);
             if (existing != null)
             {
-                _moonVisual = existing;
+                _moonRoot = existing;
+                Transform spin = existing.Find(MoonSpinMeshName);
+                if (spin != null)
+                {
+                    _moonSpinVisual = spin;
+                    return;
+                }
+
+                MigrateLegacyMoonRoot(existing);
                 return;
             }
 
+            var rootGo = new GameObject(MoonRootName);
+            rootGo.transform.SetParent(transform, false);
+            _moonRoot = rootGo.transform;
+            _moonSpinVisual = CreateSpinSphere(_moonRoot);
+        }
+
+        void MigrateLegacyMoonRoot(Transform root)
+        {
+            _moonRoot = root;
+
+            var legacyRenderer = root.GetComponent<Renderer>();
+            if (legacyRenderer != null && _moonMaterial == null)
+                _moonMaterial = legacyRenderer.material;
+
+            Vector3 legacyScale = root.localScale;
+            _moonSpinVisual = CreateSpinSphere(root);
+
+            if (legacyScale != Vector3.zero && legacyScale != Vector3.one)
+                _moonSpinVisual.localScale = legacyScale;
+
+            DestroyColliderAndMeshOnRoot(root);
+            root.localScale = Vector3.one;
+        }
+
+        static Transform CreateSpinSphere(Transform parent)
+        {
             var vis = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            vis.name = "GemMoonVisual";
+            vis.name = MoonSpinMeshName;
             var col = vis.GetComponent<Collider>();
             if (col != null)
                 Destroy(col);
-            vis.transform.SetParent(transform, false);
-            _moonVisual = vis.transform;
+            vis.transform.SetParent(parent, false);
+            return vis.transform;
+        }
+
+        static void DestroyColliderAndMeshOnRoot(Transform root)
+        {
+            var col = root.GetComponent<Collider>();
+            if (col != null)
+                Destroy(col);
+            var filter = root.GetComponent<MeshFilter>();
+            if (filter != null)
+                Destroy(filter);
+            var renderer = root.GetComponent<Renderer>();
+            if (renderer != null)
+                Destroy(renderer);
         }
 
         void ApplyMoonScale()
         {
-            if (_moonVisual == null)
+            if (_moonSpinVisual == null)
                 return;
 
             float homeMul = _isHome ? HomeScaleMultiplier : 1f;
             float uniform = PlanetGemMoonMath.ComputeVisualUniformScale(_planetSize, homeMul);
-            _moonVisual.localScale = Vector3.one * uniform;
+            _moonSpinVisual.localScale = Vector3.one * uniform;
         }
 
         void ApplyMoonMaterial()
         {
-            if (_moonVisual == null)
+            if (_moonSpinVisual == null)
                 return;
 
-            var renderer = _moonVisual.GetComponent<Renderer>();
+            var renderer = _moonSpinVisual.GetComponent<Renderer>();
             if (renderer == null)
                 return;
 
@@ -75,18 +127,33 @@ namespace TitanOrbit.Game
                 renderer.material = _moonMaterial;
         }
 
+        void EnsureStatsLabel()
+        {
+            if (_moonRoot == null)
+                return;
+
+            if (_statsLabel == null)
+                _statsLabel = _moonRoot.GetComponent<GemMoonWorldStatsLabel>();
+            if (_statsLabel == null)
+                _statsLabel = _moonRoot.gameObject.AddComponent<GemMoonWorldStatsLabel>();
+            float homeMul = _isHome ? HomeScaleMultiplier : 1f;
+            float moonLocalRadius = 0.5f * PlanetGemMoonMath.ComputeVisualUniformScale(_planetSize, homeMul);
+            _statsLabel.Configure(_planetId, moonLocalRadius);
+        }
+
         void LateUpdate()
         {
-            if (_moonVisual == null)
+            if (_moonRoot == null || _moonSpinVisual == null)
                 return;
 
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed)
                 ? simElapsed
                 : Time.timeAsDouble;
 
-            var offset = PlanetOrbitMath.GetShipOrbitRingOffset(_planetSize, _planetLevel, _phaseOffset, elapsed);
-            _moonVisual.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
-            _moonVisual.Rotate(0f, SpinSpeed * Time.deltaTime, 0f, Space.Self);
+            var offset = PlanetGemMoonMath.GetMoonOrbitOffset(_planetSize, _planetLevel, _isHome, _planetId, elapsed);
+            _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
+            _moonRoot.rotation = Quaternion.identity;
+            _moonSpinVisual.Rotate(0f, SpinSpeed * Time.deltaTime, 0f, Space.Self);
         }
 
         static bool TryGetSimulationElapsedTime(out double elapsedSeconds)

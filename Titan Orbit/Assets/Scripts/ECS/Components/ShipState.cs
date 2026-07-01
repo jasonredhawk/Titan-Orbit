@@ -13,7 +13,10 @@ namespace TitanOrbit.ECS
         [GhostField] public int ShipLevel;
         [GhostField] public float CurrentGems;
         [GhostField] public float GemCapacity;
+        [GhostField] public float CurrentEnergy;
+        [GhostField] public float MaxEnergy;
         [GhostField] public int CurrentPeople;
+        [GhostField] public int PeopleCapacity;
         [GhostField] public bool IsDead;
         [GhostField] public bool AwaitingTeamSelection;
     }

@@ -77,6 +77,16 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                TitanOrbitPlayModeUtility.WarnIfMppmServerBuildClone();
+                Debug.Log("[TitanOrbitSessionManager] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                          " (buildSubTarget=" + TitanOrbitPlayModeUtility.GetMppmBuildSubtarget() +
+                          ") — connecting to host on port " + serverPort + ". Pick a team when connected.");
+                StartCoroutine(MaintainClientSession());
+                return;
+            }
+
             Debug.Log("[TitanOrbitSessionManager] Client play instance ready — press Play on the main menu to connect.");
         }
 
