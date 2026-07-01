@@ -4151,8 +4151,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae3422c64282f3441971af6c49183e56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.CameraFollowEcs
-  offset: {x: 0, y: 40, z: 0}
-  smooth: 8
+  offsetAtReferenceLevel: {x: 0, y: 40, z: 0}
+  followSmoothTime: 0
+  gameplayFieldOfView: 45
 --- !u!1 &716424125
 GameObject:
   m_ObjectHideFlags: 0
@@ -5652,8 +5653,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ef1c3bc0be759b41a2012ee8e7fadcc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.LoadingScreenControllerNce
-  loadingRoot: {fileID: 867079292}
-  gameplayRoot: {fileID: 505988329}
 --- !u!1 &870304000
 GameObject:
   m_ObjectHideFlags: 0
@@ -9105,6 +9104,7 @@ GameObject:
   - component: {fileID: 1418200270}
   - component: {fileID: 1418200269}
   - component: {fileID: 1418200268}
+  - component: {fileID: 1418200273}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -9154,9 +9154,14 @@ MonoBehaviour:
   teamSelectionPanel: {fileID: 376194405}
   loadingRoot: {fileID: 867079292}
   gameplayRoot: {fileID: 505988329}
+  playButton: {fileID: 1631842815}
+  statusText: {fileID: 0}
   teamAButton: {fileID: 1885954939}
   teamBButton: {fileID: 1247128883}
   teamCButton: {fileID: 772411584}
+  autoStartLocalPlayInEditor: 0
+  autoPickTeamAInEditor: 1
+  autoPickDelaySeconds: 2
 --- !u!114 &1418200271
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9186,6 +9191,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1418200273
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5980ced20333e7d4eb9d128a0d417c34, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.EcsWorldVisualizer
+  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
+  shipVisualPrefab: {fileID: 0}
+  shipVisualScale: 0.155
+  defaultMuzzleOffset: 2
+  homePlanetVisualPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
+  neutralPlanetVisualPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
+  asteroidVisualPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
+  gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
+  planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

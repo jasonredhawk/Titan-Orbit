@@ -19,7 +19,12 @@ namespace TitanOrbit.Game
                 if (healthText != null)
                     healthText.text = $"HP {ship.Health:0}/{ship.MaxHealth:0}";
                 if (gemsText != null)
-                    gemsText.text = $"Gems {ship.CurrentGems:0}/{ship.GemCapacity:0}";
+                {
+                    string gems = $"Gems {ship.CurrentGems:0}/{ship.GemCapacity:0}";
+                    if (EcsGameBridge.TryGetLocalShipOrbitState(out var orbit) && orbit.UsingOrbitMotor)
+                        gems += "  •  Orbiting";
+                    gemsText.text = gems;
+                }
             }
 
             var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.ServerWorld;

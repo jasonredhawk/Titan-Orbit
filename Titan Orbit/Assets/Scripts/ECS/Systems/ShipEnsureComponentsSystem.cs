@@ -57,6 +57,11 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipOrbitState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipOrbitState());
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }

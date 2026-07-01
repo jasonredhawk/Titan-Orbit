@@ -32,12 +32,16 @@ namespace TitanOrbit.ECS
                 mapH = math.max(100f, map.MapHeight);
             }
 
-            foreach (var (input, motor, shipState, kinematics, transform) in SystemAPI
+            foreach (var (input, motor, shipState, kinematics, transform, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipMotorConfig>, RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<LocalTransform>>()
-                         .WithAll<ShipTag>())
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
+
+                if (!EntityManager.HasComponent<ShipOrbitState>(entity))
+                    EntityManager.AddComponentData(entity, new ShipOrbitState());
 
                 var cfg = motor.ValueRO;
                 var inp = input.ValueRO;
@@ -53,6 +57,9 @@ namespace TitanOrbit.ECS
 
                 Vector2 aimWorldXz = AimWorldPoint(pos, transform.ValueRO.Rotation, inp.AimPlanarDir);
 
+                bool inOrbitRing = TryFindOrbitPlanet(pos, mapW, mapH, out var orbitPlanet, out var orbitPlanetState, out var orbitPlanetTransform);
+                bool useOrbit = inOrbitRing && !inp.Thrust;
+
                 var tickParams = new ShipMotorTickParams
                 {
                     FixedDeltaTime = dt,
@@ -62,8 +69,24 @@ namespace TitanOrbit.ECS
                     BrakeDeceleration = cfg.BrakeDeceleration,
                     RecoilDecayPerSecond = cfg.RecoilDecayPerSecond > 0f ? cfg.RecoilDecayPerSecond : 6f,
                     FixedY = FixedY,
-                    UseOrbit = false,
+                    UseOrbit = useOrbit,
                 };
+
+                if (useOrbit)
+                {
+                    PlanetOrbitMath.BuildOrbitMotorParams(
+                        pos,
+                        orbitPlanetTransform.Position,
+                        orbitPlanetTransform.Scale,
+                        orbitPlanetState.PlanetLevel,
+                        cfg.Mass,
+                        mapW,
+                        mapH,
+                        out float3 desiredVel,
+                        out float alignRate);
+                    tickParams.OrbitDesiredVelocity = new Vector3(desiredVel.x, 0f, desiredVel.z);
+                    tickParams.OrbitAlignRate = alignRate;
+                }
 
                 ShipMotorSimulator.Step(
                     ref motorState,
@@ -77,7 +100,53 @@ namespace TitanOrbit.ECS
                 transform.ValueRW.Position = motorState.Position;
                 transform.ValueRW.Rotation = motorState.Rotation;
                 kinematics.ValueRW.Velocity = motorState.Velocity;
+
+                EntityManager.SetComponentData(entity, new ShipOrbitState
+                {
+                    OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
+                    InOrbitRing = inOrbitRing,
+                    UsingOrbitMotor = useOrbit,
+                });
             }
+        }
+
+        bool TryFindOrbitPlanet(
+            float3 shipPos,
+            float mapW,
+            float mapH,
+            out Entity planetEntity,
+            out PlanetState planetState,
+            out LocalTransform planetTransform)
+        {
+            planetEntity = Entity.Null;
+            planetState = default;
+            planetTransform = default;
+
+            float bestDist = float.MaxValue;
+            bool found = false;
+
+            foreach (var (state, planetXform, entity) in SystemAPI
+                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                         .WithAll<PlanetTag>()
+                         .WithEntityAccess())
+            {
+                float planetSize = math.max(0.5f, planetXform.ValueRO.Scale);
+                PlanetOrbitMath.GetRingRadiiWorld(planetSize, state.ValueRO.PlanetLevel, out float inner, out float outer, out _);
+                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.ValueRO.Position, mapW, mapH);
+                if (!PlanetOrbitMath.IsInOrbitRing(dist, inner, outer))
+                    continue;
+
+                if (dist >= bestDist)
+                    continue;
+
+                bestDist = dist;
+                planetEntity = entity;
+                planetState = state.ValueRO;
+                planetTransform = planetXform.ValueRO;
+                found = true;
+            }
+
+            return found;
         }
 
         static Vector2 AimWorldPoint(float3 shipPos, quaternion rot, float2 aimPlanarDir)

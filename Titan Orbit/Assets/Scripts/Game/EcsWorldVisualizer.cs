@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
@@ -15,11 +17,57 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(-100)]
     public class EcsWorldVisualizer : MonoBehaviour
     {
+        const string DefaultShipFamilyAssetPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
+        const string DefaultHomePlanetPath = "Assets/Prefabs/HomePlanet.prefab";
+        const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
+        const string DefaultAsteroidPath = "Assets/Prefabs/Asteroid.prefab";
+        const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
+
+        [Header("Ships")]
+        [SerializeField] ShipFamilyDefinition shipFamily;
         [SerializeField] GameObject shipVisualPrefab;
+        [SerializeField] float shipVisualScale = 0.155f;
         [SerializeField] float defaultMuzzleOffset = 2f;
+
+        [Header("Planets & Bodies")]
+        [SerializeField] GameObject homePlanetVisualPrefab;
+        [SerializeField] GameObject neutralPlanetVisualPrefab;
+        [SerializeField] GameObject asteroidVisualPrefab;
+        [SerializeField] GameObject gemVisualPrefab;
+        [SerializeField] PlanetMaterialPool planetMaterialPool;
 
         readonly Dictionary<Entity, GameObject> _proxies = new Dictionary<Entity, GameObject>();
         readonly Dictionary<Entity, int> _proxyNetworkIds = new Dictionary<Entity, int>();
+        readonly Dictionary<Entity, int> _proxyShipLevels = new Dictionary<Entity, int>();
+        readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
+        readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
+
+        struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
+        {
+            public bool IsHome;
+            public TeamId Team;
+            public int PlanetLevel;
+            public int PlanetId;
+
+            public bool Equals(PlanetVisualKey other) =>
+                IsHome == other.IsHome && Team == other.Team && PlanetLevel == other.PlanetLevel && PlanetId == other.PlanetId;
+        }
+
+        void Awake()
+        {
+            if (shipFamily == null)
+                shipFamily = LoadDefaultShipFamily();
+            if (planetMaterialPool == null)
+                planetMaterialPool = WorldBodyVisualApplier.LoadDefaultMaterialPool();
+            if (homePlanetVisualPrefab == null)
+                homePlanetVisualPrefab = LoadDefaultPrefab(DefaultHomePlanetPath);
+            if (neutralPlanetVisualPrefab == null)
+                neutralPlanetVisualPrefab = LoadDefaultPrefab(DefaultNeutralPlanetPath);
+            if (asteroidVisualPrefab == null)
+                asteroidVisualPrefab = LoadDefaultPrefab(DefaultAsteroidPath);
+            if (gemVisualPrefab == null)
+                gemVisualPrefab = GemVisualApplier.LoadDefaultGemPrefab();
+        }
 
         void Update()
         {
@@ -40,9 +88,9 @@ namespace TitanOrbit.Game
             var alive = new HashSet<Entity>();
 
             SyncShipProxyTransforms(em, alive);
-            DrawTagged<PlanetTag>(em, alive, PrimitiveType.Sphere, new Color(0.35f, 0.55f, 1f), 1f);
-            DrawTagged<AsteroidTag>(em, alive, PrimitiveType.Sphere, new Color(0.55f, 0.45f, 0.35f), 0.6f);
-            DrawTagged<GemTag>(em, alive, PrimitiveType.Sphere, Color.yellow, 0.25f);
+            DrawPlanets(em, alive);
+            DrawAsteroids(em, alive);
+            DrawGems(em, alive);
             DrawBullets(em, alive);
 
             var remove = new List<Entity>();
@@ -77,17 +125,26 @@ namespace TitanOrbit.Game
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
-                if (_proxies.TryGetValue(entity, out var existing) && existing != null)
-                    continue;
-
                 var lt = transforms[i];
-                float scale = Mathf.Max(0.25f, lt.Scale);
+                float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
-                Color color = Color.cyan;
+                TeamId team = TeamId.None;
+                int shipLevel = 1;
                 if (em.HasComponent<ShipState>(entity))
                 {
                     var ship = em.GetComponentData<ShipState>(entity);
-                    color = TeamColor(ship.Team);
+                    team = ship.Team;
+                    shipLevel = Mathf.Max(1, ship.ShipLevel);
+                }
+
+                if (_proxies.TryGetValue(entity, out var existing) && existing != null)
+                {
+                    _proxyShipLevels.TryGetValue(entity, out int lastLevel);
+                    _proxyTeams.TryGetValue(entity, out TeamId lastTeam);
+                    if (lastLevel == shipLevel && lastTeam == team)
+                        continue;
+
+                    DestroyProxy(entity);
                 }
 
                 float muzzleOffset = defaultMuzzleOffset;
@@ -98,7 +155,7 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<GhostOwner>(entity))
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
-                var go = CreateShipProxy(entity, networkId, color, scale, muzzleOffset);
+                var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
                 go.transform.position = lt.Position;
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
@@ -121,10 +178,21 @@ namespace TitanOrbit.Game
                     continue;
 
                 var lt = transforms[i];
-                float scale = Mathf.Max(0.25f, lt.Scale);
+                float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
                 go.transform.position = lt.Position;
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
+
+                if (em.HasComponent<ShipState>(entity))
+                {
+                    var ship = em.GetComponentData<ShipState>(entity);
+                    _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
+                    _proxyTeams[entity] = ship.Team;
+                    if (ship.IsDead)
+                        go.SetActive(false);
+                    else if (!go.activeSelf)
+                        go.SetActive(true);
+                }
 
                 int networkId = 0;
                 if (em.HasComponent<GhostOwner>(entity))
@@ -143,14 +211,12 @@ namespace TitanOrbit.Game
             }
         }
 
-        GameObject CreateShipProxy(Entity entity, int networkId, Color color, float scale, float muzzleOffset)
+        GameObject CreateShipProxy(Entity entity, int networkId, TeamId team, int shipLevel, float scale, float muzzleOffset)
         {
             GameObject go;
-            if (shipVisualPrefab != null)
+            if (ShipVisualApplier.TryCreateShipVisual(shipFamily, shipVisualPrefab, team, shipLevel, out go))
             {
-                go = Instantiate(shipVisualPrefab);
                 go.name = "ShipTagProxy";
-                StripPhysicsAndNetworking(go);
             }
             else
             {
@@ -162,7 +228,7 @@ namespace TitanOrbit.Game
                 if (renderer != null)
                 {
                     renderer.material = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-                    renderer.material.color = color;
+                    renderer.material.color = team.ToColor();
                 }
             }
 
@@ -174,24 +240,28 @@ namespace TitanOrbit.Game
                 _proxyNetworkIds[entity] = networkId;
             }
 
+            _proxyShipLevels[entity] = shipLevel;
+            _proxyTeams[entity] = team;
             _proxies[entity] = go;
             return go;
         }
 
-        static void StripPhysicsAndNetworking(GameObject root)
+        static ShipFamilyDefinition LoadDefaultShipFamily()
         {
-            foreach (var col in root.GetComponentsInChildren<Collider>(true))
-                Destroy(col);
-            foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
-                Destroy(rb);
-            foreach (var net in root.GetComponentsInChildren<Component>(true))
-            {
-                if (net == null)
-                    continue;
-                var typeName = net.GetType().Name;
-                if (typeName.Contains("Network") || typeName.Contains("Netcode") || typeName.Contains("ClientNetwork"))
-                    Destroy(net);
-            }
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<ShipFamilyDefinition>(DefaultShipFamilyAssetPath);
+#else
+            return null;
+#endif
+        }
+
+        static GameObject LoadDefaultPrefab(string assetPath)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+#else
+            return null;
+#endif
         }
 
         void DestroyProxy(Entity entity)
@@ -204,6 +274,9 @@ namespace TitanOrbit.Game
                     Destroy(go);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
+                _proxyShipLevels.Remove(entity);
+                _proxyTeams.Remove(entity);
+                _proxyPlanetVisuals.Remove(entity);
             }
         }
 
@@ -246,6 +319,175 @@ namespace TitanOrbit.Game
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
+        }
+
+        void DrawPlanets(EntityManager em, HashSet<Entity> alive)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<PlanetTag>(),
+                ComponentType.ReadOnly<PlanetState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var states = query.ToComponentDataArray<PlanetState>(Unity.Collections.Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                alive.Add(entity);
+                var state = states[i];
+                var lt = transforms[i];
+                float scale = math.max(0.25f, lt.Scale);
+
+                var key = new PlanetVisualKey
+                {
+                    IsHome = state.IsHomePlanet,
+                    Team = state.Ownership,
+                    PlanetLevel = state.PlanetLevel,
+                    PlanetId = state.PlanetId,
+                };
+
+                if (_proxies.TryGetValue(entity, out var go) && go != null)
+                {
+                    _proxyPlanetVisuals.TryGetValue(entity, out var existingKey);
+                    if (existingKey.Equals(key))
+                    {
+                        go.transform.position = lt.Position;
+                        go.transform.rotation = lt.Rotation;
+                        go.transform.localScale = Vector3.one * scale;
+                        continue;
+                    }
+
+                    DestroyProxy(entity);
+                }
+
+                if (!WorldBodyVisualApplier.TryCreatePlanetVisual(
+                        homePlanetVisualPrefab,
+                        neutralPlanetVisualPrefab,
+                        planetMaterialPool,
+                        state.IsHomePlanet,
+                        state.Ownership,
+                        state.PlanetLevel,
+                        state.PlanetId,
+                        scale,
+                        out go))
+                {
+                    go = CreatePrimitivePlanetProxy(state.Ownership);
+                    _proxies[entity] = go;
+                }
+                else
+                {
+                    _proxies[entity] = go;
+                }
+
+                _proxyPlanetVisuals[entity] = key;
+                go.transform.position = lt.Position;
+                go.transform.rotation = lt.Rotation;
+                go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        void DrawAsteroids(EntityManager em, HashSet<Entity> alive)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<AsteroidTag>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                alive.Add(entity);
+                var lt = transforms[i];
+                float scale = math.max(0.25f, lt.Scale);
+
+                if (!_proxies.TryGetValue(entity, out var go) || go == null)
+                {
+                    int seed = entity.Index;
+                    if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
+                            asteroidVisualPrefab,
+                            planetMaterialPool,
+                            seed,
+                            scale,
+                            out go))
+                    {
+                        go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                        go.name = "AsteroidTagProxy";
+                        var col = go.GetComponent<Collider>();
+                        if (col != null) Destroy(col);
+                        var renderer = go.GetComponent<Renderer>();
+                        if (renderer != null)
+                        {
+                            renderer.material = WorldBodyVisualApplier.CreateLitMaterial(new Color(0.55f, 0.45f, 0.35f));
+                        }
+                    }
+
+                    _proxies[entity] = go;
+                }
+
+                go.transform.position = lt.Position;
+                go.transform.rotation = lt.Rotation;
+                go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        void DrawGems(EntityManager em, HashSet<Entity> alive)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<GemTag>(),
+                ComponentType.ReadOnly<GemState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var states = query.ToComponentDataArray<GemState>(Unity.Collections.Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                alive.Add(entity);
+                var state = states[i];
+                var lt = transforms[i];
+                float scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
+
+                if (!_proxies.TryGetValue(entity, out var go) || go == null)
+                {
+                    if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                    {
+                        go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                        go.name = "GemTagProxy";
+                        var col = go.GetComponent<Collider>();
+                        if (col != null) Destroy(col);
+                        var renderer = go.GetComponent<Renderer>();
+                        if (renderer != null)
+                            renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
+                    }
+
+                    _proxies[entity] = go;
+                }
+
+                go.transform.position = lt.Position;
+                go.transform.rotation = lt.Rotation;
+                go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        static GameObject CreatePrimitivePlanetProxy(TeamId ownership)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "PlanetTagProxy";
+            var col = go.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                Color color = ownership == TeamId.None
+                    ? new Color(0.35f, 0.55f, 1f)
+                    : ownership.ToColor();
+                renderer.material = WorldBodyVisualApplier.CreateLitMaterial(color);
+            }
+
+            return go;
         }
 
         void DrawTagged<T>(EntityManager em, HashSet<Entity> alive, PrimitiveType primitive, Color color, float scaleMul)
@@ -305,6 +547,9 @@ namespace TitanOrbit.Game
             }
             _proxies.Clear();
             _proxyNetworkIds.Clear();
+            _proxyShipLevels.Clear();
+            _proxyTeams.Clear();
+            _proxyPlanetVisuals.Clear();
         }
     }
 }

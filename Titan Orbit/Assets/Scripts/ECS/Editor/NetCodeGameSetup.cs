@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.IO;
+using TitanOrbit.Data;
 using TitanOrbit.Game;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
@@ -23,6 +24,12 @@ namespace TitanOrbit.ECS.Editor
         const string SubScenePath = "Assets/Scenes/GameplaySubScene.unity";
         const string RegistryPrefabPath = "Assets/Prefabs/ECS/GamePrefabsRegistry.prefab";
         const string InputActionsPath = "Assets/InputSystem_Actions.inputactions";
+        const string DefaultShipFamilyPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
+        const string DefaultHomePlanetPath = "Assets/Prefabs/HomePlanet.prefab";
+        const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
+        const string DefaultAsteroidPath = "Assets/Prefabs/Asteroid.prefab";
+        const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
+        const string DefaultPlanetMaterialPoolPath = "Assets/Data/PlanetMaterialPool.asset";
 
         [MenuItem("Titan Orbit/Setup NetCode Game (Full)")]
         public static void SetupActiveScene()
@@ -135,6 +142,8 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<EcsWorldVisualizer>() == null)
                 root.AddComponent<EcsWorldVisualizer>();
 
+            WireEcsWorldVisualizer(root);
+
             var duplicateSession = GameObject.Find("TitanOrbitSessionManager");
             if (duplicateSession != null && duplicateSession != root)
                 Object.DestroyImmediate(duplicateSession);
@@ -177,6 +186,53 @@ namespace TitanOrbit.ECS.Editor
             var go = GameObject.Find(objectName);
             if (go != null)
                 go.SetActive(false);
+        }
+
+        static void WireEcsWorldVisualizer(GameObject root)
+        {
+            var visualizer = root.GetComponent<EcsWorldVisualizer>();
+            if (visualizer == null)
+                return;
+
+            var so = new SerializedObject(visualizer);
+
+            var family = AssetDatabase.LoadAssetAtPath<ShipFamilyDefinition>(DefaultShipFamilyPath);
+            if (family != null)
+                so.FindProperty("shipFamily").objectReferenceValue = family;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Ship family not found at {DefaultShipFamilyPath}.");
+
+            var homePlanet = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultHomePlanetPath);
+            if (homePlanet != null)
+                so.FindProperty("homePlanetVisualPrefab").objectReferenceValue = homePlanet;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Home planet prefab not found at {DefaultHomePlanetPath}.");
+
+            var neutralPlanet = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultNeutralPlanetPath);
+            if (neutralPlanet != null)
+                so.FindProperty("neutralPlanetVisualPrefab").objectReferenceValue = neutralPlanet;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Planet prefab not found at {DefaultNeutralPlanetPath}.");
+
+            var asteroid = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultAsteroidPath);
+            if (asteroid != null)
+                so.FindProperty("asteroidVisualPrefab").objectReferenceValue = asteroid;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Asteroid prefab not found at {DefaultAsteroidPath}.");
+
+            var gem = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultGemPath);
+            if (gem != null)
+                so.FindProperty("gemVisualPrefab").objectReferenceValue = gem;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Gem prefab not found at {DefaultGemPath}.");
+
+            var materialPool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(DefaultPlanetMaterialPoolPath);
+            if (materialPool != null)
+                so.FindProperty("planetMaterialPool").objectReferenceValue = materialPool;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Planet material pool not found at {DefaultPlanetMaterialPoolPath}.");
+
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         static void WireCamera()

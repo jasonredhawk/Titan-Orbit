@@ -48,8 +48,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateShipPrefab()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            go.name = "StarshipGhost";
+            var go = new GameObject("StarshipGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.StarshipGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/StarshipGhost.prefab");
@@ -58,8 +57,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreatePlanetPrefab()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = "PlanetGhost";
+            var go = new GameObject("PlanetGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PlanetGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PlanetGhost.prefab");
@@ -68,9 +66,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateAsteroidPrefab()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = "AsteroidGhost";
-            go.transform.localScale = Vector3.one * 0.6f;
+            var go = new GameObject("AsteroidGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.AsteroidGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/AsteroidGhost.prefab");
@@ -79,9 +75,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateGemPrefab()
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = "GemGhost";
-            go.transform.localScale = Vector3.one * 0.2f;
+            var go = new GameObject("GemGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.GemGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/GemGhost.prefab");

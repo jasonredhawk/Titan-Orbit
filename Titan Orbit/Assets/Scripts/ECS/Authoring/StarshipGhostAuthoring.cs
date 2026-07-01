@@ -56,6 +56,7 @@ namespace TitanOrbit.ECS.Authoring
                     MuzzleOffset = authoring.MuzzleOffset,
                 });
                 AddComponent(entity, new ShipWeaponState());
+                AddComponent(entity, new ShipOrbitState());
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);

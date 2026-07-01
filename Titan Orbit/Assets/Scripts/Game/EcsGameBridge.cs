@@ -84,6 +84,38 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetLocalShipOrbitState(out ShipOrbitState orbitState)
+        {
+            orbitState = default;
+            var world = ClientWorld;
+            if (world != null && world.IsCreated)
+            {
+                var em = world.EntityManager;
+                using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipOrbitState));
+                if (tagged.CalculateEntityCount() > 0)
+                {
+                    orbitState = tagged.GetSingleton<ShipOrbitState>();
+                    return true;
+                }
+
+                using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipOrbitState), typeof(ShipTag));
+                if (owned.CalculateEntityCount() > 0)
+                {
+                    orbitState = owned.GetSingleton<ShipOrbitState>();
+                    return true;
+                }
+            }
+
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+            {
+                int localId = GetLocalNetworkId(world);
+                if (localId > 0 && TryGetShipOrbitStateByNetworkId(ServerWorld.EntityManager, localId, out orbitState))
+                    return true;
+            }
+
+            return false;
+        }
+
         public static bool IsNetworkInGame()
         {
             if (ClientWorld != null && ClientWorld.IsCreated && HasNetworkStreamInGame(ClientWorld))
@@ -161,6 +193,23 @@ namespace TitanOrbit.Game
                 if (owners[i].NetworkId != networkId)
                     continue;
                 state = states[i];
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool TryGetShipOrbitStateByNetworkId(EntityManager em, int networkId, out ShipOrbitState orbitState)
+        {
+            orbitState = default;
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipOrbitState));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                orbitState = states[i];
                 return true;
             }
 

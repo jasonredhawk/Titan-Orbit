@@ -3,7 +3,9 @@
     "rootNamespace": "TitanOrbit",
     "references": [
         "TitanOrbit.Shared",
+        "TitanOrbit.Data",
         "TitanOrbit.ECS",
+        "TitanOrbit.Simulation",
         "TitanOrbit.Input",
         "TitanOrbit.Services",
         "TitanOrbit.NetCode",
@@ -18,7 +20,8 @@
         "Unity.Services.Lobbies",
         "Unity.Services.Relay",
         "Unity.TextMeshPro",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "SpaceGraphicsToolkit"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
