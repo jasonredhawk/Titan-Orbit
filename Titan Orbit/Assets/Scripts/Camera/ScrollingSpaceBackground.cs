@@ -22,11 +22,8 @@ namespace TitanOrbit.Camera
         private const string ScrollShaderName = "TitanOrbit/SpaceBackgroundUnlit";
 
         [Header("References")]
-        [Tooltip("Camera to follow (defaults to Main Camera or Camera on CameraController)")]
+        [Tooltip("Camera to follow (defaults to Main Camera)")]
         [SerializeField] private UnityEngine.Camera targetCamera;
-
-        [Tooltip("Optional: resolves the same camera as gameplay. Prefer assigning on WebGL / multiplayer.")]
-        [SerializeField] private CameraController cameraController;
 
         [Header("Texture")]
         [Tooltip("Space background texture - use Nebula Blue, Nebula Aqua-Pink, Nebula Red, Stars Small, or Stars Big from DinV asset. Must have Wrap Mode: Repeat.")]
@@ -53,7 +50,6 @@ namespace TitanOrbit.Camera
 
         private void Awake()
         {
-            ResolveCameraController();
             ResolveTargetCamera();
             if (targetCamera == null)
             {
@@ -66,34 +62,16 @@ namespace TitanOrbit.Camera
 
         private void OnEnable()
         {
-            ResolveCameraController();
             if (targetCamera == null)
                 ResolveTargetCamera();
             if (meshRenderer == null && targetCamera != null)
                 EnsureBackgroundQuad();
         }
 
-        private void ResolveCameraController()
-        {
-            if (cameraController != null) return;
-            if (targetCamera != null)
-                cameraController = targetCamera.GetComponent<CameraController>();
-            if (cameraController == null)
-                cameraController = FindFirstObjectByType<CameraController>();
-        }
-
         private void ResolveTargetCamera()
         {
             if (targetCamera != null) return;
-            ResolveCameraController();
-            if (cameraController != null)
-            {
-                targetCamera = cameraController.GetComponent<UnityEngine.Camera>();
-                if (targetCamera == null)
-                    targetCamera = cameraController.GetComponentInChildren<UnityEngine.Camera>();
-            }
-            if (targetCamera == null)
-                targetCamera = UnityEngine.Camera.main;
+            targetCamera = UnityEngine.Camera.main;
         }
 
         private void EnsureBackgroundQuad()
@@ -160,7 +138,6 @@ namespace TitanOrbit.Camera
 
         private void LateUpdate()
         {
-            ResolveCameraController();
             ResolveTargetCamera();
             if (targetCamera == null) return;
 

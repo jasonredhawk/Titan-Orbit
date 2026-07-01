@@ -19,7 +19,7 @@ namespace TitanOrbit.Services
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
         static bool _pendingLinkInsteadOfSignIn;
-        /// <summary>Serializes guest init so IAP, MainMenu, and <see cref="Networking.NetworkGameManager"/> do not trip "already signing in".</summary>
+        /// <summary>Serializes guest init so IAP, MainMenu, and session bootstrap do not trip "already signing in".</summary>
         static readonly SemaphoreSlim EnsureGuestSessionGate = new SemaphoreSlim(1, 1);
 
         /// <summary>Invoked after sign-in, sign-out, or failed Unity Player Account completion.</summary>

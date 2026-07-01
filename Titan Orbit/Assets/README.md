@@ -1,7 +1,16 @@
 # Titan Orbit - Project Structure
 
 ## Overview
-This is a multiplayer top-down space arcade game built with Unity 6 and Unity Netcode for GameObjects. The game features 3 teams, up to 60 players total, with ship upgrades, planet capture mechanics, asteroid mining, and procedural map generation.
+This is a multiplayer top-down space arcade game built with Unity 6 and **Netcode for Entities** (ECS/DOTS). The game features 3 teams, up to 60 players total, with ship upgrades, planet capture mechanics, asteroid mining, and procedural map generation.
+
+## Netcode for Entities layout
+
+- `Assets/Scripts/NetCode/` — bootstrap, Relay driver, session manager (UGS Lobby/Relay)
+- `Assets/Scripts/ECS/` — ghost components, systems, bakers
+- `Assets/Scripts/Game/` — MonoBehaviour UI bridges, input, camera
+- `Assets/Scripts/Shared/` — shared enums/utilities
+
+Run **Titan Orbit → Create Ghost Prefabs** and **Titan Orbit → Setup NetCode Scene** in the Unity Editor after opening the project.
 
 ## Project Structure
 

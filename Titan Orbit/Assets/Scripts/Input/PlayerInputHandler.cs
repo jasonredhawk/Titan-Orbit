@@ -73,6 +73,27 @@ namespace TitanOrbit.Input
         public bool SpaceBrakesEnabled => spaceBrakesEnabled;
         public bool IsMobile => Application.isMobilePlatform;
 
+        /// <summary>WASD / Move action planar direction (x = world X, y = world Z).</summary>
+        public Vector2 GetMoveInput()
+        {
+            Vector2 move = Vector2.zero;
+            if (moveAction != null)
+                move = moveAction.ReadValue<Vector2>();
+
+            var k = Keyboard.current;
+            if (k != null)
+            {
+                if (k.wKey.isPressed || k.upArrowKey.isPressed) move.y += 1f;
+                if (k.sKey.isPressed || k.downArrowKey.isPressed) move.y -= 1f;
+                if (k.aKey.isPressed || k.leftArrowKey.isPressed) move.x -= 1f;
+                if (k.dKey.isPressed || k.rightArrowKey.isPressed) move.x += 1f;
+            }
+
+            if (move.sqrMagnitude > 1f)
+                move.Normalize();
+            return move;
+        }
+
         private void Awake()
         {
             if (inputActions != null)

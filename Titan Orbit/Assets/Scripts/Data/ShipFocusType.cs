@@ -1,12 +1,10 @@
 namespace TitanOrbit.Data
 {
-    /// <summary>
-    /// Defines the focus type of a starship (what it's optimized for)
-    /// </summary>
+    /// <summary>Ship role used by upgrade tree and ship data assets.</summary>
     public enum ShipFocusType
     {
-        Fighter,    // Combat-focused
-        Miner,      // Mining-focused
-        Transport   // Transport-focused
+        Fighter,
+        Miner,
+        Transport,
     }
 }
