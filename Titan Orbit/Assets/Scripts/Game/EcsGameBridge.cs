@@ -35,6 +35,19 @@ namespace TitanOrbit.Game
                     position = lt.Position;
                     return true;
                 }
+
+                if (TryGetShipFromCommandTarget(em, out lt))
+                {
+                    position = lt.Position;
+                    return true;
+                }
+
+                int localId = GetLocalNetworkId(client);
+                if (localId > 0 && TryGetShipTransformByNetworkId(em, localId, out lt))
+                {
+                    position = lt.Position;
+                    return true;
+                }
             }
 
             // Local Client+Server: the owned ship exists on the server immediately after team pick.
@@ -75,12 +88,16 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
-            {
-                int localId = GetLocalNetworkId(world);
-                if (localId > 0 && TryGetShipStateByNetworkId(ServerWorld.EntityManager, localId, out state))
-                    return true;
-            }
+            if (TryGetShipStateFromCommandTarget(em, out state))
+                return true;
+
+            int localId = GetLocalNetworkId(world);
+            if (localId > 0 && TryGetShipStateByNetworkId(em, localId, out state))
+                return true;
+
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
+                localId > 0 && TryGetShipStateByNetworkId(ServerWorld.EntityManager, localId, out state))
+                return true;
 
             return false;
         }
@@ -152,6 +169,51 @@ namespace TitanOrbit.Game
             if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryGetMapLoadingComplete(ClientWorld, out var clientComplete))
                 return clientComplete;
+
+            // MPPM / remote clients: MapStateSingleton is server-only and not ghosted.
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                HasReplicatedMapWorldContent(ClientWorld))
+                return true;
+
+            return false;
+        }
+
+        static bool TryGetShipFromCommandTarget(EntityManager em, out LocalTransform transform)
+        {
+            transform = default;
+            using var connections = em.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
+            using var targets = connections.ToComponentDataArray<CommandTarget>(Allocator.Temp);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var target = targets[i].targetEntity;
+                if (target == Entity.Null || !em.Exists(target))
+                    continue;
+                if (!em.HasComponent<ShipTag>(target) || !em.HasComponent<LocalTransform>(target))
+                    continue;
+                transform = em.GetComponentData<LocalTransform>(target);
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool TryGetShipStateFromCommandTarget(EntityManager em, out ShipState state)
+        {
+            state = default;
+            using var connections = em.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
+            using var targets = connections.ToComponentDataArray<CommandTarget>(Allocator.Temp);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var target = targets[i].targetEntity;
+                if (target == Entity.Null || !em.Exists(target))
+                    continue;
+                if (!em.HasComponent<ShipTag>(target) || !em.HasComponent<ShipState>(target))
+                    continue;
+                state = em.GetComponentData<ShipState>(target);
+                return true;
+            }
 
             return false;
         }
@@ -243,6 +305,18 @@ namespace TitanOrbit.Game
                 return false;
             loadingComplete = map.LoadingComplete;
             return true;
+        }
+
+        static bool HasReplicatedMapWorldContent(World client)
+        {
+            var em = client.EntityManager;
+            using var planets = em.CreateEntityQuery(typeof(PlanetState));
+            if (planets.CalculateEntityCount() >= 3)
+                return true;
+
+            // Host picked a team — at least one ship ghost means the match is live.
+            using var ships = em.CreateEntityQuery(typeof(ShipTag));
+            return ships.CalculateEntityCount() > 0;
         }
 
         public static TeamStateSingleton GetTeamState()

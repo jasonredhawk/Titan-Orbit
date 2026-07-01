@@ -8,11 +8,10 @@ namespace TitanOrbit.NetCode
     public static class TitanOrbitPlayModeUtility
     {
         const string ServerBuildSubtargetWarning =
-            "[TitanOrbitPlayMode] MPPM Player 2 is using a Dedicated SERVER build profile (buildSubTarget=Server). " +
-            "NetCode ghost schemas will not match the main Editor host — ships fail to replicate.\n\n" +
-            "Fix: Stop all players → Titan Orbit > Create MPPM Client Build Profile → " +
-            "Window > Play Mode > Scenarios → Player 2 → Build Profile → TitanOrbitMppmClient (Windows CLIENT, not Server). " +
-            "Then Play from the Main Editor.";
+            "[TitanOrbitPlayMode] MPPM clone is using a Dedicated SERVER build (buildSubTarget=Server). " +
+            "NetCode ghost schemas will not match the main Editor host.\n\n" +
+            "Fix: In Window > Play Mode > Scenarios, set the additional instance Multiplayer Role to Client " +
+            "(not Server). Then Play from the Main Editor only.";
 
         public static bool IsMppmAdditionalEditorInstance()
         {

@@ -172,10 +172,13 @@ namespace TitanOrbit.NetCode
                 if (HasClientInGame())
                 {
                     IsInGame = true;
-                    LastStatusMessage = "Connected.";
+                    LastStatusMessage = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
+                        ? "Connected to host — choose a team."
+                        : "Connected.";
                     Debug.Log("[TitanOrbitSessionManager] Client in-game.");
                     yield break;
                 }
+
 
                 yield return null;
             }

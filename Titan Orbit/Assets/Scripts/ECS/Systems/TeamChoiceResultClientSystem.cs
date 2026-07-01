@@ -27,7 +27,10 @@ namespace TitanOrbit.ECS
         static void LogResult(TeamChoiceResultRpc rpc)
         {
             if (rpc.Success != 0)
+            {
+                ClientTeamFlowState.ConfirmTeamChoice();
                 UnityEngine.Debug.Log($"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}).");
+            }
             else
                 UnityEngine.Debug.LogWarning($"[TeamChoiceResult] Failed: {rpc.Message}");
         }

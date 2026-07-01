@@ -31,18 +31,15 @@ namespace TitanOrbit.ECS.Editor
 
         internal static void ShowAssignProfileDialog(BuildProfile profile)
         {
-            string profileName = profile != null ? profile.name : "TitanOrbitMppmClient";
             EditorUtility.DisplayDialog(
-                "Titan Orbit — assign MPPM Player 2 build profile",
-                "Client build profile: " + profileName + "\n\n" +
-                "Required (fixes GhostReceiveSystem bit-count errors):\n\n" +
+                "Titan Orbit — MPPM two-player setup",
                 "1. Stop Play on ALL instances.\n" +
                 "2. Window > Play Mode > Scenarios.\n" +
-                "3. Select your scenario.\n" +
-                "4. Under Additional Editor Instances, select Player 2.\n" +
-                "5. Build Profile → '" + profileName + "' (Windows Standalone CLIENT).\n" +
-                "   Never use Linux Dedicated Server or Windows Dedicated Server.\n" +
-                "6. Save, then Play from the Main Editor only.\n\n" +
+                "3. Enable your scenario with one Additional Editor Instance (Player 2).\n" +
+                "4. Set Player 2 Multiplayer Role → Client.\n" +
+                "5. Press Play from the Main Editor only.\n" +
+                "6. On the Main Editor Game tab: click Play on the menu, then pick a team.\n" +
+                "7. On Player 2: click Join on any team (same team allowed for testing).\n\n" +
                 "Player 2 console should show buildSubTarget=Player, not Server.",
                 "OK");
 

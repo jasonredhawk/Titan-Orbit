@@ -13,6 +13,17 @@ namespace TitanOrbit.ECS
             int localNetworkId = GetLocalNetworkId(ref state);
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            foreach (var (cmd, entity) in SystemAPI.Query<RefRO<CommandTarget>>().WithAll<NetworkStreamInGame>().WithEntityAccess())
+            {
+                var target = cmd.ValueRO.targetEntity;
+                if (target == Entity.Null || !state.EntityManager.Exists(target))
+                    continue;
+                if (!state.EntityManager.HasComponent<ShipTag>(target))
+                    continue;
+                if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(target))
+                    ecb.AddComponent<LocalPlayerShipTag>(target);
+            }
+
             foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>().WithAll<ShipTag>().WithEntityAccess())
             {
                 bool isLocal = localNetworkId > 0 && owner.ValueRO.NetworkId == localNetworkId;

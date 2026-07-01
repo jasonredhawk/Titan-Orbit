@@ -43,7 +43,8 @@ namespace TitanOrbit.ECS.Editor
         {
             if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
                 go.AddComponent<LinkedEntityGroupAuthoring>();
-            go.AddComponent<GhostAuthoringComponent>();
+            var ghost = go.AddComponent<GhostAuthoringComponent>();
+            ghost.HasOwner = true;
         }
 
         static void CreateShipPrefab()

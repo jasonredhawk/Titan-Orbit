@@ -157,7 +157,10 @@ namespace TitanOrbit.ECS
                 AwaitingTeamSelection = false,
             });
             ecb.SetComponent(ship, LocalTransform.FromPosition(spawnPos));
-            ecb.AddComponent(ship, new GhostOwner { NetworkId = networkId });
+            if (em.HasComponent<GhostOwner>(prefabs.Ship))
+                ecb.SetComponent(ship, new GhostOwner { NetworkId = networkId });
+            else
+                ecb.AddComponent(ship, new GhostOwner { NetworkId = networkId });
 
             var commandTarget = new CommandTarget { targetEntity = ship };
             if (em.HasComponent<CommandTarget>(connection))

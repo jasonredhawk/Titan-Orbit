@@ -37,11 +37,15 @@ namespace TitanOrbit.Game
 
         bool _autoPickSent;
         bool _autoStartSent;
+        bool _loggedWaitingForMap;
+        bool _loggedTeamUiReady;
         float _connectedAt = -1f;
+        float _mppmConnectedSince = -1f;
         string _statusMessage = "Press Play to start a local match.";
 
         void Awake()
         {
+            ClientTeamFlowState.Reset();
             ResolveMissingReferences();
             if (GetComponent<EcsWorldVisualizer>() == null)
                 gameObject.AddComponent<EcsWorldVisualizer>();
@@ -66,9 +70,19 @@ namespace TitanOrbit.Game
             if (loadingRoot != null) loadingRoot.SetActive(false);
             if (gameplayRoot != null) gameplayRoot.SetActive(false);
 
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                _autoStartSent = true;
+                _statusMessage = "Connecting to host... choose a team when the lobby appears.";
+                if (playButton != null)
+                    playButton.interactable = false;
+            }
+
+            WireTeamButtons();
             RefreshUi();
 
-            if (autoStartLocalPlayInEditor && Application.isEditor)
+            if (autoStartLocalPlayInEditor && Application.isEditor &&
+                !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 StartCoroutine(WaitAndStartLocalPlay());
         }
 
@@ -185,7 +199,7 @@ namespace TitanOrbit.Game
             join.Configure(team);
 
             button.onClick.RemoveAllListeners();
-            // TeamJoinButton handles clicks via IPointerClickHandler after child raycasts are disabled.
+            button.onClick.AddListener(join.JoinTeam);
         }
 
         static void DisableChildRaycasts(Button button)
@@ -280,6 +294,15 @@ namespace TitanOrbit.Game
         void UpdateStatusFromSession()
         {
             var session = TitanOrbitSessionManager.Instance;
+
+            if (IsInGameFlow() && IsMapReadyForTeamSelection() && !EcsGameBridge.HasLocalPlayerShip())
+            {
+                _statusMessage = "Choose a team.";
+                if (playButton != null)
+                    playButton.interactable = true;
+                return;
+            }
+
             if (session != null && !string.IsNullOrEmpty(session.LastStatusMessage))
                 _statusMessage = session.LastStatusMessage;
 
@@ -301,10 +324,13 @@ namespace TitanOrbit.Game
 #if UNITY_SERVER
             return;
 #endif
-            if (!Application.isEditor || _autoPickSent)
+            // MPPM additional players choose their team manually.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return;
-            if (!autoPickTeamAInEditor && !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+
+            if (!Application.isEditor || _autoPickSent || !autoPickTeamAInEditor)
                 return;
+
             if (!IsInGameFlow() || !EcsGameBridge.IsMapLoadingComplete())
                 return;
             if (EcsGameBridge.TryGetLocalShipPosition(out _))
@@ -317,21 +343,52 @@ namespace TitanOrbit.Game
                 return;
 
             _autoPickSent = true;
-            var team = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
-                ? TitanOrbitPlayModeUtility.GetSuggestedTeamForMppmPlayer()
-                : TeamId.TeamA;
-            PickTeam(team);
+            PickTeam(TeamId.TeamA);
+        }
+
+        bool IsMapReadyForTeamSelection()
+        {
+            if (EcsGameBridge.IsMapLoadingComplete())
+                return true;
+
+            // Remote MPPM client: once connected, allow team pick even if map ghosts are slow.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() &&
+                IsInGameFlow() &&
+                _mppmConnectedSince >= 0f &&
+                Time.time - _mppmConnectedSince >= 1f)
+                return true;
+
+            return false;
         }
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();
 
         void RefreshUi()
         {
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
+                _mppmConnectedSince = Time.time;
+
             bool connected = IsInGameFlow();
-            bool mapReady = connected && EcsGameBridge.IsMapLoadingComplete();
+            bool mapReady = connected && IsMapReadyForTeamSelection();
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
+            bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
             bool showLoading = connected && !mapReady;
-            bool showTeam = connected && mapReady && !hasShip;
+            bool showTeam = connected && mapReady && !hasShip && !teamConfirmed;
+            bool showSpawnWait = connected && teamConfirmed && !hasShip;
+
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && connected && !mapReady && !_loggedWaitingForMap)
+            {
+                _loggedWaitingForMap = true;
+                Debug.Log("[NceGameFlow] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                          " connected — waiting for host. Start the match on the Main Editor (Play → pick a team).");
+            }
+
+            if (showTeam && TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && !_loggedTeamUiReady)
+            {
+                _loggedTeamUiReady = true;
+                Debug.Log("[NceGameFlow] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                          " — team selection ready. Click Join on any team.");
+            }
 
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(!connected);
@@ -341,34 +398,36 @@ namespace TitanOrbit.Game
 
             if (statusText != null)
             {
-                if (!connected)
-                    statusText.text = _statusMessage;
-                else if (showLoading)
-                    statusText.text = "Loading map...";
-                else if (showTeam)
-                    statusText.text = HasClientInGameForUi()
-                        ? "Choose a team."
-                        : "Connecting to server...";
+                if (!connected || showLoading || showTeam || showSpawnWait)
+                    statusText.text = !connected
+                        ? _statusMessage
+                        : showLoading
+                            ? "Loading map... (start the match on the Main Editor if this persists)"
+                            : showSpawnWait
+                                ? "Spawning your ship..."
+                                : "Choose a team.";
             }
 
             // Lobby backdrop covers loading + team pick (loadingRoot is an empty legacy object).
             if (lobbyPanel != null)
-                lobbyPanel.SetActive(showLoading || showTeam);
+                lobbyPanel.SetActive(showLoading || showTeam || showSpawnWait);
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(showTeam);
+
+            SetTeamButtonsInteractable(showTeam);
 
             if (loadingRoot != null)
                 loadingRoot.SetActive(false);
 
             if (gameplayRoot != null)
-                gameplayRoot.SetActive(connected && mapReady && hasShip);
+                gameplayRoot.SetActive(connected && hasShip);
         }
 
-        static bool HasClientInGameForUi()
+        void SetTeamButtonsInteractable(bool interactable)
         {
-            var world = ClientServerBootstrap.ClientWorld;
-            if (world == null || !world.IsCreated) return false;
-            return world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount() > 0;
+            if (teamAButton != null) teamAButton.interactable = interactable;
+            if (teamBButton != null) teamBButton.interactable = interactable;
+            if (teamCButton != null) teamCButton.interactable = interactable;
         }
     }
 }

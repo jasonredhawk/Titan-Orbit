@@ -60,7 +60,8 @@ namespace TitanOrbit.ECS.Editor
                 "• Auto-connect → 127.0.0.1:7777\n" +
                 "• Num Thin Clients → 0\n\n" +
                 "Use the main Editor Game tab and press Play on the main menu.\n\n" +
-                "For a second human player, run Titan Orbit > Configure Multiplayer For MPPM (2 Players).",
+                "For a second human player: Titan Orbit > Configure Multiplayer For MPPM (2 Players), " +
+                "then set Player 2 Role → Client in Window > Play Mode > Scenarios.",
                 "OK");
 
             Debug.Log("[NetCodeGameSetup] Local multiplayer prefs applied. Open Window > Multiplayer > PlayMode Tools to verify.");

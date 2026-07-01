@@ -1,14 +1,13 @@
 using TitanOrbit.Core;
 using TitanOrbit.NetCode;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
     /// <summary>Handles team join clicks on the JoinButton itself (not label children).</summary>
     [RequireComponent(typeof(Button))]
-    public class TeamJoinButton : MonoBehaviour, IPointerClickHandler
+    public class TeamJoinButton : MonoBehaviour
     {
         [SerializeField] TeamId team;
 
@@ -30,7 +29,7 @@ namespace TitanOrbit.Game
             DisableChildRaycasts();
         }
 
-        public void OnPointerClick(PointerEventData eventData)
+        public void JoinTeam()
         {
             if (_button != null && !_button.interactable)
                 return;
@@ -41,6 +40,9 @@ namespace TitanOrbit.Game
                 Debug.LogError("[TeamJoinButton] Session manager missing.");
                 return;
             }
+
+            if (_button != null)
+                _button.interactable = false;
 
             TitanOrbitSessionManager.Instance.RequestTeam(team);
         }
