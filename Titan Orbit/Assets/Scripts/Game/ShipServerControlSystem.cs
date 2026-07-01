@@ -83,7 +83,6 @@ namespace TitanOrbit.Game
         static ShipInput BuildShipInput(PlayerInputHandler inputHandler)
         {
             float2 aimDir = float2.zero;
-            float2 movePlanar = float2.zero;
             bool thrust = false;
             bool spaceBrakes = true;
             bool shoot = false;
@@ -108,14 +107,13 @@ namespace TitanOrbit.Game
                 }
 
                 Vector2 move = inputHandler.GetMoveInput();
-                movePlanar = new float2(move.x, move.y);
-                thrust = inputHandler.MoveForwardPressed || math.lengthsq(movePlanar) > 0.01f;
+                thrust = inputHandler.MoveForwardPressed;
                 spaceBrakes = inputHandler.SpaceBrakesEnabled;
                 shoot = inputHandler.ShootPressed;
             }
             else
             {
-                ReadFallbackInput(ref movePlanar, ref thrust, ref spaceBrakes, ref shoot);
+                ReadFallbackInput(ref thrust, ref spaceBrakes, ref shoot);
             }
 
             var fire = new InputEvent();
@@ -125,22 +123,18 @@ namespace TitanOrbit.Game
             return new ShipInput
             {
                 AimPlanarDir = aimDir,
-                MovePlanarDir = movePlanar,
+                MovePlanarDir = float2.zero,
                 Thrust = thrust,
                 Fire = fire,
                 SpaceBrakes = spaceBrakes,
             };
         }
 
-        static void ReadFallbackInput(ref float2 movePlanar, ref bool thrust, ref bool spaceBrakes, ref bool shoot)
+        static void ReadFallbackInput(ref bool thrust, ref bool spaceBrakes, ref bool shoot)
         {
             var keyboard = Keyboard.current;
             if (keyboard != null)
             {
-                if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) movePlanar.y += 1f;
-                if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) movePlanar.y -= 1f;
-                if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) movePlanar.x -= 1f;
-                if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) movePlanar.x += 1f;
                 if (keyboard.leftCtrlKey.wasPressedThisFrame)
                     spaceBrakes = !spaceBrakes;
             }
@@ -152,11 +146,6 @@ namespace TitanOrbit.Game
                     thrust = true;
                 shoot = mouse.leftButton.isPressed;
             }
-
-            if (math.lengthsq(movePlanar) > 1f)
-                movePlanar = math.normalize(movePlanar);
-            if (math.lengthsq(movePlanar) > 0.01f)
-                thrust = true;
         }
     }
 }

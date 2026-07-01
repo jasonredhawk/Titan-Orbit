@@ -1,6 +1,8 @@
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
+using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -19,6 +21,41 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipKinematics>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipKinematics());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipWeaponConfig>()
+                         .WithEntityAccess())
+            {
+                ecb.AddComponent(entity, new ShipWeaponConfig
+                {
+                    FireRate = 2f,
+                    BulletSpeed = 20f,
+                    BulletDamage = 8f,
+                    BulletLifetime = 3f,
+                    BulletMaxDistance = 200f,
+                    MuzzleOffset = 2f,
+                });
+            }
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipWeaponState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipWeaponState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
+            {
+                if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
+                {
+                    var buffer = ecb.AddBuffer<ShipWeaponMountElement>(entity);
+                    buffer.Add(new ShipWeaponMountElement
+                    {
+                        LocalPosition = new float3(0f, 0f, 2f),
+                        LocalRotation = quaternion.identity,
+                        DirectionAngleDeg = 0f,
+                        CannonIndex = 0,
+                    });
+                }
+            }
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();

@@ -25,6 +25,23 @@ namespace TitanOrbit.ECS
         public float RotationSpeed;
         public float BrakeDeceleration;
         public float Mass;
+        public float RecoilDecayPerSecond;
+    }
+
+    public struct ShipWeaponConfig : IComponentData
+    {
+        public float FireRate;
+        public float BulletSpeed;
+        public float BulletDamage;
+        public float BulletLifetime;
+        public float BulletMaxDistance;
+        public float MuzzleOffset;
+    }
+
+    public struct ShipWeaponState : IComponentData
+    {
+        public float FireCooldown;
+        public int NextMountIndex;
     }
 
     public struct ShipKinematics : IComponentData

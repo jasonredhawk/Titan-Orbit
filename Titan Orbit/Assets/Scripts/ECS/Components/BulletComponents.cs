@@ -36,5 +36,6 @@ namespace TitanOrbit.ECS
         public float3 Velocity;
         public float RemainingLifetime;
         public float Scale;
+        public byte OwnerTeam;
     }
 }

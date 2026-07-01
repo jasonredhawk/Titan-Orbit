@@ -44,9 +44,7 @@ namespace TitanOrbit.Game
                 }
             }
 
-            Vector2 move = _input.GetMoveInput();
-            var movePlanar = new float2(move.x, move.y);
-            bool thrust = _input.MoveForwardPressed || math.lengthsq(movePlanar) > 0.01f;
+            bool thrust = _input.MoveForwardPressed;
 
             var fire = new InputEvent();
             if (_input.ShootPressed)
@@ -55,7 +53,7 @@ namespace TitanOrbit.Game
             return new ShipInput
             {
                 AimPlanarDir = aimDir,
-                MovePlanarDir = movePlanar,
+                MovePlanarDir = float2.zero,
                 Thrust = thrust,
                 Fire = fire,
                 SpaceBrakes = _input.SpaceBrakesEnabled,

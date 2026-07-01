@@ -87,10 +87,12 @@ namespace TitanOrbit.ECS
 
             int teamCount = 3;
             float radius = math.min(mapW, mapH) * 0.35f;
+            var homePositions = new NativeArray<float3>(teamCount, Allocator.Temp);
             for (int i = 0; i < teamCount; i++)
             {
                 float angle = i * (math.PI * 2f / teamCount);
                 float3 pos = new float3(math.cos(angle) * radius, 0f, math.sin(angle) * radius);
+                homePositions[i] = pos;
                 layoutEntries.Add(new MapLayoutEntryElement
                 {
                     EntityKind = 1,
@@ -109,12 +111,36 @@ namespace TitanOrbit.ECS
                 SpawnPlanet(ref state, pos, TeamId.None, false);
             }
 
-            for (int i = 0; i < 20; i++)
+            const int asteroidsPerHome = 6;
+            const float asteroidMinDistFromHome = 35f;
+            const float asteroidMaxDistFromHome = 90f;
+            for (int h = 0; h < teamCount; h++)
             {
-                float3 pos = new float3(rng.NextFloat(-mapW * 0.45f, mapW * 0.45f), 0f, rng.NextFloat(-mapH * 0.45f, mapH * 0.45f));
+                float3 homePos = homePositions[h];
+                for (int a = 0; a < asteroidsPerHome; a++)
+                {
+                    float offsetAngle = rng.NextFloat(0f, math.PI * 2f);
+                    float offsetDist = rng.NextFloat(asteroidMinDistFromHome, asteroidMaxDistFromHome);
+                    float3 pos = homePos + new float3(
+                        math.cos(offsetAngle) * offsetDist,
+                        0f,
+                        math.sin(offsetAngle) * offsetDist);
+                    layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 3, Position = pos, Scale = 3f });
+                    SpawnAsteroid(ref state, pos);
+                }
+            }
+
+            for (int i = 0; i < 6; i++)
+            {
+                float3 pos = new float3(
+                    rng.NextFloat(-mapW * 0.12f, mapW * 0.12f),
+                    0f,
+                    rng.NextFloat(-mapH * 0.12f, mapH * 0.12f));
                 layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 3, Position = pos, Scale = 3f });
                 SpawnAsteroid(ref state, pos);
             }
+
+            homePositions.Dispose();
 
             var layout = em.GetBuffer<MapLayoutEntryElement>(mapEntity);
             for (int i = 0; i < layoutEntries.Length; i++)

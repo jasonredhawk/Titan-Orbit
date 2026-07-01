@@ -4,13 +4,13 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
-using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     [BurstCompile]
-    [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(ShipMovementSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletSimulationSystem : ISystem
     {
@@ -31,9 +31,12 @@ namespace TitanOrbit.ECS
             for (int i = bullets.Length - 1; i >= 0; i--)
             {
                 var b = bullets[i];
+                float3 prevPos = b.Position;
+                float3 newPos = prevPos + b.Velocity * dt;
+                float stepDistance = math.distance(prevPos, newPos);
+
                 b.Age += dt;
-                b.Traveled += math.length(b.Velocity) * dt;
-                b.Position += b.Velocity * dt;
+                b.Traveled += stepDistance;
 
                 if (b.Age >= b.Lifetime || b.Traveled >= b.MaxDistance)
                 {
@@ -41,43 +44,131 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                bool hit = false;
+
                 foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
                              .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
                              .WithEntityAccess())
                 {
                     if (shipState.ValueRO.IsDead) continue;
-                    float dist = math.distance(b.Position, shipTransform.ValueRO.Position);
-                    if (dist < 2f && shipState.ValueRO.Team != (TeamId)b.OwnerTeam)
+                    if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam) continue;
+
+                    if (!BulletCollision.SegmentHitsSphere(prevPos, newPos, shipTransform.ValueRO.Position, 2f, out float3 hitPoint))
+                        continue;
+
+                    var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
+                    writable.ValueRW.Health -= b.Damage;
+                    if (writable.ValueRW.Health <= 0f)
+                        writable.ValueRW.IsDead = true;
+                    hit = true;
+                    break;
+                }
+
+                if (!hit)
+                {
+                    foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
+                                 .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
+                                 .WithAll<AsteroidTag>()
+                                 .WithEntityAccess())
                     {
-                        var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
-                        writable.ValueRW.Health -= b.Damage;
-                        if (writable.ValueRW.Health <= 0f)
-                            writable.ValueRW.IsDead = true;
-                        bullets.RemoveAtSwapBack(i);
-                        goto nextBullet;
+                        if (asteroidState.ValueRO.IsDestroyed)
+                            continue;
+
+                        float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
+                        if (!BulletCollision.SegmentHitsSphere(
+                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, out _))
+                            continue;
+
+                        var asteroid = asteroidState.ValueRO;
+                        asteroid.Health -= b.Damage;
+                        if (asteroid.Health <= 0f)
+                        {
+                            asteroid.Health = 0f;
+                            asteroid.IsDestroyed = true;
+                        }
+
+                        asteroidState.ValueRW = asteroid;
+                        hit = true;
+                        break;
                     }
                 }
 
+                if (hit)
+                {
+                    bullets.RemoveAtSwapBack(i);
+                    continue;
+                }
+
+                b.Position = newPos;
                 bullets[i] = b;
-                nextBullet: ;
             }
 
-            foreach (var (input, shipState, transform, ghostOwner) in SystemAPI
-                         .Query<RefRO<ShipInput>, RefRO<ShipState>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
-                         .WithAll<ShipTag>())
+            foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
+                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRO<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
             {
-                if (shipState.ValueRO.IsDead || !input.ValueRO.Fire.IsSet)
+                if (shipState.ValueRO.IsDead)
                     continue;
 
-                float3 fwd = math.mul(transform.ValueRO.Rotation, new float3(0f, 0f, 1f));
+                float cooldown = weaponState.ValueRO.FireCooldown;
+                if (cooldown > 0f)
+                {
+                    cooldown = math.max(0f, cooldown - dt);
+                    weaponState.ValueRW.FireCooldown = cooldown;
+                }
+
+                if (!input.ValueRO.Fire.IsSet)
+                    continue;
+
+                float fireRate = math.max(0.1f, weaponCfg.ValueRO.FireRate);
+                if (cooldown > 0f)
+                    continue;
+
+                if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
+                    continue;
+
+                var mounts = SystemAPI.GetBuffer<ShipWeaponMountElement>(entity);
+                if (mounts.Length == 0)
+                    continue;
+
+                int mountIdx = weaponState.ValueRO.NextMountIndex;
+                if (mountIdx < 0)
+                    mountIdx = 0;
+                mountIdx %= mounts.Length;
+                var mount = mounts[mountIdx];
+
+                float3 fireOrigin;
+                float3 fireForward;
+                if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
+                {
+                    float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
+                    localFwd.y = 0f;
+                    if (math.lengthsq(localFwd) < 0.0001f)
+                        localFwd = new float3(0f, 0f, 1f);
+                    else
+                        localFwd = math.normalize(localFwd);
+                    fireForward = math.rotate(transform.ValueRO.Rotation, localFwd);
+                    fireForward.y = 0f;
+                    if (math.lengthsq(fireForward) < 0.0001f)
+                        fireForward = new float3(0f, 0f, 1f);
+                    else
+                        fireForward = math.normalize(fireForward);
+                    fireOrigin = transform.ValueRO.Position + math.rotate(transform.ValueRO.Rotation, mount.LocalPosition);
+                    fireOrigin.y = transform.ValueRO.Position.y;
+                }
+
+                float3 shipVel = kinematics.ValueRO.Velocity;
+                shipVel.y = 0f;
+                float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
                 var spawn = new BulletElement
                 {
-                    Position = transform.ValueRO.Position + fwd * 2f,
-                    Velocity = fwd * 80f,
-                    MaxDistance = 200f,
-                    Lifetime = 3f,
-                    Damage = 10f,
+                    Position = fireOrigin,
+                    Velocity = bulletVel,
+                    MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
+                    Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
+                    Damage = math.max(1f, weaponCfg.ValueRO.BulletDamage),
                     OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                     OwnerTeam = (byte)shipState.ValueRO.Team,
                     Sequence = (uint)state.WorldUnmanaged.Time.ElapsedTime,
@@ -92,6 +183,9 @@ namespace TitanOrbit.ECS
                     OwnerTeam = spawn.OwnerTeam,
                     Sequence = spawn.Sequence,
                 });
+
+                weaponState.ValueRW.FireCooldown = 1f / fireRate;
+                weaponState.ValueRW.NextMountIndex = (mountIdx + 1) % mounts.Length;
             }
         }
     }
