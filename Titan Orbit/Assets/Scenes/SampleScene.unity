@@ -1540,63 +1540,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &344295255
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 344295258}
-  - component: {fileID: 344295257}
-  - component: {fileID: 344295256}
-  m_Layer: 0
-  m_Name: NetworkManager
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &344295256
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 344295255}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 593a2fe42fa9d37498c96f9a383b6521, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkManager
---- !u!114 &344295257
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 344295255}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6960e84d07fb87f47956e7a81d71c4e6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Transports.UTP.UnityTransport
---- !u!4 &344295258
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 344295255}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &376194405
 GameObject:
   m_ObjectHideFlags: 0
@@ -8036,63 +7979,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1198577097}
   m_CullTransparentMesh: 1
---- !u!1 &1200563827
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1200563829}
-  - component: {fileID: 1200563828}
-  - component: {fileID: 1200563830}
-  m_Layer: 0
-  m_Name: MapGenerator
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &1200563828
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1200563827}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
---- !u!4 &1200563829
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1200563827}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1200563830
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1200563827}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5637e53a7c767a84696ce886d7fd8d7f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Generation.MapGenerator
 --- !u!1 &1207700297
 GameObject:
   m_ObjectHideFlags: 0
@@ -8760,132 +8646,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1286054774}
   m_CullTransparentMesh: 1
---- !u!1 &1331055381
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1331055383}
-  - component: {fileID: 1331055382}
-  - component: {fileID: 1331055389}
-  - component: {fileID: 1331055388}
-  - component: {fileID: 1331055387}
-  - component: {fileID: 1331055386}
-  - component: {fileID: 1331055385}
-  - component: {fileID: 1331055384}
-  m_Layer: 0
-  m_Name: GameManagers
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &1331055382
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
---- !u!4 &1331055383
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1331055384
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bb26bfd4ecf8efb42b0d1fde6a351fce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.CrossPlatformManager
-  targetFrameRate: 60
-  enableVSync: 1
-  reduceQualityOnMobile: 1
-  mobileTargetFrameRate: 30
---- !u!114 &1331055385
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e1b9716a95f9b6940b6ecde89103fe19, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.MatchManager
---- !u!114 &1331055386
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 78fc2ca6d4ef19f40bad1bae256e8b36, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.TeamManager
---- !u!114 &1331055387
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3bd77682efa6bcb4a9816b21b3ab81db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
---- !u!114 &1331055388
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 16c4384c690572e4a92833e3c582b303, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Networking.PlayerDisplayNames
---- !u!114 &1331055389
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1331055381}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1886695e163827a45bd1f3fae30cf16a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Networking.NetworkGameManager
 --- !u!1 &1345699743
 GameObject:
   m_ObjectHideFlags: 0
@@ -9907,52 +9667,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
---- !u!1 &1548571601
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1548571603}
-  - component: {fileID: 1548571602}
-  m_Layer: 0
-  m_Name: TitanOrbitSessionManager
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &1548571602
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1548571601}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f264fedfce0d8e14199b2771665a927f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: TitanOrbit.NetCode::TitanOrbit.NetCode.TitanOrbitSessionManager
-  maxPlayers: 60
-  serverPort: 7777
---- !u!4 &1548571603
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1548571601}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1565820825
 GameObject:
   m_ObjectHideFlags: 0
@@ -13602,6 +13316,39 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 508c65a3615e2d847a581125ad331751, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.MinimapController
+  minimapRadius: 40
+  collapsedZoomOutMultiplier: 1.5
+  displaySize: 150
+  minimapContent: {fileID: 0}
+  sizeScaleFactor: 1.2
+  playerBlipSize: 10
+  asteroidBlipScaleFactor: 1
+  moonBlipScaleFactor: 0.85
+  moonBlipMinSize: 5
+  edgeMarkerSize: 36
+  edgeMarkerMinSize: 20
+  edgeMarkerMaxSize: 48
+  maxPlanetDistance: 150
+  expandedSizePercent: 0.85
+  expandedBackgroundAlpha: 0.9
+  fullMapRadius: 212
+  expandedMapFitPadding: 1.03
+  markerHeight: 1
+  mapSizeLabel: {fileID: 0}
+  playerBlipPrefab: {fileID: 0}
+  shipBlipPrefab: {fileID: 0}
+  planetBlipPrefab: {fileID: 0}
+  homePlanetBlipPrefab: {fileID: 0}
+  asteroidBlipPrefab: {fileID: 0}
+  teamAColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  teamBColor: {r: 0.3, g: 0.5, b: 1, a: 1}
+  teamCColor: {r: 0.2, g: 0.7, b: 0.28, a: 1}
+  teamDColor: {r: 0.95, g: 0.55, b: 0.12, a: 1}
+  teamEColor: {r: 0.65, g: 0.25, b: 0.85, a: 1}
+  planetColor: {r: 0.6, g: 0.6, b: 0.6, a: 1}
+  homePlanetColor: {r: 1, g: 0.9, b: 0.2, a: 1}
+  asteroidColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+  moonColor: {r: 0.55, g: 0.88, b: 1, a: 1}
 --- !u!114 &2084310204
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -14158,10 +13905,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 417425496}
   - {fileID: 1964602100}
-  - {fileID: 344295258}
-  - {fileID: 1331055383}
   - {fileID: 1207700299}
-  - {fileID: 1200563829}
   - {fileID: 711795282}
   - {fileID: 1443126313}
   - {fileID: 252336436}
@@ -14169,7 +13913,6 @@ SceneRoots:
   - {fileID: 259437814}
   - {fileID: 1959116599}
   - {fileID: 1935040838}
-  - {fileID: 1548571603}
   - {fileID: 566081330}
   - {fileID: 836235907}
   - {fileID: 1418200272}

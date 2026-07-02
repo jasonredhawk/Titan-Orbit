@@ -61,7 +61,7 @@ namespace TitanOrbit.ECS
             Vector2 aimWorldXz = AimWorldPoint(pos, transform.ValueRO.Rotation, inp.AimPlanarDir);
 
             bool inOrbitRing = TryFindOrbitPlanet(em, pos, mapW, mapH, out var orbitPlanetState, out var orbitPlanetTransform);
-            bool useOrbit = inOrbitRing && !inp.Thrust;
+            bool useOrbit = inOrbitRing && !inp.Thrust && !inp.Fire.IsSet;
 
             var tickParams = new ShipMotorTickParams
             {

@@ -12,7 +12,7 @@ namespace TitanOrbit.ECS
 {
     public static class PeopleTransportConstants
     {
-        public const float OrbitDwellBeforeTransferSeconds = 1f;
+        public const float OrbitDwellBeforeTransferSeconds = 2f;
         public const float TransferSpeedMultiplier = 1f;
         public const float DefaultShipHullRadius = 1f;
 
@@ -91,10 +91,15 @@ namespace TitanOrbit.ECS
 
                 ref var transfer = ref transferState.ValueRW;
                 float3 shipPos = shipTransform.ValueRO.Position;
-                int orbitPlanetId = orbit.ValueRO.OrbitPlanetId;
-                if (orbitPlanetId == 0)
-                    orbitPlanetId = TryFindRelaxedOrbitPlanetId(shipPos, planetTransformById, planetStateById, mapW, mapH);
+                if (!orbit.ValueRO.InOrbitRing || orbit.ValueRO.OrbitPlanetId == 0)
+                {
+                    transfer.OrbitDwellSeconds = 0f;
+                    transfer.LoadAccumulator = 0f;
+                    transfer.UnloadAccumulator = 0f;
+                    continue;
+                }
 
+                int orbitPlanetId = orbit.ValueRO.OrbitPlanetId;
                 if (!CanTransferPeople(
                         in orbit.ValueRO, in shipInput.ValueRO, in moonDock.ValueRO, shipPos,
                         orbitPlanetId, planetTransformById, planetStateById, mapW, mapH))
@@ -230,42 +235,6 @@ namespace TitanOrbit.ECS
                 "(or run Titan Orbit > Create Ghost Prefabs).");
         }
 
-        static int TryFindRelaxedOrbitPlanetId(
-            float3 shipPos,
-            NativeHashMap<int, LocalTransform> planetTransformById,
-            NativeHashMap<int, PlanetState> planetStateById,
-            float mapW,
-            float mapH)
-        {
-            int bestId = 0;
-            float bestDist = float.MaxValue;
-
-            foreach (var kv in planetStateById)
-            {
-                int planetId = kv.Key;
-                if (!planetTransformById.TryGetValue(planetId, out var planetTransform))
-                    continue;
-
-                var planetState = kv.Value;
-                float planetSize = math.max(0.5f, planetTransform.Scale);
-                PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetState.PlanetLevel, out float inner, out float outer, out _);
-                const float relax = 0.12f;
-                float relaxedInner = math.max(0f, inner * (1f - relax));
-                float relaxedOuter = outer * (1f + relax);
-                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetTransform.Position, mapW, mapH);
-                if (!PlanetOrbitMath.IsInOrbitRing(dist, relaxedInner, relaxedOuter))
-                    continue;
-
-                if (dist >= bestDist)
-                    continue;
-
-                bestDist = dist;
-                bestId = planetId;
-            }
-
-            return bestId;
-        }
-
         static bool CanTransferPeople(
             in ShipOrbitState orbit,
             in ShipInput input,
@@ -277,9 +246,9 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH)
         {
-            if (orbitPlanetId == 0)
+            if (!orbit.InOrbitRing || orbitPlanetId == 0 || orbit.OrbitPlanetId != orbitPlanetId)
                 return false;
-            if (input.Thrust)
+            if (input.Thrust || input.Fire.IsSet)
                 return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;
@@ -290,11 +259,8 @@ namespace TitanOrbit.ECS
 
             float planetSize = math.max(0.5f, planetTransform.Scale);
             PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetState.PlanetLevel, out float inner, out float outer, out _);
-            const float relax = 0.12f;
-            float relaxedInner = math.max(0f, inner * (1f - relax));
-            float relaxedOuter = outer * (1f + relax);
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetTransform.Position, mapW, mapH);
-            return PlanetOrbitMath.IsInOrbitRing(dist, relaxedInner, relaxedOuter);
+            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer);
         }
 
         static int GetShipNetworkId(ref SystemState state, Entity shipEntity)
@@ -437,9 +403,11 @@ namespace TitanOrbit.ECS
             var shipStateByNetworkId = new NativeHashMap<int, ShipState>(32, Allocator.Temp);
             var shipTransformByNetworkId = new NativeHashMap<int, LocalTransform>(32, Allocator.Temp);
             var shipMoonDockByNetworkId = new NativeHashMap<int, ShipMoonDockState>(32, Allocator.Temp);
-            foreach (var (owner, shipState, moonDock, transform, entity) in SystemAPI
-                         .Query<RefRO<GhostOwner>, RefRO<ShipState>, RefRO<ShipMoonDockState>,
-                             RefRO<LocalTransform>>()
+            var shipInputByNetworkId = new NativeHashMap<int, ShipInput>(32, Allocator.Temp);
+            var shipOrbitByNetworkId = new NativeHashMap<int, ShipOrbitState>(32, Allocator.Temp);
+            foreach (var (owner, shipState, shipInput, shipOrbit, moonDock, transform, entity) in SystemAPI
+                         .Query<RefRO<GhostOwner>, RefRO<ShipState>, RefRO<ShipInput>, RefRO<ShipOrbitState>,
+                             RefRO<ShipMoonDockState>, RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -449,6 +417,8 @@ namespace TitanOrbit.ECS
                 shipStateByNetworkId[id] = shipState.ValueRO;
                 shipTransformByNetworkId[id] = transform.ValueRO;
                 shipMoonDockByNetworkId[id] = moonDock.ValueRO;
+                shipInputByNetworkId[id] = shipInput.ValueRO;
+                shipOrbitByNetworkId[id] = shipOrbit.ValueRO;
             }
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
@@ -470,6 +440,7 @@ namespace TitanOrbit.ECS
                 StepTransportMotion(
                     ref t, ref transform.ValueRW, isLoad, myPos, dt, mapW, mapH,
                     shipStateByNetworkId, shipTransformByNetworkId, shipMoonDockByNetworkId,
+                    shipInputByNetworkId, shipOrbitByNetworkId,
                     planetTransformById, planetStateById);
                 myPos = transform.ValueRO.Position;
                 myPos.y = 0f;
@@ -504,9 +475,9 @@ namespace TitanOrbit.ECS
                     planetStateById.TryGetValue(t.SourcePlanetId, out var sourcePlanetState);
                     float sourcePlanetSize = math.max(0.5f, sourceTransform.Scale);
                     bool eligible = IsShipEligibleForLoad(
-                        shipState, shipMoonDock,
-                        shipTransform.Position, sourceTransform.Position, sourcePlanetSize, sourcePlanetState.PlanetLevel,
-                        mapW, mapH);
+                        shipState, shipInputByNetworkId[t.TargetShipNetworkId], shipOrbitByNetworkId[t.TargetShipNetworkId],
+                        shipMoonDock, shipTransform.Position, sourceTransform.Position, sourcePlanetSize,
+                        sourcePlanetState.PlanetLevel, t.SourcePlanetId, mapW, mapH);
 
                     if (!eligible)
                     {
@@ -579,6 +550,8 @@ namespace TitanOrbit.ECS
             shipStateByNetworkId.Dispose();
             shipTransformByNetworkId.Dispose();
             shipMoonDockByNetworkId.Dispose();
+            shipInputByNetworkId.Dispose();
+            shipOrbitByNetworkId.Dispose();
         }
 
         internal static void StepTransportMotion(
@@ -592,6 +565,8 @@ namespace TitanOrbit.ECS
             NativeHashMap<int, ShipState> shipStateByNetworkId,
             NativeHashMap<int, LocalTransform> shipTransformByNetworkId,
             NativeHashMap<int, ShipMoonDockState> shipMoonDockByNetworkId,
+            NativeHashMap<int, ShipInput> shipInputByNetworkId,
+            NativeHashMap<int, ShipOrbitState> shipOrbitByNetworkId,
             NativeHashMap<int, LocalTransform> planetTransformById,
             NativeHashMap<int, PlanetState> planetStateById)
         {
@@ -601,14 +576,16 @@ namespace TitanOrbit.ECS
             if (isLoad &&
                 shipTransformByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipTransform) &&
                 shipStateByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipState) &&
+                shipInputByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipInput) &&
+                shipOrbitByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipOrbit) &&
                 planetTransformById.TryGetValue(transport.SourcePlanetId, out var sourceTransform) &&
                 planetStateById.TryGetValue(transport.SourcePlanetId, out var sourcePlanetState))
             {
                 float sourcePlanetSize = math.max(0.5f, sourceTransform.Scale);
                 shipMoonDockByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipMoonDock);
                 bool eligible = IsShipEligibleForLoad(
-                    shipState, shipMoonDock, shipTransform.Position, sourceTransform.Position,
-                    sourcePlanetSize, sourcePlanetState.PlanetLevel, mapW, mapH);
+                    shipState, shipInput, shipOrbit, shipMoonDock, shipTransform.Position, sourceTransform.Position,
+                    sourcePlanetSize, sourcePlanetState.PlanetLevel, transport.SourcePlanetId, mapW, mapH);
 
                 target = eligible
                     ? PeopleTransportMath.GetShipMagnetTarget(
@@ -666,25 +643,29 @@ namespace TitanOrbit.ECS
 
         internal static bool IsShipEligibleForLoad(
             in ShipState ship,
+            in ShipInput input,
+            in ShipOrbitState orbit,
             in ShipMoonDockState moonDock,
             float3 shipPos,
             float3 planetPos,
             float planetSize,
             int planetLevel,
+            int sourcePlanetId,
             float mapW,
             float mapH)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
+            if (input.Thrust || input.Fire.IsSet)
+                return false;
+            if (!orbit.InOrbitRing || orbit.OrbitPlanetId != sourcePlanetId)
+                return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;
 
             PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetLevel, out float inner, out float outer, out _);
-            const float relax = 0.12f;
-            float relaxedInner = math.max(0f, inner * (1f - relax));
-            float relaxedOuter = outer * (1f + relax);
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapW, mapH);
-            return PlanetOrbitMath.IsInOrbitRing(dist, relaxedInner, relaxedOuter);
+            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer);
         }
 
         static void DeliverLoad(ref SystemState state, Entity shipEntity, ref ShipState ship, float amount, TeamId team)
@@ -824,8 +805,11 @@ namespace TitanOrbit.ECS
             var shipTransformByNetworkId = new NativeHashMap<int, LocalTransform>(16, Allocator.Temp);
             var shipStateByNetworkId = new NativeHashMap<int, ShipState>(16, Allocator.Temp);
             var shipMoonDockByNetworkId = new NativeHashMap<int, ShipMoonDockState>(16, Allocator.Temp);
-            foreach (var (owner, shipState, moonDock, transform) in SystemAPI
-                         .Query<RefRO<GhostOwner>, RefRO<ShipState>, RefRO<ShipMoonDockState>, RefRO<LocalTransform>>()
+            var shipInputByNetworkId = new NativeHashMap<int, ShipInput>(16, Allocator.Temp);
+            var shipOrbitByNetworkId = new NativeHashMap<int, ShipOrbitState>(16, Allocator.Temp);
+            foreach (var (owner, shipState, shipInput, shipOrbit, moonDock, transform) in SystemAPI
+                         .Query<RefRO<GhostOwner>, RefRO<ShipState>, RefRO<ShipInput>, RefRO<ShipOrbitState>,
+                             RefRO<ShipMoonDockState>, RefRO<LocalTransform>>()
                          .WithAll<ShipTag>())
             {
                 if (owner.ValueRO.NetworkId == 0)
@@ -834,6 +818,8 @@ namespace TitanOrbit.ECS
                 shipTransformByNetworkId[id] = transform.ValueRO;
                 shipStateByNetworkId[id] = shipState.ValueRO;
                 shipMoonDockByNetworkId[id] = moonDock.ValueRO;
+                shipInputByNetworkId[id] = shipInput.ValueRO;
+                shipOrbitByNetworkId[id] = shipOrbit.ValueRO;
             }
 
             var planetTransformById = new NativeHashMap<int, LocalTransform>(32, Allocator.Temp);
@@ -854,12 +840,15 @@ namespace TitanOrbit.ECS
                 PeopleTransportSimulationSystem.StepTransportMotion(
                     ref t, ref transform.ValueRW, t.IsLoad != 0, myPos, dt, mapW, mapH,
                     shipStateByNetworkId, shipTransformByNetworkId, shipMoonDockByNetworkId,
+                    shipInputByNetworkId, shipOrbitByNetworkId,
                     planetTransformById, planetStateById);
             }
 
             shipTransformByNetworkId.Dispose();
             shipStateByNetworkId.Dispose();
             shipMoonDockByNetworkId.Dispose();
+            shipInputByNetworkId.Dispose();
+            shipOrbitByNetworkId.Dispose();
             planetTransformById.Dispose();
             planetStateById.Dispose();
         }
