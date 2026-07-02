@@ -28,7 +28,7 @@ namespace TitanOrbit.Game
         [Header("Ships")]
         [SerializeField] ShipFamilyDefinition shipFamily;
         [SerializeField] GameObject shipVisualPrefab;
-        [SerializeField] float shipVisualScale = 0.155f;
+        [SerializeField] float shipVisualScale = BodyCollisionMath.ShipPresentationScale;
         [SerializeField] float defaultMuzzleOffset = 2f;
 
         [Header("Planets & Bodies")]
@@ -233,6 +233,8 @@ namespace TitanOrbit.Game
             }
 
             ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(go.transform, muzzleOffset);
+            if (!go.GetComponent<ShipHullColliderCache>())
+                ShipHullColliderCollector.EnsureCacheOnHull(go.transform);
 
             if (networkId > 0)
             {

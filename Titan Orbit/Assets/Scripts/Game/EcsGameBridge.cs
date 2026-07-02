@@ -97,6 +97,35 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetMatchState(out MatchStateSingleton match)
+        {
+            match = default;
+            var world = ClientWorld ?? ServerWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            using var query = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+            return query.TryGetSingleton(out match);
+        }
+
+        public static bool TryGetLocalShipDeathState(out ShipDeathState death)
+        {
+            death = default;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+                em.HasComponent<ShipDeathState>(shipEntity))
+            {
+                death = em.GetComponentData<ShipDeathState>(shipEntity);
+                return true;
+            }
+
+            return false;
+        }
+
         public static bool TryGetLocalShipOrbitState(out ShipOrbitState orbitState)
         {
             orbitState = default;
@@ -185,6 +214,54 @@ namespace TitanOrbit.Game
                     continue;
                 transform = em.GetComponentData<LocalTransform>(target);
                 return true;
+            }
+
+            return false;
+        }
+
+        static bool TryGetLocalShipEntity(EntityManager em, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+
+            using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
+            if (tagged.CalculateEntityCount() > 0)
+            {
+                shipEntity = tagged.GetSingletonEntity();
+                return true;
+            }
+
+            using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipTag));
+            if (owned.CalculateEntityCount() > 0)
+            {
+                shipEntity = owned.GetSingletonEntity();
+                return true;
+            }
+
+            using var connections = em.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
+            using var targets = connections.ToComponentDataArray<CommandTarget>(Allocator.Temp);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var target = targets[i].targetEntity;
+                if (target == Entity.Null || !em.Exists(target) || !em.HasComponent<ShipTag>(target))
+                    continue;
+                shipEntity = target;
+                return true;
+            }
+
+            int localId = GetLocalNetworkId(ClientWorld);
+            if (localId > 0)
+            {
+                using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+                using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+                using var entities = query.ToEntityArray(Allocator.Temp);
+                for (int i = 0; i < owners.Length; i++)
+                {
+                    if (owners[i].NetworkId != localId)
+                        continue;
+                    shipEntity = entities[i];
+                    return true;
+                }
             }
 
             return false;

@@ -23,6 +23,10 @@ namespace TitanOrbit.ECS.Authoring
         public float BulletMaxDistance = 200f;
         public float MuzzleOffset = 2f;
 
+        [Header("Collision (optional bake for headless server)")]
+        [Tooltip("Chassis prefab used to bake module BoxColliders into the ship ghost. Leave empty to rely on client hull sync.")]
+        public GameObject collisionChassisPrefab;
+
         class Baker : Baker<StarshipGhostAuthoring>
         {
             public override void Bake(StarshipGhostAuthoring authoring)
@@ -64,6 +68,27 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);
+                BakeHullColliders(authoring, entity);
+            }
+
+            void BakeHullColliders(StarshipGhostAuthoring authoring, Entity shipEntity)
+            {
+                var hull = AddBuffer<ShipHullColliderElement>(shipEntity);
+                if (authoring.collisionChassisPrefab == null)
+                    return;
+
+#if UNITY_EDITOR
+                var temp = Object.Instantiate(authoring.collisionChassisPrefab);
+                try
+                {
+                    foreach (var element in ShipHullColliderBakeUtility.CollectFromHierarchy(temp.transform))
+                        hull.Add(element);
+                }
+                finally
+                {
+                    Object.DestroyImmediate(temp);
+                }
+#endif
             }
 
             void BakeWeaponMounts(StarshipGhostAuthoring authoring, Entity shipEntity)

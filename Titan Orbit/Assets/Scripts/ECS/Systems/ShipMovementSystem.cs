@@ -17,6 +17,7 @@ namespace TitanOrbit.ECS
         protected override void OnUpdate()
         {
             float dt = SystemAPI.Time.DeltaTime;
+            double elapsed = SystemAPI.Time.ElapsedTime;
             ShipMovementLogic.GetMapSize(EntityManager, out float mapW, out float mapH);
 
             foreach (var (input, motor, shipState, kinematics, transform, entity) in SystemAPI
@@ -24,7 +25,7 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
-                ShipMovementLogic.StepShip(EntityManager, dt, mapW, mapH, input, motor, shipState, kinematics, transform, entity);
+                ShipMovementLogic.StepShip(EntityManager, dt, mapW, mapH, elapsed, input, motor, shipState, kinematics, transform, entity);
             }
         }
     }

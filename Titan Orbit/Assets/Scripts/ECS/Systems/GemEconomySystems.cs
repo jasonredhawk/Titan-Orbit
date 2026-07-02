@@ -22,8 +22,11 @@ namespace TitanOrbit.ECS
         public const float AsteroidExplosionSpeed = 2.2f;
         public const float AsteroidExplosionRadius = 1.4f;
         public const float GemDragPerSecond = 1.25f;
-        public const float AsteroidHitRadiusScale = 0.85f;
-        public const float MinAsteroidHitRadius = 2.5f;
+        /// <summary>SgtPlanet base radius on <c>Asteroid.prefab</c>.</summary>
+        public const float AsteroidMeshBaseRadius = 0.5f;
+        /// <summary>Padding over mesh radius for displacement and slight aim forgiveness.</summary>
+        public const float AsteroidHitRadiusScale = 1.1f;
+        public const float MinAsteroidHitRadius = 0.15f;
     }
 
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]

@@ -53,6 +53,9 @@ namespace TitanOrbit.ECS
                         CannonIndex = 0,
                     });
                 }
+
+                if (!state.EntityManager.HasBuffer<ShipHullColliderElement>(entity))
+                    ecb.AddBuffer<ShipHullColliderElement>(entity);
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

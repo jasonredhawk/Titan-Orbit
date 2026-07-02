@@ -159,6 +159,15 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<EcsWorldVisualizer>() == null)
                 root.AddComponent<EcsWorldVisualizer>();
 
+            if (root.GetComponent<PeopleTransferPopupPresenter>() == null)
+                root.AddComponent<PeopleTransferPopupPresenter>();
+
+            if (root.GetComponent<MatchEndScreenController>() == null)
+                root.AddComponent<MatchEndScreenController>();
+
+            if (root.GetComponent<DeathScreenController>() == null)
+                root.AddComponent<DeathScreenController>();
+
             WireEcsWorldVisualizer(root);
             WireMapGenerationSettingsLoader(root);
 

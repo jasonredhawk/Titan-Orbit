@@ -70,8 +70,19 @@ namespace TitanOrbit.Game
             ResolveMissingReferences();
             if (GetComponent<EcsWorldVisualizer>() == null)
                 gameObject.AddComponent<EcsWorldVisualizer>();
+            EnsureMatchFlowControllers();
             WireTeamButtons();
             EnsureMainMenuPlayButton();
+        }
+
+        void EnsureMatchFlowControllers()
+        {
+            if (GetComponent<PeopleTransferPopupPresenter>() == null)
+                gameObject.AddComponent<PeopleTransferPopupPresenter>();
+            if (GetComponent<MatchEndScreenController>() == null)
+                gameObject.AddComponent<MatchEndScreenController>();
+            if (GetComponent<DeathScreenController>() == null)
+                gameObject.AddComponent<DeathScreenController>();
         }
 
         void Start()
@@ -533,7 +544,10 @@ namespace TitanOrbit.Game
                 loadingRoot.SetActive(false);
 
             if (gameplayRoot != null)
-                gameplayRoot.SetActive(connected && hasShip);
+            {
+                bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
+                gameplayRoot.SetActive(connected && hasShip && !matchWon);
+            }
         }
 
         void ApplyActiveTeamVisibility(int activeTeamCount)

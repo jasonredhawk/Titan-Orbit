@@ -43,9 +43,10 @@ namespace TitanOrbit.ECS
 
         public static float AsteroidHitRadius(float scale)
         {
+            float meshRadius = scale * GemEconomyConstants.AsteroidMeshBaseRadius;
             return math.max(
                 GemEconomyConstants.MinAsteroidHitRadius,
-                scale * GemEconomyConstants.AsteroidHitRadiusScale);
+                meshRadius * GemEconomyConstants.AsteroidHitRadiusScale);
         }
     }
 }

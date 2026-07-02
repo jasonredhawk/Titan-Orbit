@@ -31,6 +31,7 @@ namespace TitanOrbit.ECS
             float dt,
             float mapW,
             float mapH,
+            double elapsedSeconds,
             RefRO<ShipInput> input,
             RefRO<ShipMotorConfig> motor,
             RefRW<ShipState> shipState,
@@ -97,6 +98,17 @@ namespace TitanOrbit.ECS
                 aimWorldXz,
                 inp.Thrust,
                 inp.SpaceBrakes);
+
+            ShipCollisionLogic.ResolveMovement(
+                em,
+                entity,
+                pos,
+                transform.ValueRO.Rotation,
+                ref motorState,
+                transform.ValueRO.Scale,
+                mapW,
+                mapH,
+                elapsedSeconds);
 
             motorState.Position = ToroidalMapEcs.Wrap(motorState.Position, mapW, mapH);
 
