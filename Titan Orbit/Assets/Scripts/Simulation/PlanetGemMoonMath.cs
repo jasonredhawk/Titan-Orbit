@@ -42,6 +42,14 @@ namespace TitanOrbit.Simulation
             return Mathf.Max(rNominal, rClear);
         }
 
+        /// <summary>World-space radius used to keep map spawns outside a planet's orbit ring.</summary>
+        public static float ComputeMapPlacementInfluenceRadiusWorld(float planetSize, int planetLevel, float homeScaleMultiplier = 1f)
+        {
+            const float orbitRingHalfThicknessLocal = 0.055f;
+            float moonOrbitWorld = EstimateOrbitRadiusWorld(planetSize, planetLevel, homeScaleMultiplier);
+            return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * orbitRingHalfThicknessLocal;
+        }
+
         public static float GetMoonDockRadiusWorld(float planetSize, bool isHomePlanet)
         {
             float homeMul = isHomePlanet ? 1.5f : 1f;

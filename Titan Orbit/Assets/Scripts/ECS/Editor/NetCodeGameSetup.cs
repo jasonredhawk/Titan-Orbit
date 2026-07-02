@@ -31,6 +31,7 @@ namespace TitanOrbit.ECS.Editor
         const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
         const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
         const string DefaultPlanetMaterialPoolPath = "Assets/Data/PlanetMaterialPool.asset";
+        const string DefaultMapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
 
         [MenuItem("Titan Orbit/Setup NetCode Game (Full)")]
         public static void SetupActiveScene()
@@ -94,6 +95,8 @@ namespace TitanOrbit.ECS.Editor
 
         static SceneAsset EnsureGameplaySubScene()
         {
+            GhostPrefabCreator.EnsureMapGenerationSettingsAsset();
+
             if (!File.Exists(SubScenePath))
             {
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
@@ -157,6 +160,7 @@ namespace TitanOrbit.ECS.Editor
                 root.AddComponent<EcsWorldVisualizer>();
 
             WireEcsWorldVisualizer(root);
+            WireMapGenerationSettingsLoader(root);
 
             var duplicateSession = GameObject.Find("TitanOrbitSessionManager");
             if (duplicateSession != null && duplicateSession != root)
@@ -255,6 +259,24 @@ namespace TitanOrbit.ECS.Editor
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        static void WireMapGenerationSettingsLoader(GameObject root)
+        {
+            var loader = root.GetComponent<MapGenerationSettingsLoader>();
+            if (loader == null)
+                loader = root.AddComponent<MapGenerationSettingsLoader>();
+
+            var settings = GhostPrefabCreator.EnsureMapGenerationSettingsAsset();
+            if (settings == null)
+            {
+                Debug.LogWarning($"[NetCodeGameSetup] Map generation settings not found at {DefaultMapGenerationSettingsPath}.");
+                return;
+            }
+
+            var so = new SerializedObject(loader);
+            so.FindProperty("settings").objectReferenceValue = settings;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         static void WireCamera()
         {
             var cam = UnityEngine.Camera.main;
@@ -297,6 +319,18 @@ namespace TitanOrbit.ECS.Editor
             AssignButton(so, "teamAButton", FindJoinButtonForTeam("A"));
             AssignButton(so, "teamBButton", FindJoinButtonForTeam("B"));
             AssignButton(so, "teamCButton", FindJoinButtonForTeam("C"));
+            AssignButton(so, "teamDButton", FindJoinButtonForTeam("D"));
+            AssignButton(so, "teamEButton", FindJoinButtonForTeam("E"));
+
+            AssignPanel(so, "teamAPanel", "TeamAPanel");
+            AssignPanel(so, "teamBPanel", "TeamBPanel");
+            AssignPanel(so, "teamCPanel", "TeamCPanel");
+            AssignPanel(so, "teamDPanel", "TeamDPanel");
+            AssignPanel(so, "teamEPanel", "TeamEPanel");
+
+            var autoPickProp = so.FindProperty("autoPickTeamAInEditor");
+            if (autoPickProp != null)
+                autoPickProp.boolValue = false;
 
             so.ApplyModifiedPropertiesWithoutUndo();
 

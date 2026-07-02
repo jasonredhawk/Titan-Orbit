@@ -8876,6 +8876,7 @@ GameObject:
   - component: {fileID: 1418200269}
   - component: {fileID: 1418200268}
   - component: {fileID: 1418200273}
+  - component: {fileID: 1418200274}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8930,8 +8931,15 @@ MonoBehaviour:
   teamAButton: {fileID: 1885954939}
   teamBButton: {fileID: 1247128883}
   teamCButton: {fileID: 772411584}
+  teamDButton: {fileID: 1760031212}
+  teamEButton: {fileID: 1449190652}
+  teamAPanel: {fileID: 0}
+  teamBPanel: {fileID: 0}
+  teamCPanel: {fileID: 0}
+  teamDPanel: {fileID: 0}
+  teamEPanel: {fileID: 0}
   autoStartLocalPlayInEditor: 0
-  autoPickTeamAInEditor: 1
+  autoPickTeamAInEditor: 0
   autoPickDelaySeconds: 2
 --- !u!114 &1418200271
 MonoBehaviour:
@@ -8982,8 +8990,21 @@ MonoBehaviour:
   neutralPlanetVisualPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
   asteroidVisualPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
   gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
-  peopleTransportVisualPrefab: {fileID: 0}
+  peopleTransportVisualPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
+--- !u!114 &1418200274
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b6882fb3d2693a045848d59c3be4a873, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.MapGenerationSettingsLoader
+  settings: {fileID: 11400000, guid: 3fea612f27b86134d969d0c57c181c4d, type: 2}
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

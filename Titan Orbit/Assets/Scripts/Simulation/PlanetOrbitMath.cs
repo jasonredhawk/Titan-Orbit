@@ -5,6 +5,7 @@ namespace TitanOrbit.Simulation
     /// <summary>Planet orbit ring geometry and motor helpers ported from legacy Planet/Starship.</summary>
     public static class PlanetOrbitMath
     {
+        public const float LevelBandsTiltDegrees = -26.7f;
         public const float LevelBandsInnerRadiusLocal = 0.68f;
         public const float LevelBandThicknessLocal = 0.06f;
         public const float LevelBandGapLocal = 0.022f;
@@ -15,6 +16,19 @@ namespace TitanOrbit.Simulation
         const float OrbitRadiusPullStrength = 2.5f;
         const float OrbitCaptureResponsiveness = 3.5f;
         const float BaseOrbitSpeed = 0.8f;
+
+        /// <summary>
+        /// Local spin axis shared by the planet body, gem moon, and decorative level bands.
+        /// Derived from the level-band ring tilt (XY disc rotated around local X).
+        /// </summary>
+        public static float3 GetLevelBandsSpinAxisLocal()
+        {
+            var tilt = quaternion.EulerXYZ(math.radians(LevelBandsTiltDegrees), 0f, 0f);
+            return math.normalize(math.mul(tilt, new float3(0f, 0f, 1f)));
+        }
+
+        public static quaternion GetLevelBandsTiltRotation() =>
+            quaternion.EulerXYZ(math.radians(LevelBandsTiltDegrees), 0f, 0f);
 
         /// <summary>Local-space outer edge of the decorative Saturn-style level bands (1 band per level).</summary>
         public static float GetLevelBandsOuterRadiusLocal(int planetLevel)

@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using Unity.Entities;
 using UnityEngine;
 
@@ -10,6 +11,8 @@ namespace TitanOrbit.ECS.Authoring
         public GameObject AsteroidPrefab;
         public GameObject GemPrefab;
         public GameObject PeopleTransportPrefab;
+        [Tooltip("Procedural map bounds. Also assign on NceGameRoot > MapGenerationSettingsLoader for play-mode without subscene rebake.")]
+        public MapGenerationSettings MapGenerationSettings;
 
         class Baker : Baker<GamePrefabsRegistryAuthoring>
         {
@@ -24,6 +27,11 @@ namespace TitanOrbit.ECS.Authoring
                     Gem = GetEntity(authoring.GemPrefab, TransformUsageFlags.Dynamic),
                     PeopleTransport = GetEntity(authoring.PeopleTransportPrefab, TransformUsageFlags.Dynamic),
                 });
+
+                var settings = authoring.MapGenerationSettings;
+                AddComponent(entity, settings != null
+                    ? MapGenerationConfigUtility.FromSettings(settings)
+                    : MapGenerationConfigUtility.Default());
             }
         }
     }

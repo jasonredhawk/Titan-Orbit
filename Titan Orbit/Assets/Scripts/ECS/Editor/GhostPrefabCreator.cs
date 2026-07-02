@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using TitanOrbit.Data;
 using UnityEditor;
 using UnityEngine;
 using Unity.NetCode;
@@ -9,10 +10,14 @@ namespace TitanOrbit.ECS.Editor
 {
     public static class GhostPrefabCreator
     {
+        const string MapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
+
         [MenuItem("Titan Orbit/Create Ghost Prefabs")]
         public static void CreateGhostPrefabs()
         {
             EnsureDirectory("Assets/Prefabs/ECS");
+            EnsureDirectory("Assets/Data");
+            EnsureMapGenerationSettingsAsset();
             CreateShipPrefab();
             CreatePlanetPrefab();
             CreateAsteroidPrefab();
@@ -107,8 +112,39 @@ namespace TitanOrbit.ECS.Editor
             reg.AsteroidPrefab = asteroid;
             reg.GemPrefab = gem;
             reg.PeopleTransportPrefab = peopleTransport;
+            reg.MapGenerationSettings = EnsureMapGenerationSettingsAsset();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/GamePrefabsRegistry.prefab");
             Object.DestroyImmediate(go);
+        }
+
+        [MenuItem("Titan Orbit/Select Map Generation Settings Asset")]
+        public static void SelectMapGenerationSettingsAsset()
+        {
+            var asset = EnsureMapGenerationSettingsAsset();
+            Selection.activeObject = asset;
+            EditorGUIUtility.PingObject(asset);
+        }
+
+        [MenuItem("Titan Orbit/Create Map Generation Settings Asset")]
+        public static void CreateMapGenerationSettingsMenuItem()
+        {
+            EnsureDirectory("Assets/Data");
+            var asset = EnsureMapGenerationSettingsAsset();
+            Selection.activeObject = asset;
+            EditorGUIUtility.PingObject(asset);
+            Debug.Log($"[GhostPrefabCreator] Map generation settings at {MapGenerationSettingsPath}");
+        }
+
+        public static MapGenerationSettings EnsureMapGenerationSettingsAsset()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(MapGenerationSettingsPath);
+            if (existing != null)
+                return existing;
+
+            var asset = ScriptableObject.CreateInstance<MapGenerationSettings>();
+            AssetDatabase.CreateAsset(asset, MapGenerationSettingsPath);
+            AssetDatabase.SaveAssets();
+            return asset;
         }
     }
 }

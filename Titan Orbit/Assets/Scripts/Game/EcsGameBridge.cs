@@ -313,12 +313,83 @@ namespace TitanOrbit.Game
 
         public static TeamStateSingleton GetTeamState()
         {
-            var world = ClientWorld ?? ServerWorld;
-            if (world == null || !world.IsCreated) return default;
-            var query = world.EntityManager.CreateEntityQuery(typeof(TeamStateSingleton));
-            if (query.TryGetSingleton<TeamStateSingleton>(out var team))
-                return team;
+            if (ServerWorld != null && ServerWorld.IsCreated)
+            {
+                var serverQuery = ServerWorld.EntityManager.CreateEntityQuery(typeof(TeamStateSingleton));
+                if (serverQuery.TryGetSingleton<TeamStateSingleton>(out var serverTeam))
+                    return serverTeam;
+            }
+
+            if (ClientWorld != null && ClientWorld.IsCreated)
+            {
+                var clientQuery = ClientWorld.EntityManager.CreateEntityQuery(typeof(TeamStateSingleton));
+                if (clientQuery.TryGetSingleton<TeamStateSingleton>(out var clientTeam))
+                    return clientTeam;
+            }
+
             return default;
+        }
+
+        /// <summary>Number of teams in this match (from home planets, then server team state).</summary>
+        public static bool TryGetActiveTeamCount(out int activeTeamCount)
+        {
+            activeTeamCount = 0;
+
+            if (ServerWorld != null && ServerWorld.IsCreated)
+            {
+                using var homes = ServerWorld.EntityManager.CreateEntityQuery(typeof(HomePlanetTag));
+                int homeCount = homes.CalculateEntityCount();
+                if (homeCount > 0)
+                {
+                    activeTeamCount = homeCount;
+                    return true;
+                }
+
+                if (ServerWorld.EntityManager.CreateEntityQuery(typeof(TeamStateSingleton))
+                        .TryGetSingleton<TeamStateSingleton>(out var serverTeam) &&
+                    serverTeam.ActiveTeamCount > 0)
+                {
+                    activeTeamCount = serverTeam.ActiveTeamCount;
+                    return true;
+                }
+            }
+
+            var world = GetVisualizationWorld();
+            if (world != null && world.IsCreated)
+            {
+                int replicatedHomeCount = CountReplicatedHomePlanets(world.EntityManager);
+                if (replicatedHomeCount > 0)
+                {
+                    activeTeamCount = replicatedHomeCount;
+                    return true;
+                }
+            }
+
+            if (!IsMapLoadingComplete())
+                return false;
+
+            var teamState = GetTeamState();
+            if (teamState.ActiveTeamCount > 0)
+            {
+                activeTeamCount = teamState.ActiveTeamCount;
+                return true;
+            }
+
+            return false;
+        }
+
+        static int CountReplicatedHomePlanets(EntityManager em)
+        {
+            using var query = em.CreateEntityQuery(typeof(PlanetState), typeof(PlanetTag));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            int count = 0;
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].IsHomePlanet)
+                    count++;
+            }
+
+            return count;
         }
 
         public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)

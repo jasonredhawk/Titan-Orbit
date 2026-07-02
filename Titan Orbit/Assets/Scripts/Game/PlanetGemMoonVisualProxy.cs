@@ -1,5 +1,6 @@
 using TitanOrbit.Simulation;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using UnityEngine;
 
@@ -153,7 +154,9 @@ namespace TitanOrbit.Game
             var offset = PlanetGemMoonMath.GetMoonOrbitOffset(_planetSize, _planetLevel, _isHome, _planetId, elapsed);
             _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
             _moonRoot.rotation = Quaternion.identity;
-            _moonSpinVisual.Rotate(0f, SpinSpeed * Time.deltaTime, 0f, Space.Self);
+            float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
+            Vector3 spinAxisWorld = transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
+            _moonSpinVisual.Rotate(spinAxisWorld, SpinSpeed * Time.deltaTime, Space.World);
         }
 
         static bool TryGetSimulationElapsedTime(out double elapsedSeconds)

@@ -62,8 +62,18 @@ namespace TitanOrbit.Game
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
             Material moonMaterial = CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId);
             moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial);
+            EnsurePlanetSpin(instance);
             EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
             return true;
+        }
+
+        static void EnsurePlanetSpin(GameObject planetRoot)
+        {
+            if (planetRoot == null)
+                return;
+
+            if (planetRoot.GetComponent<PlanetSpinVisualProxy>() == null)
+                planetRoot.AddComponent<PlanetSpinVisualProxy>();
         }
 
         static void EnsureOrbitRingVisual(
@@ -168,10 +178,24 @@ namespace TitanOrbit.Game
             return Color.white;
         }
 
+        const float MinAsteroidRadius = 0.35f;
+        const float BaseTextureTiling = 8f;
+        const float TextureScaleRandomMin = 0.12f;
+        const float TextureScaleRandomMax = 7f;
+        const float BumpScaleMin = 0.15f;
+        const float BumpScaleMax = 5f;
+        const float DisplacementMin = 0.025f;
+        const float DisplacementMax = 0.32f;
+        const float DetailTilingMin = 12f;
+        const float DetailTilingMax = 140f;
+
+        static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
+        static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
+        static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
+
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
-            PlanetMaterialPool materialPool,
-            int seed,
+            Vector3 worldPosition,
             float worldScale,
             out GameObject instance)
         {
@@ -183,12 +207,58 @@ namespace TitanOrbit.Game
             instance.name = "AsteroidTagProxy";
             StripForProxy(instance);
 
-            Material mat = PickNeutralMaterial(materialPool, seed);
-            ApplyMaterialToSgtPlanets(instance, mat);
-
             float target = Mathf.Max(0.25f, worldScale);
             instance.transform.localScale = Vector3.one * target;
+            instance.transform.position = worldPosition;
+            ApplyAsteroidSurfaceVariation(instance, worldPosition, target);
+            EnsureAsteroidSpin(instance, worldPosition);
             return true;
+        }
+
+        public static void EnsureAsteroidSpin(GameObject root, Vector3 worldPosition)
+        {
+            if (root == null)
+                return;
+
+            var spin = root.GetComponent<AsteroidSpinVisualProxy>();
+            if (spin == null)
+                spin = root.AddComponent<AsteroidSpinVisualProxy>();
+            spin.Configure(worldPosition);
+        }
+
+        /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
+        static void ApplyAsteroidSurfaceVariation(GameObject root, Vector3 worldPosition, float rawSize)
+        {
+            if (rawSize < 0.01f)
+                return;
+
+            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            if (sgt == null || sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
+                return;
+
+            int seed = unchecked((int)((long)(worldPosition.x * 1000) * 73856093
+                ^ (long)(worldPosition.z * 1000) * 19349663
+                ^ (long)(worldPosition.y * 100) * 83492791));
+            var rng = new System.Random(seed);
+
+            float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
+            float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
+            sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
+
+            if (sgt.Material.HasProperty(ShaderIdBumpScale))
+            {
+                float bump = Mathf.Lerp(BumpScaleMin, BumpScaleMax, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
+            }
+
+            if (sgt.Material.HasProperty(ShaderIdDetailTiling))
+            {
+                float detailTiling = Mathf.Lerp(DetailTilingMin, DetailTilingMax, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
+            }
+
+            sgt.Displacement = Mathf.Lerp(DisplacementMin, DisplacementMax, (float)rng.NextDouble());
+            sgt.DirtyMesh();
         }
 
         public static void ApplyPlanetMaterial(GameObject root, PlanetMaterialPool pool, bool isHome, TeamId team, int planetId)
@@ -221,14 +291,6 @@ namespace TitanOrbit.Game
                 case TeamId.TeamC: return 2;
                 default: return 0;
             }
-        }
-
-        static Material PickNeutralMaterial(PlanetMaterialPool pool, int seed)
-        {
-            if (pool == null || pool.Materials == null || pool.Materials.Count == 0)
-                return null;
-            int index = Mathf.Abs(seed) % pool.Materials.Count;
-            return pool.GetMaterial(index, useWaterList: false);
         }
 
         static void ApplyMaterialToSgtPlanets(GameObject root, Material mat)

@@ -1,5 +1,6 @@
 using System.Collections;
 using TitanOrbit.Core;
+using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TMPro;
 using Unity.Entities;
@@ -29,10 +30,28 @@ namespace TitanOrbit.Game
         [SerializeField] Button teamAButton;
         [SerializeField] Button teamBButton;
         [SerializeField] Button teamCButton;
+        [SerializeField] Button teamDButton;
+        [SerializeField] Button teamEButton;
+
+        [Header("Team Panels (optional; auto-found by name)")]
+        [SerializeField] GameObject teamAPanel;
+        [SerializeField] GameObject teamBPanel;
+        [SerializeField] GameObject teamCPanel;
+        [SerializeField] GameObject teamDPanel;
+        [SerializeField] GameObject teamEPanel;
+
+        static readonly TeamId[] TeamOrder =
+        {
+            TeamId.TeamA, TeamId.TeamB, TeamId.TeamC, TeamId.TeamD, TeamId.TeamE,
+        };
+
+        Button[] _teamButtons;
+        GameObject[] _teamPanels;
 
         [Header("Dev")]
         [SerializeField] bool autoStartLocalPlayInEditor = false;
-        [SerializeField] bool autoPickTeamAInEditor = true;
+        [Tooltip("Editor-only: auto-join Team A after a delay. Leave off to pick a team manually.")]
+        [SerializeField] bool autoPickTeamAInEditor = false;
         [SerializeField] float autoPickDelaySeconds = 2f;
 
         bool _autoPickSent;
@@ -46,6 +65,8 @@ namespace TitanOrbit.Game
         void Awake()
         {
             ClientTeamFlowState.Reset();
+            _teamButtons = new[] { teamAButton, teamBButton, teamCButton, teamDButton, teamEButton };
+            _teamPanels = new[] { teamAPanel, teamBPanel, teamCPanel, teamDPanel, teamEPanel };
             ResolveMissingReferences();
             if (GetComponent<EcsWorldVisualizer>() == null)
                 gameObject.AddComponent<EcsWorldVisualizer>();
@@ -56,7 +77,7 @@ namespace TitanOrbit.Game
         void Start()
         {
             WirePlayButton();
-            if (teamAButton == null || teamBButton == null || teamCButton == null)
+            if (_teamButtons[0] == null || _teamButtons[1] == null || _teamButtons[2] == null)
                 Debug.LogWarning("[NceGameFlow] One or more team Join buttons were not found. Expected TeamAPanel/Content/JoinButton etc.");
             else
                 Debug.Log("[NceGameFlow] Team Join buttons wired.");
@@ -109,11 +130,11 @@ namespace TitanOrbit.Game
         void ResolveMissingReferences()
         {
             if (mainMenuPanel == null)
-                mainMenuPanel = GameObject.Find("MainMenuPanel");
+                mainMenuPanel = FindSceneObjectByName("MainMenuPanel");
             if (lobbyPanel == null)
-                lobbyPanel = GameObject.Find("LobbyPanel");
+                lobbyPanel = FindSceneObjectByName("LobbyPanel");
             if (teamSelectionPanel == null)
-                teamSelectionPanel = GameObject.Find("TeamSelectionPanel");
+                teamSelectionPanel = FindSceneObjectByName("TeamSelectionPanel");
             if (loadingRoot == null)
             {
                 var loading = GameObject.Find("LoadingScreenController");
@@ -128,7 +149,7 @@ namespace TitanOrbit.Game
 
             if (playButton == null)
             {
-                var playGo = GameObject.Find("PlayButton");
+                var playGo = FindSceneObjectByName("PlayButton");
                 if (playGo != null)
                     playButton = playGo.GetComponent<Button>();
             }
@@ -143,11 +164,78 @@ namespace TitanOrbit.Game
             if (teamAButton == null) teamAButton = FindJoinButton("TeamAPanel");
             if (teamBButton == null) teamBButton = FindJoinButton("TeamBPanel");
             if (teamCButton == null) teamCButton = FindJoinButton("TeamCPanel");
+            if (teamDButton == null) teamDButton = FindJoinButton("TeamDPanel");
+            if (teamEButton == null) teamEButton = FindJoinButton("TeamEPanel");
+
+            _teamButtons = new[] { teamAButton, teamBButton, teamCButton, teamDButton, teamEButton };
+
+            if (teamAPanel == null) teamAPanel = FindSceneObjectByName("TeamAPanel");
+            if (teamBPanel == null) teamBPanel = FindSceneObjectByName("TeamBPanel");
+            if (teamCPanel == null) teamCPanel = FindSceneObjectByName("TeamCPanel");
+            if (teamDPanel == null) teamDPanel = FindSceneObjectByName("TeamDPanel");
+            if (teamEPanel == null) teamEPanel = FindSceneObjectByName("TeamEPanel");
+
+            _teamPanels = new[] { teamAPanel, teamBPanel, teamCPanel, teamDPanel, teamEPanel };
+        }
+
+        static GameObject FindSceneObjectByName(string objectName)
+        {
+            var transforms = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                var transform = transforms[i];
+                if (transform.name != objectName)
+                    continue;
+                var scene = transform.gameObject.scene;
+                if (!scene.IsValid() || !scene.isLoaded)
+                    continue;
+                return transform.gameObject;
+            }
+
+            return null;
+        }
+
+        bool EnsureTeamUiReferences()
+        {
+            bool hadMissing = false;
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                if (_teamPanels[i] != null && _teamButtons[i] != null)
+                    continue;
+
+                hadMissing = true;
+                ResolveMissingReferences();
+                break;
+            }
+
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                if (_teamPanels[i] == null && _teamButtons[i] != null)
+                    _teamPanels[i] = ResolveTeamPanelFromButton(_teamButtons[i]);
+            }
+
+            return hadMissing;
+        }
+
+        static GameObject ResolveTeamPanelFromButton(Button button)
+        {
+            if (button == null)
+                return null;
+
+            var transform = button.transform;
+            while (transform != null)
+            {
+                if (transform.name.StartsWith("Team") && transform.name.EndsWith("Panel"))
+                    return transform.gameObject;
+                transform = transform.parent;
+            }
+
+            return null;
         }
 
         static Button FindJoinButton(string panelName)
         {
-            var panel = GameObject.Find(panelName);
+            var panel = FindSceneObjectByName(panelName);
             if (panel == null) return null;
 
             var join = panel.transform.Find("Content/JoinButton");
@@ -182,9 +270,8 @@ namespace TitanOrbit.Game
 
         void WireTeamButtons()
         {
-            WireTeamButton(teamAButton, TeamId.TeamA);
-            WireTeamButton(teamBButton, TeamId.TeamB);
-            WireTeamButton(teamCButton, TeamId.TeamC);
+            for (int i = 0; i < TeamOrder.Length; i++)
+                WireTeamButton(_teamButtons[i], TeamOrder[i]);
         }
 
         static void WireTeamButton(Button button, TeamId team)
@@ -333,7 +420,11 @@ namespace TitanOrbit.Game
 
             if (!IsInGameFlow() || !EcsGameBridge.IsMapLoadingComplete())
                 return;
+            if (!EcsGameBridge.TryGetActiveTeamCount(out _))
+                return;
             if (EcsGameBridge.TryGetLocalShipPosition(out _))
+                return;
+            if (ClientTeamFlowState.TeamChoiceConfirmed)
                 return;
 
             if (_connectedAt < 0f)
@@ -372,8 +463,13 @@ namespace TitanOrbit.Game
             bool mapReady = connected && IsMapReadyForTeamSelection();
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
+            int activeTeamsForUi = 0;
+            bool knowsTeamCount = connected && mapReady &&
+                                  EcsGameBridge.TryGetActiveTeamCount(out activeTeamsForUi) &&
+                                  activeTeamsForUi > 0;
             bool showLoading = connected && !mapReady;
-            bool showTeam = connected && mapReady && !hasShip && !teamConfirmed;
+            bool showTeamCountWait = connected && mapReady && !hasShip && !teamConfirmed && !knowsTeamCount;
+            bool showTeam = connected && mapReady && !hasShip && !teamConfirmed && knowsTeamCount;
             bool showSpawnWait = connected && teamConfirmed && !hasShip;
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && connected && !mapReady && !_loggedWaitingForMap)
@@ -398,11 +494,13 @@ namespace TitanOrbit.Game
 
             if (statusText != null)
             {
-                if (!connected || showLoading || showTeam || showSpawnWait)
+                if (!connected || showLoading || showTeam || showTeamCountWait || showSpawnWait)
                     statusText.text = !connected
                         ? _statusMessage
                         : showLoading
                             ? "Loading map... (start the match on the Main Editor if this persists)"
+                            : showTeamCountWait
+                                ? "Preparing teams..."
                             : showSpawnWait
                                 ? "Spawning your ship..."
                                 : "Choose a team.";
@@ -410,11 +508,26 @@ namespace TitanOrbit.Game
 
             // Lobby backdrop covers loading + team pick (loadingRoot is an empty legacy object).
             if (lobbyPanel != null)
-                lobbyPanel.SetActive(showLoading || showTeam || showSpawnWait);
+                lobbyPanel.SetActive(showLoading || showTeam || showTeamCountWait || showSpawnWait);
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(showTeam);
 
-            SetTeamButtonsInteractable(showTeam);
+            if (showTeam)
+            {
+                if (EnsureTeamUiReferences())
+                    WireTeamButtons();
+                ApplyActiveTeamVisibility(activeTeamsForUi);
+                SetTeamButtonsInteractable(true, activeTeamsForUi);
+            }
+            else if (!connected)
+            {
+                RestoreTeamPanelsForNextSelection();
+                SetTeamButtonsInteractable(false, MapGenerationLogic.MaxSupportedTeams);
+            }
+            else
+            {
+                SetTeamButtonsInteractable(false, MapGenerationLogic.MaxSupportedTeams);
+            }
 
             if (loadingRoot != null)
                 loadingRoot.SetActive(false);
@@ -423,11 +536,43 @@ namespace TitanOrbit.Game
                 gameplayRoot.SetActive(connected && hasShip);
         }
 
-        void SetTeamButtonsInteractable(bool interactable)
+        void ApplyActiveTeamVisibility(int activeTeamCount)
         {
-            if (teamAButton != null) teamAButton.interactable = interactable;
-            if (teamBButton != null) teamBButton.interactable = interactable;
-            if (teamCButton != null) teamCButton.interactable = interactable;
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                bool inMatch = activeTeamCount > 0 && (int)TeamOrder[i] <= activeTeamCount;
+                var panel = _teamPanels[i] ?? ResolveTeamPanelFromButton(_teamButtons[i]);
+                if (panel != null)
+                    panel.SetActive(inMatch);
+                else if (_teamButtons[i] != null)
+                    _teamButtons[i].gameObject.SetActive(inMatch);
+            }
+
+            if (teamSelectionPanel != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(teamSelectionPanel.GetComponent<RectTransform>());
+        }
+
+        void RestoreTeamPanelsForNextSelection()
+        {
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                if (_teamPanels[i] != null)
+                    _teamPanels[i].SetActive(true);
+                else if (_teamButtons[i] != null)
+                    _teamButtons[i].gameObject.SetActive(true);
+            }
+        }
+
+        void SetTeamButtonsInteractable(bool interactable, int activeTeamCount)
+        {
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                if (_teamButtons[i] == null)
+                    continue;
+
+                bool teamActive = activeTeamCount > 0 && (int)TeamOrder[i] <= activeTeamCount;
+                _teamButtons[i].interactable = interactable && teamActive;
+            }
         }
     }
 }

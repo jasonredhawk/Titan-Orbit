@@ -1,10 +1,12 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Transforms;
+using UnityEngine;
 using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
@@ -22,7 +24,7 @@ namespace TitanOrbit.ECS
                 typeof(MapStateSingleton), typeof(ActiveBulletsTag));
             state.EntityManager.SetComponentData(entity, new TeamStateSingleton
             {
-                ActiveTeamCount = 3,
+                ActiveTeamCount = 0,
                 MaxPlayersPerTeam = 20,
             });
             state.EntityManager.SetComponentData(entity, new MatchStateSingleton());
@@ -66,6 +68,24 @@ namespace TitanOrbit.ECS
             state.RequireForUpdate<GamePrefabs>();
         }
 
+        MapGenerationConfig GetConfig(ref SystemState state)
+        {
+            if (MapGenerationSettingsCache.Settings != null)
+                return MapGenerationConfigUtility.FromSettings(MapGenerationSettingsCache.Settings);
+
+            if (SystemAPI.TryGetSingleton<MapGenerationConfig>(out var config))
+                return config;
+
+            return MapGenerationConfigUtility.Default();
+        }
+
+        static string DescribeConfigSource()
+        {
+            if (MapGenerationSettingsCache.Settings != null)
+                return $"asset '{MapGenerationSettingsCache.Settings.name}' (runtime loader)";
+            return "baked ECS defaults";
+        }
+
         public void OnUpdate(ref SystemState state)
         {
             if (_generated) return;
@@ -73,76 +93,82 @@ namespace TitanOrbit.ECS
 
             var em = state.EntityManager;
             var mapEntity = SystemAPI.GetSingletonEntity<MapStateSingleton>();
-            var layoutEntries = new NativeList<MapLayoutEntryElement>(35, Allocator.Temp);
-            uint seed = (uint)SystemAPI.Time.ElapsedTime + 1;
-            var rng = Random.CreateFromIndex(seed);
+            var config = GetConfig(ref state);
+            UnityEngine.Debug.Log(
+                $"[MapGeneration] Using settings from {DescribeConfigSource()}. " +
+                $"Map {config.MinMapSize:F0}-{config.MaxMapSize:F0}, teams {config.MinTeamsPerMatch}-{config.MaxTeamsPerMatch}, " +
+                $"neutrals {config.MinNeutralPlanets}-{config.MaxNeutralPlanets}.");
+            uint fallbackSeed = MapGenerationLogic.ComputeEphemeralSeed();
+            var rolled = MapGenerationLogic.RollParameters(config, fallbackSeed);
+            var rng = Random.CreateFromIndex(rolled.Seed);
 
-            float mapW = 1000f;
-            float mapH = 1000f;
             var mapState = em.GetComponentData<MapStateSingleton>(mapEntity);
-            mapState.MapWidth = mapW;
-            mapState.MapHeight = mapH;
-            mapState.BlueprintSeed = (int)seed;
+            mapState.MapWidth = rolled.MapWidth;
+            mapState.MapHeight = rolled.MapHeight;
+            mapState.BlueprintSeed = (int)rolled.Seed;
             em.SetComponentData(mapEntity, mapState);
-            Generation.ToroidalMapEcs.SetMapSize(mapW, mapH);
+            Generation.ToroidalMapEcs.SetMapSize(rolled.MapWidth, rolled.MapHeight);
 
-            int teamCount = 3;
+            var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
+            teamState.ValueRW.ActiveTeamCount = rolled.TeamCount;
+
             int nextNeutralPlanetId = 100;
-            float radius = math.min(mapW, mapH) * 0.35f;
-            var homePositions = new NativeArray<float3>(teamCount, Allocator.Temp);
-            for (int i = 0; i < teamCount; i++)
+            int estimatedEntries = rolled.TeamCount + rolled.NeutralPlanetCount + rolled.AsteroidCount;
+            var layoutEntries = new NativeList<MapLayoutEntryElement>(math.max(16, estimatedEntries), Allocator.Temp);
+            var planetPlacements = new NativeList<MapGenerationLogic.PlanetPlacement>(estimatedEntries, Allocator.Temp);
+            var homeLayouts = new NativeList<MapGenerationLogic.HomePlanetLayout>(rolled.TeamCount, Allocator.Temp);
+            var neutralLayouts = new NativeList<MapGenerationLogic.NeutralPlanetLayout>(rolled.NeutralPlanetCount, Allocator.Temp);
+            var asteroidLayouts = new NativeList<MapGenerationLogic.AsteroidLayout>(rolled.AsteroidCount, Allocator.Temp);
+
+            MapGenerationLogic.BuildHomePlanets(config, rolled, ref rng, homeLayouts, planetPlacements);
+            for (int i = 0; i < homeLayouts.Length; i++)
             {
-                float angle = i * (math.PI * 2f / teamCount);
-                float3 pos = new float3(math.cos(angle) * radius, 0f, math.sin(angle) * radius);
-                homePositions[i] = pos;
+                var home = homeLayouts[i];
+                var team = (TeamId)(i + 1);
                 layoutEntries.Add(new MapLayoutEntryElement
                 {
                     EntityKind = 1,
-                    Position = pos,
-                    Team = (TeamId)(i + 1),
-                    PlanetId = (int)(TeamId)(i + 1),
-                    Scale = 15f,
+                    Position = home.Position,
+                    Team = team,
+                    PlanetId = (int)team,
+                    Scale = home.Scale,
                 });
-                SpawnPlanet(ref state, pos, (TeamId)(i + 1), true, ref nextNeutralPlanetId);
+                SpawnPlanet(ref state, home.Position, team, true, home.Scale, home.Level, ref nextNeutralPlanetId);
             }
 
-            for (int i = 0; i < 12; i++)
+            MapGenerationLogic.BuildNeutralPlanets(config, rolled, ref rng, planetPlacements, neutralLayouts);
+            for (int i = 0; i < neutralLayouts.Length; i++)
             {
-                float3 pos = new float3(rng.NextFloat(-mapW * 0.4f, mapW * 0.4f), 0f, rng.NextFloat(-mapH * 0.4f, mapH * 0.4f));
-                layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 2, Position = pos, Scale = 8f });
-                SpawnPlanet(ref state, pos, TeamId.None, false, ref nextNeutralPlanetId);
-            }
-
-            const int asteroidsPerHome = 6;
-            const float asteroidMinDistFromHome = 35f;
-            const float asteroidMaxDistFromHome = 90f;
-            for (int h = 0; h < teamCount; h++)
-            {
-                float3 homePos = homePositions[h];
-                for (int a = 0; a < asteroidsPerHome; a++)
+                var neutral = neutralLayouts[i];
+                layoutEntries.Add(new MapLayoutEntryElement
                 {
-                    float offsetAngle = rng.NextFloat(0f, math.PI * 2f);
-                    float offsetDist = rng.NextFloat(asteroidMinDistFromHome, asteroidMaxDistFromHome);
-                    float3 pos = homePos + new float3(
-                        math.cos(offsetAngle) * offsetDist,
-                        0f,
-                        math.sin(offsetAngle) * offsetDist);
-                    layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 3, Position = pos, Scale = 3f });
-                    SpawnAsteroid(ref state, pos);
-                }
+                    EntityKind = 2,
+                    Position = neutral.Position,
+                    Scale = neutral.Scale,
+                });
+                SpawnPlanet(ref state, neutral.Position, TeamId.None, false, neutral.Scale, neutral.Level, ref nextNeutralPlanetId);
             }
 
-            for (int i = 0; i < 6; i++)
+            MapGenerationLogic.BuildAsteroids(config, rolled, ref rng, planetPlacements, asteroidLayouts);
+            for (int i = 0; i < asteroidLayouts.Length; i++)
             {
-                float3 pos = new float3(
-                    rng.NextFloat(-mapW * 0.12f, mapW * 0.12f),
-                    0f,
-                    rng.NextFloat(-mapH * 0.12f, mapH * 0.12f));
-                layoutEntries.Add(new MapLayoutEntryElement { EntityKind = 3, Position = pos, Scale = 3f });
-                SpawnAsteroid(ref state, pos);
+                var asteroid = asteroidLayouts[i];
+                float uniformScale = math.cmax(asteroid.Scale);
+                layoutEntries.Add(new MapLayoutEntryElement
+                {
+                    EntityKind = 3,
+                    Position = asteroid.Position,
+                    Scale = uniformScale,
+                });
+                SpawnAsteroid(ref state, asteroid.Position, asteroid.Scale, asteroid.GemValue);
             }
 
-            homePositions.Dispose();
+            homeLayouts.Dispose();
+            int neutralCount = neutralLayouts.Length;
+            int asteroidCount = asteroidLayouts.Length;
+            neutralLayouts.Dispose();
+            asteroidLayouts.Dispose();
+            planetPlacements.Dispose();
 
             var layout = em.GetBuffer<MapLayoutEntryElement>(mapEntity);
             for (int i = 0; i < layoutEntries.Length; i++)
@@ -153,16 +179,18 @@ namespace TitanOrbit.ECS
             mapState.LoadingProgress = 1f;
             mapState.LoadingComplete = true;
             em.SetComponentData(mapEntity, mapState);
+
+            UnityEngine.Debug.Log(
+                $"[MapGeneration] Map generated. Size: {rolled.MapWidth:F0}x{rolled.MapHeight:F0}, " +
+                $"Teams: {rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, Seed: {rolled.Seed}");
         }
 
-        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, ref int nextNeutralPlanetId)
+        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, float scale, int level, ref int nextNeutralPlanetId)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Planet == Entity.Null)
                 return;
             var em = state.EntityManager;
             var e = em.Instantiate(prefabs.Planet);
-            float scale = isHome ? 15f : 8f;
-            int level = isHome ? 3 : 1;
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, scale));
             int planetId = isHome ? (int)team : nextNeutralPlanetId++;
             int maxPopulation = PlanetPopulationMath.GetMaxPopulation(scale, level);
@@ -184,17 +212,18 @@ namespace TitanOrbit.ECS
             });
         }
 
-        void SpawnAsteroid(ref SystemState state, float3 pos)
+        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
             var em = state.EntityManager;
             var e = em.Instantiate(prefabs.Asteroid);
-            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 3f));
+            float uniformScale = math.cmax(scale);
+            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, uniformScale));
             SetOrAddComponent(em, e, new AsteroidState
             {
-                RemainingGems = 100f,
-                Health = 100f,
+                RemainingGems = gemValue,
+                Health = gemValue,
             });
             if (!em.HasComponent<AsteroidTag>(e))
                 em.AddComponent<AsteroidTag>(e);

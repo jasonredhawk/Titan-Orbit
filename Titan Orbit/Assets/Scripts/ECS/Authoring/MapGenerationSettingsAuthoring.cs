@@ -1,0 +1,23 @@
+using TitanOrbit.Data;
+using Unity.Entities;
+using UnityEngine;
+
+namespace TitanOrbit.ECS.Authoring
+{
+    public class MapGenerationSettingsAuthoring : MonoBehaviour
+    {
+        public MapGenerationSettings Settings;
+
+        class Baker : Baker<MapGenerationSettingsAuthoring>
+        {
+            public override void Bake(MapGenerationSettingsAuthoring authoring)
+            {
+                var entity = GetEntity(TransformUsageFlags.None);
+                var s = authoring.Settings;
+                AddComponent(entity, s != null
+                    ? MapGenerationConfigUtility.FromSettings(s)
+                    : MapGenerationConfigUtility.Default());
+            }
+        }
+    }
+}

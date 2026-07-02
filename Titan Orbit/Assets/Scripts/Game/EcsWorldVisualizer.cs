@@ -445,11 +445,9 @@ namespace TitanOrbit.Game
 
                 if (!_proxies.TryGetValue(entity, out var go) || go == null)
                 {
-                    int seed = entity.Index;
                     if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
                             asteroidVisualPrefab,
-                            planetMaterialPool,
-                            seed,
+                            lt.Position,
                             scale,
                             out go))
                     {
@@ -462,13 +460,14 @@ namespace TitanOrbit.Game
                         {
                             renderer.material = WorldBodyVisualApplier.CreateLitMaterial(new Color(0.55f, 0.45f, 0.35f));
                         }
+
+                        WorldBodyVisualApplier.EnsureAsteroidSpin(go, lt.Position);
                     }
 
                     _proxies[entity] = go;
                 }
 
                 go.transform.position = lt.Position;
-                go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
         }

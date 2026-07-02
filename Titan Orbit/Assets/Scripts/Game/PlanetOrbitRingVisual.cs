@@ -12,7 +12,7 @@ namespace TitanOrbit.Game
     public class PlanetOrbitRingVisual : ImmediateModeShapeDrawer
     {
         [Header("Ring Layout")]
-        [SerializeField] float tiltDegrees = -26.7f;
+        [SerializeField] float tiltDegrees = PlanetOrbitMath.LevelBandsTiltDegrees;
         [SerializeField] float innerRadius = PlanetOrbitMath.LevelBandsInnerRadiusLocal;
         [SerializeField] float ringThickness = PlanetOrbitMath.LevelBandThicknessLocal;
         [SerializeField] float gapBetweenBands = PlanetOrbitMath.LevelBandGapLocal;
@@ -86,7 +86,7 @@ namespace TitanOrbit.Game
 
             Color baseColor = _team != TeamId.None ? _team.ToColor() : new Color(0.75f, 0.75f, 0.8f);
             float opacity = ringOpacity + (_isHome ? homeRingOpacityBoost : 0f);
-            Quaternion tilt = Quaternion.Euler(tiltDegrees, 0f, 0f);
+            Quaternion tilt = Quaternion.Euler(tiltDegrees, 0f, 0f); // matches PlanetOrbitMath.GetLevelBandsTiltRotation()
             using (Draw.Command(cam))
             {
                 Draw.ResetAllDrawStates();
