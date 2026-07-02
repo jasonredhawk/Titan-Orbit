@@ -16,51 +16,49 @@ namespace TitanOrbit.Game
         public static World ClientWorld => ClientServerBootstrap.ClientWorld;
         public static World ServerWorld => ClientServerBootstrap.ServerWorld;
 
+        /// <summary>ECS world used for rendering and local-player camera follow.</summary>
+        public static World GetVisualizationWorld()
+        {
+            if (IsLocalHost() &&
+                ServerWorld != null &&
+                ServerWorld.IsCreated)
+                return ServerWorld;
+
+            return ClientWorld ?? ServerWorld;
+        }
+
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
             position = default;
 
-            var client = ClientWorld;
-            if (client != null && client.IsCreated)
-            {
-                var em = client.EntityManager;
-                if (TryGetShipTransform(em, ComponentType.ReadOnly<LocalPlayerShipTag>(), out var lt))
-                {
-                    position = lt.Position;
-                    return true;
-                }
+            if (!TryGetLocalShipTransform(out var lt))
+                return false;
 
-                if (TryGetShipTransform(em, ComponentType.ReadOnly<GhostOwnerIsLocal>(), out lt))
-                {
-                    position = lt.Position;
-                    return true;
-                }
+            position = lt.Position;
+            return true;
+        }
 
-                if (TryGetShipFromCommandTarget(em, out lt))
-                {
-                    position = lt.Position;
-                    return true;
-                }
+        static bool TryGetLocalShipTransform(out LocalTransform transform)
+        {
+            transform = default;
 
-                int localId = GetLocalNetworkId(client);
-                if (localId > 0 && TryGetShipTransformByNetworkId(em, localId, out lt))
-                {
-                    position = lt.Position;
-                    return true;
-                }
-            }
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
 
-            // Local Client+Server: the owned ship exists on the server immediately after team pick.
-            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
-            {
-                int localId = GetLocalNetworkId(client);
-                if (localId > 0 &&
-                    TryGetShipTransformByNetworkId(ServerWorld.EntityManager, localId, out var serverLt))
-                {
-                    position = serverLt.Position;
-                    return true;
-                }
-            }
+            var em = world.EntityManager;
+            if (TryGetShipTransform(em, ComponentType.ReadOnly<LocalPlayerShipTag>(), out transform))
+                return true;
+
+            if (TryGetShipTransform(em, ComponentType.ReadOnly<GhostOwnerIsLocal>(), out transform))
+                return true;
+
+            if (TryGetShipFromCommandTarget(em, out transform))
+                return true;
+
+            int localId = GetLocalNetworkId(ClientWorld);
+            if (localId > 0 && TryGetShipTransformByNetworkId(em, localId, out transform))
+                return true;
 
             return false;
         }
@@ -70,8 +68,9 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipState(out ShipState state)
         {
             state = default;
-            var world = ClientWorld;
-            if (world == null || !world.IsCreated) return false;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
 
             var em = world.EntityManager;
             using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipState));
@@ -91,12 +90,8 @@ namespace TitanOrbit.Game
             if (TryGetShipStateFromCommandTarget(em, out state))
                 return true;
 
-            int localId = GetLocalNetworkId(world);
+            int localId = GetLocalNetworkId(ClientWorld);
             if (localId > 0 && TryGetShipStateByNetworkId(em, localId, out state))
-                return true;
-
-            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
-                localId > 0 && TryGetShipStateByNetworkId(ServerWorld.EntityManager, localId, out state))
                 return true;
 
             return false;
@@ -105,31 +100,28 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipOrbitState(out ShipOrbitState orbitState)
         {
             orbitState = default;
-            var world = ClientWorld;
-            if (world != null && world.IsCreated)
-            {
-                var em = world.EntityManager;
-                using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipOrbitState));
-                if (tagged.CalculateEntityCount() > 0)
-                {
-                    orbitState = tagged.GetSingleton<ShipOrbitState>();
-                    return true;
-                }
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
 
-                using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipOrbitState), typeof(ShipTag));
-                if (owned.CalculateEntityCount() > 0)
-                {
-                    orbitState = owned.GetSingleton<ShipOrbitState>();
-                    return true;
-                }
+            var em = world.EntityManager;
+            using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipOrbitState));
+            if (tagged.CalculateEntityCount() > 0)
+            {
+                orbitState = tagged.GetSingleton<ShipOrbitState>();
+                return true;
             }
 
-            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+            using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipOrbitState), typeof(ShipTag));
+            if (owned.CalculateEntityCount() > 0)
             {
-                int localId = GetLocalNetworkId(world);
-                if (localId > 0 && TryGetShipOrbitStateByNetworkId(ServerWorld.EntityManager, localId, out orbitState))
-                    return true;
+                orbitState = owned.GetSingleton<ShipOrbitState>();
+                return true;
             }
+
+            int localId = GetLocalNetworkId(ClientWorld);
+            if (localId > 0 && TryGetShipOrbitStateByNetworkId(em, localId, out orbitState))
+                return true;
 
             return false;
         }

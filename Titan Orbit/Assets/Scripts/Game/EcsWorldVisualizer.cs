@@ -112,15 +112,7 @@ namespace TitanOrbit.Game
                 DestroyProxy(entity);
         }
 
-        static World PickVisualizationWorld()
-        {
-            if (EcsGameBridge.IsLocalHost() &&
-                ClientServerBootstrap.ServerWorld != null &&
-                ClientServerBootstrap.ServerWorld.IsCreated)
-                return ClientServerBootstrap.ServerWorld;
-
-            return ClientServerBootstrap.ClientWorld ?? ClientServerBootstrap.ServerWorld;
-        }
+        static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
         void EnsureShipProxies(EntityManager em)
         {
