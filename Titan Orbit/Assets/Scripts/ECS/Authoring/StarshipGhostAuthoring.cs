@@ -68,6 +68,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);
+                BakeWingTractorBeams(authoring, entity);
                 BakeHullColliders(authoring, entity);
             }
 
@@ -137,6 +138,52 @@ namespace TitanOrbit.ECS.Authoring
                         DirectionAngleDeg = 0f,
                         CannonIndex = 0,
                     });
+                }
+            }
+
+            void BakeWingTractorBeams(StarshipGhostAuthoring authoring, Entity shipEntity)
+            {
+                var wings = AddBuffer<ShipWingTractorBeamElement>(shipEntity);
+                var wingAuthorings = authoring.GetComponentsInChildren<ShipWingTractorBeamAuthoring>(true);
+                for (int i = 0; i < wingAuthorings.Length; i++)
+                {
+                    var wing = wingAuthorings[i];
+                    if (wing == null || wing.transform == authoring.transform)
+                        continue;
+
+                    var t = wing.transform;
+                    wings.Add(new ShipWingTractorBeamElement
+                    {
+                        LocalPosition = t.localPosition,
+                        TractorBeamDistance = wing.tractorBeamDistance,
+                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerLevel,
+                        TractorBeamPower = wing.tractorBeamPower,
+                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerLevel,
+                        MaxGems = wing.maxGems,
+                        MaxGemsPerLevel = wing.maxGemsPerLevel,
+                    });
+                }
+
+                if (wings.Length == 0)
+                {
+                    foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
+                    {
+                        if (t == authoring.transform || !t.name.Contains("Wing"))
+                            continue;
+                        if (t.name.Contains("Weapon"))
+                            continue;
+
+                        wings.Add(new ShipWingTractorBeamElement
+                        {
+                            LocalPosition = t.localPosition,
+                            TractorBeamDistance = 3f,
+                            TractorBeamDistancePerLevel = 0.75f,
+                            TractorBeamPower = 4f,
+                            TractorBeamPowerPerLevel = 1f,
+                            MaxGems = 8f,
+                            MaxGemsPerLevel = 2f,
+                        });
+                    }
                 }
             }
         }

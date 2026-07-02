@@ -233,6 +233,7 @@ namespace TitanOrbit.Game
             }
 
             ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(go.transform, muzzleOffset);
+            ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
             if (!go.GetComponent<ShipHullColliderCache>())
                 ShipHullColliderCollector.EnsureCacheOnHull(go.transform);
 

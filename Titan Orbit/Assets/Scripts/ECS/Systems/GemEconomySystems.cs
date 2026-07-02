@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -14,6 +15,8 @@ namespace TitanOrbit.ECS
         public const float MiningRange = 6f;
         public const float MiningRate = 5f;
         public const float GemPickupRange = 2.5f;
+        /// <summary>Collect gems at the wing when tractor-pulled (legacy Gem.collectRadius ~0.6).</summary>
+        public const float GemWingCollectRadius = 0.65f;
         public const float PlanetInteractionRange = 20f;
         public const float MoonDockRangeMultiplier = 2.2f;
         public const float MoonLandingCompleteThreshold = 0.999f;
@@ -124,6 +127,8 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
 
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRW<ShipState>>()
@@ -137,13 +142,23 @@ namespace TitanOrbit.ECS
                 if (capacityLeft <= 0.001f)
                     continue;
 
+                bool hasWings = state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(shipEntity) &&
+                                state.EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity).Length > 0;
+
                 foreach (var (gemState, gemTransform, gemEntity) in SystemAPI
                              .Query<RefRO<GemState>, RefRO<LocalTransform>>()
                              .WithAll<GemTag>()
                              .WithEntityAccess())
                 {
-                    if (math.distance(shipTransform.ValueRO.Position, gemTransform.ValueRO.Position) >
-                        GemEconomyConstants.GemPickupRange)
+                    if (!IsWithinPickupRange(
+                            state.EntityManager,
+                            shipEntity,
+                            shipTransform.ValueRO,
+                            gemTransform.ValueRO,
+                            gemState.ValueRO,
+                            hasWings,
+                            mapW,
+                            mapH))
                         continue;
 
                     float take = math.min(gemState.ValueRO.Value, capacityLeft);
@@ -180,6 +195,36 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+        }
+
+        static bool IsWithinPickupRange(
+            EntityManager em,
+            Entity shipEntity,
+            in LocalTransform shipTransform,
+            in LocalTransform gemTransform,
+            in GemState gemState,
+            bool hasWings,
+            float mapW,
+            float mapH)
+        {
+            float3 gemPos = gemTransform.Position;
+
+            if (hasWings)
+            {
+                var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+                float collectRadius = GemEconomyConstants.GemWingCollectRadius + gemState.Size * 0.25f;
+                for (int wi = 0; wi < wings.Length; wi++)
+                {
+                    float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
+                    if (GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH) <= collectRadius)
+                        return true;
+                }
+
+                return false;
+            }
+
+            return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
+                   GemEconomyConstants.GemPickupRange;
         }
     }
 
