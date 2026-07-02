@@ -34,4 +34,12 @@ namespace TitanOrbit.ECS
     public struct AsteroidTag : IComponentData { }
     public struct GemTag : IComponentData { }
     public struct HomePlanetTag : IComponentData { }
+
+    /// <summary>Server-side passive population growth (legacy Planet.Update growth loop).</summary>
+    public struct PlanetGrowthState : IComponentData
+    {
+        /// <summary>Fractional population used for smooth growth (legacy currentPopulation float).</summary>
+        public float FractionalPopulation;
+        public float LastHostilePopulationImpactServerTime;
+    }
 }

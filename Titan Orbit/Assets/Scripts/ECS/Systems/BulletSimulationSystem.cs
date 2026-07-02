@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -95,6 +96,36 @@ namespace TitanOrbit.ECS
                         }
 
                         asteroidState.ValueRW = asteroid;
+                        hit = true;
+                        break;
+                    }
+                }
+
+                if (!hit)
+                {
+                    foreach (var (transport, transform, transportEntity) in SystemAPI
+                                 .Query<RefRW<PeopleTransportState>, RefRO<LocalTransform>>()
+                                 .WithAll<PeopleTransportTag>()
+                                 .WithEntityAccess())
+                    {
+                        ref var t = ref transport.ValueRW;
+                        if (t.Amount <= 0f || t.Health <= 0f)
+                            continue;
+
+                        var sourceTeam = (TeamId)t.Team;
+                        var ownerTeam = (TeamId)b.OwnerTeam;
+                        if (sourceTeam == TeamId.None || sourceTeam == ownerTeam)
+                            continue;
+
+                        float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
+                        if (!BulletCollision.SegmentHitsSphere(
+                                prevPos, newPos, transform.ValueRO.Position, hitRadius, out _))
+                            continue;
+
+                        t.Health -= b.Damage;
+                        if (t.Health <= 0f)
+                            PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, transportEntity, t);
+
                         hit = true;
                         break;
                     }

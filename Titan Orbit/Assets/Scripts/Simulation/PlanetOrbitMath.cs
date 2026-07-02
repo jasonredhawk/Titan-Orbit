@@ -5,17 +5,39 @@ namespace TitanOrbit.Simulation
     /// <summary>Planet orbit ring geometry and motor helpers ported from legacy Planet/Starship.</summary>
     public static class PlanetOrbitMath
     {
-        const float OrbitZoneBaseOuterRadiusLocal = 0.85f * 1.5f * 0.75f;
-        const float OrbitRingGrowthPerLevel = 0.05f;
+        public const float LevelBandsInnerRadiusLocal = 0.68f;
+        public const float LevelBandThicknessLocal = 0.06f;
+        public const float LevelBandGapLocal = 0.022f;
+
         const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
+        /// <summary>Gap between the outermost level band and the inner edge of the ship orbit ring.</summary>
+        const float OrbitRingClearanceFromLevelBandsLocal = LevelBandGapLocal * 2f;
         const float OrbitRadiusPullStrength = 2.5f;
         const float OrbitCaptureResponsiveness = 3.5f;
         const float BaseOrbitSpeed = 0.8f;
 
+        /// <summary>Local-space outer edge of the decorative Saturn-style level bands (1 band per level).</summary>
+        public static float GetLevelBandsOuterRadiusLocal(int planetLevel)
+        {
+            int bandCount = math.clamp(planetLevel, 1, PlanetEconomyMath.MaxPlanetLevel);
+            float step = LevelBandThicknessLocal + LevelBandGapLocal;
+            float lastCenter = LevelBandsInnerRadiusLocal + (bandCount - 1) * step;
+            return lastCenter + LevelBandThicknessLocal * 0.5f;
+        }
+
+        /// <summary>Local-space center radius of the ship orbit ring (fixed for all planet levels).</summary>
+        public static float GetOrbitRingCenterRadiusLocal()
+        {
+            return GetLevelBandsOuterRadiusLocal(PlanetEconomyMath.MaxPlanetLevel)
+                + OrbitRingClearanceFromLevelBandsLocal
+                + OrbitRingHalfThicknessLocal;
+        }
+
         public static void GetRingRadiiWorld(float planetSize, int planetLevel, out float innerWorld, out float outerWorld, out float centerWorld)
         {
-            int level = math.max(1, planetLevel);
-            float centerLocal = OrbitZoneBaseOuterRadiusLocal * math.pow(1f + OrbitRingGrowthPerLevel, level - 1);
+            // Orbit ring size is fixed: always sits outside where all MaxPlanetLevel decorative bands would reach.
+            _ = planetLevel;
+            float centerLocal = GetOrbitRingCenterRadiusLocal();
             float innerLocal = math.max(0.52f, centerLocal - OrbitRingHalfThicknessLocal);
             float outerLocal = centerLocal + OrbitRingHalfThicknessLocal;
             centerWorld = planetSize * centerLocal;

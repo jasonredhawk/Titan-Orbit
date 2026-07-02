@@ -47,5 +47,13 @@ namespace TitanOrbit.Generation
             float3 d = ShortestOffsetXZ(a, b, mapWidth, mapHeight);
             return math.length(new float2(d.x, d.z));
         }
+
+        public static float3 ToroidalDirection(float3 from, float3 to, float mapWidth, float mapHeight)
+        {
+            float3 offset = ShortestOffsetXZ(from, to, mapWidth, mapHeight);
+            if (math.lengthsq(offset) < 0.0001f)
+                return new float3(0f, 0f, 1f);
+            return math.normalize(offset);
+        }
     }
 }

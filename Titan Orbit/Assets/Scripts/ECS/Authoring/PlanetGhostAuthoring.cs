@@ -13,6 +13,7 @@ namespace TitanOrbit.ECS.Authoring
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent(entity, new PlanetTag());
                 AddComponent(entity, new PlanetState());
+                AddComponent(entity, new PlanetGrowthState());
             }
         }
     }

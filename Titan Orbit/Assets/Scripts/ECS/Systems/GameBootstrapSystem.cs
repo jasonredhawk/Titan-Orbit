@@ -178,6 +178,10 @@ namespace TitanOrbit.ECS
                 em.AddComponent<PlanetTag>(e);
             if (isHome && !em.HasComponent<HomePlanetTag>(e))
                 em.AddComponent<HomePlanetTag>(e);
+            SetOrAddComponent(em, e, new PlanetGrowthState
+            {
+                FractionalPopulation = maxPopulation,
+            });
         }
 
         void SpawnAsteroid(ref SystemState state, float3 pos)

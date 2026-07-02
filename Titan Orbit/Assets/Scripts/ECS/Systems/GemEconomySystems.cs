@@ -199,7 +199,7 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.Team == TeamId.None || shipState.ValueRO.CurrentGems <= 0f)
                     continue;
 
-                foreach (var (planetState, planetTransform) in SystemAPI
+                foreach (var (planetState, _) in SystemAPI
                              .Query<RefRW<PlanetState>, RefRO<LocalTransform>>()
                              .WithAll<PlanetTag>())
                 {

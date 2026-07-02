@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &8546532577817128093
+--- !u!1 &7123456789012345678
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,24 +8,24 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 7878444432896334799}
-  - component: {fileID: 3871922316657892261}
-  - component: {fileID: 1084409205903698291}
-  - component: {fileID: 1043643772512593442}
+  - component: {fileID: 7123456789012345679}
+  - component: {fileID: 7123456789012345680}
+  - component: {fileID: 7123456789012345681}
+  - component: {fileID: 7123456789012345682}
   m_Layer: 0
-  m_Name: PlanetGhost
+  m_Name: PeopleTransportGhost
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &7878444432896334799
+--- !u!4 &7123456789012345679
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8546532577817128093}
+  m_GameObject: {fileID: 7123456789012345678}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -34,31 +34,31 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &3871922316657892261
+--- !u!114 &7123456789012345680
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8546532577817128093}
+  m_GameObject: {fileID: 7123456789012345678}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c16549610bfe4458aa9389201d072bb6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Entities.Hybrid::Unity.Entities.Hybrid.Baking.LinkedEntityGroupAuthoring
---- !u!114 &1084409205903698291
+--- !u!114 &7123456789012345681
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8546532577817128093}
+  m_GameObject: {fileID: 7123456789012345678}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7c79d771cedb4794bf100ce60df5f764, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.NetCode.Authoring.Hybrid::Unity.NetCode.GhostAuthoringComponent
-  HasOwner: 1
+  HasOwner: 0
   SupportAutoCommandTarget: 1
   TrackInterpolationDelay: 0
   GhostGroup: 0
@@ -72,15 +72,15 @@ MonoBehaviour:
   Importance: 1
   MaxSendRate: 0
   prefabId: 
---- !u!114 &1043643772512593442
+--- !u!114 &7123456789012345682
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8546532577817128093}
+  m_GameObject: {fileID: 7123456789012345678}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4e8b2c19d3a4f6e8b2c19d3a4f6e8b2, type: 3}
+  m_Script: {fileID: 11500000, guid: f4e8a2b1c3d5476980abcdef01020304, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: TitanOrbit.ECS::TitanOrbit.ECS.Authoring.PlanetGhostAuthoring
+  m_EditorClassIdentifier: TitanOrbit.ECS::TitanOrbit.ECS.Authoring.PeopleTransportGhostAuthoring

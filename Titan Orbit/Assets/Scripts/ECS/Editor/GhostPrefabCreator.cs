@@ -17,6 +17,7 @@ namespace TitanOrbit.ECS.Editor
             CreatePlanetPrefab();
             CreateAsteroidPrefab();
             CreateGemPrefab();
+            CreatePeopleTransportPrefab();
             CreateRegistryPrefab();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -39,12 +40,21 @@ namespace TitanOrbit.ECS.Editor
             }
         }
 
-        static void AddGhostRootComponents(GameObject go)
+        static void AddGhostRootComponents(GameObject go, bool hasOwner = true)
         {
             if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
                 go.AddComponent<LinkedEntityGroupAuthoring>();
             var ghost = go.AddComponent<GhostAuthoringComponent>();
-            ghost.HasOwner = true;
+            ghost.HasOwner = hasOwner;
+        }
+
+        static void CreatePeopleTransportPrefab()
+        {
+            var go = new GameObject("PeopleTransportGhost");
+            AddGhostRootComponents(go, hasOwner: false);
+            go.AddComponent<TitanOrbit.ECS.Authoring.PeopleTransportGhostAuthoring>();
+            PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PeopleTransportGhost.prefab");
+            Object.DestroyImmediate(go);
         }
 
         static void CreateShipPrefab()
@@ -89,12 +99,14 @@ namespace TitanOrbit.ECS.Editor
             var planet = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/PlanetGhost.prefab");
             var asteroid = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/AsteroidGhost.prefab");
             var gem = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/GemGhost.prefab");
+            var peopleTransport = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/PeopleTransportGhost.prefab");
             var go = new GameObject("GamePrefabsRegistry");
             var reg = go.AddComponent<TitanOrbit.ECS.Authoring.GamePrefabsRegistryAuthoring>();
             reg.ShipPrefab = ship;
             reg.PlanetPrefab = planet;
             reg.AsteroidPrefab = asteroid;
             reg.GemPrefab = gem;
+            reg.PeopleTransportPrefab = peopleTransport;
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/GamePrefabsRegistry.prefab");
             Object.DestroyImmediate(go);
         }

@@ -29,6 +29,7 @@ namespace TitanOrbit.ECS.Editor
         const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
         const string DefaultAsteroidPath = "Assets/Prefabs/Asteroid.prefab";
         const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
+        const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
         const string DefaultPlanetMaterialPoolPath = "Assets/Data/PlanetMaterialPool.asset";
 
         [MenuItem("Titan Orbit/Setup NetCode Game (Full)")]
@@ -86,7 +87,8 @@ namespace TitanOrbit.ECS.Editor
 
         static void EnsureGhostPrefabs()
         {
-            if (!File.Exists(Path.Combine(Application.dataPath, "Prefabs/ECS/StarshipGhost.prefab")))
+            if (!File.Exists(Path.Combine(Application.dataPath, "Prefabs/ECS/StarshipGhost.prefab")) ||
+                !File.Exists(Path.Combine(Application.dataPath, "Prefabs/ECS/PeopleTransportGhost.prefab")))
                 GhostPrefabCreator.CreateGhostPrefabs();
         }
 
@@ -237,6 +239,12 @@ namespace TitanOrbit.ECS.Editor
                 so.FindProperty("gemVisualPrefab").objectReferenceValue = gem;
             else
                 Debug.LogWarning($"[NetCodeGameSetup] Gem prefab not found at {DefaultGemPath}.");
+
+            var peopleTransport = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultPeopleTransportPath);
+            if (peopleTransport != null)
+                so.FindProperty("peopleTransportVisualPrefab").objectReferenceValue = peopleTransport;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] People transport prefab not found at {DefaultPeopleTransportPath}.");
 
             var materialPool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(DefaultPlanetMaterialPoolPath);
             if (materialPool != null)

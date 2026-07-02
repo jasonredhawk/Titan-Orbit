@@ -335,10 +335,10 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return false;
 
-            if (TryFindPlanetState(ClientWorld, planetId, out state))
+            if (IsLocalHost() && TryFindPlanetState(ServerWorld, planetId, out state))
                 return true;
 
-            if (IsLocalHost() && TryFindPlanetState(ServerWorld, planetId, out state))
+            if (TryFindPlanetState(ClientWorld, planetId, out state))
                 return true;
 
             return false;

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -22,6 +23,7 @@ namespace TitanOrbit.Game
         const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
         const string DefaultAsteroidPath = "Assets/Prefabs/Asteroid.prefab";
         const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
+        const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
 
         [Header("Ships")]
         [SerializeField] ShipFamilyDefinition shipFamily;
@@ -34,6 +36,7 @@ namespace TitanOrbit.Game
         [SerializeField] GameObject neutralPlanetVisualPrefab;
         [SerializeField] GameObject asteroidVisualPrefab;
         [SerializeField] GameObject gemVisualPrefab;
+        [SerializeField] GameObject peopleTransportVisualPrefab;
         [SerializeField] PlanetMaterialPool planetMaterialPool;
 
         readonly Dictionary<Entity, GameObject> _proxies = new Dictionary<Entity, GameObject>();
@@ -67,6 +70,10 @@ namespace TitanOrbit.Game
                 asteroidVisualPrefab = LoadDefaultPrefab(DefaultAsteroidPath);
             if (gemVisualPrefab == null)
                 gemVisualPrefab = GemVisualApplier.LoadDefaultGemPrefab();
+            if (peopleTransportVisualPrefab == null)
+                peopleTransportVisualPrefab = PeopleTransportVisualApplier.LoadDefaultPrefab();
+            if (peopleTransportVisualPrefab == null)
+                peopleTransportVisualPrefab = LoadDefaultPrefab(DefaultPeopleTransportPath);
         }
 
         void Update()
@@ -91,6 +98,7 @@ namespace TitanOrbit.Game
             DrawPlanets(em, alive);
             DrawAsteroids(em, alive);
             DrawGems(em, alive);
+            DrawPeopleTransports(em, alive);
             DrawBullets(em, alive);
 
             var remove = new List<Entity>();
@@ -277,6 +285,47 @@ namespace TitanOrbit.Game
                 _proxyShipLevels.Remove(entity);
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
+            }
+        }
+
+        void DrawPeopleTransports(EntityManager em, HashSet<Entity> alive)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<PeopleTransportTag>(),
+                ComponentType.ReadOnly<PeopleTransportState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var states = query.ToComponentDataArray<PeopleTransportState>(Unity.Collections.Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                alive.Add(entity);
+                var state = states[i];
+                var lt = transforms[i];
+                float scale = PeopleTransportVisualApplier.ComputeWorldScale(math.max(1f, state.Amount));
+                var team = (TeamId)state.Team;
+
+                if (!_proxies.TryGetValue(entity, out var go) || go == null)
+                {
+                    go = PeopleTransportVisualApplier.CreateVisual(peopleTransportVisualPrefab, state.Amount, team);
+                    _proxies[entity] = go;
+                }
+
+                go.transform.position = lt.Position;
+                go.transform.rotation = lt.Rotation;
+                go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        static void ApplyTeamColorToVisual(GameObject go, TeamId team)
+        {
+            var color = TeamColor(team);
+            foreach (var renderer in go.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                renderer.material = WorldBodyVisualApplier.CreateLitMaterial(color);
             }
         }
 

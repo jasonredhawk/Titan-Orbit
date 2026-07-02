@@ -13,9 +13,9 @@ namespace TitanOrbit.Game
     {
         [Header("Ring Layout")]
         [SerializeField] float tiltDegrees = -26.7f;
-        [SerializeField] float innerRadius = 0.68f;
-        [SerializeField] float ringThickness = 0.06f;
-        [SerializeField] float gapBetweenBands = 0.022f;
+        [SerializeField] float innerRadius = PlanetOrbitMath.LevelBandsInnerRadiusLocal;
+        [SerializeField] float ringThickness = PlanetOrbitMath.LevelBandThicknessLocal;
+        [SerializeField] float gapBetweenBands = PlanetOrbitMath.LevelBandGapLocal;
 
         [Header("Appearance")]
         [Range(0.2f, 1f)]
@@ -47,7 +47,7 @@ namespace TitanOrbit.Game
             _planetId = planetId;
         }
 
-        static int ClampLevel(int level) => Mathf.Clamp(level, 1, 6);
+        static int ClampLevel(int level) => Mathf.Clamp(level, 1, PlanetEconomyMath.MaxPlanetLevel);
 
         float GetInnerRadiusLocal()
         {

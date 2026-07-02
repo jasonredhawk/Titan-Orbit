@@ -9,6 +9,7 @@ namespace TitanOrbit.ECS.Authoring
         public GameObject PlanetPrefab;
         public GameObject AsteroidPrefab;
         public GameObject GemPrefab;
+        public GameObject PeopleTransportPrefab;
 
         class Baker : Baker<GamePrefabsRegistryAuthoring>
         {
@@ -21,6 +22,7 @@ namespace TitanOrbit.ECS.Authoring
                     Planet = GetEntity(authoring.PlanetPrefab, TransformUsageFlags.Dynamic),
                     Asteroid = GetEntity(authoring.AsteroidPrefab, TransformUsageFlags.Dynamic),
                     Gem = GetEntity(authoring.GemPrefab, TransformUsageFlags.Dynamic),
+                    PeopleTransport = GetEntity(authoring.PeopleTransportPrefab, TransformUsageFlags.Dynamic),
                 });
             }
         }

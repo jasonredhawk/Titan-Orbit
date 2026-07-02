@@ -8,5 +8,6 @@ namespace TitanOrbit.ECS
         public Entity Planet;
         public Entity Asteroid;
         public Entity Gem;
+        public Entity PeopleTransport;
     }
 }

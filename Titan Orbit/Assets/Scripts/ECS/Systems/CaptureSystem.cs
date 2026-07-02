@@ -7,7 +7,7 @@ namespace TitanOrbit.ECS
     /// <summary>Checks win condition after planet ownership changes.</summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(PeopleTransportSystem))]
+    [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
     public partial struct CaptureSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)
