@@ -169,7 +169,7 @@ namespace TitanOrbit.Game
                     }
                     else if (gemsDelta < -0.01f)
                     {
-                        ProcessGemDepositSounds(ref snap, state, -gemsDelta);
+                        ProcessGemDepositFeedback(anchor, ref snap, state, -gemsDelta, state.Team);
                     }
                     else if (snap.DepositSoundAccumulator > 0.001f)
                     {
@@ -205,8 +205,6 @@ namespace TitanOrbit.Game
 
         void PollPlanetGems(EntityManager em)
         {
-            TryGetLocalShipAnchor(out Transform localAnchor);
-
             using var planetQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>());
@@ -215,25 +213,7 @@ namespace TitanOrbit.Game
             for (int i = 0; i < planetStates.Length; i++)
             {
                 var state = planetStates[i];
-                int id = state.PlanetId;
-
-                if (!_planetGems.TryGetValue(id, out float lastGems))
-                    lastGems = state.CurrentGems;
-
-                float delta = state.CurrentGems - lastGems;
-                _planetGems[id] = state.CurrentGems;
-
-                if (delta <= 0.01f)
-                    continue;
-
-                if (localAnchor != null)
-                {
-                    WorldFloatingCountManager.Instance.ShowFloatingCount(
-                        localAnchor,
-                        FloatingCountChannel.GemDeposit,
-                        delta,
-                        state.Ownership);
-                }
+                _planetGems[state.PlanetId] = state.CurrentGems;
             }
         }
 
@@ -290,7 +270,12 @@ namespace TitanOrbit.Game
             }
         }
 
-        static void ProcessGemDepositSounds(ref ShipSnapshot snap, in ShipState state, float depositedAmount)
+        static void ProcessGemDepositFeedback(
+            Transform anchor,
+            ref ShipSnapshot snap,
+            in ShipState state,
+            float depositedAmount,
+            TeamId team)
         {
             snap.DepositSoundAccumulator += depositedAmount;
             float gemValue = Mathf.Max(1f, state.ShipLevel);
@@ -299,17 +284,27 @@ namespace TitanOrbit.Game
             while (snap.DepositSoundAccumulator >= gemValue
                    && now - snap.LastDepositSoundTime >= DepositGemSoundInterval)
             {
-                AudioManager.Instance?.PlayGemDepositSound(gemValue);
+                EmitGemDepositFeedback(anchor, gemValue, team);
                 snap.DepositSoundAccumulator -= gemValue;
                 snap.LastDepositSoundTime = now;
             }
 
             if (state.CurrentGems <= 0.001f && snap.DepositSoundAccumulator > 0.001f)
             {
-                AudioManager.Instance?.PlayGemDepositSound(snap.DepositSoundAccumulator);
+                EmitGemDepositFeedback(anchor, snap.DepositSoundAccumulator, team);
                 snap.DepositSoundAccumulator = 0f;
                 snap.LastDepositSoundTime = now;
             }
+        }
+
+        static void EmitGemDepositFeedback(Transform anchor, float amount, TeamId team)
+        {
+            AudioManager.Instance?.PlayGemDepositSound(amount);
+            WorldFloatingCountManager.Instance.ShowFloatingCount(
+                anchor,
+                FloatingCountChannel.GemDeposit,
+                amount,
+                team);
         }
 
         static bool TryGetShipAnchor(int networkId, out Transform anchor) =>
