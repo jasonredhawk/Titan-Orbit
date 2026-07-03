@@ -1,3 +1,5 @@
+using TitanOrbit.Core;
+using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -20,10 +22,38 @@ namespace TitanOrbit.Game
         int _planetLevel;
         int _planetId;
         bool _isHome;
+        TeamId _team = TeamId.None;
         Material _moonMaterial;
         GemMoonWorldStatsLabel _statsLabel;
 
         public int PlanetId => _planetId;
+
+        public float PlanetSize => _planetSize;
+
+        public bool IsHome => _isHome;
+
+        public float MoonBodyRadiusLocal =>
+            PlanetGemMoonMath.GetMoonBodyRadiusLocal(_planetSize, _isHome);
+
+        public float MoonDockSnapRadiusLocal =>
+            PlanetGemMoonMath.GetMoonDockSnapRadiusLocal(_planetSize, _isHome);
+
+        public float MoonVisualShellOuterRadiusLocal =>
+            PlanetGemMoonMath.GetMoonVisualShellOuterRadiusLocal(_planetSize, _isHome);
+
+        public float MoonShieldOuterRadiusLocal =>
+            PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(_planetSize, _isHome);
+
+        public float CurrentShieldRatio
+        {
+            get
+            {
+                if (EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(_planetId, out PlanetGemMoonState state)
+                    && state.MaxShield > 0.001f)
+                    return Mathf.Clamp01(state.CurrentShield / state.MaxShield);
+                return 1f;
+            }
+        }
 
         public Vector3 MoonWorldPosition =>
             _moonRoot != null ? _moonRoot.position : transform.position;
@@ -54,16 +84,19 @@ namespace TitanOrbit.Game
 
         void OnDisable() => PlanetGemMoonVisualRegistry.Unregister(this);
 
-        public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial)
+        public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial, TeamId team = TeamId.None)
         {
             _planetSize = Mathf.Max(0.01f, planetSize);
             _planetLevel = Mathf.Max(1, planetLevel);
             _planetId = planetId;
             _isHome = isHome;
+            _team = team;
             _moonMaterial = moonMaterial;
             EnsureMoonVisual();
             ApplyMoonScale();
             ApplyMoonMaterial();
+            EnsureOrbitZoneVisual();
+            EnsureMatrixShieldVisual();
             EnsureStatsLabel();
             if (_planetId > 0 && isActiveAndEnabled)
                 PlanetGemMoonVisualRegistry.Register(this);
@@ -159,6 +192,22 @@ namespace TitanOrbit.Game
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             if (_moonMaterial != null)
                 renderer.material = _moonMaterial;
+        }
+
+        void EnsureOrbitZoneVisual()
+        {
+            if (_moonRoot == null)
+                return;
+
+            GemMoonOrbitZoneVisual.EnsureOnMoonRoot(_moonRoot, this);
+        }
+
+        void EnsureMatrixShieldVisual()
+        {
+            if (_moonRoot == null)
+                return;
+
+            GemMoonMatrixShieldVisual.EnsureOnMoonRoot(_moonRoot, this, _team);
         }
 
         void EnsureStatsLabel()

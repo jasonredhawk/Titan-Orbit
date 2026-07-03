@@ -22,6 +22,8 @@ namespace TitanOrbit.Game
                 name.Contains("GemsLabel") ||
                 name.Contains("GemMoon") ||
                 name.Contains("GemMoonStats") ||
+                name.Contains("MoonOrbitZone") ||
+                name.Contains("GemMoonMatrixShield") ||
                 name.Contains("PlanetRings") ||
                 name.Contains("PlanetOrbit"))
                 return true;

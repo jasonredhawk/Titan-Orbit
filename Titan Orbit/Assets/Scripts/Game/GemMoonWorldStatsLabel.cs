@@ -10,6 +10,8 @@ namespace TitanOrbit.Game
     /// <summary>World-space gem count / max above the orbiting gem moon.</summary>
     public class GemMoonWorldStatsLabel : MonoBehaviour
     {
+        const string GemsColorHex = "#FF3333";
+        const string ShieldColorHex = "#40F2FF";
         const int TextSortingOrder = 5001;
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
@@ -67,7 +69,7 @@ namespace TitanOrbit.Game
             tmp.verticalAlignment = VerticalAlignmentOptions.Bottom;
             tmp.enableWordWrapping = false;
             tmp.richText = true;
-            tmp.lineSpacing = -8f;
+            tmp.lineSpacing = -10f;
             tmp.color = new Color(1f, 0.2f, 0.2f);
             ApplyReadableTextMaterial(tmp);
             tmp.ForceMeshUpdate();
@@ -138,10 +140,26 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
                 return;
 
-            int current = Mathf.RoundToInt(state.CurrentGems);
-            int max = Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(state.PlanetLevel));
-            _labelText.text = $"<size=110%>{current}</size>\n<size=70%>{max}</size>";
-            _labelText.color = state.Ownership.ToColor();
+            int currentGems = Mathf.RoundToInt(state.CurrentGems);
+            int maxGems = Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(state.PlanetLevel));
+
+            int currentShield;
+            int maxShield;
+            if (EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(planetId, out PlanetGemMoonState moonState))
+            {
+                currentShield = Mathf.RoundToInt(moonState.CurrentShield);
+                maxShield = Mathf.RoundToInt(moonState.MaxShield);
+            }
+            else
+            {
+                maxShield = Mathf.RoundToInt(PlanetGemMoonMath.GetMaxShieldForLevel(state.PlanetLevel));
+                currentShield = maxShield;
+            }
+
+            _labelText.text =
+                $"<color={GemsColorHex}><size=110%>{currentGems}</size>\n<size=70%>{maxGems}</size></color>\n" +
+                $"<color={ShieldColorHex}><size=110%>{currentShield}</size>\n<size=70%>{maxShield}</size></color>";
+            _labelText.color = Color.white;
         }
     }
 }

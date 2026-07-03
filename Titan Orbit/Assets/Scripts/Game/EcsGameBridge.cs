@@ -608,6 +608,21 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetPlanetGemMoonStateByPlanetId(int planetId, out PlanetGemMoonState moonState)
+        {
+            moonState = default;
+            if (planetId == 0)
+                return false;
+
+            if (IsLocalHost() && TryFindPlanetGemMoonState(ServerWorld, planetId, out moonState))
+                return true;
+
+            if (TryFindPlanetGemMoonState(ClientWorld, planetId, out moonState))
+                return true;
+
+            return false;
+        }
+
         /// <summary>Reads contributed gem bank balance from the server ledger (local host only).</summary>
         public static bool TryGetContributedGems(int homePlanetId, out float amount)
         {
@@ -653,6 +668,27 @@ namespace TitanOrbit.Game
                 if (states[i].PlanetId != planetId)
                     continue;
                 state = states[i];
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool TryFindPlanetGemMoonState(World world, int planetId, out PlanetGemMoonState moonState)
+        {
+            moonState = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(PlanetGemMoonState));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var moonStates = query.ToComponentDataArray<PlanetGemMoonState>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                moonState = moonStates[i];
                 return true;
             }
 

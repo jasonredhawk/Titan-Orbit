@@ -215,6 +215,12 @@ namespace TitanOrbit.ECS
             {
                 FractionalPopulation = maxPopulation,
             });
+            float maxShield = PlanetGemMoonMath.GetMaxShieldForLevel(level);
+            SetOrAddComponent(em, e, new PlanetGemMoonState
+            {
+                CurrentShield = maxShield,
+                MaxShield = maxShield,
+            });
         }
 
         void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue)

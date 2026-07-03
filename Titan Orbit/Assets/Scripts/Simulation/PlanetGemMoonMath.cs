@@ -9,6 +9,15 @@ namespace TitanOrbit.Simulation
         const float GemMoonReferencePlanetSize = 20f;
         const float GemMoonInversePlanetSizeCap = 10f;
         const float GemMoonDockOrbitZoneRadiusOverBody = 1.95f * 1.2f;
+        public const float BaseMaxShieldPoints = 250f;
+        public const float ShieldBarrierRadiusOverDock = 1.06f;
+        public const float MatrixShieldOrbitZoneEdgeExpandMultiplier = 1.35f;
+        public const float MatrixShieldRadiusReference = 5.5f;
+        public const float ShieldRegenDelaySeconds = 1.5f;
+        public const float ShieldRegenSecondsToFull = 30f;
+
+        public static float GetMaxShieldForLevel(int planetLevel) =>
+            math.max(0.001f, BaseMaxShieldPoints * math.max(1, planetLevel));
 
         public static float ComputeVisualUniformScale(float planetSize, float homeScaleMultiplier = 1f)
         {
@@ -65,6 +74,25 @@ namespace TitanOrbit.Simulation
             float uniform = ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
             return 0.5f * uniform * Mathf.Max(0.01f, planetSize);
         }
+
+        /// <summary>Moon body radius in moon-root local space (collider / visual mesh space).</summary>
+        public static float GetMoonBodyRadiusLocal(float planetSize, bool isHomePlanet)
+        {
+            float homeMul = isHomePlanet ? 1.5f : 1f;
+            return 0.5f * ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
+        }
+
+        /// <summary>Dock / orbit-zone outer radius in moon-root local space.</summary>
+        public static float GetMoonDockSnapRadiusLocal(float planetSize, bool isHomePlanet) =>
+            GetMoonBodyRadiusLocal(planetSize, isHomePlanet) * GemMoonDockOrbitZoneRadiusOverBody;
+
+        /// <summary>Shared outer shell radius for moon orbit-zone fill and matrix-shield VFX.</summary>
+        public static float GetMoonVisualShellOuterRadiusLocal(float planetSize, bool isHomePlanet) =>
+            GetMoonShieldOuterRadiusLocal(planetSize, isHomePlanet);
+
+        /// <summary>Outer shield barrier radius in moon-root local space (gameplay repulsion trigger).</summary>
+        public static float GetMoonShieldOuterRadiusLocal(float planetSize, bool isHomePlanet) =>
+            GetMoonDockSnapRadiusLocal(planetSize, isHomePlanet) * math.max(1f, ShieldBarrierRadiusOverDock);
 
         public static float GetMoonSurfaceLandingRangeWorld(float planetSize, bool isHomePlanet, float shipRadiusEstimate = 0.8f)
         {

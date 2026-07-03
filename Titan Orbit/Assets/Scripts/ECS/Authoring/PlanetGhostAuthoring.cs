@@ -14,6 +14,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new PlanetTag());
                 AddComponent(entity, new PlanetState());
                 AddComponent(entity, new PlanetGrowthState());
+                AddComponent(entity, new PlanetGemMoonState());
             }
         }
     }

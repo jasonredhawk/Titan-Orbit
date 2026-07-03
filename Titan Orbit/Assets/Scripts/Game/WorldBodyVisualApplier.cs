@@ -61,7 +61,7 @@ namespace TitanOrbit.Game
             if (moon == null)
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
             Material moonMaterial = CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId);
-            moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial);
+            moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             EnsurePlanetSpin(instance);
             EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
             return true;

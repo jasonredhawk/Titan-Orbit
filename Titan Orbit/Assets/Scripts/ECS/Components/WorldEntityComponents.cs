@@ -44,4 +44,12 @@ namespace TitanOrbit.ECS
         public float FractionalPopulation;
         public float LastHostilePopulationImpactServerTime;
     }
+
+    /// <summary>Replicated gem-moon shield reservoir (legacy PlanetGemMoon shieldPoints).</summary>
+    public struct PlanetGemMoonState : IComponentData
+    {
+        [GhostField] public float CurrentShield;
+        [GhostField] public float MaxShield;
+        public float LastShieldHitServerTime;
+    }
 }
