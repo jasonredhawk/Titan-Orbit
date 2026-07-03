@@ -97,6 +97,24 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
+        {
+            attributes = default;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!TryGetLocalShipEntity(em, out var shipEntity))
+                return false;
+
+            if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                return true;
+
+            attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+            return true;
+        }
+
         public static bool TryGetMatchState(out MatchStateSingleton match)
         {
             match = default;

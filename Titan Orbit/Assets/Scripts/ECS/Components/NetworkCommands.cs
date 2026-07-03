@@ -56,4 +56,9 @@ namespace TitanOrbit.ECS
         public byte Success;
         public FixedString128Bytes Message;
     }
+
+    public struct PurchaseAttributeUpgradeCommand : IRpcCommand
+    {
+        public int AttributeIndex;
+    }
 }

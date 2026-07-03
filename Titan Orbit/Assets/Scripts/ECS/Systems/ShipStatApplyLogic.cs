@@ -150,6 +150,12 @@ namespace TitanOrbit.ECS
 
             ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
 
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+            {
+                var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
+            }
+
             if (em.HasComponent<ShipState>(shipEntity))
             {
                 var ship = em.GetComponentData<ShipState>(shipEntity);

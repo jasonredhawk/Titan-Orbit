@@ -162,6 +162,8 @@ namespace TitanOrbit.ECS
             else
                 ecb.AddComponent(ship, new GhostOwner { NetworkId = networkId });
 
+            ecb.AddComponent(ship, new ShipAttributeUpgradeState());
+
             var commandTarget = new CommandTarget { targetEntity = ship };
             if (em.HasComponent<CommandTarget>(connection))
                 ecb.SetComponent(connection, commandTarget);

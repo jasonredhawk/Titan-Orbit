@@ -235,6 +235,13 @@ namespace TitanOrbit.ECS
             ship.ShipLevel = targetLevel;
             em.SetComponentData(shipEntity, ship);
 
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+            {
+                var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                ShipAttributeUpgradeLogic.Reset(ref attrs);
+                em.SetComponentData(shipEntity, attrs);
+            }
+
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);

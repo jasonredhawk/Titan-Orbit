@@ -94,6 +94,33 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 
+        public static void PurchaseAttributeUpgrade(int attributeIndex)
+        {
+            if (attributeIndex < 0 || attributeIndex > 9)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server != null && server.IsCreated)
+                {
+                    int networkId = EcsGameBridge.GetLocalNetworkId();
+                    if (ShipAttributeUpgradeLogic.TryPurchaseForNetworkId(
+                            server.EntityManager, networkId, attributeIndex, out _))
+                        return;
+                }
+            }
+
+            var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new PurchaseAttributeUpgradeCommand { AttributeIndex = attributeIndex });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
         public static void PurchaseStoreItem(int homePlanetId, StoreItemType itemType)
         {
             var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;

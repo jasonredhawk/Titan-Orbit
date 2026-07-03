@@ -74,6 +74,7 @@ namespace TitanOrbit.ECS.Authoring
                     HealthRegenDelayAfterDamage = 0.35f,
                 });
                 AddComponent(entity, new ShipVitalsState());
+                AddComponent(entity, new ShipAttributeUpgradeState());
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());
                 AddComponent(entity, new ShipMoonDockState());
