@@ -72,7 +72,21 @@ namespace TitanOrbit.Entities
                 config = Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
 
             if (config != null && storePlanetId > 0)
-                CurrentChassisId = config.GetChassisIdForLadderSlot(storePlanetId, ShipLevel, BranchIndex);
+            {
+                bool isHomePlanet = false;
+                int configIndex = -1;
+                if (EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planetState))
+                {
+                    isHomePlanet = planetState.IsHomePlanet;
+                    if (planetState.IsHomePlanet)
+                        configIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+                    else if (planetState.ShipFamilyConfigIndex > 0)
+                        configIndex = planetState.ShipFamilyConfigIndex;
+                }
+
+                CurrentChassisId = config.GetChassisIdForLadderSlot(
+                    storePlanetId, ShipLevel, BranchIndex, isHomePlanet, configIndex);
+            }
         }
 
         void SyncLoadoutBuffers()

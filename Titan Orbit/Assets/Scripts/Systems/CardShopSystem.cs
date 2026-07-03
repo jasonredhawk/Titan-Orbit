@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Game;
 using TitanOrbit.UI;
 using UnityEngine;
 
@@ -75,7 +76,47 @@ namespace TitanOrbit.Systems
         {
             if (Config == null || ship == null)
                 return null;
-            return Config.GetChassisIdForLadderSlot(storePlanetId, level, branchIndex);
+
+            ResolveStorePlanetFamily(storePlanetId, ship, out bool isHomePlanet, out int configIndex);
+            return Config.GetChassisIdForLadderSlot(storePlanetId, level, branchIndex, isHomePlanet, configIndex);
+        }
+
+        public ShipFamilyDefinition GetShipFamilyForStorePlanet(int storePlanetId, Starship ship = null)
+        {
+            if (Config == null || storePlanetId <= 0)
+                return null;
+
+            ResolveStorePlanetFamily(storePlanetId, ship, out bool isHomePlanet, out int configIndex);
+            return Config.GetFamilyForPlanet(storePlanetId, isHomePlanet, configIndex)?.shipFamilyDefinition;
+        }
+
+        static void ResolveStorePlanetFamily(int storePlanetId, Starship ship, out bool isHomePlanet, out int configIndex)
+        {
+            isHomePlanet = false;
+            configIndex = -1;
+
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out PlanetState state))
+            {
+                isHomePlanet = state.IsHomePlanet;
+                if (state.IsHomePlanet)
+                    configIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+                else if (state.ShipFamilyConfigIndex > 0)
+                    configIndex = state.ShipFamilyConfigIndex;
+                return;
+            }
+
+            if (ship != null)
+            {
+                foreach (var home in HomePlanet.AllHomePlanets)
+                {
+                    if (home != null && home.PlanetId == storePlanetId && home.AssignedTeam == ship.ShipTeam)
+                    {
+                        isHomePlanet = true;
+                        configIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+                        return;
+                    }
+                }
+            }
         }
 
         public ShipChassisDefinition GetChassisDefinitionByChassisId(string chassisId)

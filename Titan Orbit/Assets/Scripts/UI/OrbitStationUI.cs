@@ -3328,9 +3328,12 @@ namespace TitanOrbit.UI
                 return;
 
             EnsureMoonDockStoreSection();
-            ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
-                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
-                : null;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            ShipFamilyDefinition family = null;
+            if (CardShopSystem.Instance != null && storePlanet != null)
+                family = CardShopSystem.Instance.GetShipFamilyForStorePlanet(storePlanet.PlanetId, currentShip);
+            else if (CardShopSystem.Instance != null && currentShip != null)
+                family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
             string familyKey = family != null ? family.familyId : string.Empty;
             bool needsEquipmentRebuild = !string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal)
                 || _moonDockEquipmentCardLayoutVersionBuilt != MoonDockEquipmentCardLayoutVersion;

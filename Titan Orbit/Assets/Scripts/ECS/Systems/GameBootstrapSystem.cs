@@ -134,7 +134,7 @@ namespace TitanOrbit.ECS
                     PlanetId = (int)team,
                     Scale = home.Scale,
                 });
-                SpawnPlanet(ref state, home.Position, team, true, home.Scale, home.Level, ref nextNeutralPlanetId);
+                SpawnPlanet(ref state, home.Position, team, true, home.Scale, home.Level, ref nextNeutralPlanetId, 0);
             }
 
             MapGenerationLogic.BuildNeutralPlanets(config, rolled, ref rng, planetPlacements, neutralLayouts);
@@ -147,7 +147,8 @@ namespace TitanOrbit.ECS
                     Position = neutral.Position,
                     Scale = neutral.Scale,
                 });
-                SpawnPlanet(ref state, neutral.Position, TeamId.None, false, neutral.Scale, neutral.Level, ref nextNeutralPlanetId);
+                byte familyIndex = (byte)(1 + rng.NextInt(0, PlanetShipFamilyAssignment.NonHomeFamilySlotCount));
+                SpawnPlanet(ref state, neutral.Position, TeamId.None, false, neutral.Scale, neutral.Level, ref nextNeutralPlanetId, familyIndex);
             }
 
             MapGenerationLogic.BuildAsteroids(config, rolled, ref rng, planetPlacements, asteroidLayouts);
@@ -186,7 +187,7 @@ namespace TitanOrbit.ECS
                 $"Teams: {rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, Seed: {rolled.Seed}");
         }
 
-        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, float scale, int level, ref int nextNeutralPlanetId)
+        void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, float scale, int level, ref int nextNeutralPlanetId, byte shipFamilyConfigIndex)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Planet == Entity.Null)
                 return;
@@ -202,6 +203,7 @@ namespace TitanOrbit.ECS
                 PlanetLevel = level,
                 PlanetId = planetId,
                 IsHomePlanet = isHome,
+                ShipFamilyConfigIndex = isHome ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex : shipFamilyConfigIndex,
             });
             if (!em.HasComponent<PlanetTag>(e))
                 em.AddComponent<PlanetTag>(e);

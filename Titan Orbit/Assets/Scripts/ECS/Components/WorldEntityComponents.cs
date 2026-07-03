@@ -13,6 +13,8 @@ namespace TitanOrbit.ECS
         [GhostField] public float CurrentGems;
         [GhostField] public int PlanetId;
         [GhostField] public bool IsHomePlanet;
+        /// <summary>Index into PlanetShipFamilyConfig.families. 0 = AstroEagle (home only).</summary>
+        [GhostField] public byte ShipFamilyConfigIndex;
     }
 
     public struct AsteroidState : IComponentData

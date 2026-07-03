@@ -42,16 +42,86 @@ namespace TitanOrbit.Data
             return offset + branchIndex;
         }
 
-        /// <summary>Chassis ID at the ladder slot for this planet's family tree, or null.</summary>
-        public string GetChassisIdForLadderSlot(int planetId, int level, int branchIndex)
+        /// <summary>Gets the family entry for the given planet.</summary>
+        public ShipFamilyEntry GetFamilyForPlanet(int planetId) =>
+            GetFamilyForPlanet(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
+
+        /// <summary>Resolves ship family using ECS planet state when available.</summary>
+        public ShipFamilyEntry GetFamilyForPlanet(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            int idx = GetLadderLinearIndex(level, branchIndex);
-            if (idx < 0) return null;
-            return GetChassisIdForPlanetAndIndex(planetId, idx);
+            int configIndex = ResolveConfigIndex(planetId, isHomePlanet, shipFamilyConfigIndex);
+            return GetFamilyByConfigIndex(configIndex);
         }
 
-        /// <summary>Gets the family entry for the given planet.</summary>
-        public ShipFamilyEntry GetFamilyForPlanet(int planetId)
+        /// <summary>Gets a family entry by config list index (0 = home / AstroEagle).</summary>
+        public ShipFamilyEntry GetFamilyByConfigIndex(int configIndex)
+        {
+            if (families == null || families.Count == 0)
+                return null;
+            configIndex = Mathf.Clamp(configIndex, 0, families.Count - 1);
+            return families[configIndex];
+        }
+
+        /// <summary>Resolves config list index for a planet. Home planets always use AstroEagle (index 0).</summary>
+        public int ResolveConfigIndex(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        {
+            if (families == null || families.Count == 0)
+                return 0;
+
+            if (isHomePlanet || planetId == 0)
+                return GetHomeFamilyConfigIndex();
+
+            if (shipFamilyConfigIndex > 0 && shipFamilyConfigIndex < families.Count)
+                return shipFamilyConfigIndex;
+
+            if (planetId >= 100)
+                return GetNonHomeFamilyConfigIndex(planetId - 100);
+
+            for (int i = 0; i < families.Count; i++)
+            {
+                var f = families[i];
+                if (f != null && f.planetId == planetId)
+                    return i;
+            }
+
+            return GetNonHomeFamilyConfigIndex(Mathf.Abs(planetId));
+        }
+
+        public int GetHomeFamilyConfigIndex()
+        {
+            if (families == null || families.Count == 0)
+                return 0;
+
+            for (int i = 0; i < families.Count; i++)
+            {
+                if (families[i]?.planetId == 0)
+                    return i;
+            }
+
+            return 0;
+        }
+
+        public int GetNonHomeFamilyCount() => families == null ? 0 : Mathf.Max(0, families.Count - 1);
+
+        public int GetNonHomeFamilyConfigIndex(int ordinal)
+        {
+            int nonHomeCount = GetNonHomeFamilyCount();
+            if (nonHomeCount <= 0)
+                return GetHomeFamilyConfigIndex();
+            return 1 + (Mathf.Abs(ordinal) % nonHomeCount);
+        }
+
+        /// <summary>Chassis ID at the ladder slot for this planet's resolved ship family.</summary>
+        public string GetChassisIdForLadderSlot(int planetId, int level, int branchIndex, bool isHomePlanet = false, int shipFamilyConfigIndex = -1)
+        {
+            int idx = GetLadderLinearIndex(level, branchIndex);
+            if (idx < 0)
+                return null;
+            return GetChassisIdForPlanetAndIndex(planetId, idx, isHomePlanet, shipFamilyConfigIndex);
+        }
+
+        /// <summary>Legacy lookup by planet id only — prefer overload with isHomePlanet / config index.</summary>
+        public ShipFamilyEntry GetFamilyForPlanetLegacy(int planetId)
         {
             if (families == null || families.Count == 0) return null;
             for (int i = 0; i < families.Count; i++)
@@ -264,9 +334,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Gets chassis ID for the given planet and ship index (0-based). Uses the entry's ShipFamilyDefinition upgradeTree.</summary>
-        public string GetChassisIdForPlanetAndIndex(int planetId, int index)
+        public string GetChassisIdForPlanetAndIndex(int planetId, int index, bool isHomePlanet = false, int shipFamilyConfigIndex = -1)
         {
-            ShipFamilyEntry family = GetFamilyForPlanet(planetId);
+            ShipFamilyEntry family = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return null;
             if (index < 0 || index >= family.shipFamilyDefinition.upgradeTree.Count) return null;
 
