@@ -321,6 +321,11 @@ namespace TitanOrbit.Game
             string familyPrefix = shipFamily != null ? shipFamily.familyId : "AstroEagle";
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings);
 
+            var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
+            if (attributeScaleVisual == null)
+                attributeScaleVisual = go.AddComponent<ShipComponentAttributeScaleApplier>();
+            attributeScaleVisual.Bind(entity, familyPrefix, shipFamily);
+
             return go;
         }
 
