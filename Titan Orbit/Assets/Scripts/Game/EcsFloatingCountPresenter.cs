@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using Unity.Collections;
@@ -15,12 +16,17 @@ namespace TitanOrbit.Game
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
     {
+        const float DepositGemSoundInterval = 0.5f;
+
         struct ShipSnapshot
         {
             public int People;
             public float Gems;
             public float Health;
             public bool IsDead;
+            public int ShipLevel;
+            public float DepositSoundAccumulator;
+            public float LastDepositSoundTime;
         }
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
@@ -81,6 +87,7 @@ namespace TitanOrbit.Game
                     Gems = state.CurrentGems,
                     Health = state.Health,
                     IsDead = state.IsDead,
+                    ShipLevel = state.ShipLevel,
                 };
             }
 
@@ -105,11 +112,9 @@ namespace TitanOrbit.Game
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
-                ComponentType.ReadOnly<GhostOwner>(),
-                ComponentType.ReadOnly<LocalTransform>());
+                ComponentType.ReadOnly<GhostOwner>());
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            using var transforms = shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool hasLocalNetworkId = localNetworkId > 0;
@@ -121,20 +126,24 @@ namespace TitanOrbit.Game
                     continue;
 
                 var state = shipStates[i];
-                Vector3 pos = transforms[i].Position;
+                if (!TryGetShipAnchor(networkId, out Transform anchor))
+                    continue;
 
                 if (!_ships.TryGetValue(networkId, out ShipSnapshot last))
                 {
-                    last = new ShipSnapshot
+                    _ships[networkId] = new ShipSnapshot
                     {
                         People = state.CurrentPeople,
                         Gems = state.CurrentGems,
                         Health = state.Health,
                         IsDead = state.IsDead,
+                        ShipLevel = state.ShipLevel,
                     };
-                    _ships[networkId] = last;
                     continue;
                 }
+
+                var snap = last;
+                snap.ShipLevel = state.ShipLevel;
 
                 bool justDied = !last.IsDead && state.IsDead;
                 bool justRespawned = last.IsDead && !state.IsDead;
@@ -145,17 +154,26 @@ namespace TitanOrbit.Game
                     if (peopleDelta != 0)
                     {
                         var channel = peopleDelta > 0 ? FloatingCountChannel.PeopleLoad : FloatingCountChannel.PeopleUnload;
-                        WorldFloatingCountManager.Instance.ShowFloatingCount(pos, channel, peopleDelta, state.Team);
+                        WorldFloatingCountManager.Instance.ShowFloatingCount(anchor, channel, peopleDelta, state.Team);
                     }
 
                     float gemsDelta = state.CurrentGems - last.Gems;
                     if (gemsDelta > 0.01f)
                     {
+                        AudioManager.Instance?.PlayGemCollectSound(gemsDelta);
                         WorldFloatingCountManager.Instance.ShowFloatingCount(
-                            pos,
+                            anchor,
                             FloatingCountChannel.GemPickup,
                             gemsDelta,
                             state.Team);
+                    }
+                    else if (gemsDelta < -0.01f)
+                    {
+                        ProcessGemDepositSounds(ref snap, state, -gemsDelta);
+                    }
+                    else if (snap.DepositSoundAccumulator > 0.001f)
+                    {
+                        snap.DepositSoundAccumulator = 0f;
                     }
                 }
 
@@ -165,7 +183,7 @@ namespace TitanOrbit.Game
                     if (Mathf.Abs(healthDelta) >= 1f)
                     {
                         WorldFloatingCountManager.Instance.ShowFloatingCount(
-                            pos,
+                            anchor,
                             FloatingCountChannel.HealthChange,
                             healthDelta,
                             state.Team);
@@ -178,18 +196,21 @@ namespace TitanOrbit.Game
                     Gems = state.CurrentGems,
                     Health = state.Health,
                     IsDead = state.IsDead,
+                    ShipLevel = state.ShipLevel,
+                    DepositSoundAccumulator = snap.DepositSoundAccumulator,
+                    LastDepositSoundTime = snap.LastDepositSoundTime,
                 };
             }
         }
 
         void PollPlanetGems(EntityManager em)
         {
+            TryGetLocalShipAnchor(out Transform localAnchor);
+
             using var planetQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
-                ComponentType.ReadOnly<PlanetState>(),
-                ComponentType.ReadOnly<LocalTransform>());
+                ComponentType.ReadOnly<PlanetState>());
             using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
-            using var transforms = planetQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             for (int i = 0; i < planetStates.Length; i++)
             {
@@ -205,23 +226,27 @@ namespace TitanOrbit.Game
                 if (delta <= 0.01f)
                     continue;
 
-                WorldFloatingCountManager.Instance.ShowFloatingCount(
-                    transforms[i].Position,
-                    FloatingCountChannel.GemDeposit,
-                    delta,
-                    state.Ownership);
+                if (localAnchor != null)
+                {
+                    WorldFloatingCountManager.Instance.ShowFloatingCount(
+                        localAnchor,
+                        FloatingCountChannel.GemDeposit,
+                        delta,
+                        state.Ownership);
+                }
             }
         }
 
         void PollAsteroids(EntityManager em)
         {
+            if (!TryGetLocalShipAnchor(out Transform localAnchor))
+                return;
+
             using var asteroidQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<AsteroidTag>(),
-                ComponentType.ReadOnly<AsteroidState>(),
-                ComponentType.ReadOnly<LocalTransform>());
+                ComponentType.ReadOnly<AsteroidState>());
             using var entities = asteroidQuery.ToEntityArray(Allocator.Temp);
             using var states = asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
-            using var transforms = asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             var seen = new HashSet<Entity>();
 
@@ -241,7 +266,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
-                    transforms[i].Position,
+                    localAnchor,
                     new AsteroidFloatingFeedback
                     {
                         Team = state.TerritoryTeam,
@@ -263,6 +288,40 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < stale.Count; i++)
                     _asteroidHealth.Remove(stale[i]);
             }
+        }
+
+        static void ProcessGemDepositSounds(ref ShipSnapshot snap, in ShipState state, float depositedAmount)
+        {
+            snap.DepositSoundAccumulator += depositedAmount;
+            float gemValue = Mathf.Max(1f, state.ShipLevel);
+            float now = Time.time;
+
+            while (snap.DepositSoundAccumulator >= gemValue
+                   && now - snap.LastDepositSoundTime >= DepositGemSoundInterval)
+            {
+                AudioManager.Instance?.PlayGemDepositSound(gemValue);
+                snap.DepositSoundAccumulator -= gemValue;
+                snap.LastDepositSoundTime = now;
+            }
+
+            if (state.CurrentGems <= 0.001f && snap.DepositSoundAccumulator > 0.001f)
+            {
+                AudioManager.Instance?.PlayGemDepositSound(snap.DepositSoundAccumulator);
+                snap.DepositSoundAccumulator = 0f;
+                snap.LastDepositSoundTime = now;
+            }
+        }
+
+        static bool TryGetShipAnchor(int networkId, out Transform anchor) =>
+            ShipWeaponProxyRegistry.TryGetHull(networkId, out anchor);
+
+        static bool TryGetLocalShipAnchor(out Transform anchor)
+        {
+            anchor = null;
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            if (localNetworkId <= 0)
+                return false;
+            return ShipWeaponProxyRegistry.TryGetHull(localNetworkId, out anchor);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 
@@ -28,6 +29,19 @@ namespace TitanOrbit.Game
         [SerializeField] float floatingCountIconScale = 0.1f;
         [SerializeField] Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0f, 0f);
         [SerializeField] float floatingCountVerticalOffset = 3.5f;
+        [Header("Ship-Local Popups")]
+        [Tooltip("Font size for popups parented to the ship (toroidal / follow-ship mode).")]
+        [SerializeField] float shipFloatingFontSize = 32f;
+        [Tooltip("Base screen-up clearance on the XZ play plane, plus a hull-radius multiplier below.")]
+        [SerializeField] float shipFloatingVerticalOffset = 1.75f;
+        [SerializeField] float shipFloatingOffsetHullRadiusMultiplier = 6f;
+        [SerializeField] float shipFloatingOffsetMin = 2f;
+        [SerializeField] float shipFloatingOffsetMax = 5f;
+        [SerializeField] float shipFloatingIconScale = 0.3f;
+        [SerializeField] float shipFloatingStackLineSpacing = 1.25f;
+        [Tooltip("Optional tiny screen-plane jitter; keep near 0 to stay centered above the ship.")]
+        [SerializeField] float shipFloatingSpawnJitterRadius = 0.05f;
+        [SerializeField] float shipFloatingLateralDriftMax = 0f;
         [Header("Floating Count Spread")]
         [SerializeField] float floatingCountSpawnJitterRadius = 1.05f;
         [SerializeField] float floatingCountSpawnRingStep = 0.32f;
@@ -40,8 +54,6 @@ namespace TitanOrbit.Game
         [SerializeField] Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
         [SerializeField] Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
-
-        int floatingPopupSequence;
 
         public FloatingCountChannelVisibility FloatingCountVisibility => floatingCountVisibility;
 
@@ -90,8 +102,11 @@ namespace TitanOrbit.Game
 #endif
         }
 
-        public void ShowFloatingCount(Vector3 position, FloatingCountChannel channel, float signedAmount, TeamId team)
+        public void ShowFloatingCount(Transform shipAnchor, FloatingCountChannel channel, float signedAmount, TeamId team)
         {
+            if (shipAnchor == null)
+                return;
+
             if (!IsFloatingCountChannelVisible(channel))
                 return;
 
@@ -174,11 +189,14 @@ namespace TitanOrbit.Game
                     break;
             }
 
-            SpawnPopup(message, icon, color, $"FloatingCountPopup_{channel}", position, fontToUse);
+            SpawnPopupAttached(message, icon, color, $"FloatingCountPopup_{channel}", shipAnchor, fontToUse);
         }
 
-        public void ShowAsteroidFeedback(Vector3 position, AsteroidFloatingFeedback feedback)
+        public void ShowAsteroidFeedback(Transform shipAnchor, AsteroidFloatingFeedback feedback)
         {
+            if (shipAnchor == null)
+                return;
+
             FloatingCountStackLine[] lines = BuildAsteroidFeedbackLines(feedback);
             if (lines == null || lines.Length == 0)
                 return;
@@ -187,19 +205,23 @@ namespace TitanOrbit.Game
             if (fontToUse == null)
                 return;
 
-            Vector3 spawnPos = GetStackSpawnPosition(position);
             var go = new GameObject("FloatingCountStack_AsteroidHit");
-            go.transform.position = spawnPos;
+            ComputeShipFollowSpawn(shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset);
+            go.transform.position = shipAnchor.position;
+            ApplyShipFollowTransformScale(go.transform, shipAnchor);
 
             var popup = go.AddComponent<FloatingCountStackPopup>();
             popup.Initialize(
                 lines,
                 fontToUse,
-                floatingCountFontSize,
-                floatingCountStackLineSpacing,
+                shipFloatingFontSize,
+                shipFloatingStackLineSpacing,
                 floatingCountDuration,
                 floatingCountRiseSpeed,
-                Mathf.Max(0f, floatingCountLateralDriftMax));
+                Mathf.Max(0f, shipFloatingLateralDriftMax),
+                followAnchor: shipAnchor,
+                followScreenUpOffset: screenUpOffset,
+                initialWorldMotionOffset: initialMotionOffset);
         }
 
         FloatingCountStackLine[] BuildAsteroidFeedbackLines(AsteroidFloatingFeedback feedback)
@@ -248,45 +270,82 @@ namespace TitanOrbit.Game
         bool IsFloatingCountChannelVisible(FloatingCountChannel channel) =>
             floatingCountVisibility == null || floatingCountVisibility.IsEnabled(channel);
 
-        Vector3 GetStackSpawnPosition(Vector3 position)
+        void ComputeShipFollowSpawn(Transform shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset)
         {
-            Vector3 spawnPos = position;
-            spawnPos.y = floatingCountVerticalOffset;
-            if (spawnPos.y < 4f)
-                spawnPos.y = 4f;
-            return spawnPos;
+            screenUpOffset = ResolveShipFloatingOffset(shipAnchor);
+            initialMotionOffset = ComputeSpawnJitterOffset();
         }
 
-        Vector3 GetSpreadSpawnPosition(Vector3 position)
+        Vector3 ComputeSpawnJitterOffset()
         {
-            int n = floatingPopupSequence++;
-            const float goldenAngle = 2.39996323f;
-            float phase = (position.x * 12.9898f + position.z * 78.233f) * 0.215f;
-            float angle = phase + goldenAngle * n;
-            int period = Mathf.Max(8, floatingCountSpiralPeriod);
-            float ringR = Mathf.Sqrt((n % period) + 1) * Mathf.Max(0.01f, floatingCountSpawnRingStep);
-            ringR = Mathf.Min(ringR, Mathf.Max(0.5f, floatingCountMaxSpreadRadius));
+            if (shipFloatingSpawnJitterRadius <= 0.001f)
+                return Vector3.zero;
 
-            Vector3 ring = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringR;
-            Vector2 jitter = Random.insideUnitCircle * Mathf.Max(0f, floatingCountSpawnJitterRadius);
-            Vector3 spawnPos = position + ring + new Vector3(jitter.x, floatingCountVerticalOffset, jitter.y);
+            var cam = Camera.main;
+            Vector3 playUp = GetPlayPlaneUp(cam);
+            Vector3 playRight = Vector3.Cross(Vector3.up, playUp);
+            if (playRight.sqrMagnitude < 1e-8f)
+                playRight = Vector3.right;
+            playRight.Normalize();
 
-            if (spawnPos.y < 4f)
-                spawnPos.y = 4f;
-            return spawnPos;
+            Vector2 jitter = Random.insideUnitCircle * shipFloatingSpawnJitterRadius;
+            return playRight * jitter.x + playUp * jitter.y;
         }
 
-        void SpawnPopup(string message, Sprite icon, Color color, string popupName, Vector3 position, TMP_FontAsset fontToUse)
+        float ResolveShipFloatingOffset(Transform shipAnchor)
         {
-            if (string.IsNullOrEmpty(message))
+            float hullRadius = BodyCollisionMath.MinShipHullRadiusWorld;
+            if (shipAnchor != null)
+            {
+                float presentationScale = Mathf.Max(0.0001f, shipAnchor.lossyScale.x);
+                float ecsScale = presentationScale / BodyCollisionMath.ShipPresentationScale;
+                hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(ecsScale);
+            }
+
+            float total = shipFloatingVerticalOffset + hullRadius * shipFloatingOffsetHullRadiusMultiplier;
+            return Mathf.Clamp(total, shipFloatingOffsetMin, shipFloatingOffsetMax);
+        }
+
+        static Vector3 GetPlayPlaneUp(Camera cam)
+        {
+            if (cam == null)
+                return Vector3.forward;
+
+            Vector3 dir = cam.transform.up;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 1e-8f)
+                dir = Vector3.ProjectOnPlane(-cam.transform.forward, Vector3.up);
+            if (dir.sqrMagnitude < 1e-8f)
+                dir = Vector3.forward;
+            return dir.normalized;
+        }
+
+        void ApplyShipFollowTransformScale(Transform popupRoot, Transform shipAnchor)
+        {
+            float shipScale = shipAnchor != null
+                ? Mathf.Max(0.0001f, shipAnchor.lossyScale.x)
+                : BodyCollisionMath.ShipPresentationScale;
+            popupRoot.localScale = Vector3.one * shipScale;
+        }
+
+        void SpawnPopupAttached(
+            string message,
+            Sprite icon,
+            Color color,
+            string popupName,
+            Transform shipAnchor,
+            TMP_FontAsset fontToUse)
+        {
+            if (string.IsNullOrEmpty(message) || shipAnchor == null)
                 return;
 
             if (Camera.main == null)
                 return;
 
-            Vector3 spawnPos = GetSpreadSpawnPosition(position);
             var go = new GameObject(popupName);
-            go.transform.position = spawnPos;
+            ComputeShipFollowSpawn(shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset);
+            go.transform.position = shipAnchor.position;
+            ApplyShipFollowTransformScale(go.transform, shipAnchor);
 
             var popup = go.AddComponent<FloatingCountPopup>();
             popup.Initialize(
@@ -294,12 +353,15 @@ namespace TitanOrbit.Game
                 icon,
                 color,
                 fontToUse,
-                floatingCountFontSize,
+                shipFloatingFontSize,
                 floatingCountDuration,
                 floatingCountRiseSpeed,
-                floatingCountIconScale,
+                shipFloatingIconScale,
                 floatingCountIconLocalOffset,
-                Mathf.Max(0f, floatingCountLateralDriftMax));
+                Mathf.Max(0f, shipFloatingLateralDriftMax),
+                followAnchor: shipAnchor,
+                followScreenUpOffset: screenUpOffset,
+                initialWorldMotionOffset: initialMotionOffset);
         }
     }
 }

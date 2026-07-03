@@ -7,14 +7,14 @@ namespace TitanOrbit.Simulation
     {
         public const float SearchRadiusNormal = 3f;
         public const float SearchRadiusOrbit = 4.5f;
-        public const float AttractionSpeedNormal = 10f;
-        public const float AttractionSpeedOrbit = 16f;
-        public const float GameplayPullSpeedScale = 0.38f;
-        public const float MinGameplayPullSpeed = 0.75f;
-        public const float MaxGameplayPullSpeed = 5.5f;
+        public const float BasePullSpeedNormal = 5f;
+        public const float BasePullSpeedOrbit = 8f;
         public const float MaxGemsToSearchRadius = SearchRadiusNormal / 8f;
-        public const float MaxGemsToAttractionSpeed = AttractionSpeedNormal / 8f;
-        public const float ActivePullTowardSpeedThreshold = 0.22f;
+        public const float ReferenceGemSizeForPull = 0.35f;
+        public const float MinGemSizeForPull = 0.2f;
+        public const float MinGemMassPullFactor = 0.55f;
+        public const float MaxGemMassPullFactor = 1.85f;
+        public const float ActivePullTowardSpeedThreshold = 2.5f;
 
         public const float ExtendLineSpeed = 16f;
         public const float MinExtendDuration = 0.07f;
@@ -25,24 +25,37 @@ namespace TitanOrbit.Simulation
         {
             float gems = math.max(0f, effectiveMaxGems);
             searchRadius = gems * MaxGemsToSearchRadius;
-            attractionSpeed = gems * MaxGemsToAttractionSpeed;
-            ApplyOrbitTractorMultipliers(inOrbitZone, ref searchRadius, ref attractionSpeed);
+            ApplyOrbitSearchRadiusMultiplier(inOrbitZone, ref searchRadius);
             searchRadius = math.max(0.5f, searchRadius);
-            attractionSpeed = ScaleToGameplayPullSpeed(attractionSpeed);
+            attractionSpeed = GetBasePullSpeed(inOrbitZone);
         }
 
-        public static float ScaleToGameplayPullSpeed(float authoredPullSpeed)
+        public static float GetBasePullSpeed(bool inOrbitZone) =>
+            inOrbitZone ? BasePullSpeedOrbit : BasePullSpeedNormal;
+
+        public static float ResolveGemSizeForPull(float gemValue, float gemSize)
         {
-            float speed = math.max(0f, authoredPullSpeed) * GameplayPullSpeedScale;
-            return math.clamp(speed, MinGameplayPullSpeed, MaxGameplayPullSpeed);
+            if (gemSize > 0.001f)
+                return gemSize;
+
+            return math.clamp(math.sqrt(math.max(0.25f, gemValue)) * 0.2f, MinGemSizeForPull, 0.5f);
         }
 
-        public static void ApplyOrbitTractorMultipliers(bool inOrbitZone, ref float searchRadius, ref float attractionSpeed)
+        public static float ComputeGemMassPullFactor(float gemSize)
+        {
+            float size = math.max(MinGemSizeForPull, gemSize);
+            float factor = ReferenceGemSizeForPull / size;
+            return math.clamp(factor, MinGemMassPullFactor, MaxGemMassPullFactor);
+        }
+
+        public static float ResolvePullSpeed(float gemValue, float gemSize, bool inOrbitZone) =>
+            GetBasePullSpeed(inOrbitZone) * ComputeGemMassPullFactor(ResolveGemSizeForPull(gemValue, gemSize));
+
+        public static void ApplyOrbitSearchRadiusMultiplier(bool inOrbitZone, ref float searchRadius)
         {
             if (!inOrbitZone)
                 return;
             searchRadius *= SearchRadiusOrbit / SearchRadiusNormal;
-            attractionSpeed *= AttractionSpeedOrbit / AttractionSpeedNormal;
         }
 
         public static void GetTractorBeamFromStats(
@@ -59,18 +72,17 @@ namespace TitanOrbit.Simulation
         {
             int perLvl = math.max(0, shipLevel - 1);
             searchRadius = tractorBeamDistance + tractorBeamDistancePerLevel * perLvl;
-            attractionSpeed = tractorBeamPower + tractorBeamPowerPerLevel * perLvl;
 
-            if (searchRadius <= 0f && attractionSpeed <= 0f)
+            if (searchRadius <= 0f && tractorBeamPower <= 0f && tractorBeamPowerPerLevel <= 0f)
             {
                 float effectiveMaxGems = math.max(0f, maxGems + maxGemsPerLevel * perLvl);
                 GetTractorBeamFromMaxGems(effectiveMaxGems, inOrbitZone, out searchRadius, out attractionSpeed);
                 return;
             }
 
-            ApplyOrbitTractorMultipliers(inOrbitZone, ref searchRadius, ref attractionSpeed);
+            ApplyOrbitSearchRadiusMultiplier(inOrbitZone, ref searchRadius);
             searchRadius = math.max(0.5f, searchRadius);
-            attractionSpeed = ScaleToGameplayPullSpeed(attractionSpeed);
+            attractionSpeed = GetBasePullSpeed(inOrbitZone);
         }
 
         public static void GetWingTractorParams(

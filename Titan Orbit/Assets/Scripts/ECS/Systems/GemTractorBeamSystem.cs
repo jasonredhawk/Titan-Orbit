@@ -117,7 +117,10 @@ namespace TitanOrbit.ECS
                     continue;
 
                 int wingIndex = assignment[gemEntity.Index];
-                float pullSpeed = ResolvePullSpeed(wingIndex, wings, shipLevel, inOrbit);
+                float pullSpeed = GemTractorBeamMath.ResolvePullSpeed(
+                    gemState.ValueRO.Value,
+                    gemState.ValueRO.Size,
+                    inOrbit);
 
                 float3 gemPos = gemTransform.ValueRO.Position;
                 float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
@@ -287,22 +290,6 @@ namespace TitanOrbit.ECS
 
             if (closest != Entity.Null)
                 assignment.TryAdd(closest.Index, 0);
-        }
-
-        static float ResolvePullSpeed(
-            int wingIndex,
-            DynamicBuffer<ShipWingTractorBeamElement> wings,
-            int shipLevel,
-            bool inOrbit)
-        {
-            if (wingIndex >= 0 && wingIndex < wings.Length)
-            {
-                ShipWingTractorBeamPose.GetTractorParams(wings[wingIndex], shipLevel, inOrbit, out _, out float speed);
-                return speed;
-            }
-
-            GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out float fallback);
-            return fallback;
         }
 
         void EnsureDeployState(long pairKey, float3 origin, float3 gemPos, float mapW, float mapH, double now)

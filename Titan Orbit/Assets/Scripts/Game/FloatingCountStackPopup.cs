@@ -32,6 +32,9 @@ namespace TitanOrbit.Game
         float riseSpeed;
         float lockedY;
         Vector3 lateralVelocity;
+        Transform followAnchor;
+        float followScreenUpOffset;
+        Vector3 worldMotionOffset;
 
         public void Initialize(
             FloatingCountStackLine[] lines,
@@ -40,8 +43,14 @@ namespace TitanOrbit.Game
             float lineSpacing,
             float duration,
             float riseSpeed,
-            float lateralDriftSpeedMax = 0f)
+            float lateralDriftSpeedMax = 0f,
+            Transform followAnchor = null,
+            float followScreenUpOffset = 0f,
+            Vector3 initialWorldMotionOffset = default)
         {
+            this.followAnchor = followAnchor;
+            this.followScreenUpOffset = followScreenUpOffset;
+            worldMotionOffset = initialWorldMotionOffset;
             if (lines == null || lines.Length == 0)
             {
                 Destroy(gameObject);
@@ -66,10 +75,17 @@ namespace TitanOrbit.Game
             }
 
             elapsed = 0f;
-            lockedY = Mathf.Max(transform.position.y, MinPopupWorldY);
-            Vector3 initPos = transform.position;
-            initPos.y = lockedY;
-            transform.position = initPos;
+            if (followAnchor == null)
+            {
+                lockedY = Mathf.Max(transform.position.y, MinPopupWorldY);
+                Vector3 initPos = transform.position;
+                initPos.y = lockedY;
+                transform.position = initPos;
+            }
+            else
+            {
+                ApplyFollowPosition();
+            }
 
             baseColor = Color.white;
             baseColor.a = 0f;
@@ -168,13 +184,19 @@ namespace TitanOrbit.Game
             float t = Mathf.Clamp01(elapsed / lifetime);
 
             var cam = Camera.main;
-            transform.position += GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
+            Vector3 motion = GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
             if (lateralVelocity.sqrMagnitude > 0f)
-                transform.position += lateralVelocity * Time.deltaTime;
+                motion += lateralVelocity * Time.deltaTime;
 
-            Vector3 pos = transform.position;
-            pos.y = lockedY;
-            transform.position = pos;
+            worldMotionOffset += motion;
+
+            if (followAnchor == null)
+            {
+                transform.position += motion;
+                Vector3 pos = transform.position;
+                pos.y = lockedY;
+                transform.position = pos;
+            }
 
             if (cam != null)
                 transform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
@@ -193,12 +215,30 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            if (followAnchor != null)
+            {
+                ApplyFollowPosition();
+                return;
+            }
+
             Vector3 pos = transform.position;
             if (pos.y != lockedY)
             {
                 pos.y = lockedY;
                 transform.position = pos;
             }
+        }
+
+        void ApplyFollowPosition()
+        {
+            if (followAnchor == null)
+                return;
+
+            var cam = Camera.main;
+            Vector3 playUp = GetRiseDirectionOnPlayPlane(cam);
+            Vector3 basePos = followAnchor.position + playUp * followScreenUpOffset;
+            basePos.y = followAnchor.position.y;
+            transform.position = basePos + worldMotionOffset;
         }
     }
 }
