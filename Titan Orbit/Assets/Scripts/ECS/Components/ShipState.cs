@@ -36,6 +36,8 @@ namespace TitanOrbit.ECS
         public float FireRate;
         public float BulletSpeed;
         public float BulletDamage;
+        /// <summary>Energy spent per shot (legacy: equals fire power / bullet damage).</summary>
+        public float EnergyCostPerShot;
         public float BulletLifetime;
         public float BulletMaxDistance;
         public float MuzzleOffset;
@@ -44,6 +46,19 @@ namespace TitanOrbit.ECS
         /// <summary>Level-1 baseline used to derive upgrade VFX growth from current damage/speed.</summary>
         public float ReferenceBulletDamage;
         public float ReferenceBulletSpeed;
+    }
+
+    /// <summary>Regen rates from ship-family stats; applied server-side each tick.</summary>
+    public struct ShipVitalsConfig : IComponentData
+    {
+        public float HealthRegenPerSecond;
+        public float EnergyRegenPerSecond;
+        public float HealthRegenDelayAfterDamage;
+    }
+
+    public struct ShipVitalsState : IComponentData
+    {
+        public double LastHullDamageTime;
     }
 
     public struct ShipWeaponState : IComponentData

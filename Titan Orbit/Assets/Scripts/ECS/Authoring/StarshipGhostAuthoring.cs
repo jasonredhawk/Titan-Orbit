@@ -59,6 +59,7 @@ namespace TitanOrbit.ECS.Authoring
                     FireRate = authoring.FireRate,
                     BulletSpeed = authoring.BulletSpeed,
                     BulletDamage = authoring.BulletDamage,
+                    EnergyCostPerShot = authoring.BulletDamage,
                     BulletLifetime = authoring.BulletLifetime,
                     BulletMaxDistance = authoring.BulletMaxDistance,
                     MuzzleOffset = authoring.MuzzleOffset,
@@ -66,6 +67,13 @@ namespace TitanOrbit.ECS.Authoring
                     ReferenceBulletDamage = authoring.BulletDamage,
                     ReferenceBulletSpeed = authoring.BulletSpeed,
                 });
+                AddComponent(entity, new ShipVitalsConfig
+                {
+                    HealthRegenPerSecond = 6f,
+                    EnergyRegenPerSecond = 5f,
+                    HealthRegenDelayAfterDamage = 0.35f,
+                });
+                AddComponent(entity, new ShipVitalsState());
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());
                 AddComponent(entity, new ShipMoonDockState());

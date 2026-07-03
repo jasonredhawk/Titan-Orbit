@@ -184,6 +184,7 @@ namespace TitanOrbit.ECS
                 weapon.FireRate = fireRate;
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
+                weapon.EnergyCostPerShot = firePower;
                 if (weapon.ReferenceBulletDamage <= 0.01f)
                     weapon.ReferenceBulletDamage = firePower;
                 if (weapon.ReferenceBulletSpeed <= 0.01f)
@@ -204,6 +205,27 @@ namespace TitanOrbit.ECS
                 motor.EngineThrust = thrust;
                 motor.RotationSpeed = turnVal;
                 em.SetComponentData(shipEntity, motor);
+            }
+
+            var vitals = new ShipVitalsConfig
+            {
+                HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
+                EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
+                HealthRegenDelayAfterDamage = 0.35f,
+            };
+            if (em.HasComponent<ShipVitalsConfig>(shipEntity))
+                em.SetComponentData(shipEntity, vitals);
+            else if (queueStructuralChanges)
+                ecb.AddComponent(shipEntity, vitals);
+            else
+                em.AddComponentData(shipEntity, vitals);
+
+            if (!em.HasComponent<ShipVitalsState>(shipEntity))
+            {
+                if (queueStructuralChanges)
+                    ecb.AddComponent(shipEntity, new ShipVitalsState());
+                else
+                    em.AddComponentData(shipEntity, new ShipVitalsState());
             }
 
             var chassisState = new ShipChassisState

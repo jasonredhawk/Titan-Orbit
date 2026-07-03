@@ -68,6 +68,12 @@ namespace TitanOrbit.ECS
                     writable.ValueRW.Health -= b.Damage;
                     if (writable.ValueRW.Health <= 0f)
                         writable.ValueRW.IsDead = true;
+                    if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
+                    {
+                        var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
+                        vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
+                        state.EntityManager.SetComponentData(shipEntity, vitals);
+                    }
                     hit = true;
                     break;
                 }
@@ -142,7 +148,7 @@ namespace TitanOrbit.ECS
             }
 
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
-                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRO<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
+                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -161,6 +167,12 @@ namespace TitanOrbit.ECS
 
                 float fireRate = math.max(0.1f, weaponCfg.ValueRO.FireRate);
                 if (cooldown > 0f)
+                    continue;
+
+                float energyCost = weaponCfg.ValueRO.EnergyCostPerShot > 0f
+                    ? weaponCfg.ValueRO.EnergyCostPerShot
+                    : weaponCfg.ValueRO.BulletDamage;
+                if (shipState.ValueRO.CurrentEnergy < energyCost)
                     continue;
 
                 if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
@@ -233,6 +245,8 @@ namespace TitanOrbit.ECS
                     BankIndex = 0,
                     ScaleMultiplier = visualScale,
                 });
+
+                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energyCost);
 
                 weaponState.ValueRW.FireCooldown = 1f / fireRate;
                 weaponState.ValueRW.NextMountIndex = (mountIdx + 1) % mounts.Length;

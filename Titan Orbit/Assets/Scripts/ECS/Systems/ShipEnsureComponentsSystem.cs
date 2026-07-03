@@ -29,6 +29,7 @@ namespace TitanOrbit.ECS
                     FireRate = 2f,
                     BulletSpeed = 20f,
                     BulletDamage = 8f,
+                    EnergyCostPerShot = 8f,
                     BulletLifetime = 3f,
                     BulletMaxDistance = 200f,
                     MuzzleOffset = 2f,
@@ -37,6 +38,23 @@ namespace TitanOrbit.ECS
                     ReferenceBulletSpeed = 20f,
                 });
             }
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipVitalsConfig>()
+                         .WithEntityAccess())
+            {
+                ecb.AddComponent(entity, new ShipVitalsConfig
+                {
+                    HealthRegenPerSecond = 6f,
+                    EnergyRegenPerSecond = 5f,
+                    HealthRegenDelayAfterDamage = 0.35f,
+                });
+            }
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipVitalsState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipVitalsState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipWeaponState>()
