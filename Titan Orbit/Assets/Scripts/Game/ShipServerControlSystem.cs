@@ -17,6 +17,7 @@ namespace TitanOrbit.Game
     /// Right-click thrust still works alongside WASD / arrow keys.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(Unity.NetCode.GhostInputSystemGroup))]
     [UpdateBefore(typeof(ShipMovementSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class ShipServerControlSystem : SystemBase
@@ -69,10 +70,17 @@ namespace TitanOrbit.Game
                     }
                 }
 
-                if (EntityManager.HasComponent<ShipInput>(entity))
-                    cmd.WantDepositGems |= EntityManager.GetComponentData<ShipInput>(entity).WantDepositGems;
-
+                bool wantDeposit = MoonOrbitClientState.WantDepositGems;
+                cmd.WantDepositGems = wantDeposit;
                 EntityManager.SetComponentData(entity, cmd);
+
+                if (EcsGameBridge.IsLocalHost() && EntityManager.HasComponent<ShipDepositIntent>(entity))
+                {
+                    EntityManager.SetComponentData(entity, new ShipDepositIntent
+                    {
+                        WantDepositGems = wantDeposit,
+                    });
+                }
             }
         }
 

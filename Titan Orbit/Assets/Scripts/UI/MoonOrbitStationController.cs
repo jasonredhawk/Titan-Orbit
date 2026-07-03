@@ -89,6 +89,8 @@ namespace TitanOrbit.UI
 
         void HideMenu()
         {
+            MoonOrbitRpcClient.SetWantDepositGems(false);
+            _landingCompleteTime = -1f;
             if (!_menuVisible)
                 return;
             if (_ui != null)

@@ -200,6 +200,24 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetLocalShipDepositIntent(out bool wantDepositGems)
+        {
+            wantDepositGems = false;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+                em.HasComponent<ShipDepositIntent>(shipEntity))
+            {
+                wantDepositGems = em.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
+                return true;
+            }
+
+            return false;
+        }
+
         public static bool TryGetLocalShipLoadout(out ShipLoadoutState loadout)
         {
             loadout = default;

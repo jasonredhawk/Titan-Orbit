@@ -137,7 +137,7 @@ namespace TitanOrbit.UI
         partial void OnOrbitStationEcsHide()
         {
             MoonOrbitClientState.SetOrbitMenuVisible(false);
-            MoonOrbitClientState.SetWantDepositGems(false);
+            // Keep deposit intent while still moon-docked; MoonOrbitStationController clears on undock.
             OrbitStationEcsContext.Clear();
             _ecsStorePlanetId = 0;
             _ecsHomePlanetId = 0;

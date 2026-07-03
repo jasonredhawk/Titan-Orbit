@@ -3313,12 +3313,9 @@ namespace TitanOrbit.UI
 
         private void ApplyAutoDepositToShip(bool wantDeposit)
         {
-            if (currentShip == null)
-                return;
-            if (currentShip.WantToDepositGems == wantDeposit)
-                return;
-            currentShip.SetWantToDepositGemsServerRpc(wantDeposit);
-            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            if (currentShip != null)
+                currentShip.SetWantToDepositGemsServerRpc(wantDeposit);
+            else
                 MoonOrbitRpcClient.SetWantDepositGems(wantDeposit);
         }
 

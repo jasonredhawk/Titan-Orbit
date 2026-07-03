@@ -247,6 +247,10 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.Team == TeamId.None || shipState.ValueRO.CurrentGems <= 0f)
                     continue;
 
+                bool wantDeposit = shipInput.ValueRO.WantDepositGems;
+                if (state.EntityManager.HasComponent<ShipDepositIntent>(shipEntity))
+                    wantDeposit = state.EntityManager.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
+
                 int ownerNetworkId = 0;
                 if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
                     ownerNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
@@ -261,6 +265,7 @@ namespace TitanOrbit.ECS
 
                     if (!CanDepositAtPlanet(
                             shipInput.ValueRO,
+                            wantDeposit,
                             moonDock.ValueRO,
                             planetState.ValueRO))
                         continue;
@@ -291,10 +296,11 @@ namespace TitanOrbit.ECS
 
         static bool CanDepositAtPlanet(
             in ShipInput input,
+            bool wantDepositGems,
             in ShipMoonDockState moonDock,
             in PlanetState planet)
         {
-            if (input.Thrust || !input.WantDepositGems)
+            if (input.Thrust || !wantDepositGems)
                 return false;
 
             if (moonDock.MoonPlanetId != planet.PlanetId || moonDock.MoonPlanetId == 0)

@@ -4,6 +4,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Game;
+using TitanOrbit.UI;
 using UnityEngine;
 
 namespace TitanOrbit.Entities
@@ -59,6 +60,9 @@ namespace TitanOrbit.Entities
 
             if (EcsGameBridge.TryGetLocalShipInput(out var input))
                 WantToDepositGems = input.WantDepositGems;
+
+            if (EcsGameBridge.TryGetLocalShipDepositIntent(out bool depositIntent))
+                WantToDepositGems = depositIntent;
 
             ResolveChassisId(storePlanetId);
             SyncLoadoutBuffers();
@@ -136,7 +140,7 @@ namespace TitanOrbit.Entities
         public void SetWantToDepositGemsServerRpc(bool wantDeposit)
         {
             WantToDepositGems = wantDeposit;
-            MoonOrbitClientState.SetWantDepositGems(wantDeposit);
+            MoonOrbitRpcClient.SetWantDepositGems(wantDeposit);
         }
 
         public void RemoveCardServerRpc(int slotIndex) { }

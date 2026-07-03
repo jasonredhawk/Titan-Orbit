@@ -75,6 +75,11 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(entity, new ShipMoonDockState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipDepositIntent>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipDepositIntent());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipLoadoutState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipLoadoutState());

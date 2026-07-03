@@ -36,6 +36,21 @@ namespace TitanOrbit.ECS
                     var input = state.EntityManager.GetComponentData<ShipInput>(shipEntity);
                     input.WantDepositGems = cmd.ValueRO.WantDeposit;
                     state.EntityManager.SetComponentData(shipEntity, input);
+
+                    if (state.EntityManager.HasComponent<ShipDepositIntent>(shipEntity))
+                    {
+                        state.EntityManager.SetComponentData(shipEntity, new ShipDepositIntent
+                        {
+                            WantDepositGems = cmd.ValueRO.WantDeposit,
+                        });
+                    }
+                    else
+                    {
+                        state.EntityManager.AddComponentData(shipEntity, new ShipDepositIntent
+                        {
+                            WantDepositGems = cmd.ValueRO.WantDeposit,
+                        });
+                    }
                 }
 
                 ecb.DestroyEntity(entity);

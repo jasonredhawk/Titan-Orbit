@@ -55,6 +55,15 @@ namespace TitanOrbit.UI
             var input = em.GetComponentData<ShipInput>(shipEntity);
             input.WantDepositGems = wantDeposit;
             em.SetComponentData(shipEntity, input);
+
+            if (em.HasComponent<ShipDepositIntent>(shipEntity))
+            {
+                em.SetComponentData(shipEntity, new ShipDepositIntent { WantDepositGems = wantDeposit });
+            }
+            else
+            {
+                em.AddComponentData(shipEntity, new ShipDepositIntent { WantDepositGems = wantDeposit });
+            }
         }
 
         public static void PurchaseShipUpgrade(int storePlanetId, int targetLevel, int targetBranchIndex)

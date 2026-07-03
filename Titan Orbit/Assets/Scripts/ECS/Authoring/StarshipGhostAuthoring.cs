@@ -69,6 +69,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());
                 AddComponent(entity, new ShipMoonDockState());
+                AddComponent(entity, new ShipDepositIntent());
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);
