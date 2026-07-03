@@ -27,8 +27,13 @@ namespace TitanOrbit.ECS
         public float MaxSpeed;
         public float RotationSpeed;
         public float BrakeDeceleration;
+        /// <summary>Fallback hull mass when <see cref="HullMassReference"/> is unset (legacy baseMass).</summary>
         public float Mass;
         public float RecoilDecayPerSecond;
+        /// <summary>Chassis component mass × hull mass scale (excludes HP bulk and gems).</summary>
+        public float HullMassReference;
+        /// <summary>Level-1 max health used to soften movement mass at higher ship levels.</summary>
+        public float ChassisReferenceHealth;
     }
 
     public struct ShipWeaponConfig : IComponentData

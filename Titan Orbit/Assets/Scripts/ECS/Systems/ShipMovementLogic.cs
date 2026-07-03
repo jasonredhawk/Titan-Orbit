@@ -60,13 +60,21 @@ namespace TitanOrbit.ECS
 
             var cfg = motor.ValueRO;
             float3 pos = transform.ValueRO.Position;
+            var ship = shipState.ValueRO;
+
+            float effectiveMass = ShipMassLogic.ComputeMovementMass(
+                cfg.HullMassReference,
+                ship.MaxHealth,
+                cfg.ChassisReferenceHealth,
+                ship.CurrentGems,
+                cfg.Mass > 0f ? cfg.Mass : ShipMassLogic.DefaultBaseMass);
 
             var motorState = new ShipMotorState
             {
                 Position = pos,
                 Rotation = transform.ValueRO.Rotation,
                 Velocity = kinematics.ValueRO.Velocity,
-                Mass = cfg.Mass,
+                Mass = effectiveMass,
             };
 
             Vector2 aimWorldXz = AimWorldPoint(pos, transform.ValueRO.Rotation, inp.AimPlanarDir);
@@ -93,7 +101,7 @@ namespace TitanOrbit.ECS
                     orbitPlanetTransform.Position,
                     orbitPlanetTransform.Scale,
                     orbitPlanetState.PlanetLevel,
-                    cfg.Mass,
+                    effectiveMass,
                     mapW,
                     mapH,
                     out float3 desiredVel,

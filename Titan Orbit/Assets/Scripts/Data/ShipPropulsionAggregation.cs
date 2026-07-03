@@ -15,6 +15,12 @@ namespace TitanOrbit.Data
         /// <summary>Applied to aggregated top speed and acceleration at runtime (0.8 = 20% slower overall).</summary>
         public const float OverallPropulsionSpeedMultiplier = 0.8f;
 
+        /// <summary>
+        /// Multiplier on engine thrust force at runtime (legacy Starship <c>ENGINE_THRUST_VISIBILITY</c>).
+        /// Keeps acceleration snappy while mass still scales thrust via F/m.
+        /// </summary>
+        public const float EngineThrustVisibility = 10f;
+
         /// <summary>Per-level terms for non-propulsion stats (~25% of base). Used when balancing weapon energy after scan.</summary>
         public const float PerLevelFractionOfBase = 0.25f;
 
@@ -30,8 +36,42 @@ namespace TitanOrbit.Data
         /// </summary>
         public const float TurnDefinitionToDegreesPerSecond = 10f;
 
+        /// <summary>
+        /// Visual banking (°) when turn rate equals the global max ship turn speed
+        /// (see <see cref="ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits"/>).
+        /// </summary>
+        public const float VisualBankReferenceMaxAngleDegrees = 111f;
+
+        /// <summary>
+        /// Fallback max turn speed (authored units, level 1) when no upgrade-tree breakdown is available.
+        /// </summary>
+        public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 43.40541f;
+
         public static float ConvertTurnDefinitionToDegreesPerSecond(float turnDefinition) =>
             Mathf.Max(1f, turnDefinition) * TurnDefinitionToDegreesPerSecond;
+
+        /// <summary>
+        /// Target visual bank angle (°): 0 turn rate → 0°, global max turn rate → <paramref name="maxBankDegrees"/>.
+        /// </summary>
+        public static float ComputeVisualBankTargetAngle(
+            float signedAngularVelDegPerSec,
+            float maxBankDegrees,
+            float globalMaxTurnDegPerSec)
+        {
+            if (globalMaxTurnDegPerSec <= 0f || Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
+                return 0f;
+
+            float turnRatio = Mathf.Clamp01(Mathf.Abs(signedAngularVelDegPerSec) / globalMaxTurnDegPerSec);
+            return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * maxBankDegrees;
+        }
+
+        /// <summary>Global max ship turn speed in °/s for visual banking (family definition units × scale).</summary>
+        public static float GetGlobalMaxTurnSpeedDegreesPerSecond(
+            float definitionUnitsToDegreesPerSecond = TurnDefinitionToDegreesPerSecond)
+        {
+            float authored = ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
+            return authored * definitionUnitsToDegreesPerSecond;
+        }
 
         /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;

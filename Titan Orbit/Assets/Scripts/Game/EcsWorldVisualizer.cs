@@ -310,6 +310,11 @@ namespace TitanOrbit.Game
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
 
+            var bankVisual = go.GetComponent<ShipBankVisualApplier>();
+            if (bankVisual == null)
+                bankVisual = go.AddComponent<ShipBankVisualApplier>();
+            bankVisual.Bind(entity);
+
             var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
             if (moonDockVisual == null)
                 moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();

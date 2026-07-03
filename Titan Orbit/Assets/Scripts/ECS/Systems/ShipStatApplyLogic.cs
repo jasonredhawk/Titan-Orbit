@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using UnityEngine;
@@ -205,11 +206,23 @@ namespace TitanOrbit.ECS
                 float thrust = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal);
+                thrust *= ShipPropulsionAggregation.EngineThrustVisibility;
+
+                ShipComponentAbilityStats levelOneStats =
+                    ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
+                float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
+                float componentMass = TryGetChassisComponentMass(chassisId);
+                float hullMassReference = ShipMassLogic.ComputeHullMassReference(
+                    componentMass,
+                    ShipMassLogic.DefaultBaseMass);
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
                 motor.MaxSpeed = moveVal;
                 motor.EngineThrust = thrust;
                 motor.RotationSpeed = turnVal;
+                motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
+                motor.HullMassReference = hullMassReference;
+                motor.ChassisReferenceHealth = referenceHealth;
                 em.SetComponentData(shipEntity, motor);
             }
 
@@ -246,6 +259,24 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(shipEntity, chassisState);
             else
                 em.AddComponentData(shipEntity, chassisState);
+        }
+
+        static float TryGetChassisComponentMass(string chassisId)
+        {
+            var config = Config;
+            if (config == null || string.IsNullOrEmpty(chassisId))
+                return 0f;
+
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            if (tier?.prefab == null)
+                return 0f;
+
+            string familyPrefix = "AstroEagle";
+            int underscore = chassisId.IndexOf('_');
+            if (underscore > 0)
+                familyPrefix = chassisId.Substring(0, underscore);
+
+            return ChassisComponentStats.ComputeComponentMassFromTransform(tier.prefab.transform, familyPrefix);
         }
     }
 }

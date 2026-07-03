@@ -271,10 +271,62 @@ namespace TitanOrbit.Data
             _lookup[key.Trim()] = stats;
         }
 
+        static float s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
+
+        /// <summary>
+        /// Highest level-1 turn speed among upgrade-tree chassis tiers
+        /// (from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>).
+        /// </summary>
+        public static float GetMaxUpgradeTreeTurnSpeedAuthoredUnits(IEnumerable<ShipFamilyDefinition> families)
+        {
+            float max = 0f;
+            if (families == null)
+                return max;
+
+            foreach (ShipFamilyDefinition def in families)
+            {
+                if (def?.upgradeTree == null)
+                    continue;
+
+                for (int i = 0; i < def.upgradeTree.Count; i++)
+                {
+                    ShipFamilyChassisTierEntry tier = def.upgradeTree[i];
+                    if (tier == null)
+                        continue;
+                    max = Mathf.Max(max, tier.powerScoreBreakdown.turnSpeed);
+                }
+            }
+
+            return max;
+        }
+
+        /// <summary>
+        /// Cached global max turn speed (authored units, level 1) across every loaded ship family upgrade tree.
+        /// </summary>
+        public static float GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits()
+        {
+            if (s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored >= 0f)
+                return s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored;
+
+            ShipFamilyDefinition[] all = Resources.FindObjectsOfTypeAll<ShipFamilyDefinition>();
+            s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = GetMaxUpgradeTreeTurnSpeedAuthoredUnits(all);
+
+            return s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored > 0f
+                ? s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored
+                : ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits;
+        }
+
+        /// <summary>Clears cached global max turn speed (call after upgrade-tree stat scans in the editor).</summary>
+        public static void InvalidateGlobalMaxUpgradeTreeTurnSpeedCache()
+        {
+            s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
+        }
+
 #if UNITY_EDITOR
         void OnValidate()
         {
             InvalidateComponentStatsLookup();
+            InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
         }
 #endif

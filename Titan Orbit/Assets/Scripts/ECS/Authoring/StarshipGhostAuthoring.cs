@@ -11,8 +11,8 @@ namespace TitanOrbit.ECS.Authoring
         public float EngineThrust = 40f;
         public float MaxSpeed = 35f;
         public float RotationSpeed = 180f;
-        public float BrakeDeceleration = 25f;
-        public float Mass = 5f;
+        public float BrakeDeceleration = 7f;
+        public float Mass = 1f;
         public float RecoilDecayPerSecond = 6f;
 
         [Header("Weapon (level-1 cannon defaults)")]
