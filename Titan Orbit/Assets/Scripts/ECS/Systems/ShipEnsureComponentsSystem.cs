@@ -32,6 +32,9 @@ namespace TitanOrbit.ECS
                     BulletLifetime = 3f,
                     BulletMaxDistance = 200f,
                     MuzzleOffset = 2f,
+                    BulletScale = 1f,
+                    ReferenceBulletDamage = 8f,
+                    ReferenceBulletSpeed = 20f,
                 });
             }
 
@@ -70,6 +73,17 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipMoonDockState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipMoonDockState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipLoadoutState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipLoadoutState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
+            {
+                if (!state.EntityManager.HasBuffer<EquippedEquipmentElement>(entity))
+                    ecb.AddBuffer<EquippedEquipmentElement>(entity);
+            }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipPeopleTransferState>()

@@ -32,6 +32,15 @@ namespace TitanOrbit.ECS.Editor
         const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
         const string DefaultPlanetMaterialPoolPath = "Assets/Data/PlanetMaterialPool.asset";
         const string DefaultMapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
+        const string DefaultBulletVfxBankPath = "Assets/Data/BulletVfxBank.asset";
+
+        [MenuItem("Titan Orbit/Create Bullet VFX Bank")]
+        public static void CreateBulletVfxBankMenu()
+        {
+            var bank = BulletVfxBankSetup.EnsureAsset();
+            if (bank != null)
+                Debug.Log($"[BulletVfxBankSetup] Bullet VFX bank ready at {DefaultBulletVfxBankPath}");
+        }
 
         [MenuItem("Titan Orbit/Setup NetCode Game (Full)")]
         public static void SetupActiveScene()
@@ -264,6 +273,13 @@ namespace TitanOrbit.ECS.Editor
                 so.FindProperty("planetMaterialPool").objectReferenceValue = materialPool;
             else
                 Debug.LogWarning($"[NetCodeGameSetup] Planet material pool not found at {DefaultPlanetMaterialPoolPath}.");
+
+            var bulletBank = BulletVfxBankSetup.EnsureAsset()
+                ?? AssetDatabase.LoadAssetAtPath<BulletVfxBank>(DefaultBulletVfxBankPath);
+            if (bulletBank != null)
+                so.FindProperty("bulletVfxBank").objectReferenceValue = bulletBank;
+            else
+                Debug.LogWarning($"[NetCodeGameSetup] Bullet VFX bank not found at {DefaultBulletVfxBankPath}.");
 
             so.ApplyModifiedPropertiesWithoutUndo();
         }

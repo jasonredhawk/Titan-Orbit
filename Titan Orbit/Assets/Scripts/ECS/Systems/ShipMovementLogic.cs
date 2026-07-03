@@ -47,8 +47,18 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<ShipMoonDockState>(entity))
                 em.AddComponentData(entity, new ShipMoonDockState());
 
-            var cfg = motor.ValueRO;
             var inp = input.ValueRO;
+            var moonDock = em.GetComponentData<ShipMoonDockState>(entity);
+            if (moonDock.MoonPlanetId != 0 &&
+                moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
+                !inp.Thrust)
+            {
+                kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                em.SetComponentData(entity, new ShipOrbitState());
+                return;
+            }
+
+            var cfg = motor.ValueRO;
             float3 pos = transform.ValueRO.Position;
 
             var motorState = new ShipMotorState

@@ -1,0 +1,299 @@
+using System;
+using System.Collections.Generic;
+using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
+using TitanOrbit.Entities;
+using TitanOrbit.UI;
+using UnityEngine;
+
+namespace TitanOrbit.Systems
+{
+    /// <summary>Legacy card/ship shop for OrbitStationUI; purchases delegate to ECS RPCs.</summary>
+    public class CardShopSystem : MonoBehaviour
+    {
+        public static CardShopSystem Instance { get; private set; }
+
+        public bool IsSpawned => true;
+
+        public static event Action ClientSpinOfferReceived;
+        public static event Action ClientSpinOfferConsumed;
+
+        PlanetShipFamilyConfig _planetShipFamilyConfig;
+
+        void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+            _planetShipFamilyConfig = LoadPlanetShipFamilyConfig();
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this)
+                Instance = null;
+        }
+
+        static PlanetShipFamilyConfig LoadPlanetShipFamilyConfig()
+        {
+            var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            if (config != null)
+                return config;
+            return Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
+        }
+
+        PlanetShipFamilyConfig Config => _planetShipFamilyConfig != null ? _planetShipFamilyConfig : (_planetShipFamilyConfig = LoadPlanetShipFamilyConfig());
+
+        public ShipFamilyDefinition GetShipFamilyForShip(Starship ship)
+        {
+            if (Config == null || ship == null)
+                return null;
+            string cid = ship.CurrentChassisId;
+            if (string.IsNullOrEmpty(cid))
+                cid = GetStarterChassisId();
+            return Config.GetShipFamilyDefinitionForChassisId(cid);
+        }
+
+        public string GetStarterChassisId()
+        {
+            if (Config?.families != null && Config.families.Count > 0)
+            {
+                string id = Config.GetChassisIdForPlanetAndIndex(0, 0);
+                if (!string.IsNullOrEmpty(id))
+                    return id;
+            }
+
+            return "AstroEagle_01";
+        }
+
+        public string GetChassisIdForUpgradeLadderSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            if (Config == null || ship == null)
+                return null;
+            return Config.GetChassisIdForLadderSlot(storePlanetId, level, branchIndex);
+        }
+
+        public ShipChassisDefinition GetChassisDefinitionByChassisId(string chassisId)
+        {
+            return Config != null ? Config.GetChassisByChassisId(chassisId) : null;
+        }
+
+        public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
+        {
+            return Config != null ? Config.GetMenuPreviewSpriteForChassisId(chassisId, team) : null;
+        }
+
+        public string GetUpgradeTreeShipNameForChassisId(string chassisId)
+        {
+            return Config != null ? Config.GetUpgradeTreeShipNameForChassisId(chassisId) : null;
+        }
+
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
+        {
+            return Config != null ? Config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+        }
+
+        public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
+        {
+            return Config != null ? Config.GetPurchaseGemCostForChassisId(chassisId, shipLevel) : 0;
+        }
+
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForUpgradeSlot(
+            Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return string.IsNullOrEmpty(cid) ? default : GetPowerScoreBreakdownForChassisId(cid);
+        }
+
+        public string GetUpgradeTreeShipNameForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return string.IsNullOrEmpty(cid) ? null : GetUpgradeTreeShipNameForChassisId(cid);
+        }
+
+        public Sprite GetMenuPreviewSpriteForUpgradeSlot(
+            Starship ship, int storePlanetId, int level, int branchIndex, TeamManager.Team team = TeamManager.Team.None)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return string.IsNullOrEmpty(cid) ? null : GetMenuPreviewSpriteForChassisId(cid, team);
+        }
+
+        public int GetPurchaseGemCostForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return string.IsNullOrEmpty(cid) ? 0 : GetPurchaseGemCostForChassisId(cid, level);
+        }
+
+        public bool CanPurchaseShipLevelUpgrade(Starship ship, Planet storePlanet, out int nextLevel, out float cost, out string chassisId)
+        {
+            nextLevel = 0;
+            cost = 0f;
+            chassisId = null;
+            if (ship == null || storePlanet == null)
+                return false;
+            if (ship.ShipLevel >= 7)
+                return false;
+
+            HomePlanet homePlanet = FindHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null)
+                return false;
+
+            int homeLevel = homePlanet.HomePlanetLevel;
+            nextLevel = ship.ShipLevel + 1;
+            if (nextLevel > homeLevel)
+                return false;
+
+            bool isHome = storePlanet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isCaptured = !isHome && storePlanet.TeamOwnership == ship.ShipTeam;
+            if (!isHome && !isCaptured)
+                return false;
+
+            if (nextLevel > storePlanet.PlanetLevel)
+                return false;
+
+            int storePlanetId = storePlanet.PlanetId;
+            var targets = new List<int>(4);
+            UpgradeTree.GetNextLevelBranchTargets(ship.ShipLevel, ship.BranchIndex, targets);
+            for (int i = 0; i < targets.Count; i++)
+            {
+                chassisId = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, nextLevel, targets[i]);
+                if (!string.IsNullOrEmpty(chassisId))
+                    break;
+            }
+
+            if (string.IsNullOrEmpty(chassisId))
+                return false;
+
+            cost = GetPurchaseGemCostForChassisId(chassisId, nextLevel);
+            return true;
+        }
+
+        public bool CanSwapShipAtSameTreeSlot(
+            Starship ship, Planet storePlanet, int targetLevel, int targetBranchIndex, out string chassisId)
+        {
+            chassisId = null;
+            if (ship == null || storePlanet == null)
+                return false;
+            if (targetLevel != ship.ShipLevel || targetBranchIndex != ship.BranchIndex)
+                return false;
+
+            HomePlanet homePlanet = FindHomePlanetForTeam(ship.ShipTeam);
+            if (homePlanet == null || targetLevel > homePlanet.HomePlanetLevel)
+                return false;
+
+            bool isHome = storePlanet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
+            bool isCaptured = !isHome && storePlanet.TeamOwnership == ship.ShipTeam;
+            if (!isHome && !isCaptured)
+                return false;
+
+            if (storePlanet.PlanetLevel < targetLevel)
+                return false;
+
+            chassisId = GetChassisIdForUpgradeLadderSlot(ship, storePlanet.PlanetId, targetLevel, targetBranchIndex);
+            if (string.IsNullOrEmpty(chassisId))
+                return false;
+
+            string current = ship.CurrentChassisId;
+            return string.IsNullOrEmpty(current)
+                || !string.Equals(chassisId, current, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public void PurchaseShipLevelUpgradeServerRpc(ulong planetNetworkId, ulong shipNetworkId, int targetBranchIndex)
+        {
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0)
+                return;
+
+            int targetLevel = OrbitStationEcsContext.ShipLevel + 1;
+            MoonOrbitRpcClient.PurchaseShipUpgrade(storePlanetId, targetLevel, targetBranchIndex);
+            MoonOrbitRpcClient.RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
+        }
+
+        public void SwapShipAtSameTreeSlotServerRpc(
+            ulong planetNetworkId, ulong shipNetworkId, int targetLevel, int targetBranchIndex)
+        {
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0)
+                return;
+            MoonOrbitRpcClient.PurchaseShipUpgrade(storePlanetId, targetLevel, targetBranchIndex);
+            MoonOrbitRpcClient.RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
+        }
+
+        public void RequestDebugSelectUpgradeTreeNode(ulong planetNetworkId, ulong shipNetworkId, int nodeLevel, int targetBranchIndex)
+        {
+            PurchaseShipLevelUpgradeServerRpc(planetNetworkId, shipNetworkId, targetBranchIndex);
+        }
+
+        public static int GetSpinCardTier(int shipLevel, int homePlanetLevel)
+        {
+            int s = Mathf.Max(1, shipLevel);
+            int h = Mathf.Max(1, homePlanetLevel);
+            return Mathf.Min(s, h);
+        }
+
+        public float GetCardSpinCost(int spinCardTier)
+        {
+            int gemLevel = Mathf.Clamp(Mathf.Max(1, spinCardTier), 1, 24);
+            return Mathf.Max(15f, 20f * gemLevel * gemLevel);
+        }
+
+        public int GetCardPoolCountForSpin(
+            Starship ship, int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        {
+            return GetCardPoolForSpin(ship, spinCardTier, homePlanetLevel, isHomeStore, storePlanetId, team).Count;
+        }
+
+        public List<CardData> GetCardPoolForSpin(
+            Starship ship, int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
+        {
+            var pool = new List<CardData>();
+            var family = GetShipFamilyForShip(ship);
+            if (family == null)
+                return pool;
+
+            int tier = Mathf.Max(1, spinCardTier);
+            foreach (var card in family.GetUpgradeCards())
+            {
+                if (card == null || Mathf.Max(1, card.cardLevel) != tier)
+                    continue;
+                if (homePlanetLevel < card.minHomePlanetLevel)
+                    continue;
+                pool.Add(card);
+            }
+
+            return pool;
+        }
+
+        public string GetClientSpinOfferCardId(int index) => null;
+
+        public CardData GetCardByIdForShip(Starship ship, string cardId) => null;
+
+        public void CardSpinServerRpc(ulong planetNetworkId, ulong shipNetworkId)
+        {
+            Debug.LogWarning("[CardShopSystem] Card spin is not available in ECS yet.");
+        }
+
+        public void PurchaseCardServerRpc(ulong planetNetworkId, ulong shipNetworkId, string cardId) { }
+
+        public void PurchaseChassisServerRpc(ulong planetNetworkId, ulong shipNetworkId, string chassisId, int tierLevel)
+        {
+            Debug.LogWarning("[CardShopSystem] Chassis purchase via legacy RPC is not wired to ECS yet.");
+        }
+
+        static HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
+        {
+            foreach (var home in HomePlanet.AllHomePlanets)
+            {
+                if (home != null && home.AssignedTeam == team)
+                    return home;
+            }
+
+            return null;
+        }
+    }
+}

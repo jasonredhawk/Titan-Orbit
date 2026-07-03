@@ -73,6 +73,20 @@ namespace TitanOrbit.Simulation
             return moonRadius + shipRadiusEstimate + moonRadius * surfaceStandoffOverMoonRadius;
         }
 
+        /// <summary>
+        /// Gameplay moon orbit / dock shell (legacy GetMoonDockSnapRadiusWorld × ship radius).
+        /// Ships inside this zone can begin landing even while the moon orbits.
+        /// </summary>
+        public static float GetMoonDockZoneRadiusWorld(
+            float planetSize,
+            bool isHomePlanet,
+            float shipRadiusEstimate = 0.8f,
+            float zoneMultiplier = 1.05f)
+        {
+            float zoneRadius = GetMoonDockRadiusWorld(planetSize, isHomePlanet);
+            return zoneRadius * math.max(0.01f, zoneMultiplier) + math.max(0f, shipRadiusEstimate);
+        }
+
         /// <summary>World-space offset for the gem moon on the planet orbit ring (same radius as people-transfer ring).</summary>
         public static float3 GetMoonOrbitOffset(
             float planetSize,

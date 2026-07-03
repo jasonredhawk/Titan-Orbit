@@ -22,7 +22,11 @@ namespace TitanOrbit.ECS
         [GhostField]
         public bool SpaceBrakes;
 
+        /// <summary>When true at a landed moon, gems transfer to the planet (manual or auto-deposit toggle).</summary>
+        [GhostField]
+        public bool WantDepositGems;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},f={Fire.Count},b={SpaceBrakes}]";
+            $"ShipInput[t={Thrust},f={Fire.Count},b={SpaceBrakes},d={WantDepositGems}]";
     }
 }

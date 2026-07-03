@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
 using Unity.Mathematics;
@@ -47,7 +48,7 @@ namespace TitanOrbit.Game
             bool thrust = _input.MoveForwardPressed;
 
             var fire = new InputEvent();
-            if (_input.ShootPressed)
+            if (_input.ShootPressed && !MoonOrbitClientState.IsOrbitMenuVisible)
                 fire.Set();
 
             return new ShipInput
@@ -57,6 +58,7 @@ namespace TitanOrbit.Game
                 Thrust = thrust,
                 Fire = fire,
                 SpaceBrakes = _input.SpaceBrakesEnabled,
+                WantDepositGems = MoonOrbitClientState.WantDepositGems,
             };
         }
     }

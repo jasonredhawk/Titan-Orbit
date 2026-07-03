@@ -166,7 +166,7 @@ namespace TitanOrbit.Game
                             continue;
                         }
 
-                        float widthAtGem = GetSmoothedGemVisualDiameter(gems[gi].Index, gemTransforms[gi], gemStates[gi]) *
+                        float widthAtGem = GetSmoothedGemVisualDiameter(gems[gi], gemStates[gi]) *
                                            gemEndWidthScale * widthPulse;
                         float thinWidth = Mathf.Max(extendLineThickness, GemTractorBeamDeployTracker.ExtendLineThickness);
                         float currentWidth = Mathf.Lerp(thinWidth, widthAtGem, widthExpand);
@@ -262,19 +262,21 @@ namespace TitanOrbit.Game
                 Draw.Triangle(shipDisplay, gemLeft, gemRight, colorShip, colorGem, colorGem);
         }
 
-        static float GetSmoothedGemVisualDiameter(int gemEntityIndex, in LocalTransform gemTransform, in GemState gemState)
+        static float GetSmoothedGemVisualDiameter(Entity gemEntity, in GemState gemState)
         {
-            float raw = math.max(0.2f, gemState.Size > 0.001f ? gemState.Size : gemTransform.Scale);
-            raw *= 2f;
+            float raw = GemVisualDiameterRegistry.TryGetDiameter(gemEntity, out float registered)
+                ? registered
+                : GemVisualApplier.ComputeVisualDiameter(math.max(0.25f, gemState.Value));
 
-            if (!SmoothedGemDiameterById.TryGetValue(gemEntityIndex, out float smoothed))
+            int key = gemEntity.Index;
+            if (!SmoothedGemDiameterById.TryGetValue(key, out float smoothed))
             {
-                SmoothedGemDiameterById[gemEntityIndex] = raw;
+                SmoothedGemDiameterById[key] = raw;
                 return raw;
             }
 
             smoothed = Mathf.Lerp(smoothed, raw, Time.deltaTime * GemDiameterSmoothing);
-            SmoothedGemDiameterById[gemEntityIndex] = smoothed;
+            SmoothedGemDiameterById[key] = smoothed;
             return smoothed;
         }
     }

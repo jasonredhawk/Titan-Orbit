@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
 using Unity.Collections;
@@ -68,6 +69,9 @@ namespace TitanOrbit.Game
                     }
                 }
 
+                if (EntityManager.HasComponent<ShipInput>(entity))
+                    cmd.WantDepositGems |= EntityManager.GetComponentData<ShipInput>(entity).WantDepositGems;
+
                 EntityManager.SetComponentData(entity, cmd);
             }
         }
@@ -109,7 +113,7 @@ namespace TitanOrbit.Game
                 Vector2 move = inputHandler.GetMoveInput();
                 thrust = inputHandler.MoveForwardPressed;
                 spaceBrakes = inputHandler.SpaceBrakesEnabled;
-                shoot = inputHandler.ShootPressed;
+                shoot = inputHandler.ShootPressed && !MoonOrbitClientState.IsOrbitMenuVisible;
             }
             else
             {
@@ -127,6 +131,7 @@ namespace TitanOrbit.Game
                 Thrust = thrust,
                 Fire = fire,
                 SpaceBrakes = spaceBrakes,
+                WantDepositGems = MoonOrbitClientState.WantDepositGems,
             };
         }
 
@@ -144,7 +149,8 @@ namespace TitanOrbit.Game
             {
                 if (mouse.rightButton.isPressed)
                     thrust = true;
-                shoot = mouse.leftButton.isPressed;
+                if (!MoonOrbitClientState.IsOrbitMenuVisible)
+                    shoot = mouse.leftButton.isPressed;
             }
         }
     }

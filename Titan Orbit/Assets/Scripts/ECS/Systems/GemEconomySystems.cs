@@ -247,9 +247,14 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.Team == TeamId.None || shipState.ValueRO.CurrentGems <= 0f)
                     continue;
 
-                foreach (var (planetState, _) in SystemAPI
+                int ownerNetworkId = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                    ownerNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
+                foreach (var (planetState, _, planetEntity) in SystemAPI
                              .Query<RefRW<PlanetState>, RefRO<LocalTransform>>()
-                             .WithAll<PlanetTag>())
+                             .WithAll<PlanetTag>()
+                             .WithEntityAccess())
                 {
                     if (planetState.ValueRO.Ownership != shipState.ValueRO.Team)
                         continue;
@@ -277,6 +282,9 @@ namespace TitanOrbit.ECS
                     planet.PlanetLevel = level;
                     planet.CurrentGems = gems;
                     planetState.ValueRW = planet;
+
+                    if (planet.IsHomePlanet && ownerNetworkId > 0)
+                        ContributedGemsLogic.Add(state.EntityManager, planetEntity, ownerNetworkId, amount);
                 }
             }
         }
@@ -286,7 +294,7 @@ namespace TitanOrbit.ECS
             in ShipMoonDockState moonDock,
             in PlanetState planet)
         {
-            if (input.Thrust)
+            if (input.Thrust || !input.WantDepositGems)
                 return false;
 
             if (moonDock.MoonPlanetId != planet.PlanetId || moonDock.MoonPlanetId == 0)

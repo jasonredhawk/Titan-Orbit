@@ -8877,6 +8877,9 @@ GameObject:
   - component: {fileID: 1418200268}
   - component: {fileID: 1418200273}
   - component: {fileID: 1418200274}
+  - component: {fileID: 1418200277}
+  - component: {fileID: 1418200276}
+  - component: {fileID: 1418200275}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8992,6 +8995,9 @@ MonoBehaviour:
   gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
   peopleTransportVisualPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
+  bulletVfxBank: {fileID: 11400000, guid: 2a974d6fe4bb1904b8ce53e2e35cbb6b, type: 2}
+  defaultBulletBankIndex: 0
+  defaultBulletScaleMultiplier: 1
 --- !u!114 &1418200274
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9005,6 +9011,48 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.MapGenerationSettingsLoader
   settings: {fileID: 11400000, guid: 3fea612f27b86134d969d0c57c181c4d, type: 2}
+--- !u!114 &1418200275
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c06b2cf43649eb94596e801fa0207065, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.DeathScreenController
+  overlayRoot: {fileID: 0}
+  messageText: {fileID: 0}
+--- !u!114 &1418200276
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a795cdfda74526e4e944a35de8530d2e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.MatchEndScreenController
+  overlayRoot: {fileID: 0}
+  titleText: {fileID: 0}
+  subtitleText: {fileID: 0}
+  continueButton: {fileID: 0}
+--- !u!114 &1418200277
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a3615746815c1e44988758254351aae7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.PeopleTransferPopupPresenter
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

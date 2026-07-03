@@ -22,4 +22,38 @@ namespace TitanOrbit.ECS
     {
         public FixedString64Bytes DisplayName;
     }
+
+    public struct RequestContributedGemsCommand : IRpcCommand
+    {
+        public int HomePlanetId;
+    }
+
+    public struct ContributedGemsResultRpc : IRpcCommand
+    {
+        public float Amount;
+    }
+
+    public struct SetWantDepositGemsCommand : IRpcCommand
+    {
+        public bool WantDeposit;
+    }
+
+    public struct PurchaseShipUpgradeCommand : IRpcCommand
+    {
+        public int StorePlanetId;
+        public int TargetLevel;
+        public int TargetBranchIndex;
+    }
+
+    public struct PurchaseStoreItemCommand : IRpcCommand
+    {
+        public int HomePlanetId;
+        public int ItemType;
+    }
+
+    public struct OrbitStoreResultRpc : IRpcCommand
+    {
+        public byte Success;
+        public FixedString128Bytes Message;
+    }
 }

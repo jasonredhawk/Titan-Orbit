@@ -80,10 +80,10 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipState), typeof(ShipTag));
-            if (owned.CalculateEntityCount() > 0)
+            if (TryGetLocalOwnedShipEntity(em, out var ownedShip) &&
+                em.HasComponent<ShipState>(ownedShip))
             {
-                state = owned.GetSingleton<ShipState>();
+                state = em.GetComponentData<ShipState>(ownedShip);
                 return true;
             }
 
@@ -141,16 +141,79 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipOrbitState), typeof(ShipTag));
-            if (owned.CalculateEntityCount() > 0)
+            if (TryGetLocalOwnedShipEntity(em, out var ownedShip) &&
+                em.HasComponent<ShipOrbitState>(ownedShip))
             {
-                orbitState = owned.GetSingleton<ShipOrbitState>();
+                orbitState = em.GetComponentData<ShipOrbitState>(ownedShip);
                 return true;
             }
 
             int localId = GetLocalNetworkId(ClientWorld);
             if (localId > 0 && TryGetShipOrbitStateByNetworkId(em, localId, out orbitState))
                 return true;
+
+            return false;
+        }
+
+        public static bool TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock)
+        {
+            moonDock = default;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+                em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                moonDock = em.GetComponentData<ShipMoonDockState>(shipEntity);
+                return true;
+            }
+
+            return false;
+        }
+
+        public static bool TryGetLocalShipEntityOnWorld(World world, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            return TryGetLocalShipEntity(world.EntityManager, out shipEntity);
+        }
+
+        public static bool TryGetLocalShipInput(out ShipInput input)
+        {
+            input = default;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+                em.HasComponent<ShipInput>(shipEntity))
+            {
+                input = em.GetComponentData<ShipInput>(shipEntity);
+                return true;
+            }
+
+            return false;
+        }
+
+        public static bool TryGetLocalShipLoadout(out ShipLoadoutState loadout)
+        {
+            loadout = default;
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+                em.HasComponent<ShipLoadoutState>(shipEntity))
+            {
+                loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+                return true;
+            }
 
             return false;
         }
@@ -219,6 +282,22 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        static bool TryGetLocalOwnedShipEntity(EntityManager em, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            using var query = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipTag));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (!em.IsComponentEnabled<GhostOwnerIsLocal>(entities[i]))
+                    continue;
+                shipEntity = entities[i];
+                return true;
+            }
+
+            return false;
+        }
+
         static bool TryGetLocalShipEntity(EntityManager em, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -226,16 +305,16 @@ namespace TitanOrbit.Game
             using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
             if (tagged.CalculateEntityCount() > 0)
             {
-                shipEntity = tagged.GetSingletonEntity();
-                return true;
+                using var entities = tagged.ToEntityArray(Allocator.Temp);
+                if (entities.Length > 0)
+                {
+                    shipEntity = entities[0];
+                    return true;
+                }
             }
 
-            using var owned = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipTag));
-            if (owned.CalculateEntityCount() > 0)
-            {
-                shipEntity = owned.GetSingletonEntity();
+            if (TryGetLocalOwnedShipEntity(em, out shipEntity))
                 return true;
-            }
 
             using var connections = em.CreateEntityQuery(
                 typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
@@ -291,10 +370,19 @@ namespace TitanOrbit.Game
         {
             transform = default;
             using var query = em.CreateEntityQuery(marker, typeof(ShipTag), typeof(LocalTransform));
-            if (query.CalculateEntityCount() == 0)
-                return false;
-            transform = query.GetSingleton<LocalTransform>();
-            return true;
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (marker == ComponentType.ReadOnly<GhostOwnerIsLocal>() &&
+                    !em.IsComponentEnabled<GhostOwnerIsLocal>(entities[i]))
+                    continue;
+
+                transform = transforms[i];
+                return true;
+            }
+
+            return false;
         }
 
         static bool TryGetShipTransformByNetworkId(EntityManager em, int networkId, out LocalTransform transform)
@@ -498,6 +586,81 @@ namespace TitanOrbit.Game
                 if (states[i].PlanetId != planetId)
                     continue;
                 state = states[i];
+                return true;
+            }
+
+            return false;
+        }
+
+        public static bool TryGetPlanetPoseByPlanetId(int planetId, out float3 position, out float scale, out PlanetState state)
+        {
+            position = default;
+            scale = 1f;
+            state = default;
+            if (planetId == 0)
+                return false;
+
+            if (IsLocalHost() && TryFindPlanetPose(ServerWorld, planetId, out position, out scale, out state))
+                return true;
+
+            if (TryFindPlanetPose(ClientWorld, planetId, out position, out scale, out state))
+                return true;
+
+            return false;
+        }
+
+        public static bool TryGetPlanetRotationByPlanetId(int planetId, out quaternion rotation)
+        {
+            rotation = quaternion.identity;
+            if (planetId == 0)
+                return false;
+
+            if (IsLocalHost() && TryFindPlanetRotation(ServerWorld, planetId, out rotation))
+                return true;
+
+            return TryFindPlanetRotation(ClientWorld, planetId, out rotation);
+        }
+
+        static bool TryFindPlanetPose(World world, int planetId, out float3 position, out float scale, out PlanetState state)
+        {
+            position = default;
+            scale = 1f;
+            state = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                state = states[i];
+                position = transforms[i].Position;
+                scale = math.max(0.25f, transforms[i].Scale);
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool TryFindPlanetRotation(World world, int planetId, out quaternion rotation)
+        {
+            rotation = quaternion.identity;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                rotation = transforms[i].Rotation;
                 return true;
             }
 

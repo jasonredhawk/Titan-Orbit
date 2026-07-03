@@ -23,6 +23,37 @@ namespace TitanOrbit.Game
         Material _moonMaterial;
         GemMoonWorldStatsLabel _statsLabel;
 
+        public int PlanetId => _planetId;
+
+        public Vector3 MoonWorldPosition =>
+            _moonRoot != null ? _moonRoot.position : transform.position;
+
+        public Vector3 SpinAxisWorld
+        {
+            get
+            {
+                float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
+                return transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
+            }
+        }
+
+        public float MoonBodyRadiusWorld
+        {
+            get
+            {
+                float homeMul = _isHome ? HomeScaleMultiplier : 1f;
+                return PlanetGemMoonMath.GetMoonBodyRadiusWorld(_planetSize, _isHome);
+            }
+        }
+
+        void OnEnable()
+        {
+            if (_planetId > 0)
+                PlanetGemMoonVisualRegistry.Register(this);
+        }
+
+        void OnDisable() => PlanetGemMoonVisualRegistry.Unregister(this);
+
         public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial)
         {
             _planetSize = Mathf.Max(0.01f, planetSize);
@@ -34,6 +65,8 @@ namespace TitanOrbit.Game
             ApplyMoonScale();
             ApplyMoonMaterial();
             EnsureStatsLabel();
+            if (_planetId > 0 && isActiveAndEnabled)
+                PlanetGemMoonVisualRegistry.Register(this);
         }
 
         void EnsureMoonVisual()

@@ -199,6 +199,16 @@ namespace TitanOrbit.ECS
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
                 float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
+                float visualScale = BulletVisualScale.ComputePerShotScale(
+                    weaponCfg.ValueRO.BulletScale,
+                    weaponCfg.ValueRO.BulletDamage,
+                    weaponCfg.ValueRO.BulletSpeed,
+                    weaponCfg.ValueRO.ReferenceBulletDamage > 0f
+                        ? weaponCfg.ValueRO.ReferenceBulletDamage
+                        : BulletVisualScale.DefaultReferenceBulletDamage,
+                    weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
+                        ? weaponCfg.ValueRO.ReferenceBulletSpeed
+                        : BulletVisualScale.DefaultReferenceBulletSpeed);
                 var spawn = new BulletElement
                 {
                     Position = fireOrigin,
@@ -216,9 +226,12 @@ namespace TitanOrbit.ECS
                     SpawnPosition = spawn.Position,
                     Velocity = spawn.Velocity,
                     Lifetime = spawn.Lifetime,
+                    MaxDistance = spawn.MaxDistance,
                     Damage = spawn.Damage,
                     OwnerTeam = spawn.OwnerTeam,
                     Sequence = spawn.Sequence,
+                    BankIndex = 0,
+                    ScaleMultiplier = visualScale,
                 });
 
                 weaponState.ValueRW.FireCooldown = 1f / fireRate;

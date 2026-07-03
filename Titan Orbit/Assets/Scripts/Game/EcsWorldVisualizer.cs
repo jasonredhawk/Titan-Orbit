@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Entities;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -39,7 +41,13 @@ namespace TitanOrbit.Game
         [SerializeField] GameObject peopleTransportVisualPrefab;
         [SerializeField] PlanetMaterialPool planetMaterialPool;
 
+        [Header("Combat VFX")]
+        [SerializeField] BulletVfxBank bulletVfxBank;
+        [SerializeField] int defaultBulletBankIndex;
+        [SerializeField] float defaultBulletScaleMultiplier = 1f;
+
         readonly Dictionary<Entity, GameObject> _proxies = new Dictionary<Entity, GameObject>();
+        readonly Dictionary<Entity, ClientBulletStretchVisual> _bulletStretchVisuals = new Dictionary<Entity, ClientBulletStretchVisual>();
         readonly Dictionary<Entity, int> _proxyNetworkIds = new Dictionary<Entity, int>();
         readonly Dictionary<Entity, int> _proxyShipLevels = new Dictionary<Entity, int>();
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
@@ -74,6 +82,8 @@ namespace TitanOrbit.Game
                 peopleTransportVisualPrefab = PeopleTransportVisualApplier.LoadDefaultPrefab();
             if (peopleTransportVisualPrefab == null)
                 peopleTransportVisualPrefab = LoadDefaultPrefab(DefaultPeopleTransportPath);
+            if (bulletVfxBank == null)
+                bulletVfxBank = BulletVfxBank.LoadDefault();
         }
 
         void Update()
@@ -98,7 +108,9 @@ namespace TitanOrbit.Game
             DrawPlanets(em, alive);
             DrawAsteroids(em, alive);
             DrawGems(em, alive);
+            GemVisualDiameterRegistry.RemoveStale(alive);
             DrawPeopleTransports(em, alive);
+            ProcessBulletHitEvents(em);
             DrawBullets(em, alive);
 
             var remove = new List<Entity>();
@@ -179,9 +191,20 @@ namespace TitanOrbit.Game
 
                 var lt = transforms[i];
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
-                go.transform.position = lt.Position;
-                go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+
+                bool skipTransformSync = false;
+                if (em.HasComponent<ShipMoonDockState>(entity))
+                {
+                    var moonDock = em.GetComponentData<ShipMoonDockState>(entity);
+                    skipTransformSync = moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f;
+                }
+
+                if (!skipTransformSync)
+                {
+                    go.transform.position = lt.Position;
+                    go.transform.rotation = lt.Rotation;
+                    go.transform.localScale = Vector3.one * scale;
+                }
 
                 if (em.HasComponent<ShipState>(entity))
                 {
@@ -246,6 +269,12 @@ namespace TitanOrbit.Game
             _proxyShipLevels[entity] = shipLevel;
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
+
+            var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
+            if (moonDockVisual == null)
+                moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();
+            moonDockVisual.Bind(entity, scale);
+
             return go;
         }
 
@@ -280,7 +309,37 @@ namespace TitanOrbit.Game
                 _proxyShipLevels.Remove(entity);
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
+                _bulletStretchVisuals.Remove(entity);
             }
+        }
+
+        void ProcessBulletHitEvents(EntityManager em)
+        {
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<ActiveBulletsTag>());
+            if (query.CalculateEntityCount() == 0)
+                return;
+
+            var bulletEntity = query.GetSingletonEntity();
+            if (!em.HasBuffer<BulletHitEventElement>(bulletEntity))
+                return;
+
+            var hits = em.GetBuffer<BulletHitEventElement>(bulletEntity);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                var team = (TeamId)hit.OwnerTeam;
+                int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
+                float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
+                BulletVisualFactory.SpawnBulletImpactVfx(
+                    hit.HitPosition,
+                    bulletVfxBank,
+                    bankIndex,
+                    team,
+                    hit.Damage,
+                    scaleMul);
+            }
+
+            hits.Clear();
         }
 
         void DrawPeopleTransports(EntityManager em, HashSet<Entity> alive)
@@ -339,29 +398,60 @@ namespace TitanOrbit.Game
                 alive.Add(entity);
                 var tracer = tracers[i];
                 var lt = transforms[i];
-                float scale = Mathf.Max(0.1f, tracer.Scale > 0f ? tracer.Scale : lt.Scale);
-                var color = TeamColor((TeamId)tracer.OwnerTeam);
-                if (tracer.OwnerTeam == 0)
-                    color = new Color(1f, 0.9f, 0.35f);
+                var team = (TeamId)tracer.OwnerTeam;
+                int bankIndex = tracer.BankIndex >= 0 ? tracer.BankIndex : defaultBulletBankIndex;
+                float scaleMul = tracer.ScaleMultiplier > 0f ? tracer.ScaleMultiplier : defaultBulletScaleMultiplier;
+                float3 velocity = tracer.Velocity;
+                float bulletSpeed = math.length(velocity);
 
                 if (!_proxies.TryGetValue(entity, out var go) || go == null)
                 {
-                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    go.name = "BulletTracerProxy";
-                    var col = go.GetComponent<Collider>();
-                    if (col != null) Destroy(col);
-                    var renderer = go.GetComponent<Renderer>();
-                    if (renderer != null)
-                    {
-                        renderer.material = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-                        renderer.material.color = color;
-                    }
+                    go = new GameObject("BulletTracer");
                     _proxies[entity] = go;
+
+                    Vector3 spawnPos = tracer.SpawnPosition;
+                    Vector3 vel = velocity;
+                    BulletVisualFactory.PlayMuzzleVfx(
+                        spawnPos,
+                        vel,
+                        bulletVfxBank,
+                        bankIndex,
+                        team,
+                        scaleMul,
+                        bulletSpeed);
+                    AudioManager.Instance?.PlayWeaponShootSound(
+                        BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+
+                    GameObject visual = BulletVisualFactory.BuildVisual(
+                        go.transform,
+                        bulletVfxBank,
+                        bankIndex,
+                        team,
+                        BulletShape.Sphere,
+                        scaleMul,
+                        bulletSpeed,
+                        noTrail: false);
+
+                    if (bulletVfxBank != null
+                        && bulletVfxBank.TryGetProfile(bankIndex, out var profile)
+                        && profile != null
+                        && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
+                        && ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                    {
+                        _bulletStretchVisuals[entity] = go.GetComponent<ClientBulletStretchVisual>();
+                    }
                 }
 
                 go.transform.position = lt.Position;
-                go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+                if (math.lengthsq(velocity) > 0.0001f)
+                    go.transform.rotation = Quaternion.LookRotation(((Vector3)velocity).normalized, Vector3.up);
+
+                if (_bulletStretchVisuals.TryGetValue(entity, out var stretch) && stretch != null)
+                {
+                    float travelled = math.distance(tracer.SpawnPosition, tracer.Position);
+                    float progress = travelled / math.max(0.5f, tracer.MaxDistance);
+                    stretch.ApplyTravelProgress(progress);
+                }
             }
         }
 
@@ -512,6 +602,7 @@ namespace TitanOrbit.Game
                 go.transform.position = lt.Position;
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
+                GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
             }
         }
 

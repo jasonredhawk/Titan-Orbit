@@ -43,6 +43,25 @@ namespace TitanOrbit.Game
             return Mathf.Lerp(ScaleAtMinValue, ScaleAtMaxValue, t);
         }
 
+        /// <summary>Estimated world diameter when proxy renderer bounds are unavailable.</summary>
+        public static float ComputeVisualDiameter(float gemValue) =>
+            ComputeVisualScale(gemValue);
+
+        public static float ReadWorldDiameter(GameObject proxy, float gemValue)
+        {
+            if (proxy != null)
+            {
+                var renderer = proxy.GetComponentInChildren<Renderer>();
+                if (renderer != null)
+                {
+                    Vector3 extents = renderer.bounds.extents;
+                    return Mathf.Max(extents.x, extents.z) * 2f;
+                }
+            }
+
+            return ComputeVisualDiameter(gemValue);
+        }
+
         static void ApplyGemTint(GameObject root)
         {
             var renderer = root.GetComponentInChildren<Renderer>();

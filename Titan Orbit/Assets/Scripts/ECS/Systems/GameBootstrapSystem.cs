@@ -31,6 +31,7 @@ namespace TitanOrbit.ECS
             state.EntityManager.SetComponentData(entity, new MapStateSingleton { MapWidth = 1000f, MapHeight = 1000f });
             state.EntityManager.AddBuffer<BulletElement>(entity);
             state.EntityManager.AddBuffer<BulletSpawnEventElement>(entity);
+            state.EntityManager.AddBuffer<BulletHitEventElement>(entity);
             state.EntityManager.AddBuffer<MapLayoutEntryElement>(entity);
             state.EntityManager.AddBuffer<PlayerNameElement>(entity);
         }
@@ -206,6 +207,8 @@ namespace TitanOrbit.ECS
                 em.AddComponent<PlanetTag>(e);
             if (isHome && !em.HasComponent<HomePlanetTag>(e))
                 em.AddComponent<HomePlanetTag>(e);
+            if (isHome && !em.HasBuffer<ContributedGemsElement>(e))
+                em.AddBuffer<ContributedGemsElement>(e);
             SetOrAddComponent(em, e, new PlanetGrowthState
             {
                 FractionalPopulation = maxPopulation,

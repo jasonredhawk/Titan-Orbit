@@ -22,6 +22,7 @@ namespace TitanOrbit.ECS.Authoring
         public float BulletLifetime = 3f;
         public float BulletMaxDistance = 200f;
         public float MuzzleOffset = 2f;
+        public float BulletScale = 1f;
 
         [Header("Collision (optional bake for headless server)")]
         [Tooltip("Chassis prefab used to bake module BoxColliders into the ship ghost. Leave empty to rely on client hull sync.")]
@@ -61,6 +62,9 @@ namespace TitanOrbit.ECS.Authoring
                     BulletLifetime = authoring.BulletLifetime,
                     BulletMaxDistance = authoring.BulletMaxDistance,
                     MuzzleOffset = authoring.MuzzleOffset,
+                    BulletScale = authoring.BulletScale,
+                    ReferenceBulletDamage = authoring.BulletDamage,
+                    ReferenceBulletSpeed = authoring.BulletSpeed,
                 });
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());

@@ -20,6 +20,9 @@ namespace TitanOrbit.Data
         [Header("Team Materials")]
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
 
+        [Header("Components")]
+        public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
+
         public List<Material> GetMaterialsForTeam(TeamId team)
         {
             if (teamMaterials == null || teamMaterials.Count == 0)
@@ -34,6 +37,22 @@ namespace TitanOrbit.Data
                     return set.materials;
             }
 
+            return null;
+        }
+
+        public System.Collections.Generic.IReadOnlyList<CardData> GetUpgradeCards()
+        {
+            return System.Array.Empty<CardData>();
+        }
+
+        public bool TryGetComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
+        {
+            entry = null;
+            return false;
+        }
+
+        public Sprite GetMenuPreviewSpriteForComponent(string componentId, TeamManager.Team team = TeamManager.Team.None)
+        {
             return null;
         }
 
@@ -97,8 +116,20 @@ namespace TitanOrbit.Data
         public string chassisId;
         public string upgradeTreeShipName;
         public GameObject prefab;
+        public Sprite menuPreviewSprite;
+        public List<ShipFamilyTeamMenuPreview> teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
         public int minHomePlanetLevel = 1;
+        public float powerScore;
+        public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
         public bool lockedInUpgradeTree;
+    }
+
+    [Serializable]
+    public class ShipFamilyTeamMenuPreview
+    {
+        public string variantName;
+        public TeamManager.Team team = TeamManager.Team.None;
+        public Sprite sprite;
     }
 
     [Serializable]

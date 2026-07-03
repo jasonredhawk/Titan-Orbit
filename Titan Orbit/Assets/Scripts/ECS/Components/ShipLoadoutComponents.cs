@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -16,6 +17,13 @@ namespace TitanOrbit.ECS
     public struct EquippedCardElement : IBufferElementData
     {
         [GhostField] public int CardId;
+    }
+
+    public struct EquippedEquipmentElement : IBufferElementData
+    {
+        [GhostField] public int ItemType;
+        [GhostField] public int RemainingCharges;
+        [GhostField] public FixedString64Bytes ComponentId;
     }
 
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]

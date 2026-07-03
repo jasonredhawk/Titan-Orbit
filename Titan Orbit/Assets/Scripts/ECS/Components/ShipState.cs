@@ -39,6 +39,11 @@ namespace TitanOrbit.ECS
         public float BulletLifetime;
         public float BulletMaxDistance;
         public float MuzzleOffset;
+        /// <summary>Authored cannon bullet scale (WeaponConfig.cannons[].bulletScale).</summary>
+        public float BulletScale;
+        /// <summary>Level-1 baseline used to derive upgrade VFX growth from current damage/speed.</summary>
+        public float ReferenceBulletDamage;
+        public float ReferenceBulletSpeed;
     }
 
     public struct ShipWeaponState : IComponentData

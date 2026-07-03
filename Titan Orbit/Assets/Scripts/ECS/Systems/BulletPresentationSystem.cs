@@ -32,10 +32,15 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(tracer, new BulletTracerState
                 {
                     Position = evt.SpawnPosition,
+                    SpawnPosition = evt.SpawnPosition,
                     Velocity = evt.Velocity,
                     RemainingLifetime = evt.Lifetime,
+                    MaxDistance = math.max(0.5f, evt.MaxDistance),
                     Scale = 0.3f,
+                    ScaleMultiplier = evt.ScaleMultiplier > 0f ? evt.ScaleMultiplier : 1f,
+                    Damage = evt.Damage,
                     OwnerTeam = evt.OwnerTeam,
+                    BankIndex = evt.BankIndex,
                 });
             }
             events.Clear();
@@ -53,6 +58,11 @@ namespace TitanOrbit.ECS
         {
             float dt = SystemAPI.Time.DeltaTime;
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+            DynamicBuffer<BulletHitEventElement> hitEvents = default;
+            bool hasHitEvents = SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity)
+                                && state.EntityManager.HasBuffer<BulletHitEventElement>(bulletEntity);
+            if (hasHitEvents)
+                hitEvents = state.EntityManager.GetBuffer<BulletHitEventElement>(bulletEntity);
 
             foreach (var (tracer, transform, entity) in SystemAPI
                          .Query<RefRW<BulletTracerState>, RefRW<LocalTransform>>()
@@ -106,6 +116,17 @@ namespace TitanOrbit.ECS
                 {
                     tracer.ValueRW.Position = hitPoint;
                     transform.ValueRW.Position = hitPoint;
+                    if (hasHitEvents)
+                    {
+                        hitEvents.Add(new BulletHitEventElement
+                        {
+                            HitPosition = hitPoint,
+                            Damage = tracer.ValueRO.Damage,
+                            OwnerTeam = tracer.ValueRO.OwnerTeam,
+                            BankIndex = tracer.ValueRO.BankIndex,
+                            ScaleMultiplier = tracer.ValueRO.ScaleMultiplier > 0f ? tracer.ValueRO.ScaleMultiplier : 1f,
+                        });
+                    }
                     ecb.DestroyEntity(entity);
                     continue;
                 }

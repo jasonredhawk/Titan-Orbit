@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 17ceb135702e74e40901e753d1641853, type: 3}
+  m_Name: BulletVfxBank
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.BulletVfxBank
+  categories:
+  - categoryName: Laserbolt
+    prefabs:
+    - {fileID: 126790, guid: 8b41f5320e19912428ff12551caca1e8, type: 3}
+    - {fileID: 199764, guid: a722c1f6fea53614a920ed802bff377d, type: 3}
+    - {fileID: 119578, guid: 3c7763e17d188664693086a53b04dcc3, type: 3}
+    - {fileID: 126566, guid: fd3266d43eff6f441a248797390b26aa, type: 3}
+    - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
+    profile:
+      statModifiers:
+        firePowerMultiplier: 0
+        bulletSpeedMultiplier: 0
+        fireRateMultiplier: 0
+        rammingPowerMultiplier: 0
+        bulletRangeMultiplier: 0
+      abilities: []
+  fallbackImpactPrefab: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
+  visualScaleMultiplier: 0.5
