@@ -1483,33 +1483,11 @@ namespace TitanOrbit.UI
                 asteroidBlipPixelSizeByInstanceId.Remove(id);
             }
 
+            blipsToRemove.Clear();
             foreach (var kv in blips)
             {
                 if (kv.Key == null) { blipsToRemove.Add(kv.Key); continue; }
                 if (!kv.Key.gameObject.activeInHierarchy) { blipsToRemove.Add(kv.Key); continue; }
-
-                Vector3 worldPos = kv.Key.position;
-                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-
-                float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                if (dist > minimapRadius) { kv.Value.gameObject.SetActive(false); continue; }
-                kv.Value.gameObject.SetActive(true);
-
-                float normX = dx / minimapRadius;
-                float normZ = dz / minimapRadius;
-                kv.Value.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
-
-                if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
-                {
-                    // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
-                    float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
-                    float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
-                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
-
-                    int instanceId = kv.Key.GetInstanceID();
-                    asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
-                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
-                }
             }
 
             foreach (var t in blipsToRemove)
@@ -1716,8 +1694,48 @@ namespace TitanOrbit.UI
 
             UpdateGemMoonBlips(playerPos, worldToMinimapScale);
 
+            // Position after all EnsureBlip calls so new blips never flash at center (0,0) for a frame.
+            UpdateBlipPositions(playerPos, worldToMinimapScale);
+
             RebuildLastFrameAsteroidInstanceIds();
             UpdateDeadAsteroidGhosts(playerPos);
+        }
+
+        private void UpdateBlipPositions(Vector3 playerPos, float worldToMinimapScale)
+        {
+            foreach (var kv in blips)
+            {
+                if (kv.Key == null || kv.Value == null)
+                    continue;
+
+                Vector3 worldPos = kv.Key.position;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
+
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                if (dist > minimapRadius)
+                {
+                    kv.Value.gameObject.SetActive(false);
+                    continue;
+                }
+
+                kv.Value.gameObject.SetActive(true);
+
+                float normX = dx / minimapRadius;
+                float normZ = dz / minimapRadius;
+                kv.Value.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
+
+                if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
+                {
+                    // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
+                    float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
+                    float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
+                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
+
+                    int instanceId = kv.Key.GetInstanceID();
+                    asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
+                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
+                }
+            }
         }
 
         private void BuildCurrentAsteroidInstanceIdsFromBlips()
@@ -1860,6 +1878,7 @@ namespace TitanOrbit.UI
 
             var go = new GameObject("Blip");
             go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
 
             var img = go.AddComponent<Image>();
             img.color = color;
@@ -1884,6 +1903,7 @@ namespace TitanOrbit.UI
 
             var go = new GameObject("Blip", typeof(RectTransform));
             go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
             var rt = go.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(size, size);
             rt.anchorMin = new Vector2(0.5f, 0.5f);

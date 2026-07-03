@@ -46,6 +46,9 @@ namespace TitanOrbit.Game
         [SerializeField] int defaultBulletBankIndex;
         [SerializeField] float defaultBulletScaleMultiplier = 1f;
 
+        [Header("Ship Propulsion VFX")]
+        [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
+
         readonly Dictionary<Entity, GameObject> _proxies = new Dictionary<Entity, GameObject>();
         readonly Dictionary<Entity, ClientBulletStretchVisual> _bulletStretchVisuals = new Dictionary<Entity, ClientBulletStretchVisual>();
         readonly Dictionary<Entity, int> _proxyNetworkIds = new Dictionary<Entity, int>();
@@ -84,6 +87,11 @@ namespace TitanOrbit.Game
                 peopleTransportVisualPrefab = LoadDefaultPrefab(DefaultPeopleTransportPath);
             if (bulletVfxBank == null)
                 bulletVfxBank = BulletVfxBank.LoadDefault();
+            if (propulsionVfxSettings.thrusterJetFlameBank == null ||
+                propulsionVfxSettings.thrusterJetFlameBank.Count == 0)
+            {
+                propulsionVfxSettings = ShipPropulsionVisualApplier.LoadDefaultSettings();
+            }
         }
 
         void Update()
@@ -274,6 +282,12 @@ namespace TitanOrbit.Game
             if (moonDockVisual == null)
                 moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();
             moonDockVisual.Bind(entity, scale);
+
+            var propulsionVisual = go.GetComponent<ShipPropulsionVisualApplier>();
+            if (propulsionVisual == null)
+                propulsionVisual = go.AddComponent<ShipPropulsionVisualApplier>();
+            string familyPrefix = shipFamily != null ? shipFamily.familyId : "AstroEagle";
+            propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings);
 
             return go;
         }

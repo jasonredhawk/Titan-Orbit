@@ -45,7 +45,8 @@ namespace TitanOrbit.UI
         private RectTransform _loadoutHost;
         private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
-        private TextMeshProUGUI _bankAmountText;
+        private TextMeshProUGUI _shipGemsValueText;
+        private TextMeshProUGUI _bankValueText;
         private TextMeshProUGUI _planetProgressText;
         private Button _autoDepositToggle;
         private Image _autoDepositToggleBg;
@@ -312,10 +313,10 @@ namespace TitanOrbit.UI
         public void RefreshDepositStatus(float shipGems, float bankBalance, float planetGems, int planetLevel)
         {
             EnsureBuilt();
-            if (_bankAmountText != null)
-                _bankAmountText.text = $"Ship Gems: {shipGems:F0}  →  Bank: {bankBalance:F0}";
-            else if (_bankText != null)
-                _bankText.text = $"Ship Gems: {shipGems:F0}  →  Bank: {bankBalance:F0}";
+            if (_shipGemsValueText != null)
+                _shipGemsValueText.text = shipGems.ToString("F0");
+            if (_bankValueText != null)
+                _bankValueText.text = bankBalance.ToString("F0");
 
             if (_planetProgressText == null)
                 return;
@@ -323,12 +324,12 @@ namespace TitanOrbit.UI
             planetLevel = Mathf.Max(1, planetLevel);
             if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
             {
-                _planetProgressText.text = $"Planet L{planetLevel}: max level";
+                _planetProgressText.text = $"Planet L{planetLevel} · max";
                 return;
             }
 
             float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
-            _planetProgressText.text = $"Planet L{planetLevel}: {planetGems:F0} / {maxGems:F0} gems";
+            _planetProgressText.text = $"Planet L{planetLevel} · {planetGems:F0}/{maxGems:F0}";
         }
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
@@ -475,22 +476,34 @@ namespace TitanOrbit.UI
             _bankText.raycastTarget = false;
             ApplyFont(_bankText);
 
-            var amountGo = new GameObject("Amount");
-            amountGo.transform.SetParent(bannerGo.transform, false);
-            var amountLe = amountGo.AddComponent<LayoutElement>();
-            amountLe.preferredHeight = 24f;
-            amountLe.minHeight = 20f;
-            amountLe.flexibleHeight = 0f;
-            _bankAmountText = amountGo.AddComponent<TextMeshProUGUI>();
-            _bankAmountText.text = "Ship Gems: 0  →  Bank: 0";
-            _bankAmountText.fontSize = 16f;
-            _bankAmountText.fontStyle = FontStyles.Bold;
-            _bankAmountText.alignment = TextAlignmentOptions.Center;
-            _bankAmountText.color = new Color(1f, 0.92f, 0.55f, 1f);
-            _bankAmountText.enableWordWrapping = false;
-            _bankAmountText.overflowMode = TextOverflowModes.Ellipsis;
-            _bankAmountText.raycastTarget = false;
-            ApplyFont(_bankAmountText);
+            var flowRowGo = new GameObject("GemFlowRow");
+            flowRowGo.transform.SetParent(bannerGo.transform, false);
+            var flowRowLe = flowRowGo.AddComponent<LayoutElement>();
+            flowRowLe.preferredHeight = 40f;
+            flowRowLe.minHeight = 36f;
+            flowRowLe.flexibleHeight = 0f;
+            var flowRow = flowRowGo.AddComponent<HorizontalLayoutGroup>();
+            flowRow.spacing = 4f;
+            flowRow.padding = new RectOffset(2, 2, 0, 0);
+            flowRow.childAlignment = TextAnchor.MiddleCenter;
+            flowRow.childControlWidth = true;
+            flowRow.childControlHeight = true;
+            flowRow.childForceExpandWidth = true;
+            flowRow.childForceExpandHeight = true;
+
+            _shipGemsValueText = CreateGemFlowColumn(
+                flowRowGo.transform,
+                "Ship",
+                "0",
+                new Color(0.82f, 0.92f, 1f, 1f));
+
+            CreateGemFlowArrow(flowRowGo.transform);
+
+            _bankValueText = CreateGemFlowColumn(
+                flowRowGo.transform,
+                "Bank",
+                "0",
+                new Color(1f, 0.92f, 0.55f, 1f));
 
             var planetGo = new GameObject("PlanetProgress");
             planetGo.transform.SetParent(bannerGo.transform, false);
@@ -499,12 +512,80 @@ namespace TitanOrbit.UI
             planetLe.minHeight = 16f;
             planetLe.flexibleHeight = 0f;
             _planetProgressText = planetGo.AddComponent<TextMeshProUGUI>();
-            _planetProgressText.text = "Planet L1: 0 / 100 gems";
-            _planetProgressText.fontSize = 12f;
+            _planetProgressText.text = "Planet L1 · 0/100";
+            _planetProgressText.fontSize = 11f;
             _planetProgressText.alignment = TextAlignmentOptions.Center;
             _planetProgressText.color = new Color(0.72f, 0.82f, 0.95f, 0.95f);
             _planetProgressText.raycastTarget = false;
             ApplyFont(_planetProgressText);
+        }
+
+        TextMeshProUGUI CreateGemFlowColumn(Transform parent, string label, string value, Color valueColor)
+        {
+            var colGo = new GameObject(label + "Column");
+            colGo.transform.SetParent(parent, false);
+            var colLe = colGo.AddComponent<LayoutElement>();
+            colLe.flexibleWidth = 1f;
+            colLe.minWidth = 56f;
+
+            var colVlg = colGo.AddComponent<VerticalLayoutGroup>();
+            colVlg.spacing = 0f;
+            colVlg.childAlignment = TextAnchor.MiddleCenter;
+            colVlg.childControlWidth = true;
+            colVlg.childControlHeight = true;
+            colVlg.childForceExpandWidth = true;
+            colVlg.childForceExpandHeight = false;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(colGo.transform, false);
+            var labelLe = labelGo.AddComponent<LayoutElement>();
+            labelLe.preferredHeight = 12f;
+            labelLe.minHeight = 10f;
+            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 10f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.alignment = TextAlignmentOptions.Center;
+            labelTmp.color = new Color(0.72f, 0.78f, 0.88f, 0.95f);
+            labelTmp.raycastTarget = false;
+            ApplyFont(labelTmp);
+
+            var valueGo = new GameObject("Value");
+            valueGo.transform.SetParent(colGo.transform, false);
+            var valueLe = valueGo.AddComponent<LayoutElement>();
+            valueLe.preferredHeight = 24f;
+            valueLe.minHeight = 20f;
+            var valueTmp = valueGo.AddComponent<TextMeshProUGUI>();
+            valueTmp.text = value;
+            valueTmp.fontSize = 22f;
+            valueTmp.fontStyle = FontStyles.Bold;
+            valueTmp.alignment = TextAlignmentOptions.Center;
+            valueTmp.color = valueColor;
+            valueTmp.enableWordWrapping = false;
+            valueTmp.overflowMode = TextOverflowModes.Overflow;
+            valueTmp.raycastTarget = false;
+            ApplyFont(valueTmp);
+
+            return valueTmp;
+        }
+
+        void CreateGemFlowArrow(Transform parent)
+        {
+            var arrowGo = new GameObject("Arrow");
+            arrowGo.transform.SetParent(parent, false);
+            var arrowLe = arrowGo.AddComponent<LayoutElement>();
+            arrowLe.preferredWidth = 18f;
+            arrowLe.minWidth = 14f;
+            arrowLe.flexibleWidth = 0f;
+
+            var arrowTmp = arrowGo.AddComponent<TextMeshProUGUI>();
+            arrowTmp.text = "→";
+            arrowTmp.fontSize = 16f;
+            arrowTmp.fontStyle = FontStyles.Bold;
+            arrowTmp.alignment = TextAlignmentOptions.Center;
+            arrowTmp.color = new Color(0.55f, 0.62f, 0.72f, 0.9f);
+            arrowTmp.raycastTarget = false;
+            ApplyFont(arrowTmp);
         }
 
         private void CreateAutoDepositToggle(Transform parent)

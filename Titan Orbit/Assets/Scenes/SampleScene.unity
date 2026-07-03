@@ -8772,6 +8772,25 @@ MonoBehaviour:
   bulletVfxBank: {fileID: 11400000, guid: 2a974d6fe4bb1904b8ce53e2e35cbb6b, type: 2}
   defaultBulletBankIndex: 0
   defaultBulletScaleMultiplier: 1
+  propulsionVfxSettings:
+    engineVfxPrefab: {fileID: 0}
+    thrusterVfxPrefab: {fileID: 0}
+    useThrusterVfxForAcceleration: 1
+    thrusterJetFlameBank:
+    - colorName: Blue
+      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    - colorName: Green
+      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    - colorName: Red
+      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    thrusterVfxLocalOffset: {x: 0, y: 0, z: -0.2}
+    thrusterVfxLocalEuler: {x: 0, y: 180, z: 0}
+    thrusterVfxIdleScale: 0.1
+    thrusterVfxTransitionSpeed: 3
 --- !u!114 &1418200274
 MonoBehaviour:
   m_ObjectHideFlags: 0

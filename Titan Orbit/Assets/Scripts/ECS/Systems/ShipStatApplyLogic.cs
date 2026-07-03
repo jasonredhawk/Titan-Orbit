@@ -194,7 +194,7 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
-                float turnVal = Mathf.Max(1f, effective.turnSpeed);
+                float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
                 float thrust = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal);

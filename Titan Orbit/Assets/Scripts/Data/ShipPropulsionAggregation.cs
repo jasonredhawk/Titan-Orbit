@@ -24,6 +24,15 @@ namespace TitanOrbit.Data
         /// <summary>Per level after 1, mobility loses this fraction of the base stat (matches Starship).</summary>
         public const float ShipLevelMobilityPenaltyFractionPerLevel = 0.11f;
 
+        /// <summary>
+        /// Family-authored <see cref="ShipComponentAbilityStats.turnSpeed"/> uses small definition units;
+        /// multiply by this at runtime only (rotation/banking), not in power-score UI.
+        /// </summary>
+        public const float TurnDefinitionToDegreesPerSecond = 10f;
+
+        public static float ConvertTurnDefinitionToDegreesPerSecond(float turnDefinition) =>
+            Mathf.Max(1f, turnDefinition) * TurnDefinitionToDegreesPerSecond;
+
         /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
 
