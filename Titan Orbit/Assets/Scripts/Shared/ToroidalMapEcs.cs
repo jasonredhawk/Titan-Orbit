@@ -55,5 +55,81 @@ namespace TitanOrbit.Generation
                 return new float3(0f, 0f, 1f);
             return math.normalize(offset);
         }
+
+        /// <summary>Nearest toroidal copy of <paramref name="logicalPos"/> to <paramref name="referencePos"/>.</summary>
+        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos, float mapWidth, float mapHeight)
+        {
+            float dx = referencePos.x - logicalPos.x;
+            float dz = referencePos.z - logicalPos.z;
+            int k = (int)math.round(dx / mapWidth);
+            int m = (int)math.round(dz / mapHeight);
+            return new float3(logicalPos.x + k * mapWidth, logicalPos.y, logicalPos.z + m * mapHeight);
+        }
+
+        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos) =>
+            GetDisplayPosition(logicalPos, referencePos, s_MapWidth, s_MapHeight);
+
+        /// <summary>Display tile with hysteresis to avoid pops near tile boundaries.</summary>
+        public static float3 GetDisplayPositionWithHysteresis(
+            float3 logicalPos,
+            float3 referencePos,
+            ref int tileK,
+            ref int tileM,
+            float mapWidth,
+            float mapHeight,
+            float switchMarginFraction = 0.35f)
+        {
+            float dx = referencePos.x - logicalPos.x;
+            float dz = referencePos.z - logicalPos.z;
+            int candidateK = (int)math.round(dx / mapWidth);
+            int candidateM = (int)math.round(dz / mapHeight);
+
+            if (tileK == int.MinValue)
+            {
+                tileK = candidateK;
+                tileM = candidateM;
+            }
+            else if (candidateK != tileK || candidateM != tileM)
+            {
+                float3 current = new float3(
+                    logicalPos.x + tileK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + tileM * mapHeight);
+                float3 candidate = new float3(
+                    logicalPos.x + candidateK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + candidateM * mapHeight);
+                float currentDistSq = (referencePos.x - current.x) * (referencePos.x - current.x)
+                    + (referencePos.z - current.z) * (referencePos.z - current.z);
+                float candidateDistSq = (referencePos.x - candidate.x) * (referencePos.x - candidate.x)
+                    + (referencePos.z - candidate.z) * (referencePos.z - candidate.z);
+                float margin = math.max(1f, switchMarginFraction * math.min(mapWidth, mapHeight));
+                if (candidateDistSq < currentDistSq - margin * margin)
+                {
+                    tileK = candidateK;
+                    tileM = candidateM;
+                }
+            }
+
+            return new float3(
+                logicalPos.x + tileK * mapWidth,
+                logicalPos.y,
+                logicalPos.z + tileM * mapHeight);
+        }
+
+        public static float3 GetDisplayPositionWithHysteresis(
+            float3 logicalPos,
+            float3 referencePos,
+            ref int tileK,
+            ref int tileM,
+            float switchMarginFraction = 0.35f) =>
+            GetDisplayPositionWithHysteresis(
+                logicalPos,
+                referencePos,
+                ref tileK,
+                ref tileM,
+                s_MapWidth,
+                s_MapHeight,
+                switchMarginFraction);
     }
 }

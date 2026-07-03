@@ -120,8 +120,7 @@ namespace TitanOrbit.ECS
                 mapH,
                 elapsedSeconds);
 
-            motorState.Position = ToroidalMapEcs.Wrap(motorState.Position, mapW, mapH);
-
+            // Ships stay in unwrapped world space; presentation repositions other bodies via ToroidalDisplay.
             transform.ValueRW.Position = motorState.Position;
             transform.ValueRW.Rotation = motorState.Rotation;
             kinematics.ValueRW.Velocity = motorState.Velocity;

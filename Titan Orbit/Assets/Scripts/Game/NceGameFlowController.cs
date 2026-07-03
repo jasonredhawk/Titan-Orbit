@@ -21,6 +21,7 @@ namespace TitanOrbit.Game
         [SerializeField] GameObject teamSelectionPanel;
         [SerializeField] GameObject loadingRoot;
         [SerializeField] GameObject gameplayRoot;
+        [SerializeField] GameObject shipStatsPanel;
 
         [Header("Main Menu")]
         [SerializeField] Button playButton;
@@ -56,6 +57,7 @@ namespace TitanOrbit.Game
 
         bool _autoPickSent;
         bool _autoStartSent;
+        bool _joinTeamUiCleaned;
         bool _loggedWaitingForMap;
         bool _loggedTeamUiReady;
         float _connectedAt = -1f;
@@ -103,6 +105,7 @@ namespace TitanOrbit.Game
             if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
             if (loadingRoot != null) loadingRoot.SetActive(false);
             if (gameplayRoot != null) gameplayRoot.SetActive(false);
+            if (shipStatsPanel != null) shipStatsPanel.SetActive(false);
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
             {
@@ -113,6 +116,7 @@ namespace TitanOrbit.Game
             }
 
             WireTeamButtons();
+            CleanupJoinTeamScreenUi();
             RefreshUi();
 
             if (autoStartLocalPlayInEditor && Application.isEditor &&
@@ -159,6 +163,8 @@ namespace TitanOrbit.Game
             }
             if (gameplayRoot == null)
                 gameplayRoot = GameObject.Find("HUD");
+            if (shipStatsPanel == null)
+                shipStatsPanel = FindSceneObjectByName("ShipStatsPanel");
 
             if (playButton == null)
             {
@@ -545,11 +551,36 @@ namespace TitanOrbit.Game
             if (loadingRoot != null)
                 loadingRoot.SetActive(false);
 
+            bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
+            bool showGameplayHud = connected && hasShip && !matchWon;
+
             if (gameplayRoot != null)
-            {
-                bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
-                gameplayRoot.SetActive(connected && hasShip && !matchWon);
-            }
+                gameplayRoot.SetActive(showGameplayHud);
+
+            if (shipStatsPanel != null)
+                shipStatsPanel.SetActive(showGameplayHud);
+        }
+
+        void CleanupJoinTeamScreenUi()
+        {
+            if (_joinTeamUiCleaned)
+                return;
+
+            _joinTeamUiCleaned = true;
+
+            if (lobbyPanel == null)
+                return;
+
+            HideChildIfPresent(lobbyPanel.transform, "PlayerCount");
+            HideChildIfPresent(lobbyPanel.transform, "RoomName");
+            HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
+        }
+
+        static void HideChildIfPresent(Transform parent, string childName)
+        {
+            var child = parent.Find(childName);
+            if (child != null)
+                child.gameObject.SetActive(false);
         }
 
         void ApplyActiveTeamVisibility(int activeTeamCount)

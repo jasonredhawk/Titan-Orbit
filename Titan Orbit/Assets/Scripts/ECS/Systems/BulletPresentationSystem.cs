@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -57,6 +58,14 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
+
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
             DynamicBuffer<BulletHitEventElement> hitEvents = default;
             bool hasHitEvents = SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity)
@@ -87,7 +96,8 @@ namespace TitanOrbit.ECS
                     if (shipState.ValueRO.IsDead) continue;
                     if (shipState.ValueRO.Team == (TeamId)tracer.ValueRO.OwnerTeam) continue;
 
-                    if (BulletCollision.SegmentHitsSphere(prevPos, newPos, shipTransform.ValueRO.Position, 2f, out hitPoint))
+                    if (BulletCollision.SegmentHitsSphereToroidal(
+                            prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out hitPoint))
                     {
                         hit = true;
                         break;
@@ -104,7 +114,8 @@ namespace TitanOrbit.ECS
                             continue;
 
                         float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
-                        if (BulletCollision.SegmentHitsSphere(prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, out hitPoint))
+                        if (BulletCollision.SegmentHitsSphereToroidal(
+                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
                         {
                             hit = true;
                             break;

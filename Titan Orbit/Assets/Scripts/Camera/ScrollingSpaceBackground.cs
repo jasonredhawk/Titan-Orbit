@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using UnityEngine;
 
 namespace TitanOrbit.Camera
@@ -47,6 +48,11 @@ namespace TitanOrbit.Camera
         private Transform backgroundQuadTransform;
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
         private static readonly int UVScroll = Shader.PropertyToID("_UVScroll");
+
+        private bool hasLastCamPos;
+        private Vector3 lastCamPos;
+        private float scrollOffsetX;
+        private float scrollOffsetZ;
 
         private void Awake()
         {
@@ -149,9 +155,37 @@ namespace TitanOrbit.Camera
             transform.position = new Vector3(camPos.x, -Mathf.Abs(depthOffset), camPos.z);
             ResizeQuadToCoverView();
 
-            float offsetX = camPos.x * scrollScale;
-            float offsetZ = camPos.z * scrollScale;
-            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
+            if (!hasLastCamPos)
+            {
+                lastCamPos = camPos;
+                hasLastCamPos = true;
+                scrollOffsetX = camPos.x * scrollScale;
+                scrollOffsetZ = camPos.z * scrollScale;
+            }
+            else
+            {
+                float dx = camPos.x - lastCamPos.x;
+                float dz = camPos.z - lastCamPos.z;
+                float mapW = ToroidalMap.GetMapWidth();
+                float mapH = ToroidalMap.GetMapHeight();
+                if (mapW > 1f)
+                {
+                    if (dx > mapW * 0.5f) dx -= mapW;
+                    else if (dx < -mapW * 0.5f) dx += mapW;
+                }
+
+                if (mapH > 1f)
+                {
+                    if (dz > mapH * 0.5f) dz -= mapH;
+                    else if (dz < -mapH * 0.5f) dz += mapH;
+                }
+
+                scrollOffsetX += dx * scrollScale;
+                scrollOffsetZ += dz * scrollScale;
+                lastCamPos = camPos;
+            }
+
+            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));
         }
 
         private void ResizeQuadToCoverView()

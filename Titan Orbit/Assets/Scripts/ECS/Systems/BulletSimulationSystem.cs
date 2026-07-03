@@ -34,6 +34,13 @@ namespace TitanOrbit.ECS
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             float dt = SystemAPI.Time.DeltaTime;
+            float mapW = 1000f;
+            float mapH = 1000f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            {
+                mapW = math.max(100f, mapState.MapWidth);
+                mapH = math.max(100f, mapState.MapHeight);
+            }
 
             for (int i = bullets.Length - 1; i >= 0; i--)
             {
@@ -61,7 +68,8 @@ namespace TitanOrbit.ECS
                     if (shipState.ValueRO.IsDead) continue;
                     if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam) continue;
 
-                    if (!BulletCollision.SegmentHitsSphere(prevPos, newPos, shipTransform.ValueRO.Position, 2f, out float3 hitPoint))
+                    if (!BulletCollision.SegmentHitsSphereToroidal(
+                            prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out float3 hitPoint))
                         continue;
 
                     var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
@@ -89,8 +97,8 @@ namespace TitanOrbit.ECS
                             continue;
 
                         float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
-                        if (!BulletCollision.SegmentHitsSphere(
-                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, out _))
+                        if (!BulletCollision.SegmentHitsSphereToroidal(
+                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out _))
                             continue;
 
                         var asteroid = asteroidState.ValueRO;
@@ -124,8 +132,8 @@ namespace TitanOrbit.ECS
                             continue;
 
                         float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
-                        if (!BulletCollision.SegmentHitsSphere(
-                                prevPos, newPos, transform.ValueRO.Position, hitRadius, out _))
+                        if (!BulletCollision.SegmentHitsSphereToroidal(
+                                prevPos, newPos, transform.ValueRO.Position, hitRadius, mapW, mapH, out _))
                             continue;
 
                         t.Health -= b.Damage;

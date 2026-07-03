@@ -47,6 +47,14 @@ namespace TitanOrbit.ECS
                 return;
 
             float dt = SystemAPI.Time.DeltaTime;
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
@@ -65,8 +73,11 @@ namespace TitanOrbit.ECS
                     if (asteroidState.ValueRO.IsDestroyed)
                         continue;
 
-                    if (math.distance(shipTransform.ValueRO.Position, asteroidTransform.ValueRO.Position) >
-                        GemEconomyConstants.MiningRange)
+                    if (ToroidalMapEcs.ToroidalDistance(
+                            shipTransform.ValueRO.Position,
+                            asteroidTransform.ValueRO.Position,
+                            mapW,
+                            mapH) > GemEconomyConstants.MiningRange)
                         continue;
 
                     var a = asteroidState.ValueRO;

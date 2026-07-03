@@ -133,6 +133,9 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out float3 planetPos, out float planetSize, out var planetState))
                 return false;
 
+            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+                planetPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(planetId, planetPos, reference);
+
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed) ? simElapsed : Time.timeAsDouble;
             float3 moonPosF3 = PlanetOrbitMath.GetMoonWorldPosition(
                 planetPos,

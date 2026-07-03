@@ -1,9 +1,32 @@
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
 {
     public static class BulletCollision
     {
+        /// <summary>Logical center repositioned to the map tile nearest <paramref name="unwrapOrigin"/>.</summary>
+        public static float3 UnwrapCenterNear(float3 unwrapOrigin, float3 logicalCenter, float mapW, float mapH)
+        {
+            float3 center = unwrapOrigin + ToroidalMapEcs.ShortestOffsetXZ(unwrapOrigin, logicalCenter, mapW, mapH);
+            center.y = logicalCenter.y;
+            return center;
+        }
+
+        /// <summary>Swept segment vs sphere on a torus — unwraps obstacle center near the segment start.</summary>
+        public static bool SegmentHitsSphereToroidal(
+            float3 from,
+            float3 to,
+            float3 logicalCenter,
+            float radius,
+            float mapW,
+            float mapH,
+            out float3 hitPoint)
+        {
+            float3 center = UnwrapCenterNear(from, logicalCenter, mapW, mapH);
+            return SegmentHitsSphere(from, to, center, radius, out hitPoint);
+        }
+
         /// <summary>Swept segment vs sphere — returns the first contact point along [from, to].</summary>
         public static bool SegmentHitsSphere(float3 from, float3 to, float3 center, float radius, out float3 hitPoint)
         {

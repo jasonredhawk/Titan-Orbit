@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -55,6 +56,9 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, int> _proxyShipLevels = new Dictionary<Entity, int>();
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
+
+        Vector3 _toroidalReference;
+        bool _hasToroidalReference;
 
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
         {
@@ -112,6 +116,8 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             var alive = new HashSet<Entity>();
 
+            BeginToroidalFrame(em, alive);
+
             SyncShipProxyTransforms(em, alive);
             DrawPlanets(em, alive);
             DrawAsteroids(em, alive);
@@ -133,6 +139,32 @@ namespace TitanOrbit.Game
         }
 
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
+
+        void BeginToroidalFrame(EntityManager em, HashSet<Entity> alive)
+        {
+            ToroidalDisplay.SyncMapSize(em);
+            _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
+            ToroidalDisplay.PruneStale(alive);
+        }
+
+        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
+        {
+            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
+                return logicalPos;
+
+            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
+                return logicalPos;
+
+            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
+
+        Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
+        {
+            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
+                return logicalPos;
+
+            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
 
         void EnsureShipProxies(EntityManager em)
         {
@@ -176,7 +208,7 @@ namespace TitanOrbit.Game
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
                 var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, em, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
@@ -209,7 +241,7 @@ namespace TitanOrbit.Game
 
                 if (!skipTransformSync)
                 {
-                    go.transform.position = lt.Position;
+                    go.transform.position = GetVisualPosition(entity, em, lt.Position);
                     go.transform.rotation = lt.Rotation;
                     go.transform.localScale = Vector3.one * scale;
                 }
@@ -314,6 +346,7 @@ namespace TitanOrbit.Game
         {
             if (_proxies.TryGetValue(entity, out var go))
             {
+                ToroidalDisplay.RemoveEntity(entity);
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
@@ -344,8 +377,11 @@ namespace TitanOrbit.Game
                 var team = (TeamId)hit.OwnerTeam;
                 int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
+                Vector3 hitPos = hit.HitPosition;
+                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+                    hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
                 BulletVisualFactory.SpawnBulletImpactVfx(
-                    hit.HitPosition,
+                    hitPos,
                     bulletVfxBank,
                     bankIndex,
                     team,
@@ -381,7 +417,7 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
@@ -423,7 +459,7 @@ namespace TitanOrbit.Game
                     go = new GameObject("BulletTracer");
                     _proxies[entity] = go;
 
-                    Vector3 spawnPos = tracer.SpawnPosition;
+                    Vector3 spawnPos = GetVisualPosition(entity, tracer.SpawnPosition);
                     Vector3 vel = velocity;
                     BulletVisualFactory.PlayMuzzleVfx(
                         spawnPos,
@@ -456,7 +492,7 @@ namespace TitanOrbit.Game
                     }
                 }
 
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 if (math.lengthsq(velocity) > 0.0001f)
                     go.transform.rotation = Quaternion.LookRotation(((Vector3)velocity).normalized, Vector3.up);
 
@@ -500,7 +536,7 @@ namespace TitanOrbit.Game
                     _proxyPlanetVisuals.TryGetValue(entity, out var existingKey);
                     if (existingKey.Equals(key))
                     {
-                        go.transform.position = lt.Position;
+                        go.transform.position = GetVisualPosition(entity, lt.Position);
                         go.transform.rotation = lt.Rotation;
                         go.transform.localScale = Vector3.one * scale;
                         continue;
@@ -529,7 +565,7 @@ namespace TitanOrbit.Game
                 }
 
                 _proxyPlanetVisuals[entity] = key;
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
@@ -574,7 +610,7 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.localScale = Vector3.one * scale;
             }
         }
@@ -613,7 +649,7 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
@@ -667,7 +703,7 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
-                go.transform.position = lt.Position;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
             }
