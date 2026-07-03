@@ -308,7 +308,7 @@ namespace TitanOrbit.Data
             return ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(GetTierEntryForChassisId(chassisId), shipLevel);
         }
 
-        /// <summary>Power score breakdown for this chassis from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>.</summary>
+        /// <summary>Power score breakdown for this chassis from baked data or live prefab sum.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
         {
             if (string.IsNullOrEmpty(chassisId) || families == null) return default;
@@ -325,8 +325,24 @@ namespace TitanOrbit.Data
 
                 foreach (var tier in f.shipFamilyDefinition.upgradeTree)
                 {
-                    if (tier != null && tier.chassisId == chassisId)
+                    if (tier == null || tier.chassisId != chassisId)
+                        continue;
+
+                    if (tier.powerScoreBreakdown.HasDisplayStats)
                         return tier.powerScoreBreakdown;
+
+                    if (tier.prefab != null &&
+                        ShipFamilyStatsCalculator.TrySumFromPrefab(
+                            tier.prefab,
+                            f.shipFamilyDefinition,
+                            shipLevel: 1,
+                            out ShipComponentAbilityStats stats))
+                    {
+                        return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
+                            ShipComponentStoreData.GetEffectiveStatsAtShipLevel(stats, 1));
+                    }
+
+                    return default;
                 }
                 return default;
             }

@@ -77,8 +77,10 @@ namespace TitanOrbit.Game
 
         void EnsureMatchFlowControllers()
         {
-            if (GetComponent<PeopleTransferPopupPresenter>() == null)
-                gameObject.AddComponent<PeopleTransferPopupPresenter>();
+            if (GetComponent<WorldFloatingCountManager>() == null)
+                gameObject.AddComponent<WorldFloatingCountManager>();
+            if (GetComponent<EcsFloatingCountPresenter>() == null)
+                gameObject.AddComponent<EcsFloatingCountPresenter>();
             if (GetComponent<MatchEndScreenController>() == null)
                 gameObject.AddComponent<MatchEndScreenController>();
             if (GetComponent<DeathScreenController>() == null)

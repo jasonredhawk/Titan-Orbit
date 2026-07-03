@@ -168,8 +168,11 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<EcsWorldVisualizer>() == null)
                 root.AddComponent<EcsWorldVisualizer>();
 
-            if (root.GetComponent<PeopleTransferPopupPresenter>() == null)
-                root.AddComponent<PeopleTransferPopupPresenter>();
+            if (root.GetComponent<WorldFloatingCountManager>() == null)
+                root.AddComponent<WorldFloatingCountManager>();
+
+            if (root.GetComponent<EcsFloatingCountPresenter>() == null)
+                root.AddComponent<EcsFloatingCountPresenter>();
 
             if (root.GetComponent<MatchEndScreenController>() == null)
                 root.AddComponent<MatchEndScreenController>();

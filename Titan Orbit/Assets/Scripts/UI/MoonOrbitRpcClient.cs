@@ -14,7 +14,18 @@ namespace TitanOrbit.UI
     {
         public static void RequestContributedGems(int homePlanetId)
         {
-            var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
+            if (homePlanetId <= 0)
+                return;
+
+            // Local host creates RPCs on the server world, but MoonOrbitStoreSystem only handles
+            // ReceiveRpcCommandRequest from clients — read the ledger directly instead.
+            if (EcsGameBridge.TryGetContributedGems(homePlanetId, out float amount))
+            {
+                MoonOrbitClientState.SetContributedGems(amount);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;
 
@@ -29,7 +40,7 @@ namespace TitanOrbit.UI
             MoonOrbitClientState.SetWantDepositGems(wantDeposit);
             ApplyWantDepositOnServer(wantDeposit);
 
-            if (EcsGameBridge.IsLocalHost())
+            if (EcsGameBridge.IsLocalHost() || !EcsGameBridge.IsNetworkInGame())
                 return;
 
             var world = EcsGameBridge.ClientWorld;

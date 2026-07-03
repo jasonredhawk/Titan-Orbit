@@ -590,6 +590,37 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Reads contributed gem bank balance from the server ledger (local host only).</summary>
+        public static bool TryGetContributedGems(int homePlanetId, out float amount)
+        {
+            amount = 0f;
+            if (homePlanetId <= 0 || !IsLocalHost())
+                return false;
+
+            var server = ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+
+            int networkId = GetLocalNetworkId();
+            if (networkId <= 0)
+                return false;
+
+            var em = server.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(HomePlanetTag), typeof(PlanetState));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].PlanetId != homePlanetId)
+                    continue;
+
+                amount = ContributedGemsLogic.Get(em, entities[i], networkId);
+                return true;
+            }
+
+            return false;
+        }
+
         static bool TryFindPlanetState(World world, int planetId, out PlanetState state)
         {
             state = default;

@@ -1,5 +1,6 @@
 using System;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -30,7 +31,7 @@ namespace TitanOrbit.UI
 
         private const float NavStripHeight = 44f;
         private const float CurrentShipNodeHeight = 232f;
-        private const float BankBalanceBannerHeight = 72f;
+        private const float BankBalanceBannerHeight = 96f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
         public const int AutoDepositGemsDefaultEnabled = 1;
@@ -45,6 +46,7 @@ namespace TitanOrbit.UI
         private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
         private TextMeshProUGUI _bankAmountText;
+        private TextMeshProUGUI _planetProgressText;
         private Button _autoDepositToggle;
         private Image _autoDepositToggleBg;
         private TextMeshProUGUI _autoDepositToggleStateLabel;
@@ -304,13 +306,29 @@ namespace TitanOrbit.UI
             SetAutoDepositToggleVisual(enabled, notify: false);
         }
 
-        public void RefreshBank(float contributedGems)
+        public void RefreshBank(float contributedGems) =>
+            RefreshDepositStatus(0f, contributedGems, 0f, 1);
+
+        public void RefreshDepositStatus(float shipGems, float bankBalance, float planetGems, int planetLevel)
         {
             EnsureBuilt();
             if (_bankAmountText != null)
-                _bankAmountText.text = $"{contributedGems:F0} g";
+                _bankAmountText.text = $"Ship Gems: {shipGems:F0}  →  Bank: {bankBalance:F0}";
             else if (_bankText != null)
-                _bankText.text = $"Bank balance: {contributedGems:F0} g";
+                _bankText.text = $"Ship Gems: {shipGems:F0}  →  Bank: {bankBalance:F0}";
+
+            if (_planetProgressText == null)
+                return;
+
+            planetLevel = Mathf.Max(1, planetLevel);
+            if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
+            {
+                _planetProgressText.text = $"Planet L{planetLevel}: max level";
+                return;
+            }
+
+            float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
+            _planetProgressText.text = $"Planet L{planetLevel}: {planetGems:F0} / {maxGems:F0} gems";
         }
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
@@ -448,7 +466,7 @@ namespace TitanOrbit.UI
             labelLe.preferredHeight = 14f;
             labelLe.minHeight = 12f;
             _bankText = labelGo.AddComponent<TextMeshProUGUI>();
-            _bankText.text = "Bank balance";
+            _bankText.text = "GEM DEPOSITS";
             _bankText.fontSize = 11f;
             _bankText.fontStyle = FontStyles.Bold;
             _bankText.characterSpacing = 2f;
@@ -460,12 +478,12 @@ namespace TitanOrbit.UI
             var amountGo = new GameObject("Amount");
             amountGo.transform.SetParent(bannerGo.transform, false);
             var amountLe = amountGo.AddComponent<LayoutElement>();
-            amountLe.preferredHeight = 32f;
-            amountLe.minHeight = 28f;
+            amountLe.preferredHeight = 24f;
+            amountLe.minHeight = 20f;
             amountLe.flexibleHeight = 0f;
             _bankAmountText = amountGo.AddComponent<TextMeshProUGUI>();
-            _bankAmountText.text = "0 g";
-            _bankAmountText.fontSize = 26f;
+            _bankAmountText.text = "Ship Gems: 0  →  Bank: 0";
+            _bankAmountText.fontSize = 16f;
             _bankAmountText.fontStyle = FontStyles.Bold;
             _bankAmountText.alignment = TextAlignmentOptions.Center;
             _bankAmountText.color = new Color(1f, 0.92f, 0.55f, 1f);
@@ -473,6 +491,20 @@ namespace TitanOrbit.UI
             _bankAmountText.overflowMode = TextOverflowModes.Ellipsis;
             _bankAmountText.raycastTarget = false;
             ApplyFont(_bankAmountText);
+
+            var planetGo = new GameObject("PlanetProgress");
+            planetGo.transform.SetParent(bannerGo.transform, false);
+            var planetLe = planetGo.AddComponent<LayoutElement>();
+            planetLe.preferredHeight = 18f;
+            planetLe.minHeight = 16f;
+            planetLe.flexibleHeight = 0f;
+            _planetProgressText = planetGo.AddComponent<TextMeshProUGUI>();
+            _planetProgressText.text = "Planet L1: 0 / 100 gems";
+            _planetProgressText.fontSize = 12f;
+            _planetProgressText.alignment = TextAlignmentOptions.Center;
+            _planetProgressText.color = new Color(0.72f, 0.82f, 0.95f, 0.95f);
+            _planetProgressText.raycastTarget = false;
+            ApplyFont(_planetProgressText);
         }
 
         private void CreateAutoDepositToggle(Transform parent)

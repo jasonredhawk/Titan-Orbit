@@ -243,6 +243,14 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, loadout);
             }
 
+            var shipState = em.GetComponentData<ShipState>(shipEntity);
+            ShipStatApplyLogic.ApplyToShip(
+                em,
+                shipEntity,
+                shipState.Team,
+                shipState.ShipLevel,
+                targetBranchIndex);
+
             message = "Ship upgraded.";
             return true;
         }

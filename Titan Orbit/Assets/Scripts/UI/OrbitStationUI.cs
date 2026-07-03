@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
 #if ENABLE_INPUT_SYSTEM
@@ -639,7 +640,7 @@ namespace TitanOrbit.UI
                     if (h != null && h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
                 }
             }
-            contributedGems = 0f;
+            contributedGems = lastReceivedGems;
             EnsurePanelExists();
             EnterMoonDockLayout();
             if (rootPanel != null)
@@ -3287,7 +3288,31 @@ namespace TitanOrbit.UI
             if (!_moonDockLayoutActive || orbitDockSidebar == null)
                 return;
 
-            orbitDockSidebar.RefreshBank(contributedGems);
+            float bankBalance = contributedGems;
+            if (OrbitStationEcsContext.HomePlanetId > 0 &&
+                EcsGameBridge.TryGetContributedGems(OrbitStationEcsContext.HomePlanetId, out float liveBank))
+            {
+                bankBalance = liveBank;
+                if (Mathf.Abs(liveBank - lastReceivedGems) > 0.01f)
+                    OnContributedGemsReceived(liveBank);
+            }
+
+            float shipGems = 0f;
+            if (EcsGameBridge.TryGetLocalShipState(out var shipState))
+                shipGems = shipState.CurrentGems;
+
+            float planetGems = 0f;
+            int planetLevel = 1;
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0 && currentPlanet != null)
+                storePlanetId = currentPlanet.PlanetId;
+            if (storePlanetId > 0 && EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planetState))
+            {
+                planetGems = planetState.CurrentGems;
+                planetLevel = Mathf.Max(1, planetState.PlanetLevel);
+            }
+
+            orbitDockSidebar.RefreshDepositStatus(shipGems, bankBalance, planetGems, planetLevel);
             ApplyAutoDepositPreferenceToShip();
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
             float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;

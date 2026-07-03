@@ -61,6 +61,15 @@ namespace TitanOrbit.Data
             if (id.Contains("arm")) return "Arm";
             return string.Empty;
         }
+
+        public static bool IsWeaponComponent(string componentId) =>
+            ShipComponentAbilityStatsMath.IsWeaponComponent(componentId);
+
+        public static bool IsPropulsionComponent(string componentId) =>
+            ShipComponentAbilityStatsMath.IsPropulsionComponent(componentId);
+
+        public void AddInPlace(ShipComponentAbilityStats other) =>
+            ShipComponentAbilityStatsMath.AddInPlace(ref this, other);
     }
 
     [Serializable]
