@@ -137,10 +137,18 @@ namespace TitanOrbit.Game
             if (label == null || moonRoot == null)
                 return;
 
-            float anchorY = GetMoonLabelAnchorYLocal(GetMoonSurfaceYLocal(moonRoot, fallbackMoonRadius), fallbackMoonRadius);
-            label.transform.localPosition = new Vector3(0f, anchorY, 0f);
+            ApplySnugMoonLabel(label.transform, moonRoot, fallbackMoonRadius);
             label.verticalAlignment = VerticalAlignmentOptions.Bottom;
             label.ForceMeshUpdate();
+        }
+
+        public static void ApplySnugMoonLabel(Transform labelRoot, Transform moonRoot, float fallbackMoonRadius = 0.25f)
+        {
+            if (labelRoot == null || moonRoot == null)
+                return;
+
+            float anchorY = GetMoonLabelAnchorYLocal(GetMoonSurfaceYLocal(moonRoot, fallbackMoonRadius), fallbackMoonRadius);
+            labelRoot.localPosition = new Vector3(0f, anchorY, 0f);
         }
     }
 }
