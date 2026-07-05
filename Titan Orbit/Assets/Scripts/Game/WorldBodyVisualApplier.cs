@@ -52,6 +52,8 @@ namespace TitanOrbit.Game
             ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId);
             instance.transform.localScale = Vector3.one * Mathf.Max(0.25f, worldScale);
 
+            EnsurePlanetSpin(instance);
+
             var stats = instance.GetComponent<PlanetWorldStatsLabel>();
             if (stats == null)
                 stats = instance.AddComponent<PlanetWorldStatsLabel>();
@@ -62,7 +64,6 @@ namespace TitanOrbit.Game
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
             Material moonMaterial = CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId);
             moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
-            EnsurePlanetSpin(instance);
             EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
             return true;
         }
@@ -312,7 +313,8 @@ namespace TitanOrbit.Game
             {
                 if (renderer == null || renderer is ParticleSystemRenderer)
                     continue;
-                if (renderer.gameObject.name.Contains("PopulationText"))
+                if (renderer.gameObject.name.Contains("PopulationText") ||
+                    renderer.gameObject.name.Contains("PlanetStatsLabel"))
                     continue;
                 renderer.sharedMaterial = mat;
             }
@@ -352,7 +354,7 @@ namespace TitanOrbit.Game
             for (int i = root.transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = root.transform.GetChild(i);
-                if (child.name.Contains("PopulationText"))
+                if (child.name.Contains("PopulationText") || child.name.Contains("PlanetStatsLabel"))
                     continue;
                 if (child.GetComponent<Canvas>() != null)
                     Object.Destroy(child.gameObject);

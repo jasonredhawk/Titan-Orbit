@@ -17,6 +17,7 @@ namespace TitanOrbit.Game
         {
             "GemMoonVisual",
             "PopulationText",
+            "PlanetStatsLabel",
         };
 
         Transform _spinPivot;
@@ -120,6 +121,14 @@ namespace TitanOrbit.Game
 
                 child.SetParent(_spinPivot, true);
             }
+        }
+
+        public void KeepOnPlanetRoot(Transform child)
+        {
+            if (child == null || child.parent == transform)
+                return;
+
+            child.SetParent(transform, true);
         }
 
         void LateUpdate()

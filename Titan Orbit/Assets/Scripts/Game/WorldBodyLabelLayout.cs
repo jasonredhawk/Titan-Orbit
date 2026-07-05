@@ -17,9 +17,20 @@ namespace TitanOrbit.Game
             if (renderer == null)
                 return true;
 
+            if (renderer is ParticleSystemRenderer)
+                return true;
+
+            if (IsWorldStatsLabelRenderer(renderer.transform))
+                return true;
+
             string name = renderer.gameObject.name;
             if (name.Contains("PopulationText") ||
+                name.Contains("PlanetStatsLabel") ||
+                name.Contains("PopulationRow") ||
+                name.Contains("FamilyTitle") ||
                 name.Contains("GemsLabel") ||
+                name.Contains("GemRow") ||
+                name.Contains("ShieldRow") ||
                 name.Contains("GemMoon") ||
                 name.Contains("GemMoonStats") ||
                 name.Contains("MoonOrbitZone") ||
@@ -28,7 +39,23 @@ namespace TitanOrbit.Game
                 name.Contains("PlanetOrbit"))
                 return true;
 
-            return renderer is ParticleSystemRenderer;
+            return false;
+        }
+
+        static bool IsWorldStatsLabelRenderer(Transform rendererTransform)
+        {
+            Transform t = rendererTransform;
+            while (t != null)
+            {
+                string name = t.name;
+                if (name.Contains("PlanetStatsLabel") ||
+                    name.Contains("GemsLabel") ||
+                    name.Contains("PopulationText"))
+                    return true;
+                t = t.parent;
+            }
+
+            return false;
         }
 
         static bool IsUnderMoonVisual(Transform rendererTransform, Transform planetRoot)
@@ -66,7 +93,7 @@ namespace TitanOrbit.Game
             }
 
             if (found)
-                return maxY;
+                return Mathf.Clamp(maxY, 0.01f, 5f);
 
             foreach (var col in planetRoot.GetComponents<SphereCollider>())
             {
@@ -120,16 +147,20 @@ namespace TitanOrbit.Game
             if (label == null || planetRoot == null)
                 return;
 
-            float anchorY = GetPlanetLabelAnchorYLocal(GetPlanetSurfaceYLocal(planetRoot));
-            Transform t = label.transform;
-            Vector3 localPos = t.localPosition;
-            localPos.x = 0f;
-            localPos.y = anchorY;
-            localPos.z = 0f;
-            t.localPosition = localPos;
+            ApplySnugPlanetLabel(label.transform, planetRoot);
             label.verticalAlignment = VerticalAlignmentOptions.Bottom;
             label.enabled = true;
             label.ForceMeshUpdate();
+        }
+
+        public static void ApplySnugPlanetLabel(Transform labelRoot, Transform planetRoot)
+        {
+            if (labelRoot == null || planetRoot == null)
+                return;
+
+            float surfaceY = GetPlanetSurfaceYLocal(planetRoot);
+            float anchorY = GetPlanetLabelAnchorYLocal(surfaceY);
+            labelRoot.localPosition = new Vector3(0f, Mathf.Clamp(anchorY, 0.01f, 6f), 0f);
         }
 
         public static void ApplySnugMoonLabel(TextMeshPro label, Transform moonRoot, float fallbackMoonRadius = 0.25f)
