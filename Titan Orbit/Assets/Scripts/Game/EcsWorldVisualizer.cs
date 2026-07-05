@@ -233,10 +233,16 @@ namespace TitanOrbit.Game
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
                 bool skipTransformSync = false;
-                if (em.HasComponent<ShipMoonDockState>(entity))
+                var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
+                if (moonDockVisual != null)
+                    skipTransformSync = moonDockVisual.ShouldSkipTransformSync;
+                else if (em.HasComponent<ShipMoonDockState>(entity))
                 {
                     var moonDock = em.GetComponentData<ShipMoonDockState>(entity);
-                    skipTransformSync = moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f;
+                    bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
+                    skipTransformSync = moonDock.MoonPlanetId != 0
+                        && approachReady
+                        && moonDock.LandingProgress > 0.001f;
                 }
 
                 if (!skipTransformSync)

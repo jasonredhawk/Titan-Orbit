@@ -9,5 +9,7 @@ namespace TitanOrbit.ECS
         [GhostField] public int MoonPlanetId;
         /// <summary>0–1 progress; reaches 1 after landing dwell completes on moon surface.</summary>
         [GhostField] public float LandingProgress;
+        /// <summary>Accumulated stillness time toward approach delay; 0 while moving/shooting.</summary>
+        [GhostField] public float LandingApproachDelay;
     }
 }

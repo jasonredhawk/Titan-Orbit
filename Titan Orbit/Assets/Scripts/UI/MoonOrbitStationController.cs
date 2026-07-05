@@ -72,6 +72,8 @@ namespace TitanOrbit.UI
                     OrbitDockSidebarPanelUI.AutoDepositGemsPrefsKey,
                     OrbitDockSidebarPanelUI.AutoDepositGemsDefaultEnabled) != 0;
                 MoonOrbitRpcClient.SetWantDepositGems(autoDeposit);
+                // Pre-create UI during the landing pause so opening the menu does not hitch the camera.
+                GetOrCreateUi();
             }
 
             bool shouldShow = Time.time >= _landingCompleteTime + MenuDelayAfterLandingSeconds;

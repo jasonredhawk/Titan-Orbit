@@ -20,6 +20,8 @@ namespace TitanOrbit.ECS
         public const float PlanetInteractionRange = 20f;
         public const float MoonDockRangeMultiplier = 2.2f;
         public const float MoonLandingCompleteThreshold = 0.999f;
+        /// <summary>Stillness time required before moon landing progress begins or resumes.</summary>
+        public const float MoonLandingApproachDelaySeconds = 0.5f;
         public const float DepositRatePerShipLevel = 2f;
         public const float MinGemSpawnValue = 0.25f;
         public const float AsteroidExplosionSpeed = 2.2f;

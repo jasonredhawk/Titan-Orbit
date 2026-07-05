@@ -24,6 +24,7 @@ namespace TitanOrbit.ECS
             double elapsed = SystemAPI.Time.ElapsedTime;
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
+            float approachDelayRequired = GemEconomyConstants.MoonLandingApproachDelaySeconds;
 
             foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, shipEntity) in SystemAPI
                          .Query<RefRW<LocalTransform>, RefRO<ShipInput>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRW<ShipMoonDockState>>()
@@ -45,12 +46,14 @@ namespace TitanOrbit.ECS
 
                 int landedPlanetId = moonDock.ValueRO.MoonPlanetId;
                 float landingProgress = moonDock.ValueRO.LandingProgress;
+                float approachDelay = moonDock.ValueRO.LandingApproachDelay;
                 bool inMoonZone = false;
 
                 if (!shipInput.ValueRO.Thrust && shipState.ValueRO.Team != TeamId.None)
                 {
                     float speed = math.length(new float2(shipKinematics.ValueRO.Velocity.x, shipKinematics.ValueRO.Velocity.z));
                     TeamId shipTeam = shipState.ValueRO.Team;
+                    bool disruptLanding = IsDisruptingLanding(shipInput.ValueRO, speed);
 
                     foreach (var (planetState, planetTransform) in SystemAPI
                                  .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
@@ -86,13 +89,20 @@ namespace TitanOrbit.ECS
                         if (landedPlanetId != 0 && landedPlanetId != planetState.ValueRO.PlanetId)
                         {
                             landingProgress = 0f;
+                            approachDelay = 0f;
                         }
 
                         landedPlanetId = planetState.ValueRO.PlanetId;
 
-                        if (speed <= MaxLandingSpeed)
+                        if (disruptLanding)
                         {
-                            landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
+                            approachDelay = 0f;
+                        }
+                        else
+                        {
+                            approachDelay = math.min(approachDelayRequired, approachDelay + dt);
+                            if (approachDelay >= approachDelayRequired && speed <= MaxLandingSpeed)
+                                landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
                         }
 
                         if (landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold)
@@ -109,14 +119,24 @@ namespace TitanOrbit.ECS
                 {
                     landedPlanetId = 0;
                     landingProgress = 0f;
+                    approachDelay = 0f;
                 }
 
                 moonDock.ValueRW = new ShipMoonDockState
                 {
                     MoonPlanetId = landedPlanetId,
                     LandingProgress = landingProgress,
+                    LandingApproachDelay = approachDelay,
                 };
             }
+        }
+
+        static bool IsDisruptingLanding(in ShipInput input, float speed)
+        {
+            if (input.Fire.IsSet)
+                return true;
+
+            return speed > MaxLandingSpeed;
         }
     }
 }

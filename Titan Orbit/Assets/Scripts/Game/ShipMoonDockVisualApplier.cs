@@ -9,22 +9,54 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side moon landing presentation: ship snaps to moon surface and rotates with moon spin.
+    /// Client-side moon landing presentation: ship animates from its current pose onto the moon surface,
+    /// and reverses that animation when thrusting away.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class ShipMoonDockVisualApplier : MonoBehaviour
     {
         const float SpinSpeedDegPerSec = 9f;
         const float DockScaleAtSurface = 0.24f;
-        const float DockScaleAtOrbitEdge = 1f / 3f;
+        const float LandingDurationSeconds = 1f;
 
         Entity _shipEntity;
-        Vector3 _landingOffset;
-        int _cachedPlanetId;
         float _baselineScale = 1f;
-        float _dockStartScale = 1f;
-        Quaternion _dockStartRotation = Quaternion.identity;
-        bool _wasDocked;
+        bool _wasControllingTransform;
+        bool _wasLandingVisualActive;
+        bool _wasMoonDockEngaged;
+
+        // Landing animation start pose (captured when each landing sequence begins).
+        Vector3 _landingStartPosition;
+        Quaternion _landingStartRotation;
+        float _landingStartScale;
+
+        // Surface contact direction on the moon spin plane (rotates with moon during dock).
+        Vector3 _landingSurfaceDir;
+
+        // Takeoff animation.
+        bool _isTakeoffAnimating;
+        float _takeoffProgress;
+        Vector3 _takeoffStartPosition;
+        Quaternion _takeoffStartRotation;
+        float _takeoffStartScale;
+
+        /// <summary>When true, EcsWorldVisualizer should not overwrite this proxy's transform.</summary>
+        public bool ShouldSkipTransformSync => _isTakeoffAnimating || _wasControllingTransform;
+
+        static ShipMoonDockVisualApplier s_localInstance;
+
+        /// <summary>Visual follow point for the local player while landing/docked/taking off.</summary>
+        public static bool TryGetLocalFollowPosition(out Vector3 position)
+        {
+            if (s_localInstance != null && s_localInstance.ShouldSkipTransformSync)
+            {
+                position = s_localInstance.transform.position;
+                return true;
+            }
+
+            position = default;
+            return false;
+        }
 
         public void Bind(Entity shipEntity, float presentationScale = -1f)
         {
@@ -43,77 +75,195 @@ namespace TitanOrbit.Game
         void LateUpdate()
         {
             if (_shipEntity == Entity.Null)
+            {
+                ResetDockPresentationState();
                 return;
+            }
 
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
+            {
+                ResetDockPresentationState();
                 return;
+            }
 
             var em = world.EntityManager;
             if (!em.Exists(_shipEntity) ||
                 !em.HasComponent<ShipMoonDockState>(_shipEntity) ||
                 !em.HasComponent<LocalTransform>(_shipEntity))
+            {
+                if (s_localInstance == this)
+                    s_localInstance = null;
+                ResetDockPresentationState();
                 return;
+            }
 
             var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
-            if (moonDock.MoonPlanetId == 0 || moonDock.LandingProgress <= 0.001f)
+            bool moonDockEngaged = moonDock.MoonPlanetId != 0;
+            bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
+            bool landingVisualActive = moonDockEngaged && approachReady && moonDock.LandingProgress > 0.001f;
+            UpdateLocalInstanceRegistration(em);
+
+            if (_isTakeoffAnimating)
             {
-                if (_wasDocked)
+                UpdateTakeoffAnimation(em);
+                _wasControllingTransform = true;
+                _wasLandingVisualActive = false;
+                _wasMoonDockEngaged = moonDockEngaged;
+                return;
+            }
+
+            if (!landingVisualActive)
+            {
+                if (_wasMoonDockEngaged && !moonDockEngaged)
+                    BeginTakeoffAnimation();
+
+                if (_isTakeoffAnimating)
                 {
-                    transform.localScale = Vector3.one * _baselineScale;
-                    RefreshBaselineScale();
+                    UpdateTakeoffAnimation(em);
+                    _wasControllingTransform = true;
+                    _wasLandingVisualActive = false;
+                    _wasMoonDockEngaged = moonDockEngaged;
+                    return;
                 }
-                _wasDocked = false;
-                _cachedPlanetId = 0;
+
+                _wasControllingTransform = false;
+                _wasLandingVisualActive = false;
+                _wasMoonDockEngaged = moonDockEngaged;
                 return;
             }
 
             if (!TryResolveMoonPose(moonDock.MoonPlanetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius))
+            {
+                _wasControllingTransform = false;
+                _wasLandingVisualActive = false;
+                _wasMoonDockEngaged = moonDockEngaged;
                 return;
+            }
 
-            float eased = GemMoonDockEaseInOut(Mathf.Clamp01(moonDock.LandingProgress));
+            if (!_wasLandingVisualActive)
+                CaptureLandingStartPose(moonPos, spinAxis);
+
+            ApplyLandingAnimation(moonDock, moonPos, spinAxis, moonBodyRadius);
+            _wasControllingTransform = true;
+            _wasLandingVisualActive = true;
+            _wasMoonDockEngaged = moonDockEngaged;
+        }
+
+        void ResetDockPresentationState()
+        {
+            _wasControllingTransform = false;
+            _wasLandingVisualActive = false;
+            _wasMoonDockEngaged = false;
+        }
+
+        void CaptureLandingStartPose(Vector3 moonPos, Vector3 spinAxis)
+        {
+            RefreshBaselineScale();
+            _landingStartPosition = transform.position;
+            _landingStartRotation = transform.rotation;
+            _landingStartScale = transform.localScale.x;
+            _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+        }
+
+        void ApplyLandingAnimation(ShipMoonDockState moonDock, Vector3 moonPos, Vector3 spinAxis, float moonBodyRadius)
+        {
             float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(_baselineScale / BodyCollisionMath.ShipPresentationScale);
             float contactRadius = moonBodyRadius + shipRadius;
 
-            if (!_wasDocked || _cachedPlanetId != moonDock.MoonPlanetId)
-            {
-                RefreshBaselineScale();
-                _dockStartScale = transform.localScale.x;
-                _dockStartRotation = transform.rotation;
-
-                Vector3 initialDir = transform.position - moonPos;
-                initialDir = Vector3.ProjectOnPlane(initialDir, spinAxis);
-                if (initialDir.sqrMagnitude < 0.0001f)
-                    initialDir = Vector3.Cross(spinAxis, Vector3.forward);
-                if (initialDir.sqrMagnitude < 0.0001f)
-                    initialDir = Vector3.Cross(spinAxis, Vector3.right);
-                initialDir.Normalize();
-                _landingOffset = initialDir * contactRadius;
-                _cachedPlanetId = moonDock.MoonPlanetId;
-            }
-
+            float eased = GemMoonDockEaseInOut(Mathf.Clamp01(moonDock.LandingProgress));
             float spinStep = SpinSpeedDegPerSec * Time.deltaTime * eased;
             if (Mathf.Abs(spinStep) > 0.0001f)
-                _landingOffset = Quaternion.AngleAxis(spinStep, spinAxis) * _landingOffset;
+                _landingSurfaceDir = Quaternion.AngleAxis(spinStep, spinAxis) * _landingSurfaceDir;
 
-            _landingOffset = _landingOffset.normalized * contactRadius;
-            transform.position = moonPos + _landingOffset;
+            _landingSurfaceDir = _landingSurfaceDir.normalized;
+            Vector3 endPosition = moonPos + _landingSurfaceDir * contactRadius;
+            Quaternion endRotation = ComputeDockedRotation(_landingSurfaceDir, spinAxis);
+            float dockedScale = _baselineScale * DockScaleAtSurface;
 
-            Vector3 surfaceNormal = _landingOffset.normalized;
+            transform.position = Vector3.Lerp(_landingStartPosition, endPosition, eased);
+            transform.rotation = Quaternion.Slerp(_landingStartRotation, endRotation, eased);
+            transform.localScale = Vector3.one * Mathf.Lerp(_landingStartScale, dockedScale, eased);
+        }
+
+        void OnDisable()
+        {
+            if (s_localInstance == this)
+                s_localInstance = null;
+        }
+
+        void UpdateLocalInstanceRegistration(EntityManager em)
+        {
+            if (em.HasComponent<LocalPlayerShipTag>(_shipEntity) ||
+                em.HasComponent<GhostOwnerIsLocal>(_shipEntity))
+                s_localInstance = this;
+            else if (s_localInstance == this)
+                s_localInstance = null;
+        }
+
+        void BeginTakeoffAnimation()
+        {
+            _takeoffStartPosition = transform.position;
+            _takeoffStartRotation = transform.rotation;
+            _takeoffStartScale = transform.localScale.x;
+            _takeoffProgress = 0f;
+            _isTakeoffAnimating = true;
+        }
+
+        void UpdateTakeoffAnimation(EntityManager em)
+        {
+            var lt = em.GetComponentData<LocalTransform>(_shipEntity);
+            float flightScale = Mathf.Max(0.25f, lt.Scale) * BodyCollisionMath.ShipPresentationScale;
+
+            Vector3 endPosition = GetShipVisualPosition(em, lt.Position);
+            Quaternion endRotation = lt.Rotation;
+            float endScale = flightScale;
+
+            _takeoffProgress = Mathf.Min(1f, _takeoffProgress + Time.deltaTime / LandingDurationSeconds);
+            float eased = GemMoonDockEaseInOut(_takeoffProgress);
+
+            transform.position = Vector3.Lerp(_takeoffStartPosition, endPosition, eased);
+            transform.rotation = Quaternion.Slerp(_takeoffStartRotation, endRotation, eased);
+            transform.localScale = Vector3.one * Mathf.Lerp(_takeoffStartScale, endScale, eased);
+
+            if (_takeoffProgress >= 1f)
+            {
+                _isTakeoffAnimating = false;
+                RefreshBaselineScale();
+            }
+        }
+
+        static Vector3 ComputeSurfaceDirection(Vector3 shipPosition, Vector3 moonPos, Vector3 spinAxis)
+        {
+            Vector3 dir = shipPosition - moonPos;
+            dir = Vector3.ProjectOnPlane(dir, spinAxis);
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.Cross(spinAxis, Vector3.forward);
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.Cross(spinAxis, Vector3.right);
+            return dir.normalized;
+        }
+
+        static Quaternion ComputeDockedRotation(Vector3 surfaceNormal, Vector3 spinAxis)
+        {
             Vector3 tangent = Vector3.Cross(spinAxis, surfaceNormal);
             if (tangent.sqrMagnitude < 0.0001f)
-                tangent = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
+                tangent = Vector3.Cross(surfaceNormal, Vector3.forward);
             if (tangent.sqrMagnitude < 0.0001f)
                 tangent = Vector3.forward;
             tangent.Normalize();
+            return Quaternion.LookRotation(tangent, surfaceNormal);
+        }
 
-            Quaternion targetRot = Quaternion.LookRotation(tangent, surfaceNormal);
-            transform.rotation = Quaternion.Slerp(_dockStartRotation, targetRot, eased);
+        Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos)
+        {
+            if (ToroidalDisplay.IsLocalPlayerShip(em, _shipEntity))
+                return logicalPos;
 
-            float targetScaleMul = Mathf.Lerp(DockScaleAtOrbitEdge, DockScaleAtSurface, eased);
-            float targetScale = _baselineScale * targetScaleMul;
-            transform.localScale = Vector3.one * Mathf.Lerp(_dockStartScale, targetScale, eased);
-            _wasDocked = true;
+            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+                return ToroidalDisplay.ToDisplayPositionWithHysteresis(_shipEntity, logicalPos, reference);
+
+            return logicalPos;
         }
 
         static bool TryResolveMoonPose(int planetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius)

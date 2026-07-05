@@ -29,6 +29,9 @@ namespace TitanOrbit.Game
 
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
+            if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
+                return true;
+
             position = default;
 
             if (!TryGetLocalShipTransform(out var lt))
