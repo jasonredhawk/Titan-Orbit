@@ -58,6 +58,7 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
+            double elapsed = SystemAPI.Time.ElapsedTime;
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
@@ -89,18 +90,45 @@ namespace TitanOrbit.ECS
                 bool hit = false;
                 float3 hitPoint = newPos;
 
-                foreach (var (shipState, shipTransform) in SystemAPI
-                             .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
-                             .WithAll<ShipTag>())
+                foreach (var (planetState, planetTransform) in SystemAPI
+                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                             .WithAll<PlanetTag>())
                 {
-                    if (shipState.ValueRO.IsDead) continue;
-                    if (shipState.ValueRO.Team == (TeamId)tracer.ValueRO.OwnerTeam) continue;
+                    float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
+                    float3 planetPos = planetTransform.ValueRO.Position;
 
-                    if (BulletCollision.SegmentHitsSphereToroidal(
-                            prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out hitPoint))
+                    if (BulletCollision.SegmentHitsPlanetToroidal(
+                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out hitPoint))
                     {
                         hit = true;
                         break;
+                    }
+
+                    if (BulletCollision.SegmentHitsMoonNear(
+                            prevPos, newPos, planetPos, planetSize,
+                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
+                            planetState.ValueRO.IsHomePlanet, mapW, mapH, out hitPoint))
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+
+                if (!hit)
+                {
+                    foreach (var (shipState, shipTransform) in SystemAPI
+                             .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
+                             .WithAll<ShipTag>())
+                    {
+                        if (shipState.ValueRO.IsDead) continue;
+                        if (shipState.ValueRO.Team == (TeamId)tracer.ValueRO.OwnerTeam) continue;
+
+                        if (BulletCollision.SegmentHitsSphereToroidal(
+                                prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out hitPoint))
+                        {
+                            hit = true;
+                            break;
+                        }
                     }
                 }
 

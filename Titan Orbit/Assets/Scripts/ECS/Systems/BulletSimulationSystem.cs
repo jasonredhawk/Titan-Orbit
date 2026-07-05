@@ -34,6 +34,7 @@ namespace TitanOrbit.ECS
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             float dt = SystemAPI.Time.DeltaTime;
+            double elapsed = SystemAPI.Time.ElapsedTime;
             float mapW = 1000f;
             float mapH = 1000f;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
@@ -60,7 +61,33 @@ namespace TitanOrbit.ECS
 
                 bool hit = false;
 
-                foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
+                foreach (var (planetState, planetTransform) in SystemAPI
+                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                             .WithAll<PlanetTag>())
+                {
+                    float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
+                    float3 planetPos = planetTransform.ValueRO.Position;
+
+                    if (BulletCollision.SegmentHitsPlanetToroidal(
+                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out _))
+                    {
+                        hit = true;
+                        break;
+                    }
+
+                    if (BulletCollision.SegmentHitsMoonNear(
+                            prevPos, newPos, planetPos, planetSize,
+                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
+                            planetState.ValueRO.IsHomePlanet, mapW, mapH, out _))
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+
+                if (!hit)
+                {
+                    foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
                              .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
                              .WithEntityAccess())
@@ -84,6 +111,7 @@ namespace TitanOrbit.ECS
                     }
                     hit = true;
                     break;
+                }
                 }
 
                 if (!hit)

@@ -1,4 +1,5 @@
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
@@ -70,6 +71,46 @@ namespace TitanOrbit.ECS
             return math.max(
                 GemEconomyConstants.MinAsteroidHitRadius,
                 meshRadius * GemEconomyConstants.AsteroidHitRadiusScale);
+        }
+
+        public static bool SegmentHitsPlanetToroidal(
+            float3 from,
+            float3 to,
+            float3 logicalPlanetCenter,
+            float planetScale,
+            float mapW,
+            float mapH,
+            out float3 hitPoint)
+        {
+            float radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetScale);
+            return SegmentHitsSphereToroidal(from, to, logicalPlanetCenter, radius, mapW, mapH, out hitPoint);
+        }
+
+        public static bool SegmentHitsMoonNear(
+            float3 from,
+            float3 to,
+            float3 logicalPlanetCenter,
+            float planetScale,
+            int planetLevel,
+            int planetId,
+            double elapsedSeconds,
+            bool isHomePlanet,
+            float mapW,
+            float mapH,
+            out float3 hitPoint)
+        {
+            hitPoint = to;
+            float radius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetScale, isHomePlanet);
+            float3 moonCenter = PlanetOrbitMath.GetMoonWorldPositionNear(
+                from,
+                logicalPlanetCenter,
+                planetScale,
+                planetLevel,
+                planetId,
+                elapsedSeconds,
+                mapW,
+                mapH);
+            return SegmentHitsSphere(from, to, moonCenter, radius, out hitPoint);
         }
     }
 }
