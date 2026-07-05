@@ -17,8 +17,10 @@ namespace TitanOrbit.Game
         const int TextSortingOrder = 5001;
         const int IconSortingOrder = 5000;
         const float LabelWorldScale = 0.022f;
-        const float LabelFontSize = 22f;
-        const float RowSpacingLocal = 10f;
+        const float CurrentFontSize = 33f;
+        const float MaxFontSize = 21f;
+        const float StatBlockGapLocal = 2f;
+        const float ValueLineGapLocal = 0.5f;
         const float IconGapLocal = 2.5f;
         const float IconHeightOverFontSize = 0.11f;
         const float OutlineWidth = 0.14f;
@@ -35,7 +37,8 @@ namespace TitanOrbit.Game
         {
             public Transform Root;
             public SpriteRenderer Icon;
-            public TextMeshPro Text;
+            public TextMeshPro CurrentText;
+            public TextMeshPro MaxText;
         }
 
         public void Configure(int id, float moonLocalRadius)
@@ -71,8 +74,6 @@ namespace TitanOrbit.Game
             _labelRoot = CreateLabelRoot("GemsLabel", transform);
             _gemRow = CreateStatRow(_labelRoot, "GemRow", GemMoonLabelIcons.Gem, ParseHexColor(GemsColorHex));
             _shieldRow = CreateStatRow(_labelRoot, "ShieldRow", GemMoonLabelIcons.Shield, ParseHexColor(ShieldColorHex));
-            _shieldRow.Root.localPosition = new Vector3(0f, -RowSpacingLocal * 0.5f, 0f);
-            _gemRow.Root.localPosition = new Vector3(0f, RowSpacingLocal * 0.5f, 0f);
         }
 
         static Transform CreateLabelRoot(string name, Transform parent)
@@ -98,27 +99,35 @@ namespace TitanOrbit.Game
             iconRenderer.sortingOrder = IconSortingOrder;
             iconRenderer.enabled = iconSprite != null;
 
-            var textGo = new GameObject("Text");
-            textGo.transform.SetParent(rowGo.transform, false);
-            var tmp = textGo.AddComponent<TextMeshPro>();
-            tmp.font = ResolveFont();
-            tmp.fontSize = LabelFontSize;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.alignment = TextAlignmentOptions.Midline;
-            tmp.enableWordWrapping = false;
-            tmp.richText = true;
-            tmp.color = Color.white;
-            ApplyReadableTextMaterial(tmp);
+            var currentText = CreateValueText(rowGo.transform, "Current", CurrentFontSize, Color.white);
+            var maxText = CreateValueText(rowGo.transform, "Max", MaxFontSize, Color.white);
 
             if (iconSprite != null)
-                ApplyIconScale(iconRenderer, iconSprite, tmp.fontSize);
+                ApplyIconScale(iconRenderer, iconSprite, CurrentFontSize);
 
             return new StatRow
             {
                 Root = rowGo.transform,
                 Icon = iconRenderer,
-                Text = tmp,
+                CurrentText = currentText,
+                MaxText = maxText,
             };
+        }
+
+        static TextMeshPro CreateValueText(Transform parent, string name, float fontSize, Color color)
+        {
+            var textGo = new GameObject(name);
+            textGo.transform.SetParent(parent, false);
+            var tmp = textGo.AddComponent<TextMeshPro>();
+            tmp.font = ResolveFont();
+            tmp.fontSize = fontSize;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.enableWordWrapping = false;
+            tmp.richText = false;
+            tmp.color = color;
+            ApplyReadableTextMaterial(tmp);
+            return tmp;
         }
 
         void ApplyLayout()
@@ -141,14 +150,23 @@ namespace TitanOrbit.Game
 
         static void LayoutStatRow(ref StatRow row)
         {
-            if (row.Text == null)
+            if (row.CurrentText == null || row.MaxText == null)
                 return;
 
-            if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
-                ApplyIconScale(row.Icon, row.Icon.sprite, row.Text.fontSize);
+            row.CurrentText.fontSize = CurrentFontSize;
+            row.MaxText.fontSize = MaxFontSize;
 
-            row.Text.ForceMeshUpdate();
-            float textWidth = row.Text.preferredWidth;
+            if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
+                ApplyIconScale(row.Icon, row.Icon.sprite, row.CurrentText.fontSize);
+
+            row.CurrentText.ForceMeshUpdate();
+            row.MaxText.ForceMeshUpdate();
+
+            float textWidth = Mathf.Max(row.CurrentText.preferredWidth, row.MaxText.preferredWidth);
+            float currentHeight = row.CurrentText.preferredHeight;
+            float maxHeight = row.MaxText.preferredHeight;
+            float textHeight = currentHeight + ValueLineGapLocal + maxHeight;
+
             float iconWidth = 0f;
             if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
                 iconWidth = row.Icon.transform.localScale.x * row.Icon.sprite.bounds.size.x;
@@ -156,11 +174,28 @@ namespace TitanOrbit.Game
             float gap = iconWidth > 0f ? IconGapLocal : 0f;
             float totalWidth = iconWidth + gap + textWidth;
             float rowLeft = -totalWidth * 0.5f;
+            float textCenterX = rowLeft + iconWidth + gap + textWidth * 0.5f;
+
+            float stackTop = textHeight * 0.5f;
+            row.CurrentText.transform.localPosition = new Vector3(
+                textCenterX,
+                stackTop - currentHeight * 0.5f,
+                0f);
+            row.MaxText.transform.localPosition = new Vector3(
+                textCenterX,
+                -stackTop + maxHeight * 0.5f,
+                0f);
 
             if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
                 row.Icon.transform.localPosition = new Vector3(rowLeft + iconWidth * 0.5f, 0f, 0f);
+        }
 
-            row.Text.transform.localPosition = new Vector3(rowLeft + iconWidth + gap + textWidth * 0.5f, 0f, 0f);
+        static float GetStatRowHeight(StatRow row)
+        {
+            if (row.CurrentText == null || row.MaxText == null)
+                return 0f;
+
+            return row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight;
         }
 
         static void LayoutLabelBlock(ref StatRow gemRow, ref StatRow shieldRow)
@@ -168,49 +203,12 @@ namespace TitanOrbit.Game
             LayoutStatRow(ref gemRow);
             LayoutStatRow(ref shieldRow);
 
-            float gemWidth = GetRowWidth(gemRow);
-            float shieldWidth = GetRowWidth(shieldRow);
-            float maxWidth = Mathf.Max(gemWidth, shieldWidth);
-            if (maxWidth <= 0f)
-                return;
+            float gemHeight = GetStatRowHeight(gemRow);
+            float shieldHeight = GetStatRowHeight(shieldRow);
+            float totalHeight = gemHeight + StatBlockGapLocal + shieldHeight;
 
-            CenterRowOnAxis(ref gemRow, gemWidth, maxWidth);
-            CenterRowOnAxis(ref shieldRow, shieldWidth, maxWidth);
-        }
-
-        static float GetRowWidth(StatRow row)
-        {
-            if (row.Text == null)
-                return 0f;
-
-            float textWidth = row.Text.preferredWidth;
-            float iconWidth = 0f;
-            if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
-                iconWidth = row.Icon.transform.localScale.x * row.Icon.sprite.bounds.size.x;
-
-            float gap = iconWidth > 0f ? IconGapLocal : 0f;
-            return iconWidth + gap + textWidth;
-        }
-
-        static void CenterRowOnAxis(ref StatRow row, float rowWidth, float blockWidth)
-        {
-            float shift = (blockWidth - rowWidth) * 0.5f;
-            if (Mathf.Abs(shift) < 0.001f || row.Root == null)
-                return;
-
-            if (row.Icon != null && row.Icon.enabled)
-            {
-                var iconPos = row.Icon.transform.localPosition;
-                iconPos.x += shift;
-                row.Icon.transform.localPosition = iconPos;
-            }
-
-            if (row.Text != null)
-            {
-                var textPos = row.Text.transform.localPosition;
-                textPos.x += shift;
-                row.Text.transform.localPosition = textPos;
-            }
+            gemRow.Root.localPosition = new Vector3(0f, (totalHeight - gemHeight) * 0.5f, 0f);
+            shieldRow.Root.localPosition = new Vector3(0f, -(totalHeight - shieldHeight) * 0.5f, 0f);
         }
 
         static TMP_FontAsset ResolveFont()
@@ -270,7 +268,7 @@ namespace TitanOrbit.Game
                 return;
 
             EnsureLabel();
-            if (_gemRow.Text == null || _shieldRow.Text == null)
+            if (_gemRow.CurrentText == null || _shieldRow.CurrentText == null)
                 return;
 
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
@@ -292,10 +290,15 @@ namespace TitanOrbit.Game
                 currentShield = maxShield;
             }
 
-            _gemRow.Text.text =
-                $"<color={GemsColorHex}>{currentGems}</color> <color={GemsMaxColorHex}>/ {maxGems}</color>";
-            _shieldRow.Text.text =
-                $"<color={ShieldColorHex}>{currentShield}</color> <color={ShieldMaxColorHex}>/ {maxShield}</color>";
+            _gemRow.CurrentText.text = currentGems.ToString();
+            _gemRow.MaxText.text = maxGems.ToString();
+            _gemRow.CurrentText.color = ParseHexColor(GemsColorHex);
+            _gemRow.MaxText.color = ParseHexColor(GemsMaxColorHex);
+
+            _shieldRow.CurrentText.text = currentShield.ToString();
+            _shieldRow.MaxText.text = maxShield.ToString();
+            _shieldRow.CurrentText.color = ParseHexColor(ShieldColorHex);
+            _shieldRow.MaxText.color = ParseHexColor(ShieldMaxColorHex);
 
             LayoutLabelBlock(ref _gemRow, ref _shieldRow);
         }
