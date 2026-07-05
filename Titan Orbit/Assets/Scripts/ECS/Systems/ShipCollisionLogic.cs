@@ -184,33 +184,35 @@ namespace TitanOrbit.ECS
             {
                 var planetState = planetStates[i];
                 var planetTransform = planetTransforms[i];
-                float bodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetTransform.Scale);
+                float planetSize = math.max(0.25f, planetTransform.Scale);
+
+                float bodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetSize);
                 float3 planetCenter = UnwrapCenter(unwrapOrigin, planetTransform.Position, mapW, mapH);
                 var planetCenter2 = new float2(planetCenter.x, planetCenter.z);
-                if (!IsWithinRange(shipMid, planetCenter2, bodyRadius, boxReach, moveDistance, mapW, mapH))
-                    continue;
+                if (IsWithinRange(shipMid, planetCenter2, bodyRadius, boxReach, moveDistance, mapW, mapH))
+                {
+                    CollectBoxCenterVsSphere(
+                        boxFrom, boxTo, boxReach, planetCenter2, bodyRadius,
+                        ref bestT, ref bestNormal, ref foundHit);
+                }
 
-                CollectBoxCenterVsSphere(
-                    boxFrom, boxTo, boxReach, planetCenter2, bodyRadius,
-                    ref bestT, ref bestNormal, ref foundHit);
-
-                float planetSize = math.max(0.25f, planetTransform.Scale);
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
+                float moonRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, planetState.IsHomePlanet);
+                float3 moonCenter = PlanetOrbitMath.GetMoonWorldPositionNear(
+                    unwrapOrigin,
                     planetTransform.Position,
                     planetSize,
                     planetState.PlanetLevel,
                     planetState.PlanetId,
                     elapsedSeconds,
-                    planetState.IsHomePlanet);
-                float moonRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, planetState.IsHomePlanet);
-                float3 moonCenter = UnwrapCenter(unwrapOrigin, moonPos, mapW, mapH);
+                    mapW,
+                    mapH);
                 var moonCenter2 = new float2(moonCenter.x, moonCenter.z);
-                if (!IsWithinRange(shipMid, moonCenter2, moonRadius, boxReach, moveDistance, mapW, mapH))
-                    continue;
-
-                CollectBoxCenterVsSphere(
-                    boxFrom, boxTo, boxReach, moonCenter2, moonRadius,
-                    ref bestT, ref bestNormal, ref foundHit);
+                if (IsWithinRange(shipMid, moonCenter2, moonRadius, boxReach, moveDistance, mapW, mapH))
+                {
+                    CollectBoxCenterVsSphere(
+                        boxFrom, boxTo, boxReach, moonCenter2, moonRadius,
+                        ref bestT, ref bestNormal, ref foundHit);
+                }
             }
 
             using var asteroidQuery = em.CreateEntityQuery(
@@ -395,25 +397,22 @@ namespace TitanOrbit.ECS
                         float bodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetSize);
                         float3 planetCenter = UnwrapCenter(unwrapOrigin, planetTransform.Position, mapW, mapH);
                         var planetCenter2 = new float2(planetCenter.x, planetCenter.z);
-                        if (!IsWithinRange(shipPos2, planetCenter2, bodyRadius, boxReach, 0f, mapW, mapH))
-                            continue;
+                        if (IsWithinRange(shipPos2, planetCenter2, bodyRadius, boxReach, 0f, mapW, mapH))
+                            TryCollectDepenetrationPush(selfObb, planetCenter2, bodyRadius, ref deepestPenetration, ref bestPush);
 
-                        TryCollectDepenetrationPush(selfObb, planetCenter2, bodyRadius, ref deepestPenetration, ref bestPush);
-
-                        float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
+                        float moonRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, planetState.IsHomePlanet);
+                        float3 moonCenter = PlanetOrbitMath.GetMoonWorldPositionNear(
+                            unwrapOrigin,
                             planetTransform.Position,
                             planetSize,
                             planetState.PlanetLevel,
                             planetState.PlanetId,
                             elapsedSeconds,
-                            planetState.IsHomePlanet);
-                        float moonRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, planetState.IsHomePlanet);
-                        float3 moonCenter = UnwrapCenter(unwrapOrigin, moonPos, mapW, mapH);
+                            mapW,
+                            mapH);
                         var moonCenter2 = new float2(moonCenter.x, moonCenter.z);
-                        if (!IsWithinRange(shipPos2, moonCenter2, moonRadius, boxReach, 0f, mapW, mapH))
-                            continue;
-
-                        TryCollectDepenetrationPush(selfObb, moonCenter2, moonRadius, ref deepestPenetration, ref bestPush);
+                        if (IsWithinRange(shipPos2, moonCenter2, moonRadius, boxReach, 0f, mapW, mapH))
+                            TryCollectDepenetrationPush(selfObb, moonCenter2, moonRadius, ref deepestPenetration, ref bestPush);
                     }
 
                     using var asteroidQuery = em.CreateEntityQuery(

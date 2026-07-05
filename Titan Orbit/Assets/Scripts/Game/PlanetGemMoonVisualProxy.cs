@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -233,8 +234,14 @@ namespace TitanOrbit.Game
                 ? simElapsed
                 : Time.timeAsDouble;
 
-            var offset = PlanetGemMoonMath.GetMoonOrbitOffset(_planetSize, _planetLevel, _isHome, _planetId, elapsed);
-            _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
+            if (TryResolveMoonWorldPosition(elapsed, out float3 moonPos))
+                _moonRoot.position = new Vector3(moonPos.x, moonPos.y, moonPos.z);
+            else
+            {
+                var offset = PlanetGemMoonMath.GetMoonOrbitOffset(_planetSize, _planetLevel, _isHome, _planetId, elapsed);
+                _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
+            }
+
             _moonRoot.rotation = Quaternion.identity;
             float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
             Vector3 spinAxisWorld = transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
@@ -254,6 +261,49 @@ namespace TitanOrbit.Game
                 return false;
 
             elapsedSeconds = world.Time.ElapsedTime;
+            return true;
+        }
+
+        bool TryResolveMoonWorldPosition(double elapsed, out float3 moonPos)
+        {
+            moonPos = default;
+            if (_planetId <= 0)
+                return false;
+
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            World world = null;
+            if (ClientServerBootstrap.ServerWorld != null && ClientServerBootstrap.ServerWorld.IsCreated)
+                world = ClientServerBootstrap.ServerWorld;
+            else if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+                world = ClientServerBootstrap.ClientWorld;
+
+            if (world != null && world.IsCreated)
+            {
+                using var mapQuery = world.EntityManager.CreateEntityQuery(typeof(MapStateSingleton));
+                if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map))
+                {
+                    mapW = math.max(100f, map.MapWidth);
+                    mapH = math.max(100f, map.MapHeight);
+                }
+            }
+
+            float3 reference = new float3(transform.position.x, 0f, transform.position.z);
+            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
+                reference = new float3(shipPos.x, 0f, shipPos.z);
+
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(_planetId, out float3 logicalPlanet, out float planetScale, out var planetState))
+                return false;
+
+            moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                reference,
+                logicalPlanet,
+                math.max(0.25f, planetScale),
+                planetState.PlanetLevel,
+                _planetId,
+                elapsed,
+                mapW,
+                mapH);
             return true;
         }
     }

@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
@@ -107,8 +108,31 @@ namespace TitanOrbit.Simulation
             double elapsedSeconds,
             bool isHomePlanet = false)
         {
+            _ = isHomePlanet;
             float phase = GetShipOrbitPhaseOffset(planetId);
             return planetPosition + GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
+        }
+
+        /// <summary>
+        /// Moon world position on the map tile nearest <paramref name="nearPosition"/>.
+        /// Unwraps the planet first, then applies orbit offset (matches gem-moon visuals and toroidal display).
+        /// </summary>
+        public static float3 GetMoonWorldPositionNear(
+            float3 nearPosition,
+            float3 planetPosition,
+            float planetSize,
+            int planetLevel,
+            int planetId,
+            double elapsedSeconds,
+            float mapW,
+            float mapH)
+        {
+            float3 planetNear = nearPosition + ToroidalMapEcs.ShortestOffsetXZ(nearPosition, planetPosition, mapW, mapH);
+            planetNear.y = 0f;
+            float phase = GetShipOrbitPhaseOffset(planetId);
+            float3 moon = planetNear + GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
+            moon.y = 0f;
+            return moon;
         }
 
         public static float GetGravityFactor(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
