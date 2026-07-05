@@ -58,6 +58,7 @@ namespace TitanOrbit.Game
         bool _autoPickSent;
         bool _autoStartSent;
         bool _joinTeamUiCleaned;
+        bool _teamPanelWidthsConfigured;
         bool _loggedWaitingForMap;
         bool _loggedTeamUiReady;
         float _connectedAt = -1f;
@@ -535,6 +536,7 @@ namespace TitanOrbit.Game
             {
                 if (EnsureTeamUiReferences())
                     WireTeamButtons();
+                EnsureUniformTeamPanelWidths();
                 ApplyActiveTeamVisibility(activeTeamsForUi);
                 SetTeamButtonsInteractable(true, activeTeamsForUi);
             }
@@ -581,6 +583,50 @@ namespace TitanOrbit.Game
             var child = parent.Find(childName);
             if (child != null)
                 child.gameObject.SetActive(false);
+        }
+
+        void EnsureUniformTeamPanelWidths()
+        {
+            if (_teamPanelWidthsConfigured || teamSelectionPanel == null)
+                return;
+
+            var layout = teamSelectionPanel.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null)
+                return;
+
+            var containerRect = teamSelectionPanel.GetComponent<RectTransform>();
+            if (containerRect == null)
+                return;
+
+            Canvas.ForceUpdateCanvases();
+            float containerWidth = containerRect.rect.width;
+            if (containerWidth <= 0f)
+                return;
+
+            int maxTeams = MapGenerationLogic.MaxSupportedTeams;
+            float padding = layout.padding.horizontal;
+            float spacingTotal = layout.spacing * Mathf.Max(0, maxTeams - 1);
+            float panelWidth = (containerWidth - padding - spacingTotal) / maxTeams;
+            if (panelWidth <= 0f)
+                return;
+
+            layout.childForceExpandWidth = false;
+
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                var panel = _teamPanels[i] ?? ResolveTeamPanelFromButton(_teamButtons[i]);
+                if (panel == null)
+                    continue;
+
+                var layoutElement = panel.GetComponent<LayoutElement>();
+                if (layoutElement == null)
+                    layoutElement = panel.AddComponent<LayoutElement>();
+
+                layoutElement.preferredWidth = panelWidth;
+                layoutElement.flexibleWidth = 0f;
+            }
+
+            _teamPanelWidthsConfigured = true;
         }
 
         void ApplyActiveTeamVisibility(int activeTeamCount)
