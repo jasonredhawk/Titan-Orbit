@@ -61,8 +61,8 @@ namespace TitanOrbit.ECS
 
                 bool hit = false;
 
-                foreach (var (planetState, planetTransform) in SystemAPI
-                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                foreach (var (planetState, planetTransform, moonState) in SystemAPI
+                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRW<PlanetGemMoonState>>()
                              .WithAll<PlanetTag>())
                 {
                     float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
@@ -75,11 +75,26 @@ namespace TitanOrbit.ECS
                         break;
                     }
 
+                    var attackerTeam = (TeamId)b.OwnerTeam;
+                    if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
+                        continue;
+
+                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        planetSize,
+                        planetState.ValueRO.IsHomePlanet,
+                        moonState.ValueRO.CurrentShield);
+
                     if (BulletCollision.SegmentHitsMoonNear(
                             prevPos, newPos, planetPos, planetSize,
                             planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
-                            planetState.ValueRO.IsHomePlanet, mapW, mapH, out _))
+                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out _))
                     {
+                        PlanetGemMoonCombatLogic.ApplyBulletDamage(
+                            ref moonState.ValueRW,
+                            b.Damage,
+                            attackerTeam,
+                            planetState.ValueRO.Ownership,
+                            elapsed);
                         hit = true;
                         break;
                     }

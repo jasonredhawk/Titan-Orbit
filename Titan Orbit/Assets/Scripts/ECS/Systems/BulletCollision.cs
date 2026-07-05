@@ -95,12 +95,12 @@ namespace TitanOrbit.ECS
             int planetId,
             double elapsedSeconds,
             bool isHomePlanet,
+            float hitRadius,
             float mapW,
             float mapH,
             out float3 hitPoint)
         {
             hitPoint = to;
-            float radius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetScale, isHomePlanet);
             float3 moonCenter = PlanetOrbitMath.GetMoonWorldPositionNear(
                 from,
                 logicalPlanetCenter,
@@ -110,7 +110,7 @@ namespace TitanOrbit.ECS
                 elapsedSeconds,
                 mapW,
                 mapH);
-            return SegmentHitsSphere(from, to, moonCenter, radius, out hitPoint);
+            return SegmentHitsSphere(from, to, moonCenter, hitRadius, out hitPoint);
         }
     }
 }

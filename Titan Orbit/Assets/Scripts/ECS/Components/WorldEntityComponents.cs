@@ -51,5 +51,10 @@ namespace TitanOrbit.ECS
         [GhostField] public float CurrentShield;
         [GhostField] public float MaxShield;
         public float LastShieldHitServerTime;
+        /// <summary>Server-only moon gem reservoir damaged when shield is down (legacy gemPoints).</summary>
+        public float CurrentMoonGems;
+        public float MaxMoonGems;
+        public float GemDrainAccumulator;
+        public float GemSpawnTimer;
     }
 }

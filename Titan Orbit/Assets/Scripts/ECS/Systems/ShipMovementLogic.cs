@@ -124,6 +124,15 @@ namespace TitanOrbit.ECS
                 transform.ValueRO.Rotation,
                 ref motorState,
                 transform.ValueRO.Scale,
+                ship.Team,
+                mapW,
+                mapH,
+                elapsedSeconds);
+
+            PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
+                em,
+                ref motorState,
+                ship.Team,
                 mapW,
                 mapH,
                 elapsedSeconds);

@@ -1,7 +1,10 @@
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Collections;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -20,11 +23,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 float maxShield = PlanetGemMoonMath.GetMaxShieldForLevel(planet.ValueRO.PlanetLevel);
-                ecb.AddComponent(entity, new PlanetGemMoonState
+                var moonState = new PlanetGemMoonState
                 {
                     CurrentShield = maxShield,
                     MaxShield = maxShield,
-                });
+                };
+                PlanetGemMoonCombatLogic.InitMoonGems(ref moonState);
+                ecb.AddComponent(entity, moonState);
             }
 
             ecb.Playback(state.EntityManager);
@@ -48,6 +53,9 @@ namespace TitanOrbit.ECS
                 float scaledMax = PlanetGemMoonMath.GetMaxShieldForLevel(planet.ValueRO.PlanetLevel);
                 ref PlanetGemMoonState shield = ref moonShield.ValueRW;
 
+                if (shield.MaxMoonGems <= 0.001f)
+                    PlanetGemMoonCombatLogic.InitMoonGems(ref shield);
+
                 if (math.abs(scaledMax - shield.MaxShield) > 0.001f)
                 {
                     float prevMax = math.max(0.001f, shield.MaxShield);
@@ -65,6 +73,92 @@ namespace TitanOrbit.ECS
                 float regenRate = shield.MaxShield / math.max(0.01f, PlanetGemMoonMath.ShieldRegenSecondsToFull);
                 shield.CurrentShield = math.min(shield.MaxShield, shield.CurrentShield + regenRate * dt);
             }
+        }
+    }
+
+    /// <summary>When the moon shield is down, drain planet gems and expel them as collectibles.</summary>
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(PlanetGemMoonShieldSystem))]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    public partial struct PlanetGemMoonCombatDrainSystem : ISystem
+    {
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<GamePrefabs>();
+        }
+
+        public void OnUpdate(ref SystemState state)
+        {
+            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
+                return;
+
+            float dt = SystemAPI.Time.DeltaTime;
+            double elapsed = SystemAPI.Time.ElapsedTime;
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
+
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            foreach (var (planet, moon, transform) in SystemAPI
+                         .Query<RefRW<PlanetState>, RefRW<PlanetGemMoonState>, RefRO<LocalTransform>>()
+                         .WithAll<PlanetTag>())
+            {
+                ref PlanetGemMoonState moonState = ref moon.ValueRW;
+                if (moonState.CurrentShield > 0f)
+                    continue;
+                if (moonState.CurrentMoonGems <= 0.0001f)
+                    continue;
+
+                ref PlanetState planetState = ref planet.ValueRW;
+                if (planetState.CurrentGems <= 0.0001f)
+                    continue;
+
+                float drain = PlanetGemMoonMath.GemDrainPerSecondWhenShieldDown * dt;
+                drain = math.min(drain, math.min(moonState.CurrentMoonGems, planetState.CurrentGems));
+                if (drain <= 0.0001f)
+                    continue;
+
+                moonState.CurrentMoonGems -= drain;
+                planetState.CurrentGems -= drain;
+                moonState.GemDrainAccumulator += drain;
+                moonState.GemSpawnTimer += dt;
+
+                if (moonState.GemSpawnTimer < PlanetGemMoonMath.GemSpawnInterval)
+                    continue;
+                if (moonState.GemDrainAccumulator < PlanetGemMoonMath.GemSpawnMinValue)
+                    continue;
+
+                float spawnValue = moonState.GemDrainAccumulator;
+                moonState.GemDrainAccumulator = 0f;
+                moonState.GemSpawnTimer = 0f;
+
+                float planetSize = math.max(0.25f, transform.ValueRO.Scale);
+                float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                    transform.ValueRO.Position,
+                    transform.ValueRO.Position,
+                    planetSize,
+                    planetState.PlanetLevel,
+                    planetState.PlanetId,
+                    elapsed,
+                    mapW,
+                    mapH);
+
+                GemSpawning.Spawn(
+                    ecb,
+                    prefabs.Gem,
+                    moonPos,
+                    spawnValue,
+                    (uint)planetState.PlanetId,
+                    burst: false);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
         }
     }
 }

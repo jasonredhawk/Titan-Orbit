@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -90,8 +91,8 @@ namespace TitanOrbit.ECS
                 bool hit = false;
                 float3 hitPoint = newPos;
 
-                foreach (var (planetState, planetTransform) in SystemAPI
-                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                foreach (var (planetState, planetTransform, moonState) in SystemAPI
+                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
                              .WithAll<PlanetTag>())
                 {
                     float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
@@ -104,10 +105,19 @@ namespace TitanOrbit.ECS
                         break;
                     }
 
+                    var ownerTeam = (TeamId)tracer.ValueRO.OwnerTeam;
+                    if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, ownerTeam))
+                        continue;
+
+                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        planetSize,
+                        planetState.ValueRO.IsHomePlanet,
+                        moonState.ValueRO.CurrentShield);
+
                     if (BulletCollision.SegmentHitsMoonNear(
                             prevPos, newPos, planetPos, planetSize,
                             planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
-                            planetState.ValueRO.IsHomePlanet, mapW, mapH, out hitPoint))
+                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
                     {
                         hit = true;
                         break;

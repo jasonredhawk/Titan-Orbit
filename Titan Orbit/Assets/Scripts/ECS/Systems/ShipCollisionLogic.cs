@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -22,6 +23,7 @@ namespace TitanOrbit.ECS
             quaternion prevRot,
             ref ShipMotorState motorState,
             float shipTransformScale,
+            TeamId shipTeam,
             float mapW,
             float mapH,
             double elapsedSeconds)
@@ -56,6 +58,7 @@ namespace TitanOrbit.ECS
                     ref foundHit,
                     em,
                     selfEntity,
+                    shipTeam,
                     elapsedSeconds);
 
                 if (foundHit && bestT > MinSweptHitT && bestT < 1f)
@@ -74,6 +77,7 @@ namespace TitanOrbit.ECS
                 mapH,
                 em,
                 selfEntity,
+                shipTeam,
                 elapsedSeconds);
         }
 
@@ -138,6 +142,7 @@ namespace TitanOrbit.ECS
             ref bool foundHit,
             EntityManager em,
             Entity selfEntity,
+            TeamId shipTeam,
             double elapsedSeconds)
         {
             for (int h = 0; h < selfHull.Length; h++)
@@ -149,7 +154,7 @@ namespace TitanOrbit.ECS
 
                 CollectSphereObstacleHits(
                     obbFrom.Center, obbTo.Center, boxReach, unwrapOrigin, moveDistance, mapW, mapH,
-                    ref bestT, ref bestNormal, ref foundHit, em, elapsedSeconds);
+                    ref bestT, ref bestNormal, ref foundHit, em, shipTeam, elapsedSeconds);
 
                 CollectShipObstacleHits(
                     obbFrom, obbTo, boxReach, unwrapOrigin, moveDistance, mapW, mapH,
@@ -169,6 +174,7 @@ namespace TitanOrbit.ECS
             ref float3 bestNormal,
             ref bool foundHit,
             EntityManager em,
+            TeamId shipTeam,
             double elapsedSeconds)
         {
             float2 shipMid = (boxFrom + boxTo) * 0.5f;
@@ -176,8 +182,10 @@ namespace TitanOrbit.ECS
             using var planetQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>(),
+                ComponentType.ReadOnly<PlanetGemMoonState>(),
                 ComponentType.ReadOnly<LocalTransform>());
             using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var moonStates = planetQuery.ToComponentDataArray<PlanetGemMoonState>(Allocator.Temp);
             using var planetTransforms = planetQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             for (int i = 0; i < planetStates.Length; i++)
@@ -212,6 +220,19 @@ namespace TitanOrbit.ECS
                     CollectBoxCenterVsSphere(
                         boxFrom, boxTo, boxReach, moonCenter2, moonRadius,
                         ref bestT, ref bestNormal, ref foundHit);
+                }
+
+                var moonState = moonStates[i];
+                if (moonState.CurrentShield > 0.001f &&
+                    !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.Ownership, shipTeam))
+                {
+                    float shieldRadius = PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(planetSize, planetState.IsHomePlanet);
+                    if (IsWithinRange(shipMid, moonCenter2, shieldRadius, boxReach, moveDistance, mapW, mapH))
+                    {
+                        CollectBoxCenterVsSphere(
+                            boxFrom, boxTo, boxReach, moonCenter2, shieldRadius,
+                            ref bestT, ref bestNormal, ref foundHit);
+                    }
                 }
             }
 
@@ -363,6 +384,7 @@ namespace TitanOrbit.ECS
             float mapH,
             EntityManager em,
             Entity selfEntity,
+            TeamId shipTeam,
             double elapsedSeconds)
         {
             const int maxIterations = 4;
@@ -385,8 +407,10 @@ namespace TitanOrbit.ECS
                     using var planetQuery = em.CreateEntityQuery(
                         ComponentType.ReadOnly<PlanetTag>(),
                         ComponentType.ReadOnly<PlanetState>(),
+                        ComponentType.ReadOnly<PlanetGemMoonState>(),
                         ComponentType.ReadOnly<LocalTransform>());
                     using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
+                    using var moonStates = planetQuery.ToComponentDataArray<PlanetGemMoonState>(Allocator.Temp);
                     using var planetTransforms = planetQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
                     for (int i = 0; i < planetStates.Length; i++)
@@ -413,6 +437,15 @@ namespace TitanOrbit.ECS
                         var moonCenter2 = new float2(moonCenter.x, moonCenter.z);
                         if (IsWithinRange(shipPos2, moonCenter2, moonRadius, boxReach, 0f, mapW, mapH))
                             TryCollectDepenetrationPush(selfObb, moonCenter2, moonRadius, ref deepestPenetration, ref bestPush);
+
+                        var moonState = moonStates[i];
+                        if (moonState.CurrentShield > 0.001f &&
+                            !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.Ownership, shipTeam))
+                        {
+                            float shieldRadius = PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(planetSize, planetState.IsHomePlanet);
+                            if (IsWithinRange(shipPos2, moonCenter2, shieldRadius, boxReach, 0f, mapW, mapH))
+                                TryCollectDepenetrationPush(selfObb, moonCenter2, shieldRadius, ref deepestPenetration, ref bestPush);
+                        }
                     }
 
                     using var asteroidQuery = em.CreateEntityQuery(

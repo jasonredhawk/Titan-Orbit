@@ -15,6 +15,12 @@ namespace TitanOrbit.Simulation
         public const float MatrixShieldRadiusReference = 5.5f;
         public const float ShieldRegenDelaySeconds = 1.5f;
         public const float ShieldRegenSecondsToFull = 30f;
+        public const float BaseMaxMoonGemPoints = 500f;
+        public const float GemDrainPerSecondWhenShieldDown = 20f;
+        public const float GemSpawnInterval = 0.25f;
+        public const float GemSpawnMinValue = 2f;
+        public const float EnemyShieldRepelMinSpeed = 8f;
+        public const float EnemyShieldRepelMaxSpeed = 22f;
 
         public static float GetMaxShieldForLevel(int planetLevel) =>
             math.max(0.001f, BaseMaxShieldPoints * math.max(1, planetLevel));
@@ -93,6 +99,16 @@ namespace TitanOrbit.Simulation
         /// <summary>Outer shield barrier radius in moon-root local space (gameplay repulsion trigger).</summary>
         public static float GetMoonShieldOuterRadiusLocal(float planetSize, bool isHomePlanet) =>
             GetMoonDockSnapRadiusLocal(planetSize, isHomePlanet) * math.max(1f, ShieldBarrierRadiusOverDock);
+
+        /// <summary>World-space outer shield barrier (bullet hits + enemy ship repulsion when shield is up).</summary>
+        public static float GetMoonShieldOuterRadiusWorld(float planetSize, bool isHomePlanet) =>
+            GetMoonShieldOuterRadiusLocal(planetSize, isHomePlanet) * math.max(0.01f, planetSize);
+
+        /// <summary>World-space bullet hit radius: shield shell when up, body when down.</summary>
+        public static float GetMoonBulletHitRadiusWorld(float planetSize, bool isHomePlanet, float currentShield) =>
+            currentShield > 0.001f
+                ? GetMoonShieldOuterRadiusWorld(planetSize, isHomePlanet)
+                : GetMoonBodyRadiusWorld(planetSize, isHomePlanet);
 
         public static float GetMoonSurfaceLandingRangeWorld(float planetSize, bool isHomePlanet, float shipRadiusEstimate = 0.8f)
         {
