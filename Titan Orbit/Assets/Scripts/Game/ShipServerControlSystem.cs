@@ -37,6 +37,11 @@ namespace TitanOrbit.Game
 
         protected override void OnUpdate()
         {
+            // Dedicated / remote clients send ShipInput via NetCode ghost commands.
+            // Only the local host reads keyboard/mouse into ShipInput on the server world.
+            if (!IsLocalHostPlay())
+                return;
+
             if (_playerShips.IsEmpty)
                 return;
 
@@ -82,6 +87,20 @@ namespace TitanOrbit.Game
                     });
                 }
             }
+        }
+
+        static bool IsLocalHostPlay()
+        {
+            if (TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return false;
+
+            var client = ClientServerBootstrap.ClientWorld;
+            var server = ClientServerBootstrap.ServerWorld;
+            if (client == null || !client.IsCreated || server == null || !server.IsCreated)
+                return false;
+
+            return TitanOrbit.NetCode.TitanOrbitSessionManager.IsClientGameplayReady(client) &&
+                   TitanOrbit.NetCode.TitanOrbitSessionManager.IsClientConnectionReady(server);
         }
 
         int GetFirstConnectedNetworkId()
