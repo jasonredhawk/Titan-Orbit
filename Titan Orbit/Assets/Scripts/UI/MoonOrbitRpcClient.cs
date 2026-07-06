@@ -55,6 +55,9 @@ namespace TitanOrbit.UI
 
         static void ApplyWantDepositOnServer(bool wantDeposit)
         {
+            if (TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return;
+
             var server = EcsGameBridge.ServerWorld;
             if (server == null || !server.IsCreated)
                 return;

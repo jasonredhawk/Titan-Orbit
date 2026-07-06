@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -259,11 +260,14 @@ namespace TitanOrbit.Game
 
         public static bool IsNetworkInGame()
         {
-            if (ClientWorld != null && ClientWorld.IsCreated && HasNetworkStreamInGame(ClientWorld))
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld))
                 return true;
 
 #if UNITY_SERVER
-            if ((ClientWorld == null || !ClientWorld.IsCreated) && HasNetworkStreamInGame(ServerWorld))
+            if ((ClientWorld == null || !ClientWorld.IsCreated) &&
+                ServerWorld != null && ServerWorld.IsCreated &&
+                TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld))
                 return true;
 #endif
             return false;
@@ -271,8 +275,12 @@ namespace TitanOrbit.Game
 
         public static bool IsLocalHost()
         {
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return false;
+
             return ClientWorld != null && ClientWorld.IsCreated && ServerWorld != null && ServerWorld.IsCreated &&
-                   HasNetworkStreamInGame(ClientWorld) && HasNetworkStreamInGame(ServerWorld);
+                   TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld) &&
+                   TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld);
         }
 
         public static int GetLocalNetworkId()

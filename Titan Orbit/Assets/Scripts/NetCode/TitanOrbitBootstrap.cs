@@ -1,3 +1,5 @@
+using System;
+using TitanOrbit.Data;
 using Unity.NetCode;
 using UnityEngine;
 
@@ -9,8 +11,14 @@ namespace TitanOrbit.NetCode
         public override bool Initialize(string defaultWorldName)
         {
             Application.runInBackground = true;
-            AutoConnectPort = 7777;
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
+#if UNITY_EDITOR
+            // Avoid loopback auto-connect fighting dedicated Relay joins in production-style editor testing.
+            AutoConnectPort = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? (ushort)7777 : (ushort)0;
+#else
+            // Dedicated headless must not auto-listen on 7777 before Relay is configured.
+            AutoConnectPort = ShouldRunDedicatedServer() ? (ushort)0 : (ushort)7777;
+#endif
 
 #if UNITY_EDITOR
             if (HasExplicitDedicatedServerArg())
@@ -32,13 +40,14 @@ namespace TitanOrbit.NetCode
             }
 
             CreateDefaultClientServerWorlds();
-            Debug.Log("[TitanOrbitBootstrap] Editor play: " + RequestedPlayType + " worlds created.");
+            Debug.Log("[TitanOrbitBootstrap] Editor play: " + RequestedPlayType + " worlds created. AutoConnectPort=" + AutoConnectPort + ".");
             return true;
 #endif
 
             if (ShouldRunDedicatedServer())
             {
                 CreateServerWorld("ServerWorld");
+                Debug.Log("[TitanOrbitBootstrap] Dedicated server build: ServerWorld created.");
             }
             else if (ShouldRunLanHost())
             {
@@ -53,15 +62,7 @@ namespace TitanOrbit.NetCode
             return true;
         }
 
-        static bool HasExplicitDedicatedServerArg()
-        {
-            foreach (var arg in System.Environment.GetCommandLineArgs())
-            {
-                if (arg == "--titanOrbitDedicated")
-                    return true;
-            }
-            return false;
-        }
+        static bool HasExplicitDedicatedServerArg() => TitanOrbitServerCommandLine.HasDedicatedFlag();
 
         static bool ShouldRunDedicatedServer()
         {

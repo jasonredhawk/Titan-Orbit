@@ -49,6 +49,7 @@ namespace TitanOrbit.ECS.Editor
             var subSceneAsset = EnsureGameplaySubScene();
             DisableLegacyNgoObjects();
             EnsureBootstrapObjects();
+            TitanOrbitMultiplayerConfigEditor.EnsureAsset();
             EnsureGameplaySubSceneReference(subSceneAsset);
             WireCamera();
             WireUiFlow();
@@ -63,6 +64,7 @@ namespace TitanOrbit.ECS.Editor
         public static void ConfigureMultiplayerForLocalPlay()
         {
             ApplyLocalPlayNetCodePrefs();
+            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(true);
 
             EditorUtility.DisplayDialog(
                 "Titan Orbit — local play setup",
@@ -76,6 +78,26 @@ namespace TitanOrbit.ECS.Editor
                 "OK");
 
             Debug.Log("[NetCodeGameSetup] Local multiplayer prefs applied. Open Window > Multiplayer > PlayMode Tools to verify.");
+        }
+
+        [MenuItem("Titan Orbit/Configure Multiplayer For Dedicated Server")]
+        public static void ConfigureMultiplayerForDedicatedServer()
+        {
+            ApplyDedicatedJoinNetCodePrefs();
+            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(false);
+
+            EditorUtility.DisplayDialog(
+                "Titan Orbit — dedicated server join setup",
+                "PlayMode Tools (NetCode) updated:\n\n" +
+                "• PlayMode Type → Client (no local ServerWorld)\n" +
+                "• Auto-connect port → 0 (manual Relay join only)\n" +
+                "• Local play menu buttons → hidden\n\n" +
+                "Press Play, then use Join game to browse UGS lobbies and connect via Relay.\n\n" +
+                "If join fails with \"join code not found\", the GCE server restarted — tap Refresh or Request match.\n\n" +
+                "Switch back to local testing with Titan Orbit > Configure Multiplayer For Local Play.",
+                "OK");
+
+            Debug.Log("[NetCodeGameSetup] Dedicated-server join prefs applied (Client world, AutoConnectPort=0). Restart Play mode if already running.");
         }
 
         [MenuItem("Titan Orbit/Configure Multiplayer For MPPM (2 Players)")]
@@ -93,6 +115,17 @@ namespace TitanOrbit.ECS.Editor
             MultiplayerPlayModePreferences.SimulatorEnabled = false;
             MultiplayerPlayModePreferences.AutoConnectionAddress = "127.0.0.1";
             MultiplayerPlayModePreferences.AutoConnectionPort = 7777;
+        }
+
+        /// <summary>Editor client-only: join remote dedicated matches via UGS + Relay (no local ServerWorld).</summary>
+        public static void ApplyDedicatedJoinNetCodePrefs()
+        {
+            MultiplayerPlayModePreferences.RequestedPlayType = ClientServerBootstrap.PlayType.Client;
+            MultiplayerPlayModePreferences.SimulateDedicatedServer = false;
+            MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
+            MultiplayerPlayModePreferences.SimulatorEnabled = false;
+            MultiplayerPlayModePreferences.AutoConnectionAddress = "127.0.0.1";
+            MultiplayerPlayModePreferences.AutoConnectionPort = 0;
         }
 
         static void EnsureGhostPrefabs()
@@ -149,6 +182,9 @@ namespace TitanOrbit.ECS.Editor
 
             if (root.GetComponent<NceGameFlowController>() == null)
                 root.AddComponent<NceGameFlowController>();
+
+            if (root.GetComponent<JoinGameBrowserController>() == null)
+                root.AddComponent<JoinGameBrowserController>();
 
             if (root.GetComponent<ShipInputBridge>() == null)
                 root.AddComponent<ShipInputBridge>();
@@ -216,6 +252,18 @@ namespace TitanOrbit.ECS.Editor
                     typeName.Contains("TitanOrbit.Core.LocalPlayerSetup"))
                 {
                     mb.enabled = false;
+                }
+            }
+
+            var canvas = GameObject.Find("Canvas");
+            if (canvas != null)
+            {
+                foreach (var mb in canvas.GetComponents<MonoBehaviour>())
+                {
+                    if (mb == null) continue;
+                    var typeName = mb.GetType().FullName;
+                    if (typeName != null && typeName.Contains("TitanOrbit.UI.MainMenu"))
+                        mb.enabled = false;
                 }
             }
         }

@@ -11,9 +11,17 @@ namespace TitanOrbit.NetCode
         {
             if (TitanOrbitRelayState.TryGetClientRelay(out var relay))
             {
-                DefaultDriverBuilder.RegisterClientDriver(world, ref driverStore, netDebug, ref relay);
+                var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
+                    DefaultDriverBuilder.GetNetworkClientSettings());
+                settings = settings.WithRelayParameters(ref relay);
+#if !UNITY_WEBGL || UNITY_EDITOR
+                DefaultDriverBuilder.RegisterClientUdpDriver(world, ref driverStore, netDebug, settings);
+#else
+                DefaultDriverBuilder.RegisterClientWebSocketDriver(world, ref driverStore, netDebug, settings);
+#endif
                 return;
             }
+
             DefaultDriverBuilder.RegisterClientDriver(world, ref driverStore, netDebug,
                 DefaultDriverBuilder.GetNetworkClientSettings());
         }
@@ -22,11 +30,43 @@ namespace TitanOrbit.NetCode
         {
             if (TitanOrbitRelayState.TryGetServerRelay(out var relay))
             {
-                DefaultDriverBuilder.RegisterServerDriver(world, ref driverStore, netDebug, ref relay);
+                var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
+                    DefaultDriverBuilder.GetNetworkServerSettings());
+                settings = settings.WithRelayParameters(ref relay);
+
+                // Headless dedicated host: relay UDP only. IPC + relay UDP (default RegisterServerDriver)
+                // can leave Listen bound to the wrong driver so Relay clients never reach the server.
+                if (IsDedicatedServerOnlyProcess())
+                {
+#if !UNITY_WEBGL || UNITY_EDITOR
+                    DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
+#else
+                    DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
+#endif
+                    return;
+                }
+
+                DefaultDriverBuilder.RegisterServerIpcDriver(world, ref driverStore, netDebug,
+                    DefaultDriverBuilder.GetNetworkServerSettings());
+#if !UNITY_WEBGL || UNITY_EDITOR
+                DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
+#else
+                DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
+#endif
                 return;
             }
+
             DefaultDriverBuilder.RegisterServerDriver(world, ref driverStore, netDebug,
                 DefaultDriverBuilder.GetNetworkServerSettings());
+        }
+
+        static bool IsDedicatedServerOnlyProcess()
+        {
+#if UNITY_SERVER
+            return true;
+#else
+            return ClientServerBootstrap.RequestedPlayType == ClientServerBootstrap.PlayType.Server;
+#endif
         }
     }
 }

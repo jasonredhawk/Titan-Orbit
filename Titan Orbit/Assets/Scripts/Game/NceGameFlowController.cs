@@ -1,7 +1,11 @@
+using System;
 using System.Collections;
+using System.Threading.Tasks;
+using TitanOrbit.Data;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
+using TitanOrbit.Services;
 using TMPro;
 using Unity.Entities;
 using Unity.NetCode;
@@ -62,9 +66,12 @@ namespace TitanOrbit.Game
         bool _loggedWaitingForMap;
         bool _loggedTeamUiReady;
         float _connectedAt = -1f;
+        float _dedicatedConnectedAt = -1f;
         float _mppmConnectedSince = -1f;
         LoadingScreenControllerNce _loadingScreen;
-        string _statusMessage = "Press Play to start a local match.";
+        JoinGameBrowserController _joinBrowser;
+        string _statusMessage = "Join a dedicated match or enable local play in TitanOrbitMultiplayerConfig.";
+        bool _mainMenuButtonsBuilt;
 
         void Awake()
         {
@@ -78,6 +85,101 @@ namespace TitanOrbit.Game
             EnsureMatchFlowControllers();
             WireTeamButtons();
             EnsureMainMenuPlayButton();
+            EnsureJoinGameBrowser();
+            BuildMainMenuButtons();
+        }
+
+        void EnsureJoinGameBrowser()
+        {
+            _joinBrowser = GetComponent<JoinGameBrowserController>();
+            if (_joinBrowser == null)
+                _joinBrowser = gameObject.AddComponent<JoinGameBrowserController>();
+            _joinBrowser.Configure(mainMenuPanel);
+        }
+
+        void BuildMainMenuButtons()
+        {
+            if (_mainMenuButtonsBuilt || mainMenuPanel == null)
+                return;
+            _mainMenuButtonsBuilt = true;
+
+            var panelRt = mainMenuPanel.GetComponent<RectTransform>();
+            if (panelRt == null)
+                return;
+
+            if (playButton != null)
+            {
+                var playLabel = playButton.GetComponentInChildren<TextMeshProUGUI>();
+                if (playLabel != null)
+                    playLabel.text = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions
+                        ? "Local play"
+                        : "Quick join";
+            }
+
+            float y = -120f;
+            CreateMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
+            y -= 56f;
+
+            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
+            {
+                CreateMainMenuButton("LocalHostButton", "Local host", y, OnLocalHostClicked);
+                y -= 48f;
+                CreateMainMenuButton("LocalClientButton", "Local client", y, OnLocalClientClicked);
+            }
+        }
+
+        void CreateMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
+        {
+            if (mainMenuPanel.transform.Find(name) != null)
+                return;
+
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(mainMenuPanel.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(320f, 44f);
+            rt.anchoredPosition = new Vector2(0f, y);
+            go.GetComponent<Image>().color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+
+            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textGo.transform.SetParent(go.transform, false);
+            var textRt = textGo.GetComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = Vector2.zero;
+            textRt.offsetMax = Vector2.zero;
+            var tmp = textGo.GetComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 20f;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
+
+            go.GetComponent<Button>().onClick.AddListener(onClick);
+        }
+
+        void OnBrowseGamesClicked()
+        {
+            if (_joinBrowser != null)
+                _joinBrowser.Show();
+        }
+
+        void OnLocalHostClicked()
+        {
+            if (TitanOrbitSessionManager.Instance == null)
+                return;
+            TitanOrbitSessionManager.Instance.StartLanHostForLocalTest();
+            UnityEngine.SceneManagement.SceneManager.LoadScene(
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+        }
+
+        void OnLocalClientClicked()
+        {
+            if (TitanOrbitSessionManager.Instance == null)
+                return;
+            TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
         }
 
         void EnsureMatchFlowControllers()
@@ -120,11 +222,66 @@ namespace TitanOrbit.Game
 
             WireTeamButtons();
             CleanupJoinTeamScreenUi();
+            BuildMainMenuButtons();
             RefreshUi();
+            _ = PrimeGuestSessionAndPrefetchLobbiesAsync();
 
-            if (autoStartLocalPlayInEditor && Application.isEditor &&
+            if (autoStartLocalPlayInEditor && TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
+                Application.isEditor &&
                 !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 StartCoroutine(WaitAndStartLocalPlay());
+        }
+
+        async System.Threading.Tasks.Task PrimeGuestSessionAndPrefetchLobbiesAsync()
+        {
+            bool ok = await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync();
+            Debug.Log("[NceGameFlow] UGS guest session ready=" + ok + " project=" + (Application.cloudProjectId ?? "(none)"));
+            if (!ok)
+            {
+                _statusMessage = "Multiplayer services unavailable. Check internet and Unity project link.";
+                return;
+            }
+
+            await PrefetchDedicatedLobbyCountAsync();
+        }
+
+        async System.Threading.Tasks.Task PrefetchDedicatedLobbyCountAsync()
+        {
+            try
+            {
+                var lobbies = await TitanOrbitLobbyService.QueryBrowsableDedicatedLobbiesAsync(40, skipEmptyStabilization: true);
+                if (lobbies.Count > 0)
+                {
+                    _statusMessage = lobbies.Count + " dedicated match" + (lobbies.Count == 1 ? "" : "es") +
+                                     " available — tap Join game.";
+                    Debug.Log("[NceGameFlow] Menu lobby prefetch found " + lobbies.Count +
+                              " browsable match(es); first=\"" + lobbies[0].Name + "\".");
+                    return;
+                }
+
+                var kind = TitanOrbitLobbyService.LastOpenLobbyQueryKind;
+                if (kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.RateLimitBackoff)
+                {
+                    _statusMessage = "Lobby list rate-limited — wait a moment, then tap Join game → Refresh.";
+                    return;
+                }
+
+                if (kind != TitanOrbitLobbyService.OpenLobbyQueryResultKind.Ok)
+                {
+                    string detail = TitanOrbitLobbyService.LastOpenLobbyQueryErrorDetail;
+                    _statusMessage = string.IsNullOrEmpty(detail)
+                        ? "Could not query lobbies — tap Join game → Refresh."
+                        : "Lobby query failed: " + detail;
+                    return;
+                }
+
+                _statusMessage = "No dedicated matches listed yet — tap Join game → Request match or Refresh.";
+                Debug.Log("[NceGameFlow] Menu lobby prefetch: zero browsable dedicated matches (see TitanOrbitLobbyService query log).");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[NceGameFlow] Lobby prefetch failed: " + ex.Message);
+            }
         }
 
         static void LogNetCodeWorldState()
@@ -136,7 +293,7 @@ namespace TitanOrbit.Game
 #if UNITY_EDITOR
             message += ". PlayMode Type (NetCode prefs)=" + MultiplayerPlayModePreferences.RequestedPlayType;
 #endif
-            message += ". Use the main Editor Game tab; run Titan Orbit > Configure Multiplayer For Local Play if Play fails.";
+            message += ". Use the main Editor Game tab; run Titan Orbit > Configure Multiplayer For Local Play (LAN) or Configure Multiplayer For Dedicated Server (UGS/Relay).";
             Debug.Log(message);
         }
 
@@ -201,7 +358,7 @@ namespace TitanOrbit.Game
 
         static GameObject FindSceneObjectByName(string objectName)
         {
-            var transforms = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var transforms = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (int i = 0; i < transforms.Length; i++)
             {
                 var transform = transforms[i];
@@ -365,6 +522,15 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (!TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
+            {
+                _statusMessage = "Finding a dedicated match...";
+                if (playButton != null)
+                    playButton.interactable = false;
+                QuickJoinDedicatedFromMenuAsync();
+                return;
+            }
+
             if (!HasPlayableClientWorld())
             {
                 _statusMessage = "No ClientWorld. Run Titan Orbit > Configure Multiplayer For Local Play, then use the main Editor Game tab.";
@@ -382,6 +548,45 @@ namespace TitanOrbit.Game
 
             TitanOrbitSessionManager.Instance.StartLocalPlay();
             _autoStartSent = true;
+        }
+
+        async void QuickJoinDedicatedFromMenuAsync()
+        {
+            try
+            {
+                bool ok = await TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
+                if (!ok)
+                {
+                    _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Quick join failed. Try Join game.";
+                    return;
+                }
+
+                _statusMessage = "Connecting to dedicated server...";
+                float deadline = Time.realtimeSinceStartup + 65f;
+                while (Time.realtimeSinceStartup < deadline)
+                {
+                    if (TitanOrbitSessionManager.Instance.IsInGame && EcsGameBridge.IsNetworkInGame())
+                    {
+                        _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage;
+                        return;
+                    }
+
+                    if (!TitanOrbitSessionManager.IsDedicatedJoinConnecting)
+                    {
+                        _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Connection failed.";
+                        return;
+                    }
+
+                    await Task.Yield();
+                }
+
+                _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Connection timed out.";
+            }
+            finally
+            {
+                if (playButton != null)
+                    playButton.interactable = true;
+            }
         }
 
         static bool HasPlayableClientWorld()
@@ -470,6 +675,15 @@ namespace TitanOrbit.Game
                 Time.time - _mppmConnectedSince >= 1f)
                 return true;
 
+            // Dedicated Relay client: ghosts can lag behind the in-game handshake.
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient && IsInGameFlow())
+            {
+                if (EcsGameBridge.TryGetActiveTeamCount(out int teams) && teams > 0)
+                    return true;
+                if (_dedicatedConnectedAt >= 0f && Time.time - _dedicatedConnectedAt >= 5f)
+                    return true;
+            }
+
             return false;
         }
 
@@ -480,7 +694,13 @@ namespace TitanOrbit.Game
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
                 _mppmConnectedSince = Time.time;
 
+            bool connectingDedicated = TitanOrbitSessionManager.IsDedicatedJoinConnecting;
             bool connected = IsInGameFlow();
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
+                _dedicatedConnectedAt = Time.time;
+            if (!connected && !connectingDedicated)
+                _dedicatedConnectedAt = -1f;
+
             bool mapReady = connected && IsMapReadyForTeamSelection();
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
@@ -508,18 +728,23 @@ namespace TitanOrbit.Game
             }
 
             if (mainMenuPanel != null)
-                mainMenuPanel.SetActive(!connected);
+                mainMenuPanel.SetActive(!connected && !connectingDedicated &&
+                                      (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (playButton != null && mainMenuPanel != null && mainMenuPanel.activeSelf)
                 playButton.gameObject.SetActive(true);
 
             if (statusText != null)
             {
-                if (!connected || showLoading || showTeam || showTeamCountWait || showSpawnWait)
-                    statusText.text = !connected
+                if (!connected || showLoading || showTeam || showTeamCountWait || showSpawnWait || connectingDedicated)
+                    statusText.text = connectingDedicated && !connected
+                        ? "Connecting to dedicated server..."
+                        : !connected
                         ? _statusMessage
                         : showLoading
-                            ? "Loading map... (start the match on the Main Editor if this persists)"
+                            ? TitanOrbitSessionManager.IsDedicatedOnlineClient
+                                ? "Syncing map from dedicated server..."
+                                : "Loading map... (start the match on the Main Editor if this persists)"
                             : showTeamCountWait
                                 ? "Preparing teams..."
                             : showSpawnWait
@@ -534,10 +759,10 @@ namespace TitanOrbit.Game
                 teamSelectionPanel.SetActive(showTeam);
 
             if (loadingRoot != null)
-                loadingRoot.SetActive(showLoading);
+                loadingRoot.SetActive(showLoading || (connectingDedicated && !connected));
             if (_loadingScreen != null)
             {
-                if (showLoading)
+                if (showLoading || (connectingDedicated && !connected))
                     _loadingScreen.Show();
                 else
                     _loadingScreen.Hide();

@@ -38,6 +38,7 @@ namespace TitanOrbit.Diagnostics
 
                 sb.AppendLine();
                 string line = sb.ToString();
+                Debug.Log("[DedicatedServerFileLog] " + line.TrimEnd());
                 lock (Gate)
                 {
                     if (File.Exists(path))
