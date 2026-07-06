@@ -63,6 +63,7 @@ namespace TitanOrbit.Game
         bool _loggedTeamUiReady;
         float _connectedAt = -1f;
         float _mppmConnectedSince = -1f;
+        LoadingScreenControllerNce _loadingScreen;
         string _statusMessage = "Press Play to start a local match.";
 
         void Awake()
@@ -71,6 +72,7 @@ namespace TitanOrbit.Game
             _teamButtons = new[] { teamAButton, teamBButton, teamCButton, teamDButton, teamEButton };
             _teamPanels = new[] { teamAPanel, teamBPanel, teamCPanel, teamDPanel, teamEPanel };
             ResolveMissingReferences();
+            EnsureLoadingScreen();
             if (GetComponent<EcsWorldVisualizer>() == null)
                 gameObject.AddComponent<EcsWorldVisualizer>();
             EnsureMatchFlowControllers();
@@ -157,11 +159,10 @@ namespace TitanOrbit.Game
             {
                 var loading = GameObject.Find("LoadingScreenController");
                 if (loading != null)
-                {
-                    var panel = loading.transform.Find("LoadingPanel");
-                    loadingRoot = panel != null ? panel.gameObject : loading;
-                }
+                    loadingRoot = loading;
             }
+
+            EnsureLoadingScreen();
             if (gameplayRoot == null)
                 gameplayRoot = GameObject.Find("HUD");
             if (shipStatsPanel == null)
@@ -526,11 +527,21 @@ namespace TitanOrbit.Game
                                 : "Choose a team.";
             }
 
-            // Lobby backdrop covers loading + team pick (loadingRoot is an empty legacy object).
+            // Loading screen is shown alone; lobby backdrop covers team pick and spawn wait.
             if (lobbyPanel != null)
-                lobbyPanel.SetActive(showLoading || showTeam || showTeamCountWait || showSpawnWait);
+                lobbyPanel.SetActive(showTeam || showTeamCountWait || showSpawnWait);
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(showTeam);
+
+            if (loadingRoot != null)
+                loadingRoot.SetActive(showLoading);
+            if (_loadingScreen != null)
+            {
+                if (showLoading)
+                    _loadingScreen.Show();
+                else
+                    _loadingScreen.Hide();
+            }
 
             if (showTeam)
             {
@@ -550,9 +561,6 @@ namespace TitanOrbit.Game
                 SetTeamButtonsInteractable(false, MapGenerationLogic.MaxSupportedTeams);
             }
 
-            if (loadingRoot != null)
-                loadingRoot.SetActive(false);
-
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
             bool showGameplayHud = connected && hasShip && !matchWon;
 
@@ -561,6 +569,27 @@ namespace TitanOrbit.Game
 
             if (shipStatsPanel != null)
                 shipStatsPanel.SetActive(showGameplayHud);
+        }
+
+        void EnsureLoadingScreen()
+        {
+            if (_loadingScreen != null)
+                return;
+
+            if (loadingRoot != null)
+                _loadingScreen = loadingRoot.GetComponent<LoadingScreenControllerNce>();
+
+            if (_loadingScreen == null)
+            {
+                var loadingGo = GameObject.Find("LoadingScreenController");
+                if (loadingGo != null)
+                {
+                    loadingRoot = loadingGo;
+                    _loadingScreen = loadingGo.GetComponent<LoadingScreenControllerNce>();
+                    if (_loadingScreen == null)
+                        _loadingScreen = loadingGo.AddComponent<LoadingScreenControllerNce>();
+                }
+            }
         }
 
         void CleanupJoinTeamScreenUi()

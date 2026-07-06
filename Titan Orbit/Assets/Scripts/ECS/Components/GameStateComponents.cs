@@ -32,6 +32,8 @@ namespace TitanOrbit.ECS
         [GhostField] public float MapHeight;
         [GhostField] public int BlueprintSeed;
         [GhostField] public float LoadingProgress;
+        [GhostField] public int LoadingCompletedSteps;
+        [GhostField] public int LoadingTotalSteps;
         [GhostField] public bool LoadingComplete;
     }
 

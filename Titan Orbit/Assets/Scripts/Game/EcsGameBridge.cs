@@ -301,6 +301,173 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        public static bool TryGetMapLoadingProgress(out float progress)
+        {
+            progress = 0f;
+            if (!IsNetworkInGame())
+                return false;
+
+            if (TryGetMapLoadingState(out var completedSteps, out var totalSteps, out var loadingComplete, out progress))
+                return true;
+
+            if (ClientWorld != null && ClientWorld.IsCreated)
+            {
+                progress = EstimateClientMapLoadProgress(ClientWorld, out completedSteps, out totalSteps);
+                return totalSteps > 0 || progress > 0f;
+            }
+
+            return false;
+        }
+
+        public static bool TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+            if (!IsNetworkInGame())
+                return false;
+
+            if (TryGetMapLoadingState(out completedSteps, out totalSteps, out _, out _))
+                return totalSteps > 0;
+
+            if (ClientWorld != null && ClientWorld.IsCreated)
+            {
+                EstimateClientMapLoadProgress(ClientWorld, out completedSteps, out totalSteps);
+                return totalSteps > 0;
+            }
+
+            return false;
+        }
+
+        static bool TryGetMapLoadingState(
+            out int completedSteps,
+            out int totalSteps,
+            out bool loadingComplete,
+            out float progress)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+            loadingComplete = false;
+            progress = 0f;
+
+            if (ServerWorld != null && ServerWorld.IsCreated &&
+                TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
+                return true;
+
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                TryReadMapLoadingState(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
+                return true;
+
+            if (ServerWorld != null && ServerWorld.IsCreated)
+                return TryReadSpawnedBodyProgress(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress);
+
+            return false;
+        }
+
+        static bool TryReadMapLoadingState(
+            World world,
+            out int completedSteps,
+            out int totalSteps,
+            out bool loadingComplete,
+            out float progress)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+            loadingComplete = false;
+            progress = 0f;
+
+            if (world == null || !world.IsCreated)
+                return false;
+
+            if (!world.EntityManager.CreateEntityQuery(typeof(MapStateSingleton))
+                    .TryGetSingleton<MapStateSingleton>(out var map))
+                return false;
+
+            completedSteps = map.LoadingCompletedSteps;
+            totalSteps = map.LoadingTotalSteps;
+            loadingComplete = map.LoadingComplete;
+            progress = loadingComplete
+                ? 1f
+                : totalSteps > 0
+                    ? Mathf.Clamp01((float)completedSteps / totalSteps)
+                    : Mathf.Clamp01(map.LoadingProgress);
+            return totalSteps > 0 || map.LoadingProgress > 0f || loadingComplete;
+        }
+
+        static bool TryReadSpawnedBodyProgress(
+            World world,
+            out int completedSteps,
+            out int totalSteps,
+            out bool loadingComplete,
+            out float progress)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+            loadingComplete = false;
+            progress = 0f;
+
+            var em = world.EntityManager;
+            using var planets = em.CreateEntityQuery(typeof(PlanetState));
+            using var asteroids = em.CreateEntityQuery(typeof(AsteroidState));
+            completedSteps = planets.CalculateEntityCount() + asteroids.CalculateEntityCount();
+            if (completedSteps <= 0)
+                return false;
+
+            if (em.CreateEntityQuery(typeof(MapStateSingleton)).TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.LoadingTotalSteps > 0)
+            {
+                totalSteps = map.LoadingTotalSteps;
+                loadingComplete = map.LoadingComplete;
+            }
+            else
+            {
+                totalSteps = math.max(completedSteps, 1);
+                loadingComplete = false;
+            }
+
+            progress = loadingComplete ? 1f : Mathf.Clamp01((float)completedSteps / totalSteps);
+            return true;
+        }
+
+        static float EstimateClientMapLoadProgress(World client, out int completedSteps, out int totalSteps)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+
+            if (HasReplicatedMapWorldContent(client))
+            {
+                completedSteps = 1;
+                totalSteps = 1;
+                return 1f;
+            }
+
+            var em = client.EntityManager;
+            using var planets = em.CreateEntityQuery(typeof(PlanetState));
+            using var asteroids = em.CreateEntityQuery(typeof(AsteroidState));
+            completedSteps = planets.CalculateEntityCount() + asteroids.CalculateEntityCount();
+
+            if (em.CreateEntityQuery(typeof(MapStateSingleton)).TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.LoadingTotalSteps > 0)
+            {
+                totalSteps = map.LoadingTotalSteps;
+                if (map.LoadingComplete)
+                    return 1f;
+                return Mathf.Clamp01((float)math.min(completedSteps, totalSteps) / totalSteps);
+            }
+
+            if (em.CreateEntityQuery(typeof(MapLayoutEntryElement)).TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout) &&
+                layout.Length > 0)
+            {
+                totalSteps = layout.Length;
+                return Mathf.Clamp01((float)completedSteps / totalSteps);
+            }
+
+            totalSteps = math.max(completedSteps, 24);
+            if (completedSteps <= 0)
+                return 0f;
+
+            return Mathf.Clamp01((float)completedSteps / totalSteps);
+        }
+
         static bool TryGetShipFromCommandTarget(EntityManager em, out LocalTransform transform)
         {
             transform = default;
