@@ -257,11 +257,8 @@ namespace TitanOrbit.Game
 
         Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos)
         {
-            if (ToroidalDisplay.IsLocalPlayerShip(em, _shipEntity))
-                return logicalPos;
-
             if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                return ToroidalDisplay.ToDisplayPositionWithHysteresis(_shipEntity, logicalPos, reference);
+                return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, reference);
 
             return logicalPos;
         }
@@ -284,7 +281,7 @@ namespace TitanOrbit.Game
                 return false;
 
             if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                planetPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(planetId, planetPos, reference);
+                planetPos = ToroidalDisplay.ToDisplayPositionContinuous(planetPos, reference);
 
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed) ? simElapsed : Time.timeAsDouble;
             float3 moonPosF3 = PlanetOrbitMath.GetMoonWorldPosition(

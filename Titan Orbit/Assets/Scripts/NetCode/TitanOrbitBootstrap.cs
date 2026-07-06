@@ -11,6 +11,9 @@ namespace TitanOrbit.NetCode
         public override bool Initialize(string defaultWorldName)
         {
             Application.runInBackground = true;
+#if UNITY_SERVER
+            Application.targetFrameRate = 60;
+#endif
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
 #if UNITY_EDITOR
             // Avoid loopback auto-connect fighting dedicated Relay joins in production-style editor testing.

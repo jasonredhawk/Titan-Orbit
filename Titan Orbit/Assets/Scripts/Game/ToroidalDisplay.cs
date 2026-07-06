@@ -10,7 +10,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client toroidal display offsets for ECS presentation proxies (replaces legacy ToroidalRenderer).
-    /// Ships stay in unwrapped world space; static and remote entities shift to the map tile nearest the local player.
+    /// Bodies are placed on the nearest toroidal copy to the camera using continuous shortest-offset math.
     /// </summary>
     public static class ToroidalDisplay
     {
@@ -31,14 +31,23 @@ namespace TitanOrbit.Game
             ToroidalMapEcs.SetMapSize(mapW, mapH);
         }
 
+        /// <summary>
+        /// Nearest toroidal copy of <paramref name="logicalPosition"/> to <paramref name="referencePosition"/>.
+        /// Uses shortest XZ offset (no per-entity tile memory) so static bodies track the reference smoothly.
+        /// </summary>
+        public static Vector3 ToDisplayPositionContinuous(Vector3 logicalPosition, Vector3 referencePosition)
+        {
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(referencePosition, logicalPosition, mapW, mapH);
+            return new Vector3(
+                referencePosition.x + offset.x,
+                logicalPosition.y,
+                referencePosition.z + offset.z);
+        }
+
         public static bool TryGetReferencePosition(out Vector3 reference)
         {
-            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
-            {
-                reference = new Vector3(shipPos.x, 0f, shipPos.z);
-                return true;
-            }
-
             var cam = UnityEngine.Camera.main;
             if (cam != null && cam.isActiveAndEnabled)
             {
@@ -47,16 +56,24 @@ namespace TitanOrbit.Game
                 return true;
             }
 
+            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
+            {
+                reference = new Vector3(shipPos.x, 0f, shipPos.z);
+                return true;
+            }
+
             reference = default;
             return false;
         }
 
+        [System.Obsolete("Use ToDisplayPositionContinuous for presentation; hysteresis causes visible pops.")]
         public static Vector3 ToDisplayPosition(Vector3 logicalPosition, Vector3 referencePosition)
         {
             float3 display = ToroidalMapEcs.GetDisplayPosition(logicalPosition, referencePosition);
             return display;
         }
 
+        [System.Obsolete("Use ToDisplayPositionContinuous for presentation; hysteresis causes visible pops.")]
         public static Vector3 ToDisplayPositionWithHysteresis(
             Entity entity,
             Vector3 logicalPosition,

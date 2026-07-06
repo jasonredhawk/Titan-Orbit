@@ -36,8 +36,10 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetLocalShipPosition(out var targetPos))
                 return;
 
+            float smoothTime = followSmoothTime;
+
             Vector3 followXz = new Vector3(targetPos.x, 0f, targetPos.z);
-            if (followSmoothTime <= 0.0001f)
+            if (smoothTime <= 0.0001f)
             {
                 smoothedFollowXz = followXz;
                 hasSmoothedFollowXz = true;
@@ -54,7 +56,7 @@ namespace TitanOrbit.Game
                     smoothedFollowXz,
                     followXz,
                     ref followVelocity,
-                    followSmoothTime,
+                    smoothTime,
                     Mathf.Infinity,
                     Time.deltaTime);
             }

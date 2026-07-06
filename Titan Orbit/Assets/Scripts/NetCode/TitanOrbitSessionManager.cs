@@ -642,11 +642,19 @@ namespace TitanOrbit.NetCode
             return serverWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
         }
 
+        static int s_LastServerTickFrame = -1;
+
         static void TickServerWorld(World world = null)
         {
             world ??= ClientServerBootstrap.ServerWorld;
-            if (world != null && world.IsCreated)
-                world.Update();
+            if (world == null || !world.IsCreated)
+                return;
+
+            // One simulation step per Unity frame even if Update and coroutines both pump the server.
+            if (Time.frameCount == s_LastServerTickFrame)
+                return;
+            s_LastServerTickFrame = Time.frameCount;
+            world.Update();
         }
 
         static void LogServerWorldWaitStatus(int waitFrames)
@@ -874,7 +882,7 @@ namespace TitanOrbit.NetCode
                     return;
 
                 RequestDisconnectAllConnections(world);
-                world.Update();
+                TickServerWorld(world);
                 await Task.Yield();
             }
         }
@@ -1226,7 +1234,7 @@ namespace TitanOrbit.NetCode
                 var server = ClientServerBootstrap.ServerWorld;
                 if (server != null && server.IsCreated)
                 {
-                    TickServerWorld(server);
+                    // Server world is ticked once per frame from Update() on UNITY_SERVER builds.
                     RequestGoInGame(server);
                     var em = server.EntityManager;
                     int connections = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();

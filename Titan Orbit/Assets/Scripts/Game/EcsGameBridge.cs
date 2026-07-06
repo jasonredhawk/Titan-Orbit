@@ -42,6 +42,23 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        public static bool TryGetLocalShipVelocity(out Vector3 velocity)
+        {
+            velocity = default;
+
+            var world = GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!TryGetLocalShipEntity(em, out var shipEntity) ||
+                !em.HasComponent<ShipKinematics>(shipEntity))
+                return false;
+
+            velocity = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+            return true;
+        }
+
         static bool TryGetLocalShipTransform(out LocalTransform transform)
         {
             transform = default;

@@ -49,14 +49,7 @@ namespace TitanOrbit.NetCode
             session.EnsureDedicatedBootStarted();
         }
 
-#if UNITY_SERVER
-        void Update()
-        {
-            var server = ClientServerBootstrap.ServerWorld;
-            if (server != null && server.IsCreated)
-                server.Update();
-        }
-#endif
+        // Server ECS tick: TitanOrbitSessionManager.Update() on UNITY_SERVER builds.
 
         void OnApplicationQuit()
         {

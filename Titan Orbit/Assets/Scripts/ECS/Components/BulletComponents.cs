@@ -42,6 +42,9 @@ namespace TitanOrbit.ECS
 
     public struct ActiveBulletsTag : IComponentData { }
 
+    /// <summary>Tracer positions are already in client display/world space (not logical ECS toroidal space).</summary>
+    public struct BulletTracerDisplaySpace : IComponentData { }
+
     public struct BulletTracerState : IComponentData
     {
         public float3 Position;

@@ -5,6 +5,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -18,7 +19,7 @@ namespace TitanOrbit.Game
     /// Client-side primitive proxies so baked ghost entities are visible before Entities Graphics is wired.
     /// Ship proxies include weapon mount children so bullet direction uses weapon forward, not mouse aim.
     /// </summary>
-    [DefaultExecutionOrder(-100)]
+    [DefaultExecutionOrder(66000)]
     public class EcsWorldVisualizer : MonoBehaviour
     {
         const string DefaultShipFamilyAssetPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
@@ -59,6 +60,8 @@ namespace TitanOrbit.Game
 
         Vector3 _toroidalReference;
         bool _hasToroidalReference;
+
+        const float LocalShipRotationSmoothRate = 25f;
 
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
         {
@@ -143,19 +146,21 @@ namespace TitanOrbit.Game
         void BeginToroidalFrame(EntityManager em, HashSet<Entity> alive)
         {
             ToroidalDisplay.SyncMapSize(em);
-            _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
+            if (ToroidalDisplay.TryGetReferencePosition(out var rawReference))
+            {
+                _toroidalReference = rawReference;
+                _hasToroidalReference = true;
+            }
+
             ToroidalDisplay.PruneStale(alive);
         }
 
-        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
+        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos)
         {
-            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
-                return logicalPos;
-
             if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
                 return logicalPos;
 
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
         }
 
         Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
@@ -163,7 +168,7 @@ namespace TitanOrbit.Game
             if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
                 return logicalPos;
 
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
         }
 
         void EnsureShipProxies(EntityManager em)
@@ -247,8 +252,20 @@ namespace TitanOrbit.Game
 
                 if (!skipTransformSync)
                 {
-                    go.transform.position = GetVisualPosition(entity, em, lt.Position);
-                    go.transform.rotation = lt.Rotation;
+                    var targetPosition = GetVisualPosition(entity, em, lt.Position);
+                    var targetRotation = lt.Rotation;
+                    go.transform.position = targetPosition;
+                    if (TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                        ToroidalDisplay.IsLocalPlayerShip(em, entity))
+                    {
+                        float rotBlend = 1f - Mathf.Exp(-LocalShipRotationSmoothRate * Time.deltaTime);
+                        go.transform.rotation = Quaternion.Slerp(go.transform.rotation, targetRotation, rotBlend);
+                    }
+                    else
+                    {
+                        go.transform.rotation = targetRotation;
+                    }
+
                     go.transform.localScale = Vector3.one * scale;
                 }
 
@@ -395,7 +412,7 @@ namespace TitanOrbit.Game
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
                 Vector3 hitPos = hit.HitPosition;
                 if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                    hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
+                    hitPos = ToroidalDisplay.ToDisplayPositionContinuous(hitPos, reference);
                 BulletVisualFactory.SpawnBulletImpactVfx(
                     hitPos,
                     bulletVfxBank,
@@ -449,6 +466,21 @@ namespace TitanOrbit.Game
             }
         }
 
+        Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos)
+        {
+            if (em.HasComponent<BulletTracerDisplaySpace>(entity))
+                return logicalPos;
+
+            return GetBulletVisualPosition(logicalPos);
+        }
+
+        Vector3 GetBulletVisualPosition(float3 logicalPos)
+        {
+            if (_hasToroidalReference)
+            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
+            return logicalPos;
+        }
+
         void DrawBullets(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -475,7 +507,7 @@ namespace TitanOrbit.Game
                     go = new GameObject("BulletTracer");
                     _proxies[entity] = go;
 
-                    Vector3 spawnPos = GetVisualPosition(entity, tracer.SpawnPosition);
+                    Vector3 spawnPos = GetBulletVisualPosition(entity, em, tracer.SpawnPosition);
                     Vector3 vel = velocity;
                     BulletVisualFactory.PlayMuzzleVfx(
                         spawnPos,
@@ -508,7 +540,7 @@ namespace TitanOrbit.Game
                     }
                 }
 
-                go.transform.position = GetVisualPosition(entity, lt.Position);
+                go.transform.position = GetBulletVisualPosition(entity, em, lt.Position);
                 if (math.lengthsq(velocity) > 0.0001f)
                     go.transform.rotation = Quaternion.LookRotation(((Vector3)velocity).normalized, Vector3.up);
 

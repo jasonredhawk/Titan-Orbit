@@ -189,6 +189,9 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<ShipInputBridge>() == null)
                 root.AddComponent<ShipInputBridge>();
 
+            if (root.GetComponent<ClientLocalBulletVfxBridge>() == null)
+                root.AddComponent<ClientLocalBulletVfxBridge>();
+
             var input = root.GetComponent<PlayerInputHandler>();
             if (input == null)
                 input = root.AddComponent<PlayerInputHandler>();

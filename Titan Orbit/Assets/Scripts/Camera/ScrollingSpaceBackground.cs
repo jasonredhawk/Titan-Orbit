@@ -1,4 +1,4 @@
-using TitanOrbit.Generation;
+using TitanOrbit.Game;
 using UnityEngine;
 
 namespace TitanOrbit.Camera
@@ -14,7 +14,7 @@ namespace TitanOrbit.Camera
     /// <c>TitanOrbit/SpaceBackgroundUnlit</c> and drives scrolling only via <c>_UVScroll</c> on the
     /// instance material (no property block).
     /// </remarks>
-    [DefaultExecutionOrder(300)]
+    [DefaultExecutionOrder(66200)]
     public class ScrollingSpaceBackground : MonoBehaviour
     {
         /// <summary>Resources material that references the scrolling background shader (included in player builds).</summary>
@@ -155,7 +155,13 @@ namespace TitanOrbit.Camera
             transform.position = new Vector3(camPos.x, -Mathf.Abs(depthOffset), camPos.z);
             ResizeQuadToCoverView();
 
-            if (!hasLastCamPos)
+            float dt = Time.deltaTime;
+            if (EcsGameBridge.TryGetLocalShipVelocity(out var shipVel))
+            {
+                scrollOffsetX += shipVel.x * dt * scrollScale;
+                scrollOffsetZ += shipVel.z * dt * scrollScale;
+            }
+            else if (!hasLastCamPos)
             {
                 lastCamPos = camPos;
                 hasLastCamPos = true;
@@ -166,23 +172,9 @@ namespace TitanOrbit.Camera
             {
                 float dx = camPos.x - lastCamPos.x;
                 float dz = camPos.z - lastCamPos.z;
-                float mapW = ToroidalMap.GetMapWidth();
-                float mapH = ToroidalMap.GetMapHeight();
-                if (mapW > 1f)
-                {
-                    if (dx > mapW * 0.5f) dx -= mapW;
-                    else if (dx < -mapW * 0.5f) dx += mapW;
-                }
-
-                if (mapH > 1f)
-                {
-                    if (dz > mapH * 0.5f) dz -= mapH;
-                    else if (dz < -mapH * 0.5f) dz += mapH;
-                }
-
+                lastCamPos = camPos;
                 scrollOffsetX += dx * scrollScale;
                 scrollOffsetZ += dz * scrollScale;
-                lastCamPos = camPos;
             }
 
             bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));
