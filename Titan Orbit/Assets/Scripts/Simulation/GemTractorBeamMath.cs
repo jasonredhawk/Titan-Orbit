@@ -116,24 +116,20 @@ namespace TitanOrbit.Simulation
             return math.clamp(dist / ExtendLineSpeed, MinExtendDuration, MaxExtendDuration);
         }
 
+        // Flat world: plain Euclidean XZ (map dimensions ignored, kept for signature compatibility).
         public static float ToroidalDistance(float3 a, float3 b, float mapW, float mapH)
         {
-            float3 d = ShortestOffsetXZ(a, b, mapW, mapH);
-            return math.length(new float2(d.x, d.z));
+            float dx = b.x - a.x;
+            float dz = b.z - a.z;
+            return math.sqrt(dx * dx + dz * dz);
         }
 
-        public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapW, float mapH)
-        {
-            float dx = to.x - from.x;
-            float dz = to.z - from.z;
-            dx -= math.round(dx / mapW) * mapW;
-            dz -= math.round(dz / mapH) * mapH;
-            return new float3(dx, 0f, dz);
-        }
+        public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapW, float mapH) =>
+            new float3(to.x - from.x, 0f, to.z - from.z);
 
         public static float3 ToroidalDirection(float3 from, float3 to, float mapW, float mapH)
         {
-            float3 offset = ShortestOffsetXZ(from, to, mapW, mapH);
+            float3 offset = new float3(to.x - from.x, 0f, to.z - from.z);
             if (math.lengthsq(offset) < 0.0001f)
                 return new float3(0f, 0f, 1f);
             return math.normalize(offset);

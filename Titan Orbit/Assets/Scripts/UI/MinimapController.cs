@@ -172,12 +172,9 @@ namespace TitanOrbit.UI
 
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
-            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
-            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            // Flat world: plain Euclidean delta (no wrapping).
             dx = to.x - from.x;
             dz = to.z - from.z;
-            dx -= mapW * Mathf.Round(dx / mapW);
-            dz -= mapH * Mathf.Round(dz / mapH);
         }
 
         /// <summary>Half-diagonal of the toroidal map — circle radius that fits every world point around the player.</summary>
