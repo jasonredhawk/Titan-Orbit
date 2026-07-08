@@ -4,7 +4,6 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
-using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -58,10 +57,10 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
-        Vector3 _toroidalReference;
-        bool _hasToroidalReference;
+        Entity _cachedDedicatedLocalShipEntity;
 
-        const float LocalShipRotationSmoothRate = 25f;
+        /// <summary>Local-player ship proxy on dedicated clients.</summary>
+        public GameObject LocalPlayerShipProxy { get; private set; }
 
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
         {
@@ -119,9 +118,8 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             var alive = new HashSet<Entity>();
 
-            BeginToroidalFrame(em, alive);
-
             SyncShipProxyTransforms(em, alive);
+
             DrawPlanets(em, alive);
             DrawAsteroids(em, alive);
             DrawGems(em, alive);
@@ -143,36 +141,67 @@ namespace TitanOrbit.Game
 
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
-        void BeginToroidalFrame(EntityManager em, HashSet<Entity> alive)
+        void ApplyShipProxyTransform(
+            EntityManager em,
+            Entity entity,
+            bool isDedicatedLocalShip,
+            LocalTransform lt,
+            Transform go,
+            float scale)
         {
-            ToroidalDisplay.SyncMapSize(em);
-            if (ToroidalDisplay.TryGetReferencePosition(out var rawReference))
+            Vector3 pos = lt.Position;
+            go.position = pos;
+            go.rotation = lt.Rotation;
+            go.localScale = Vector3.one * scale;
+
+            if (isDedicatedLocalShip)
+                ShipDisplayPose.SetLocalPose(pos, lt.Rotation);
+        }
+
+        static bool TryResolveDedicatedLocalShipEntity(EntityManager em, out Entity localShipEntity)
+        {
+            localShipEntity = Entity.Null;
+            if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return false;
+
+            var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.GetVisualizationWorld();
+            return world != null &&
+                   world.IsCreated &&
+                   EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out localShipEntity);
+        }
+
+        bool TryResolveDedicatedLocalShipEntityCached(EntityManager em, out Entity localShipEntity)
+        {
+            localShipEntity = Entity.Null;
+            if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return false;
+
+            if (_cachedDedicatedLocalShipEntity != Entity.Null &&
+                em.Exists(_cachedDedicatedLocalShipEntity) &&
+                em.HasComponent<ShipTag>(_cachedDedicatedLocalShipEntity))
             {
-                _toroidalReference = rawReference;
-                _hasToroidalReference = true;
+                localShipEntity = _cachedDedicatedLocalShipEntity;
+                return true;
             }
 
-            ToroidalDisplay.PruneStale(alive);
+            if (!TryResolveDedicatedLocalShipEntity(em, out localShipEntity))
+                return false;
+
+            _cachedDedicatedLocalShipEntity = localShipEntity;
+            return true;
         }
 
-        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos)
-        {
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
+        static bool IsDedicatedLocalShip(Entity entity, Entity localShipEntity) =>
+            localShipEntity != Entity.Null && entity == localShipEntity;
 
-            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
-        }
+        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
 
-        Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
-        {
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
-        }
+        Vector3 GetVisualPosition(Entity entity, float3 logicalPos) => logicalPos;
 
         void EnsureShipProxies(EntityManager em)
         {
+            TryResolveDedicatedLocalShipEntityCached(em, out var localShipEntity);
+
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<LocalTransform>());
@@ -183,6 +212,7 @@ namespace TitanOrbit.Game
             {
                 var entity = entities[i];
                 var lt = transforms[i];
+                bool isDedicatedLocalShip = IsDedicatedLocalShip(entity, localShipEntity);
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
                 TeamId team = TeamId.None;
@@ -213,14 +243,14 @@ namespace TitanOrbit.Game
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
                 var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
-                go.transform.position = GetVisualPosition(entity, em, lt.Position);
-                go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+                ApplyShipProxyTransform(em, entity, isDedicatedLocalShip, lt, go.transform, scale);
             }
         }
 
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
+            TryResolveDedicatedLocalShipEntityCached(em, out var localShipEntity);
+
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<LocalTransform>());
@@ -250,23 +280,20 @@ namespace TitanOrbit.Game
                         && moonDock.LandingProgress > 0.001f;
                 }
 
+                bool isDedicatedLocalShip = IsDedicatedLocalShip(entity, localShipEntity);
+                if (isDedicatedLocalShip)
+                    LocalPlayerShipProxy = go;
+
                 if (!skipTransformSync)
                 {
-                    var targetPosition = GetVisualPosition(entity, em, lt.Position);
-                    var targetRotation = lt.Rotation;
-                    go.transform.position = targetPosition;
-                    if (TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                        ToroidalDisplay.IsLocalPlayerShip(em, entity))
-                    {
-                        float rotBlend = 1f - Mathf.Exp(-LocalShipRotationSmoothRate * Time.deltaTime);
-                        go.transform.rotation = Quaternion.Slerp(go.transform.rotation, targetRotation, rotBlend);
-                    }
+                    if (isDedicatedLocalShip)
+                        ApplyShipProxyTransform(em, entity, true, lt, go.transform, scale);
                     else
-                    {
-                        go.transform.rotation = targetRotation;
-                    }
-
-                    go.transform.localScale = Vector3.one * scale;
+                        ApplyShipProxyTransform(em, entity, false, lt, go.transform, scale);
+                }
+                else if (isDedicatedLocalShip)
+                {
+                    ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
                 }
 
                 if (em.HasComponent<ShipState>(entity))
@@ -320,8 +347,6 @@ namespace TitanOrbit.Game
 
             ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(go.transform, muzzleOffset);
             ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
-            if (!go.GetComponent<ShipHullColliderCache>())
-                ShipHullColliderCollector.EnsureCacheOnHull(go.transform);
 
             if (networkId > 0)
             {
@@ -377,9 +402,11 @@ namespace TitanOrbit.Game
 
         void DestroyProxy(Entity entity)
         {
+            if (entity == _cachedDedicatedLocalShipEntity)
+                _cachedDedicatedLocalShipEntity = Entity.Null;
+
             if (_proxies.TryGetValue(entity, out var go))
             {
-                ToroidalDisplay.RemoveEntity(entity);
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
@@ -411,8 +438,6 @@ namespace TitanOrbit.Game
                 int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
                 Vector3 hitPos = hit.HitPosition;
-                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                    hitPos = ToroidalDisplay.ToDisplayPositionContinuous(hitPos, reference);
                 BulletVisualFactory.SpawnBulletImpactVfx(
                     hitPos,
                     bulletVfxBank,
@@ -466,20 +491,9 @@ namespace TitanOrbit.Game
             }
         }
 
-        Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos)
-        {
-            if (em.HasComponent<BulletTracerDisplaySpace>(entity))
-                return logicalPos;
+        Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
 
-            return GetBulletVisualPosition(logicalPos);
-        }
-
-        Vector3 GetBulletVisualPosition(float3 logicalPos)
-        {
-            if (_hasToroidalReference)
-            return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, _toroidalReference);
-            return logicalPos;
-        }
+        Vector3 GetBulletVisualPosition(float3 logicalPos) => logicalPos;
 
         void DrawBullets(EntityManager em, HashSet<Entity> alive)
         {

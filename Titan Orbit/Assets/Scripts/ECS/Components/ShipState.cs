@@ -74,6 +74,7 @@ namespace TitanOrbit.ECS
 
     public struct ShipKinematics : IComponentData
     {
+        [GhostField(Quantization = 1000)]
         public float3 Velocity;
     }
 

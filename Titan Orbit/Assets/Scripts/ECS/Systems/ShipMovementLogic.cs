@@ -3,6 +3,7 @@ using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -36,11 +37,15 @@ namespace TitanOrbit.ECS
             RefRO<ShipMotorConfig> motor,
             RefRW<ShipState> shipState,
             RefRW<ShipKinematics> kinematics,
+            RefRW<PhysicsVelocity> physicsVelocity,
             RefRW<LocalTransform> transform,
             Entity entity)
         {
             if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+            {
+                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 return;
+            }
 
             if (!em.HasComponent<ShipOrbitState>(entity))
                 em.AddComponentData(entity, new ShipOrbitState());
@@ -54,6 +59,7 @@ namespace TitanOrbit.ECS
                 !inp.Thrust)
             {
                 kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 em.SetComponentData(entity, new ShipOrbitState());
                 return;
             }
@@ -73,7 +79,8 @@ namespace TitanOrbit.ECS
             {
                 Position = pos,
                 Rotation = transform.ValueRO.Rotation,
-                Velocity = kinematics.ValueRO.Velocity,
+                // Start from the post-physics velocity so collision bounce carries into the next step.
+                Velocity = physicsVelocity.ValueRO.Linear,
                 Mass = effectiveMass,
             };
 
@@ -117,18 +124,8 @@ namespace TitanOrbit.ECS
                 inp.Thrust,
                 inp.SpaceBrakes);
 
-            ShipCollisionLogic.ResolveMovement(
-                em,
-                entity,
-                pos,
-                transform.ValueRO.Rotation,
-                ref motorState,
-                transform.ValueRO.Scale,
-                ship.Team,
-                mapW,
-                mapH,
-                elapsedSeconds);
-
+            // Unity Physics resolves ship/asteroid/planet contacts (bounce) — no custom sweep here.
+            // Shield repel still nudges velocity away from enemy moon shields (position writes ignored).
             PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
                 em,
                 ref motorState,
@@ -137,10 +134,12 @@ namespace TitanOrbit.ECS
                 mapH,
                 elapsedSeconds);
 
-            // Ships stay in unwrapped world space; presentation repositions other bodies via ToroidalDisplay.
-            transform.ValueRW.Position = motorState.Position;
+            // Drive the dynamic physics body: we own facing + desired velocity; physics owns position.
+            float3 vel = motorState.Velocity;
+            vel.y = 0f;
             transform.ValueRW.Rotation = motorState.Rotation;
-            kinematics.ValueRW.Velocity = motorState.Velocity;
+            physicsVelocity.ValueRW = new PhysicsVelocity { Linear = vel, Angular = float3.zero };
+            kinematics.ValueRW.Velocity = vel;
 
             em.SetComponentData(entity, new ShipOrbitState
             {

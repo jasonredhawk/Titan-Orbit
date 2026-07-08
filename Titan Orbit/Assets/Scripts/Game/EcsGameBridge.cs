@@ -42,28 +42,13 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        public static bool TryGetLocalShipVelocity(out Vector3 velocity)
-        {
-            velocity = default;
+        public static bool TryGetLocalShipTransform(out LocalTransform transform) =>
+            TryGetLocalShipTransformFromWorld(GetVisualizationWorld(), out transform);
 
-            var world = GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return false;
-
-            var em = world.EntityManager;
-            if (!TryGetLocalShipEntity(em, out var shipEntity) ||
-                !em.HasComponent<ShipKinematics>(shipEntity))
-                return false;
-
-            velocity = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
-            return true;
-        }
-
-        static bool TryGetLocalShipTransform(out LocalTransform transform)
+        public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)
         {
             transform = default;
 
-            var world = GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -82,6 +67,27 @@ namespace TitanOrbit.Game
                 return true;
 
             return false;
+        }
+
+        public static bool TryGetLocalShipVelocity(out Vector3 velocity)
+        {
+            velocity = default;
+
+            var world = TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                        ClientWorld != null &&
+                        ClientWorld.IsCreated
+                ? ClientWorld
+                : GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!TryGetLocalShipEntity(em, out var shipEntity) ||
+                !em.HasComponent<ShipKinematics>(shipEntity))
+                return false;
+
+            velocity = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+            return true;
         }
 
         public static bool HasLocalPlayerShip() => TryGetLocalShipPosition(out _);
@@ -533,32 +539,6 @@ namespace TitanOrbit.Game
         {
             shipEntity = Entity.Null;
 
-            using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
-            if (tagged.CalculateEntityCount() > 0)
-            {
-                using var entities = tagged.ToEntityArray(Allocator.Temp);
-                if (entities.Length > 0)
-                {
-                    shipEntity = entities[0];
-                    return true;
-                }
-            }
-
-            if (TryGetLocalOwnedShipEntity(em, out shipEntity))
-                return true;
-
-            using var connections = em.CreateEntityQuery(
-                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
-            using var targets = connections.ToComponentDataArray<CommandTarget>(Allocator.Temp);
-            for (int i = 0; i < targets.Length; i++)
-            {
-                var target = targets[i].targetEntity;
-                if (target == Entity.Null || !em.Exists(target) || !em.HasComponent<ShipTag>(target))
-                    continue;
-                shipEntity = target;
-                return true;
-            }
-
             int localId = GetLocalNetworkId(ClientWorld);
             if (localId > 0)
             {
@@ -572,6 +552,32 @@ namespace TitanOrbit.Game
                     shipEntity = entities[i];
                     return true;
                 }
+            }
+
+            if (TryGetLocalOwnedShipEntity(em, out shipEntity))
+                return true;
+
+            using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
+            if (tagged.CalculateEntityCount() > 0)
+            {
+                using var entities = tagged.ToEntityArray(Allocator.Temp);
+                if (entities.Length > 0)
+                {
+                    shipEntity = entities[0];
+                    return true;
+                }
+            }
+
+            using var connections = em.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(CommandTarget));
+            using var targets = connections.ToComponentDataArray<CommandTarget>(Allocator.Temp);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var target = targets[i].targetEntity;
+                if (target == Entity.Null || !em.Exists(target) || !em.HasComponent<ShipTag>(target))
+                    continue;
+                shipEntity = target;
+                return true;
             }
 
             return false;

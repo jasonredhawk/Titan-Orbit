@@ -24,7 +24,6 @@ namespace TitanOrbit.Game
 
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
-            ShipHullColliderCollector.EnsureCacheOnHull(instance.transform);
             StripPhysicsAndNetworking(instance);
             ApplyTeamMaterials(family, instance, team);
             return true;

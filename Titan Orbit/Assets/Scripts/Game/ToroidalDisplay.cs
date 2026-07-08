@@ -9,13 +9,22 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client toroidal display offsets for ECS presentation proxies (replaces legacy ToroidalRenderer).
-    /// Bodies are placed on the nearest toroidal copy to the camera using continuous shortest-offset math.
+    /// Client toroidal display for ECS presentation proxies.
+    /// Static bodies use per-entity tile hysteresis: they stay on a fixed map copy until the
+    /// ship crosses a toroidal wrap boundary, not every frame.
     /// </summary>
     public static class ToroidalDisplay
     {
         static readonly Dictionary<Entity, (int k, int m)> s_EntityTiles = new();
         static readonly Dictionary<int, (int k, int m)> s_KeyedTiles = new();
+        static int s_TileSwitchesThisFrame;
+
+        public static int TileSwitchesThisFrame => s_TileSwitchesThisFrame;
+
+        internal static void BeginFrame()
+        {
+            s_TileSwitchesThisFrame = 0;
+        }
 
         public static void SyncMapSize(EntityManager em)
         {
@@ -32,52 +41,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Nearest toroidal copy of <paramref name="logicalPosition"/> to <paramref name="referencePosition"/>.
-        /// Uses shortest XZ offset (no per-entity tile memory) so static bodies track the reference smoothly.
+        /// Nearest toroidal copy with per-entity tile memory. Position is stable while the ship
+        /// remains in the same map tile; only changes on wrap.
         /// </summary>
-        public static Vector3 ToDisplayPositionContinuous(Vector3 logicalPosition, Vector3 referencePosition)
-        {
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(referencePosition, logicalPosition, mapW, mapH);
-            return new Vector3(
-                referencePosition.x + offset.x,
-                logicalPosition.y,
-                referencePosition.z + offset.z);
-        }
-
-        public static bool TryGetReferencePosition(out Vector3 reference)
-        {
-            var cam = UnityEngine.Camera.main;
-            if (cam != null && cam.isActiveAndEnabled)
-            {
-                var camPos = cam.transform.position;
-                reference = new Vector3(camPos.x, 0f, camPos.z);
-                return true;
-            }
-
-            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
-            {
-                reference = new Vector3(shipPos.x, 0f, shipPos.z);
-                return true;
-            }
-
-            reference = default;
-            return false;
-        }
-
-        [System.Obsolete("Use ToDisplayPositionContinuous for presentation; hysteresis causes visible pops.")]
-        public static Vector3 ToDisplayPosition(Vector3 logicalPosition, Vector3 referencePosition)
-        {
-            float3 display = ToroidalMapEcs.GetDisplayPosition(logicalPosition, referencePosition);
-            return display;
-        }
-
-        [System.Obsolete("Use ToDisplayPositionContinuous for presentation; hysteresis causes visible pops.")]
-        public static Vector3 ToDisplayPositionWithHysteresis(
-            Entity entity,
-            Vector3 logicalPosition,
-            Vector3 referencePosition)
+        public static Vector3 ToDisplayPosition(Entity entity, Vector3 logicalPosition, Vector3 referencePosition)
         {
             if (!s_EntityTiles.TryGetValue(entity, out var tile))
                 tile = (int.MinValue, int.MinValue);
@@ -89,6 +56,10 @@ namespace TitanOrbit.Game
                 referencePosition,
                 ref tileK,
                 ref tileM);
+
+            if (tile.k != int.MinValue && (tileK != tile.k || tileM != tile.m))
+                s_TileSwitchesThisFrame++;
+
             s_EntityTiles[entity] = (tileK, tileM);
             return display;
         }
@@ -108,8 +79,49 @@ namespace TitanOrbit.Game
                 referencePosition,
                 ref tileK,
                 ref tileM);
+
+            if (tile.k != int.MinValue && (tileK != tile.k || tileM != tile.m))
+                s_TileSwitchesThisFrame++;
+
             s_KeyedTiles[stableKey] = (tileK, tileM);
             return display;
+        }
+
+        public static bool TryGetReferencePosition(out Vector3 reference)
+        {
+            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
+            {
+                reference = new Vector3(shipPos.x, 0f, shipPos.z);
+                return true;
+            }
+
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                var p = ShipDisplayPose.LocalPosition;
+                reference = new Vector3(p.x, 0f, p.z);
+                return true;
+            }
+
+            var cam = UnityEngine.Camera.main;
+            if (cam != null && cam.isActiveAndEnabled)
+            {
+                var camPos = cam.transform.position;
+                reference = new Vector3(camPos.x, 0f, camPos.z);
+                return true;
+            }
+
+            reference = default;
+            return false;
+        }
+
+        [System.Obsolete("Repositions every frame as the ship moves. Use ToDisplayPosition with hysteresis instead.")]
+        public static Vector3 ToDisplayPositionContinuous(Vector3 logicalPosition, Vector3 referencePosition)
+        {
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(referencePosition, logicalPosition, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
+            return new Vector3(
+                referencePosition.x + offset.x,
+                logicalPosition.y,
+                referencePosition.z + offset.z);
         }
 
         public static void RemoveEntity(Entity entity) => s_EntityTiles.Remove(entity);

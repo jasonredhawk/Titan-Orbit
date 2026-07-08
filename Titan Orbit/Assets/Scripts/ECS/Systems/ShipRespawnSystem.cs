@@ -3,6 +3,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -20,8 +21,8 @@ namespace TitanOrbit.ECS
             float now = (float)SystemAPI.Time.ElapsedTime;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            foreach (var (shipState, deathState, kinematics, orbitState, transform, entity) in SystemAPI
-                         .Query<RefRW<ShipState>, RefRO<ShipDeathState>, RefRW<ShipKinematics>, RefRW<ShipOrbitState>, RefRW<LocalTransform>>()
+            foreach (var (shipState, deathState, kinematics, orbitState, physicsVelocity, transform, entity) in SystemAPI
+                         .Query<RefRW<ShipState>, RefRO<ShipDeathState>, RefRW<ShipKinematics>, RefRW<ShipOrbitState>, RefRW<PhysicsVelocity>, RefRW<LocalTransform>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -33,6 +34,7 @@ namespace TitanOrbit.ECS
 
                 float3 spawnPos = FindHomeSpawnPosition(ref state, shipState.ValueRO.Team);
                 RespawnShip(ref shipState.ValueRW, ref kinematics.ValueRW, ref orbitState.ValueRW, ref transform.ValueRW, spawnPos);
+                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 ecb.RemoveComponent<ShipDeathState>(entity);
             }
 

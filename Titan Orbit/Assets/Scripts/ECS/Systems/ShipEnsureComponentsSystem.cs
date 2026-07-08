@@ -75,9 +75,6 @@ namespace TitanOrbit.ECS
                     });
                 }
 
-                if (!state.EntityManager.HasBuffer<ShipHullColliderElement>(entity))
-                    ecb.AddBuffer<ShipHullColliderElement>(entity);
-
                 if (!state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(entity))
                     ecb.AddBuffer<ShipWingTractorBeamElement>(entity);
             }

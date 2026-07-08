@@ -36,6 +36,7 @@ namespace TitanOrbit.NetCode
 
         string _activeLobbyId;
         Coroutine _connectWatch;
+        Coroutine _mppmLanConnectCoroutine;
         TitanOrbitServerCommandLine _serverConfig;
         bool _recreateDedicatedMatchInProgress;
 
@@ -79,10 +80,22 @@ namespace TitanOrbit.NetCode
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
             {
                 TitanOrbitPlayModeUtility.WarnIfMppmServerBuildClone();
+                bool localLan = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions;
                 Debug.Log("[TitanOrbitSessionManager] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
                           " (buildSubTarget=" + TitanOrbitPlayModeUtility.GetMppmBuildSubtarget() +
-                          ") — connecting to host on port " + serverPort + ". Pick a team when connected.");
-                StartCoroutine(MaintainClientSession());
+                          ") — " + (localLan
+                              ? "auto-connecting to host on port " + serverPort + ". Pick a team when connected."
+                              : "ready for dedicated join via Browse Games (no LAN auto-connect)."));
+
+                // Local LAN MPPM only. Dedicated Relay joins fail if we leave a port-7777 connection open.
+                if (localLan)
+                {
+                    _mppmLanConnectCoroutine = StartCoroutine(MaintainClientSession());
+                    return;
+                }
+
+                IsDedicatedOnlineClient = false;
+                IsInGame = false;
                 return;
             }
 
@@ -882,7 +895,8 @@ namespace TitanOrbit.NetCode
                     return;
 
                 RequestDisconnectAllConnections(world);
-                TickServerWorld(world);
+                // Must tick THIS world (client or server). Shared TickServerWorld frame-gate can skip client ticks.
+                world.Update();
                 await Task.Yield();
             }
         }
@@ -981,6 +995,7 @@ namespace TitanOrbit.NetCode
                     lobby.Id, joinAllocation.AllocationId.ToString());
 
                 TitanOrbitRelayState.SetClientRelay(clientRelay);
+                await EnsureClientReadyForRelayDriverResetAsync();
                 ResetClientDriverIfNeeded();
 
                 var clientWorld = ClientServerBootstrap.ClientWorld;
@@ -991,7 +1006,6 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-                await ClearNetworkConnectionsAsync(clientWorld);
                 ConnectRelayClient(clientWorld);
                 for (int i = 0; i < 30; i++)
                 {
@@ -1055,17 +1069,50 @@ namespace TitanOrbit.NetCode
         {
             IsDedicatedOnlineClient = true;
             IsInGame = false;
+            StopMppmLanAutoConnect();
 
             await SuspendLocalServerForDedicatedClientAsync();
+            await EnsureClientReadyForRelayDriverResetAsync();
+            TitanOrbitRelayState.Clear();
+        }
 
+        void StopMppmLanAutoConnect()
+        {
+            if (_mppmLanConnectCoroutine == null)
+                return;
+
+            StopCoroutine(_mppmLanConnectCoroutine);
+            _mppmLanConnectCoroutine = null;
+            Debug.Log("[TitanOrbitSessionManager] Stopped MPPM LAN auto-connect before dedicated Relay join.");
+        }
+
+        /// <summary>
+        /// Disconnect leftover LAN/loopback connections and wait until NetworkStreamConnection entities are gone.
+        /// Required before NetworkStreamDriver.ResetDriverStore / Relay Connect.
+        /// </summary>
+        async Task EnsureClientReadyForRelayDriverResetAsync()
+        {
             var clientWorld = ClientServerBootstrap.ClientWorld;
-            if (clientWorld != null && clientWorld.IsCreated)
+            if (clientWorld == null || !clientWorld.IsCreated)
+                return;
+
+            ClearNetworkStreamInGame(clientWorld);
+            await ClearNetworkConnectionsAsync(clientWorld);
+
+            for (int i = 0; i < 10; i++)
             {
-                ClearNetworkStreamInGame(clientWorld);
-                await ClearNetworkConnectionsAsync(clientWorld);
+                if (clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() == 0)
+                    return;
+
+                RequestDisconnectAllConnections(clientWorld);
+                clientWorld.Update();
+                await Task.Yield();
             }
 
-            TitanOrbitRelayState.Clear();
+            int remaining = clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
+            if (remaining > 0)
+                Debug.LogWarning("[TitanOrbitSessionManager] " + remaining +
+                                 " NetworkStreamConnection(s) still present before Relay driver reset.");
         }
 
         static async Task SuspendLocalServerForDedicatedClientAsync()

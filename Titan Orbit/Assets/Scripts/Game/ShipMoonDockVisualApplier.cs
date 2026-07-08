@@ -255,13 +255,7 @@ namespace TitanOrbit.Game
             return Quaternion.LookRotation(tangent, surfaceNormal);
         }
 
-        Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos)
-        {
-            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                return ToroidalDisplay.ToDisplayPositionContinuous(logicalPos, reference);
-
-            return logicalPos;
-        }
+        Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos) => logicalPos;
 
         static bool TryResolveMoonPose(int planetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius)
         {
@@ -280,9 +274,7 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out float3 planetPos, out float planetSize, out var planetState))
                 return false;
 
-            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                planetPos = ToroidalDisplay.ToDisplayPositionContinuous(planetPos, reference);
-
+            // Baseline: moon pose from logical planet position (no toroidal display offset).
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed) ? simElapsed : Time.timeAsDouble;
             float3 moonPosF3 = PlanetOrbitMath.GetMoonWorldPosition(
                 planetPos,

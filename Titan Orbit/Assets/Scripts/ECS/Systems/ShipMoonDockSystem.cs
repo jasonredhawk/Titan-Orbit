@@ -4,6 +4,7 @@ using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -26,14 +27,15 @@ namespace TitanOrbit.ECS
             float mapH = ToroidalMapEcs.MapHeight;
             float approachDelayRequired = GemEconomyConstants.MoonLandingApproachDelaySeconds;
 
-            foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, shipEntity) in SystemAPI
-                         .Query<RefRW<LocalTransform>, RefRO<ShipInput>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRW<ShipMoonDockState>>()
+            foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, massOverride, shipEntity) in SystemAPI
+                         .Query<RefRW<LocalTransform>, RefRO<ShipInput>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRW<ShipMoonDockState>, RefRW<PhysicsMassOverride>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
                     moonDock.ValueRW = default;
+                    massOverride.ValueRW = new PhysicsMassOverride { IsKinematic = 0, SetVelocityToZero = 0 };
                     continue;
                 }
 
@@ -41,6 +43,7 @@ namespace TitanOrbit.ECS
                 if (shipInput.ValueRO.Thrust && moonDock.ValueRO.MoonPlanetId != 0)
                 {
                     moonDock.ValueRW = default;
+                    massOverride.ValueRW = new PhysicsMassOverride { IsKinematic = 0, SetVelocityToZero = 0 };
                     continue;
                 }
 
@@ -121,6 +124,15 @@ namespace TitanOrbit.ECS
                     landingProgress = 0f;
                     approachDelay = 0f;
                 }
+
+                // While fully landed, treat the ship as kinematic so it stays pinned to the moon
+                // and the physics solver can't shove it off. Any other state is fully dynamic.
+                bool fullyLanded = landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+                massOverride.ValueRW = new PhysicsMassOverride
+                {
+                    IsKinematic = (byte)(fullyLanded ? 1 : 0),
+                    SetVelocityToZero = (byte)(fullyLanded ? 1 : 0),
+                };
 
                 moonDock.ValueRW = new ShipMoonDockState
                 {

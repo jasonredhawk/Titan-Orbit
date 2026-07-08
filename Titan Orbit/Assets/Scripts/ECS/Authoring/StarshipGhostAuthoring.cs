@@ -1,7 +1,9 @@
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
@@ -23,10 +25,6 @@ namespace TitanOrbit.ECS.Authoring
         public float BulletMaxDistance = 200f;
         public float MuzzleOffset = 2f;
         public float BulletScale = 1f;
-
-        [Header("Collision (optional bake for headless server)")]
-        [Tooltip("Chassis prefab used to bake module BoxColliders into the ship ghost. Leave empty to rely on client hull sync.")]
-        public GameObject collisionChassisPrefab;
 
         class Baker : Baker<StarshipGhostAuthoring>
         {
@@ -83,27 +81,37 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);
                 BakeWingTractorBeams(authoring, entity);
-                BakeHullColliders(authoring, entity);
+                BakeShipPhysicsBody(entity, authoring.Mass);
             }
 
-            void BakeHullColliders(StarshipGhostAuthoring authoring, Entity shipEntity)
+            // Stage 2: dynamic Unity Physics body. Server drives PhysicsVelocity from the motor;
+            // Unity Physics integrates position and resolves ship/asteroid/planet contacts (bounce).
+            // Rotation is locked (InverseInertia = 0) so contacts never spin the ship — facing is
+            // controlled by the motor writing LocalTransform.Rotation.
+            void BakeShipPhysicsBody(Entity shipEntity, float mass)
             {
-                var hull = AddBuffer<ShipHullColliderElement>(shipEntity);
-                if (authoring.collisionChassisPrefab == null)
-                    return;
+                float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
+                var material = Unity.Physics.Material.Default;
+                material.Restitution = 0.5f;
+                material.Friction = 0.05f;
 
-#if UNITY_EDITOR
-                var temp = Object.Instantiate(authoring.collisionChassisPrefab);
-                try
-                {
-                    foreach (var element in ShipHullColliderBakeUtility.CollectFromHierarchy(temp.transform))
-                        hull.Add(element);
-                }
-                finally
-                {
-                    Object.DestroyImmediate(temp);
-                }
-#endif
+                var collider = Unity.Physics.SphereCollider.Create(
+                    new SphereGeometry { Center = float3.zero, Radius = radius },
+                    TitanOrbitPhysicsLayers.Ship,
+                    material);
+                AddBlobAsset(ref collider, out _);
+                AddComponent(shipEntity, new PhysicsCollider { Value = collider });
+                AddSharedComponent(shipEntity, new PhysicsWorldIndex(0));
+                AddComponent(shipEntity, PhysicsVelocity.Zero);
+
+                var physicsMass = PhysicsMass.CreateDynamic(collider.Value.MassProperties, math.max(0.5f, mass));
+                physicsMass.InverseInertia = float3.zero;
+                AddComponent(shipEntity, physicsMass);
+                AddComponent(shipEntity, new PhysicsGravityFactor { Value = 0f });
+                AddComponent(shipEntity, new PhysicsDamping { Linear = 0f, Angular = 0f });
+                // Toggled kinematic while docked to a moon so the dock animation can pin the pose
+                // without the physics solver fighting it.
+                AddComponent(shipEntity, new PhysicsMassOverride { IsKinematic = 0, SetVelocityToZero = 0 });
             }
 
             void BakeWeaponMounts(StarshipGhostAuthoring authoring, Entity shipEntity)
