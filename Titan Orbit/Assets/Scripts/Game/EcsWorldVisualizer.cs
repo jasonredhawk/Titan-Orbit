@@ -192,18 +192,6 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
         }
 
-        static bool TryResolveDedicatedLocalShipEntity(EntityManager em, out Entity localShipEntity)
-        {
-            localShipEntity = Entity.Null;
-            if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
-                return false;
-
-            var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.GetVisualizationWorld();
-            return world != null &&
-                   world.IsCreated &&
-                   EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out localShipEntity);
-        }
-
         bool TryResolveLocalPlayerShipEntityCached(EntityManager em, out Entity localShipEntity)
         {
             localShipEntity = Entity.Null;
@@ -227,11 +215,23 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            if (!TryResolveDedicatedLocalShipEntity(em, out localShipEntity))
-                return false;
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId > 0)
+            {
+                using var owned = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+                using var owners = owned.ToComponentDataArray<GhostOwner>(Unity.Collections.Allocator.Temp);
+                using var entities = owned.ToEntityArray(Unity.Collections.Allocator.Temp);
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    if (owners[i].NetworkId != localId)
+                        continue;
+                    localShipEntity = entities[i];
+                    _cachedLocalPlayerShipEntity = localShipEntity;
+                    return true;
+                }
+            }
 
-            _cachedLocalPlayerShipEntity = localShipEntity;
-            return true;
+            return false;
         }
 
         static bool IsLocalPlayerShip(Entity entity, Entity localShipEntity) =>

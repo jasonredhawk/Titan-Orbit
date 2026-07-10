@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
@@ -33,6 +34,19 @@ namespace TitanOrbit.Game
             return ClientWorld ?? ServerWorld;
         }
 
+        /// <summary>
+        /// World that owns the local player's ship ghost tags and predicted pose.
+        /// ClientWorld for host + dedicated clients; visualization world otherwise.
+        /// </summary>
+        public static World GetLocalPlayerShipWorld()
+        {
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                (IsLocalHost() || TitanOrbitSessionManager.IsDedicatedOnlineClient))
+                return ClientWorld;
+
+            return GetVisualizationWorld();
+        }
+
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
@@ -48,7 +62,7 @@ namespace TitanOrbit.Game
         }
 
         public static bool TryGetLocalShipTransform(out LocalTransform transform) =>
-            TryGetLocalShipTransformFromWorld(GetVisualizationWorld(), out transform);
+            TryGetLocalShipTransformFromWorld(GetLocalPlayerShipWorld(), out transform);
 
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)
         {
@@ -85,11 +99,7 @@ namespace TitanOrbit.Game
         {
             velocity = default;
 
-            var world = TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                        ClientWorld != null &&
-                        ClientWorld.IsCreated
-                ? ClientWorld
-                : GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -130,7 +140,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipState(out ShipState state)
         {
             state = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -162,7 +172,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
         {
             attributes = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -191,7 +201,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipDeathState(out ShipDeathState death)
         {
             death = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -209,7 +219,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipOrbitState(out ShipOrbitState orbitState)
         {
             orbitState = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -238,7 +248,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock)
         {
             moonDock = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -265,7 +275,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipInput(out ShipInput input)
         {
             input = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -283,7 +293,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipDepositIntent(out bool wantDepositGems)
         {
             wantDepositGems = false;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -301,7 +311,7 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipLoadout(out ShipLoadoutState loadout)
         {
             loadout = default;
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -396,18 +406,48 @@ namespace TitanOrbit.Game
             if (!IsNetworkInGame())
                 return false;
 
-            // Local host: only trust authoritative server totals — never infer from client ghost counts.
-            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
-            {
-                if (TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out _, out _))
-                    return totalSteps > 0;
+            return TryGetVisibleMapLoadingStepCounts(out completedSteps, out totalSteps);
+        }
+
+        /// <summary>
+        /// Loading UI uses replicated ghost counts for the numerator (what players see arrive)
+        /// and the host's authoritative spawn total for the denominator when available.
+        /// </summary>
+        static bool TryGetVisibleMapLoadingStepCounts(out int completedSteps, out int totalSteps)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+
+            int homes = 0;
+            int planets = 0;
+            int asteroids = 0;
+            bool hasReplicatedBodies = ClientWorld != null && ClientWorld.IsCreated &&
+                                       TryGetReplicatedMapBodyCounts(ClientWorld, out homes, out planets, out asteroids);
+
+            int homeCount = homes;
+            if (homeCount <= 0 && IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+                homeCount = CountServerHomePlanets(ServerWorld);
+
+            if (hasReplicatedBodies)
+                completedSteps = planets + asteroids;
+            else if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
+                     TryReadMapLoadingState(ServerWorld, out int serverCompleted, out _, out _, out _))
+                completedSteps = serverCompleted;
+
+            if (completedSteps <= 0 && !hasReplicatedBodies)
                 return false;
-            }
 
-            if (TryGetMapLoadingState(out completedSteps, out totalSteps, out _, out _))
-                return totalSteps > 0;
+            totalSteps = ResolveRemoteMapExpectedTotal(homeCount);
+            return totalSteps > 0;
+        }
 
-            return false;
+        static int CountServerHomePlanets(World server)
+        {
+            if (server == null || !server.IsCreated)
+                return 0;
+
+            using var homes = server.EntityManager.CreateEntityQuery(typeof(HomePlanetTag));
+            return homes.CalculateEntityCount();
         }
 
         static bool TryGetMapLoadingState(
@@ -422,9 +462,20 @@ namespace TitanOrbit.Game
             progress = 0f;
 
             if (IsLocalHost() &&
-                ServerWorld != null && ServerWorld.IsCreated &&
-                TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
-                return true;
+                ServerWorld != null && ServerWorld.IsCreated)
+            {
+                if (TryGetVisibleMapLoadingStepCounts(out completedSteps, out totalSteps))
+                {
+                    TryGetMapLoadingComplete(ServerWorld, out loadingComplete);
+                    progress = totalSteps > 0
+                        ? Mathf.Clamp01((float)completedSteps / totalSteps)
+                        : 0f;
+                    return true;
+                }
+
+                if (TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
+                    return true;
+            }
 
             if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryReadMapLoadingState(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
@@ -770,8 +821,6 @@ namespace TitanOrbit.Game
 
         const float RemoteMapStableSeconds = 0.5f;
         const int RemoteMapMinAsteroids = 32;
-        // Conservative spawn-step estimate until home planets reveal team count (MapGenerationSettings min asteroids).
-        const int DefaultRemoteMapSpawnSteps = 460;
         static int s_RemoteMapExpectedTotal = -1;
         static int s_RemoteMapPlanetCount = -1;
         static int s_RemoteMapAsteroidCount = -1;
@@ -797,7 +846,24 @@ namespace TitanOrbit.Game
                 return s_RemoteMapExpectedTotal;
             }
 
-            return s_RemoteMapExpectedTotal > 0 ? s_RemoteMapExpectedTotal : DefaultRemoteMapSpawnSteps;
+            return s_RemoteMapExpectedTotal > 0 ? s_RemoteMapExpectedTotal : EstimateMapSpawnStepsFromSettings(0);
+        }
+
+        static int EstimateMapSpawnStepsFromSettings(int homeCount)
+        {
+            if (MapGenerationSettingsCache.Settings != null)
+            {
+                var s = MapGenerationSettingsCache.Settings;
+                int neutrals = (s.minNeutralPlanets + s.maxNeutralPlanets + 1) / 2;
+                int asteroids = (s.asteroidsAtMinMapSize + s.asteroidsAtMaxMapSize + 1) / 2;
+                if (homeCount > 0)
+                    return homeCount + neutrals + asteroids;
+
+                int teams = (s.minTeamsPerMatch + s.maxTeamsPerMatch + 1) / 2;
+                return teams + neutrals + asteroids;
+            }
+
+            return homeCount > 0 ? homeCount + 12 + 666 : 678;
         }
 
         static bool TryGetReplicatedMapBodyCounts(World client, out int homeCount, out int planetCount, out int asteroidCount)
@@ -828,8 +894,7 @@ namespace TitanOrbit.Game
                 layout.Length > 0)
                 return layout.Length;
 
-            // Typical roll: homes + neutrals + hundreds of asteroids (see MapGenerationSettings).
-            return homeCount + 12 + 444;
+            return EstimateMapSpawnStepsFromSettings(homeCount);
         }
 
         static bool TryReadReplicatedMapLoadProgress(
@@ -945,7 +1010,7 @@ namespace TitanOrbit.Game
                 }
             }
 
-            var world = GetVisualizationWorld();
+            var world = GetLocalPlayerShipWorld();
             if (world != null && world.IsCreated)
             {
                 int replicatedHomeCount = CountReplicatedHomePlanets(world.EntityManager);
