@@ -189,6 +189,9 @@ namespace TitanOrbit.ECS
 
             _nextNeutralPlanetId = 100;
             int estimatedEntries = _rolled.TeamCount + _rolled.NeutralPlanetCount + _rolled.AsteroidCount;
+            // Publish total spawn steps immediately so loading UI never treats "completed so far" as 100%.
+            _totalSpawnSteps = math.max(1, estimatedEntries);
+            SetLoadingProgress(ref state, 0, _totalSpawnSteps);
             _layoutEntries = new NativeList<MapLayoutEntryElement>(math.max(16, estimatedEntries), Allocator.Persistent);
             _spawnQueue = new NativeList<PendingSpawn>(math.max(16, estimatedEntries), Allocator.Persistent);
 

@@ -346,13 +346,6 @@ namespace TitanOrbit.NetCode
                 return false;
             }
 
-            if (IsServerWorldListening(server))
-            {
-                LastStatusMessage = "Already hosting on port " + serverPort + ".";
-                Debug.Log("[TitanOrbitSessionManager] Local LAN host already listening on port " + serverPort + ".");
-                return true;
-            }
-
             StartCoroutine(BootLanHostOnly());
             return true;
         }
@@ -362,7 +355,7 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: false, resetNetworkDrivers: false);
+                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: false, resetNetworkDrivers: true);
 
                 float readyDeadline = Time.realtimeSinceStartup + 15f;
                 while (Time.realtimeSinceStartup < readyDeadline)
@@ -382,7 +375,7 @@ namespace TitanOrbit.NetCode
                     yield break;
                 }
 
-                ListenServer(server, serverPort);
+                ListenLocalLanServer(server, serverPort);
 
                 float listenDeadline = Time.realtimeSinceStartup + 10f;
                 while (Time.realtimeSinceStartup < listenDeadline && !IsServerWorldListening(server))
@@ -421,7 +414,7 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: false);
+                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: true);
 
                 float readyDeadline = Time.realtimeSinceStartup + 15f;
                 while (Time.realtimeSinceStartup < readyDeadline)
@@ -497,7 +490,7 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-            yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: false);
+            yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: true);
 
             LastStatusMessage = "Waiting for NetCode worlds...";
             float readyDeadline = Time.realtimeSinceStartup + 15f;
@@ -527,7 +520,7 @@ namespace TitanOrbit.NetCode
             }
 
             LastStatusMessage = "Starting local host...";
-            ListenServer(server, serverPort);
+            ListenLocalLanServer(server, serverPort);
             ConnectLocalClient(serverPort);
 
             float deadline = Time.realtimeSinceStartup + 20f;
@@ -1565,6 +1558,24 @@ namespace TitanOrbit.NetCode
                     return true;
             }
             return false;
+        }
+
+        /// <summary>Loopback LAN bind on <paramref name="port"/> — resets stale Relay/dedicated listen state first.</summary>
+        static void ListenLocalLanServer(World world, ushort port)
+        {
+            if (world == null || !world.IsCreated)
+                return;
+
+            TitanOrbitRelayState.Clear();
+            if (IsServerWorldListening(world))
+                ResetServerDriverIfNeeded();
+
+            var driver = world.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
+            bool listenOk = driver.ValueRW.Listen(NetworkEndpoint.AnyIpv4.WithPort(port));
+            if (!listenOk)
+                Debug.LogError("[TitanOrbitSessionManager] LAN Listen failed on port " + port + ".");
+
+            TickServerWorld(world);
         }
 
         static void ListenServer(World world, ushort port)

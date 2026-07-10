@@ -52,13 +52,19 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps) && totalSteps > 0)
             {
                 float fraction = (float)completedSteps / totalSteps;
+                if (completedSteps >= totalSteps && !EcsGameBridge.IsMapLoadingComplete())
+                    fraction = Mathf.Min(fraction, 0.99f);
                 UpdateStatusForSteps(completedSteps, totalSteps);
                 ApplyProgress(fraction);
                 return;
             }
 
             if (EcsGameBridge.TryGetMapLoadingProgress(out float progress))
+            {
+                if (progress >= 1f && !EcsGameBridge.IsMapLoadingComplete())
+                    progress = 0.99f;
                 ApplyProgress(progress);
+            }
         }
 
         public void Show()

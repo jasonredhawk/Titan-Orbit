@@ -68,7 +68,6 @@ namespace TitanOrbit.Game
         float _connectedAt = -1f;
         float _dedicatedConnectedAt = -1f;
         float _mppmConnectedSince = -1f;
-        float _localHostConnectedSince = -1f;
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
@@ -148,21 +147,38 @@ namespace TitanOrbit.Game
 
         void CreateMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
         {
-            if (mainMenuPanel.transform.Find(name) != null)
+            Transform existing = mainMenuPanel.transform.Find(name);
+            if (existing != null)
+            {
+                WireMainMenuButton(existing.gameObject, label, y, onClick);
                 return;
+            }
 
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            WireMainMenuButton(go, label, y, onClick);
             go.transform.SetParent(mainMenuPanel.transform, false);
+        }
+
+        void WireMainMenuButton(GameObject go, string label, float y, UnityEngine.Events.UnityAction onClick)
+        {
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.sizeDelta = new Vector2(320f, 44f);
             rt.anchoredPosition = new Vector2(0f, y);
-            go.GetComponent<Image>().color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
 
-            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
-            textGo.transform.SetParent(go.transform, false);
+            var image = go.GetComponent<Image>();
+            if (image != null)
+                image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+
+            var textGo = go.transform.Find("Text")?.gameObject;
+            if (textGo == null)
+            {
+                textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+                textGo.transform.SetParent(go.transform, false);
+            }
+
             var textRt = textGo.GetComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
@@ -175,7 +191,37 @@ namespace TitanOrbit.Game
             tmp.color = Color.white;
             tmp.raycastTarget = false;
 
-            go.GetComponent<Button>().onClick.AddListener(onClick);
+            var button = go.GetComponent<Button>();
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(onClick);
+            button.interactable = true;
+        }
+
+        void WireExistingMainMenuButtons()
+        {
+            if (mainMenuPanel == null)
+                return;
+
+            float y = -120f;
+            WireExistingMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
+            y -= 56f;
+
+            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
+            {
+                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                    WireExistingMainMenuButton("LocalHostButton", "Local host", y, OnLocalHostClicked);
+                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                    y -= 48f;
+                WireExistingMainMenuButton("LocalClientButton", "Local client", y, OnLocalClientClicked);
+            }
+        }
+
+        void WireExistingMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
+        {
+            var existing = mainMenuPanel.transform.Find(name);
+            if (existing == null)
+                return;
+            WireMainMenuButton(existing.gameObject, label, y, onClick);
         }
 
         void OnBrowseGamesClicked()
@@ -187,24 +233,46 @@ namespace TitanOrbit.Game
         void OnLocalHostClicked()
         {
             if (TitanOrbitSessionManager.Instance == null)
+            {
+                _statusMessage = "Session manager missing on NceGameRoot.";
+                PushStatusToUi();
+                Debug.LogError("[NceGameFlow] Local host: TitanOrbitSessionManager missing.");
                 return;
+            }
 
             if (!HasPlayableServerWorld())
             {
                 _statusMessage = "No ServerWorld. Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).";
+                PushStatusToUi();
                 Debug.LogError("[NceGameFlow] Local host requires ServerWorld. server=" +
                                DescribeWorld(ClientServerBootstrap.ServerWorld));
                 return;
             }
 
-            Debug.Log("[NceGameFlow] Local host clicked.");
-            if (!TitanOrbitSessionManager.Instance.StartLocalHostForLanTest())
+            if (!HasPlayableClientWorld())
             {
-                _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Could not start local host.";
+                _statusMessage = "No ClientWorld. Run Titan Orbit > Configure Multiplayer For Local Play.";
+                PushStatusToUi();
+                Debug.LogError("[NceGameFlow] Local host requires ClientWorld. client=" +
+                               DescribeWorld(ClientServerBootstrap.ClientWorld));
                 return;
             }
 
-            _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage;
+            Debug.Log("[NceGameFlow] Local host clicked — starting host + local client.");
+            _statusMessage = "Starting local host...";
+            PushStatusToUi();
+            _autoStartSent = true;
+            if (playButton != null)
+                playButton.interactable = false;
+
+            // Host and connect this window so team selection appears (not listen-only).
+            TitanOrbitSessionManager.Instance.StartLocalPlay();
+        }
+
+        void PushStatusToUi()
+        {
+            if (statusText != null)
+                statusText.text = _statusMessage;
         }
 
         void OnLocalClientClicked()
@@ -256,6 +324,7 @@ namespace TitanOrbit.Game
             WireTeamButtons();
             CleanupJoinTeamScreenUi();
             BuildMainMenuButtons();
+            WireExistingMainMenuButtons();
             RefreshUi();
             _ = PrimeGuestSessionAndPrefetchLobbiesAsync();
 
@@ -723,43 +792,7 @@ namespace TitanOrbit.Game
 
         bool IsMapReadyForTeamSelection()
         {
-            if (EcsGameBridge.IsMapLoadingComplete())
-                return true;
-
-            // Remote MPPM client: once connected, allow team pick even if map ghosts are slow.
-            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() &&
-                IsInGameFlow() &&
-                _mppmConnectedSince >= 0f &&
-                Time.time - _mppmConnectedSince >= 1f)
-                return true;
-
-            // Dedicated Relay client: ghosts can lag behind the in-game handshake.
-            if (TitanOrbitSessionManager.IsDedicatedOnlineClient && IsInGameFlow())
-            {
-                if (EcsGameBridge.TryGetActiveTeamCount(out int teams) && teams > 0)
-                    return true;
-                if (_dedicatedConnectedAt >= 0f && Time.time - _dedicatedConnectedAt >= 5f)
-                    return true;
-            }
-
-            // Main editor host / local listen server: ClientWorld ghosts can arrive before
-            // MapStateSingleton.LoadingComplete flips on ServerWorld (Player 1 vs MPPM Player 2 asymmetry).
-            if (IsInGameFlow() &&
-                !TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-            {
-                if (_localHostConnectedSince >= 0f &&
-                    EcsGameBridge.TryGetActiveTeamCount(out int teams) && teams > 0)
-                    return true;
-
-                if (EcsGameBridge.HasClientReplicatedMapContent())
-                    return true;
-
-                if (_localHostConnectedSince >= 0f && Time.time - _localHostConnectedSince >= 2f)
-                    return true;
-            }
-
-            return false;
+            return EcsGameBridge.IsMapLoadingComplete();
         }
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();
@@ -775,14 +808,6 @@ namespace TitanOrbit.Game
                 _dedicatedConnectedAt = Time.time;
             if (!connected && !connectingDedicated)
                 _dedicatedConnectedAt = -1f;
-
-            bool isLocalHostClient = connected &&
-                                     !TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                                     !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
-            if (isLocalHostClient && _localHostConnectedSince < 0f)
-                _localHostConnectedSince = Time.time;
-            if (!connected && !connectingDedicated)
-                _localHostConnectedSince = -1f;
 
             bool mapReadyForFlow = connected && IsMapReadyForTeamSelection();
 
@@ -857,7 +882,7 @@ namespace TitanOrbit.Game
                         : showLoading
                             ? TitanOrbitSessionManager.IsDedicatedOnlineClient
                                 ? "Syncing map from dedicated server..."
-                                : "Loading map... (start the match on the Main Editor if this persists)"
+                                : "Building galaxy..."
                             : showRejoinChoice
                                 ? "You have a ship in this match."
                             : showTeamCountWait
@@ -902,7 +927,7 @@ namespace TitanOrbit.Game
             }
 
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
-            bool showGameplayHud = connected && hasShip && !showRejoinChoice &&
+            bool showGameplayHud = connected && mapReady && hasShip && !showRejoinChoice &&
                                    !ClientTeamFlowState.IsRejoinChoicePending && !matchWon;
 
             if (gameplayRoot != null)

@@ -48,7 +48,7 @@ namespace TitanOrbit.Game
             if (_inputHandler == null)
                 _inputHandler = Object.FindAnyObjectByType<PlayerInputHandler>();
 
-            int playerNetworkId = GetFirstConnectedNetworkId();
+            int playerNetworkId = GetLocalClientNetworkId();
             if (playerNetworkId <= 0)
                 return;
 
@@ -101,6 +101,18 @@ namespace TitanOrbit.Game
 
             return TitanOrbit.NetCode.TitanOrbitSessionManager.IsClientGameplayReady(client) &&
                    TitanOrbit.NetCode.TitanOrbitSessionManager.IsClientConnectionReady(server);
+        }
+
+        static int GetLocalClientNetworkId()
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            if (client == null || !client.IsCreated)
+                return -1;
+
+            using var ids = client.EntityManager
+                .CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
+                .ToComponentDataArray<NetworkId>(Allocator.Temp);
+            return ids.Length > 0 ? ids[0].Value : -1;
         }
 
         int GetFirstConnectedNetworkId()

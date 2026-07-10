@@ -7,7 +7,10 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Captures input for online client ghosts. Local Client+Server play uses ShipServerControlSystem on the host instead.</summary>
+    /// <summary>
+    /// Captures keyboard/mouse into <see cref="ShipPendingInput"/> for client prediction.
+    /// Local host also uses <see cref="ShipServerControlSystem"/> on ServerWorld for authority.
+    /// </summary>
     [DefaultExecutionOrder(-10000)]
     public class ShipInputBridge : MonoBehaviour
     {
@@ -20,9 +23,11 @@ namespace TitanOrbit.Game
 
         void Update()
         {
-            if (_input == null || EcsGameBridge.IsLocalHost())
+            if (_input == null)
                 return;
 
+            // Local host still needs client-world ShipInput for owner prediction (ShipClientPredictedMovementSystem).
+            // Server authority is handled separately by ShipServerControlSystem.
             ShipPendingInput.Set(BuildInput(), localHostMode: false);
         }
 

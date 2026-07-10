@@ -1,0 +1,167 @@
+---
+description: Write rich, beginner-friendly comments throughout code — teach terms, explain steps inside methods, and label standard vs custom patterns.
+alwaysApply: true
+---
+
+# Titan Orbit — educational commenting standard
+
+The project owner edits code by hand and wants to **learn while reading**. Comments are not optional decoration — they are part of the deliverable. When you add or change code, add comments that help a reader with **limited Unity/NetCode/ECS experience** understand what is happening and why.
+
+This rule sets **comment density and teaching style** project-wide. Architecture rules in `titan-orbit-ship-simulation.mdc` still apply; when that doc says "comment sparingly," interpret it as **no noise on obvious lines** — not as "skip teaching comments inside methods."
+
+---
+
+## Audience and tone
+
+Write for someone who:
+- Knows basic C# but may not know Unity DOTS, NetCode, or multiplayer jargon.
+- Cannot infer *why* a line exists from naming alone.
+- Benefits from knowing whether a pattern is **industry-standard** or **specific to Titan Orbit**.
+
+Tone: patient teacher, not expert-to-expert. Use plain language first; put acronyms in parentheses on first use in a file or method.
+
+---
+
+## Four comment layers (use all of them)
+
+| Layer | Where | What to teach |
+|-------|--------|----------------|
+| **File** | `/// <summary>` on class/struct | What this file does, which world(s) it runs in, what it reads/writes, what system it pairs with. |
+| **Method** | `/// <summary>` + optional `<param>` / `<returns>` | Purpose, inputs, outputs, side effects, and when this method is called in the pipeline. |
+| **Section** | `// --- Name ---` inside long methods | Logical phases (gather input → apply motor → sync components). |
+| **Inline** | Above or beside non-trivial lines/blocks | What this step does, what the variable holds, why this branch exists. |
+
+**Inside methods:** Comment the *flow*, not every line. A 20-line method should usually have several inline or block comments explaining the important steps, filters, and branches — not zero comments and not a comment on every `}`.
+
+---
+
+## Label standard vs custom
+
+When a pattern could be mistaken for "just how Unity works," tag it so the reader knows the source:
+
+| Tag | Meaning | Example prefix |
+|-----|---------|----------------|
+| `[STANDARD]` | Common C#, Unity, or general software practice | `// [STANDARD] Early return when input is invalid — avoids nested ifs.` |
+| `[UNITY]` | Unity engine / package behavior | `// [UNITY] PhysicsSystemGroup integrates Rigidbody-like bodies each fixed step.` |
+| `[NETCODE]` | Unity NetCode for Entities convention | `// [NETCODE] Simulate tag — entity is in the client prediction loop.` |
+| `[ECS/DOTS]` | Entities, components, systems, Burst jobs | `// [ECS/DOTS] IComponentData — plain struct stored on entities, no GameObject.` |
+| `[TITAN-ORBIT]` | Custom design choice for this game | `// [TITAN-ORBIT] Motor sets velocity only; physics owns position (see ship-simulation rule).` |
+
+Use one tag per comment when it helps. Do not tag every line — tag where the distinction matters.
+
+---
+
+## Teach terms inline
+
+When you use a domain term, briefly define it the first time in that file or method block:
+
+```csharp
+// Ghost — a networked entity copy replicated to clients (NetCode term; not a "ghost" in the spooky sense).
+// Predicted — client simulates ahead of server so input feels instant; server remains authoritative.
+// Burst — Unity compiler that turns this job into fast native code; no managed allocations in hot loops.
+```
+
+Link to paired concepts: *"Paired with `ShipMovementSystem` on the server — same motor, different world."*
+
+---
+
+## What to comment inside methods
+
+Add teaching comments for:
+
+- **Queries and filters** — what entities are included/excluded and why (`WithAll<ShipTag, Simulate>()`).
+- **Branches** — what condition means in gameplay or network terms.
+- **Math / vectors** — what the quantity represents (world units, degrees, normalized direction).
+- **Order dependencies** — what must run before/after something else.
+- **Writes vs reads** — especially when only one system may write a component.
+- **Loops** — what each iteration represents (per ship, per bullet, per connection).
+- **API calls** — what the call does in one sentence if the name is opaque.
+
+Skip comments only when the line is truly obvious *and* teaches nothing (e.g. `return;` after a documented early exit).
+
+---
+
+## Examples
+
+### Too thin (avoid)
+
+```csharp
+public static void StepShip(ref LocalTransform transform, ref PhysicsVelocity velocity, float dt)
+{
+    var input = ReadInput();
+    ApplyThrust(ref velocity, input, dt);
+    transform.Rotation = FaceVelocity(velocity);
+}
+```
+
+### Good — teaches flow and contracts
+
+```csharp
+/// <summary>
+/// One fixed-timestep motor tick for a ship. Shared by client prediction and server authority
+/// so both worlds stay in sync. Does not move position — Unity Physics does that next.
+/// </summary>
+public static void StepShip(ref LocalTransform transform, ref PhysicsVelocity velocity, float dt)
+{
+    // --- Input ---
+    // [NETCODE] Input was already copied onto the ghost by ShipInputApplySystem this frame.
+    var input = ReadInput();
+
+    // --- Thrust / brake ---
+    // [TITAN-ORBIT] We write Linear velocity only; PhysicsSystemGroup integrates Position afterward.
+    // [STANDARD] dt scales acceleration so behavior is frame-rate independent.
+    ApplyThrust(ref velocity, input, dt);
+
+    // --- Facing ---
+    // [TITAN-ORBIT] Rotation comes from motor, not collision — InverseInertia is zero on ships.
+    transform.Rotation = FaceVelocity(velocity);
+}
+```
+
+### Good — branch with gameplay meaning
+
+```csharp
+// [TITAN-ORBIT] Enemy moon shields are not physics colliders; repel is a gameplay overlay in the motor.
+if (shieldActive && teamIsHostile)
+{
+    // Push velocity outward along moon normal so the ship cannot park inside the shield bubble.
+    ApplyShieldRepel(ref velocity, moonCenter, shipPosition);
+}
+```
+
+---
+
+## File-level checklist (agent must satisfy on touched files)
+
+When you edit a file, ensure:
+
+- [ ] Class/struct has a `/// <summary>` (2–5 sentences: role, world, reads/writes, partners).
+- [ ] Public and non-obvious private methods have `/// <summary>` (and params if not obvious).
+- [ ] Methods longer than ~10 lines have section headers or block comments for each phase.
+- [ ] Non-trivial logic inside methods has inline comments with **what + why**.
+- [ ] Domain terms are explained on first use in that file or method.
+- [ ] At least one `[TITAN-ORBIT]` or `[STANDARD]`/`[NETCODE]`/`[ECS/DOTS]` tag where the distinction matters.
+- [ ] Cross-references to paired systems or rules when behavior depends on pipeline order.
+
+---
+
+## Do not
+
+- Delete existing teaching comments unless they are wrong — update them.
+- Write comments that only repeat the code (`// increment i`).
+- Assume the reader knows NetCode, Burst, ghost fields, or toroidal map math.
+- Hide "this is weird but intentional" — say so and tag `[TITAN-ORBIT]`.
+- Leave large uncommented blocks in sim, networking, or movement code.
+
+---
+
+## Priority files (extra depth)
+
+Apply **maximum** comment depth when editing:
+
+- `ECS/Systems/**` — movement, physics, shooting, combat, orbit, RPC handlers
+- `ECS/Components/**` — especially ghost-serialized fields
+- `Networking/**`, `*GhostAuthoring.cs`, bootstrap / session code
+- Anything under `titan-orbit-ship-simulation.mdc` invariants
+
+Presentation-only UI/VFX may use slightly fewer inline comments, but file and method summaries still required if behavior is non-obvious.

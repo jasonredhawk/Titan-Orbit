@@ -57,6 +57,10 @@ namespace TitanOrbit.Game
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return false;
 
+            // No local ship camera/control until the galaxy build finishes.
+            if (IsNetworkInGame() && !IsMapLoadingComplete())
+                return false;
+
             if (world == null || !world.IsCreated)
                 return false;
 
@@ -99,7 +103,9 @@ namespace TitanOrbit.Game
         }
 
         public static bool HasLocalPlayerShip() =>
-            !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() && TryGetLocalShipPosition(out _);
+            IsMapLoadingComplete() &&
+            !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
+            TryGetLocalShipPosition(out _);
 
         /// <summary>
         /// True when the server still has this player's ship from a prior session on the same match.
@@ -343,9 +349,14 @@ namespace TitanOrbit.Game
         public static bool IsMapLoadingComplete()
         {
             if (!IsNetworkInGame())
+            {
+                ResetRemoteMapLoadTracking();
                 return false;
+            }
 
-            if (ServerWorld != null && ServerWorld.IsCreated &&
+            // Local host: ServerWorld owns map generation and MapStateSingleton.
+            if (IsLocalHost() &&
+                ServerWorld != null && ServerWorld.IsCreated &&
                 TryGetMapLoadingComplete(ServerWorld, out var serverComplete))
                 return serverComplete;
 
@@ -353,10 +364,9 @@ namespace TitanOrbit.Game
                 TryGetMapLoadingComplete(ClientWorld, out var clientComplete))
                 return clientComplete;
 
-            // MPPM / remote clients: MapStateSingleton is server-only and not ghosted.
-            if (ClientWorld != null && ClientWorld.IsCreated &&
-                HasReplicatedMapWorldContent(ClientWorld))
-                return true;
+            // MPPM / dedicated clients: MapStateSingleton is not ghosted — infer from replicated bodies.
+            if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
+                return TryGetReplicatedMapLoadComplete(ClientWorld);
 
             return false;
         }
@@ -386,14 +396,16 @@ namespace TitanOrbit.Game
             if (!IsNetworkInGame())
                 return false;
 
+            // Local host: only trust authoritative server totals — never infer from client ghost counts.
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+            {
+                if (TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out _, out _))
+                    return totalSteps > 0;
+                return false;
+            }
+
             if (TryGetMapLoadingState(out completedSteps, out totalSteps, out _, out _))
                 return totalSteps > 0;
-
-            if (ClientWorld != null && ClientWorld.IsCreated)
-            {
-                EstimateClientMapLoadProgress(ClientWorld, out completedSteps, out totalSteps);
-                return totalSteps > 0;
-            }
 
             return false;
         }
@@ -409,12 +421,17 @@ namespace TitanOrbit.Game
             loadingComplete = false;
             progress = 0f;
 
-            if (ServerWorld != null && ServerWorld.IsCreated &&
+            if (IsLocalHost() &&
+                ServerWorld != null && ServerWorld.IsCreated &&
                 TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
                 return true;
 
             if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryReadMapLoadingState(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
+                return true;
+
+            if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated &&
+                TryReadReplicatedMapLoadProgress(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
                 return true;
 
             if (ServerWorld != null && ServerWorld.IsCreated)
@@ -480,8 +497,7 @@ namespace TitanOrbit.Game
             }
             else
             {
-                totalSteps = math.max(completedSteps, 1);
-                loadingComplete = false;
+                return false;
             }
 
             progress = loadingComplete ? 1f : Mathf.Clamp01((float)completedSteps / totalSteps);
@@ -493,24 +509,29 @@ namespace TitanOrbit.Game
             completedSteps = 0;
             totalSteps = 0;
 
-            if (HasReplicatedMapWorldContent(client))
+            var em = client.EntityManager;
+            bool hasMapState = em.CreateEntityQuery(typeof(MapStateSingleton))
+                .TryGetSingleton<MapStateSingleton>(out var map);
+
+            if (hasMapState)
             {
-                completedSteps = 1;
-                totalSteps = 1;
-                return 1f;
+                completedSteps = map.LoadingCompletedSteps;
+                totalSteps = map.LoadingTotalSteps;
+                if (map.LoadingComplete)
+                    return 1f;
+                if (totalSteps > 0)
+                    return Mathf.Clamp01((float)completedSteps / totalSteps);
+                if (map.LoadingProgress > 0f)
+                    return Mathf.Clamp01(map.LoadingProgress);
             }
 
-            var em = client.EntityManager;
             using var planets = em.CreateEntityQuery(typeof(PlanetState));
             using var asteroids = em.CreateEntityQuery(typeof(AsteroidState));
             completedSteps = planets.CalculateEntityCount() + asteroids.CalculateEntityCount();
 
-            if (em.CreateEntityQuery(typeof(MapStateSingleton)).TryGetSingleton<MapStateSingleton>(out var map) &&
-                map.LoadingTotalSteps > 0)
+            if (hasMapState && map.LoadingTotalSteps > 0)
             {
                 totalSteps = map.LoadingTotalSteps;
-                if (map.LoadingComplete)
-                    return 1f;
                 return Mathf.Clamp01((float)math.min(completedSteps, totalSteps) / totalSteps);
             }
 
@@ -521,7 +542,8 @@ namespace TitanOrbit.Game
                 return Mathf.Clamp01((float)completedSteps / totalSteps);
             }
 
-            totalSteps = math.max(completedSteps, 24);
+            int homeCount = CountReplicatedHomePlanets(em);
+            totalSteps = ResolveRemoteMapExpectedTotal(homeCount);
             if (completedSteps <= 0)
                 return 0f;
 
@@ -727,6 +749,138 @@ namespace TitanOrbit.Game
             if (!world.EntityManager.CreateEntityQuery(typeof(MapStateSingleton)).TryGetSingleton<MapStateSingleton>(out var map))
                 return false;
             loadingComplete = map.LoadingComplete;
+            return true;
+        }
+
+        /// <summary>Remote LAN/MPPM/dedicated clients have no ServerWorld map singleton.</summary>
+        static bool IsRemoteMapObserverClient()
+        {
+            if (IsLocalHost())
+                return false;
+
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return true;
+
+            if (TitanOrbit.NetCode.TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                return true;
+
+            // LAN client in main editor may still have a suspended ServerWorld from menu bootstrap.
+            return ClientWorld != null && ClientWorld.IsCreated && IsNetworkInGame();
+        }
+
+        const float RemoteMapStableSeconds = 0.5f;
+        const int RemoteMapMinAsteroids = 32;
+        // Conservative spawn-step estimate until home planets reveal team count (MapGenerationSettings min asteroids).
+        const int DefaultRemoteMapSpawnSteps = 460;
+        static int s_RemoteMapExpectedTotal = -1;
+        static int s_RemoteMapPlanetCount = -1;
+        static int s_RemoteMapAsteroidCount = -1;
+        static float s_RemoteMapStableSince = -1f;
+
+        static void ResetRemoteMapLoadTracking()
+        {
+            s_RemoteMapExpectedTotal = -1;
+            s_RemoteMapPlanetCount = -1;
+            s_RemoteMapAsteroidCount = -1;
+            s_RemoteMapStableSince = -1f;
+        }
+
+        /// <summary>
+        /// Remote clients never learn the true spawn queue length; keep a fixed denominator for the loading bar.
+        /// Refines once replicated home planets reveal team count.
+        /// </summary>
+        static int ResolveRemoteMapExpectedTotal(int homeCount)
+        {
+            if (homeCount > 0)
+            {
+                s_RemoteMapExpectedTotal = EstimateExpectedRemoteMapBodies(homeCount);
+                return s_RemoteMapExpectedTotal;
+            }
+
+            return s_RemoteMapExpectedTotal > 0 ? s_RemoteMapExpectedTotal : DefaultRemoteMapSpawnSteps;
+        }
+
+        static bool TryGetReplicatedMapBodyCounts(World client, out int homeCount, out int planetCount, out int asteroidCount)
+        {
+            homeCount = 0;
+            planetCount = 0;
+            asteroidCount = 0;
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            homeCount = CountReplicatedHomePlanets(em);
+            using var planets = em.CreateEntityQuery(typeof(PlanetState), typeof(PlanetTag));
+            using var asteroids = em.CreateEntityQuery(typeof(AsteroidState));
+            planetCount = planets.CalculateEntityCount();
+            asteroidCount = asteroids.CalculateEntityCount();
+            return homeCount > 0 || planetCount > 0 || asteroidCount > 0;
+        }
+
+        static int EstimateExpectedRemoteMapBodies(int homeCount)
+        {
+            if (homeCount <= 0)
+                return 0;
+
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                ClientWorld.EntityManager.CreateEntityQuery(typeof(MapLayoutEntryElement))
+                    .TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout) &&
+                layout.Length > 0)
+                return layout.Length;
+
+            // Typical roll: homes + neutrals + hundreds of asteroids (see MapGenerationSettings).
+            return homeCount + 12 + 444;
+        }
+
+        static bool TryReadReplicatedMapLoadProgress(
+            World client,
+            out int completedSteps,
+            out int totalSteps,
+            out bool loadingComplete,
+            out float progress)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
+            loadingComplete = false;
+            progress = 0f;
+
+            if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
+                return false;
+
+            completedSteps = planets + asteroids;
+            totalSteps = ResolveRemoteMapExpectedTotal(homes);
+
+            progress = Mathf.Clamp01((float)completedSteps / totalSteps);
+            loadingComplete = TryGetReplicatedMapLoadComplete(client);
+            return true;
+        }
+
+        /// <summary>
+        /// Remote clients wait for home planets + asteroid field ghosts to finish streaming, then a short settle window.
+        /// </summary>
+        static bool TryGetReplicatedMapLoadComplete(World client)
+        {
+            if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
+                return false;
+
+            if (homes < 1 || planets < homes)
+                return false;
+
+            if (asteroids < RemoteMapMinAsteroids)
+                return false;
+
+            if (planets != s_RemoteMapPlanetCount || asteroids != s_RemoteMapAsteroidCount)
+            {
+                s_RemoteMapPlanetCount = planets;
+                s_RemoteMapAsteroidCount = asteroids;
+                s_RemoteMapStableSince = Time.realtimeSinceStartup;
+                return false;
+            }
+
+            if (s_RemoteMapStableSince < 0f ||
+                Time.realtimeSinceStartup - s_RemoteMapStableSince < RemoteMapStableSeconds)
+                return false;
+
             return true;
         }
 

@@ -19,7 +19,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
-            if (!ShipPendingInput.HasValue || ShipPendingInput.LocalHostMode)
+            if (!ShipPendingInput.HasValue)
                 return;
 
             var cmd = ShipPendingInput.Latest;
