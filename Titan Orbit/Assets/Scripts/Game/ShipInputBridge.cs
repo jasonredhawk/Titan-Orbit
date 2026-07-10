@@ -8,8 +8,11 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Captures keyboard/mouse into <see cref="ShipPendingInput"/> for client prediction.
+    /// MonoBehaviour bridge from Unity's Update loop to ECS input. Captures keyboard/mouse via
+    /// PlayerInputHandler and writes into <see cref="ShipPendingInput"/>, which
+    /// <see cref="ShipInputApplySystem"/> reads during GhostInputSystemGroup on the client world.
     /// Local host also uses <see cref="ShipServerControlSystem"/> on ServerWorld for authority.
+    /// DefaultExecutionOrder(-10000) ensures input is captured before most other Update calls.
     /// </summary>
     [DefaultExecutionOrder(-10000)]
     public class ShipInputBridge : MonoBehaviour
@@ -26,11 +29,15 @@ namespace TitanOrbit.Game
             if (_input == null)
                 return;
 
-            // Local host still needs client-world ShipInput for owner prediction (ShipClientPredictedMovementSystem).
+            // [TITAN-ORBIT] Local host still needs client-world ShipInput for owner prediction.
             // Server authority is handled separately by ShipServerControlSystem.
             ShipPendingInput.Set(BuildInput(), localHostMode: false);
         }
 
+        /// <summary>
+        /// Converts PlayerInputHandler state into a ShipInput struct for ECS consumption.
+        /// Aim direction is computed from mouse world position relative to local ship.
+        /// </summary>
         ShipInput BuildInput()
         {
             var cam = UnityEngine.Camera.main;
@@ -52,6 +59,7 @@ namespace TitanOrbit.Game
 
             bool thrust = _input.MoveForwardPressed;
 
+            // [NETCODE] InputEvent.Set() marks fire as pressed this tick (one-shot for ghost input).
             var fire = new InputEvent();
             if (_input.ShootPressed && !MoonOrbitClientState.IsOrbitMenuVisible)
                 fire.Set();

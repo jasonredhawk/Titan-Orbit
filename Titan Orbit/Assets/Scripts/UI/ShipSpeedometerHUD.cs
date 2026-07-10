@@ -22,7 +22,11 @@ namespace TitanOrbit.UI
     }
 
     /// <summary>
-    /// Speed and mass HUD: speed/accel bars with tick labels, time-to-max-speed, asteroid ram estimate, and primary weapon damage/DPS.
+    /// Local-player speed and mass HUD: reads ShipMotorConfig, ShipKinematics, ShipWeaponConfig, and
+    /// effective stats (via ShipStatApplyLogic + attribute upgrades) from the visualization ECS world.
+    /// Displays speed/accel bars, time-to-max-speed, ram damage estimates (ShipMassLogic), and weapon DPS.
+    /// Presentation-only — mirrors sim numbers for player feedback; does not write ECS components.
+    /// Hidden during team select, death, and when upgrade tree obscures HUD.
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
@@ -341,6 +345,10 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Gathers local ship ECS data for HUD display. Recomputes effective stats the same way
+        /// ShipStatApplyLogic does (chassis sum + level curve + attribute multipliers) for ram rating.
+        /// </summary>
         static bool TryGetLocalShipHudData(
             out ShipState ship,
             out ShipMotorConfig motor,
@@ -376,6 +384,7 @@ namespace TitanOrbit.UI
                 ? em.GetComponentData<ShipWeaponConfig>(shipEntity)
                 : default;
 
+            // --- Reconstruct effective stats for ram display (read-only mirror of stat apply) ---
             int branchIndex = 0;
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
                 branchIndex = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
@@ -401,6 +410,7 @@ namespace TitanOrbit.UI
             return true;
         }
 
+        /// <summary>Planar speed magnitude — top-down game ignores Y velocity.</summary>
         static float GetHorizontalSpeed(in ShipKinematics kinematics)
         {
             float3 vel = kinematics.Velocity;
@@ -408,6 +418,7 @@ namespace TitanOrbit.UI
             return math.length(vel);
         }
 
+        /// <summary>[TITAN-ORBIT] Movement mass from hull reference, health, and carried gems.</summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
         {
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
@@ -419,6 +430,7 @@ namespace TitanOrbit.UI
                 baseMass);
         }
 
+        /// <summary>Estimates asteroid ram damage from current speed and effective ramming stats.</summary>
         static void GetRamDamageEstimate(
             in ShipState ship,
             in ShipMotorConfig motor,
@@ -506,6 +518,7 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // --- Speed / accel bars ---
             if (accelSampleShip != shipEntity)
             {
                 accelSampleShip = shipEntity;

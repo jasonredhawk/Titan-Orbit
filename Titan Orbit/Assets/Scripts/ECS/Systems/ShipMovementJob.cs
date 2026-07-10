@@ -8,8 +8,10 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Burst parallel ship motor job. Scheduled by <see cref="ShipMovementSystem"/> and
-    /// <see cref="ShipClientPredictedMovementSystem"/> with a shared planet snapshot.
+    /// Burst-compiled parallel job — one invocation per ship entity in the prediction loop.
+    /// Scheduled by both <see cref="ShipMovementSystem"/> (server) and
+    /// <see cref="ShipClientPredictedMovementSystem"/> (client owner). Delegates all motor math
+    /// to <see cref="ShipMovementBurstLogic.Step"/> so server and client stay bit-identical.
     /// </summary>
     [BurstCompile]
     [WithAll(typeof(ShipTag), typeof(Simulate))]
@@ -21,6 +23,9 @@ namespace TitanOrbit.ECS
         public float MapH;
         [ReadOnly] public NativeArray<PlanetMotorSnapshot> Planets;
 
+        /// <summary>
+        /// Per-ship motor tick. Component refs map directly to the entity's ghost/sim components.
+        /// </summary>
         void Execute(
             RefRO<ShipInput> input,
             RefRO<ShipMotorConfig> motor,

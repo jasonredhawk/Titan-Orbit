@@ -219,6 +219,7 @@ namespace TitanOrbit.UI
             float maxDen = Mathf.Max(strongestTotalPower, 0.001f);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
+            // Bar fill width scales with this node's total vs the strongest reference on the tree.
             float barFillW = hasData ? nodeW * total / maxDen : nodeW;
 
             int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;

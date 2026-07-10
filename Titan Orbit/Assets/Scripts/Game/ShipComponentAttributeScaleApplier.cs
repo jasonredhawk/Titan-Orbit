@@ -7,6 +7,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change.
+    /// Watches ShipAttributeUpgradeState on the linked ship entity and applies scale factors via
+    /// ShipComponentAttributeScaleLogic. Attached by EcsWorldVisualizer; cosmetic feedback only —
+    /// authoritative stats come from ShipStatApplyLogic on the server.
     /// </summary>
     [DefaultExecutionOrder(95)]
     public class ShipComponentAttributeScaleApplier : MonoBehaviour
@@ -25,6 +28,7 @@ namespace TitanOrbit.Game
 
         ShipAttributeUpgradeState _lastApplied;
 
+        /// <summary>Links to ship entity, caches chassis transform groups, applies initial scale.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, ShipFamilyDefinition family)
         {
             _shipEntity = shipEntity;
@@ -35,6 +39,7 @@ namespace TitanOrbit.Game
             RebuildCache();
         }
 
+        /// <summary>Scans hull hierarchy for component transforms and stores base scales/positions.</summary>
         void RebuildCache()
         {
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
@@ -88,6 +93,7 @@ namespace TitanOrbit.Game
                 return;
 
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(_shipEntity);
+            // [STANDARD] Skip work when ghost state unchanged since last frame.
             if (!force && attrs.Equals(_lastApplied))
                 return;
 

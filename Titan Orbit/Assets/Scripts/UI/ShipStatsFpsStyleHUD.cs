@@ -5,7 +5,11 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Top-left ship stats HUD wired to ECS ship state.</summary>
+    /// <summary>
+    /// Top-left FPS-style ship vitals HUD (health, energy, gems, people). Reads local ship state from
+    /// <see cref="EcsGameBridge"/> each <c>LateUpdate</c> — presentation only, not authoritative sim.
+    /// Auto-binds Row0..Row3 child sliders when inspector references are empty.
+    /// </summary>
     public class ShipStatsFpsStyleHUD : MonoBehaviour
     {
         struct StatBarRow
@@ -50,6 +54,7 @@ namespace TitanOrbit.UI
             ApplySquareBarStyleToAll();
         }
 
+        /// <summary>Finds Bar/Value children under Row0..Row3 when serialized fields are unset.</summary>
         void AutoBindReferences()
         {
             if (barHealth != null)
@@ -87,6 +92,7 @@ namespace TitanOrbit.UI
             };
         }
 
+        /// <summary>Polls ECS each frame and updates four stat rows; zeros bars when local ship is missing.</summary>
         void LateUpdate()
         {
             if (!_layoutApplied)

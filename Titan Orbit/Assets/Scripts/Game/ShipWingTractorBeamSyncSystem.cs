@@ -8,6 +8,12 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    /// <summary>
+    /// Copies wing tractor-beam authoring from ship visual hull proxies into ShipWingTractorBeamElement
+    /// on ship ghosts. Runs on server and client so both worlds have wing local poses and stats.
+    /// GemTractorBeamSystem (server) consumes the buffer for gem pull assignment. Hull lookup
+    /// uses ShipWeaponProxyRegistry keyed by GhostOwner.NetworkId.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipWeaponMountSyncSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]

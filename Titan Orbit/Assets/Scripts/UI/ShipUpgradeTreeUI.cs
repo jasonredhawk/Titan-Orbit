@@ -10,8 +10,9 @@ using UnityEditor;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Prefab-driven ship upgrade tree (hint, nodes canvas). Assign on a GameObject under the ships tab;
-    /// <see cref="OrbitStationUI"/> binds runtime state. Optional <see cref="previewFamily"/> fills the editor preview.
+    /// Prefab-driven ship upgrade tree panel (hint line, node canvas, connectors). Assigned on a GameObject
+    /// under the orbit station ships tab; <see cref="OrbitStationUI"/> binds runtime state via <see cref="IOrbitStationHost"/>.
+    /// Supports horizontal moon-dock layout and vertical fallback. Optional <see cref="previewFamily"/> fills editor preview.
     /// </summary>
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
@@ -66,6 +67,7 @@ namespace TitanOrbit.UI
             EnsurePanelHeader();
         }
 
+        /// <summary>Stores orbit station host and ensures title/hint header exists on older prefabs.</summary>
         public void BindStation(IOrbitStationHost station)
         {
             _station = station;
@@ -109,6 +111,9 @@ namespace TitanOrbit.UI
             titleLe.flexibleHeight = 0f;
         }
 
+        /// <summary>
+        /// Rebuilds node layout when structure or container width changes; otherwise only refreshes colors/state.
+        /// </summary>
         public void RebuildIfNeeded(bool moonHorizontal, string structureKey)
         {
             int widthBucket = -1;
@@ -190,6 +195,7 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>Updates node colors, prices, and power bars without destroying/recreating widgets.</summary>
         public void RefreshVisualState()
         {
             if (_station == null)

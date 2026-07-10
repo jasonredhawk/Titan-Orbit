@@ -9,12 +9,20 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, runs deploy
+    /// timing (beam extend + width expand), then sets gem velocity toward wing pull targets.
+    /// Reads ShipWingTractorBeamElement buffer (synced from prefab by ShipWingTractorBeamSyncSystem).
+    /// Runs after GemMotionSystem, before GemPickupSystem. Ship must have gem capacity and not be
+    /// dead, team-selecting, or moon-docking.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GemMotionSystem))]
     [UpdateBefore(typeof(GemPickupSystem))]
     public partial class GemTractorBeamSystem : SystemBase
     {
+        /// <summary>Per ship–gem pair: when lock started and how long beam extension takes.</summary>
         struct DeployState
         {
             public double LockStartTime;
@@ -29,6 +37,7 @@ namespace TitanOrbit.ECS
             public bool InFlight;
         }
 
+        // [STANDARD] Managed dictionaries — not Burst-ready; acceptable for moderate gem counts.
         readonly Dictionary<long, DeployState> _deployByPair = new Dictionary<long, DeployState>(128);
         readonly List<PullCandidate> _candidateScratch = new List<PullCandidate>(64);
 
@@ -40,6 +49,7 @@ namespace TitanOrbit.ECS
 
             var activePairs = new HashSet<long>();
 
+            // --- Per ship: assign gems to wings, then apply pull velocity ---
             foreach (var (shipTransform, shipState, shipOrbit, moonDock, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<ShipState>, RefRO<ShipOrbitState>, RefRO<ShipMoonDockState>>()
                          .WithAll<ShipTag>()
@@ -48,6 +58,7 @@ namespace TitanOrbit.ECS
                 if (!IsShipEligibleForPull(shipState.ValueRO, moonDock.ValueRO))
                     continue;
 
+                // [TITAN-ORBIT] Orbit ring widens tractor search radius via GemTractorBeamMath.
                 bool inOrbit = shipOrbit.ValueRO.InOrbitRing;
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 var wings = EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
@@ -76,6 +87,7 @@ namespace TitanOrbit.ECS
                     now);
             }
 
+            // --- Prune deploy state for ship–gem pairs no longer in range ---
             if (_deployByPair.Count > activePairs.Count)
             {
                 var stale = new List<long>(8);
@@ -90,6 +102,9 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Sets gem velocity toward assigned wing once deploy animation (extend + width) completes.
+        /// </summary>
         void ApplyPullPhysics(
             Entity shipEntity,
             in LocalTransform shipTransform,
@@ -124,6 +139,7 @@ namespace TitanOrbit.ECS
 
                 float3 gemPos = gemTransform.ValueRO.Position;
                 float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
+                // [TITAN-ORBIT] Toroidal wrap — shortest direction on the flat map.
                 float3 toWing = GemTractorBeamMath.ToroidalDirection(gemPos, pullTarget, mapW, mapH);
                 if (math.lengthsq(toWing) < 0.0001f)
                     continue;
@@ -139,6 +155,10 @@ namespace TitanOrbit.ECS
             return shipTransform.Position;
         }
 
+        /// <summary>
+        /// Scans gems within each wing's search radius, prioritizes in-flight gems, assigns one gem per wing.
+        /// Falls back to hull-center pull when no wing buffer exists.
+        /// </summary>
         NativeParallelHashMap<int, int> BuildAssignment(
             Entity shipEntity,
             in LocalTransform shipTransform,
@@ -161,6 +181,7 @@ namespace TitanOrbit.ECS
                 return assignment;
             }
 
+            // --- Collect candidates per wing ---
             for (int wi = 0; wi < wingCount; wi++)
             {
                 var wing = wings[wi];
@@ -184,6 +205,7 @@ namespace TitanOrbit.ECS
                     activePairs.Add(pairKey);
                     EnsureDeployState(pairKey, wingPos, gemPos, mapW, mapH, now);
 
+                    // Gems already moving toward ship keep their wing assignment (sticky pull).
                     bool inFlight = IsPullPhysicsActive(pairKey, now) &&
                                     GetTowardShipSpeed(gemPos, gemKinematics.ValueRO.Velocity, shipTransform.Position, mapW, mapH) >=
                                     GemTractorBeamMath.ActivePullTowardSpeedThreshold * 0.5f;
@@ -201,6 +223,7 @@ namespace TitanOrbit.ECS
             if (_candidateScratch.Count == 0)
                 return assignment;
 
+            // --- Assign: in-flight gems first, then nearest per wing ---
             var assignedGemIds = new HashSet<int>();
             var wingHasGem = new bool[wingCount];
 
@@ -248,6 +271,7 @@ namespace TitanOrbit.ECS
             return assignment;
         }
 
+        /// <summary>Ships without wing buffers pull the single closest gem to hull center.</summary>
         void BuildFallbackAssignment(
             Entity shipEntity,
             in LocalTransform shipTransform,
@@ -292,6 +316,7 @@ namespace TitanOrbit.ECS
                 assignment.TryAdd(closest.Index, 0);
         }
 
+        /// <summary>Starts deploy timer for a new ship–gem pair (beam extend duration from distance).</summary>
         void EnsureDeployState(long pairKey, float3 origin, float3 gemPos, float mapW, float mapH, double now)
         {
             if (_deployByPair.ContainsKey(pairKey))
@@ -305,6 +330,7 @@ namespace TitanOrbit.ECS
             };
         }
 
+        /// <summary>True after extend + width-expand phases complete — gem may be pulled.</summary>
         bool IsPullPhysicsActive(long pairKey, double now)
         {
             if (!_deployByPair.TryGetValue(pairKey, out DeployState state))
@@ -322,6 +348,9 @@ namespace TitanOrbit.ECS
             return math.dot(velocity, toShip);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Ship cannot pull when dead, picking team, moon-docking, or at gem capacity.
+        /// </summary>
         static bool IsShipEligibleForPull(in ShipState ship, in ShipMoonDockState moonDock)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)

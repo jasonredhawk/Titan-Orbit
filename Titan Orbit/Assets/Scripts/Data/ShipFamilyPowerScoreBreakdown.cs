@@ -3,7 +3,11 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>Ten-stat power breakdown for ship upgrade tree UI bars.</summary>
+    /// <summary>
+    /// Ten-stat power breakdown for ship upgrade tree UI bars and gem-cost derivation.
+    /// Holds both legacy five-category totals (offense/defense/energy/mobility/capacity) and per-stat
+    /// display fields used by <see cref="UI.ShipUpgradeTreePowerBarUI"/>. Baked on chassis tiers at edit time.
+    /// </summary>
     [Serializable]
     public struct ShipFamilyPowerScoreBreakdown
     {
@@ -37,6 +41,7 @@ namespace TitanOrbit.Data
 
         public float GetDisplayTotalForUi() => HasDisplayStats ? DisplayTotal : Total;
 
+        /// <summary>Stat value for one bar segment (0–9); falls back to half-category split when display stats are unset.</summary>
         public float GetDisplayStatValue(int statIndex)
         {
             if (HasDisplayStats)
@@ -75,6 +80,10 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>
+        /// Gem purchase cost for a chassis tier: 2× gem cap from breakdown, with level-based fallback.
+        /// [TITAN-ORBIT] Hull swaps and upgrades use this formula across orbit station and CardShop.
+        /// </summary>
         public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier, int shipLevel)
         {
             if (tier == null)
@@ -85,6 +94,7 @@ namespace TitanOrbit.Data
             return Mathf.RoundToInt(2f * Mathf.Max(0f, baseCap));
         }
 
+        /// <summary>Builds a breakdown struct from summed <see cref="ShipComponentAbilityStats"/>.</summary>
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
         {
             return new ShipFamilyPowerScoreBreakdown

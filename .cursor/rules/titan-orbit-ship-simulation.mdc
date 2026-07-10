@@ -1,11 +1,11 @@
 ---
-description: Ship sim target architecture — NetCode prediction, Unity Physics, Burst/DOTS, readable comments
+description: Ship sim target architecture — NetCode prediction, Unity Physics, Burst/DOTS
 alwaysApply: true
 ---
 
 # Titan Orbit — ship simulation architecture
 
-Fast-paced multiplayer shooter with many entities. This document is the **source of truth** for how ship movement, collision, prediction, and presentation must work. The human author does manual edits — keep code **well commented** so each file is understandable on its own.
+Fast-paced multiplayer shooter with many entities. This document is the **source of truth** for how ship movement, collision, prediction, and presentation must work. For comment style and density, see `titan-orbit-educational-comments.mdc`.
 
 ---
 
@@ -187,63 +187,7 @@ When fixing jitter/lag: tune tick rate, `GhostPredictionSmoothing`, physics step
 
 ---
 
-## 7. Code documentation standards (required for manual edits)
-
-The project owner edits ship sim code by hand. **Every change to ship movement, physics, prediction, or shooting must include clear comments** so files are readable without chat context.
-
-### File-level (`/// <summary>` on class/struct)
-
-Explain in 2–4 sentences:
-- What world(s) and system group it runs in.
-- Whether it is sim, presentation, or VFX-only.
-- What it reads and what it writes.
-- Cross-reference paired systems (e.g. client prediction ↔ server authority).
-
-Example pattern:
-```csharp
-/// <summary>
-/// Client-side prediction for the local owner's ship. Runs the same motor step as the server
-/// for entities tagged <see cref="Simulate"/> during the predicted fixed-step loop, before
-/// Unity Physics integrates position. Paired with <see cref="ShipMovementSystem"/> (server).
-/// </summary>
-```
-
-### Method-level (non-obvious logic only)
-
-Add `/// <summary>` or `//` blocks when:
-- Motor writes velocity but not position (physics contract).
-- A query filter matters (`Simulate`, `GhostOwnerIsLocal`, world filter).
-- Toroidal map, orbit motor, or shield repel affects behavior.
-- Client vs server behavior differs.
-
-### Inline comments (use sparingly but precisely)
-
-Comment **why**, not what:
-```csharp
-// integratePosition: false — PhysicsSystemGroup owns hull position and bounce contacts.
-// InverseInertia zero — collision impulses must not spin the ship; motor owns Rotation.
-```
-
-### Section headers in long files
-
-Use `// --- Prediction motor ---` style blocks in `ShipMovementLogic` and similar so manual navigation is easy.
-
-### When adding new systems
-
-Include a short **pipeline comment** at the top listing execution order relative to neighbors:
-```csharp
-// Order: ShipInputApplySystem → ShipClientPredictedMovementSystem → PhysicsSystemGroup → …
-```
-
-### Do not
-
-- Remove existing architecture comments unless they are wrong — update them instead.
-- Add noise comments on every line (`// increment i`).
-- Leave commented-out old smoothing / motor paths — delete dead code or mark `// LEGACY: remove in migration` with a one-line reason.
-
----
-
-## 8. Pre-submit checklist
+## 7. Pre-submit checklist
 
 - [ ] Owner still predicted on client (`ShipClientPredictedMovementSystem` + `Simulate`)?
 - [ ] Server and client call the **same** `ShipMovementLogic.StepShip`?
@@ -252,4 +196,4 @@ Include a short **pipeline comment** at the top listing execution order relative
 - [ ] No new proxy or camera smoothing on local owner movement?
 - [ ] Hot path Burst-compatible or clearly marked with migration TODO?
 - [ ] Shooting server-authoritative in `BulletSimulationSystem`?
-- [ ] New/changed code has file summary + non-obvious inline comments per section 7?
+- [ ] New/changed code meets `titan-orbit-educational-comments.mdc` checklist?

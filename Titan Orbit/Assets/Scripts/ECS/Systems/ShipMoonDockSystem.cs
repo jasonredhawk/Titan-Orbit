@@ -9,6 +9,13 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Server-authoritative moon landing and docking for friendly planets. Detects when a ship
+    /// enters a moon dock zone, progresses a landing timer, pins the ship to the moon when fully
+    /// landed, and toggles PhysicsMassOverride kinematic mode so physics doesn't fight the dock pose.
+    /// Thrust undocks immediately. Paired with moon dock visuals in ShipMoonDockVisualApplier.
+    /// Runs before GemDepositSystem so deposit logic sees a landed ship.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(GemDepositSystem))]
@@ -39,7 +46,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // Thrust undocks immediately.
+                // [TITAN-ORBIT] Thrust undocks immediately — player intent overrides landing.
                 if (shipInput.ValueRO.Thrust && moonDock.ValueRO.MoonPlanetId != 0)
                 {
                     moonDock.ValueRW = default;
@@ -52,6 +59,7 @@ namespace TitanOrbit.ECS
                 float approachDelay = moonDock.ValueRO.LandingApproachDelay;
                 bool inMoonZone = false;
 
+                // --- Scan friendly planets for moon dock zones ---
                 if (!shipInput.ValueRO.Thrust && shipState.ValueRO.Team != TeamId.None)
                 {
                     float speed = math.length(new float2(shipKinematics.ValueRO.Velocity.x, shipKinematics.ValueRO.Velocity.z));
@@ -66,6 +74,7 @@ namespace TitanOrbit.ECS
                             continue;
 
                         float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
+                        // [TITAN-ORBIT] Moon orbits the planet — position is time-dependent.
                         float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
                             planetTransform.ValueRO.Position,
                             planetSize,
@@ -89,6 +98,7 @@ namespace TitanOrbit.ECS
 
                         inMoonZone = true;
 
+                        // Switching moons resets landing progress.
                         if (landedPlanetId != 0 && landedPlanetId != planetState.ValueRO.PlanetId)
                         {
                             landingProgress = 0f;
@@ -103,11 +113,13 @@ namespace TitanOrbit.ECS
                         }
                         else
                         {
+                            // [TITAN-ORBIT] Must coast briefly at low speed before landing completes.
                             approachDelay = math.min(approachDelayRequired, approachDelay + dt);
                             if (approachDelay >= approachDelayRequired && speed <= MaxLandingSpeed)
                                 landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
                         }
 
+                        // Fully landed — snap to moon and zero velocity.
                         if (landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold)
                         {
                             shipTransform.ValueRW.Position = moonPos;
@@ -118,6 +130,7 @@ namespace TitanOrbit.ECS
                     }
                 }
 
+                // Left all moon zones — reset dock state.
                 if (!inMoonZone)
                 {
                     landedPlanetId = 0;
@@ -125,8 +138,8 @@ namespace TitanOrbit.ECS
                     approachDelay = 0f;
                 }
 
-                // While fully landed, treat the ship as kinematic so it stays pinned to the moon
-                // and the physics solver can't shove it off. Any other state is fully dynamic.
+                // --- Physics override: kinematic while fully landed ---
+                // [UNITY] PhysicsMassOverride prevents the solver from pushing the docked ship off the moon.
                 bool fullyLanded = landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
                 massOverride.ValueRW = new PhysicsMassOverride
                 {
@@ -143,6 +156,7 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>Firing or excessive speed resets the landing approach timer.</summary>
         static bool IsDisruptingLanding(in ShipInput input, float speed)
         {
             if (input.Fire.IsSet)

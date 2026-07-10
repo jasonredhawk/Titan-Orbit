@@ -5,6 +5,12 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Server-side handler for reconnect / rejoin ship RPCs. When a player reconnects mid-match,
+    /// they can resume their existing ship (<see cref="ResumeExistingShipCommand"/>) or abandon
+    /// it and pick a fresh team (<see cref="AbandonShipForRejoinCommand"/>). Updates CommandTarget
+    /// so NetCode routes input to the correct ghost. Runs after TeamManagementSystem.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(TeamManagementSystem))]
@@ -20,6 +26,7 @@ namespace TitanOrbit.ECS
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // [NETCODE] ReceiveRpcCommandRequest — incoming RPC entity; destroy after handling.
             foreach (var (req, entity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
                          .WithAll<ResumeExistingShipCommand>().WithEntityAccess())
             {
@@ -38,6 +45,9 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>
+        /// Re-links the connection's CommandTarget to their saved ship and confirms team assignment.
+        /// </summary>
         void HandleResume(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
             if (!TryGetNetworkId(em, connection, out int networkId))
@@ -58,6 +68,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // [NETCODE] CommandTarget tells NetCode which ghost receives this connection's input.
             var commandTarget = new CommandTarget { targetEntity = ship };
             if (em.HasComponent<CommandTarget>(connection))
                 ecb.SetComponent(connection, commandTarget);
@@ -68,6 +79,9 @@ namespace TitanOrbit.ECS
             LogResume(networkId, shipState.Team);
         }
 
+        /// <summary>
+        /// Destroys the saved ship, decrements team count, and clears CommandTarget for fresh team pick.
+        /// </summary>
         void HandleAbandon(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
             if (!TryGetNetworkId(em, connection, out int networkId))
@@ -104,6 +118,7 @@ namespace TitanOrbit.ECS
             return networkId > 0;
         }
 
+        /// <summary>Finds the ship ghost owned by this network id (GhostOwner.NetworkId).</summary>
         bool TryFindShipForNetworkId(ref SystemState state, int networkId, out Entity ship, out ShipState shipState)
         {
             ship = Entity.Null;
@@ -140,6 +155,7 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>Sends RejoinShipResultRpc back to the requesting client connection.</summary>
         static void SendResult(
             EntityCommandBuffer ecb,
             Entity connection,

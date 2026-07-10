@@ -6,8 +6,11 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Points the client connection CommandTarget at the locally owned ship ghost so NetCode
-    /// packages ShipInput commands for the dedicated-server path (team spawn is server-side).
+    /// Client-only: points the connection's CommandTarget at the locally owned ship ghost so NetCode
+    /// packages ShipInput commands for the dedicated-server path. Team spawn is server-side, so the
+    /// client must discover its ship via GhostOwner.NetworkId after the server assigns ownership.
+    /// Runs first in GhostInputSystemGroup, before ShipInputApplySystem. Skipped for local host play
+    /// (ShipServerControlSystem writes input directly on the server world).
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup), OrderFirst = true)]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -30,6 +33,7 @@ namespace TitanOrbit.ECS
             if (localNetworkId <= 0)
                 return;
 
+            // --- Find the ship ghost owned by this client ---
             Entity shipEntity = Entity.Null;
             foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>().WithAll<ShipTag>().WithEntityAccess())
             {
@@ -42,6 +46,7 @@ namespace TitanOrbit.ECS
             if (shipEntity == Entity.Null)
                 return;
 
+            // [NETCODE] CommandTarget.targetEntity — NetCode sends input to this ghost each tick.
             foreach (var cmd in SystemAPI.Query<RefRW<CommandTarget>>().WithAll<NetworkStreamConnection, NetworkStreamInGame>())
             {
                 if (cmd.ValueRO.targetEntity == shipEntity)
@@ -50,6 +55,7 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>True when client and server worlds both have an in-game connection (MPPM / host).</summary>
         static bool IsLocalHostPlay()
         {
             var server = ClientServerBootstrap.ServerWorld;

@@ -5,6 +5,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
+    /// <summary>UI color grouping for ship component stats (offense, health, energy, movement, capacity).</summary>
     public enum ShipComponentStatCategory
     {
         Offense = 0,
@@ -14,6 +15,11 @@ namespace TitanOrbit.Data
         Capacity = 4
     }
 
+    /// <summary>
+    /// Serializable stat block for one ship part — base value plus per-ship-level growth.
+    /// Summed across all matched prefab children to produce hull totals. Per-level fields scale with
+    /// <see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/>.
+    /// </summary>
     [Serializable]
     public struct ShipComponentAbilityStats
     {
@@ -48,6 +54,7 @@ namespace TitanOrbit.Data
         public float maxPeople;
         public float maxPeoplePerLevel;
 
+        /// <summary>Guesses part type from component id substring for editor suggestions and icons.</summary>
         public static string ResolvePartTypeForSuggestedStats(string componentId)
         {
             if (string.IsNullOrWhiteSpace(componentId))
@@ -68,10 +75,15 @@ namespace TitanOrbit.Data
         public static bool IsPropulsionComponent(string componentId) =>
             ShipComponentAbilityStatsMath.IsPropulsionComponent(componentId);
 
+        /// <summary>Adds <paramref name="other"/> into this struct in place (used during prefab stat scan).</summary>
         public void AddInPlace(ShipComponentAbilityStats other) =>
             ShipComponentAbilityStatsMath.AddInPlace(ref this, other);
     }
 
+    /// <summary>
+    /// One authored component row inside a <see cref="ShipFamilyDefinition"/> — id, display name,
+    /// stat categories, ability numbers, and optional menu preview sprite.
+    /// </summary>
     [Serializable]
     public class ShipFamilyComponentEntry
     {
@@ -81,12 +93,14 @@ namespace TitanOrbit.Data
         public ShipComponentAbilityStats stats;
         public Sprite menuPreviewSprite;
 
+        /// <summary>Ensures <see cref="statCategories"/> list exists before UI reads it.</summary>
         public void EnsureStatCategories()
         {
             if (statCategories == null)
                 statCategories = new List<ShipComponentStatCategory>();
         }
 
+        /// <summary>Menu thumbnail for moon-dock component cards (team variant reserved for future use).</summary>
         public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None) => menuPreviewSprite;
     }
 }

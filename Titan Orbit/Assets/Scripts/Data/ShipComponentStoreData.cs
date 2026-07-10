@@ -6,7 +6,9 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Moon-dock pricing and stat copy for purchasable ship-family components (equipment slots).
+    /// Moon-dock pricing and display helpers for purchasable ship-family components (equipment slots).
+    /// Converts raw <see cref="ShipComponentAbilityStats"/> into level-scaled effective stats, power scores,
+    /// gem prices, and HUD description strings. Paired with <see cref="ShipFamilyDefinition"/> component entries.
     /// </summary>
     public static class ShipComponentStoreData
     {
@@ -14,6 +16,9 @@ namespace TitanOrbit.Data
         public const float LevelPriceScalePerLevel = 0.12f;
         public const int MinimumComponentGemPrice = 8;
 
+        /// <summary>
+        /// Applies per-level growth to every stat field, including mobility penalty on move/turn at higher levels.
+        /// </summary>
         public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(ShipComponentAbilityStats stats, int shipLevel)
         {
             int perLvl = Mathf.Max(0, shipLevel - 1);
@@ -55,6 +60,7 @@ namespace TitanOrbit.Data
             };
         }
 
+        /// <summary>Single scalar power number for gem pricing (sum of breakdown categories).</summary>
         public static float GetComponentPowerScore(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null)
         {
             if (entry == null)
@@ -84,6 +90,7 @@ namespace TitanOrbit.Data
             return BulletBankProfileUtility.ApplyProfileToComponentStats(effective, entry, family);
         }
 
+        /// <summary>Gem cost from power score × level multiplier, floored at <see cref="MinimumComponentGemPrice"/>.</summary>
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
         {
             float power = GetComponentPowerScore(entry, shipLevel);
@@ -159,6 +166,7 @@ namespace TitanOrbit.Data
             return 0;
         }
 
+        /// <summary>Human-readable multi-line stat summary for moon-dock tooltips (top N non-zero stats).</summary>
         public static string GetStatsDescription(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null, int maxLines = 4)
         {
             if (entry == null)

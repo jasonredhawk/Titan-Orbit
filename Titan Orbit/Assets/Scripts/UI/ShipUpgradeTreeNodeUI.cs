@@ -6,7 +6,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Single ship node in the upgrade tree prefab. Population is driven by <see cref="ShipUpgradeTreeUI"/>.
+    /// Single ship node widget in the upgrade tree prefab. Displays level, name, price, preview sprite,
+    /// and ten-segment power bar. Population and click handlers are driven by <see cref="ShipUpgradeTreeUI"/>
+    /// and <see cref="OrbitStationUI"/>; this class owns layout scaling and price-button chrome.
     /// </summary>
     public class ShipUpgradeTreeNodeUI : MonoBehaviour
     {
@@ -101,6 +103,7 @@ namespace TitanOrbit.UI
             moonHorizontalLayout = useMoonHorizontal;
         }
 
+        /// <summary>Binds a ladder slot (level + branch) with fixed pixel size for tree overlay layout.</summary>
         public void BindSlot(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float powerTrackWidth)
         {
             IsCurrentShipDisplay = false;
@@ -458,6 +461,7 @@ namespace TitanOrbit.UI
         }
 #endif
 
+        /// <summary>Feeds power breakdown into the child bar, normalized against strongest ship on the tree.</summary>
         public void ApplyPowerBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestShipTotal)
         {
             if (powerBar == null)

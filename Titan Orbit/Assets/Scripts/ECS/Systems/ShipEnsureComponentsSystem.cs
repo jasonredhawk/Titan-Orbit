@@ -6,9 +6,11 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Pre-bakes runtime ship components (kinematics, orbit/dock state, weapons) so motor hot paths
-    /// never call AddComponent per tick. Runs before <see cref="ShipMovementSystem"/> and
-    /// <see cref="ShipClientPredictedMovementSystem"/>.
+    /// Safety net that adds missing runtime ship components at load time. Authoring should bake
+    /// everything via <see cref="Authoring.StarshipGhostAuthoring"/>, but this system ensures
+    /// older prefabs and runtime-spawned ships never hit null-component errors in motor hot paths.
+    /// Runs before <see cref="ShipMovementSystem"/> and <see cref="ShipClientPredictedMovementSystem"/>.
+    /// Uses EntityCommandBuffer so structural changes don't invalidate parallel queries mid-frame.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(ShipMovementSystem))]
@@ -20,11 +22,13 @@ namespace TitanOrbit.ECS
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Kinematics mirror (velocity for gameplay reads) ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipKinematics>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipKinematics());
 
+            // --- Weapon defaults (overwritten by ShipStatApplyLogic when chassis applies) ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipWeaponConfig>()
                          .WithEntityAccess())
@@ -66,11 +70,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipWeaponState());
 
+            // --- Weapon mounts and wing tractor beams (DynamicBuffer for multi-mount ships) ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
             {
                 if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
                 {
                     ecb.AddBuffer<ShipWeaponMountElement>(entity);
+                    // [TITAN-ORBIT] Single forward muzzle fallback when prefab has no mount children.
                     ecb.AppendToBuffer(entity, new ShipWeaponMountElement
                     {
                         LocalPosition = new float3(0f, 0f, 2f),

@@ -2,7 +2,10 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>Runtime chassis metadata resolved from ship-family upgrade trees.</summary>
+    /// <summary>
+    /// Runtime chassis metadata resolved from a <see cref="ShipFamilyDefinition"/> upgrade-tree tier.
+    /// Often created on the fly (not saved as an asset) when orbit UI or CardShop needs id, prefab, and unlock level.
+    /// </summary>
     [CreateAssetMenu(fileName = "ShipChassis", menuName = "Titan Orbit/Ship Chassis")]
     public class ShipChassisDefinition : ScriptableObject
     {

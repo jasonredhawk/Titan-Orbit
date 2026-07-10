@@ -4,11 +4,10 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Engine and thruster move speed and acceleration rules shared by <see cref="Entities.Starship"/> and editor previews.
-    /// Engines and thrusters share one propulsion pool: the single best base <see cref="ShipComponentAbilityStats.moveSpeed"/>
-    /// plus half the sum of every other part's <see cref="ShipComponentAbilityStats.moveSpeedPerLevel"/>.
-    /// Example: 6 identical v1 parts (moveSpeed 6, moveSpeedPerLevel 1.2) → (6 + (5 × 1.2) / 2) × 0.8 ≈ 7.2 effective top speed.
-    /// Acceleration caps sum across all engines and thrusters (same global scale).
+    /// Engine and thruster move-speed and acceleration rules shared by legacy <see cref="Entities.Starship"/>,
+    /// ECS motor, and editor previews. [TITAN-ORBIT] Engines/thrusters share one propulsion pool: the single
+    /// best base moveSpeed plus half the sum of every other part's moveSpeedPerLevel, then a global 0.8 scale.
+    /// Acceleration caps sum across all propulsion parts. Paired with <see cref="ShipFamilyStatsCalculator"/>.
     /// </summary>
     public static class ShipPropulsionAggregation
     {
@@ -172,6 +171,7 @@ namespace TitanOrbit.Data
             int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
             float bestPrimaryMove = 0f;
 
+            // --- Pick primary engine/thruster (highest base moveSpeed counts once) ---
             for (int i = 0; i < count; i++)
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
@@ -208,6 +208,7 @@ namespace TitanOrbit.Data
                     primaryMove + result.extraMoveSpeedFromPerLevel);
             }
 
+            // --- Sum acceleration from every propulsion part (each instance on the prefab counts) ---
             for (int i = 0; i < count; i++)
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))

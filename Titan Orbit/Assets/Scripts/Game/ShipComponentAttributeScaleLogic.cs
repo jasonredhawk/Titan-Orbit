@@ -6,10 +6,14 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Scales ship component transforms from bottom-bar attribute upgrades (ported from legacy Starship).
+    /// Maps bottom-bar attribute upgrade levels to per-component mesh scale factors on ship proxies
+    /// (ported from legacy Starship). Each chassis part group (cockpit, wing, weapon, engine, etc.)
+    /// scales from relevant upgrade stats with visibility dampening (ComponentScaleVisibility).
+    /// Used by ShipComponentAttributeScaleApplier — presentation only, not sim mass or hitboxes.
     /// </summary>
     public static class ShipComponentAttributeScaleLogic
     {
+        /// <summary>Dampens how much upgrade ratios affect visible mesh scale (0.6 = 60% of stat delta).</summary>
         public const float ComponentScaleVisibility = 0.6f;
         public const float WingGemScaleBoost = 1.67f;
 
@@ -20,6 +24,7 @@ namespace TitanOrbit.Game
             public List<Vector3> BasePositions;
         }
 
+        /// <summary>True when weapon components in the family carry energy stats (affects weapon scale blend).</summary>
         public static bool FamilyHasWeaponComponentEnergy(ShipFamilyDefinition family)
         {
             if (family?.components == null)
@@ -39,6 +44,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Captures current local scale/position for each transform in a component group.</summary>
         public static ScaleGroup BuildGroup(List<Transform> transforms)
         {
             var group = new ScaleGroup
@@ -64,6 +70,7 @@ namespace TitanOrbit.Game
             return group;
         }
 
+        /// <summary>Computes scale factors from upgrade state and applies to all component groups.</summary>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
             ScaleGroup cockpit,
@@ -93,6 +100,9 @@ namespace TitanOrbit.Game
             ApplyGroup(part, partScale);
         }
 
+        /// <summary>
+        /// Derives per-group scale from attribute upgrade ratios (+10% per level from ShipAttributeUpgradeLogic).
+        /// </summary>
         static void ComputeScaleFactors(
             in ShipAttributeUpgradeState attrs,
             bool hasWeaponComponentEnergy,
@@ -107,6 +117,7 @@ namespace TitanOrbit.Game
             float vis = Mathf.Max(0.2f, ComponentScaleVisibility);
             float multiplier = ShipAttributeUpgradeLogic.MultiplierPerLevel;
 
+            // --- Upgrade ratios (1.0 = no upgrades, 1.1 = one level, etc.) ---
             float rHealth = AttributeUpgradeRatio(attrs.MaxHealth, multiplier);
             float rHealthRegen = AttributeUpgradeRatio(attrs.HealthRegen, multiplier);
             float rEnergyCap = AttributeUpgradeRatio(attrs.EnergyCapacity, multiplier);
@@ -141,6 +152,7 @@ namespace TitanOrbit.Game
             thrusterScale = Mathf.Max(StatScale(rMove, vis, 0.9f), StatScale(rTurn, vis, 0.8f));
             partScale = Mathf.Max(StatScale(avgPart, vis), StatScale(Mathf.Max(rGem, rHealth), vis, 0.85f));
 
+            // [TITAN-ORBIT] Hard caps prevent extreme mesh distortion at max upgrades.
             wingScale = Mathf.Min(wingScale, 3.5f);
             cockpitScale = Mathf.Min(cockpitScale, 3f);
             weaponScale = Mathf.Min(weaponScale, 3f);

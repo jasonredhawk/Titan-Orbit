@@ -8,12 +8,18 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Respawns destroyed ships at their team's home planet after a short delay.</summary>
+    /// <summary>
+    /// Server-only: respawns destroyed ships at their team's home planet after
+    /// <see cref="RespawnDelaySeconds"/>. Triggered when <see cref="ShipDeathState.RespawnAtTime"/>
+    /// is reached. Resets vitals, cargo, velocity, and orbit state; removes ShipDeathState.
+    /// Runs after <see cref="BulletSimulationSystem"/> so death is fully processed first.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(BulletSimulationSystem))]
     public partial struct ShipRespawnSystem : ISystem
     {
+        /// <summary>Seconds between death and respawn at home planet.</summary>
         public const float RespawnDelaySeconds = 5f;
 
         public void OnUpdate(ref SystemState state)
@@ -29,6 +35,7 @@ namespace TitanOrbit.ECS
                 if (!shipState.ValueRO.IsDead)
                     continue;
 
+                // [TITAN-ORBIT] ShipDeathRecordingSystem sets RespawnAtTime = now + delay.
                 if (now < deathState.ValueRO.RespawnAtTime)
                     continue;
 
@@ -42,11 +49,16 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>
+        /// Locates the home planet for the given team, offset slightly so the ship doesn't spawn
+        /// inside the planet collider.
+        /// </summary>
         float3 FindHomeSpawnPosition(ref SystemState state, TeamId team)
         {
             float3 homePos = float3.zero;
             bool found = false;
 
+            // [ECS/DOTS] Prefer live planet entities tagged HomePlanetTag.
             foreach (var (planet, planetTransform) in SystemAPI
                          .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
                          .WithAll<PlanetTag, HomePlanetTag>())
@@ -59,6 +71,7 @@ namespace TitanOrbit.ECS
                 break;
             }
 
+            // [STANDARD] Fallback to baked map layout when planet entities aren't ready yet.
             if (!found && SystemAPI.TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout))
             {
                 for (int i = 0; i < layout.Length; i++)
@@ -79,6 +92,7 @@ namespace TitanOrbit.ECS
             return homePos + new float3(20f, 0f, 0f);
         }
 
+        /// <summary>Restores ship to full vitals at spawn position with zero velocity.</summary>
         static void RespawnShip(
             ref ShipState ship,
             ref ShipKinematics kinematics,

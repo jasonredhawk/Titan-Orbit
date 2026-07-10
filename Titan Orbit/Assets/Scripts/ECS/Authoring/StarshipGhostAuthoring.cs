@@ -8,8 +8,15 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// MonoBehaviour authoring component on ship ghost prefabs. The Baker converts this GameObject
+    /// hierarchy into an ECS entity with ShipTag, motor/weapon/vitals components, weapon mount buffers,
+    /// wing tractor beam buffers, and a Unity Physics dynamic sphere collider. Baked into SubScenes
+    /// for NetCode ghost replication. Paired with StarshipGhost prefab variants under Assets/Prefabs/Ships/.
+    /// </summary>
     public class StarshipGhostAuthoring : MonoBehaviour
     {
+        [Header("Motor (level-1 defaults — ShipStatApplyLogic overwrites from chassis)")]
         public float EngineThrust = 40f;
         public float MaxSpeed = 35f;
         public float RotationSpeed = 180f;
@@ -30,7 +37,10 @@ namespace TitanOrbit.ECS.Authoring
         {
             public override void Bake(StarshipGhostAuthoring authoring)
             {
+                // [ECS/DOTS] GetEntity registers this GameObject as a baked entity in the SubScene.
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
+
+                // --- Core ship components ---
                 AddComponent(entity, new ShipTag());
                 AddComponent(entity, new ShipState
                 {
@@ -41,6 +51,7 @@ namespace TitanOrbit.ECS.Authoring
                     CurrentEnergy = 50f,
                     MaxEnergy = 50f,
                     PeopleCapacity = 10,
+                    // [TITAN-ORBIT] New ships wait for RequestTeamCommand before movement is enabled.
                     AwaitingTeamSelection = true,
                 });
                 AddComponent(entity, new ShipMotorConfig
@@ -77,6 +88,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipOrbitState());
                 AddComponent(entity, new ShipMoonDockState());
                 AddComponent(entity, new ShipDepositIntent());
+                // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
                 BakeWeaponMounts(authoring, entity);
@@ -84,15 +96,15 @@ namespace TitanOrbit.ECS.Authoring
                 BakeShipPhysicsBody(entity, authoring.Mass);
             }
 
-            // Stage 2: dynamic Unity Physics body. Server drives PhysicsVelocity from the motor;
-            // Unity Physics integrates position and resolves ship/asteroid/planet contacts (bounce).
-            // Rotation is locked (InverseInertia = 0) so contacts never spin the ship — facing is
-            // controlled by the motor writing LocalTransform.Rotation.
+            /// <summary>
+            /// Bakes a dynamic Unity Physics sphere collider on the Ship layer. Server and client
+            /// prediction both run PhysicsSystemGroup after the motor sets PhysicsVelocity.
+            /// </summary>
             void BakeShipPhysicsBody(Entity shipEntity, float mass)
             {
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
+                material.Restitution = 0.5f; // [TITAN-ORBIT] Bounce off ships, planets, asteroids.
                 material.Friction = 0.05f;
 
                 var collider = Unity.Physics.SphereCollider.Create(
@@ -105,15 +117,19 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(shipEntity, PhysicsVelocity.Zero);
 
                 var physicsMass = PhysicsMass.CreateDynamic(collider.Value.MassProperties, math.max(0.5f, mass));
+                // [TITAN-ORBIT] InverseInertia = 0 — contacts never spin the ship; motor owns Rotation.
                 physicsMass.InverseInertia = float3.zero;
                 AddComponent(shipEntity, physicsMass);
                 AddComponent(shipEntity, new PhysicsGravityFactor { Value = 0f });
                 AddComponent(shipEntity, new PhysicsDamping { Linear = 0f, Angular = 0f });
-                // Toggled kinematic while docked to a moon so the dock animation can pin the pose
-                // without the physics solver fighting it.
+                // [TITAN-ORBIT] Toggled kinematic while docked to a moon (ShipMoonDockSystem).
                 AddComponent(shipEntity, new PhysicsMassOverride { IsKinematic = 0, SetVelocityToZero = 0 });
             }
 
+            /// <summary>
+            /// Collects child ShipWeaponMountAuthoring transforms into a DynamicBuffer for
+            /// multi-cannon ships. Falls back to "Weapon" named children or a forward offset.
+            /// </summary>
             void BakeWeaponMounts(StarshipGhostAuthoring authoring, Entity shipEntity)
             {
                 var mounts = AddBuffer<ShipWeaponMountElement>(shipEntity);
@@ -163,6 +179,9 @@ namespace TitanOrbit.ECS.Authoring
                 }
             }
 
+            /// <summary>
+            /// Collects wing tractor beam child authorings for gem collection gameplay.
+            /// </summary>
             void BakeWingTractorBeams(StarshipGhostAuthoring authoring, Entity shipEntity)
             {
                 var wings = AddBuffer<ShipWingTractorBeamElement>(shipEntity);

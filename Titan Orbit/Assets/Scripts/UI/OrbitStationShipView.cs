@@ -9,7 +9,11 @@ using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
-    /// <summary>ECS-backed ship view for OrbitStationUI (legacy Starship API).</summary>
+    /// <summary>
+    /// Lightweight MonoBehaviour adapter that mirrors local ship ECS state into the legacy <c>Starship</c> API
+    /// expected by <see cref="OrbitStationUI"/>. Lives in a DontDestroyOnLoad "OrbitStationShipView" object —
+    /// not a networked ghost. Refreshed via <see cref="SyncFromEcs"/> when the orbit station opens.
+    /// </summary>
     public class Starship : MonoBehaviour
     {
         const ulong FakeNetworkObjectId = 1;
@@ -31,6 +35,7 @@ namespace TitanOrbit.Entities
         public List<CardData> EquippedCards { get; } = new List<CardData>();
         public List<EquippedEquipmentEntry> EquippedEquipment { get; } = new List<EquippedEquipmentEntry>();
 
+        /// <summary>Singleton accessor — finds existing view or creates the DontDestroyOnLoad adapter.</summary>
         public static Starship GetOrCreate()
         {
             var existing = FindFirstObjectByType<Starship>();
@@ -42,6 +47,10 @@ namespace TitanOrbit.Entities
             return go.AddComponent<Starship>();
         }
 
+        /// <summary>
+        /// Pulls team, level, branch, moon-dock, deposit intent, chassis id, and equipment buffers from ECS.
+        /// Called by orbit station UI each refresh frame.
+        /// </summary>
         public void SyncFromEcs(int storePlanetId)
         {
             if (!EcsGameBridge.TryGetLocalShipState(out var ship))
@@ -68,6 +77,7 @@ namespace TitanOrbit.Entities
             SyncLoadoutBuffers();
         }
 
+        /// <summary>Resolves <see cref="CurrentChassisId"/> from planet family config and upgrade-tree ladder slot.</summary>
         void ResolveChassisId(int storePlanetId)
         {
             CurrentChassisId = null;
@@ -93,6 +103,7 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Copies equipped equipment buffer from visualization ECS world into legacy lists.</summary>
         void SyncLoadoutBuffers()
         {
             EquippedCards.Clear();
@@ -122,6 +133,7 @@ namespace TitanOrbit.Entities
             }
         }
 
+        /// <summary>Returns true when a ship component id is already in the equipped equipment buffer.</summary>
         public bool HasComponentEquipped(string componentId)
         {
             if (string.IsNullOrWhiteSpace(componentId))
@@ -137,6 +149,7 @@ namespace TitanOrbit.Entities
             return false;
         }
 
+        /// <summary>Forwards gem-deposit intent to server via <see cref="MoonOrbitRpcClient"/>.</summary>
         public void SetWantToDepositGemsServerRpc(bool wantDeposit)
         {
             WantToDepositGems = wantDeposit;

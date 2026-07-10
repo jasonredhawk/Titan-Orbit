@@ -11,7 +11,10 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side engine/thruster jet flames on ship proxies (ported from legacy Starship VFX).
+    /// Client-side engine and thruster jet VFX on ship GameObject proxies (ported from legacy Starship).
+    /// Reads ShipKinematics velocity and ShipInput.Thrust from the visualization ECS world each LateUpdate;
+    /// does not drive simulation. Attached by EcsWorldVisualizer when spawning ship hull proxies.
+    /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
     /// </summary>
     [DefaultExecutionOrder(90)]
     public class ShipPropulsionVisualApplier : MonoBehaviour
@@ -62,6 +65,7 @@ namespace TitanOrbit.Game
         bool _lastThrusterActive;
         float _thrusterVfxBlend;
 
+        /// <summary>Default VFX settings with jet-flame bank for color-matched thrusters.</summary>
         public static Settings LoadDefaultSettings()
         {
             GameObject defaultFlame = LoadDefaultJetFlamePrefab();
@@ -97,6 +101,7 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>Links this applier to a ship entity and rebuilds particle instances from chassis transforms.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, Settings settings)
         {
             _shipEntity = shipEntity;
@@ -112,6 +117,7 @@ namespace TitanOrbit.Game
 
         void OnDestroy() => ClearVfxInstances();
 
+        /// <summary>Instantiates engine/thruster prefabs at ChassisComponentStats transform sites.</summary>
         void RebuildVfx()
         {
             ClearVfxInstances();
@@ -167,6 +173,7 @@ namespace TitanOrbit.Game
             if (!_initialized || _shipEntity == Entity.Null)
                 return;
 
+            // [TITAN-ORBIT] Read presentation/visualization world — not raw predicted sim.
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
@@ -186,6 +193,7 @@ namespace TitanOrbit.Game
                 }
             }
 
+            // --- Derive motion state from ECS kinematics + input ---
             float speed = 0f;
             if (em.HasComponent<ShipKinematics>(_shipEntity))
             {
@@ -202,6 +210,7 @@ namespace TitanOrbit.Game
             bool showThrusters = _settings.useThrusterVfxForAcceleration ? accelerating : moving;
             float targetThrusterBlend = showThrusters ? 1f : 0f;
             float transitionSpeed = Mathf.Max(0.01f, _settings.thrusterVfxTransitionSpeed);
+            // [TITAN-ORBIT] Cosmetic blend — acceptable on VFX only, not ship transform.
             _thrusterVfxBlend = Mathf.MoveTowards(_thrusterVfxBlend, targetThrusterBlend, transitionSpeed * Time.deltaTime);
             bool thrusterTransitionActive = Mathf.Abs(_thrusterVfxBlend - targetThrusterBlend) > 0.0001f;
 
@@ -268,6 +277,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Picks thruster prefab by color name embedded in transform name (e.g. "Thruster_Red").</summary>
         GameObject ResolveThrusterVfxPrefabForTransform(Transform thrusterTransform)
         {
             if (_settings.thrusterJetFlameBank != null && _settings.thrusterJetFlameBank.Count > 0)

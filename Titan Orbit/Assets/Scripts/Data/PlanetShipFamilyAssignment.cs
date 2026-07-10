@@ -1,6 +1,10 @@
 namespace TitanOrbit.Data
 {
-    /// <summary>Ship-family config indices assigned when planets are generated.</summary>
+    /// <summary>
+    /// Constants for procedural planet generation: which <see cref="PlanetShipFamilyConfig"/> list index
+    /// each planet receives. Home planets always get index 0 (AstroEagle); captured planets cycle through
+    /// the remaining eleven families. Written at planet spawn, read by orbit station and chassis resolution.
+    /// </summary>
     public static class PlanetShipFamilyAssignment
     {
         /// <summary>PlanetShipFamilyConfig index for home planets (AstroEagle).</summary>

@@ -7,7 +7,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Tracks which chassis stats were last applied to a ship.</summary>
+    /// <summary>
+    /// Tracks which chassis stats were last written to a ship entity. ShipStatApplySystem compares
+    /// AppliedShipLevel / AppliedBranchIndex against ShipState to decide when to re-apply.
+    /// </summary>
     public struct ShipChassisState : IComponentData
     {
         public FixedString64Bytes ChassisId;
@@ -15,11 +18,18 @@ namespace TitanOrbit.ECS
         public int AppliedBranchIndex;
     }
 
-    /// <summary>Applies summed ship-family stats to ECS ship components.</summary>
+    /// <summary>
+    /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
+    /// ship-family component stats, applies attribute-upgrade multipliers, and writes the result
+    /// onto ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
+    /// ShipStatApplySystem (server, level/branch changes), ShipAttributeUpgradeLogic (purchase),
+    /// and respawn/rejoin flows. Does not run movement — only updates numeric caps and motor tuning.
+    /// </summary>
     public static class ShipStatApplyLogic
     {
         static PlanetShipFamilyConfig s_config;
 
+        /// <summary>Lazily loads PlanetShipFamilyConfig from Resources (cached until InvalidateConfigCache).</summary>
         public static PlanetShipFamilyConfig Config
         {
             get
@@ -38,8 +48,13 @@ namespace TitanOrbit.ECS
             return Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
         }
 
+        /// <summary>Clears cached config — call after hot-reload or editor asset changes.</summary>
         public static void InvalidateConfigCache() => s_config = null;
 
+        /// <summary>
+        /// Maps team + ship level + branch index to a chassis id string from the home-planet ladder.
+        /// Falls back to planet 0 / index 0 when lookup fails.
+        /// </summary>
         public static bool TryResolveChassisId(
             TeamId team,
             int shipLevel,
@@ -51,6 +66,7 @@ namespace TitanOrbit.ECS
             if (config == null)
                 return false;
 
+            // [TITAN-ORBIT] Home planet id drives which ship-family ladder slot is used.
             int homePlanetId = FindHomePlanetIdForTeam(team);
             if (homePlanetId <= 0)
                 homePlanetId = 0;
@@ -62,6 +78,7 @@ namespace TitanOrbit.ECS
                 isHomePlanet: true,
                 shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
 
+            // [STANDARD] Fallback chassis when ladder lookup returns empty.
             if (string.IsNullOrEmpty(chassisId))
             {
                 chassisId = config.GetChassisIdForPlanetAndIndex(
@@ -71,12 +88,19 @@ namespace TitanOrbit.ECS
             return !string.IsNullOrEmpty(chassisId);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Default home planet id when team-specific lookup is unavailable.
+        /// Bootstrap assigns planet 1 as the generic home for any non-None team.
+        /// </summary>
         static int FindHomePlanetIdForTeam(TeamId team)
         {
-            // Default home planet id used by bootstrap when team-specific lookup is unavailable.
             return team != TeamId.None ? 1 : 0;
         }
 
+        /// <summary>
+        /// Sums component stats from the chassis prefab (or tier breakdown / family fallback)
+        /// at the given ship level. Output is base stats before attribute-upgrade multipliers.
+        /// </summary>
         public static bool TryGetBaseStatsForChassis(string chassisId, int shipLevel, out ShipComponentAbilityStats baseStats)
         {
             baseStats = default;
@@ -88,6 +112,7 @@ namespace TitanOrbit.ECS
             if (tier == null)
                 return false;
 
+            // --- Resolve ship family from chassis id prefix (e.g. "AstroEagle_T2" → AstroEagle) ---
             ShipFamilyDefinition family = null;
             if (config.families != null)
             {
@@ -108,10 +133,12 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            // [TITAN-ORBIT] Prefer summing stats from the baked chassis prefab hierarchy.
             if (tier.prefab != null && family != null &&
                 ShipFamilyStatsCalculator.TrySumFromPrefab(tier.prefab, family, shipLevel, out baseStats))
                 return true;
 
+            // Fallback: use tier power-score breakdown or family default stats.
             if (tier.powerScoreBreakdown.HasDisplayStats)
             {
                 baseStats = ShipFamilyStatsCalculator.BreakdownToBaseStats(tier.powerScoreBreakdown);
@@ -129,11 +156,17 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>Convenience overload without EntityCommandBuffer (no structural changes queued).</summary>
         public static void ApplyToShip(EntityManager em, Entity shipEntity, TeamId team, int shipLevel, int branchIndex)
         {
             ApplyToShip(em, shipEntity, team, shipLevel, branchIndex, default, queueStructuralChanges: false);
         }
 
+        /// <summary>
+        /// Full stat apply: resolve chassis → sum stats → attribute multipliers → write all ship components.
+        /// When queueStructuralChanges is true, missing vitals/chassis components are added via ECB
+        /// (safe during iteration in ShipStatApplySystem).
+        /// </summary>
         public static void ApplyToShip(
             EntityManager em,
             Entity shipEntity,
@@ -149,17 +182,21 @@ namespace TitanOrbit.ECS
             if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out ShipComponentAbilityStats summed))
                 return;
 
+            // [TITAN-ORBIT] Level scaling curve applied before attribute multipliers.
             ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
 
+            // --- Attribute upgrades (+10% per level from bottom HUD) ---
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
             {
                 var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
                 ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
             }
 
+            // --- ShipState caps (health, gems, energy, people) ---
             if (em.HasComponent<ShipState>(shipEntity))
             {
                 var ship = em.GetComponentData<ShipState>(shipEntity);
+                // [STANDARD] Preserve health ratio on re-apply unless dead or awaiting team pick.
                 float prevHealthRatio = ship.MaxHealth > 0.01f ? ship.Health / ship.MaxHealth : 1f;
 
                 ship.MaxHealth = Mathf.Max(1f, effective.healthCap);
@@ -182,6 +219,7 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, ship);
             }
 
+            // --- Weapon tuning (server-authoritative bullet sim reads these) ---
             if (em.HasComponent<ShipWeaponConfig>(shipEntity))
             {
                 float firePower = Mathf.Max(0.1f, effective.firePower);
@@ -199,6 +237,7 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, weapon);
             }
 
+            // --- Motor config (ShipMovementLogic reads these; physics integrates position) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
@@ -208,6 +247,7 @@ namespace TitanOrbit.ECS
                     : moveVal);
                 thrust *= ShipPropulsionAggregation.EngineThrustVisibility;
 
+                // [TITAN-ORBIT] Mass reference uses level-1 health so upgrades change weight feel.
                 ShipComponentAbilityStats levelOneStats =
                     ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
                 float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
@@ -226,6 +266,7 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, motor);
             }
 
+            // --- Regen rates (ShipVitalsRegenSystem consumes these) ---
             var vitals = new ShipVitalsConfig
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
@@ -247,6 +288,7 @@ namespace TitanOrbit.ECS
                     em.AddComponentData(shipEntity, new ShipVitalsState());
             }
 
+            // --- Bookkeeping so ShipStatApplySystem skips unchanged ships ---
             var chassisState = new ShipChassisState
             {
                 ChassisId = chassisId,
@@ -261,6 +303,9 @@ namespace TitanOrbit.ECS
                 em.AddComponentData(shipEntity, chassisState);
         }
 
+        /// <summary>
+        /// Computes chassis component mass from prefab transform hierarchy for ShipMassLogic hull reference.
+        /// </summary>
         static float TryGetChassisComponentMass(string chassisId)
         {
             var config = Config;

@@ -6,6 +6,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Client-side handler for <see cref="RejoinShipResultRpc"/> responses from the server.
+    /// Updates <see cref="ClientTeamFlowState"/> so UI and input systems know whether the player
+    /// resumed an existing ship or chose to start fresh. Runs on ClientSimulation world only.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct RejoinShipResultClientSystem : ISystem
@@ -23,6 +28,7 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>Maps RPC result to client team-flow state machine transitions.</summary>
         [BurstDiscard]
         static void ApplyResult(RejoinShipResultRpc rpc)
         {
@@ -34,6 +40,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // Choice 1 = resume existing ship on assigned team.
             if (rpc.Choice == 1)
             {
                 ClientTeamFlowState.ChooseUseExistingShip();
@@ -42,6 +49,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // Choice 2 = abandon saved ship — show team picker for a fresh start.
             if (rpc.Choice == 2)
             {
                 ClientTeamFlowState.ChooseStartFreshShip();

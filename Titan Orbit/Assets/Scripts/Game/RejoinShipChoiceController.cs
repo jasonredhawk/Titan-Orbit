@@ -7,7 +7,12 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Prompts returning dedicated players to resume their ship or pick a new team.</summary>
+    /// <summary>
+    /// Full-screen UI for dedicated-server rejoin flow: shows saved ship summary (team, level, HP,
+    /// gems, energy) and lets the player resume that ship or abandon it and pick a new team.
+    /// Calls TitanOrbitSessionManager.RequestResumeExistingShip / RequestAbandonShipForRejoin.
+    /// Shown by session bootstrap when RejoinShipManagementSystem finds a persisted ship for the client.
+    /// </summary>
     public class RejoinShipChoiceController : MonoBehaviour
     {
         const float PanelWidth = 560f;
@@ -21,8 +26,10 @@ namespace TitanOrbit.Game
 
         public bool IsVisible => _screenRoot != null && _screenRoot.activeSelf;
 
+        /// <summary>Stores reference to main menu panel for hide/show coordination.</summary>
         public void Configure(GameObject menuPanel) => mainMenuPanel = menuPanel;
 
+        /// <summary>Displays rejoin screen with ghost-serialized ShipState summary from saved ship.</summary>
         public void Show(ShipState shipState)
         {
             EnsureUi();
@@ -53,6 +60,7 @@ namespace TitanOrbit.Game
             _choiceInProgress = false;
         }
 
+        /// <summary>[NETCODE] Resume RPC — reattach client to persisted ship entity on server.</summary>
         void OnResumeClicked()
         {
             if (_choiceInProgress || TitanOrbitSessionManager.Instance == null)
@@ -63,6 +71,7 @@ namespace TitanOrbit.Game
             TitanOrbitSessionManager.Instance.RequestResumeExistingShip();
         }
 
+        /// <summary>Abandon saved ship and return to team selection flow.</summary>
         void OnStartFreshClicked()
         {
             if (_choiceInProgress || TitanOrbitSessionManager.Instance == null)

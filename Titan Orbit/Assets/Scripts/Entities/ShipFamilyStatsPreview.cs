@@ -6,7 +6,9 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// Editor/runtime preview of summed ship-family stats on a chassis prefab.
+    /// Editor/runtime MonoBehaviour that live-sums <see cref="ShipComponentAbilityStats"/> from prefab children
+    /// using <see cref="ShipFamilyStatsCalculator"/>. Attach to a chassis prefab root to preview matched parts
+    /// and totals while authoring. [UNITY] Recalculates on enable, child changes, and OnValidate.
     /// </summary>
     [ExecuteAlways]
     public class ShipFamilyStatsPreview : MonoBehaviour
@@ -28,6 +30,7 @@ namespace TitanOrbit.Entities
         void OnValidate() => RecalculateFromChildren();
 #endif
 
+        /// <summary>Re-scans child transforms and refreshes serialized total/matched lists for inspector display.</summary>
         public void RecalculateFromChildren()
         {
             totalStats = default;

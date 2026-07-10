@@ -6,11 +6,15 @@ using TitanOrbit.Core;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Maps each planet to a ship family. Prefabs and unlock tiers come from each entry's ShipFamilyDefinition upgradeTree.
+    /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/>. Home planet (id 0) always
+    /// resolves to AstroEagle; captured planets rotate through non-home families. Prefabs, chassis ids, unlock
+    /// tiers, and gem costs all come from each family's <c>upgradeTree</c>. Paired with
+    /// <see cref="PlanetShipFamilyAssignment"/> for procedural planet generation indices.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetShipFamilyConfig", menuName = "Titan Orbit/Planet Ship Family Config")]
     public class PlanetShipFamilyConfig : ScriptableObject
     {
+        /// <summary>One planet → one ship family binding in the config list.</summary>
         [Serializable]
         public class ShipFamilyEntry
         {
@@ -87,6 +91,7 @@ namespace TitanOrbit.Data
             return GetNonHomeFamilyConfigIndex(Mathf.Abs(planetId));
         }
 
+        /// <summary>Config list index for home planets (AstroEagle). [TITAN-ORBIT] Home always uses index 0.</summary>
         public int GetHomeFamilyConfigIndex()
         {
             if (families == null || families.Count == 0)
@@ -101,8 +106,10 @@ namespace TitanOrbit.Data
             return 0;
         }
 
+        /// <summary>Number of captured-planet families (excludes home entry at index 0).</summary>
         public int GetNonHomeFamilyCount() => families == null ? 0 : Mathf.Max(0, families.Count - 1);
 
+        /// <summary>Wraps a procedural ordinal into a non-home config index (1-based slot).</summary>
         public int GetNonHomeFamilyConfigIndex(int ordinal)
         {
             int nonHomeCount = GetNonHomeFamilyCount();

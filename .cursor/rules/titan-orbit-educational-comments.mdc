@@ -7,7 +7,7 @@ alwaysApply: true
 
 The project owner edits code by hand and wants to **learn while reading**. Comments are not optional decoration — they are part of the deliverable. When you add or change code, add comments that help a reader with **limited Unity/NetCode/ECS experience** understand what is happening and why.
 
-This rule sets **comment density and teaching style** project-wide. Architecture rules in `titan-orbit-ship-simulation.mdc` still apply; when that doc says "comment sparingly," interpret it as **no noise on obvious lines** — not as "skip teaching comments inside methods."
+This rule is the **single source of truth** for comment style and density project-wide. Architecture rules in `titan-orbit-ship-simulation.mdc` still apply for sim behavior; all commenting guidance lives here.
 
 ---
 

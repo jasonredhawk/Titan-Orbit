@@ -8,6 +8,12 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    /// <summary>
+    /// Server-only: copies weapon mount transforms from ship visual hull proxies into the ship ghost's
+    /// ShipWeaponMountElement buffer each frame. Hull proxies are registered by network id in
+    /// ShipWeaponProxyRegistry (EcsWorldVisualizer). Runs after ShipMovementSystem, before
+    /// BulletSimulationSystem so muzzle poses are current for shooting.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipMovementSystem))]
     [UpdateBefore(typeof(BulletSimulationSystem))]
@@ -20,6 +26,7 @@ namespace TitanOrbit.Game
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
+                // [TITAN-ORBIT] Visual hull is GameObject-only; sim reads baked buffer on ghost.
                 if (!ShipWeaponProxyRegistry.TryGetHull(owner.ValueRO.NetworkId, out var hullRoot))
                     continue;
 

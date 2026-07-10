@@ -9,8 +9,11 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side moon landing presentation: ship animates from its current pose onto the moon surface,
-    /// and reverses that animation when thrusting away.
+    /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the moon
+    /// surface (scale shrink, spin with moon), and reverses when thrusting away. Reads ShipMoonDockState
+    /// from the visualization ECS world. When active, EcsWorldVisualizer skips transform sync
+    /// (ShouldSkipTransformSync). Provides local camera follow override via TryGetLocalFollowPosition.
+    /// Cosmetic cinematic — authoritative dock state lives in ShipMoonDockSystem on the server.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class ShipMoonDockVisualApplier : MonoBehaviour
@@ -58,6 +61,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Links to ship entity; optional presentationScale seeds baseline flight scale.</summary>
         public void Bind(Entity shipEntity, float presentationScale = -1f)
         {
             _shipEntity = shipEntity;
@@ -100,10 +104,12 @@ namespace TitanOrbit.Game
 
             var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
             bool moonDockEngaged = moonDock.MoonPlanetId != 0;
+            // [TITAN-ORBIT] Brief approach delay before landing animation starts (matches server timing).
             bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
             bool landingVisualActive = moonDockEngaged && approachReady && moonDock.LandingProgress > 0.001f;
             UpdateLocalInstanceRegistration(em);
 
+            // --- Takeoff reverse animation (when moon dock disengages) ---
             if (_isTakeoffAnimating)
             {
                 UpdateTakeoffAnimation(em);
@@ -210,6 +216,7 @@ namespace TitanOrbit.Game
             _isTakeoffAnimating = true;
         }
 
+        /// <summary>Lerps proxy back to ECS LocalTransform flight pose over LandingDurationSeconds.</summary>
         void UpdateTakeoffAnimation(EntityManager em)
         {
             var lt = em.GetComponentData<LocalTransform>(_shipEntity);
@@ -257,6 +264,7 @@ namespace TitanOrbit.Game
 
         Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos) => logicalPos;
 
+        /// <summary>Resolves moon world pose from visual registry or ECS planet + orbit math fallback.</summary>
         static bool TryResolveMoonPose(int planetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius)
         {
             moonPos = default;

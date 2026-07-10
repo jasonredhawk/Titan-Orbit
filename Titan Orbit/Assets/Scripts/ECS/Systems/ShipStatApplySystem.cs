@@ -5,7 +5,12 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Re-applies ship-family stats when level or chassis branch changes.</summary>
+    /// <summary>
+    /// Server-only: re-applies ship-family chassis stats when ShipLevel or branch index changes.
+    /// Compares current level/branch against ShipChassisState (last applied) and calls
+    /// ShipStatApplyLogic.ApplyToShip when they differ. Runs after TeamManagementSystem so
+    /// team assignment is known before resolving home-planet chassis ladder.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(TeamManagementSystem))]
@@ -24,6 +29,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 int branch = loadout.ValueRO.BranchIndex;
+                // [STANDARD] Apply stats on first spawn or when level/branch changes.
                 bool needsApply = !em.HasComponent<ShipChassisState>(entity);
                 if (!needsApply)
                 {
@@ -39,6 +45,7 @@ namespace TitanOrbit.ECS
                     em, entity, ship.ValueRO.Team, ship.ValueRO.ShipLevel, branch, ecb, queueStructuralChanges: true);
             }
 
+            // Ships without loadout state (legacy prefabs) — default branch 0.
             foreach (var (ship, entity) in SystemAPI.Query<RefRW<ShipState>>()
                          .WithAll<ShipTag>()
                          .WithNone<ShipLoadoutState>()

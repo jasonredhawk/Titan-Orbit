@@ -3,8 +3,17 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    /// <summary>
+    /// Tags weapon-slot transforms on a hull prefab with <see cref="ECS.Authoring.ShipWeaponMountAuthoring"/>
+    /// so ECS baking can build <c>ShipWeaponMountElement</c> buffers for muzzle pose and VFX.
+    /// Creates a default forward "Weapon" child when no weapon transforms exist. Presentation/bake helper only.
+    /// </summary>
     public static class ShipWeaponMountCollector
     {
+        /// <summary>
+        /// Scans hull children for weapon-named transforms and ensures each has mount authoring.
+        /// Falls back to <see cref="EnsureDefaultWeaponMount"/> when none are found.
+        /// </summary>
         public static void EnsureWeaponMountsOnHierarchy(Transform hullRoot, float muzzleOffset)
         {
             if (hullRoot == null)
@@ -27,6 +36,10 @@ namespace TitanOrbit.Game
                 EnsureDefaultWeaponMount(hullRoot, muzzleOffset);
         }
 
+        /// <summary>
+        /// Adds a single forward weapon mount at <paramref name="muzzleOffset"/> when the prefab has no weapon children.
+        /// [TITAN-ORBIT] Guarantees at least one muzzle origin for shooting VFX and pose math.
+        /// </summary>
         public static void EnsureDefaultWeaponMount(Transform hullRoot, float muzzleOffset)
         {
             if (hullRoot == null)

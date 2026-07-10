@@ -3,7 +3,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Per-stat gem upgrade levels (0–ShipLevel each). Synced for the bottom upgrade HUD.</summary>
+    /// <summary>
+    /// Per-stat gem upgrade levels (0–ShipLevel each). Players spend gems from the bottom HUD
+    /// to increment these; ShipAttributeUpgradeLogic applies +10% multipliers per level.
+    /// Ghost-serialized for client upgrade UI. Reset on ship level-up (chassis change).
+    /// </summary>
     public struct ShipAttributeUpgradeState : IComponentData
     {
         [GhostField] public int FirePower;

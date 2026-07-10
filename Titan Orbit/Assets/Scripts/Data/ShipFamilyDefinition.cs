@@ -6,8 +6,15 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
+    /// <summary>
+    /// Baseline ability stats used when a <see cref="ShipFamilyDefinition"/> leaves
+    /// <see cref="ShipFamilyDefinition.defaultFallbackStats"/> all zero. Paired with
+    /// <see cref="ShipComponentAbilityStatsMath.WithZeroStatFallbacks"/> so every chassis still has
+    /// playable movement, health, and weapon numbers after prefab scan.
+    /// </summary>
     public static class ShipFamilyDefaultFallbackStats
     {
+        /// <summary>Returns the project-wide default stat block for a generic level-1 ship.</summary>
         public static ShipComponentAbilityStats CreateBaseline()
         {
             return new ShipComponentAbilityStats
@@ -47,7 +54,10 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Ship family definition: component stat modifiers, upgrade tree, and visual helpers.
+    /// ScriptableObject (designer asset) that defines one ship family — AstroEagle, Cosmic Shark, etc.
+    /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials, and lookup helpers.
+    /// Read by <see cref="ShipFamilyStatsCalculator"/>, <see cref="PlanetShipFamilyConfig"/>, and orbit-station UI
+    /// to resolve prefabs, power bars, and moon-dock component prices. Does not run in ECS sim directly.
     /// </summary>
     [CreateAssetMenu(fileName = "ShipFamily", menuName = "Titan Orbit/Ship Family Definition")]
     public class ShipFamilyDefinition : ScriptableObject
@@ -77,6 +87,9 @@ namespace TitanOrbit.Data
         [NonSerialized] readonly Dictionary<string, ShipComponentAbilityStats> _lookup = new Dictionary<string, ShipComponentAbilityStats>(StringComparer.OrdinalIgnoreCase);
         [NonSerialized] List<CardData> _runtimeProceduralCards;
 
+        /// <summary>
+        /// Returns authored fallback stats, or the global baseline when the asset field is all zero.
+        /// </summary>
         public ShipComponentAbilityStats GetEffectiveDefaultFallbackStats()
         {
             return ShipComponentAbilityStatsMath.IsAllZero(defaultFallbackStats)
@@ -84,11 +97,16 @@ namespace TitanOrbit.Data
                 : defaultFallbackStats;
         }
 
+        /// <summary>
+        /// Fills any zero fields in <paramref name="summedStats"/> from this family's effective defaults.
+        /// Called after prefab stat scan so missing component entries do not zero out the hull.
+        /// </summary>
         public ShipComponentAbilityStats ApplyStatFallbacks(ShipComponentAbilityStats summedStats)
         {
             return ShipComponentAbilityStatsMath.WithZeroStatFallbacks(summedStats, GetEffectiveDefaultFallbackStats());
         }
 
+        /// <summary>Team-tinted hull materials for visual proxies, or null when none are configured.</summary>
         public List<Material> GetMaterialsForTeam(TeamId team)
         {
             if (teamMaterials == null || teamMaterials.Count == 0)
@@ -106,13 +124,19 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>Procedural card deck keyed to this family (lazy-created at first access).</summary>
         public IReadOnlyList<CardData> GetUpgradeCards()
         {
             return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateProceduralDeck(familyId);
         }
 
+        /// <summary>Clears the cached component-id → stats dictionary (editor OnValidate calls this).</summary>
         public void InvalidateComponentStatsLookup() => _lookupBuilt = false;
 
+        /// <summary>
+        /// Looks up authored stats for a prefab child name such as <c>Weapon_1</c> or <c>Engine_2</c>.
+        /// Tries raw id, normalized id, and alternate propulsion naming (<c>Engine1</c> ↔ <c>Engine_1</c>).
+        /// </summary>
         public bool TryGetStatsForComponent(string componentId, out ShipComponentAbilityStats stats)
         {
             EnsureLookup();
@@ -130,6 +154,7 @@ namespace TitanOrbit.Data
             return !string.IsNullOrEmpty(alternate) && _lookup.TryGetValue(alternate, out stats);
         }
 
+        /// <summary>Full component row (stats, preview sprite, categories) for a component id, or false.</summary>
         public bool TryGetComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
         {
             entry = null;
@@ -158,6 +183,7 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>Menu thumbnail for a purchasable component; team variant when available.</summary>
         public Sprite GetMenuPreviewSpriteForComponent(string componentId, TeamManager.Team team = TeamManager.Team.None)
         {
             return TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) && entry != null
@@ -165,6 +191,10 @@ namespace TitanOrbit.Data
                 : null;
         }
 
+        /// <summary>
+        /// Chooses the visual chassis prefab for a home-planet level. Prefers an exact locked-in tier match,
+        /// else the highest tier whose <c>minHomePlanetLevel</c> is ≤ <paramref name="shipLevel"/>.
+        /// </summary>
         public bool TryGetVisualPrefabForLevel(int shipLevel, out GameObject prefab)
         {
             prefab = null;
@@ -173,6 +203,7 @@ namespace TitanOrbit.Data
 
             shipLevel = Mathf.Max(1, shipLevel);
 
+            // --- Exact locked-in tier (e.g. level-3 slot baked to a specific hull) ---
             for (int i = 0; i < upgradeTree.Count; i++)
             {
                 var tier = upgradeTree[i];
@@ -185,6 +216,7 @@ namespace TitanOrbit.Data
                 }
             }
 
+            // --- Best tier at or below requested level ---
             ShipFamilyChassisTierEntry best = null;
             for (int i = 0; i < upgradeTree.Count; i++)
             {
@@ -203,6 +235,7 @@ namespace TitanOrbit.Data
                 return true;
             }
 
+            // [STANDARD] Last resort — first prefab in the tree so callers never get null when any tier exists.
             for (int i = 0; i < upgradeTree.Count; i++)
             {
                 if (upgradeTree[i]?.prefab != null)
@@ -215,6 +248,9 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>
+        /// Strips Unity clone suffixes and mirrored-part markers so prefab child names match authored ids.
+        /// </summary>
         public static string NormalizeComponentId(string rawId)
         {
             if (string.IsNullOrWhiteSpace(rawId))
@@ -227,6 +263,9 @@ namespace TitanOrbit.Data
             return s.Trim();
         }
 
+        /// <summary>
+        /// Converts between <c>Engine_1</c> and <c>Engine1</c> forms so lookups survive inconsistent naming.
+        /// </summary>
         public static string GetAlternateComponentIdForm(string componentId)
         {
             if (string.IsNullOrWhiteSpace(componentId))
@@ -332,6 +371,7 @@ namespace TitanOrbit.Data
 #endif
     }
 
+    /// <summary>One upgrade-tree slot: chassis id, prefab, unlock level, and baked power breakdown.</summary>
     [Serializable]
     public class ShipFamilyChassisTierEntry
     {
@@ -346,6 +386,7 @@ namespace TitanOrbit.Data
         public bool lockedInUpgradeTree;
     }
 
+    /// <summary>Team-specific menu sprite override for a chassis tier.</summary>
     [Serializable]
     public class ShipFamilyTeamMenuPreview
     {
@@ -354,6 +395,7 @@ namespace TitanOrbit.Data
         public Sprite sprite;
     }
 
+    /// <summary>Material list applied to hull proxies for one team color variant.</summary>
     [Serializable]
     public class ShipFamilyTeamMaterialSet
     {

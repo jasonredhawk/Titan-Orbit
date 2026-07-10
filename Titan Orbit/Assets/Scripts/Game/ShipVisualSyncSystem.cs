@@ -6,10 +6,12 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    // Order: NetCode presentation → ShipVisualSyncSystem (last in PresentationSystemGroup) → EcsWorldVisualizer LateUpdate
+    // [TITAN-ORBIT] Pipeline order: NetCode presentation → ShipVisualSyncSystem (last) → EcsWorldVisualizer LateUpdate
     /// <summary>
-    /// Captures ghost <see cref="LocalTransform"/> after NetCode presentation so GameObject proxies
-    /// and client VFX read the correct interpolation phase via <see cref="GhostPresentationTransformCache"/>.
+    /// Captures ghost <see cref="LocalTransform"/> after NetCode presentation interpolation so
+    /// GameObject visual proxies and client VFX read the correct phase via
+    /// <see cref="GhostPresentationTransformCache"/>. Runs last in PresentationSystemGroup —
+    /// do not read raw sim transforms in MonoBehaviour LateUpdate for movement (see ship-simulation rule).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderLast = true)]
@@ -17,6 +19,7 @@ namespace TitanOrbit.Game
     {
         protected override void OnUpdate()
         {
+            // [TITAN-ORBIT] Frame-stamped cache — EcsWorldVisualizer reads this in LateUpdate.
             GhostPresentationTransformCache.BeginPublish(UnityEngine.Time.frameCount);
 
             foreach (var (lt, entity) in SystemAPI

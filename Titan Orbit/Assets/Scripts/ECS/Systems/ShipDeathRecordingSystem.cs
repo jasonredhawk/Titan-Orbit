@@ -4,7 +4,12 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Marks lethal ships for delayed respawn (added once when IsDead becomes true).</summary>
+    /// <summary>
+    /// Server-only: watches for ships whose <see cref="ShipState.IsDead"/> just became true and
+    /// adds <see cref="ShipDeathState"/> with a respawn timer. Clears cargo and velocity once —
+    /// runs before <see cref="ShipRespawnSystem"/>. WithNone&lt;ShipDeathState&gt; ensures this
+    /// fires exactly once per death.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(BulletSimulationSystem))]
@@ -25,6 +30,7 @@ namespace TitanOrbit.ECS
                 if (!shipState.ValueRO.IsDead)
                     continue;
 
+                // --- Death cleanup: drop cargo, stop movement ---
                 shipState.ValueRW.CurrentGems = 0f;
                 shipState.ValueRW.CurrentPeople = 0;
                 kinematics.ValueRW.Velocity = Unity.Mathematics.float3.zero;
@@ -32,6 +38,7 @@ namespace TitanOrbit.ECS
                 orbitState.ValueRW.InOrbitRing = false;
                 orbitState.ValueRW.UsingOrbitMotor = false;
 
+                // [TITAN-ORBIT] Schedule respawn — ShipRespawnSystem removes this component later.
                 ecb.AddComponent(entity, new ShipDeathState
                 {
                     RespawnAtTime = now + ShipRespawnSystem.RespawnDelaySeconds,

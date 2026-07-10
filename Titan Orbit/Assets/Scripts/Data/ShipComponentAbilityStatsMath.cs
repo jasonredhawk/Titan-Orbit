@@ -4,9 +4,14 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>Math helpers for <see cref="ShipComponentAbilityStats"/> aggregation and scaling.</summary>
+    /// <summary>
+    /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
+    /// transform-based scaling, and component-id classification (weapon vs engine vs thruster).
+    /// No Unity scene access; safe to call from editor tooling and runtime stat pipelines.
+    /// </summary>
     public static class ShipComponentAbilityStatsMath
     {
+        /// <summary>Field-wise sum of two stat blocks.</summary>
         public static ShipComponentAbilityStats Add(ShipComponentAbilityStats a, ShipComponentAbilityStats b)
         {
             return new ShipComponentAbilityStats
@@ -49,6 +54,7 @@ namespace TitanOrbit.Data
             target = Add(target, other);
         }
 
+        /// <summary>True when every base and per-level field is exactly zero.</summary>
         public static bool IsAllZero(in ShipComponentAbilityStats s)
         {
             return s.firePower == 0f && s.firePowerPerLevel == 0f &&
@@ -68,6 +74,10 @@ namespace TitanOrbit.Data
                    s.maxPeople == 0f && s.maxPeoplePerLevel == 0f;
         }
 
+        /// <summary>
+        /// Copies <paramref name="defaults"/> into any zero field of <paramref name="stats"/>.
+        /// [TITAN-ORBIT] Prevents a missing component entry from zeroing an entire hull stat.
+        /// </summary>
         public static ShipComponentAbilityStats WithZeroStatFallbacks(
             in ShipComponentAbilityStats stats,
             in ShipComponentAbilityStats defaults)
@@ -106,6 +116,7 @@ namespace TitanOrbit.Data
             return result;
         }
 
+        /// <summary>Average of localScale axes — used as generic size multiplier for non-weapon parts.</summary>
         public static float GetNormalizedScaleFromTransform(Transform t)
         {
             if (t == null) return 1f;
@@ -163,6 +174,10 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>
+        /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
+        /// Propulsion move/accel ignore scale; turn and ramming are never scaled. [TITAN-ORBIT] Art size affects combat stats.
+        /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(
             ShipComponentAbilityStats stats,
             Transform t,
@@ -175,6 +190,7 @@ namespace TitanOrbit.Data
 
             if (IsWeaponComponent(componentId))
             {
+                // [TITAN-ORBIT] Wider weapon mesh → more fire power; deeper (Z) mesh → slower fire rate.
                 float firePowerScale = (x + y) * 0.5f;
                 float fireRateScale = 1f / z;
                 return new ShipComponentAbilityStats
@@ -228,6 +244,7 @@ namespace TitanOrbit.Data
             return scaled;
         }
 
+        /// <summary>Multiplies every stat field by <paramref name="factor"/>.</summary>
         public static ShipComponentAbilityStats Multiply(ShipComponentAbilityStats s, float factor)
         {
             return new ShipComponentAbilityStats

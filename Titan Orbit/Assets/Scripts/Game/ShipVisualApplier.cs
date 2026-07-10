@@ -5,9 +5,18 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Instantiates ship-family chassis prefabs and applies team material sets.</summary>
+    /// <summary>
+    /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
+    /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
+    /// Strips physics colliders, Rigidbodies, and NetCode MonoBehaviour components so the proxy
+    /// cannot affect simulation — ECS ghosts and Unity Physics own authoritative state.
+    /// </summary>
     public static class ShipVisualApplier
     {
+        /// <summary>
+        /// Creates a ship visual instance from family config or prefab override. Applies team materials
+        /// and strips sim/network components. Returns false when no prefab resolves.
+        /// </summary>
         public static bool TryCreateShipVisual(
             ShipFamilyDefinition family,
             GameObject prefabOverride,
@@ -29,6 +38,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Swaps renderer sharedMaterials with team palette from ShipFamilyDefinition.</summary>
         public static void ApplyTeamMaterials(ShipFamilyDefinition family, GameObject root, TeamId team)
         {
             if (family == null || root == null || team == TeamId.None)
@@ -60,6 +70,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
+        /// </summary>
         public static void StripPhysicsAndNetworking(GameObject root)
         {
             foreach (var col in root.GetComponentsInChildren<Collider>(true))

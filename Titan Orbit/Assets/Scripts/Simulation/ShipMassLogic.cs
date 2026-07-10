@@ -4,19 +4,28 @@ using UnityEngine;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Movement and ramming mass rules ported from legacy <c>Starship</c>.
-    /// Hull component mass and gem cargo increase mass; HP bulk is softened for movement via <see cref="MovementHullBulkExponent"/>.
+    /// Movement and ramming mass rules ported from legacy Starship MonoBehaviour.
+    /// Hull component mass and gem cargo increase effective mass; HP bulk is softened for
+    /// movement via <see cref="MovementHullBulkExponent"/> so higher-level ships don't feel
+    /// sluggish. Called from <see cref="TitanOrbit.ECS.ShipMovementBurstLogic"/> each motor tick.
     /// </summary>
     public static class ShipMassLogic
     {
         public const float DefaultBaseMass = 1f;
+        /// <summary>Scales authored chassis mass into movement reference.</summary>
         public const float HullMassScale = 0.7f;
+        /// <summary>Each gem adds this much movement mass.</summary>
         public const float MassPerGem = 0.01f;
+        /// <summary>Exponent &lt; 1 softens HP bulk for movement (0.4 = fourth-root scaling).</summary>
         public const float MovementHullBulkExponent = 0.4f;
+        /// <summary>Gems count heavier for ramming collisions than for acceleration.</summary>
         public const float RammingGemMassScale = 2.5f;
         public const float DefaultBrakeDeceleration = 7f;
         public const float MinMass = 0.5f;
 
+        /// <summary>
+        /// Softens HP-based mass increase for movement. Level-10 ships aren't 10× harder to turn.
+        /// </summary>
         public static float GetMovementBulkScale(float maxHealth, float chassisReferenceHealth)
         {
             float bulk = maxHealth / math.max(1f, chassisReferenceHealth);
@@ -27,16 +36,21 @@ namespace TitanOrbit.Simulation
             return math.pow(bulk, MovementHullBulkExponent);
         }
 
+        /// <summary>Linear HP scaling for ramming — bigger ships hit harder.</summary>
         public static float GetRammingBulkScale(float maxHealth, float chassisReferenceHealth) =>
             maxHealth / Mathf.Max(1f, chassisReferenceHealth);
 
+        /// <summary>Chassis component mass reference before HP bulk and gems.</summary>
         public static float ComputeHullMassReference(float componentMass, float baseMass = DefaultBaseMass)
         {
             float hull = componentMass > 0f ? componentMass : baseMass;
             return Mathf.Max(MinMass, hull * HullMassScale);
         }
 
-        /// <summary>Mass used by the motor each tick (softened hull bulk + gem cargo).</summary>
+        /// <summary>
+        /// Mass used by the motor each tick (softened hull bulk + gem cargo).
+        /// Heavier mass → slower acceleration, same top speed cap.
+        /// </summary>
         public static float ComputeMovementMass(
             float hullMassReference,
             float maxHealth,
@@ -51,6 +65,7 @@ namespace TitanOrbit.Simulation
             return math.max(MinMass, hullRef * bulkScale + currentGems * MassPerGem);
         }
 
+        /// <summary>Hull-only mass baseline for ramming damage calculations.</summary>
         public static float ComputeRammingHullMassBaseline(
             float hullMassReference,
             float maxHealth,
@@ -64,6 +79,7 @@ namespace TitanOrbit.Simulation
             return Mathf.Max(MinMass, hullRef * bulkScale);
         }
 
+        /// <summary>Total mass for ship-vs-ship ramming (hull + weighted gems).</summary>
         public static float ComputeRammingMass(
             float hullMassReference,
             float maxHealth,

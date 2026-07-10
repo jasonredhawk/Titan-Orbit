@@ -5,10 +5,13 @@ using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
-    // Order: ShipInputApplySystem → ShipMovementSystem → PhysicsSystemGroup → BulletSimulationSystem → …
+    // [TITAN-ORBIT] Pipeline order: ShipInputApplySystem → ShipMovementSystem → PhysicsSystemGroup → BulletSimulationSystem → …
     /// <summary>
-    /// Authoritative ship motor (server only). Schedules <see cref="ShipMovementJob"/> before
-    /// Unity Physics integrates hull position. Paired with <see cref="ShipClientPredictedMovementSystem"/>.
+    /// Authoritative ship motor on the dedicated server (and host server world). Schedules
+    /// <see cref="ShipMovementJob"/> before <see cref="PhysicsSystemGroup"/> so the motor sets
+    /// velocity and rotation, then Unity Physics integrates hull position and resolves collisions.
+    /// Paired with <see cref="ShipClientPredictedMovementSystem"/> on the client — both call the
+    /// same Burst job and <see cref="ShipMovementBurstLogic.Step"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]
@@ -17,12 +20,15 @@ namespace TitanOrbit.ECS
     {
         public void OnCreate(ref SystemState state)
         {
+            // [STANDARD] Skip OnUpdate until at least one ship with motor config exists.
             state.RequireForUpdate<ShipMotorConfig>();
         }
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- Shared context for all ships this tick ---
             ShipMovementLogic.GetMapSize(ref state, out float mapW, out float mapH);
+            // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
             var job = new ShipMovementJob

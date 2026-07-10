@@ -4,7 +4,9 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// ScriptableObject containing ship statistics and configuration
+    /// Legacy ScriptableObject holding per-ship base stats, weapon config, and visual tuning.
+    /// Newer hulls derive combat numbers from <see cref="ShipFamilyDefinition"/> component sums; this asset
+    /// still backs upgrade-tree nodes, mass/visual scale, and banking feel on individual prefabs.
     /// </summary>
     [CreateAssetMenu(fileName = "New Ship Data", menuName = "Titan Orbit/Ship Data")]
     public class ShipData : ScriptableObject

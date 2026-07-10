@@ -12,8 +12,10 @@ using UnityEngine.InputSystem;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Reads keyboard/mouse on the authoritative host and writes ShipInput immediately before movement.
-    /// Avoids MonoBehaviour update ordering and empty NetCode input commands during local Client+Server play.
+    /// Local-host-only bridge: reads keyboard/mouse on the authoritative server world and writes
+    /// ShipInput on the host player's ghost before ShipMovementSystem runs. Dedicated clients and
+    /// remote players send input via NetCode ghost commands (ShipInputApplySystem on client).
+    /// Avoids MonoBehaviour update ordering gaps during Client+Server play in the Editor.
     /// Right-click thrust still works alongside WASD / arrow keys.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -28,6 +30,7 @@ namespace TitanOrbit.Game
         protected override void OnCreate()
         {
             RequireForUpdate<NetworkStreamInGame>();
+            // [NETCODE] GhostOwner identifies which connection owns each ship ghost.
             _playerShips = GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<GhostOwner>(),
@@ -54,6 +57,7 @@ namespace TitanOrbit.Game
 
             var cmd = BuildShipInput(_inputHandler);
 
+            // --- Write input onto the host player's ship ghost only ---
             using var owners = _playerShips.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var entities = _playerShips.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < entities.Length; i++)
@@ -62,9 +66,11 @@ namespace TitanOrbit.Game
                     continue;
 
                 var entity = entities[i];
+                // [ECS/DOTS] ShipKinematics may be missing on first frame after spawn.
                 if (!EntityManager.HasComponent<ShipKinematics>(entity))
                     EntityManager.AddComponentData(entity, new ShipKinematics());
 
+                // [TITAN-ORBIT] Clear team-selection gate once host starts moving.
                 if (EntityManager.HasComponent<ShipState>(entity))
                 {
                     var shipState = EntityManager.GetComponentData<ShipState>(entity);
@@ -79,6 +85,7 @@ namespace TitanOrbit.Game
                 cmd.WantDepositGems = wantDeposit;
                 EntityManager.SetComponentData(entity, cmd);
 
+                // [TITAN-ORBIT] Host also mirrors deposit intent for moon-dock systems.
                 if (EcsGameBridge.IsLocalHost() && EntityManager.HasComponent<ShipDepositIntent>(entity))
                 {
                     EntityManager.SetComponentData(entity, new ShipDepositIntent
@@ -89,6 +96,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// True when Editor/MPPM runs client + server worlds locally (not dedicated online client).
+        /// </summary>
         static bool IsLocalHostPlay()
         {
             if (TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
@@ -103,6 +113,7 @@ namespace TitanOrbit.Game
                    TitanOrbit.NetCode.TitanOrbitSessionManager.IsClientConnectionReady(server);
         }
 
+        /// <summary>NetworkId of the local client connection (matches GhostOwner on host ship).</summary>
         static int GetLocalClientNetworkId()
         {
             var client = ClientServerBootstrap.ClientWorld;
@@ -123,6 +134,10 @@ namespace TitanOrbit.Game
             return ids.Length > 0 ? ids[0].Value : -1;
         }
 
+        /// <summary>
+        /// Builds ShipInput from PlayerInputHandler (preferred) or raw keyboard/mouse fallback.
+        /// Aim direction is planar (XZ) from mouse world position toward ship.
+        /// </summary>
         static ShipInput BuildShipInput(PlayerInputHandler inputHandler)
         {
             float2 aimDir = float2.zero;
@@ -152,6 +167,7 @@ namespace TitanOrbit.Game
                 Vector2 move = inputHandler.GetMoveInput();
                 thrust = inputHandler.MoveForwardPressed;
                 spaceBrakes = inputHandler.SpaceBrakesEnabled;
+                // [TITAN-ORBIT] Orbit menu open suppresses shooting (same as client path).
                 shoot = inputHandler.ShootPressed && !MoonOrbitClientState.IsOrbitMenuVisible;
             }
             else
@@ -159,6 +175,7 @@ namespace TitanOrbit.Game
                 ReadFallbackInput(ref thrust, ref spaceBrakes, ref shoot);
             }
 
+            // [NETCODE] InputEvent.Set marks Fire as pressed this tick for ghost serialization.
             var fire = new InputEvent();
             if (shoot)
                 fire.Set();
@@ -174,6 +191,7 @@ namespace TitanOrbit.Game
             };
         }
 
+        /// <summary>Direct Input System read when PlayerInputHandler is not in scene.</summary>
         static void ReadFallbackInput(ref bool thrust, ref bool spaceBrakes, ref bool shoot)
         {
             var keyboard = Keyboard.current;

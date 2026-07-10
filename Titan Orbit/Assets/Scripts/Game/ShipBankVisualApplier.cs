@@ -8,8 +8,10 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side roll banking on ship proxies (ported from legacy Starship ApplyVisualBanking).
-    /// Root transform yaw comes from ECS; roll is applied on a BankPivot child so it is not overwritten.
+    /// Client-side roll banking on ship GameObject proxies (ported from legacy Starship ApplyVisualBanking).
+    /// Root transform yaw comes from ECS presentation sync; roll is applied on a BankPivot child so
+    /// EcsWorldVisualizer does not overwrite it. Reads ShipKinematics for idle detection and yaw rate
+    /// from proxy rotation. Suppressed during moon dock. Cosmetic only — no sim effect.
     /// </summary>
     [DefaultExecutionOrder(85)]
     public class ShipBankVisualApplier : MonoBehaviour
@@ -30,6 +32,7 @@ namespace TitanOrbit.Game
         bool _bankYawInitialized;
         bool _bankingInitialized;
 
+        /// <summary>Links to ship entity and ensures BankPivot hierarchy exists under the proxy root.</summary>
         public void Bind(Entity shipEntity, float maxBankDegrees = -1f, float bankSmooth = -1f)
         {
             _shipEntity = shipEntity;
@@ -41,6 +44,10 @@ namespace TitanOrbit.Game
             ResetBankingState();
         }
 
+        /// <summary>
+        /// Creates BankPivot → Prefab container and reparents existing mesh children so roll
+        /// does not fight yaw written by EcsWorldVisualizer on the root transform.
+        /// </summary>
         void EnsureBankPivotHierarchy()
         {
             Transform existing = transform.Find(BankPivotName);
@@ -109,6 +116,7 @@ namespace TitanOrbit.Game
                     return;
             }
 
+            // [TITAN-ORBIT] Moon dock cinematic owns transform — skip banking.
             if (em.HasComponent<ShipMoonDockState>(_shipEntity))
             {
                 var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
@@ -125,6 +133,7 @@ namespace TitanOrbit.Game
             ApplyVisualBanking(dt);
         }
 
+        /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt)
         {
             float yawDeg = GetPlanarYawDegrees(transform.rotation);
@@ -164,6 +173,7 @@ namespace TitanOrbit.Game
                 velFlat = new Vector3(vel.x, 0f, vel.z);
             }
 
+            // [TITAN-ORBIT] Zero bank when nearly stationary to avoid jitter at rest.
             if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
                 && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;

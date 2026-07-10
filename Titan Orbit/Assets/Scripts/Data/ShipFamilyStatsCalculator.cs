@@ -5,11 +5,13 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Sums ability stats from a chassis prefab hierarchy and a <see cref="ShipFamilyDefinition"/>.
-    /// Shared by editor previews and runtime ship stat application.
+    /// Static stat summing from a chassis prefab hierarchy plus a <see cref="ShipFamilyDefinition"/>.
+    /// Walks child transforms named <c>{familyId}_{componentId}</c>, scales stats by transform size, applies
+    /// propulsion aggregation, then stat fallbacks. Shared by editor previews, power-score baking, and runtime UI.
     /// </summary>
     public static class ShipFamilyStatsCalculator
     {
+        /// <summary>Per-component match list returned alongside the summed total.</summary>
         public struct SumResult
         {
             public ShipComponentAbilityStats TotalStats;
@@ -17,6 +19,10 @@ namespace TitanOrbit.Data
             public List<ShipComponentAbilityStats> PerComponentStats;
         }
 
+        /// <summary>
+        /// Sums prefab stats at level 1, then applies per-level scaling for <paramref name="shipLevel"/>.
+        /// Returns false when prefab or family is missing or the sum is all zero.
+        /// </summary>
         public static bool TrySumFromPrefab(
             GameObject prefab,
             ShipFamilyDefinition family,
@@ -35,6 +41,9 @@ namespace TitanOrbit.Data
             return true;
         }
 
+        /// <summary>
+        /// Core scan: instantiate prefab if needed, match children, sum scaled stats, apply propulsion rules.
+        /// </summary>
         public static SumResult SumFromPrefabHierarchy(GameObject prefab, ShipFamilyDefinition family, int shipLevel = 1)
         {
             var result = new SumResult
@@ -53,6 +62,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrEmpty(familyId))
                 return result;
 
+            // [UNITY] Prefab assets are not in a scene — instantiate temporarily so GetComponentsInChildren works.
             GameObject instance = prefab;
             bool destroyInstance = false;
             if (!prefab.scene.IsValid())
@@ -73,6 +83,7 @@ namespace TitanOrbit.Data
                     string name = t.name;
                     if (string.IsNullOrEmpty(name))
                         continue;
+                    // [TITAN-ORBIT] Child names must start with familyId_ to count as a stat-bearing part.
                     if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
                         continue;
 
@@ -89,6 +100,7 @@ namespace TitanOrbit.Data
                     result.PerComponentStats.Add(scaled);
                 }
 
+                // [TITAN-ORBIT] Engines/thrusters share one move-speed pool — replace naive sum here.
                 result.TotalStats = ShipPropulsionAggregation.ApplyPropulsionToSummedStats(
                     result.TotalStats,
                     result.MatchedComponentIds,
@@ -105,6 +117,7 @@ namespace TitanOrbit.Data
             return result;
         }
 
+        /// <summary>Maps a baked <see cref="ShipFamilyPowerScoreBreakdown"/> back into ability-stat fields.</summary>
         public static ShipComponentAbilityStats BreakdownToBaseStats(ShipFamilyPowerScoreBreakdown breakdown)
         {
             return new ShipComponentAbilityStats

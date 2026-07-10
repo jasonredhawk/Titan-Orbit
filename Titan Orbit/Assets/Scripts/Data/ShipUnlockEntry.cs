@@ -3,7 +3,10 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>One chassis unlock row for orbit store / ships tab.</summary>
+    /// <summary>
+    /// One unlockable chassis row for the orbit station ships tab — chassis metadata, minimum home-planet
+    /// level, and gem cost. Built at runtime by <see cref="PlanetShipFamilyConfig.GetUnlockedEntriesForPlanet"/>.
+    /// </summary>
     [Serializable]
     public class ShipUnlockEntry
     {

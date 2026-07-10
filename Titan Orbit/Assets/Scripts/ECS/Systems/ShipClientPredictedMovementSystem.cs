@@ -5,10 +5,12 @@ using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
-    // Order: ShipInputApplySystem → ShipClientPredictedMovementSystem → PhysicsSystemGroup → …
+    // [TITAN-ORBIT] Pipeline order: ShipInputApplySystem → ShipClientPredictedMovementSystem → PhysicsSystemGroup → …
     /// <summary>
-    /// Client-side prediction for the local owner's ship. Schedules the same <see cref="ShipMovementJob"/>
-    /// as the server for entities tagged <see cref="Simulate"/>, before Unity Physics integrates position.
+    /// Client-side prediction for the local owner's ship. NetCode marks predicted ghosts with
+    /// the <see cref="Simulate"/> tag so this system runs the same <see cref="ShipMovementJob"/>
+    /// as the server before Unity Physics integrates position. Input feels instant; server remains
+    /// authoritative and can roll back mispredictions via NetCode's built-in smoothing.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]
@@ -22,6 +24,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- Same job as server — deterministic motor is the key to prediction ---
             ShipMovementLogic.GetMapSize(ref state, out float mapW, out float mapH);
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
@@ -33,7 +36,7 @@ namespace TitanOrbit.ECS
                 MapH = mapH,
                 Planets = planets.AsArray(),
             };
-            // Simulate — NetCode tag for entities in the owner prediction loop.
+            // [NETCODE] ShipMovementJob queries WithAll<Simulate> — only predicted entities run here.
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);
         }

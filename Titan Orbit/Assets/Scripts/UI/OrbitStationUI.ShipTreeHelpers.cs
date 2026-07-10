@@ -9,9 +9,13 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Ship upgrade tree binding helpers (kept out of main OrbitStationUI for clarity).</summary>
+    /// <summary>
+    /// Partial <see cref="OrbitStationUI"/> — ship upgrade tree instantiation, layout, node population,
+    /// purchase/swap clicks, and hint text. Kept in a separate file so the main station UI stays readable.
+    /// </summary>
     public partial class OrbitStationUI
     {
+        /// <summary>Instantiates tree prefab under ships tab and wires layout element + host binding.</summary>
         private void EnsureShipUpgradeTreeInstance(Transform parent)
         {
             if (shipUpgradeTree != null)
@@ -146,6 +150,7 @@ namespace TitanOrbit.UI
 
         internal float GetShipTreeLayoutBasisWidthPublic() => GetShipTreeLayoutBasisWidth();
 
+        /// <summary>Walks upgrade path from current ship back to level 1 for green connector highlighting.</summary>
         internal bool TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges)
         {
             edges = new HashSet<(int, int, int, int)>();
@@ -194,6 +199,10 @@ namespace TitanOrbit.UI
         private static bool IsDebugFreeShipUpgradeTree() =>
             GameManager.Instance != null && GameManager.Instance.DebugFreeShipUpgradeTree;
 
+        /// <summary>
+        /// Colors, prices, interactable state, and power bars for every tree node (and current-ship display).
+        /// Called from <see cref="ShipUpgradeTreeUI.RefreshVisualState"/>.
+        /// </summary>
         internal void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower)
         {
             if (view == null || currentShip == null)
@@ -216,6 +225,7 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // --- Unlock / purchase eligibility ---
             int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
             int currentLevel = currentShip.ShipLevel;
             int currentBranch = currentShip.BranchIndex;
@@ -409,6 +419,9 @@ namespace TitanOrbit.UI
             OnUpgradeTreeNodeClicked(currentShip.ShipLevel, currentShip.BranchIndex);
         }
 
+        /// <summary>
+        /// Handles upgrade purchase, same-tier hull swap, or debug-free selection. Routes to ECS RPC or legacy Netcode RPC.
+        /// </summary>
         internal void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();

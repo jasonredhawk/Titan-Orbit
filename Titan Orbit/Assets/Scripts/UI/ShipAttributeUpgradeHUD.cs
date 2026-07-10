@@ -10,9 +10,12 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Ship Upgrade Menu at bottom-left of the screen, sized to end before the minimap. 10 abilities bound to keys 1-9 and 0.
-    /// Strip position: <b>Screen / strip placement</b> on this component (defaults anchor the strip to the root canvas bottom-left with small padding; re-applied every frame in Play mode).
-    /// Each upgrade costs ShipLevel * 5 gems. Max upgrades per ability = ShipLevel.
+    /// Bottom-left ship attribute upgrade bar (10 slots, keys 1–9 and 0). Reads local ship
+    /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
+    /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
+    /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel. Strip layout avoids
+    /// minimap overlap. Cosmetic tick marks reflect ghost-serialized upgrade levels.
+    /// Strip position: Screen / strip placement on this component (re-applied every frame in Play mode).
     /// </summary>
     public class ShipAttributeUpgradeHUD : MonoBehaviour
     {
@@ -581,6 +584,9 @@ namespace TitanOrbit.UI
                 TryUpgrade(9);
         }
 
+        /// <summary>
+        /// Client-side pre-check then RPC — server re-validates gems/caps in ShipAttributeUpgradeLogic.
+        /// </summary>
         private void TryUpgrade(int index)
         {
             if (!CanShowUpgradeBar())
@@ -597,6 +603,7 @@ namespace TitanOrbit.UI
             if (current >= ShipAttributeUpgradeLogic.GetMaxUpgrades(ship.ShipLevel)) return;
             if (ship.CurrentGems < ShipAttributeUpgradeLogic.GetUpgradeCost(ship.ShipLevel) - 0.01f) return;
 
+            // [NETCODE] Authoritative purchase runs on server after RPC delivery.
             MoonOrbitRpcClient.PurchaseAttributeUpgrade(index);
         }
     }

@@ -3,12 +3,25 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Fixed-step deterministic ship motor. When <c>integratePosition</c> is false (ships with Unity Physics),
-    /// only velocity and rotation are updated — physics integrates hull position.
-    /// Inlined by <see cref="TitanOrbit.ECS.ShipMovementJob"/> — no per-method [BurstCompile] (BC1064 AOT).
+    /// Fixed-step deterministic ship motor math. Shared by server authority and client prediction
+    /// so both worlds produce identical velocity and rotation each tick.
+    /// When <c>integratePosition</c> is false (ships with Unity Physics), only velocity and
+    /// rotation are updated — the physics solver integrates hull position and resolves collisions.
+    /// Inlined by <see cref="TitanOrbit.ECS.ShipMovementJob"/> — no per-method [BurstCompile]
+    /// on helpers (BC1064 AOT failure if compiled separately).
     /// </summary>
     public static class ShipMotorSimulator
     {
+        /// <summary>
+        /// Advances one motor tick: rotate toward aim, apply thrust/brakes or orbit blend,
+        /// optionally integrate position (non-physics entities only).
+        /// </summary>
+        /// <param name="state">Read/write motor state (position, rotation, velocity, mass).</param>
+        /// <param name="p">Per-tick tuning from ship stats and world context.</param>
+        /// <param name="aimWorldXZ">World-space aim point on the XZ plane (motor rotates toward this).</param>
+        /// <param name="thrust">True when the player is holding forward thrust.</param>
+        /// <param name="spaceBrakes">True when space-brake deceleration is enabled.</param>
+        /// <param name="integratePosition">When false, caller writes PhysicsVelocity; physics owns Position.</param>
         public static void Step(
             ref ShipMotorState state,
             in ShipMotorTickParams p,
@@ -20,6 +33,7 @@ namespace TitanOrbit.Simulation
             float dt = p.FixedDeltaTime;
             if (dt <= 0f) return;
 
+            // [TITAN-ORBIT] Electric shock status effect — hard brake, no rotation or thrust.
             if (p.ElectricShockDisabled)
             {
                 ApplyElectricShockBraking(ref state, p.BrakeDeceleration, dt);
@@ -27,11 +41,15 @@ namespace TitanOrbit.Simulation
                 return;
             }
 
+            // --- Facing ---
+            // [TITAN-ORBIT] Rotation comes from motor, not collision — ship InverseInertia is zero.
             if (!p.TheatricalRotationLocked)
                 TryRotateTowardAim(ref state, in aimWorldXZ, p.RotationSpeedDegPerSec, dt);
 
+            // --- Velocity: orbit blend or thrust/brakes ---
             if (p.UseOrbit)
             {
+                // [TITAN-ORBIT] Passive orbit — lerp current velocity toward tangential orbit velocity.
                 float3 currentVel = state.Velocity;
                 currentVel.y = 0f;
                 float3 desired = p.OrbitDesiredVelocity;
@@ -46,14 +64,18 @@ namespace TitanOrbit.Simulation
                 ApplyThrustAndBrakes(ref state, in p, thrust, spaceBrakes, dt);
             }
 
+            // --- Position integration (legacy / non-physics path only) ---
             if (integratePosition)
             {
                 IntegratePosition(ref state, dt);
                 state.Position.y = p.FixedY;
             }
-            // integratePosition: false — caller writes PhysicsVelocity; physics solver owns Position.
+            // [TITAN-ORBIT] integratePosition: false — caller writes PhysicsVelocity; physics solver owns Position.
         }
 
+        /// <summary>
+        /// Slerps ship rotation toward the aim point, clamped by rotation speed × dt.
+        /// </summary>
         static void TryRotateTowardAim(
             ref ShipMotorState state,
             in float2 aimWorldXZ,
@@ -73,9 +95,13 @@ namespace TitanOrbit.Simulation
             quaternion from = state.Rotation;
             quaternion to = targetRotation;
             float angle = math.angle(from, to);
+            // [STANDARD] Clamp rotation step so turning speed is frame-rate independent.
             state.Rotation = angle <= maxRadians ? to : math.slerp(from, to, maxRadians / math.max(angle, 1e-6f));
         }
 
+        /// <summary>
+        /// Applies forward thrust along ship facing, space-brake deceleration, and recoil decay above max speed.
+        /// </summary>
         static void ApplyThrustAndBrakes(
             ref ShipMotorState state,
             in ShipMotorTickParams p,
@@ -88,6 +114,7 @@ namespace TitanOrbit.Simulation
             float mass = math.max(0.5f, state.Mass);
             float maxSpeed = p.MaxSpeed;
 
+            // --- Thrust direction = ship forward on XZ plane ---
             float3 moveDirection = float3.zero;
             if (thrust)
             {
@@ -103,10 +130,12 @@ namespace TitanOrbit.Simulation
                 float3 accel;
                 if (speed < maxSpeed)
                 {
+                    // [STANDARD] F = ma → a = thrust / mass
                     accel = moveDirection * (p.EngineThrust / mass);
                 }
                 else
                 {
+                    // [TITAN-ORBIT] At max speed, thrust steers without adding forward speed (strafe-like).
                     float3 velNorm = math.normalize(vel);
                     float3 thrustVec = moveDirection * p.EngineThrust;
                     float alongVel = math.dot(thrustVec, velNorm);
@@ -117,6 +146,7 @@ namespace TitanOrbit.Simulation
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
             {
+                // [TITAN-ORBIT] Space brakes — constant deceleration opposite velocity.
                 float brakeAccel = p.BrakeDeceleration;
                 float3 brake = -math.normalize(vel) * brakeAccel * dt;
                 if (math.length(brake) > math.length(vel))
@@ -126,6 +156,8 @@ namespace TitanOrbit.Simulation
             }
 
             vel.y = 0f;
+
+            // --- Recoil decay: speed above max bleeds off over time (gun kick, collisions) ---
             float mag = math.length(vel);
             if (mag > maxSpeed && maxSpeed > 0.001f)
             {
@@ -137,6 +169,9 @@ namespace TitanOrbit.Simulation
             state.Velocity = vel;
         }
 
+        /// <summary>
+        /// Stronger braking used when electric shock disables normal motor control.
+        /// </summary>
         static void ApplyElectricShockBraking(ref ShipMotorState state, float brakeDeceleration, float dt)
         {
             float3 vel = state.Velocity;
@@ -157,11 +192,13 @@ namespace TitanOrbit.Simulation
             state.Velocity = vel;
         }
 
+        /// <summary>Legacy position integration — not used when Unity Physics owns the hull.</summary>
         static void IntegratePosition(ref ShipMotorState state, float dt)
         {
             state.Position += state.Velocity * dt;
         }
 
+        /// <summary>Adds a velocity delta (e.g. knockback) while keeping Y locked.</summary>
         public static void ApplyVelocityImpulse(ref ShipMotorState state, in float3 deltaVelocity)
         {
             float3 dv = deltaVelocity;
@@ -170,6 +207,7 @@ namespace TitanOrbit.Simulation
             state.Velocity.y = 0f;
         }
 
+        /// <summary>Replaces velocity entirely (e.g. teleport sync).</summary>
         public static void SetVelocity(ref ShipMotorState state, in float3 velocity)
         {
             float3 vel = velocity;
@@ -177,6 +215,7 @@ namespace TitanOrbit.Simulation
             state.Velocity = vel;
         }
 
+        /// <summary>Hard-resets motor state at a spawn point (respawn, dock snap).</summary>
         public static void SnapState(
             ref ShipMotorState state,
             in float3 position,

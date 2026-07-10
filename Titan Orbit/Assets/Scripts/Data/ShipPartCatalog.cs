@@ -49,7 +49,8 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Catalog of all known USC-derived ship parts. Generated/maintained via editor tooling.
+    /// Catalog of all USC-derived ship parts. Editor tooling generates and maintains the list; cards and
+    /// loadout systems look up prefabs and default grid footprints by <see cref="ShipPartDefinition.componentKey"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "ShipPartCatalog", menuName = "Titan Orbit/Ship Part Catalog")]
     public class ShipPartCatalog : ScriptableObject
@@ -58,6 +59,7 @@ namespace TitanOrbit.Data
 
         private Dictionary<string, ShipPartDefinition> _lookup;
 
+        /// <summary>Case-insensitive lookup by normalized component key (e.g. AstroEagle_Engine_2).</summary>
         public ShipPartDefinition GetPart(string componentKey)
         {
             if (string.IsNullOrEmpty(componentKey)) return null;

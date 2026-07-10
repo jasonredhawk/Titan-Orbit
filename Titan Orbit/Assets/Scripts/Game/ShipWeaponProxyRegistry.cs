@@ -3,11 +3,16 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Maps ship network ids to hull proxy roots that carry weapon mount children.</summary>
+    /// <summary>
+    /// Static registry mapping NetCode ship network ids to hull proxy <see cref="Transform"/> roots.
+    /// <see cref="ShipWeaponMountSyncSystem"/> and client bullet VFX read this to find weapon mount children
+    /// on hybrid GameObject proxies. Client presentation only — not authoritative sim state.
+    /// </summary>
     public static class ShipWeaponProxyRegistry
     {
         static readonly Dictionary<int, Transform> s_HullByNetworkId = new Dictionary<int, Transform>();
 
+        /// <summary>Records the visual hull root for a spawned ship ghost.</summary>
         public static void Register(int networkId, Transform hullRoot)
         {
             if (networkId <= 0 || hullRoot == null)
@@ -15,6 +20,7 @@ namespace TitanOrbit.Game
             s_HullByNetworkId[networkId] = hullRoot;
         }
 
+        /// <summary>Removes the mapping when the proxy is destroyed (guards against stale transforms).</summary>
         public static void Unregister(int networkId, Transform hullRoot)
         {
             if (networkId <= 0)
@@ -23,6 +29,7 @@ namespace TitanOrbit.Game
                 s_HullByNetworkId.Remove(networkId);
         }
 
+        /// <summary>Returns the registered hull root for a ship network id, or false when unknown.</summary>
         public static bool TryGetHull(int networkId, out Transform hullRoot)
         {
             hullRoot = null;

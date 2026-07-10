@@ -3,7 +3,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Server-authoritative health and energy regeneration from ship-family vitals.</summary>
+    /// <summary>
+    /// Server-authoritative health and energy regeneration from ship-family vitals config.
+    /// Runs each simulation tick before <see cref="BulletSimulationSystem"/> so regen applies
+    /// before shots consume energy. Skips dead ships and ships awaiting team selection.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(BulletSimulationSystem))]
@@ -27,6 +31,7 @@ namespace TitanOrbit.ECS
                 ref var s = ref ship.ValueRW;
                 var cfg = vitals.ValueRO;
 
+                // --- Energy regen (always active when below max) ---
                 if (s.CurrentEnergy < s.MaxEnergy && cfg.EnergyRegenPerSecond > 0f)
                 {
                     s.CurrentEnergy = UnityEngine.Mathf.Min(
@@ -34,6 +39,7 @@ namespace TitanOrbit.ECS
                         s.CurrentEnergy + cfg.EnergyRegenPerSecond * dt);
                 }
 
+                // --- Health regen (delayed after last hull damage) ---
                 if (s.Health < s.MaxHealth && cfg.HealthRegenPerSecond > 0f)
                 {
                     float delay = UnityEngine.Mathf.Max(0f, cfg.HealthRegenDelayAfterDamage);
