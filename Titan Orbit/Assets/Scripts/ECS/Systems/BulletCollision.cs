@@ -4,6 +4,11 @@ using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Pure math helpers for swept bullet segment tests on a toroidal map. Shared by authoritative
+    /// <see cref="BulletSimulationSystem"/> and cosmetic <see cref="BulletTracerUpdateSystem"/>.
+    /// Burst-compatible — no EntityManager access.
+    /// </summary>
     public static class BulletCollision
     {
         /// <summary>Logical center repositioned to the map tile nearest <paramref name="unwrapOrigin"/>.</summary>
@@ -65,6 +70,7 @@ namespace TitanOrbit.ECS
             return true;
         }
 
+        /// <summary>World hit radius for asteroid mesh scale (mining VFX alignment).</summary>
         public static float AsteroidHitRadius(float scale)
         {
             float meshRadius = scale * GemEconomyConstants.AsteroidMeshBaseRadius;
@@ -73,6 +79,7 @@ namespace TitanOrbit.ECS
                 meshRadius * GemEconomyConstants.AsteroidHitRadiusScale);
         }
 
+        /// <summary>Planet body sphere radius from visual scale.</summary>
         public static bool SegmentHitsPlanetToroidal(
             float3 from,
             float3 to,
@@ -86,6 +93,9 @@ namespace TitanOrbit.ECS
             return SegmentHitsSphereToroidal(from, to, logicalPlanetCenter, radius, mapW, mapH, out hitPoint);
         }
 
+        /// <summary>
+        /// Gem-moon position orbits the planet — unwrap moon center near segment start for toroidal accuracy.
+        /// </summary>
         public static bool SegmentHitsMoonNear(
             float3 from,
             float3 to,

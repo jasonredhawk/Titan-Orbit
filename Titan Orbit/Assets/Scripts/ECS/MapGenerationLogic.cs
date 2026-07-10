@@ -6,7 +6,8 @@ using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Seed-based procedural layout for ECS map generation (ported from legacy MapGenerator).</summary>
+    /// <summary>Seed-based procedural layout for ECS map generation (ported from legacy MapGenerator).
+    /// Pure functions — no EntityManager. Called by <see cref="MapGenerationSystem"/> on the server.</summary>
     public static class MapGenerationLogic
     {
         public const int MinSupportedTeams = 2;

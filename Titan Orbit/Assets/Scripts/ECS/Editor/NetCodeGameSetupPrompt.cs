@@ -4,6 +4,10 @@ using UnityEditor.SceneManagement;
 
 namespace TitanOrbit.ECS.Editor
 {
+    /// <summary>
+    /// First-run editor prompt on SampleScene — offers to run NetCodeGameSetup if SubScene is missing.
+    /// Uses EditorPrefs so the dialog shows only once per machine.
+    /// </summary>
     [InitializeOnLoad]
     static class NetCodeGameSetupPrompt
     {

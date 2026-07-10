@@ -4,6 +4,11 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// Scene singleton that bakes ghost prefab entity references into <see cref="GamePrefabs"/>
+    /// and optional <see cref="MapGenerationConfig"/>. Server map generation and team spawn
+    /// instantiate entities from these baked prefab handles.
+    /// </summary>
     public class GamePrefabsRegistryAuthoring : MonoBehaviour
     {
         public GameObject ShipPrefab;
@@ -18,6 +23,7 @@ namespace TitanOrbit.ECS.Authoring
         {
             public override void Bake(GamePrefabsRegistryAuthoring authoring)
             {
+                // [ECS/DOTS] TransformUsageFlags.None — registry entity has no transform.
                 var entity = GetEntity(TransformUsageFlags.None);
                 AddComponent(entity, new GamePrefabs
                 {

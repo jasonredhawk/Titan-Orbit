@@ -4,7 +4,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Checks win condition after planet ownership changes.</summary>
+    /// <summary>
+    /// Server win-condition check: if one team owns every planet, declare match won.
+    /// Runs after people transport sim so capture from population transfer is visible first.
+    /// Writes <see cref="MatchStateSingleton.WinningTeam"/> — replicated to clients.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
@@ -14,6 +18,7 @@ namespace TitanOrbit.ECS
         {
             if (!SystemAPI.TryGetSingletonRW<MatchStateSingleton>(out var match))
                 return;
+            // [STANDARD] Early exit — winner already decided this match.
             if (match.ValueRO.WinningTeam != TeamId.None)
                 return;
 
@@ -21,12 +26,14 @@ namespace TitanOrbit.ECS
             if (activeTeams <= 0)
                 return;
 
+            // --- Scan planets: all must share one non-None owner ---
             TeamId owner = TeamId.None;
             int ownedCount = 0;
 
             foreach (var planet in SystemAPI.Query<RefRO<PlanetState>>().WithAll<PlanetTag>())
             {
                 var team = planet.ValueRO.Ownership;
+                // Neutral planet blocks domination win.
                 if (team == TeamId.None)
                     return;
 

@@ -3,8 +3,13 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Converts editor <see cref="MapGenerationSettings"/> ScriptableObject into ECS
+    /// <see cref="MapGenerationConfig"/> for server map generation. Used by bake and bootstrap.
+    /// </summary>
     public static class MapGenerationConfigUtility
     {
+        /// <summary>Maps all fields from designer-facing settings to the ECS config struct.</summary>
         public static MapGenerationConfig FromSettings(MapGenerationSettings s) => new MapGenerationConfig
         {
             Seed = s.seed,
@@ -34,6 +39,7 @@ namespace TitanOrbit.ECS
             MinAsteroidSpacing = s.minAsteroidSpacing,
         };
 
+        /// <summary>Fallback config when no ScriptableObject is assigned in the scene.</summary>
         public static MapGenerationConfig Default() =>
             FromSettings(ScriptableObject.CreateInstance<MapGenerationSettings>());
     }

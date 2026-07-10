@@ -7,6 +7,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// Baker for asteroid ghost prefabs. Adds mineable <see cref="AsteroidState"/> and a static
+    /// sphere collider on the World physics layer. Asteroids block ship movement but gems do not.
+    /// </summary>
     public class AsteroidGhostAuthoring : MonoBehaviour
     {
         class Baker : Baker<AsteroidGhostAuthoring>
@@ -17,8 +21,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new AsteroidTag());
                 AddComponent(entity, new AsteroidState());
 
-                // Static Unity Physics body. Geometry radius is the unscaled mesh radius;
-                // Unity Physics applies LocalTransform.Scale at runtime for the world radius.
+                // --- Static physics collider (see PlanetGhostAuthoring for layer notes) ---
                 var material = Unity.Physics.Material.Default;
                 material.Restitution = 0.5f;
                 var collider = Unity.Physics.SphereCollider.Create(

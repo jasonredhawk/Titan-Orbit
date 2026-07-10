@@ -11,15 +11,21 @@ using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Server initialization: creates match singletons (team state, map state, bullet buffers)
+    /// on first world boot. Runs once in InitializationSystemGroup before map generation.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup))]
     public partial struct GameBootstrapSystem : ISystem
     {
         public void OnCreate(ref SystemState state)
         {
+            // [STANDARD] Idempotent — skip if another bootstrap path already created singletons.
             if (SystemAPI.HasSingleton<TeamStateSingleton>())
                 return;
 
+            // [ECS/DOTS] One entity holds multiple singleton components and shared buffers.
             var entity = state.EntityManager.CreateEntity(typeof(TeamStateSingleton), typeof(MatchStateSingleton),
                 typeof(MapStateSingleton), typeof(ActiveBulletsTag));
             state.EntityManager.SetComponentData(entity, new TeamStateSingleton
@@ -39,6 +45,9 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state) { }
     }
 
+    /// <summary>
+    /// Server: increments match elapsed time after first simulation tick. Sets MatchStarted flag.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MatchTimerSystem : ISystem
@@ -57,6 +66,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Server procedural map spawn: rolls layout from <see cref="MapGenerationLogic"/>, instantiates
+    /// planets and asteroids incrementally, updates loading progress on <see cref="MapStateSingleton"/>.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MapGenerationSystem : ISystem

@@ -8,9 +8,14 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Server-side gem-moon combat helpers ported from legacy PlanetGemMoon.</summary>
+    /// <summary>
+    /// Server-side gem-moon combat helpers ported from legacy PlanetGemMoon. Shield absorption,
+    /// moon gem drain, friendly-fire rules, and motor shield repel. Called from
+    /// <see cref="BulletSimulationSystem"/> and <see cref="ShipMovementBurstLogic"/>.
+    /// </summary>
     public static class PlanetGemMoonCombatLogic
     {
+        /// <summary>True when attacker cannot damage this moon (same team or neutral attacker).</summary>
         public static bool IsTeamFriendlyToMoon(TeamId moonOwner, TeamId team)
         {
             if (moonOwner == TeamId.None)
@@ -20,6 +25,7 @@ namespace TitanOrbit.ECS
             return moonOwner == team;
         }
 
+        /// <summary>Sets moon gem reservoir to default max on planet spawn.</summary>
         public static void InitMoonGems(ref PlanetGemMoonState moon)
         {
             moon.MaxMoonGems = PlanetGemMoonMath.BaseMaxMoonGemPoints;

@@ -21,6 +21,7 @@ namespace TitanOrbit.ECS
             if (_applied)
                 return;
 
+            // [UNITY] Zero gravity — top-down space; ships use motor thrust, not PhysicsGravityFactor.
             if (SystemAPI.HasSingleton<PhysicsStep>())
             {
                 var step = SystemAPI.GetSingleton<PhysicsStep>();
@@ -35,6 +36,7 @@ namespace TitanOrbit.ECS
                 state.EntityManager.AddComponentData(stepEntity, singleton);
             }
 
+            // [NETCODE] Lag compensation history — required for client prediction physics rewind.
             if (!SystemAPI.HasSingleton<LagCompensationConfig>())
             {
                 var lagEntity = state.EntityManager.CreateEntity();

@@ -4,6 +4,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// Standalone baker for map generation settings when not combined with
+    /// <see cref="GamePrefabsRegistryAuthoring"/> on the same GameObject.
+    /// </summary>
     public class MapGenerationSettingsAuthoring : MonoBehaviour
     {
         public MapGenerationSettings Settings;

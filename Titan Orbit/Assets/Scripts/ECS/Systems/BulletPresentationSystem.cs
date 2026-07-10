@@ -8,6 +8,11 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Client/server presentation: spawns cosmetic bullet tracer entities from server spawn events.
+    /// Runs in PresentationSystemGroup — does not affect authoritative sim. Paired with
+    /// <see cref="BulletTracerUpdateSystem"/> which advances tracers and emits hit VFX events.
+    /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletPresentationSystem : ISystem
@@ -26,6 +31,7 @@ namespace TitanOrbit.ECS
             if (events.Length == 0)
                 return;
 
+            // [ECS/DOTS] ECB defers entity creation until Playback — safe during buffer iteration.
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
             foreach (var evt in events)
             {
@@ -51,6 +57,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Advances cosmetic bullet tracers each frame and detects visual hits for VFX.
+    /// Mirrors server collision layers (planets, moons, ships, asteroids) but does not apply damage.
+    /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     [UpdateAfter(typeof(BulletPresentationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
@@ -91,6 +101,7 @@ namespace TitanOrbit.ECS
                 bool hit = false;
                 float3 hitPoint = newPos;
 
+                // --- World collision (same order as BulletSimulationSystem) ---
                 foreach (var (planetState, planetTransform, moonState) in SystemAPI
                              .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
                              .WithAll<PlanetTag>())

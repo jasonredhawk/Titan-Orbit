@@ -33,7 +33,10 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>Grows planet population toward max cap over time (legacy Planet server Update).</summary>
+    /// <summary>
+    /// Grows planet population toward max cap over time (legacy Planet server Update).
+    /// Pauses growth briefly after hostile population events. Writes replicated Population on PlanetState.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]

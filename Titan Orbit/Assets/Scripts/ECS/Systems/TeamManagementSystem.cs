@@ -8,6 +8,11 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Server-only team assignment and player ship spawn. Handles <see cref="RequestTeamCommand"/>
+    /// RPCs from clients: validates roster caps, spawns ship ghost, replies with
+    /// <see cref="TeamChoiceResultRpc"/>. Paired with <see cref="TeamChoiceResultClientSystem"/>.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct TeamManagementSystem : ISystem
@@ -22,6 +27,7 @@ namespace TitanOrbit.ECS
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // [NETCODE] ReceiveRpcCommandRequest pairs each RPC entity with its source connection.
             foreach (var (cmd, req, entity) in SystemAPI.Query<RefRO<RequestTeamCommand>, RefRO<ReceiveRpcCommandRequest>>().WithEntityAccess())
             {
                 int networkId = cmd.ValueRO.NetworkId;

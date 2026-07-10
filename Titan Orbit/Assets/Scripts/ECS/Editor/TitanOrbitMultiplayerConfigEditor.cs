@@ -6,6 +6,9 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Editor
 {
+    /// <summary>
+    /// Editor menus for TitanOrbitMultiplayerConfig — toggles local play UI for dev vs production builds.
+    /// </summary>
     public static class TitanOrbitMultiplayerConfigEditor
     {
         const string AssetPath = "Assets/Resources/TitanOrbitMultiplayerConfig.asset";

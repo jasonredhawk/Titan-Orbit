@@ -7,13 +7,22 @@ namespace TitanOrbit.ECS
     /// (planets/asteroids) only. Gems and people-transports are gameplay-scripted movers, so they do
     /// not physically collide with ships (ships collect gems / pass through transports by design).
     /// </summary>
+    /// <summary>
+    /// Collision layer bit masks and pre-built CollisionFilter values for Unity Physics.
+    /// Baked onto ghost prefabs in *GhostAuthoring bakers. See ship-simulation rule for matrix.
+    /// </summary>
     public static class TitanOrbitPhysicsLayers
     {
+        /// <summary>Layer bit — player and AI ships (dynamic bodies).</summary>
         public const uint Ships = 1u << 0;
+        /// <summary>Layer bit — planets and asteroids (static bodies).</summary>
         public const uint World = 1u << 1;
+        /// <summary>Layer bit — gem pickups (scripted motion, world collision only).</summary>
         public const uint Gems = 1u << 2;
+        /// <summary>Layer bit — people transport projectiles.</summary>
         public const uint Transports = 1u << 3;
 
+        /// <summary>[TITAN-ORBIT] Ships collide with other ships and world static geometry only.</summary>
         public static readonly CollisionFilter Ship = new CollisionFilter
         {
             BelongsTo = Ships,

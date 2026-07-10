@@ -4,6 +4,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// Baker for gem pickup ghosts. Gems use scripted motion (<see cref="GemKinematics"/>) — no
+    /// ship collision. Layer is set when spawned at runtime; prefab bakes tag + state only.
+    /// </summary>
     public class GemGhostAuthoring : MonoBehaviour
     {
         class Baker : Baker<GemGhostAuthoring>

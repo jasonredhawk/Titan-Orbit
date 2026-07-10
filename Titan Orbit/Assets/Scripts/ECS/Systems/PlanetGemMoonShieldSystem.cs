@@ -8,7 +8,10 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Ensures gem-moon shield state exists and regenerates after hits (legacy PlanetGemMoon).</summary>
+    /// <summary>
+    /// Server-only: ensures every planet has <see cref="PlanetGemMoonState"/> after spawn.
+    /// Initializes shield capacity from planet level and moon gem reservoir.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct PlanetGemMoonEnsureSystem : ISystem
@@ -37,6 +40,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Regenerates gem-moon shields after combat downtime and drains moon gems into spawned pickups
+    /// when shield is depleted (legacy PlanetGemMoon server loop).
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PlanetGemMoonEnsureSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]

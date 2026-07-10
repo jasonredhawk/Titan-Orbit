@@ -9,6 +9,13 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Burst-compiled server-authoritative bullet simulation and ship firing. Runs after
+    /// <see cref="ShipMovementSystem"/> so muzzle positions use current transforms. Advances
+    /// <see cref="BulletElement"/> buffer with toroidal segment tests against planets, moons,
+    /// ships, asteroids, and people transports. Spawns cosmetic events for
+    /// <see cref="BulletPresentationSystem"/>. Damage and death are server-only.
+    /// </summary>
     [BurstCompile]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipMovementSystem))]
@@ -18,12 +25,14 @@ namespace TitanOrbit.ECS
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
+            // [ECS/DOTS] RequireForUpdate — system skips OnUpdate until a bullet singleton exists.
             state.RequireForUpdate<ActiveBulletsTag>();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            // --- Singleton bullet buffers ---
             if (!SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity))
                 return;
 
@@ -35,6 +44,7 @@ namespace TitanOrbit.ECS
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             float dt = SystemAPI.Time.DeltaTime;
             double elapsed = SystemAPI.Time.ElapsedTime;
+            // [TITAN-ORBIT] Map size for toroidal unwrap during swept collision tests.
             float mapW = 1000f;
             float mapH = 1000f;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
@@ -43,6 +53,7 @@ namespace TitanOrbit.ECS
                 mapH = math.max(100f, mapState.MapHeight);
             }
 
+            // --- Advance existing bullets (reverse loop for swap-back removal) ---
             for (int i = bullets.Length - 1; i >= 0; i--)
             {
                 var b = bullets[i];
@@ -53,6 +64,7 @@ namespace TitanOrbit.ECS
                 b.Age += dt;
                 b.Traveled += stepDistance;
 
+                // Lifetime / range expiry — no hit, just despawn.
                 if (b.Age >= b.Lifetime || b.Traveled >= b.MaxDistance)
                 {
                     bullets.RemoveAtSwapBack(i);
@@ -61,6 +73,7 @@ namespace TitanOrbit.ECS
 
                 bool hit = false;
 
+                // [TITAN-ORBIT] Planet hull and gem-moon shield hits (friendly moons skip damage).
                 foreach (var (planetState, planetTransform, moonState) in SystemAPI
                              .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRW<PlanetGemMoonState>>()
                              .WithAll<PlanetTag>())
@@ -102,6 +115,7 @@ namespace TitanOrbit.ECS
 
                 if (!hit)
                 {
+                    // Enemy ships only — friendly fire disabled.
                     foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
                              .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
@@ -198,6 +212,7 @@ namespace TitanOrbit.ECS
                 bullets[i] = b;
             }
 
+            // --- Ship firing (spawn new bullets from Fire input) ---
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()

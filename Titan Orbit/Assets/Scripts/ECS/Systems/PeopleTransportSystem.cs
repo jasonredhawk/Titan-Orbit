@@ -10,6 +10,10 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Tunable timing for people transport orbit dwell and hull interaction radius.
+    /// Used by <see cref="PeopleTransportDispatchSystem"/> and simulation systems.
+    /// </summary>
     public static class PeopleTransportConstants
     {
         public const float OrbitDwellBeforeTransferSeconds = 2f;
@@ -23,6 +27,7 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>Outcome when a transport unloads population at a planet (friendly, drain, or capture).</summary>
     public enum PeopleUnloadOutcome : byte
     {
         Friendly = 0,
@@ -367,6 +372,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>Magnet-steers in-flight people transports and applies load/unload on arrival.</summary>
+    /// <summary>
+    /// Server authoritative simulation of people-transport projectiles: movement, homing,
+    /// unload at planets/ships, capture/drain outcomes. Runs after dispatch and bullets.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportDispatchSystem))]

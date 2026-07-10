@@ -10,6 +10,10 @@ using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
 {
+    /// <summary>
+    /// Tunable constants for gem mining, pickup, deposit, and asteroid hit radii.
+    /// Shared by <see cref="MiningSystem"/>, <see cref="GemPickupSystem"/>, and bullet collision.
+    /// </summary>
     public static class GemEconomyConstants
     {
         public const float MiningRange = 6f;
@@ -34,6 +38,10 @@ namespace TitanOrbit.ECS
         public const float MinAsteroidHitRadius = 0.15f;
     }
 
+    /// <summary>
+    /// Server: ships near asteroids mine gems over time, spawning gem entities when chunks break off.
+    /// Destroys asteroids when RemainingGems reaches zero.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MiningSystem : ISystem
@@ -105,6 +113,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Server: applies drag and integrates gem positions from <see cref="GemKinematics.Velocity"/>.
+    /// Gems are scripted movers — not Unity Physics bodies.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(MiningSystem))]
@@ -132,6 +144,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Server: collects gems into ship cargo when within hull or wing tractor pickup radius.
+    /// Runs after <see cref="GemTractorBeamSystem"/> so pulled gems can be collected at wings.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(AsteroidDestructionSystem))]
@@ -241,6 +257,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Server: deposits ship cargo gems into friendly planets while docked at the gem moon.
+    /// Credits home-planet contributed gems for store purchases.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GemPickupSystem))]
@@ -323,6 +343,10 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>
+    /// Server: when an asteroid is destroyed, spawns a burst of gem entities with explosion velocity.
+    /// Runs after bullets and mining may have marked asteroids IsDestroyed.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(BulletSimulationSystem))]

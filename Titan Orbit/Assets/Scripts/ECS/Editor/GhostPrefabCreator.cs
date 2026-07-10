@@ -8,6 +8,10 @@ using Unity.Entities.Hybrid.Baking;
 
 namespace TitanOrbit.ECS.Editor
 {
+    /// <summary>
+    /// Editor menu utility that creates ECS ghost prefabs (ship, planet, asteroid, gem, transport)
+    /// and the GamePrefabsRegistry asset under Assets/Prefabs/ECS/. Run once per project setup.
+    /// </summary>
     public static class GhostPrefabCreator
     {
         const string MapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";

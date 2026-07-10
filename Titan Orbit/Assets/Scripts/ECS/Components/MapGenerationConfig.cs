@@ -2,7 +2,8 @@ using Unity.Entities;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Baked map-generation parameters (from <see cref="Data.MapGenerationSettings"/>).</summary>
+    /// <summary>Baked map-generation parameters (from <see cref="Data.MapGenerationSettings"/>).
+    /// Singleton read by <see cref="MapGenerationSystem"/> on server boot to roll procedural layout.</summary>
     public struct MapGenerationConfig : IComponentData
     {
         public int Seed;

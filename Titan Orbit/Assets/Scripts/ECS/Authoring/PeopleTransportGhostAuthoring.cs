@@ -4,6 +4,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Authoring
 {
+    /// <summary>
+    /// Baker for people-transport projectile ghosts. Spawned at runtime by
+    /// <see cref="PeopleTransportDispatchSystem"/> when ships load/unload population at planets.
+    /// </summary>
     public class PeopleTransportGhostAuthoring : MonoBehaviour
     {
         class Baker : Baker<PeopleTransportGhostAuthoring>

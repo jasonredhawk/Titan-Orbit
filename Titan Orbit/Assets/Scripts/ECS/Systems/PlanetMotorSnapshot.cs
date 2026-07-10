@@ -26,13 +26,14 @@ namespace TitanOrbit.ECS
         {
             var list = new NativeList<PlanetMotorSnapshot>(allocator);
             var em = state.EntityManager;
-            // CreateEntityQuery (not state.GetEntityQuery) — caller-owned; safe to dispose.
+            // [ECS/DOTS] CreateEntityQuery (not state.GetEntityQuery) — caller-owned; safe to dispose.
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>(),
                 ComponentType.ReadOnly<LocalTransform>());
             using var entities = query.ToEntityArray(Allocator.Temp);
 
+            // --- One snapshot per planet (shared by all ships this movement tick) ---
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];

@@ -7,6 +7,10 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Editor
 {
+    /// <summary>
+    /// Editor utility that creates or populates the BulletVfxBank ScriptableObject with default
+    /// tracer and impact prefabs. Used by NetCode setup and client bullet VFX bridges.
+    /// </summary>
     public static class BulletVfxBankSetup
     {
         const string AssetPath = "Assets/Data/BulletVfxBank.asset";

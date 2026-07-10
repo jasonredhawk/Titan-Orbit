@@ -7,7 +7,8 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Server RPC handlers for moon orbit store: contributed gems, deposits, purchases.</summary>
+    /// <summary>Server RPC handlers for moon orbit store: contributed gems, deposits, purchases.
+    /// Validates team, planet id, and gem balances before mutating ship/planet state.</summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MoonOrbitStoreSystem : ISystem
@@ -16,6 +17,7 @@ namespace TitanOrbit.ECS
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Contributed gems balance query ---
             foreach (var (cmd, req, entity) in SystemAPI
                          .Query<RefRO<RequestContributedGemsCommand>, RefRO<ReceiveRpcCommandRequest>>()
                          .WithEntityAccess())

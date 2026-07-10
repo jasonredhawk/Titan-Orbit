@@ -17,7 +17,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.ECS.Editor
 {
     /// <summary>
-    /// One-click setup for the NCE vertical slice in the active scene.
+    /// One-click setup for the NetCode for Entities vertical slice in the active scene.
+    /// Wires subscene, prefab registry, input actions, and default data assets for local MPPM testing.
+    /// Editor-only — not compiled into player or dedicated server builds.
     /// </summary>
     public static class NetCodeGameSetup
     {

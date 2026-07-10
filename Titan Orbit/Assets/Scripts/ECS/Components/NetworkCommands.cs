@@ -26,16 +26,19 @@ namespace TitanOrbit.ECS
         public FixedString128Bytes Message;
     }
 
+    /// <summary>Client sets display name shown in scoreboard/HUD.</summary>
     public struct SetPlayerNameCommand : IRpcCommand
     {
         public FixedString64Bytes DisplayName;
     }
 
+    /// <summary>Client requests contributed-gem balance at a home planet store.</summary>
     public struct RequestContributedGemsCommand : IRpcCommand
     {
         public int HomePlanetId;
     }
 
+    /// <summary>Server replies with player's contributed gem total at the requested home planet.</summary>
     public struct ContributedGemsResultRpc : IRpcCommand
     {
         public float Amount;
@@ -57,12 +60,14 @@ namespace TitanOrbit.ECS
         public int TargetBranchIndex;
     }
 
+    /// <summary>Client purchases a store item (non-ship) at a home planet moon store.</summary>
     public struct PurchaseStoreItemCommand : IRpcCommand
     {
         public int HomePlanetId;
         public int ItemType;
     }
 
+    /// <summary>Server success/failure reply for orbit store purchases.</summary>
     public struct OrbitStoreResultRpc : IRpcCommand
     {
         public byte Success;

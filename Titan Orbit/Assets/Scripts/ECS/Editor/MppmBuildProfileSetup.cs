@@ -5,7 +5,9 @@ using UnityEngine;
 
 namespace TitanOrbit.ECS.Editor
 {
-    /// <summary>Points MPPM Player 2 at the shipped Windows client build profile.</summary>
+    /// <summary>
+    /// Points MPPM Player 2 at the shipped Windows client build profile for multi-editor play mode testing.
+    /// </summary>
     public static class MppmBuildProfileSetup
     {
         public const string ClientProfilePath = "Assets/Settings/Build Profiles/TitanOrbitMppmClient.asset";
