@@ -3,7 +3,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Applies pending input on the in-game client for predicted ghosts (non-local-host online play).</summary>
+    // Order: (input) → ShipInputApplySystem → ShipClientPredictedMovementSystem → …
+    /// <summary>
+    /// Copies pending player input onto the local predicted ship ghost during
+    /// <see cref="GhostInputSystemGroup"/>. Client simulation only; server reads replicated input.
+    /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipInputApplySystem : ISystem

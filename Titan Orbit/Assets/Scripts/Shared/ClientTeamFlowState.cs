@@ -14,16 +14,52 @@ namespace TitanOrbit.Core
         public static bool TeamChoiceConfirmed { get; private set; }
         public static RejoinShipChoice RejoinChoice { get; private set; } = RejoinShipChoice.NotApplicable;
 
-        public static void ConfirmTeamChoice() => TeamChoiceConfirmed = true;
+        /// <summary>True after the player clicks Join Team — blocks late ship ghosts from triggering rejoin UI.</summary>
+        static bool _teamPickRequested;
+        static bool _rejoinEligibilityLocked;
+
+        public static bool HasRequestedTeamPick => _teamPickRequested;
+        public static bool IsRejoinEligibilityLocked => _rejoinEligibilityLocked;
+
+        public static void ConfirmTeamChoice()
+        {
+            TeamChoiceConfirmed = true;
+            LockRejoinEligibility();
+        }
 
         public static void Reset()
         {
             TeamChoiceConfirmed = false;
             RejoinChoice = RejoinShipChoice.NotApplicable;
+            _teamPickRequested = false;
+            _rejoinEligibilityLocked = false;
         }
 
-        public static void NotifyRejoinableShipDetected()
+        /// <summary>Call when the player clicks a team button (before server ack).</summary>
+        public static void NotifyTeamPickRequested()
         {
+            _teamPickRequested = true;
+            LockRejoinEligibility();
+        }
+
+        /// <summary>Allow retry after a failed team RPC without treating the spawned ship as a rejoin.</summary>
+        public static void ClearTeamPickRequest()
+        {
+            if (TeamChoiceConfirmed)
+                return;
+            _teamPickRequested = false;
+        }
+
+        static void LockRejoinEligibility() => _rejoinEligibilityLocked = true;
+
+        /// <summary>
+        /// Promote to Pending only while the player has not started normal team selection.
+        /// Ships spawned after Join Team must not be mistaken for a prior-session rejoin.
+        /// </summary>
+        public static void TryNotifyRejoinableShip(bool hasRejoinableShip)
+        {
+            if (!hasRejoinableShip || _rejoinEligibilityLocked || TeamChoiceConfirmed || IsRejoinChoiceResolved)
+                return;
             if (RejoinChoice == RejoinShipChoice.NotApplicable)
                 RejoinChoice = RejoinShipChoice.Pending;
         }

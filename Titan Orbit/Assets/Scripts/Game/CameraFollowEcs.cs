@@ -4,7 +4,8 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Baseline top-down follow: hard lock to the local ship ECS pose each LateUpdate.
+    /// Baseline top-down follow: hard lock to <see cref="ShipDisplayPose"/> (presentation phase)
+    /// each LateUpdate. No extra camera smoothing on predicted owner movement.
     /// </summary>
     [DefaultExecutionOrder(67001)]
     public class CameraFollowEcs : MonoBehaviour

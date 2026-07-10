@@ -3,8 +3,8 @@ using UnityEngine;
 namespace TitanOrbit.Shared
 {
     /// <summary>
-    /// Interpolated local-player display pose, published from NetCode presentation each frame.
-    /// Camera, background, and UI should read this instead of raw ECS or smoothed proxy copies.
+    /// Presentation-phase local-player pose published from <see cref="EcsWorldVisualizer"/>.
+    /// Camera and background read this — not raw sim ECS or double-smoothed proxy copies.
     /// </summary>
     public static class ShipDisplayPose
     {

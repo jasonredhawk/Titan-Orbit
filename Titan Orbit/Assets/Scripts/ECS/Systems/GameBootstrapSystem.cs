@@ -157,6 +157,7 @@ namespace TitanOrbit.ECS
         bool BeginGeneration(ref SystemState state)
         {
             var em = state.EntityManager;
+            DestroyExistingPlayerShips(ref state);
             _mapEntity = SystemAPI.GetSingletonEntity<MapStateSingleton>();
             _config = GetConfig(ref state);
             UnityEngine.Debug.Log(
@@ -179,6 +180,12 @@ namespace TitanOrbit.ECS
 
             var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
             teamState.ValueRW.ActiveTeamCount = _rolled.TeamCount;
+            teamState.ValueRW.TeamACount = 0;
+            teamState.ValueRW.TeamBCount = 0;
+            teamState.ValueRW.TeamCCount = 0;
+            teamState.ValueRW.TeamDCount = 0;
+            teamState.ValueRW.TeamECount = 0;
+            teamState.ValueRW.EliminatedTeamsMask = 0;
 
             _nextNeutralPlanetId = 100;
             int estimatedEntries = _rolled.TeamCount + _rolled.NeutralPlanetCount + _rolled.AsteroidCount;
@@ -338,6 +345,16 @@ namespace TitanOrbit.ECS
         {
             if (_layoutEntries.IsCreated) _layoutEntries.Dispose();
             if (_spawnQueue.IsCreated) _spawnQueue.Dispose();
+        }
+
+        /// <summary>Fresh map generation must not inherit player ships from a prior match on the same server world.</summary>
+        static void DestroyExistingPlayerShips(ref SystemState state)
+        {
+            var em = state.EntityManager;
+            using var ships = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            using var entities = ships.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+                em.DestroyEntity(entities[i]);
         }
 
         void SpawnPlanet(ref SystemState state, float3 pos, TeamId team, bool isHome, float scale, int level, ref int nextNeutralPlanetId, byte shipFamilyConfigIndex)

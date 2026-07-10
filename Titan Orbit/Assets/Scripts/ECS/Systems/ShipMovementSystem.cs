@@ -1,38 +1,40 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
-using Unity.Physics;
 using Unity.Physics.Systems;
-using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
+    // Order: ShipInputApplySystem → ShipMovementSystem → PhysicsSystemGroup → BulletSimulationSystem → …
     /// <summary>
-    /// Authoritative ship motor (server only). Client owner prediction runs in
-    /// <see cref="ShipClientPredictedMovementSystem"/>.
+    /// Authoritative ship motor (server only). Schedules <see cref="ShipMovementJob"/> before
+    /// Unity Physics integrates hull position. Paired with <see cref="ShipClientPredictedMovementSystem"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
-    public partial class ShipMovementSystem : SystemBase
+    public partial struct ShipMovementSystem : ISystem
     {
-        protected override void OnCreate()
+        public void OnCreate(ref SystemState state)
         {
-            RequireForUpdate<ShipMotorConfig>();
+            state.RequireForUpdate<ShipMotorConfig>();
         }
 
-        protected override void OnUpdate()
+        public void OnUpdate(ref SystemState state)
         {
-            float dt = SystemAPI.Time.DeltaTime;
-            double elapsed = SystemAPI.Time.ElapsedTime;
-            ShipMovementLogic.GetMapSize(EntityManager, out float mapW, out float mapH);
+            ShipMovementLogic.GetMapSize(ref state, out float mapW, out float mapH);
+            var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
-            foreach (var (input, motor, shipState, kinematics, physicsVelocity, transform, entity) in SystemAPI
-                         .Query<RefRO<ShipInput>, RefRO<ShipMotorConfig>, RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<PhysicsVelocity>, RefRW<LocalTransform>>()
-                         .WithAll<ShipTag, Simulate>()
-                         .WithEntityAccess())
+            var job = new ShipMovementJob
             {
-                ShipMovementLogic.StepShip(EntityManager, dt, mapW, mapH, elapsed, input, motor, shipState, kinematics, physicsVelocity, transform, entity);
-            }
+                Dt = SystemAPI.Time.DeltaTime,
+                Elapsed = SystemAPI.Time.ElapsedTime,
+                MapW = mapW,
+                MapH = mapH,
+                Planets = planets.AsArray(),
+            };
+            state.Dependency = job.ScheduleParallel(state.Dependency);
+            state.Dependency = planets.Dispose(state.Dependency);
         }
     }
 }

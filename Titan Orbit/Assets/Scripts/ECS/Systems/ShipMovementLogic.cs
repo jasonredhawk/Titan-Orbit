@@ -5,98 +5,99 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
-using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Shared deterministic ship motor step for server authority and client prediction.</summary>
+    /// <summary>Map size lookup for movement systems (runs in managed OnUpdate, not Burst).</summary>
     public static class ShipMovementLogic
     {
-        const float FixedY = 0f;
-        const float AimPointDistance = 100f;
-
-        public static void GetMapSize(EntityManager em, out float mapW, out float mapH)
+        public static void GetMapSize(ref SystemState state, out float mapW, out float mapH)
         {
             mapW = 1000f;
             mapH = 1000f;
-            using var query = em.CreateEntityQuery(typeof(MapStateSingleton));
+            // CreateEntityQuery (not state.GetEntityQuery) — caller-owned; safe to dispose.
+            using var query = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
             if (query.TryGetSingleton<MapStateSingleton>(out var map))
             {
                 mapW = math.max(100f, map.MapWidth);
                 mapH = math.max(100f, map.MapHeight);
             }
         }
+    }
 
-        public static void StepShip(
-            EntityManager em,
+    /// <summary>
+    /// Ship motor step shared by <see cref="ShipMovementSystem"/> (server) and
+    /// <see cref="ShipClientPredictedMovementSystem"/> (client prediction). Inlined into
+    /// <see cref="ShipMovementJob"/> — do not add [BurstCompile] on helpers (BC1064 AOT).
+    /// </summary>
+    public static class ShipMovementBurstLogic
+    {
+        const float FixedY = 0f;
+        const float AimPointDistance = 100f;
+
+        public static void Step(
+            in ShipInput input,
+            in ShipMotorConfig motor,
+            in ShipMoonDockState moonDock,
+            ref ShipState shipState,
+            ref ShipKinematics kinematics,
+            ref PhysicsVelocity physicsVelocity,
+            ref LocalTransform transform,
+            ref ShipOrbitState orbitState,
+            in NativeArray<PlanetMotorSnapshot> planets,
             float dt,
             float mapW,
             float mapH,
-            double elapsedSeconds,
-            RefRO<ShipInput> input,
-            RefRO<ShipMotorConfig> motor,
-            RefRW<ShipState> shipState,
-            RefRW<ShipKinematics> kinematics,
-            RefRW<PhysicsVelocity> physicsVelocity,
-            RefRW<LocalTransform> transform,
-            Entity entity)
+            double elapsedSeconds)
         {
-            if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+            // --- Early out: dead, team select, or docked on moon ---
+            if (shipState.IsDead || shipState.AwaitingTeamSelection)
             {
-                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
+                physicsVelocity = PhysicsVelocity.Zero;
                 return;
             }
 
-            if (!em.HasComponent<ShipOrbitState>(entity))
-                em.AddComponentData(entity, new ShipOrbitState());
-            if (!em.HasComponent<ShipMoonDockState>(entity))
-                em.AddComponentData(entity, new ShipMoonDockState());
-
-            var inp = input.ValueRO;
-            var moonDock = em.GetComponentData<ShipMoonDockState>(entity);
             if (moonDock.MoonPlanetId != 0 &&
                 moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
-                !inp.Thrust)
+                !input.Thrust)
             {
-                kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
-                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
-                em.SetComponentData(entity, new ShipOrbitState());
+                kinematics.Velocity = float3.zero;
+                physicsVelocity = PhysicsVelocity.Zero;
+                orbitState = default;
                 return;
             }
 
-            var cfg = motor.ValueRO;
-            float3 pos = transform.ValueRO.Position;
-            var ship = shipState.ValueRO;
-
+            // --- Motor tick: thrust, orbit, aim rotation (no position integration) ---
+            float3 pos = transform.Position;
             float effectiveMass = ShipMassLogic.ComputeMovementMass(
-                cfg.HullMassReference,
-                ship.MaxHealth,
-                cfg.ChassisReferenceHealth,
-                ship.CurrentGems,
-                cfg.Mass > 0f ? cfg.Mass : ShipMassLogic.DefaultBaseMass);
+                motor.HullMassReference,
+                shipState.MaxHealth,
+                motor.ChassisReferenceHealth,
+                shipState.CurrentGems,
+                motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass);
 
             var motorState = new ShipMotorState
             {
                 Position = pos,
-                Rotation = transform.ValueRO.Rotation,
-                // Start from the post-physics velocity so collision bounce carries into the next step.
-                Velocity = physicsVelocity.ValueRO.Linear,
+                Rotation = transform.Rotation,
+                // Start from post-physics velocity so collision bounce carries into the next step.
+                Velocity = physicsVelocity.Linear,
                 Mass = effectiveMass,
             };
 
-            Vector2 aimWorldXz = AimWorldPoint(pos, transform.ValueRO.Rotation, inp.AimPlanarDir);
+            AimWorldPoint(in pos, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
 
-            bool inOrbitRing = TryFindOrbitPlanet(em, pos, mapW, mapH, out var orbitPlanetState, out var orbitPlanetTransform);
-            bool useOrbit = inOrbitRing && !inp.Thrust && !inp.Fire.IsSet;
+            bool inOrbitRing = TryFindOrbitPlanet(pos, mapW, mapH, in planets, out var orbitPlanetState, out var orbitPlanetTransform);
+            bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet;
 
             var tickParams = new ShipMotorTickParams
             {
                 FixedDeltaTime = dt,
-                EngineThrust = cfg.EngineThrust,
-                MaxSpeed = cfg.MaxSpeed,
-                RotationSpeedDegPerSec = cfg.RotationSpeed,
-                BrakeDeceleration = cfg.BrakeDeceleration,
-                RecoilDecayPerSecond = cfg.RecoilDecayPerSecond > 0f ? cfg.RecoilDecayPerSecond : 6f,
+                EngineThrust = motor.EngineThrust,
+                MaxSpeed = motor.MaxSpeed,
+                RotationSpeedDegPerSec = motor.RotationSpeed,
+                BrakeDeceleration = motor.BrakeDeceleration,
+                RecoilDecayPerSecond = motor.RecoilDecayPerSecond > 0f ? motor.RecoilDecayPerSecond : 6f,
                 FixedY = FixedY,
                 UseOrbit = useOrbit,
             };
@@ -113,48 +114,48 @@ namespace TitanOrbit.ECS
                     mapH,
                     out float3 desiredVel,
                     out float alignRate);
-                tickParams.OrbitDesiredVelocity = new Vector3(desiredVel.x, 0f, desiredVel.z);
+                tickParams.OrbitDesiredVelocity = new float3(desiredVel.x, 0f, desiredVel.z);
                 tickParams.OrbitAlignRate = alignRate;
             }
 
+            // integratePosition: false — PhysicsSystemGroup owns hull position and bounce contacts.
             ShipMotorSimulator.Step(
                 ref motorState,
                 in tickParams,
-                aimWorldXz,
-                inp.Thrust,
-                inp.SpaceBrakes,
+                in aimWorldXz,
+                input.Thrust,
+                input.SpaceBrakes,
                 integratePosition: false);
 
-            // Unity Physics resolves ship/asteroid/planet contacts (bounce) — no custom sweep here.
-            // Shield repel still nudges velocity away from enemy moon shields (position writes ignored).
+            // --- Shield repel (deterministic gameplay overlay; moons have no physics colliders) ---
             PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
-                em,
                 ref motorState,
-                ship.Team,
+                shipState.Team,
+                in planets,
                 mapW,
                 mapH,
                 elapsedSeconds);
 
-            // Drive the dynamic physics body: we own facing + desired velocity; physics owns position.
+            // --- Physics handoff: motor owns facing + desired velocity; physics owns position ---
             float3 vel = motorState.Velocity;
             vel.y = 0f;
-            transform.ValueRW.Rotation = motorState.Rotation;
-            physicsVelocity.ValueRW = new PhysicsVelocity { Linear = vel, Angular = float3.zero };
-            kinematics.ValueRW.Velocity = vel;
+            transform.Rotation = motorState.Rotation;
+            physicsVelocity = new PhysicsVelocity { Linear = vel, Angular = float3.zero };
+            kinematics.Velocity = vel;
 
-            em.SetComponentData(entity, new ShipOrbitState
+            orbitState = new ShipOrbitState
             {
                 OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
                 InOrbitRing = inOrbitRing,
                 UsingOrbitMotor = useOrbit,
-            });
+            };
         }
 
         static bool TryFindOrbitPlanet(
-            EntityManager em,
-            float3 shipPos,
+            in float3 shipPos,
             float mapW,
             float mapH,
+            in NativeArray<PlanetMotorSnapshot> planets,
             out PlanetState planetState,
             out LocalTransform planetTransform)
         {
@@ -164,17 +165,11 @@ namespace TitanOrbit.ECS
             float bestDist = float.MaxValue;
             bool found = false;
 
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<PlanetTag>(),
-                ComponentType.ReadOnly<PlanetState>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
-            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-
-            for (int i = 0; i < states.Length; i++)
+            for (int i = 0; i < planets.Length; i++)
             {
-                var state = states[i];
-                var planetXform = transforms[i];
+                var snapshot = planets[i];
+                var state = snapshot.Planet;
+                var planetXform = snapshot.Transform;
                 float planetSize = math.max(0.5f, planetXform.Scale);
                 PlanetOrbitMath.GetRingRadiiWorld(planetSize, state.PlanetLevel, out float inner, out float outer, out _);
                 float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
@@ -193,14 +188,15 @@ namespace TitanOrbit.ECS
             return found;
         }
 
-        static Vector2 AimWorldPoint(float3 shipPos, quaternion rot, float2 aimPlanarDir)
+        static void AimWorldPoint(in float3 shipPos, in quaternion rot, in float2 aimPlanarDir, out float2 aimWorldXz)
         {
             if (math.lengthsq(aimPlanarDir) > 0.01f)
             {
                 float2 dir = math.normalize(aimPlanarDir);
-                return new Vector2(
+                aimWorldXz = new float2(
                     shipPos.x + dir.x * AimPointDistance,
                     shipPos.z + dir.y * AimPointDistance);
+                return;
             }
 
             float3 forward = math.mul(rot, new float3(0f, 0f, 1f));
@@ -210,7 +206,7 @@ namespace TitanOrbit.ECS
             else
                 forward = math.normalize(forward);
 
-            return new Vector2(
+            aimWorldXz = new float2(
                 shipPos.x + forward.x * AimPointDistance,
                 shipPos.z + forward.z * AimPointDistance);
         }

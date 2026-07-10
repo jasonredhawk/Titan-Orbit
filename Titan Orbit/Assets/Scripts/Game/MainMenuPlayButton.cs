@@ -47,6 +47,16 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() &&
+                TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
+                !HasPlayableServerWorld())
+            {
+                Debug.LogError(
+                    "[MainMenuPlayButton] ServerWorld is missing for local play. " +
+                    "Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).");
+                return;
+            }
+
             if (TitanOrbitSessionManager.Instance == null)
             {
                 Debug.LogError("[MainMenuPlayButton] TitanOrbitSessionManager missing on NceGameRoot.");
@@ -70,6 +80,14 @@ namespace TitanOrbit.Game
             if (client == null || !client.IsCreated)
                 return false;
             return client.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
+        }
+
+        static bool HasPlayableServerWorld()
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+            return server.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
         }
 
         void DisableChildRaycasts()

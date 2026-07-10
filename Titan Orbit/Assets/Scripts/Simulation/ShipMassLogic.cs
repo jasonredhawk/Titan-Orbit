@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Simulation
@@ -18,12 +19,12 @@ namespace TitanOrbit.Simulation
 
         public static float GetMovementBulkScale(float maxHealth, float chassisReferenceHealth)
         {
-            float bulk = maxHealth / Mathf.Max(1f, chassisReferenceHealth);
+            float bulk = maxHealth / math.max(1f, chassisReferenceHealth);
             if (bulk <= 1f || MovementHullBulkExponent >= 0.999f)
                 return bulk;
             if (MovementHullBulkExponent <= 0.001f)
                 return 1f;
-            return Mathf.Pow(bulk, MovementHullBulkExponent);
+            return math.pow(bulk, MovementHullBulkExponent);
         }
 
         public static float GetRammingBulkScale(float maxHealth, float chassisReferenceHealth) =>
@@ -45,9 +46,9 @@ namespace TitanOrbit.Simulation
         {
             float hullRef = hullMassReference > 0f
                 ? hullMassReference
-                : ComputeHullMassReference(0f, baseMass);
+                : math.max(MinMass, baseMass * HullMassScale);
             float bulkScale = GetMovementBulkScale(maxHealth, chassisReferenceHealth);
-            return Mathf.Max(MinMass, hullRef * bulkScale + currentGems * MassPerGem);
+            return math.max(MinMass, hullRef * bulkScale + currentGems * MassPerGem);
         }
 
         public static float ComputeRammingHullMassBaseline(

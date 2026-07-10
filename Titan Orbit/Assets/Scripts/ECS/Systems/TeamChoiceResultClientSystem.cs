@@ -32,7 +32,10 @@ namespace TitanOrbit.ECS
                 UnityEngine.Debug.Log($"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}).");
             }
             else
+            {
+                ClientTeamFlowState.ClearTeamPickRequest();
                 UnityEngine.Debug.LogWarning($"[TeamChoiceResult] Failed: {rpc.Message}");
+            }
         }
     }
 }

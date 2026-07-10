@@ -68,6 +68,7 @@ namespace TitanOrbit.Game
         float _connectedAt = -1f;
         float _dedicatedConnectedAt = -1f;
         float _mppmConnectedSince = -1f;
+        float _localHostConnectedSince = -1f;
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
@@ -187,6 +188,14 @@ namespace TitanOrbit.Game
         {
             if (TitanOrbitSessionManager.Instance == null)
                 return;
+
+            if (!HasPlayableServerWorld())
+            {
+                _statusMessage = "No ServerWorld. Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).";
+                Debug.LogError("[NceGameFlow] Local host requires ServerWorld. server=" +
+                               DescribeWorld(ClientServerBootstrap.ServerWorld));
+                return;
+            }
 
             Debug.Log("[NceGameFlow] Local host clicked.");
             if (!TitanOrbitSessionManager.Instance.StartLocalHostForLanTest())
@@ -566,6 +575,14 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && !HasPlayableServerWorld())
+            {
+                _statusMessage = "No ServerWorld. Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).";
+                Debug.LogError("[NceGameFlow] Local play requires ServerWorld. server=" +
+                               DescribeWorld(ClientServerBootstrap.ServerWorld));
+                return;
+            }
+
             _statusMessage = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
                 ? "Connecting to host..."
                 : "Connecting to game server...";
@@ -624,6 +641,14 @@ namespace TitanOrbit.Game
             if (client == null || !client.IsCreated)
                 return false;
             return client.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
+        }
+
+        static bool HasPlayableServerWorld()
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+            return server.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
         }
 
         static string DescribeWorld(World world)
@@ -717,6 +742,23 @@ namespace TitanOrbit.Game
                     return true;
             }
 
+            // Main editor host / local listen server: ClientWorld ghosts can arrive before
+            // MapStateSingleton.LoadingComplete flips on ServerWorld (Player 1 vs MPPM Player 2 asymmetry).
+            if (IsInGameFlow() &&
+                !TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                if (_localHostConnectedSince >= 0f &&
+                    EcsGameBridge.TryGetActiveTeamCount(out int teams) && teams > 0)
+                    return true;
+
+                if (EcsGameBridge.HasClientReplicatedMapContent())
+                    return true;
+
+                if (_localHostConnectedSince >= 0f && Time.time - _localHostConnectedSince >= 2f)
+                    return true;
+            }
+
             return false;
         }
 
@@ -734,31 +776,48 @@ namespace TitanOrbit.Game
             if (!connected && !connectingDedicated)
                 _dedicatedConnectedAt = -1f;
 
+            bool isLocalHostClient = connected &&
+                                     !TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                                     !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
+            if (isLocalHostClient && _localHostConnectedSince < 0f)
+                _localHostConnectedSince = Time.time;
+            if (!connected && !connectingDedicated)
+                _localHostConnectedSince = -1f;
+
+            bool mapReadyForFlow = connected && IsMapReadyForTeamSelection();
+
             ShipState rejoinShipState = default;
             bool hasRejoinableShip = connected &&
                                      EcsGameBridge.TryGetRejoinableShipForLocalPlayer(out rejoinShipState);
-            if (hasRejoinableShip && !ClientTeamFlowState.IsRejoinChoiceResolved)
-                ClientTeamFlowState.NotifyRejoinableShipDetected();
+            // Only evaluate rejoin once basic map readiness is met — stale ships during galaxy build must not block flow.
+            if (mapReadyForFlow)
+                ClientTeamFlowState.TryNotifyRejoinableShip(hasRejoinableShip);
 
-            bool requireFullMapLoad = hasRejoinableShip && !ClientTeamFlowState.IsRejoinChoiceResolved;
+            // Full map sync only while the rejoin prompt is actually pending (returning player resume).
+            bool requireFullMapLoad = ClientTeamFlowState.IsRejoinChoicePending;
             bool mapReady = connected && (requireFullMapLoad
                 ? EcsGameBridge.IsMapLoadingComplete()
-                : IsMapReadyForTeamSelection());
+                : mapReadyForFlow);
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
+            bool teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;
             int activeTeamsForUi = 0;
             bool knowsTeamCount = connected && mapReady &&
                                   EcsGameBridge.TryGetActiveTeamCount(out activeTeamsForUi) &&
                                   activeTeamsForUi > 0;
             bool showRejoinChoice = connected && mapReady && hasRejoinableShip &&
-                                    ClientTeamFlowState.IsRejoinChoicePending;
+                                    ClientTeamFlowState.IsRejoinChoicePending &&
+                                    !teamConfirmed && !ClientTeamFlowState.HasRequestedTeamPick;
             bool allowTeamPick = ClientTeamFlowState.ChoseStartFreshShip ||
-                                 (!hasRejoinableShip && !ClientTeamFlowState.IsRejoinChoicePending);
+                                 (!ClientTeamFlowState.IsRejoinChoicePending &&
+                                  !ClientTeamFlowState.HasRequestedTeamPick &&
+                                  !hasRejoinableShip);
             bool showLoading = connected && !mapReady;
-            bool showTeamCountWait = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed && !knowsTeamCount;
-            bool showTeam = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed && knowsTeamCount &&
-                            !showRejoinChoice;
-            bool showSpawnWait = connected && teamConfirmed && !hasShip && !showRejoinChoice;
+            bool showTeamCountWait = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed &&
+                                     !teamPickInFlight && !knowsTeamCount;
+            bool showTeam = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed &&
+                            !teamPickInFlight && knowsTeamCount && !showRejoinChoice;
+            bool showSpawnWait = connected && (teamConfirmed || teamPickInFlight) && !hasShip && !showRejoinChoice;
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && connected && !mapReady && !_loggedWaitingForMap)
             {

@@ -12,7 +12,9 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only bullet tracers aligned to the predicted ECS muzzle pose (same space as camera follow).
+    /// Client-only bullet tracers aligned to the presentation-phase muzzle pose (same space as
+    /// <see cref="ShipDisplayPose"/>). VFX only — damage and bullet entities stay server-authoritative
+    /// in <see cref="BulletSimulationSystem"/>.
     /// </summary>
     [DefaultExecutionOrder(66100)]
     public class ClientLocalBulletVfxBridge : MonoBehaviour
@@ -142,7 +144,18 @@ namespace TitanOrbit.Game
             fireOrigin = default;
             fireForward = Vector3.forward;
 
-            var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+            LocalTransform shipTransform;
+            if (GhostPresentationTransformCache.PublishFrame == Time.frameCount &&
+                GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap))
+            {
+                shipTransform = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
+            }
+            else if (em.HasComponent<LocalTransform>(shipEntity))
+            {
+                shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+            }
+            else
+                return false;
 
             if (em.HasBuffer<ShipWeaponMountElement>(shipEntity))
             {

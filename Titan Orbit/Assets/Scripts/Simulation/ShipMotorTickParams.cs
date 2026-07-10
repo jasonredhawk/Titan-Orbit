@@ -1,4 +1,4 @@
-using UnityEngine;
+using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
@@ -14,7 +14,7 @@ namespace TitanOrbit.Simulation
         public bool ElectricShockDisabled;
         public bool TheatricalRotationLocked;
         public bool UseOrbit;
-        public Vector3 OrbitDesiredVelocity;
+        public float3 OrbitDesiredVelocity;
         public float OrbitAlignRate;
         public float FixedY;
     }

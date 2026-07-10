@@ -1,3 +1,4 @@
+using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -12,8 +13,13 @@ namespace TitanOrbit.ECS
         public int CannonIndex;
     }
 
+    /// <summary>
+    /// Shared muzzle origin and fire direction from ship hull transform + weapon mount.
+    /// Used by <see cref="BulletSimulationSystem"/> (server) and client tracer VFX.
+    /// </summary>
     public static class ShipWeaponPose
     {
+        [BurstCompile]
         public static bool TryResolve(
             in LocalTransform shipTransform,
             in ShipWeaponMountElement mount,

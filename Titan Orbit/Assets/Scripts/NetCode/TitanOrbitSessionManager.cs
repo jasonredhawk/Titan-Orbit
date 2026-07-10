@@ -97,8 +97,8 @@ namespace TitanOrbit.NetCode
             IsDedicatedOnlineClient = false;
             IsInGame = false;
 #if UNITY_EDITOR
-            if (!TitanOrbit.Data.TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-                SuspendEditorLocalServerUntilLocalPlay();
+            // Keep ServerWorld idle on the menu so map/match sim does not run (and finish) before Local play/host.
+            SuspendEditorLocalServerUntilLocalPlay();
 #endif
         }
 
@@ -111,7 +111,7 @@ namespace TitanOrbit.NetCode
         }
 #endif
 
-        /// <summary>Stops the editor's local ServerWorld sim until local play is started (online join testing).</summary>
+        /// <summary>Stops the editor's local ServerWorld sim until local play/host/client is started.</summary>
         public static void SuspendEditorLocalServerUntilLocalPlay()
         {
 #if UNITY_EDITOR
@@ -128,27 +128,71 @@ namespace TitanOrbit.NetCode
 
             simulation.Enabled = false;
             s_EditorLocalServerSuspendedForOnline = true;
-            Debug.Log("[TitanOrbitSessionManager] Suspended local ServerWorld simulation (online dedicated testing).");
+            Debug.Log("[TitanOrbitSessionManager] Suspended local ServerWorld simulation until Local play/host/client.");
 #endif
         }
 
+        /// <summary>Re-enables ServerWorld sim for LAN host/play (also after dedicated-join suspend).</summary>
         static void ResumeEditorLocalServerForLocalPlay()
         {
 #if UNITY_EDITOR
-            if (!s_EditorLocalServerSuspendedForOnline)
-                return;
-
             var server = ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
                 return;
 
             var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
-            if (simulation != null)
+            if (simulation != null && !simulation.Enabled)
+            {
                 simulation.Enabled = true;
+                Debug.Log("[TitanOrbitSessionManager] Resumed local ServerWorld simulation for local play.");
+            }
 
             s_EditorLocalServerSuspendedForOnline = false;
-            Debug.Log("[TitanOrbitSessionManager] Resumed local ServerWorld simulation for local play.");
 #endif
+        }
+
+        /// <summary>Clear dedicated-session leftovers before loopback LAN connect.</summary>
+        void BeginLocalLanSession(bool resetTeamFlow)
+        {
+            IsDedicatedOnlineClient = false;
+            IsInGame = false;
+            if (resetTeamFlow)
+                ClientTeamFlowState.Reset();
+
+            if (_connectWatch != null)
+            {
+                StopCoroutine(_connectWatch);
+                _connectWatch = null;
+            }
+
+            ResumeEditorLocalServerForLocalPlay();
+            TitanOrbitRelayState.Clear();
+        }
+
+        IEnumerator PrepareWorldsForLocalLanConnect(bool resetTeamFlow, bool resetNetworkDrivers)
+        {
+            BeginLocalLanSession(resetTeamFlow);
+
+            var client = ClientServerBootstrap.ClientWorld;
+            var server = ClientServerBootstrap.ServerWorld;
+
+            if (client != null && client.IsCreated)
+            {
+                ClearNetworkStreamInGame(client);
+                yield return ClearNetworkConnections(client);
+            }
+
+            if (server != null && server.IsCreated)
+            {
+                ClearNetworkStreamInGame(server);
+                yield return ClearNetworkConnections(server);
+            }
+
+            if (resetNetworkDrivers)
+            {
+                ResetClientDriverIfNeeded();
+                ResetServerDriverIfNeeded();
+            }
         }
 
         static bool ShouldRunHeadlessServerBoot()
@@ -295,7 +339,14 @@ namespace TitanOrbit.NetCode
                 return false;
 
             var server = ClientServerBootstrap.ServerWorld;
-            if (server != null && server.IsCreated && IsServerWorldListening(server))
+            if (server == null || !server.IsCreated)
+            {
+                LastStatusMessage = "ServerWorld missing. Run Titan Orbit > Configure Multiplayer For Local Play.";
+                Debug.LogError("[TitanOrbitSessionManager] Local host requires Client+Server PlayMode (ServerWorld missing).");
+                return false;
+            }
+
+            if (IsServerWorldListening(server))
             {
                 LastStatusMessage = "Already hosting on port " + serverPort + ".";
                 Debug.Log("[TitanOrbitSessionManager] Local LAN host already listening on port " + serverPort + ".");
@@ -311,8 +362,7 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-                ResumeEditorLocalServerForLocalPlay();
-                TitanOrbitRelayState.Clear();
+                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: false, resetNetworkDrivers: false);
 
                 float readyDeadline = Time.realtimeSinceStartup + 15f;
                 while (Time.realtimeSinceStartup < readyDeadline)
@@ -371,7 +421,8 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-                TitanOrbitRelayState.Clear();
+                yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: false);
+
                 float readyDeadline = Time.realtimeSinceStartup + 15f;
                 while (Time.realtimeSinceStartup < readyDeadline)
                 {
@@ -424,7 +475,10 @@ namespace TitanOrbit.NetCode
                 Lobby lobby = await TitanOrbitLobbyService.QuickJoinLatestDedicatedLobbyAsync();
                 if (lobby == null)
                 {
-                    LastStatusMessage = "No dedicated match found.";
+                    var listed = await TitanOrbitLobbyService.QueryBrowsableDedicatedLobbiesAsync(15, skipEmptyStabilization: true);
+                    LastStatusMessage = listed.Count > 0
+                        ? "No joinable dedicated match — open Join game, Refresh, then select a live match."
+                        : "No dedicated match found.";
                     return false;
                 }
 
@@ -443,7 +497,8 @@ namespace TitanOrbit.NetCode
             _localBootRunning = true;
             try
             {
-            ResumeEditorLocalServerForLocalPlay();
+            yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: false);
+
             LastStatusMessage = "Waiting for NetCode worlds...";
             float readyDeadline = Time.realtimeSinceStartup + 15f;
             while (Time.realtimeSinceStartup < readyDeadline)
@@ -455,8 +510,6 @@ namespace TitanOrbit.NetCode
                 yield return null;
             }
 
-            TitanOrbitRelayState.Clear();
-
             var client = ClientServerBootstrap.ClientWorld;
             if (client == null || !client.IsCreated)
             {
@@ -466,11 +519,15 @@ namespace TitanOrbit.NetCode
             }
 
             var server = ClientServerBootstrap.ServerWorld;
-            bool localHost = server != null && server.IsCreated;
+            if (server == null || !server.IsCreated)
+            {
+                LastStatusMessage = "ServerWorld missing. Run Titan Orbit > Configure Multiplayer For Local Play.";
+                Debug.LogError("[TitanOrbitSessionManager] BootLanHost: ServerWorld missing — PlayMode Type must be Client+Server.");
+                yield break;
+            }
 
-            LastStatusMessage = localHost ? "Starting local host..." : "Connecting to game server...";
-            if (localHost)
-                ListenServer(server, serverPort);
+            LastStatusMessage = "Starting local host...";
+            ListenServer(server, serverPort);
             ConnectLocalClient(serverPort);
 
             float deadline = Time.realtimeSinceStartup + 20f;
@@ -481,17 +538,14 @@ namespace TitanOrbit.NetCode
 
                 if (HasClientInGame())
                 {
-                    if (localHost)
-                        RequestGoInGame(server);
+                    RequestGoInGame(server);
                     IsInGame = true;
                     LastStatusMessage = "Connected.";
-                    Debug.Log(localHost
-                        ? "[TitanOrbitSessionManager] Local Client+Server connected."
-                        : "[TitanOrbitSessionManager] Connected to game server on port " + serverPort + ".");
+                    Debug.Log("[TitanOrbitSessionManager] Local Client+Server connected.");
                     yield break;
                 }
 
-                if (localHost && HasLocalConnection(server, client))
+                if (HasLocalConnection(server, client))
                 {
                     RequestGoInGame(server);
                     RequestGoInGame(client);
@@ -1192,10 +1246,7 @@ namespace TitanOrbit.NetCode
 
             if (server != null && server.IsCreated)
             {
-                var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
-                if (simulation != null)
-                    simulation.Enabled = false;
-
+                SuspendEditorLocalServerUntilLocalPlay();
                 ClearNetworkStreamInGame(server);
                 RequestDisconnectAllConnections(server);
                 ResetServerDriverIfNeeded();
@@ -1674,6 +1725,9 @@ namespace TitanOrbit.NetCode
                 Debug.LogError("[TitanOrbitSessionManager] RequestTeam failed: no network connection on ClientWorld.");
                 return;
             }
+
+            // Block late-arriving ship ghosts from opening the rejoin screen after a normal team pick.
+            ClientTeamFlowState.NotifyTeamPickRequested();
 
             var em = world.EntityManager;
             int networkId = GetLocalNetworkId(world);

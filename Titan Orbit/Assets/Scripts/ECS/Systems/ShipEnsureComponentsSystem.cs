@@ -5,7 +5,11 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Ensures runtime-spawned ship ghosts have kinematics even if the subscene bake is stale.</summary>
+    /// <summary>
+    /// Pre-bakes runtime ship components (kinematics, orbit/dock state, weapons) so motor hot paths
+    /// never call AddComponent per tick. Runs before <see cref="ShipMovementSystem"/> and
+    /// <see cref="ShipClientPredictedMovementSystem"/>.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(ShipMovementSystem))]
     [UpdateBefore(typeof(ShipClientPredictedMovementSystem))]

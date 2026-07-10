@@ -1,16 +1,18 @@
-using UnityEngine;
+using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Fixed-step deterministic ship motor. No Unity physics forces — identical results on every peer.
+    /// Fixed-step deterministic ship motor. When <c>integratePosition</c> is false (ships with Unity Physics),
+    /// only velocity and rotation are updated — physics integrates hull position.
+    /// Inlined by <see cref="TitanOrbit.ECS.ShipMovementJob"/> — no per-method [BurstCompile] (BC1064 AOT).
     /// </summary>
     public static class ShipMotorSimulator
     {
         public static void Step(
             ref ShipMotorState state,
             in ShipMotorTickParams p,
-            Vector2 aimWorldXZ,
+            in float2 aimWorldXZ,
             bool thrust,
             bool spaceBrakes,
             bool integratePosition = true)
@@ -25,29 +27,23 @@ namespace TitanOrbit.Simulation
                 return;
             }
 
-            if (p.TheatricalRotationLocked)
-            {
-                // Hold rotation; still allow velocity decay from prior state if needed.
-            }
-            else
-            {
-                TryRotateTowardAim(ref state, aimWorldXZ, p.RotationSpeedDegPerSec, dt);
-            }
+            if (!p.TheatricalRotationLocked)
+                TryRotateTowardAim(ref state, in aimWorldXZ, p.RotationSpeedDegPerSec, dt);
 
             if (p.UseOrbit)
             {
-                Vector3 currentVel = state.Velocity;
+                float3 currentVel = state.Velocity;
                 currentVel.y = 0f;
-                Vector3 desired = p.OrbitDesiredVelocity;
+                float3 desired = p.OrbitDesiredVelocity;
                 desired.y = 0f;
-                float t = Mathf.Clamp01(p.OrbitAlignRate * dt);
-                Vector3 blended = Vector3.Lerp(currentVel, desired, t);
+                float t = math.saturate(p.OrbitAlignRate * dt);
+                float3 blended = math.lerp(currentVel, desired, t);
                 blended.y = 0f;
                 state.Velocity = blended;
             }
             else
             {
-                ApplyThrustAndBrakes(ref state, p, thrust, spaceBrakes, dt);
+                ApplyThrustAndBrakes(ref state, in p, thrust, spaceBrakes, dt);
             }
 
             if (integratePosition)
@@ -55,132 +51,146 @@ namespace TitanOrbit.Simulation
                 IntegratePosition(ref state, dt);
                 state.Position.y = p.FixedY;
             }
+            // integratePosition: false — caller writes PhysicsVelocity; physics solver owns Position.
         }
 
-        private static void TryRotateTowardAim(
+        static void TryRotateTowardAim(
             ref ShipMotorState state,
-            Vector2 aimWorldXZ,
+            in float2 aimWorldXZ,
             float rotationSpeedDeg,
             float dt)
         {
-            Vector3 shipPos = state.Position;
-            Vector3 aimPoint = new Vector3(aimWorldXZ.x, shipPos.y, aimWorldXZ.y);
-            Vector3 directionToAim = aimPoint - shipPos;
+            float3 shipPos = state.Position;
+            float3 aimPoint = new float3(aimWorldXZ.x, shipPos.y, aimWorldXZ.y);
+            float3 directionToAim = aimPoint - shipPos;
             directionToAim.y = 0f;
-            if (directionToAim.sqrMagnitude <= 0.001f)
+            if (math.lengthsq(directionToAim) <= 0.001f)
                 return;
 
-            directionToAim.Normalize();
-            Quaternion targetRotation = Quaternion.LookRotation(directionToAim);
-            state.Rotation = Quaternion.RotateTowards(state.Rotation, targetRotation, rotationSpeedDeg * dt);
+            directionToAim = math.normalize(directionToAim);
+            quaternion targetRotation = quaternion.LookRotationSafe(directionToAim, math.up());
+            float maxRadians = math.radians(rotationSpeedDeg * dt);
+            quaternion from = state.Rotation;
+            quaternion to = targetRotation;
+            float angle = math.angle(from, to);
+            state.Rotation = angle <= maxRadians ? to : math.slerp(from, to, maxRadians / math.max(angle, 1e-6f));
         }
 
-        private static void ApplyThrustAndBrakes(
+        static void ApplyThrustAndBrakes(
             ref ShipMotorState state,
             in ShipMotorTickParams p,
             bool thrust,
             bool spaceBrakes,
             float dt)
         {
-            Vector3 vel = state.Velocity;
+            float3 vel = state.Velocity;
             vel.y = 0f;
-            float mass = Mathf.Max(0.5f, state.Mass);
+            float mass = math.max(0.5f, state.Mass);
             float maxSpeed = p.MaxSpeed;
 
-            Vector3 moveDirection = Vector3.zero;
+            float3 moveDirection = float3.zero;
             if (thrust)
             {
-                Vector3 fwd = state.Rotation * Vector3.forward;
+                float3 fwd = math.mul(state.Rotation, new float3(0f, 0f, 1f));
                 fwd.y = 0f;
-                if (fwd.sqrMagnitude > 0.01f)
-                    moveDirection = fwd.normalized;
+                if (math.lengthsq(fwd) > 0.01f)
+                    moveDirection = math.normalize(fwd);
             }
 
-            if (moveDirection.magnitude > 0.1f)
+            if (math.length(moveDirection) > 0.1f)
             {
-                float speed = vel.magnitude;
-                Vector3 accel;
+                float speed = math.length(vel);
+                float3 accel;
                 if (speed < maxSpeed)
                 {
                     accel = moveDirection * (p.EngineThrust / mass);
                 }
                 else
                 {
-                    Vector3 velNorm = vel.normalized;
-                    Vector3 thrustVec = moveDirection * p.EngineThrust;
-                    float alongVel = Vector3.Dot(thrustVec, velNorm);
-                    Vector3 steerForce = thrustVec - velNorm * Mathf.Max(0f, alongVel);
+                    float3 velNorm = math.normalize(vel);
+                    float3 thrustVec = moveDirection * p.EngineThrust;
+                    float alongVel = math.dot(thrustVec, velNorm);
+                    float3 steerForce = thrustVec - velNorm * math.max(0f, alongVel);
                     accel = steerForce / mass;
                 }
                 vel += accel * dt;
             }
-            else if (spaceBrakes && vel.sqrMagnitude > 0.001f)
+            else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
             {
                 float brakeAccel = p.BrakeDeceleration;
-                Vector3 brake = -vel.normalized * brakeAccel * dt;
-                if (brake.magnitude > vel.magnitude)
-                    vel = Vector3.zero;
+                float3 brake = -math.normalize(vel) * brakeAccel * dt;
+                if (math.length(brake) > math.length(vel))
+                    vel = float3.zero;
                 else
                     vel += brake;
             }
 
             vel.y = 0f;
-            float mag = vel.magnitude;
+            float mag = math.length(vel);
             if (mag > maxSpeed && maxSpeed > 0.001f)
             {
                 float effectiveRecoilDecay = p.RecoilDecayPerSecond / mass;
-                float targetMag = Mathf.MoveTowards(mag, maxSpeed, effectiveRecoilDecay * dt);
-                vel = vel.normalized * targetMag;
+                float targetMag = math.clamp(mag - effectiveRecoilDecay * dt, maxSpeed, mag);
+                vel = math.normalize(vel) * targetMag;
             }
 
             state.Velocity = vel;
         }
 
-        private static void ApplyElectricShockBraking(ref ShipMotorState state, float brakeDeceleration, float dt)
+        static void ApplyElectricShockBraking(ref ShipMotorState state, float brakeDeceleration, float dt)
         {
-            Vector3 vel = state.Velocity;
+            float3 vel = state.Velocity;
             vel.y = 0f;
-            if (vel.sqrMagnitude <= 0.001f)
+            if (math.lengthsq(vel) <= 0.001f)
             {
-                state.Velocity = Vector3.zero;
+                state.Velocity = float3.zero;
                 return;
             }
-            float mass = Mathf.Max(0.5f, state.Mass);
+            float mass = math.max(0.5f, state.Mass);
             float brakeForce = brakeDeceleration * mass * 2.5f;
-            Vector3 decel = -vel.normalized * (brakeForce / mass) * dt;
-            if (decel.magnitude > vel.magnitude)
-                vel = Vector3.zero;
+            float3 decel = -math.normalize(vel) * (brakeForce / mass) * dt;
+            if (math.length(decel) > math.length(vel))
+                vel = float3.zero;
             else
                 vel += decel;
             vel.y = 0f;
             state.Velocity = vel;
         }
 
-        private static void IntegratePosition(ref ShipMotorState state, float dt)
+        static void IntegratePosition(ref ShipMotorState state, float dt)
         {
             state.Position += state.Velocity * dt;
         }
 
-        public static void ApplyVelocityImpulse(ref ShipMotorState state, Vector3 deltaVelocity)
+        public static void ApplyVelocityImpulse(ref ShipMotorState state, in float3 deltaVelocity)
         {
-            deltaVelocity.y = 0f;
-            state.Velocity += deltaVelocity;
+            float3 dv = deltaVelocity;
+            dv.y = 0f;
+            state.Velocity += dv;
             state.Velocity.y = 0f;
         }
 
-        public static void SetVelocity(ref ShipMotorState state, Vector3 velocity)
+        public static void SetVelocity(ref ShipMotorState state, in float3 velocity)
         {
-            velocity.y = 0f;
-            state.Velocity = velocity;
+            float3 vel = velocity;
+            vel.y = 0f;
+            state.Velocity = vel;
         }
 
-        public static void SnapState(ref ShipMotorState state, Vector3 position, Quaternion rotation, Vector3 velocity, float fixedY)
+        public static void SnapState(
+            ref ShipMotorState state,
+            in float3 position,
+            in quaternion rotation,
+            in float3 velocity,
+            float fixedY)
         {
-            position.y = fixedY;
-            velocity.y = 0f;
-            state.Position = position;
+            float3 pos = position;
+            float3 vel = velocity;
+            pos.y = fixedY;
+            vel.y = 0f;
+            state.Position = pos;
             state.Rotation = rotation;
-            state.Velocity = velocity;
+            state.Velocity = vel;
         }
     }
 }

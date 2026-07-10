@@ -795,8 +795,13 @@ namespace TitanOrbit.NetCode
 
         static bool IsDedicatedLobbySummaryStale(LobbySummary summary)
         {
-            if (summary == null || summary.ServerAliveAtEpochSeconds <= 0)
+            if (summary == null || !summary.IsDedicatedServer)
                 return false;
+
+            // Align with join validation: missing heartbeat means the listing is not joinable.
+            if (summary.ServerAliveAtEpochSeconds <= 0)
+                return true;
+
             long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             return nowEpoch - summary.ServerAliveAtEpochSeconds > DedicatedLobbyStaleSeconds;
         }

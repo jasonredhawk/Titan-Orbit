@@ -6,9 +6,10 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    // Order: NetCode presentation → ShipVisualSyncSystem (last in PresentationSystemGroup) → EcsWorldVisualizer LateUpdate
     /// <summary>
-    /// Captures ghost LocalTransform after NetCode presentation so GameObject proxies
-    /// never read ECS in MonoBehaviour LateUpdate (wrong interpolation phase).
+    /// Captures ghost <see cref="LocalTransform"/> after NetCode presentation so GameObject proxies
+    /// and client VFX read the correct interpolation phase via <see cref="GhostPresentationTransformCache"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderLast = true)]

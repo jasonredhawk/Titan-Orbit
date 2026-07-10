@@ -17,7 +17,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// GameObject proxies for ghost entities. Transforms come from <see cref="GhostPresentationTransformCache"/>
-    /// (published in NetCode PresentationSystemGroup), not raw ECS queries in LateUpdate.
+    /// (published in NetCode PresentationSystemGroup by <see cref="ShipVisualSyncSystem"/>), not raw sim ECS.
+    /// Proxies are render shells only — no extra movement smoothing on the local owner.
     /// </summary>
     [DefaultExecutionOrder(66000)]
     public class EcsWorldVisualizer : MonoBehaviour
@@ -136,11 +137,6 @@ namespace TitanOrbit.Game
 
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
-        // Local owner: predicted sim ticks at 60 Hz — light render smoothing between presentation samples.
-        // Remote ships: use presentation snapshot directly (NetCode already interpolates non-owners).
-        const float LocalShipRenderSmoothRate = 28f;
-        const float ProxySnapDistanceSq = 100f;
-
         static bool TryGetPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
         {
             lt = default;
@@ -181,32 +177,14 @@ namespace TitanOrbit.Game
             go.localScale = Vector3.one * scale;
         }
 
-        void ApplyShipProxyTransform(
-            Entity entity,
-            EntityManager em,
-            bool isLocalPlayerShip,
-            LocalTransform lt,
-            Transform go,
-            float scale,
-            bool snap)
+        /// <summary>
+        /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
+        /// prediction + GhostPredictionSmoothing own sim feel; proxies are render shells only.
+        /// </summary>
+        static void ApplyShipProxyTransform(bool isLocalPlayerShip, in LocalTransform lt, Transform go, float scale)
         {
-            Vector3 target = lt.Position;
-            Quaternion targetRot = lt.Rotation;
-
-            Vector3 pos;
-            Quaternion rot;
-            if (!isLocalPlayerShip || snap || (go.position - target).sqrMagnitude > ProxySnapDistanceSq)
-            {
-                pos = target;
-                rot = targetRot;
-            }
-            else
-            {
-                float t = 1f - Mathf.Exp(-LocalShipRenderSmoothRate * Mathf.Max(Time.deltaTime, 1e-5f));
-                pos = Vector3.Lerp(go.position, target, t);
-                rot = Quaternion.Slerp(go.rotation, targetRot, t);
-            }
-
+            Vector3 pos = lt.Position;
+            Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
 
@@ -309,7 +287,7 @@ namespace TitanOrbit.Game
 
                 var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
                 if (TryGetPresentationTransform(entity, em, out var presentLt))
-                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale, snap: true);
+                    ApplyShipProxyTransform(isLocalPlayerShip, presentLt, go.transform, scale);
             }
         }
 
@@ -352,9 +330,7 @@ namespace TitanOrbit.Game
                     LocalPlayerShipProxy = go;
 
                 if (!skipTransformSync)
-                {
-                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale, snap: false);
-                }
+                    ApplyShipProxyTransform(isLocalPlayerShip, lt, go.transform, scale);
                 else if (isLocalPlayerShip)
                 {
                     ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);

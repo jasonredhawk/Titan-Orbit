@@ -730,6 +730,12 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>True when replicated planet/ship ghosts indicate the client has enough world state for lobby UI.</summary>
+        public static bool HasClientReplicatedMapContent()
+        {
+            return ClientWorld != null && ClientWorld.IsCreated && HasReplicatedMapWorldContent(ClientWorld);
+        }
+
         static bool HasReplicatedMapWorldContent(World client)
         {
             var em = client.EntityManager;

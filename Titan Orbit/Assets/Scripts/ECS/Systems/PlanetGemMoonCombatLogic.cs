@@ -1,10 +1,10 @@
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -55,43 +55,39 @@ namespace TitanOrbit.ECS
                 moon.CurrentMoonGems = math.max(0f, moon.CurrentMoonGems - remaining);
         }
 
+        /// <summary>
+        /// Enemy moon shield repel — used by <see cref="ShipMovementBurstLogic"/>.
+        /// Scans a pre-collected planet snapshot (no EntityManager).
+        /// </summary>
         public static void ApplyShieldRepelIfNeeded(
-            EntityManager em,
             ref ShipMotorState motor,
             TeamId shipTeam,
+            in NativeArray<PlanetMotorSnapshot> planets,
             float mapW,
             float mapH,
             double elapsedSeconds)
         {
-            using var planetQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<PlanetTag>(),
-                ComponentType.ReadOnly<PlanetState>(),
-                ComponentType.ReadOnly<PlanetGemMoonState>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Unity.Collections.Allocator.Temp);
-            using var moonStates = planetQuery.ToComponentDataArray<PlanetGemMoonState>(Unity.Collections.Allocator.Temp);
-            using var planetTransforms = planetQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
-
             float3 shipPos = motor.Position;
             shipPos.y = 0f;
 
-            for (int i = 0; i < planetStates.Length; i++)
+            for (int i = 0; i < planets.Length; i++)
             {
-                var planet = planetStates[i];
-                var moon = moonStates[i];
+                var snapshot = planets[i];
+                var planet = snapshot.Planet;
+                var moon = snapshot.Moon;
                 if (moon.CurrentShield <= 0.001f)
                     continue;
                 if (IsTeamFriendlyToMoon(planet.Ownership, shipTeam))
                     continue;
 
-                float planetSize = math.max(0.25f, planetTransforms[i].Scale);
-                float shieldRadius = PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(planetSize, planet.IsHomePlanet);
+                float planetSize = math.max(0.25f, snapshot.Transform.Scale);
+                float shieldRadius = snapshot.ShieldOuterRadiusWorld;
                 if (shieldRadius <= 0.0001f)
                     continue;
 
                 float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
                     shipPos,
-                    planetTransforms[i].Position,
+                    snapshot.Transform.Position,
                     planetSize,
                     planet.PlanetLevel,
                     planet.PlanetId,
@@ -119,12 +115,11 @@ namespace TitanOrbit.ECS
                 float3 outwardVel = dir * repelSpeed;
                 outwardVel.y = 0f;
 
-                var dirV = new Vector3(dir.x, dir.y, dir.z);
-                float inward = Vector3.Dot(motor.Velocity, -dirV);
+                float inward = math.dot(motor.Velocity, -dir);
                 if (inward > 0f)
-                    motor.Velocity += dirV * inward;
+                    motor.Velocity += dir * inward;
 
-                motor.Velocity += new Vector3(outwardVel.x, outwardVel.y, outwardVel.z);
+                motor.Velocity += outwardVel;
             }
         }
     }
