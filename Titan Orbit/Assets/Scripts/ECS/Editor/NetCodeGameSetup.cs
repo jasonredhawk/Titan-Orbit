@@ -70,9 +70,9 @@ namespace TitanOrbit.ECS.Editor
                 "Titan Orbit — local play setup",
                 "PlayMode Tools (NetCode) updated:\n\n" +
                 "• PlayMode Type → Client & Server\n" +
-                "• Auto-connect → 127.0.0.1:7777\n" +
+                "• Auto-connect port → 0 (pick Local play or Join game on the menu)\n" +
                 "• Num Thin Clients → 0\n\n" +
-                "Use the main Editor Game tab and press Play on the main menu.\n\n" +
+                "Press Play, then choose Local play, Join game, or Local host/client.\n\n" +
                 "For a second human player: Titan Orbit > Configure Multiplayer For MPPM (2 Players), " +
                 "then set Player 2 Role → Client in Window > Play Mode > Scenarios.",
                 "OK");
@@ -114,7 +114,7 @@ namespace TitanOrbit.ECS.Editor
             MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
             MultiplayerPlayModePreferences.SimulatorEnabled = false;
             MultiplayerPlayModePreferences.AutoConnectionAddress = "127.0.0.1";
-            MultiplayerPlayModePreferences.AutoConnectionPort = 7777;
+            MultiplayerPlayModePreferences.AutoConnectionPort = 0;
         }
 
         /// <summary>Editor client-only: join remote dedicated matches via UGS + Relay (no local ServerWorld).</summary>

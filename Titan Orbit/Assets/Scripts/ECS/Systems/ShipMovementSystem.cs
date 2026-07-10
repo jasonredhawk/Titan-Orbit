@@ -7,8 +7,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Authoritative ship motor. Runs in the predicted fixed-step group just before Unity Physics,
-    /// setting each ship's PhysicsVelocity so the physics step integrates position and resolves contacts.
+    /// Authoritative ship motor (server only). Client owner prediction runs in
+    /// <see cref="ShipClientPredictedMovementSystem"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]
@@ -28,7 +28,7 @@ namespace TitanOrbit.ECS
 
             foreach (var (input, motor, shipState, kinematics, physicsVelocity, transform, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipMotorConfig>, RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<PhysicsVelocity>, RefRW<LocalTransform>>()
-                         .WithAll<ShipTag>()
+                         .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
                 ShipMovementLogic.StepShip(EntityManager, dt, mapW, mapH, elapsed, input, motor, shipState, kinematics, physicsVelocity, transform, entity);

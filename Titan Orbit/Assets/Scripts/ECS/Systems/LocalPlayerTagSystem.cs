@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -10,6 +11,9 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return;
+
             int localNetworkId = GetLocalNetworkId(ref state);
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 

@@ -9,7 +9,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4662302017168466}
-  - component: {fileID: 5535415437875077558}
   m_Layer: 0
   m_Name: AstroEagle_DoubleBarrel
   m_TagString: Untagged
@@ -49,79 +48,6 @@ Transform:
   - {fileID: 176882465279884550}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5535415437875077558
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1758333184152476}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ced7d950b299c1943bcdaca377dec97b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ShipFamilyStatsPreview
-  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
-  familyIdOverride: 
-  totalStats:
-    firePower: 10
-    firePowerPerLevel: 3
-    bulletSpeed: 10
-    bulletSpeedPerLevel: 2
-    fireRate: 3
-    fireRatePerLevel: 0.5
-    healthCap: 262.6579
-    healthCapPerLevel: 58.34677
-    healthRegen: 59.238243
-    healthRegenPerLevel: 18.978592
-    energyCap: 47.918568
-    energyCapPerLevel: 14.975571
-    energyRegen: 29.951141
-    energyRegenPerLevel: 8.491857
-    moveSpeed: 42.589752
-    moveSpeedPerLevel: 10.647438
-    turnSpeed: 77.62547
-    turnSpeedPerLevel: 18.656368
-    maxGems: 191.21776
-    maxGemsPerLevel: 45.473473
-    maxPeople: 44.238243
-    maxPeoplePerLevel: 10.313633
-  matchedComponentIds:
-  - Cockpit
-  - Cockpit_Base_1
-  - Cockpit_Base_1
-  - Engine_2
-  - Engine_2
-  - Part_1
-  - Part_1
-  - Part_1
-  - Part_2
-  - Part_2
-  - Tail
-  - Thruster
-  - Thruster
-  - Wing_5
-  - Wing_5
-  - Weapon
-  - Weapon
-  matchedScaleFactors:
-  - 0.9837135
-  - 1
-  - 1
-  - 1.3309323
-  - 1.3309274
-  - 1.009002
-  - 2.053556
-  - 2.0535676
-  - 2.2769856
-  - 2.4948707
-  - 1
-  - 1.4140923
-  - 1.4140923
-  - 1
-  - 1
-  - 1
-  - 1
 --- !u!1001 &51142534857913799
 PrefabInstance:
   m_ObjectHideFlags: 0

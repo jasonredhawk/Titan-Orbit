@@ -5,7 +5,8 @@ namespace TitanOrbit.NetCode
 {
     /// <summary>
     /// Configures authoritative simulation and snapshot rate (synced to clients on connect).
-    /// 60 Hz reduces discrete-step stutter vs the 30 Hz recovery-scene default.
+    /// Speeds are in units/second — raising tick rate from 30→60 Hz does not change travel speed,
+    /// only how often snapshots are sent and simulation steps run.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]

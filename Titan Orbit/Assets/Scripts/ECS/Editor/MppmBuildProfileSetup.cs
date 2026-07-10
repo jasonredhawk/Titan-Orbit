@@ -38,8 +38,8 @@ namespace TitanOrbit.ECS.Editor
                 "3. Enable your scenario with one Additional Editor Instance (Player 2).\n" +
                 "4. Set Player 2 Multiplayer Role → Client.\n" +
                 "5. Press Play from the Main Editor only.\n" +
-                "6. On the Main Editor Game tab: click Play on the menu, then pick a team.\n" +
-                "7. On Player 2: click Join on any team (same team allowed for testing).\n\n" +
+                "6. Main Editor: click Local play (solo), or Local host then Local client to also play as host.\n" +
+                "7. Player 2: click Local client after the host is listening, then pick a team.\n\n" +
                 "Player 2 console should show buildSubTarget=Player, not Server.",
                 "OK");
 

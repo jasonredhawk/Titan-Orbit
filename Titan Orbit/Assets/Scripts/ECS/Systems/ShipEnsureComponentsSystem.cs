@@ -8,6 +8,7 @@ namespace TitanOrbit.ECS
     /// <summary>Ensures runtime-spawned ship ghosts have kinematics even if the subscene bake is stale.</summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(ShipMovementSystem))]
+    [UpdateBefore(typeof(ShipClientPredictedMovementSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipEnsureComponentsSystem : ISystem
     {

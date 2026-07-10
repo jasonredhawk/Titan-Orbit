@@ -5,6 +5,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -15,8 +16,8 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side primitive proxies so baked ghost entities are visible before Entities Graphics is wired.
-    /// Ship proxies include weapon mount children so bullet direction uses weapon forward, not mouse aim.
+    /// GameObject proxies for ghost entities. Transforms come from <see cref="GhostPresentationTransformCache"/>
+    /// (published in NetCode PresentationSystemGroup), not raw ECS queries in LateUpdate.
     /// </summary>
     [DefaultExecutionOrder(66000)]
     public class EcsWorldVisualizer : MonoBehaviour
@@ -58,6 +59,7 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
         Entity _cachedDedicatedLocalShipEntity;
+        Entity _cachedLocalPlayerShipEntity;
 
         /// <summary>Local-player ship proxy on dedicated clients.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
@@ -100,15 +102,6 @@ namespace TitanOrbit.Game
             }
         }
 
-        void Update()
-        {
-            var world = PickVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-
-            EnsureShipProxies(world.EntityManager);
-        }
-
         void LateUpdate()
         {
             var world = PickVisualizationWorld();
@@ -116,6 +109,8 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
+            EnsureShipProxies(em);
+
             var alive = new HashSet<Entity>();
 
             SyncShipProxyTransforms(em, alive);
@@ -141,21 +136,82 @@ namespace TitanOrbit.Game
 
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
+        // Local owner: predicted sim ticks at 60 Hz — light render smoothing between presentation samples.
+        // Remote ships: use presentation snapshot directly (NetCode already interpolates non-owners).
+        const float LocalShipRenderSmoothRate = 28f;
+        const float ProxySnapDistanceSq = 100f;
+
+        static bool TryGetPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
+        {
+            lt = default;
+            if (GhostPresentationTransformCache.PublishFrame == Time.frameCount &&
+                GhostPresentationTransformCache.TryGetShip(entity, out var snap))
+            {
+                lt = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
+                return true;
+            }
+
+            if (!em.HasComponent<LocalTransform>(entity))
+                return false;
+
+            lt = em.GetComponentData<LocalTransform>(entity);
+            return true;
+        }
+
+        static bool TryGetPeopleTransportPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
+        {
+            lt = default;
+            if (GhostPresentationTransformCache.PublishFrame == Time.frameCount &&
+                GhostPresentationTransformCache.TryGetPeopleTransport(entity, out var snap))
+            {
+                lt = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
+                return true;
+            }
+
+            if (!em.HasComponent<LocalTransform>(entity))
+                return false;
+
+            lt = em.GetComponentData<LocalTransform>(entity);
+            return true;
+        }
+
+        static void ApplyProxyTransform(Vector3 target, Quaternion targetRot, Transform go, float scale)
+        {
+            go.SetPositionAndRotation(target, targetRot);
+            go.localScale = Vector3.one * scale;
+        }
+
         void ApplyShipProxyTransform(
-            EntityManager em,
             Entity entity,
-            bool isDedicatedLocalShip,
+            EntityManager em,
+            bool isLocalPlayerShip,
             LocalTransform lt,
             Transform go,
-            float scale)
+            float scale,
+            bool snap)
         {
-            Vector3 pos = lt.Position;
-            go.position = pos;
-            go.rotation = lt.Rotation;
+            Vector3 target = lt.Position;
+            Quaternion targetRot = lt.Rotation;
+
+            Vector3 pos;
+            Quaternion rot;
+            if (!isLocalPlayerShip || snap || (go.position - target).sqrMagnitude > ProxySnapDistanceSq)
+            {
+                pos = target;
+                rot = targetRot;
+            }
+            else
+            {
+                float t = 1f - Mathf.Exp(-LocalShipRenderSmoothRate * Mathf.Max(Time.deltaTime, 1e-5f));
+                pos = Vector3.Lerp(go.position, target, t);
+                rot = Quaternion.Slerp(go.rotation, targetRot, t);
+            }
+
+            go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
 
-            if (isDedicatedLocalShip)
-                ShipDisplayPose.SetLocalPose(pos, lt.Rotation);
+            if (isLocalPlayerShip)
+                ShipDisplayPose.SetLocalPose(pos, rot);
         }
 
         static bool TryResolveDedicatedLocalShipEntity(EntityManager em, out Entity localShipEntity)
@@ -170,28 +226,37 @@ namespace TitanOrbit.Game
                    EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out localShipEntity);
         }
 
-        bool TryResolveDedicatedLocalShipEntityCached(EntityManager em, out Entity localShipEntity)
+        bool TryResolveLocalPlayerShipEntityCached(EntityManager em, out Entity localShipEntity)
         {
             localShipEntity = Entity.Null;
-            if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
-                return false;
 
-            if (_cachedDedicatedLocalShipEntity != Entity.Null &&
-                em.Exists(_cachedDedicatedLocalShipEntity) &&
-                em.HasComponent<ShipTag>(_cachedDedicatedLocalShipEntity))
+            if (_cachedLocalPlayerShipEntity != Entity.Null &&
+                em.Exists(_cachedLocalPlayerShipEntity) &&
+                em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
             {
-                localShipEntity = _cachedDedicatedLocalShipEntity;
+                localShipEntity = _cachedLocalPlayerShipEntity;
+                return true;
+            }
+
+            using var localQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<LocalPlayerShipTag>(),
+                ComponentType.ReadOnly<ShipTag>());
+            using var localEntities = localQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+            if (localEntities.Length > 0)
+            {
+                localShipEntity = localEntities[0];
+                _cachedLocalPlayerShipEntity = localShipEntity;
                 return true;
             }
 
             if (!TryResolveDedicatedLocalShipEntity(em, out localShipEntity))
                 return false;
 
-            _cachedDedicatedLocalShipEntity = localShipEntity;
+            _cachedLocalPlayerShipEntity = localShipEntity;
             return true;
         }
 
-        static bool IsDedicatedLocalShip(Entity entity, Entity localShipEntity) =>
+        static bool IsLocalPlayerShip(Entity entity, Entity localShipEntity) =>
             localShipEntity != Entity.Null && entity == localShipEntity;
 
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
@@ -200,7 +265,7 @@ namespace TitanOrbit.Game
 
         void EnsureShipProxies(EntityManager em)
         {
-            TryResolveDedicatedLocalShipEntityCached(em, out var localShipEntity);
+            TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
 
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -212,7 +277,7 @@ namespace TitanOrbit.Game
             {
                 var entity = entities[i];
                 var lt = transforms[i];
-                bool isDedicatedLocalShip = IsDedicatedLocalShip(entity, localShipEntity);
+                bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
                 TeamId team = TeamId.None;
@@ -243,19 +308,19 @@ namespace TitanOrbit.Game
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
                 var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
-                ApplyShipProxyTransform(em, entity, isDedicatedLocalShip, lt, go.transform, scale);
+                if (TryGetPresentationTransform(entity, em, out var presentLt))
+                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale, snap: true);
             }
         }
 
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
-            TryResolveDedicatedLocalShipEntityCached(em, out var localShipEntity);
+            TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
 
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<LocalTransform>());
             using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
             for (int i = 0; i < entities.Length; i++)
             {
@@ -264,7 +329,9 @@ namespace TitanOrbit.Game
                 if (!_proxies.TryGetValue(entity, out var go) || go == null)
                     continue;
 
-                var lt = transforms[i];
+                if (!TryGetPresentationTransform(entity, em, out var lt))
+                    continue;
+
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
                 bool skipTransformSync = false;
@@ -280,18 +347,15 @@ namespace TitanOrbit.Game
                         && moonDock.LandingProgress > 0.001f;
                 }
 
-                bool isDedicatedLocalShip = IsDedicatedLocalShip(entity, localShipEntity);
-                if (isDedicatedLocalShip)
+                bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
+                if (isLocalPlayerShip)
                     LocalPlayerShipProxy = go;
 
                 if (!skipTransformSync)
                 {
-                    if (isDedicatedLocalShip)
-                        ApplyShipProxyTransform(em, entity, true, lt, go.transform, scale);
-                    else
-                        ApplyShipProxyTransform(em, entity, false, lt, go.transform, scale);
+                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale, snap: false);
                 }
-                else if (isDedicatedLocalShip)
+                else if (isLocalPlayerShip)
                 {
                     ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
                 }
@@ -458,14 +522,14 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<LocalTransform>());
             using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
             using var states = query.ToComponentDataArray<PeopleTransportState>(Unity.Collections.Allocator.Temp);
-            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
                 alive.Add(entity);
                 var state = states[i];
-                var lt = transforms[i];
+                if (!TryGetPeopleTransportPresentationTransform(entity, em, out var lt))
+                    continue;
                 float scale = PeopleTransportVisualApplier.ComputeWorldScale(math.max(1f, state.Amount));
                 var team = (TeamId)state.Team;
 
@@ -475,9 +539,8 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
-                go.transform.position = GetVisualPosition(entity, lt.Position);
-                go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+                var pos = GetVisualPosition(entity, lt.Position);
+                ApplyProxyTransform(pos, lt.Rotation, go.transform, scale);
             }
         }
 

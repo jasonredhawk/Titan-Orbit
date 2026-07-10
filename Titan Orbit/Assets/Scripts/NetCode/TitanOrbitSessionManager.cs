@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
@@ -84,15 +85,8 @@ namespace TitanOrbit.NetCode
                 Debug.Log("[TitanOrbitSessionManager] MPPM Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
                           " (buildSubTarget=" + TitanOrbitPlayModeUtility.GetMppmBuildSubtarget() +
                           ") — " + (localLan
-                              ? "auto-connecting to host on port " + serverPort + ". Pick a team when connected."
-                              : "ready for dedicated join via Browse Games (no LAN auto-connect)."));
-
-                // Local LAN MPPM only. Dedicated Relay joins fail if we leave a port-7777 connection open.
-                if (localLan)
-                {
-                    _mppmLanConnectCoroutine = StartCoroutine(MaintainClientSession());
-                    return;
-                }
+                              ? "use Local client on the menu to connect to the host on port " + serverPort + "."
+                              : "ready for dedicated join via Join game (no LAN auto-connect)."));
 
                 IsDedicatedOnlineClient = false;
                 IsInGame = false;
@@ -285,8 +279,82 @@ namespace TitanOrbit.NetCode
 
         public bool StartLanHostForLocalTest()
         {
+#if UNITY_EDITOR
+            return StartLocalHostForLanTest();
+#else
             PendingLanHost = true;
             return true;
+#endif
+        }
+
+        /// <summary>Editor/MPPM: listen on <see cref="serverPort"/> without a local client connection.</summary>
+        public bool StartLocalHostForLanTest()
+        {
+            LastStatusMessage = "Starting local LAN host...";
+            if (_localBootRunning)
+                return false;
+
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server != null && server.IsCreated && IsServerWorldListening(server))
+            {
+                LastStatusMessage = "Already hosting on port " + serverPort + ".";
+                Debug.Log("[TitanOrbitSessionManager] Local LAN host already listening on port " + serverPort + ".");
+                return true;
+            }
+
+            StartCoroutine(BootLanHostOnly());
+            return true;
+        }
+
+        IEnumerator BootLanHostOnly()
+        {
+            _localBootRunning = true;
+            try
+            {
+                ResumeEditorLocalServerForLocalPlay();
+                TitanOrbitRelayState.Clear();
+
+                float readyDeadline = Time.realtimeSinceStartup + 15f;
+                while (Time.realtimeSinceStartup < readyDeadline)
+                {
+                    var serverWorld = ClientServerBootstrap.ServerWorld;
+                    if (serverWorld != null && serverWorld.IsCreated &&
+                        serverWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0)
+                        break;
+                    yield return null;
+                }
+
+                var server = ClientServerBootstrap.ServerWorld;
+                if (server == null || !server.IsCreated)
+                {
+                    LastStatusMessage = "ServerWorld missing.";
+                    Debug.LogError("[TitanOrbitSessionManager] BootLanHostOnly: ServerWorld missing.");
+                    yield break;
+                }
+
+                ListenServer(server, serverPort);
+
+                float listenDeadline = Time.realtimeSinceStartup + 10f;
+                while (Time.realtimeSinceStartup < listenDeadline && !IsServerWorldListening(server))
+                    yield return null;
+
+                if (!IsServerWorldListening(server))
+                {
+                    LastStatusMessage = "Failed to listen on port " + serverPort + ".";
+                    Debug.LogError("[TitanOrbitSessionManager] BootLanHostOnly: listen failed on port " + serverPort + ".");
+                    yield break;
+                }
+
+                RequestGoInGame(server);
+                LastStatusMessage = "Hosting on port " + serverPort +
+                                    " — other players: Local client. You: Local play or Local client.";
+                Debug.Log("[TitanOrbitSessionManager] Local LAN host listening on port " + serverPort +
+                          ". Connect additional players with Local client.");
+            }
+            finally
+            {
+                _localBootRunning = false;
+            }
         }
 
         public bool StartLocalClientForLanTest(string address = "127.0.0.1")
@@ -1042,6 +1110,7 @@ namespace TitanOrbit.NetCode
         {
             IsDedicatedOnlineClient = false;
             IsInGame = false;
+            ClientTeamFlowState.Reset();
             if (_connectWatch != null)
             {
                 StopCoroutine(_connectWatch);
@@ -1069,6 +1138,7 @@ namespace TitanOrbit.NetCode
         {
             IsDedicatedOnlineClient = true;
             IsInGame = false;
+            ClientTeamFlowState.Reset();
             StopMppmLanAutoConnect();
 
             await SuspendLocalServerForDedicatedClientAsync();
@@ -1547,6 +1617,41 @@ namespace TitanOrbit.NetCode
             var netDebug = world.EntityManager.CreateEntityQuery(typeof(NetDebug)).GetSingleton<NetDebug>();
             new TitanOrbitRelayDriverConstructor().CreateClientDriver(world, ref store, netDebug);
             driver.ResetDriverStore(world.Unmanaged, ref store);
+        }
+
+        public void RequestResumeExistingShip()
+        {
+            if (!SendRejoinShipRpc<ResumeExistingShipCommand>())
+                LastStatusMessage = "Could not resume your ship.";
+        }
+
+        public void RequestAbandonShipForRejoin()
+        {
+            if (!SendRejoinShipRpc<AbandonShipForRejoinCommand>())
+                LastStatusMessage = "Could not abandon your saved ship.";
+        }
+
+        bool SendRejoinShipRpc<T>() where T : unmanaged, IRpcCommand
+        {
+            var world = ClientServerBootstrap.ClientWorld;
+            if (world == null || !world.IsCreated)
+            {
+                Debug.LogError("[TitanOrbitSessionManager] Rejoin RPC failed: ClientWorld missing.");
+                return false;
+            }
+
+            if (!IsClientGameplayReady(world))
+            {
+                Debug.LogError("[TitanOrbitSessionManager] Rejoin RPC failed: client not in-game.");
+                return false;
+            }
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, default(T));
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            Debug.Log("[TitanOrbitSessionManager] Sent rejoin RPC " + typeof(T).Name + ".");
+            return true;
         }
 
         public void RequestTeam(TitanOrbit.Core.TeamId team)

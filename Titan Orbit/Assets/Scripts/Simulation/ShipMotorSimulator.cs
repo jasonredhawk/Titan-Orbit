@@ -12,7 +12,8 @@ namespace TitanOrbit.Simulation
             in ShipMotorTickParams p,
             Vector2 aimWorldXZ,
             bool thrust,
-            bool spaceBrakes)
+            bool spaceBrakes,
+            bool integratePosition = true)
         {
             float dt = p.FixedDeltaTime;
             if (dt <= 0f) return;
@@ -49,8 +50,11 @@ namespace TitanOrbit.Simulation
                 ApplyThrustAndBrakes(ref state, p, thrust, spaceBrakes, dt);
             }
 
-            IntegratePosition(ref state, dt);
-            state.Position.y = p.FixedY;
+            if (integratePosition)
+            {
+                IntegratePosition(ref state, dt);
+                state.Position.y = p.FixedY;
+            }
         }
 
         private static void TryRotateTowardAim(

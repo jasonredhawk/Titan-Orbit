@@ -20,6 +20,11 @@ namespace TitanOrbit.Game
         /// <summary>ECS world used for rendering and local-player camera follow.</summary>
         public static World GetVisualizationWorld()
         {
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                ClientWorld != null &&
+                ClientWorld.IsCreated)
+                return ClientWorld;
+
             if (IsLocalHost() &&
                 ServerWorld != null &&
                 ServerWorld.IsCreated)
@@ -48,6 +53,9 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)
         {
             transform = default;
+
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return false;
 
             if (world == null || !world.IsCreated)
                 return false;
@@ -90,7 +98,28 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        public static bool HasLocalPlayerShip() => TryGetLocalShipPosition(out _);
+        public static bool HasLocalPlayerShip() =>
+            !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() && TryGetLocalShipPosition(out _);
+
+        /// <summary>
+        /// True when the server still has this player's ship from a prior session on the same match.
+        /// </summary>
+        public static bool TryGetRejoinableShipForLocalPlayer(out ShipState shipState)
+        {
+            shipState = default;
+            var world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            int localId = GetLocalNetworkId(world);
+            if (localId <= 0)
+                return false;
+
+            if (!TryGetShipStateByNetworkId(world.EntityManager, localId, out shipState))
+                return false;
+
+            return shipState.Team != TeamId.None && !shipState.AwaitingTeamSelection;
+        }
 
         public static bool TryGetLocalShipState(out ShipState state)
         {

@@ -16,8 +16,8 @@ namespace TitanOrbit.NetCode
 #endif
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
 #if UNITY_EDITOR
-            // Avoid loopback auto-connect fighting dedicated Relay joins in production-style editor testing.
-            AutoConnectPort = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? (ushort)7777 : (ushort)0;
+            // Stay on the main menu until the player picks Local play / Local client / Join game.
+            AutoConnectPort = 0;
 #else
             // Dedicated headless must not auto-listen on 7777 before Relay is configured.
             AutoConnectPort = ShouldRunDedicatedServer() ? (ushort)0 : (ushort)7777;

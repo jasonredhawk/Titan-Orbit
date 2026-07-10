@@ -1,9 +1,10 @@
 using UnityEngine;
 
-namespace TitanOrbit.Game
+namespace TitanOrbit.Shared
 {
     /// <summary>
-    /// Published each frame by <see cref="EcsWorldVisualizer"/> — single display pose for camera, toroidal ref, etc.
+    /// Interpolated local-player display pose, published from NetCode presentation each frame.
+    /// Camera, background, and UI should read this instead of raw ECS or smoothed proxy copies.
     /// </summary>
     public static class ShipDisplayPose
     {
@@ -11,13 +12,13 @@ namespace TitanOrbit.Game
         public static Vector3 LocalPosition { get; private set; }
         public static Quaternion LocalRotation { get; private set; }
 
-        internal static void SetLocalPose(Vector3 position, Quaternion rotation)
+        public static void SetLocalPose(Vector3 position, Quaternion rotation)
         {
             LocalPosition = position;
             LocalRotation = rotation;
             HasLocalPose = true;
         }
 
-        internal static void ClearLocalPose() => HasLocalPose = false;
+        public static void ClearLocalPose() => HasLocalPose = false;
     }
 }

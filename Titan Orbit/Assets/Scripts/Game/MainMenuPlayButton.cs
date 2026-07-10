@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.NetCode;
 using Unity.Entities;
 using Unity.NetCode;
@@ -52,7 +53,15 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            TitanOrbitSessionManager.Instance.StartLocalPlay();
+            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
+            {
+                if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                    TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
+                else
+                    TitanOrbitSessionManager.Instance.StartLocalPlay();
+            }
+            else
+                _ = TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
         }
 
         static bool HasPlayableClientWorld()

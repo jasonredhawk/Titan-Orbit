@@ -6,13 +6,9 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Configures Unity Physics for a top-down space game:
-    ///  - zero gravity (server + client)
-    ///  - on the server, forces the NetCode-gated PhysicsSystemGroup to tick every full tick by
-    ///    enabling lag compensation. Without this, interpolated-only ghosts would leave the physics
-    ///    group idle and ships (now physics-driven) would never move.
-    /// The client intentionally has no lag-compensation config so its physics loop stays idle and
-    /// ships remain purely snapshot-interpolated.
+    /// Configures Unity Physics for a top-down space game (zero gravity).
+    /// Server and client both need <see cref="LagCompensationConfig"/> so the physics step runs
+    /// during prediction (owner ship) and authority (all ships on server).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup))]
@@ -39,13 +35,13 @@ namespace TitanOrbit.ECS
                 state.EntityManager.AddComponentData(stepEntity, singleton);
             }
 
-            if (state.World.IsServer() && !SystemAPI.HasSingleton<LagCompensationConfig>())
+            if (!SystemAPI.HasSingleton<LagCompensationConfig>())
             {
                 var lagEntity = state.EntityManager.CreateEntity();
                 state.EntityManager.AddComponentData(lagEntity, new LagCompensationConfig
                 {
-                    ServerHistorySize = 16,
-                    ClientHistorySize = 0,
+                    ServerHistorySize = state.World.IsServer() ? 16 : 0,
+                    ClientHistorySize = state.World.IsClient() ? 16 : 0,
                     DeepCopyDynamicColliders = false,
                     DeepCopyStaticColliders = false,
                 });

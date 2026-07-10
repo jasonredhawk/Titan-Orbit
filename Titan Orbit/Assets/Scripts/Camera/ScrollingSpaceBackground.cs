@@ -1,4 +1,5 @@
 using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using UnityEngine;
 
 namespace TitanOrbit.Camera
@@ -14,7 +15,7 @@ namespace TitanOrbit.Camera
     /// <c>TitanOrbit/SpaceBackgroundUnlit</c> and drives scrolling only via <c>_UVScroll</c> on the
     /// instance material (no property block).
     /// </remarks>
-    [DefaultExecutionOrder(66200)]
+    [DefaultExecutionOrder(67100)]
     public class ScrollingSpaceBackground : MonoBehaviour
     {
         /// <summary>Resources material that references the scrolling background shader (included in player builds).</summary>
@@ -49,8 +50,8 @@ namespace TitanOrbit.Camera
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
         private static readonly int UVScroll = Shader.PropertyToID("_UVScroll");
 
-        private bool hasLastCamPos;
-        private Vector3 lastCamPos;
+        private bool hasLastScrollPos;
+        private Vector3 lastScrollPos;
         private float scrollOffsetX;
         private float scrollOffsetZ;
 
@@ -151,30 +152,29 @@ namespace TitanOrbit.Camera
                 EnsureBackgroundQuad();
             if (bgMaterial == null) return;
 
-            Vector3 camPos = targetCamera.transform.position;
-            transform.position = new Vector3(camPos.x, -Mathf.Abs(depthOffset), camPos.z);
+            Vector3 followPos;
+            if (ShipDisplayPose.HasLocalPose)
+                followPos = ShipDisplayPose.LocalPosition;
+            else if (targetCamera != null)
+                followPos = targetCamera.transform.position;
+            else
+                return;
+
+            transform.position = new Vector3(followPos.x, -Mathf.Abs(depthOffset), followPos.z);
             ResizeQuadToCoverView();
 
-            float dt = Time.deltaTime;
-            if (EcsGameBridge.TryGetLocalShipVelocity(out var shipVel))
+            if (!hasLastScrollPos)
             {
-                scrollOffsetX += shipVel.x * dt * scrollScale;
-                scrollOffsetZ += shipVel.z * dt * scrollScale;
-            }
-            else if (!hasLastCamPos)
-            {
-                lastCamPos = camPos;
-                hasLastCamPos = true;
-                scrollOffsetX = camPos.x * scrollScale;
-                scrollOffsetZ = camPos.z * scrollScale;
+                lastScrollPos = followPos;
+                hasLastScrollPos = true;
+                scrollOffsetX = followPos.x * scrollScale;
+                scrollOffsetZ = followPos.z * scrollScale;
             }
             else
             {
-                float dx = camPos.x - lastCamPos.x;
-                float dz = camPos.z - lastCamPos.z;
-                lastCamPos = camPos;
-                scrollOffsetX += dx * scrollScale;
-                scrollOffsetZ += dz * scrollScale;
+                scrollOffsetX += (followPos.x - lastScrollPos.x) * scrollScale;
+                scrollOffsetZ += (followPos.z - lastScrollPos.z) * scrollScale;
+                lastScrollPos = followPos;
             }
 
             bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));

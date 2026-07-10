@@ -791,66 +791,14 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     public partial struct PeopleTransportPresentationMotionSystem : ISystem
     {
-        public void OnUpdate(ref SystemState state)
+        public void OnCreate(ref SystemState state)
         {
-            float dt = SystemAPI.Time.DeltaTime;
-            float mapW = 1000f;
-            float mapH = 1000f;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
-            {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
-            }
-
-            var shipTransformByNetworkId = new NativeHashMap<int, LocalTransform>(16, Allocator.Temp);
-            var shipStateByNetworkId = new NativeHashMap<int, ShipState>(16, Allocator.Temp);
-            var shipMoonDockByNetworkId = new NativeHashMap<int, ShipMoonDockState>(16, Allocator.Temp);
-            var shipInputByNetworkId = new NativeHashMap<int, ShipInput>(16, Allocator.Temp);
-            var shipOrbitByNetworkId = new NativeHashMap<int, ShipOrbitState>(16, Allocator.Temp);
-            foreach (var (owner, shipState, shipInput, shipOrbit, moonDock, transform) in SystemAPI
-                         .Query<RefRO<GhostOwner>, RefRO<ShipState>, RefRO<ShipInput>, RefRO<ShipOrbitState>,
-                             RefRO<ShipMoonDockState>, RefRO<LocalTransform>>()
-                         .WithAll<ShipTag>())
-            {
-                if (owner.ValueRO.NetworkId == 0)
-                    continue;
-                int id = owner.ValueRO.NetworkId;
-                shipTransformByNetworkId[id] = transform.ValueRO;
-                shipStateByNetworkId[id] = shipState.ValueRO;
-                shipMoonDockByNetworkId[id] = moonDock.ValueRO;
-                shipInputByNetworkId[id] = shipInput.ValueRO;
-                shipOrbitByNetworkId[id] = shipOrbit.ValueRO;
-            }
-
-            var planetTransformById = new NativeHashMap<int, LocalTransform>(32, Allocator.Temp);
-            var planetStateById = new NativeHashMap<int, PlanetState>(32, Allocator.Temp);
-            foreach (var (planet, transform) in SystemAPI.Query<RefRO<PlanetState>, RefRO<LocalTransform>>().WithAll<PlanetTag>())
-            {
-                planetTransformById[planet.ValueRO.PlanetId] = transform.ValueRO;
-                planetStateById[planet.ValueRO.PlanetId] = planet.ValueRO;
-            }
-
-            foreach (var (transport, transform) in SystemAPI
-                         .Query<RefRW<PeopleTransportState>, RefRW<LocalTransform>>()
-                         .WithAll<PeopleTransportTag>())
-            {
-                ref var t = ref transport.ValueRW;
-                float3 myPos = transform.ValueRO.Position;
-                myPos.y = 0f;
-                PeopleTransportSimulationSystem.StepTransportMotion(
-                    ref t, ref transform.ValueRW, t.IsLoad != 0, myPos, dt, mapW, mapH,
-                    shipStateByNetworkId, shipTransformByNetworkId, shipMoonDockByNetworkId,
-                    shipInputByNetworkId, shipOrbitByNetworkId,
-                    planetTransformById, planetStateById);
-            }
-
-            shipTransformByNetworkId.Dispose();
-            shipStateByNetworkId.Dispose();
-            shipMoonDockByNetworkId.Dispose();
-            shipInputByNetworkId.Dispose();
-            shipOrbitByNetworkId.Dispose();
-            planetTransformById.Dispose();
-            planetStateById.Dispose();
+            // Disabled: re-simulating transport motion on the client overwrote NetCode's interpolated
+            // ghost LocalTransform every presentation frame, causing fast stepped visuals. The server
+            // sim is authoritative; clients display the interpolated ghost snapshot only.
+            state.Enabled = false;
         }
+
+        public void OnUpdate(ref SystemState state) { }
     }
 }

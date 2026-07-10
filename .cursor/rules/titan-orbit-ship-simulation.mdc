@@ -1,0 +1,255 @@
+---
+description: Ship sim target architecture — NetCode prediction, Unity Physics, Burst/DOTS, readable comments
+alwaysApply: true
+---
+
+# Titan Orbit — ship simulation architecture
+
+Fast-paced multiplayer shooter with many entities. This document is the **source of truth** for how ship movement, collision, prediction, and presentation must work. The human author does manual edits — keep code **well commented** so each file is understandable on its own.
+
+---
+
+## North star (read this first)
+
+```
+Player input
+  → ShipInputApplySystem (client, GhostInputSystemGroup)
+  → ShipMovementLogic.StepShip()  [Burst target; shared client + server]
+       writes PhysicsVelocity.Linear + LocalTransform.Rotation only
+  → PhysicsSystemGroup (Unity Physics integrates position, resolves collisions)
+  → LocalTransform (authoritative / predicted sim state)
+  → NetCode presentation + ghost interpolation
+  → GameObject visual proxies (render only — never drive sim)
+```
+
+| Role | Who runs motor | Who integrates position | Who you see on screen |
+|------|----------------|-------------------------|------------------------|
+| Local owner | Client (predicted) | Client Unity Physics | Presentation transform |
+| Remote players | Server (authority) | Server Unity Physics | NetCode ghost interpolation |
+| Server sim | Server | Server Unity Physics | N/A (or host view) |
+
+**Key idea:** Motor steers and sets velocity. **Unity Physics moves the hull and bounces off ships, planets, asteroids.** NetCode handles prediction and remote interpolation. Do not add a parallel “smoothed” movement path in MonoBehaviour.
+
+---
+
+## 1. NetCode owner prediction (required)
+
+### Systems (do not merge or delete)
+
+| System | File | World filter | Purpose |
+|--------|------|--------------|---------|
+| `ShipClientPredictedMovementSystem` | `ECS/Systems/ShipClientPredictedMovementSystem.cs` | `ClientSimulation` | Owner ship runs predicted motor before physics |
+| `ShipMovementSystem` | `ECS/Systems/ShipMovementSystem.cs` | `ServerSimulation` | Authoritative motor for all ships |
+| `ShipMovementLogic` | `ECS/Systems/ShipMovementLogic.cs` | Both call this | **Single** deterministic motor implementation |
+| `ShipInputApplySystem` | `ECS/Systems/ShipInputApplySystem.cs` | Client, `GhostInputSystemGroup` | Copies pending input onto local ghost |
+
+### Invariants
+
+- Both movement systems live in `PredictedFixedStepSimulationSystemGroup`.
+- Both run `[UpdateBefore(typeof(PhysicsSystemGroup))]` so motor sets velocity **before** physics integrates.
+- Both query `.WithAll<ShipTag, Simulate>()` — `Simulate` is NetCode’s tag for entities in the prediction loop.
+- Both call `ShipMovementLogic.StepShip(...)` with the same signature. **Never fork motor logic** into client-only or server-only copies.
+- `TitanOrbitPhysicsBootstrapSystem` must keep `LagCompensationConfig` on client and server so predicted physics can rewind.
+
+### Forbidden (unless user explicitly requests)
+
+- Removing `ShipClientPredictedMovementSystem` or making owner movement server-wait / interpolation-only.
+- Merging client and server into one system with conditional world checks.
+- Driving owner position from `LateUpdate`, `GameObject.transform`, or non-presentation ECS reads.
+- Removing `Simulate` from the movement query.
+
+---
+
+## 2. Unity Physics for movement and collision (required)
+
+### Motor → physics contract
+
+`ShipMovementLogic` calls `ShipMotorSimulator.Step(..., integratePosition: false)`.
+
+| Component | Written by motor? | Written by physics? | Notes |
+|-----------|-------------------|---------------------|-------|
+| `PhysicsVelocity.Linear` | Yes | Contacts may alter | Ship thrust/brake/shield repel |
+| `LocalTransform.Rotation` | Yes | No (inverse inertia = 0) | Facing from motor, not collision spin |
+| `LocalTransform.Position` | **No** | Yes (`PhysicsSystemGroup`) | Hull position from solver |
+| `ShipKinematics.Velocity` | Yes (mirror) | — | Gameplay reads; keep in sync with physics linear vel |
+
+Do **not** manually integrate ship `Position` in the motor when physics is active. Do **not** add custom toroidal sweep / teleport collision for ships. Bullets may keep logical segment tests in `BulletSimulationSystem`.
+
+### Colliders and layers (`ECS/TitanOrbitPhysicsLayers.cs`)
+
+| Entity | Body type | Layer | Collides with |
+|--------|-----------|-------|---------------|
+| Ship | Dynamic sphere | `Ship` | Ships, World (planets, asteroids) |
+| Planet | Static sphere | `WorldStatic` | Ships, World, Gems, Transports |
+| Asteroid | Static sphere | `WorldStatic` | Ships, World, … |
+| Gem / Transport | Scripted | `Gem` / `Transport` | World only — **no** ship hull collision |
+
+Baked in: `StarshipGhostAuthoring`, `PlanetGhostAuthoring`, `AsteroidGhostAuthoring`.
+
+Ship physics details (from authoring):
+- Sphere hull collider, restitution ~0.5 for bounce.
+- `InverseInertia = 0` — contacts never spin the ship.
+- `PhysicsGravityFactor = 0` — top-down space; gravity set zero in bootstrap.
+
+### Moons and shields (gameplay overlay, not physics bodies)
+
+Moons do **not** have separate physics colliders today. Enemy moon shields use `PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded` inside the motor step to nudge velocity outward. This must remain **deterministic** and run on **both** client prediction and server authority. Do not replace with GameObject pushes or client-only repel.
+
+### Collision events (when adding SFX / gameplay hooks)
+
+Use `ICollisionEventsJob` or physics event systems for reactions (sound, VFX triggers). **Do not** move core movement or position integration out of Unity Physics.
+
+---
+
+## 3. Burst / DOTS (target for all sim hot paths)
+
+Presentation (`EcsWorldVisualizer`, `CameraFollowEcs`, HUD, cosmetic VFX) stays managed MonoBehaviour. **Per-tick ship simulation must be Burst-ready.**
+
+### Current Burst examples (keep this pattern)
+
+- `BulletSimulationSystem` — `[BurstCompile]` `ISystem`, server shooting + bullet sim.
+- `BulletVisualScale`, `BulletCollision` — pure math helpers.
+
+### Migration targets
+
+- `ShipMovementLogic` / `ShipMotorSimulator` — move to `Unity.Mathematics`, remove per-tick `EntityManager` calls.
+- `ShipClientPredictedMovementSystem` / `ShipMovementSystem` — `partial struct ISystem` + `[BurstCompile]`.
+- `ShipWeaponPose.TryResolve` — add `[BurstCompile]`; single source for muzzle origin/forward.
+
+### Rules when editing sim code
+
+1. Prefer `partial struct ISystem` with `[BurstCompile]` on `OnCreate` / `OnUpdate`.
+2. Extract hot loops into `[BurstCompile]` static methods or `IJobEntity`.
+3. Pre-bake components in `ShipEnsureComponentsSystem` / authoring — no `AddComponent` per ship per tick.
+4. Use `[BurstDiscard]` only for debug/logging, not per-frame work.
+5. Do not move shooting into MonoBehaviour; server authority stays in `BulletSimulationSystem`.
+
+---
+
+## 4. Presentation — NetCode only, no custom movement smoothing
+
+Hybrid GameObject proxies exist because we use visual prefabs, not Entities Graphics. They are **render shells only**.
+
+### Pipeline (correct)
+
+```
+Sim LocalTransform
+  → NetCode presentation / ghost interpolation
+  → ShipVisualSyncSystem (PresentationSystemGroup, last)
+  → GhostPresentationTransformCache
+  → EcsWorldVisualizer applies to GameObject proxy
+```
+
+### Do
+
+- Read ship transforms from presentation phase (`ShipVisualSyncSystem` cache), not raw sim in `LateUpdate`.
+- Let NetCode interpolate **remote** ghosts.
+- Prefer `GhostPredictionSmoothing` for owner rollback (NetCode built-in) over custom proxy lerp.
+- `ShipDisplayPose` for camera/background — feed from **presentation** pose, not a double-smoothed copy.
+
+### Do NOT add or restore
+
+- Extra `Lerp` / `Slerp` on **local owner** ship proxy for movement feel (e.g. `LocalShipRenderSmoothRate` in `EcsWorldVisualizer`).
+- `LateUpdate` ECS queries for movement, aiming, or shooting decisions.
+- Parallel motor paths that bypass prediction or physics “to reduce jitter”.
+- Client-only movement that diverges from shared motor + physics.
+
+**Cosmetic smoothing is OK** for UI sticks, moon dock cinematics, propulsion/bank VFX — never on predicted or authoritative ship transform.
+
+---
+
+## 5. Shooting and weapon pose
+
+| Concern | Where | Notes |
+|---------|-------|-------|
+| Server hit detection + spawn | `BulletSimulationSystem` | Burst, authoritative |
+| Muzzle origin / forward | `ShipWeaponPose.TryResolve` | Shared math; used by sim and client VFX |
+| Client tracer VFX | `ClientLocalBulletVfxBridge` | VFX only; reads predicted ECS pose |
+| Cooldown / energy | `ShipWeaponState`, `ShipState` | Server sim |
+
+Client VFX may anticipate shots; **damage and bullet entities are server-authoritative.**
+
+---
+
+## 6. Legacy code — migrate toward this doc, do not extend
+
+| Current | Target action |
+|---------|---------------|
+| `EcsWorldVisualizer` local ship lerp | Remove; use presentation transform directly |
+| `ShipMovementLogic` + `EntityManager` in hot path | Burst job + pre-baked components |
+| `SystemBase` movement systems | Burst `ISystem` |
+| `ClientLocalBulletVfxBridge` LateUpdate ECS reads | Presentation or sim spawn events |
+| `GhostPresentationTransformCache` | Temporary bridge; document as hybrid-only |
+
+When fixing jitter/lag: tune tick rate, `GhostPredictionSmoothing`, physics step — **do not** remove prediction or physics.
+
+**Ask the user before changing the prediction model or removing client prediction.**
+
+---
+
+## 7. Code documentation standards (required for manual edits)
+
+The project owner edits ship sim code by hand. **Every change to ship movement, physics, prediction, or shooting must include clear comments** so files are readable without chat context.
+
+### File-level (`/// <summary>` on class/struct)
+
+Explain in 2–4 sentences:
+- What world(s) and system group it runs in.
+- Whether it is sim, presentation, or VFX-only.
+- What it reads and what it writes.
+- Cross-reference paired systems (e.g. client prediction ↔ server authority).
+
+Example pattern:
+```csharp
+/// <summary>
+/// Client-side prediction for the local owner's ship. Runs the same motor step as the server
+/// for entities tagged <see cref="Simulate"/> during the predicted fixed-step loop, before
+/// Unity Physics integrates position. Paired with <see cref="ShipMovementSystem"/> (server).
+/// </summary>
+```
+
+### Method-level (non-obvious logic only)
+
+Add `/// <summary>` or `//` blocks when:
+- Motor writes velocity but not position (physics contract).
+- A query filter matters (`Simulate`, `GhostOwnerIsLocal`, world filter).
+- Toroidal map, orbit motor, or shield repel affects behavior.
+- Client vs server behavior differs.
+
+### Inline comments (use sparingly but precisely)
+
+Comment **why**, not what:
+```csharp
+// integratePosition: false — PhysicsSystemGroup owns hull position and bounce contacts.
+// InverseInertia zero — collision impulses must not spin the ship; motor owns Rotation.
+```
+
+### Section headers in long files
+
+Use `// --- Prediction motor ---` style blocks in `ShipMovementLogic` and similar so manual navigation is easy.
+
+### When adding new systems
+
+Include a short **pipeline comment** at the top listing execution order relative to neighbors:
+```csharp
+// Order: ShipInputApplySystem → ShipClientPredictedMovementSystem → PhysicsSystemGroup → …
+```
+
+### Do not
+
+- Remove existing architecture comments unless they are wrong — update them instead.
+- Add noise comments on every line (`// increment i`).
+- Leave commented-out old smoothing / motor paths — delete dead code or mark `// LEGACY: remove in migration` with a one-line reason.
+
+---
+
+## 8. Pre-submit checklist
+
+- [ ] Owner still predicted on client (`ShipClientPredictedMovementSystem` + `Simulate`)?
+- [ ] Server and client call the **same** `ShipMovementLogic.StepShip`?
+- [ ] Motor sets velocity/rotation only; physics integrates position?
+- [ ] Ship/planet/asteroid collisions via Unity Physics layers?
+- [ ] No new proxy or camera smoothing on local owner movement?
+- [ ] Hot path Burst-compatible or clearly marked with migration TODO?
+- [ ] Shooting server-authoritative in `BulletSimulationSystem`?
+- [ ] New/changed code has file summary + non-obvious inline comments per section 7?

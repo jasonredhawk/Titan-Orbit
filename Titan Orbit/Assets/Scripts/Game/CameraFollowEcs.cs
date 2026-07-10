@@ -1,3 +1,4 @@
+using TitanOrbit.Shared;
 using UnityEngine;
 
 namespace TitanOrbit.Game

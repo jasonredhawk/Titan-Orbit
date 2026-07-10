@@ -61,4 +61,18 @@ namespace TitanOrbit.ECS
     {
         public int AttributeIndex;
     }
+
+    /// <summary>Client reconnected to a match that still has their ship — resume control.</summary>
+    public struct ResumeExistingShipCommand : IRpcCommand { }
+
+    /// <summary>Client wants a new ship and team; server destroys the persisted ship.</summary>
+    public struct AbandonShipForRejoinCommand : IRpcCommand { }
+
+    public struct RejoinShipResultRpc : IRpcCommand
+    {
+        public byte Success;
+        public byte Choice; // 1 = resume existing, 2 = abandon for fresh team pick
+        public byte AssignedTeam;
+        public FixedString128Bytes Message;
+    }
 }

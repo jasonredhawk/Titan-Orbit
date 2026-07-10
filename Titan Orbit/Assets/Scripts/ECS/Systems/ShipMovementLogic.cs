@@ -122,7 +122,8 @@ namespace TitanOrbit.ECS
                 in tickParams,
                 aimWorldXz,
                 inp.Thrust,
-                inp.SpaceBrakes);
+                inp.SpaceBrakes,
+                integratePosition: false);
 
             // Unity Physics resolves ship/asteroid/planet contacts (bounce) — no custom sweep here.
             // Shield repel still nudges velocity away from enemy moon shields (position writes ignored).

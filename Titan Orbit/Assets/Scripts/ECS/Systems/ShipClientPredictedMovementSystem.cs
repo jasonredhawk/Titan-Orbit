@@ -1,22 +1,39 @@
 using Unity.Entities;
 using Unity.NetCode;
+using Unity.Physics;
+using Unity.Physics.Systems;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Intentionally idle. Baseline mode uses Interpolated ghosts:
-    /// client sends ShipInput, server owns movement, client displays the interpolated LocalTransform.
-    /// Kept so group attributes remain available when OwnerPredicted is re-enabled later.
+    /// Client-side prediction for the local owner's ship. Runs the same motor step as the server
+    /// for entities tagged <see cref="Simulate"/> during the predicted fixed-step loop, before
+    /// Unity Physics integrates position.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
+    [UpdateBefore(typeof(PhysicsSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial class ShipClientPredictedMovementSystem : SystemBase
     {
         protected override void OnCreate()
         {
-            Enabled = false;
+            RequireForUpdate<ShipMotorConfig>();
         }
 
-        protected override void OnUpdate() { }
+        protected override void OnUpdate()
+        {
+            float dt = SystemAPI.Time.DeltaTime;
+            double elapsed = SystemAPI.Time.ElapsedTime;
+            ShipMovementLogic.GetMapSize(EntityManager, out float mapW, out float mapH);
+
+            foreach (var (input, motor, shipState, kinematics, physicsVelocity, transform, entity) in SystemAPI
+                         .Query<RefRO<ShipInput>, RefRO<ShipMotorConfig>, RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<PhysicsVelocity>, RefRW<LocalTransform>>()
+                         .WithAll<ShipTag, Simulate>()
+                         .WithEntityAccess())
+            {
+                ShipMovementLogic.StepShip(EntityManager, dt, mapW, mapH, elapsed, input, motor, shipState, kinematics, physicsVelocity, transform, entity);
+            }
+        }
     }
 }
