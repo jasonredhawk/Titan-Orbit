@@ -172,13 +172,15 @@ namespace TitanOrbit.Game
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
         /// <summary>
-        /// [HYBRID] Prefer presentation cache from ShipVisualSyncSystem; fall back to raw LocalTransform.
+        /// [HYBRID] Prefer presentation cache from ShipVisualSyncSystem; fall back to raw LocalTransform
+        /// only when the entity has never been published (spawn frame, world not ready).
         /// </summary>
         static bool TryGetPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
         {
             lt = default;
-            if (GhostPresentationTransformCache.PublishFrame == Time.frameCount &&
-                GhostPresentationTransformCache.TryGetShip(entity, out var snap))
+            // [NETCODE] Use the cache whenever we have a snapshot — one-frame staleness is fine;
+            // rejecting stale entries and falling back to sim LocalTransform caused pose fighting.
+            if (GhostPresentationTransformCache.TryGetShip(entity, out var snap))
             {
                 lt = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
                 return true;
@@ -195,8 +197,7 @@ namespace TitanOrbit.Game
         static bool TryGetPeopleTransportPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
         {
             lt = default;
-            if (GhostPresentationTransformCache.PublishFrame == Time.frameCount &&
-                GhostPresentationTransformCache.TryGetPeopleTransport(entity, out var snap))
+            if (GhostPresentationTransformCache.TryGetPeopleTransport(entity, out var snap))
             {
                 lt = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
                 return true;

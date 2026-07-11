@@ -45,8 +45,12 @@ namespace TitanOrbit.ECS
 
                 ecb.DestroyEntity(entity);
 
-                if (HasShipForNetworkId(ref state, networkId))
+                // [NETCODE] Duplicate team RPC (double-click / retry) — acknowledge so client UI advances.
+                if (TryGetShipTeamForNetworkId(ref state, networkId, out var existingTeam))
+                {
+                    SendTeamChoiceResult(ecb, connection, networkId, existingTeam, success: true, default);
                     continue;
+                }
 
                 var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
                 bool ok = TryAssignTeam(ref teamState.ValueRW, requested, out var message);
@@ -77,16 +81,40 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
-        /// <summary>[NETCODE] True if this network id already owns a ship ghost (prevents double spawn).</summary>
-        bool HasShipForNetworkId(ref SystemState state, int networkId)
+        /// <summary>[NETCODE] Queues a team-pick result RPC back to the requesting connection.</summary>
+        static void SendTeamChoiceResult(
+            EntityCommandBuffer ecb,
+            Entity connection,
+            int networkId,
+            TeamId team,
+            bool success,
+            FixedString128Bytes message)
         {
+            var resultEntity = ecb.CreateEntity();
+            ecb.AddComponent(resultEntity, new TeamChoiceResultRpc
+            {
+                NetworkId = networkId,
+                AssignedTeam = (byte)(success ? team : TeamId.None),
+                Success = (byte)(success ? 1 : 0),
+                Message = message,
+            });
+            ecb.AddComponent(resultEntity, new SendRpcCommandRequest { TargetConnection = connection });
+        }
+
+        /// <summary>[NETCODE] True if this network id already owns a ship ghost; returns assigned team.</summary>
+        bool TryGetShipTeamForNetworkId(ref SystemState state, int networkId, out TeamId team)
+        {
+            team = TeamId.None;
             if (networkId == 0)
                 return false;
 
-            foreach (var owner in SystemAPI.Query<RefRO<GhostOwner>>().WithAll<ShipTag>())
+            foreach (var (owner, shipState) in SystemAPI.Query<RefRO<GhostOwner>, RefRO<ShipState>>().WithAll<ShipTag>())
             {
-                if (owner.ValueRO.NetworkId == networkId)
-                    return true;
+                if (owner.ValueRO.NetworkId != networkId)
+                    continue;
+
+                team = shipState.ValueRO.Team;
+                return true;
             }
 
             return false;

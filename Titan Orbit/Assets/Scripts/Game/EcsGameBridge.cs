@@ -30,21 +30,18 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// ECS world used for rendering, camera follow, and GameObject proxy sync.
-        /// Dedicated clients read ClientWorld; local host prefers ServerWorld when both exist.
+        /// Host and dedicated clients both read ClientWorld so proxies use NetCode presentation
+        /// (owner prediction + remote interpolation), not raw ServerWorld simulation ticks.
         /// </summary>
         public static World GetVisualizationWorld()
         {
-            // [NETCODE] Dedicated online clients only have a live ClientWorld for ghost presentation.
-            if (TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                ClientWorld != null &&
-                ClientWorld.IsCreated)
+            // [NETCODE] ClientWorld owns ghost presentation — interpolation for remotes, prediction for local owner.
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld))
                 return ClientWorld;
 
-            // [NETCODE] Local host runs authoritative sim on ServerWorld — ghosts still replicate to ClientWorld,
-            // but host camera/proxies may read server transforms when both worlds are active.
-            if (IsLocalHost() &&
-                ServerWorld != null &&
-                ServerWorld.IsCreated)
+            // [NETCODE] Pre-connection bootstrap or server-only tools — fall back to authoritative world.
+            if (ServerWorld != null && ServerWorld.IsCreated)
                 return ServerWorld;
 
             return ClientWorld ?? ServerWorld;
@@ -410,6 +407,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Map generation finished — host reads <see cref="MapStateSingleton"/>; remote clients infer from ghost stream.
+        /// Once true for a session, stays true until disconnect so late ghost arrivals do not flash loading UI.
         /// </summary>
         public static bool IsMapLoadingComplete()
         {
@@ -419,6 +417,19 @@ namespace TitanOrbit.Game
                 return false;
             }
 
+            // [TITAN-ORBIT] Latch — replicated asteroid/planet counts can tick upward after the first "complete".
+            if (s_MapLoadingLatchedComplete)
+                return true;
+
+            bool complete = EvaluateMapLoadingComplete();
+            if (complete)
+                s_MapLoadingLatchedComplete = true;
+            return complete;
+        }
+
+        /// <summary>Computes map-ready from server singleton or remote ghost heuristics (no latch).</summary>
+        static bool EvaluateMapLoadingComplete()
+        {
             // --- Local host: ServerWorld owns map generation and MapStateSingleton ---
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
@@ -909,6 +920,10 @@ namespace TitanOrbit.Game
         static int s_RemoteMapAsteroidCount = -1;
         /// <summary>realtimeSinceStartup when body counts last changed — settle window before "complete".</summary>
         static float s_RemoteMapStableSince = -1f;
+        /// <summary>Stays true after first successful <see cref="IsMapLoadingComplete"/> until session reset.</summary>
+        static bool s_MapLoadingLatchedComplete;
+        /// <summary>Last known team count for lobby UI — avoids flicker when home ghosts briefly desync.</summary>
+        static int s_LatchedActiveTeamCount;
 
         /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
         static void ResetRemoteMapLoadTracking()
@@ -917,6 +932,8 @@ namespace TitanOrbit.Game
             s_RemoteMapPlanetCount = -1;
             s_RemoteMapAsteroidCount = -1;
             s_RemoteMapStableSince = -1f;
+            s_MapLoadingLatchedComplete = false;
+            s_LatchedActiveTeamCount = 0;
         }
 
         /// <summary>
@@ -1084,6 +1101,13 @@ namespace TitanOrbit.Game
         {
             activeTeamCount = 0;
 
+            // [TITAN-ORBIT] Latch team count once discovered so Join Team UI does not bounce to "Preparing teams...".
+            if (s_LatchedActiveTeamCount > 0)
+            {
+                activeTeamCount = s_LatchedActiveTeamCount;
+                return true;
+            }
+
             if (ServerWorld != null && ServerWorld.IsCreated)
             {
                 using var homes = ServerWorld.EntityManager.CreateEntityQuery(typeof(HomePlanetTag));
@@ -1091,7 +1115,7 @@ namespace TitanOrbit.Game
                 if (homeCount > 0)
                 {
                     activeTeamCount = homeCount;
-                    return true;
+                    return LatchActiveTeamCount(activeTeamCount);
                 }
 
                 if (ServerWorld.EntityManager.CreateEntityQuery(typeof(TeamStateSingleton))
@@ -1099,7 +1123,7 @@ namespace TitanOrbit.Game
                     serverTeam.ActiveTeamCount > 0)
                 {
                     activeTeamCount = serverTeam.ActiveTeamCount;
-                    return true;
+                    return LatchActiveTeamCount(activeTeamCount);
                 }
             }
 
@@ -1110,7 +1134,7 @@ namespace TitanOrbit.Game
                 if (replicatedHomeCount > 0)
                 {
                     activeTeamCount = replicatedHomeCount;
-                    return true;
+                    return LatchActiveTeamCount(activeTeamCount);
                 }
             }
 
@@ -1121,10 +1145,18 @@ namespace TitanOrbit.Game
             if (teamState.ActiveTeamCount > 0)
             {
                 activeTeamCount = teamState.ActiveTeamCount;
-                return true;
+                return LatchActiveTeamCount(activeTeamCount);
             }
 
             return false;
+        }
+
+        /// <summary>Stores the first non-zero team count for the current in-game session.</summary>
+        static bool LatchActiveTeamCount(int count)
+        {
+            if (count > 0)
+                s_LatchedActiveTeamCount = count;
+            return count > 0;
         }
 
         /// <summary>Counts home planets with <see cref="PlanetState.IsHomePlanet"/> in replicated state.</summary>

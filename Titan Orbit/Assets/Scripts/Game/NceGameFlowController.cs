@@ -849,7 +849,9 @@ namespace TitanOrbit.Game
                                  (!ClientTeamFlowState.IsRejoinChoicePending &&
                                   !ClientTeamFlowState.HasRequestedTeamPick &&
                                   !hasRejoinableShip);
-            bool showLoading = connected && !mapReady;
+            bool showLoading = connected && !mapReady &&
+                               !ClientTeamFlowState.TeamChoiceConfirmed &&
+                               !ClientTeamFlowState.HasRequestedTeamPick;
             bool showTeamCountWait = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed &&
                                      !teamPickInFlight && !knowsTeamCount;
             bool showTeam = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed &&

@@ -14,7 +14,9 @@ namespace TitanOrbit.Game
     /// <see cref="GhostPresentationTransformCache"/>. Runs last in PresentationSystemGroup —
     /// do not read raw sim transforms in MonoBehaviour LateUpdate for movement (see ship-simulation rule).
     /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
+    // [NETCODE] ClientSimulation only — matches EcsGameBridge.GetVisualizationWorld (ClientWorld).
+    // Publishing from ServerWorld on host used to overwrite this cache with unrelated entity ids.
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderLast = true)]
     public partial class ShipVisualSyncSystem : SystemBase
     {
